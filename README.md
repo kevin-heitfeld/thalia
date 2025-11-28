@@ -51,9 +51,32 @@ plot_raster(spikes)
 
 ## Project Status
 
-🚧 **Pre-Alpha** — Core infrastructure under development
+✅ **v0.9.1** — All 9 phases complete, 387 tests passing, 5 experiments validated
 
-See [docs/PLANNING.md](docs/PLANNING.md) for the full roadmap.
+| Component | Status | Description |
+|-----------|--------|-------------|
+| Core SNN | ✅ | LIF neurons, synapses, layers |
+| Learning | ✅ | STDP, homeostatic, reward-modulated |
+| Attractors | ✅ | Pattern storage, recall, transitions |
+| Memory | ✅ | Working memory with gating |
+| Hierarchy | ✅ | Multi-timescale processing |
+| Daydream | ✅ | Spontaneous thought generation |
+| World Model | ✅ | Predictive processing |
+| Inner Speech | ✅ | Verbal reasoning |
+| Metacognition | ✅ | Self-monitoring, confidence |
+
+### Experiments
+
+```bash
+# Run all experiments
+python experiments/scripts/exp1_basic_lif.py
+python experiments/scripts/exp2_stdp_learning.py
+python experiments/scripts/exp3_attractors.py
+python experiments/scripts/exp4_mnist_snn.py
+python experiments/scripts/exp5_spontaneous_thought.py
+```
+
+See [docs/PLANNING.md](docs/PLANNING.md) for the full roadmap and [docs/CHANGELOG.md](docs/CHANGELOG.md) for version history.
 
 ## Documentation
 

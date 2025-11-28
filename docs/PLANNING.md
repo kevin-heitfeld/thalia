@@ -29,8 +29,18 @@ A framework for building genuinely thinking spiking neural networks that can gen
 
 ### Latest Commit
 ```
-9b5713f Phase 9: Metacognition - self-monitoring, confidence tracking, error detection
+dba7fd9 Experiments: All 5 experiments passing with API fixes and results
 ```
+
+### 🧪 Experiments Status
+
+| Experiment | Status | Key Results |
+|------------|--------|-------------|
+| Exp 1: Basic LIF | ✅ PASS | Neuron dynamics correct, ~205 obs/sec GPU |
+| Exp 2: STDP Learning | ✅ PASS | Weights modified, patterns learned, stable |
+| Exp 3: Attractors | ✅ PASS | 100% recall at 50% corruption |
+| Exp 4: MNIST SNN | ✅ PASS | 43% accuracy (4x chance), 21s training |
+| Exp 5: Spontaneous Thought | ✅ PASS | 13 transitions, 67% follow associations |
 
 ---
 

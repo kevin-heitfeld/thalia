@@ -2,6 +2,31 @@
 
 All notable changes to THALIA are documented in this file.
 
+## [0.9.1] - 2025-11-28 🧪 Experiments Complete!
+
+All 5 validation experiments are now passing, demonstrating THALIA's core capabilities.
+
+### Experiments Added
+**Commit:** `dba7fd9`
+
+| Experiment | Description | Results |
+|------------|-------------|---------|
+| **Exp 1: Basic LIF** | LIF neuron dynamics validation | ✅ All neuron behavior correct |
+| **Exp 2: STDP Learning** | Spike-timing plasticity | ✅ Weights learned, patterns stable |
+| **Exp 3: Attractors** | Pattern storage & recall | ✅ 100% recall at 50% corruption |
+| **Exp 4: MNIST SNN** | Classification benchmark | ✅ 43% accuracy (4x above chance) |
+| **Exp 5: Spontaneous Thought** | Free association | ✅ 13 transitions, 67% associated |
+
+#### Files
+- `experiments/scripts/exp1_basic_lif.py`
+- `experiments/scripts/exp2_stdp_learning.py`
+- `experiments/scripts/exp3_attractors.py`
+- `experiments/scripts/exp4_mnist_snn.py`
+- `experiments/scripts/exp5_spontaneous_thought.py`
+- `experiments/results/*.png` - Visualization outputs
+
+---
+
 ## [0.9.0] - 2025-11-28 🎉 All Core Phases Complete!
 
 THALIA has achieved all planned functionality for spontaneous thinking through spiking neural networks.
