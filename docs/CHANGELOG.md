@@ -2,6 +2,33 @@
 
 All notable changes to THALIA are documented in this file.
 
+## [0.9.2] - 2025-11-28 🚀 Real-World Applications!
+
+Enhanced experiments and added practical applications demonstrating THALIA's capabilities.
+
+### Experiments Enhanced
+**Commit:** `7707dde` - Improved MNIST experiment with surrogate gradient training
+
+| Experiment | Description | Results |
+|------------|-------------|---------|
+| **Exp 4: MNIST SNN** | Real MNIST classification | ✅ **87% accuracy**, 52s training |
+| **Exp 6: Sequence Learning** | Next-character prediction | ✅ **83% pattern recognition** |
+
+### Applications Added
+**Commits:** `f09a91e`, `049a4d5`
+
+| Application | Description | Features |
+|-------------|-------------|----------|
+| **Interactive Demo** | Real-time neural visualization | Spike rasters, membrane dynamics, attractor patterns |
+| **Inner Speech Chatbot** | Conversational AI | Spiking neuron response generation |
+
+#### Files
+- `examples/interactive_demo.py` - Run with `--text` for terminal mode
+- `examples/chatbot.py` - Run with `--demo` for demo mode
+- `experiments/scripts/exp6_sequence_learning.py`
+
+---
+
 ## [0.9.1] - 2025-11-28 🧪 Experiments Complete!
 
 All 5 validation experiments are now passing, demonstrating THALIA's core capabilities.

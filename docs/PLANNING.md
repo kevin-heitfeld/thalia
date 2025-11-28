@@ -22,14 +22,14 @@ A framework for building genuinely thinking spiking neural networks that can gen
 | **Total** | **9/9** | **387** | **All phases complete!** |
 
 ### Key Metrics
-- **Total Lines of Code:** ~8,000+ lines
+- **Total Lines of Code:** ~9,000+ lines
 - **Test Coverage:** 387 passing tests
 - **GPU Support:** Full CUDA acceleration
 - **Performance:** ~200 observations/sec on RTX 3050 Ti
 
 ### Latest Commit
 ```
-dba7fd9 Experiments: All 5 experiments passing with API fixes and results
+049a4d5 Add chatbot using THALIA spiking neurons for response generation
 ```
 
 ### 🧪 Experiments Status
@@ -39,8 +39,16 @@ dba7fd9 Experiments: All 5 experiments passing with API fixes and results
 | Exp 1: Basic LIF | ✅ PASS | Neuron dynamics correct, ~205 obs/sec GPU |
 | Exp 2: STDP Learning | ✅ PASS | Weights modified, patterns learned, stable |
 | Exp 3: Attractors | ✅ PASS | 100% recall at 50% corruption |
-| Exp 4: MNIST SNN | ✅ PASS | 43% accuracy (4x chance), 21s training |
+| Exp 4: MNIST SNN | ✅ PASS | **87% accuracy on real MNIST**, 52s training |
 | Exp 5: Spontaneous Thought | ✅ PASS | 13 transitions, 67% follow associations |
+| Exp 6: Sequence Learning | ✅ PASS | **83% pattern recognition**, recurrent SNN |
+
+### 🚀 Applications Built
+
+| Application | Description | Status |
+|-------------|-------------|--------|
+| Interactive Demo | Real-time attractor visualization | ✅ Complete |
+| Inner Speech Chatbot | Conversational AI with spiking neurons | ✅ Complete |
 
 ---
 

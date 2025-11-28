@@ -51,7 +51,7 @@ plot_raster(spikes)
 
 ## Project Status
 
-✅ **v0.9.1** — All 9 phases complete, 387 tests passing, 5 experiments validated
+✅ **v0.9.2** — All 9 phases complete, 387 tests passing, 6 experiments validated
 
 | Component | Status | Description |
 |-----------|--------|-------------|
@@ -69,11 +69,22 @@ plot_raster(spikes)
 
 ```bash
 # Run all experiments
-python experiments/scripts/exp1_basic_lif.py
-python experiments/scripts/exp2_stdp_learning.py
-python experiments/scripts/exp3_attractors.py
-python experiments/scripts/exp4_mnist_snn.py
-python experiments/scripts/exp5_spontaneous_thought.py
+python experiments/scripts/exp1_basic_lif.py      # Neuron dynamics
+python experiments/scripts/exp2_stdp_learning.py  # STDP learning
+python experiments/scripts/exp3_attractors.py     # Pattern recall
+python experiments/scripts/exp4_mnist_snn.py      # Real MNIST (87%!)
+python experiments/scripts/exp5_spontaneous_thought.py  # Free association
+python experiments/scripts/exp6_sequence_learning.py    # Language patterns (83%!)
+```
+
+### Applications
+
+```bash
+# Interactive visualization demo
+python examples/interactive_demo.py --text
+
+# Chatbot using spiking neurons
+python examples/chatbot.py --demo
 ```
 
 See [docs/PLANNING.md](docs/PLANNING.md) for the full roadmap and [docs/CHANGELOG.md](docs/CHANGELOG.md) for version history.
