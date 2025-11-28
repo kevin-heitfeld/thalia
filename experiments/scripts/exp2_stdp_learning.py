@@ -13,7 +13,7 @@ import numpy as np
 from pathlib import Path
 
 from thalia.core import LIFNeuron, LIFConfig
-from thalia.learning import STDPConfig, STDPLearner
+from thalia.learning import STDPConfig, STDP
 
 
 def create_temporal_pattern(n_neurons: int, duration: int, pattern_type: str = "sequential") -> torch.Tensor:
@@ -70,7 +70,7 @@ def run_experiment():
     print(f"  Training presentations: {n_presentations}")
     
     # Create neurons
-    config = LIFConfig(tau_mem=10.0, v_thresh=1.0, noise_std=0.05)
+    config = LIFConfig(tau_mem=10.0, v_threshold=1.0, noise_std=0.05)
     output_neurons = LIFNeuron(n_neurons=n_output, config=config).to(device)
     
     # Create weights (input -> output)
@@ -86,7 +86,7 @@ def run_experiment():
         w_max=1.0,
         w_min=0.0,
     )
-    stdp = STDPLearner(stdp_config).to(device)
+    stdp = STDP(n_pre=n_input, n_post=n_output, config=stdp_config).to(device)
     
     print(f"\nSTDP Configuration:")
     print(f"  τ+: {stdp_config.tau_plus}ms")
@@ -108,7 +108,7 @@ def run_experiment():
     # Training loop
     for presentation in range(n_presentations):
         output_neurons.reset_state(batch_size=1)
-        stdp.reset()
+        stdp.reset_traces(batch_size=1)
         
         presentation_spikes = 0
         
@@ -119,12 +119,13 @@ def run_experiment():
             # Compute input current
             current = torch.mm(input_spikes, weights.t())  # (1, n_output)
             
-            # Forward pass through output neurons
-            output_spikes = output_neurons(current)
+            # Forward pass through output neurons (returns spikes, membrane)
+            output_spikes, _ = output_neurons(current)
             
-            # Apply STDP
-            dw = stdp.compute_weight_update(input_spikes, output_spikes)
-            weights = weights + dw.squeeze(0)
+            # Apply STDP - forward() returns weight update matrix (n_pre, n_post)
+            # Our weights are (n_output, n_input) so we need to transpose dw
+            dw = stdp(input_spikes, output_spikes)
+            weights = weights + dw.t()  # Transpose to match weights shape
             weights = weights.clamp(stdp_config.w_min, stdp_config.w_max)
             
             presentation_spikes += output_spikes.sum().item()
@@ -159,7 +160,7 @@ def run_experiment():
     for t in range(pattern_duration):
         input_spikes = pattern[t].unsqueeze(0)
         current = torch.mm(input_spikes, weights.t())
-        output_spikes = output_neurons(current)
+        output_spikes, _ = output_neurons(current)
         full_output_spikes.append(output_spikes.cpu().numpy())
     
     # Partial pattern response  
@@ -167,7 +168,7 @@ def run_experiment():
     for t in range(pattern_duration):
         input_spikes = partial_pattern[t].unsqueeze(0)
         current = torch.mm(input_spikes, weights.t())
-        output_spikes = output_neurons(current)
+        output_spikes, _ = output_neurons(current)
         partial_output_spikes.append(output_spikes.cpu().numpy())
     
     full_output_spikes = np.array(full_output_spikes).squeeze()
