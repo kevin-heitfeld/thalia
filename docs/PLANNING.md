@@ -317,37 +317,44 @@ thalia/
 
 ---
 
-## 🔬 First Experiments
+## 🔬 Experiments
 
-### Experiment 1: Basic LIF Network
-- Create 100 LIF neurons
-- Random sparse connectivity
-- Inject current, observe spiking
-- Visualize spike raster
+All experiments are in `experiments/scripts/` and save results to `experiments/results/`.
+
+### Experiment 1: Basic LIF Network ✅
+**Script:** `exp1_basic_lif.py`
+- [x] Create 100 LIF neurons with recurrent connections
+- [x] Random sparse connectivity (~10%)
+- [x] Inject current, observe spiking
+- [x] Visualize spike raster and membrane potentials
 
 ### Experiment 2: STDP Learning
-- Two-layer network
-- Present temporal patterns
-- Observe weight evolution
-- Test pattern completion
+**Script:** `exp2_stdp_learning.py`
+- [ ] Two-layer network
+- [ ] Present temporal patterns
+- [ ] Observe weight evolution
+- [ ] Test pattern completion
 
 ### Experiment 3: Attractor Formation
-- Small attractor network (~100 neurons)
-- Store 3-5 patterns
-- Test recall from partial cues
-- Visualize attractor basins
+**Script:** `exp3_attractors.py`
+- [ ] Small attractor network (~100 neurons)
+- [ ] Store 3-5 patterns
+- [ ] Test recall from partial cues
+- [ ] Visualize attractor basins
 
 ### Experiment 4: MNIST with SNN
-- Rate-coded input
-- STDP-trained hidden layer
-- Supervised output layer
-- Compare accuracy vs. training time
+**Script:** `exp4_mnist_snn.py`
+- [ ] Rate-coded input
+- [ ] STDP-trained hidden layer
+- [ ] Supervised output layer
+- [ ] Compare accuracy vs. training time
 
 ### Experiment 5: Spontaneous Thought
-- Recurrent network with attractors
-- No external input
-- Log concept transitions
-- Analyze thought trajectories
+**Script:** `exp5_spontaneous_thought.py`
+- [ ] Recurrent network with attractors
+- [ ] No external input
+- [ ] Log concept transitions
+- [ ] Analyze thought trajectories
 
 ---
 
