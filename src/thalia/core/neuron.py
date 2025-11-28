@@ -29,11 +29,27 @@ class LIFConfig:
     
     Attributes:
         tau_mem: Membrane time constant in ms (default: 20.0)
+            Controls how quickly the membrane potential decays toward rest.
+            Larger values = slower decay = longer memory of inputs.
         v_rest: Resting membrane potential (default: 0.0)
         v_reset: Reset potential after spike (default: 0.0)
         v_threshold: Spike threshold (default: 1.0)
         tau_ref: Refractory period in ms (default: 2.0)
+            Absolute refractory period during which neuron cannot fire.
         dt: Simulation timestep in ms (default: 1.0)
+        
+        # Adaptation parameters (spike-frequency adaptation)
+        tau_adapt: Adaptation time constant in ms (default: 100.0)
+            Controls how quickly adaptation current decays.
+        adapt_increment: Adaptation current increment per spike (default: 0.0)
+            Set > 0 to enable spike-frequency adaptation.
+            After each spike, adaptation current increases by this amount,
+            making the neuron temporarily less excitable.
+            
+        # Noise parameters
+        noise_std: Standard deviation of membrane noise (default: 0.0)
+            Gaussian noise added to membrane potential each timestep.
+            Enables stochastic firing and spontaneous activity.
     """
     tau_mem: float = 20.0
     v_rest: float = 0.0
@@ -42,10 +58,22 @@ class LIFConfig:
     tau_ref: float = 2.0
     dt: float = 1.0
     
+    # Adaptation (spike-frequency adaptation)
+    tau_adapt: float = 100.0
+    adapt_increment: float = 0.0  # 0 = no adaptation
+    
+    # Noise
+    noise_std: float = 0.0  # 0 = deterministic
+    
     @property
     def decay(self) -> float:
         """Membrane decay factor per timestep."""
         return torch.exp(torch.tensor(-self.dt / self.tau_mem)).item()
+    
+    @property
+    def adapt_decay(self) -> float:
+        """Adaptation current decay factor per timestep."""
+        return torch.exp(torch.tensor(-self.dt / self.tau_adapt)).item()
     
     @property
     def ref_steps(self) -> int:
@@ -59,21 +87,30 @@ class LIFNeuron(nn.Module):
     Implements a population of LIF neurons with shared parameters.
     Supports batch processing and GPU acceleration.
     
+    Features:
+        - Membrane potential with exponential leak
+        - Absolute refractory period
+        - Spike-frequency adaptation (optional)
+        - Stochastic noise injection (optional)
+    
     Args:
         n_neurons: Number of neurons in the layer
         config: LIF configuration parameters
         
     Example:
-        >>> config = LIFConfig(tau_mem=20.0, v_threshold=1.0)
+        >>> # Basic usage
+        >>> lif = LIFNeuron(n_neurons=100)
+        >>> lif.reset_state(batch_size=32)
+        >>> for t in range(100):
+        ...     spikes, voltage = lif(input_current[t])
+        
+        >>> # With adaptation and noise
+        >>> config = LIFConfig(
+        ...     tau_mem=20.0,
+        ...     adapt_increment=0.1,  # Enable adaptation
+        ...     noise_std=0.05        # Add noise
+        ... )
         >>> lif = LIFNeuron(n_neurons=100, config=config)
-        >>> 
-        >>> # Simulate with input current
-        >>> spikes = []
-        >>> lif.reset_state(batch_size=1)
-        >>> for t in range(1000):
-        ...     input_current = torch.randn(1, 100) * 0.5
-        ...     spike, voltage = lif(input_current)
-        ...     spikes.append(spike)
     """
     
     def __init__(
@@ -85,10 +122,14 @@ class LIFNeuron(nn.Module):
         self.n_neurons = n_neurons
         self.config = config or LIFConfig()
         
-        # Register decay as buffer (moves with device)
+        # Register constants as buffers (moves with device)
         self.register_buffer(
             "decay", 
             torch.tensor(self.config.decay, dtype=torch.float32)
+        )
+        self.register_buffer(
+            "adapt_decay",
+            torch.tensor(self.config.adapt_decay, dtype=torch.float32)
         )
         self.register_buffer(
             "v_threshold",
@@ -106,6 +147,7 @@ class LIFNeuron(nn.Module):
         # State variables (initialized on first forward or reset)
         self.membrane: Optional[torch.Tensor] = None
         self.refractory: Optional[torch.Tensor] = None
+        self.adaptation: Optional[torch.Tensor] = None  # Adaptation current
         
     def reset_state(self, batch_size: int = 1) -> None:
         """Reset neuron state to resting potential.
@@ -124,6 +166,11 @@ class LIFNeuron(nn.Module):
             (batch_size, self.n_neurons),
             device=device,
             dtype=torch.int32
+        )
+        self.adaptation = torch.zeros(
+            (batch_size, self.n_neurons),
+            device=device,
+            dtype=torch.float32
         )
         
     def forward(
@@ -153,12 +200,23 @@ class LIFNeuron(nn.Module):
         # Check which neurons are not in refractory period
         not_refractory = (self.refractory == 0).float()
         
+        # Decay adaptation current
+        self.adaptation = self.adaptation * self.adapt_decay
+        
+        # Compute effective input (subtract adaptation current)
+        effective_input = input_current - self.adaptation
+        
+        # Add noise if configured
+        if self.config.noise_std > 0:
+            noise = torch.randn_like(self.membrane) * self.config.noise_std
+            effective_input = effective_input + noise
+        
         # Leaky integration (only for non-refractory neurons)
-        # V(t+1) = decay * (V(t) - V_rest) + V_rest + I(t) * not_refractory
+        # V(t+1) = decay * (V(t) - V_rest) + V_rest + I_eff(t) * not_refractory
         self.membrane = (
             self.decay * (self.membrane - self.v_rest) 
             + self.v_rest 
-            + input_current * not_refractory
+            + effective_input * not_refractory
         )
         
         # Spike generation
@@ -178,11 +236,30 @@ class LIFNeuron(nn.Module):
             self.refractory
         )
         
+        # Increment adaptation for spiking neurons
+        if self.config.adapt_increment > 0:
+            self.adaptation = self.adaptation + spikes * self.config.adapt_increment
+        
         return spikes, self.membrane.clone()
     
+    def get_state(self) -> dict[str, torch.Tensor]:
+        """Get current neuron state for analysis/saving.
+        
+        Returns:
+            Dictionary containing membrane, refractory, and adaptation state
+        """
+        return {
+            "membrane": self.membrane.clone() if self.membrane is not None else None,
+            "refractory": self.refractory.clone() if self.refractory is not None else None,
+            "adaptation": self.adaptation.clone() if self.adaptation is not None else None,
+        }
+    
     def __repr__(self) -> str:
+        adapt_str = f", adapt={self.config.adapt_increment}" if self.config.adapt_increment > 0 else ""
+        noise_str = f", noise={self.config.noise_std}" if self.config.noise_std > 0 else ""
         return (
-            f"LIFNeuron(n_neurons={self.n_neurons}, "
-            f"tau_mem={self.config.tau_mem}, "
-            f"v_threshold={self.config.v_threshold})"
+            f"LIFNeuron(n={self.n_neurons}, "
+            f"τ_m={self.config.tau_mem}ms, "
+            f"θ={self.config.v_threshold}"
+            f"{adapt_str}{noise_str})"
         )
