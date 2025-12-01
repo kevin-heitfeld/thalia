@@ -29,13 +29,14 @@ def run_experiment():
     n_timesteps = 500
     dt = 1.0  # ms
 
-    # Create LIF configuration with varying time constants
+    # Create LIF configuration with biologically realistic parameters
     config = LIFConfig(
         tau_mem=20.0,  # 20ms membrane time constant
         v_threshold=1.0,
         v_reset=0.0,
         v_rest=0.0,
-        noise_std=0.1,  # Add some noise for variability
+        tau_ref=3.0,  # 3ms refractory period (limits max rate to ~333 Hz)
+        noise_std=0.08,  # More noise for variability between neurons
     )
 
     print(f"\nNetwork Configuration:")
@@ -49,8 +50,13 @@ def run_experiment():
         n_neurons=n_neurons,
         neuron_config=config,
         recurrent=True,
-        recurrent_connectivity=0.1,  # 10% connectivity
+        recurrent_connectivity=0.05,  # 5% connectivity (reduced)
     ).to(device)
+    
+    # Scale down recurrent weights for realistic dynamics
+    if layer.recurrent_synapses is not None:
+        with torch.no_grad():
+            layer.recurrent_synapses.weight.data *= 0.2  # Weaker connections
 
     # Count connections (handle case where recurrent_synapses exists)
     if layer.recurrent_synapses is not None:
@@ -68,18 +74,18 @@ def run_experiment():
 
     # Simulation loop
     for t in range(n_timesteps):
-        # Create input current
-        # Constant base current + time-varying component
-        base_current = 0.15  # Lower base current for reasonable rates
-        modulation = 0.1 * np.sin(2 * np.pi * t / 100)  # 100ms period
+        # Create input current - tuned for biological firing rates (10-50 Hz)
+        # Lower base current so neurons only fire occasionally
+        base_current = 0.04  # Slightly higher for ~20-30 Hz range
+        modulation = 0.02 * np.sin(2 * np.pi * t / 100)  # Subtle oscillation
         
-        # Random subset gets stronger input
+        # Random subset gets stronger input (sparse coding)
         input_current = torch.ones(1, n_neurons, device=device) * (base_current + modulation)
         
-        # Add some random input to specific neurons
-        if t % 50 == 0:  # Every 50ms, stimulate random neurons
-            stim_neurons = torch.randperm(n_neurons)[:10]
-            input_current[0, stim_neurons] += 0.5        # Forward pass - returns (spikes, voltages)
+        # Add some random input to specific neurons (mimics synaptic input)
+        if t % 15 == 0:  # More frequent stimulation
+            stim_neurons = torch.randperm(n_neurons)[:20]
+            input_current[0, stim_neurons] += 0.12  # Moderate boost        # Forward pass - returns (spikes, voltages)
         spikes, voltages = layer(external_current=input_current)
 
         # Record spikes
