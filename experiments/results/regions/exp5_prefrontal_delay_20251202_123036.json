@@ -1,0 +1,57 @@
+{
+  "config": {
+    "n_classes": 4,
+    "pattern_size": 32,
+    "n_trials": 50,
+    "delay_lengths": [
+      5,
+      10,
+      20,
+      30,
+      40,
+      50
+    ],
+    "distractor_probs": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.5
+    ]
+  },
+  "delay_sweep": {
+    "delay_lengths": [
+      5,
+      10,
+      20,
+      30,
+      40,
+      50
+    ],
+    "accuracies": [
+      0.98,
+      0.94,
+      0.94,
+      0.78,
+      0.68,
+      0.7
+    ]
+  },
+  "distractor_resistance": {
+    "distractor_probs": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.5
+    ],
+    "accuracies": [
+      0.78,
+      0.82,
+      0.78,
+      0.88,
+      0.94
+    ]
+  },
+  "accuracy_at_delay_20": 0.94
+}

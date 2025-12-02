@@ -1,0 +1,2475 @@
+{
+  "experiment": "exp2_cerebellum_timing",
+  "timestamp": "20251202_123859",
+  "passed": true,
+  "criteria_met": 3,
+  "results": {
+    "delay_18": {
+      "target_delay": 18,
+      "baseline": {
+        "timing_error_pct": 22.222222222222214,
+        "accuracy": 100.0,
+        "response_rate": 100.0,
+        "mean_response_time": 22.0
+      },
+      "final": {
+        "timing_error_pct": 11.1111111111111,
+        "timing_std": 0.0,
+        "accuracy": 100.0,
+        "response_rate": 100.0,
+        "mean_response_time": 20.0
+      },
+      "training_history": [
+        {
+          "epoch": 0,
+          "mean_timing_error": 2.1,
+          "mean_timing_error_pct": 11.666666666666666,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.1
+        },
+        {
+          "epoch": 1,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 2,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 3,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 4,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 5,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 6,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 7,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 8,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 9,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 10,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 11,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 12,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 13,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 14,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 15,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 16,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 17,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 18,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 19,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 20,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 21,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 22,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 23,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 24,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 25,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 26,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 27,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 28,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 29,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 30,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 31,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 32,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 33,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 34,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 35,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 36,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 37,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 38,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 39,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 40,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 41,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 42,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 43,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 44,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 45,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 46,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 47,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 48,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 49,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 50,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 51,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 52,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 53,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 54,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 55,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 56,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 57,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 58,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 59,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 60,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 61,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 62,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 63,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 64,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 65,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 66,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 67,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 68,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 69,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 70,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 71,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 72,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 73,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 74,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 75,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 76,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 77,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 78,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 79,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 80,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 81,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 82,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 83,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 84,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 85,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 86,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 87,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 88,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 89,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 90,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 91,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 92,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 93,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 94,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 95,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 96,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 97,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 98,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 99,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 11.11111111111111,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        }
+      ]
+    },
+    "delay_22": {
+      "target_delay": 22,
+      "baseline": {
+        "timing_error_pct": 0.0,
+        "accuracy": 100.0,
+        "response_rate": 100.0,
+        "mean_response_time": 22.0
+      },
+      "final": {
+        "timing_error_pct": 9.090909090909081,
+        "timing_std": 0.0,
+        "accuracy": 100.0,
+        "response_rate": 100.0,
+        "mean_response_time": 20.0
+      },
+      "training_history": [
+        {
+          "epoch": 0,
+          "mean_timing_error": 1.9,
+          "mean_timing_error_pct": 8.636363636363637,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.1
+        },
+        {
+          "epoch": 1,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 2,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 3,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 4,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 5,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 6,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 7,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 8,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 9,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 10,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 11,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 12,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 13,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 14,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 15,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 16,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 17,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 18,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 19,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 20,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 21,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 22,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 23,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 24,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 25,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 26,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 27,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 28,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 29,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 30,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 31,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 32,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 33,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 34,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 35,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 36,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 37,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 38,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 39,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 40,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 41,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 42,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 43,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 44,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 45,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 46,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 47,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 48,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 49,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 50,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 51,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 52,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 53,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 54,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 55,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 56,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 57,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 58,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 59,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 60,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 61,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 62,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 63,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 64,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 65,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 66,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 67,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 68,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 69,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 70,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 71,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 72,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 73,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 74,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 75,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 76,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 77,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 78,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 79,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 80,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 81,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 82,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 83,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 84,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 85,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 86,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 87,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 88,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 89,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 90,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 91,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 92,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 93,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 94,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 95,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 96,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 97,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 98,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        },
+        {
+          "epoch": 99,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 9.090909090909092,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 20.0
+        }
+      ]
+    },
+    "delay_38": {
+      "target_delay": 38,
+      "baseline": {
+        "timing_error_pct": 10.526315789473681,
+        "accuracy": 100.0,
+        "response_rate": 100.0,
+        "mean_response_time": 42.0
+      },
+      "final": {
+        "timing_error_pct": 5.263157894736844,
+        "timing_std": 0.0,
+        "accuracy": 100.0,
+        "response_rate": 100.0,
+        "mean_response_time": 40.0
+      },
+      "training_history": [
+        {
+          "epoch": 0,
+          "mean_timing_error": 2.1,
+          "mean_timing_error_pct": 5.526315789473685,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.1
+        },
+        {
+          "epoch": 1,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 2,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 3,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 4,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 5,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 6,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 7,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 8,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 9,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 10,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 11,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 12,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 13,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 14,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 15,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 16,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 17,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 18,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 19,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 20,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 21,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 22,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 23,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 24,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 25,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 26,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 27,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 28,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 29,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 30,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 31,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 32,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 33,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 34,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 35,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 36,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 37,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 38,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 39,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 40,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 41,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 42,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 43,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 44,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 45,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 46,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 47,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 48,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 49,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 50,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 51,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 52,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 53,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 54,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 55,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 56,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 57,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 58,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 59,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 60,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 61,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 62,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 63,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 64,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 65,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 66,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 67,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 68,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 69,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 70,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 71,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 72,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 73,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 74,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 75,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 76,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 77,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 78,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 79,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 80,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 81,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 82,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 83,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 84,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 85,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 86,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 87,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 88,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 89,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 90,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 91,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 92,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 93,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 94,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 95,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 96,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 97,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 98,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        },
+        {
+          "epoch": 99,
+          "mean_timing_error": 2.0,
+          "mean_timing_error_pct": 5.263157894736842,
+          "accuracy": 100.0,
+          "response_rate": 100.0,
+          "mean_response_time": 40.0
+        }
+      ]
+    }
+  },
+  "summary": {
+    "best_timing_error_pct": 5.263157894736844,
+    "all_accuracies": [
+      100.0,
+      100.0,
+      100.0
+    ],
+    "all_improvements": [
+      11.111111111111114,
+      -9.090909090909081,
+      5.263157894736837
+    ]
+  }
+}

@@ -223,6 +223,10 @@ class Cerebellum(BrainRegion):
         error_squeezed = error.squeeze()
         input_squeezed = self.input_trace
 
+        # Handle n_output=1 case where squeeze makes 0-D tensor
+        if error_squeezed.dim() == 0:
+            error_squeezed = error_squeezed.unsqueeze(0)
+
         dw = torch.outer(error_squeezed, input_squeezed)
         dw = dw * self.config.learning_rate
 

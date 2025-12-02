@@ -36,6 +36,9 @@ class LearningRule(Enum):
     ONE_SHOT = auto()          # Single-exposure learning
     THETA_PHASE = auto()       # Phase-dependent encoding/retrieval
 
+    # Predictive coding (Cortex alternative)
+    PREDICTIVE = auto()        # Δw minimizes prediction error
+
 
 @dataclass
 class RegionConfig:

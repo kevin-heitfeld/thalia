@@ -111,7 +111,7 @@ class PhaseHomeostasis:
 
 def update_bcm_threshold(
     bcm_threshold: torch.Tensor,
-    avg_activity_hz: float,
+    avg_activity_hz: torch.Tensor | float,
     target_rate_hz: float,
     tau: float,
     min_threshold: float,
@@ -123,8 +123,8 @@ def update_bcm_threshold(
     postsynaptic activity. High activity → higher threshold (harder LTP).
 
     Args:
-        bcm_threshold: Current BCM threshold tensor
-        avg_activity_hz: Average activity in Hz (spikes/second)
+        bcm_threshold: Current BCM threshold tensor (n_output,)
+        avg_activity_hz: Activity in Hz - scalar or per-neuron tensor (n_output,)
         target_rate_hz: Target firing rate in Hz
         tau: Time constant (slow adaptation)
         min_threshold: Minimum threshold value

@@ -27,13 +27,14 @@ class TestHebbianUpdate:
         input_spikes[0, 0] = 1.0
         output_spikes[0, 0] = 1.0
 
-        new_weights = hebbian_update(weights, input_spikes, output_spikes,
-                                     learning_rate=0.01, w_max=1.3,
-                                     heterosynaptic_ratio=0.5)
+        dw = hebbian_update(weights, input_spikes, output_spikes,
+                            learning_rate=0.01, w_max=1.3,
+                            heterosynaptic_ratio=0.5)
+        new_weights = (weights + dw).clamp(0.0, 1.3)
 
         # Weight 0→0 should increase
         assert new_weights[0, 0] > weights[0, 0]
-        # Other weights should be unchanged
+        # Other weights should be unchanged (dw=0 for non-active output)
         assert new_weights[1, 0] == weights[1, 0]
 
     def test_soft_bound(self):
@@ -42,9 +43,10 @@ class TestHebbianUpdate:
         input_spikes = torch.ones(1, 1)
         output_spikes = torch.ones(1, 1)
 
-        new_weights = hebbian_update(weights, input_spikes, output_spikes,
-                                     learning_rate=0.1, w_max=1.0,
-                                     heterosynaptic_ratio=0.5)
+        dw = hebbian_update(weights, input_spikes, output_spikes,
+                            learning_rate=0.1, w_max=1.0,
+                            heterosynaptic_ratio=0.5)
+        new_weights = (weights + dw).clamp(0.0, 1.0)
 
         # Should not exceed w_max
         assert new_weights[0, 0] <= 1.0
@@ -57,9 +59,10 @@ class TestHebbianUpdate:
         input_spikes = torch.zeros(1, 5)
         output_spikes = torch.zeros(1, 3)
 
-        new_weights = hebbian_update(weights, input_spikes, output_spikes,
-                                     learning_rate=0.01, w_max=1.3,
-                                     heterosynaptic_ratio=0.5)
+        dw = hebbian_update(weights, input_spikes, output_spikes,
+                            learning_rate=0.01, w_max=1.3,
+                            heterosynaptic_ratio=0.5)
+        new_weights = (weights + dw).clamp(0.0, 1.3)
 
         assert torch.allclose(new_weights, weights)
 
@@ -74,26 +77,29 @@ class TestHebbianUpdate:
         output_spikes[0, 0] = 1.0
 
         # Without STP gating
-        new_weights_no_stp = hebbian_update(
+        dw_no_stp = hebbian_update(
             weights.clone(), input_spikes, output_spikes,
             learning_rate=0.1, w_max=1.3,
             heterosynaptic_ratio=0.5)
+        new_weights_no_stp = (weights.clone() + dw_no_stp).clamp(0.0, 1.3)
 
         # With full STP resources (should be same as no gating)
         full_resources = torch.ones(5, 10)
-        new_weights_full_stp = hebbian_update(
+        dw_full_stp = hebbian_update(
             weights.clone(), input_spikes, output_spikes,
             learning_rate=0.1, w_max=1.3,
             heterosynaptic_ratio=0.5,
             stp_resources=full_resources)
+        new_weights_full_stp = (weights.clone() + dw_full_stp).clamp(0.0, 1.3)
 
         # With depleted STP resources (should learn less)
         depleted_resources = torch.ones(5, 10) * 0.2
-        new_weights_depleted = hebbian_update(
+        dw_depleted = hebbian_update(
             weights.clone(), input_spikes, output_spikes,
             learning_rate=0.1, w_max=1.3,
             heterosynaptic_ratio=0.5,
             stp_resources=depleted_resources)
+        new_weights_depleted = (weights.clone() + dw_depleted).clamp(0.0, 1.3)
 
         # Full resources should produce same update as no STP
         assert torch.allclose(new_weights_full_stp, new_weights_no_stp)

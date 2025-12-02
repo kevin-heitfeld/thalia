@@ -22,7 +22,7 @@ def hebbian_update(
     heterosynaptic_ratio: float,
     stp_resources: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Apply competitive Hebbian learning with heterosynaptic LTD.
+    """Compute competitive Hebbian weight update with heterosynaptic LTD.
 
     This implements pure coincidence detection WITH competition:
     - LTP: strengthen connections where input AND output are both active
@@ -49,6 +49,9 @@ def hebbian_update(
     - Low vesicle resources → reduced learning (synapse was heavily used)
     - Prevents early-firing inputs from dominating learning
 
+    Note: BCM homeostasis should be applied by the caller by scaling
+    the returned dw per output neuron based on activity vs threshold.
+
     Args:
         weights: Feedforward weight matrix, shape (n_output, n_input)
         input_spikes: Input spike tensor, shape (batch, n_input) or (n_input,)
@@ -62,15 +65,16 @@ def hebbian_update(
             When provided, learning rate is scaled per-synapse by resources.
 
     Returns:
-        Updated weight matrix
+        Weight update matrix dw, shape (n_output, n_input). Caller applies as:
+        weights = (weights + dw).clamp(w_min, w_max)
     """
     # Early exit if no post-synaptic activity
     if output_spikes.sum() == 0:
-        return weights
+        return torch.zeros_like(weights)
 
     # Early exit if no pre-synaptic activity
     if input_spikes.sum() == 0:
-        return weights
+        return torch.zeros_like(weights)
 
     # Ensure proper shapes for outer product
     if input_spikes.dim() == 1:
@@ -141,11 +145,10 @@ def hebbian_update(
     else:
         ltd_update = 0.0
 
-    # Apply updates
-    weights = weights + ltp_update - ltd_update
-    weights = weights.clamp(0.0, w_max)
+    # Return weight delta (caller applies BCM modulation and clamping)
+    dw = ltp_update - ltd_update
 
-    return weights
+    return dw
 
 
 def synaptic_scaling(

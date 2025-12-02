@@ -310,11 +310,25 @@ class Hippocampus(BrainRegion):
         # Target number of active neurons
         k = max(1, int(self.config.n_output * self.hippocampus_config.sparsity_target))
         
-        # Get membrane potential for ranking
-        if hasattr(self.neurons, 'v'):
+        # Get membrane potential for ranking (ConductanceLIF uses 'membrane', LIF uses 'v')
+        if hasattr(self.neurons, 'membrane') and self.neurons.membrane is not None:
+            v = self.neurons.membrane
+        elif hasattr(self.neurons, 'v') and self.neurons.v is not None:
             v = self.neurons.v
         else:
-            return spikes
+            # No membrane potential available - just do random k-WTA
+            sparse_spikes = torch.zeros_like(spikes)
+            for b in range(batch_size):
+                active_idx = spikes[b].nonzero().squeeze(-1)
+                if len(active_idx.shape) == 0:
+                    active_idx = active_idx.unsqueeze(0)
+                if len(active_idx) > k:
+                    # Randomly select k active neurons
+                    keep_idx = active_idx[torch.randperm(len(active_idx))[:k]]
+                    sparse_spikes[b, keep_idx] = 1.0
+                else:
+                    sparse_spikes[b] = spikes[b]
+            return sparse_spikes
         
         # For each batch, keep only top-k
         sparse_spikes = torch.zeros_like(spikes)
