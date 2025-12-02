@@ -577,3 +577,157 @@ class Hippocampus(BrainRegion):
     def get_state(self) -> HippocampusState:
         """Get current state."""
         return self.state
+
+    # =========================================================================
+    # RATE-CODED / HETEROASSOCIATIVE API
+    # These methods provide simpler interfaces for rate-coded experiments
+    # =========================================================================
+    
+    def store_association(
+        self,
+        cue: torch.Tensor,
+        target: torch.Tensor,
+        learning_rate: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Store a heteroassociative cue → target mapping.
+        
+        This uses direct Hebbian learning on the weight matrix for 
+        rate-coded pattern association (not spike-based).
+        
+        Args:
+            cue: Input cue pattern [n_input] or [batch, n_input]
+            target: Target pattern to retrieve [n_output] or [batch, n_output]
+            learning_rate: Optional override for learning rate
+            
+        Returns:
+            Dictionary with storage metrics
+        """
+        if cue.dim() == 1:
+            cue = cue.unsqueeze(0)
+        if target.dim() == 1:
+            target = target.unsqueeze(0)
+            
+        lr = learning_rate if learning_rate is not None else self.hippocampus_config.learning_rate
+        
+        # Hebbian association: W += lr * target^T @ cue
+        # This creates mapping: W @ cue ≈ target
+        cue_norm = cue / (cue.norm(dim=1, keepdim=True) + 1e-6)
+        target_norm = target / (target.norm(dim=1, keepdim=True) + 1e-6)
+        
+        dW = lr * torch.matmul(target_norm.t(), cue_norm)
+        
+        with torch.no_grad():
+            self.weights.data += dW
+            self.weights.data.clamp_(self.hippocampus_config.w_min, self.hippocampus_config.w_max)
+        
+        return {
+            "cue_dim": cue.shape[-1],
+            "target_dim": target.shape[-1],
+            "weight_change_norm": dW.norm().item(),
+            "weight_mean": self.weights.data.mean().item()
+        }
+    
+    def retrieve_association(
+        self,
+        cue: torch.Tensor,
+        normalize: bool = True
+    ) -> torch.Tensor:
+        """
+        Retrieve the target pattern associated with a cue.
+        
+        This performs a simple linear readout through the weight matrix,
+        suitable for rate-coded patterns.
+        
+        Args:
+            cue: Input cue pattern [n_input] or [batch, n_input]
+            normalize: Whether to normalize the output
+            
+        Returns:
+            Retrieved target pattern [batch, n_output]
+        """
+        if cue.dim() == 1:
+            cue = cue.unsqueeze(0)
+        
+        # Linear readout
+        output = torch.matmul(cue, self.weights.t())
+        
+        # Optional normalization
+        if normalize:
+            output = torch.tanh(output)
+        
+        return output.squeeze(0) if output.shape[0] == 1 else output
+    
+    def encode_rate(
+        self, 
+        input_pattern: torch.Tensor,
+        use_recurrent: bool = True
+    ) -> torch.Tensor:
+        """
+        Encode a rate-coded input pattern.
+        
+        Simple linear encoding through weights with tanh activation.
+        Useful for experiments that don't need full spiking dynamics.
+        
+        Args:
+            input_pattern: Rate-coded input [n_input] or [batch, n_input]
+            use_recurrent: Whether to apply recurrent dynamics (default True)
+            
+        Returns:
+            Encoded pattern [batch, n_output]
+        """
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+        
+        # Feedforward encoding
+        encoded = torch.matmul(input_pattern, self.weights.t())
+        
+        # Add recurrent dynamics for pattern completion (optional)
+        if use_recurrent and self.rec_weights is not None:
+            rec_input = torch.matmul(encoded, self.rec_weights.t())
+            encoded = encoded + self.hippocampus_config.recurrent_strength * rec_input
+        
+        return torch.tanh(encoded).squeeze(0) if encoded.shape[0] == 1 else torch.tanh(encoded)
+
+    def learn_hebbian_rate(
+        self,
+        input_pattern: torch.Tensor,
+        output_pattern: torch.Tensor,
+        learning_rate: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Apply Hebbian learning with rate-coded patterns.
+        
+        Updates feedforward weights to strengthen input→output mapping.
+        
+        Args:
+            input_pattern: Input pattern [n_input] or [batch, n_input]
+            output_pattern: Output pattern [n_output] or [batch, n_output]
+            learning_rate: Optional override for learning rate
+            
+        Returns:
+            Dictionary with learning metrics
+        """
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+        if output_pattern.dim() == 1:
+            output_pattern = output_pattern.unsqueeze(0)
+        
+        lr = learning_rate if learning_rate is not None else self.hippocampus_config.learning_rate
+        
+        # Hebbian: dW = lr * output^T @ input
+        # weights are [n_output, n_input], so dW should be same shape
+        input_norm = input_pattern / (input_pattern.norm(dim=1, keepdim=True) + 1e-6)
+        output_norm = output_pattern / (output_pattern.norm(dim=1, keepdim=True) + 1e-6)
+        
+        dW = lr * torch.matmul(output_norm.t(), input_norm)
+        
+        with torch.no_grad():
+            self.weights.data += dW
+            self.weights.data.clamp_(self.hippocampus_config.w_min, self.hippocampus_config.w_max)
+        
+        return {
+            "weight_change_norm": float(dW.norm().item()),
+            "weight_mean": float(self.weights.data.mean().item()),
+            "learning_rate": lr
+        }

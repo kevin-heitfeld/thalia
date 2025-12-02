@@ -1145,3 +1145,105 @@ class Cortex(BrainRegion):
             self.intrinsic_excitability.zero_()
         if self.intrinsic_avg_rate is not None:
             self.intrinsic_avg_rate.zero_()
+
+    # =========================================================================
+    # RATE-CODED API
+    # These methods provide simpler interfaces for rate-coded experiments
+    # =========================================================================
+    
+    def encode_rate(
+        self,
+        input_pattern: torch.Tensor,
+        normalize: bool = True
+    ) -> torch.Tensor:
+        """
+        Encode a rate-coded input pattern.
+        
+        Simple linear encoding through weights with optional normalization.
+        Useful for experiments that don't need full spiking dynamics.
+        
+        Args:
+            input_pattern: Rate-coded input [n_input] or [batch, n_input]
+            normalize: Whether to apply tanh normalization
+            
+        Returns:
+            Encoded pattern [batch, n_output] or [n_output]
+        """
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+        
+        # Linear encoding through weights
+        encoded = torch.matmul(input_pattern, self.weights.t())
+        
+        if normalize:
+            encoded = torch.tanh(encoded)
+        
+        return encoded.squeeze(0) if encoded.shape[0] == 1 else encoded
+    
+    def decode_rate(
+        self,
+        encoded: torch.Tensor,
+        normalize: bool = True
+    ) -> torch.Tensor:
+        """
+        Decode an encoded pattern back to input space.
+        
+        Uses transposed weights for reconstruction (like an autoencoder).
+        
+        Args:
+            encoded: Encoded pattern [n_output] or [batch, n_output]
+            normalize: Whether to apply tanh normalization
+            
+        Returns:
+            Reconstructed pattern [batch, n_input] or [n_input]
+        """
+        if encoded.dim() == 1:
+            encoded = encoded.unsqueeze(0)
+        
+        # Linear decoding through transposed weights
+        decoded = torch.matmul(encoded, self.weights)
+        
+        if normalize:
+            decoded = torch.tanh(decoded)
+        
+        return decoded.squeeze(0) if decoded.shape[0] == 1 else decoded
+    
+    def learn_hebbian_rate(
+        self,
+        input_pattern: torch.Tensor,
+        output_pattern: torch.Tensor,
+        learning_rate: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Apply Hebbian learning with rate-coded patterns.
+        
+        Args:
+            input_pattern: Input pattern [n_input] or [batch, n_input]
+            output_pattern: Output pattern [n_output] or [batch, n_output]
+            learning_rate: Optional override for learning rate
+            
+        Returns:
+            Dictionary with learning metrics
+        """
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+        if output_pattern.dim() == 1:
+            output_pattern = output_pattern.unsqueeze(0)
+        
+        lr = learning_rate if learning_rate is not None else self.config.learning_rate
+        
+        # Hebbian: dW = lr * output^T @ input
+        input_norm = input_pattern / (input_pattern.norm(dim=1, keepdim=True) + 1e-6)
+        output_norm = output_pattern / (output_pattern.norm(dim=1, keepdim=True) + 1e-6)
+        
+        dW = lr * torch.matmul(output_norm.t(), input_norm)
+        
+        with torch.no_grad():
+            self.weights.data += dW
+            self.weights.data.clamp_(self.config.w_min, self.config.w_max)
+        
+        return {
+            "weight_change_norm": float(dW.norm().item()),
+            "weight_mean": float(self.weights.data.mean().item()),
+            "learning_rate": lr
+        }

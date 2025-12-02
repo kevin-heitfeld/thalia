@@ -486,3 +486,114 @@ class Prefrontal(BrainRegion):
     def get_state(self) -> PrefrontalState:
         """Get current state."""
         return self.state
+
+    # =========================================================================
+    # RATE-CODED / MONITORING API
+    # These methods provide simpler interfaces for rate-coded experiments
+    # =========================================================================
+
+    def encode_rate(
+        self,
+        input_pattern: torch.Tensor,
+        normalize: bool = True
+    ) -> torch.Tensor:
+        """
+        Encode a rate-coded input pattern.
+
+        Simple linear encoding through weights with optional normalization.
+        Useful for experiments that don't need full spiking dynamics.
+
+        Args:
+            input_pattern: Rate-coded input [n_input] or [batch, n_input]
+            normalize: Whether to apply sigmoid normalization
+
+        Returns:
+            Encoded pattern [batch, n_output] or [n_output]
+        """
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+
+        # Linear encoding through weights
+        encoded = torch.matmul(input_pattern, self.weights.t())
+
+        if normalize:
+            encoded = torch.sigmoid(encoded)
+
+        return encoded.squeeze(0) if encoded.shape[0] == 1 else encoded
+
+    def compute_confidence(
+        self,
+        input_pattern: torch.Tensor,
+        return_raw: bool = False
+    ) -> torch.Tensor:
+        """
+        Compute a confidence/gate signal for input pattern.
+
+        Uses the prefrontal weights to produce a scalar confidence score.
+        Useful for metacognitive monitoring experiments.
+
+        Args:
+            input_pattern: Input pattern [n_input] or [batch, n_input]
+            return_raw: If True, return raw output before sigmoid
+
+        Returns:
+            Confidence score(s) [batch, n_output] or scalar if n_output=1
+        """
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+
+        # Linear transformation
+        raw = torch.matmul(input_pattern, self.weights.t())
+
+        if return_raw:
+            return raw.squeeze(0) if raw.shape[0] == 1 else raw
+
+        # Sigmoid for confidence in [0, 1]
+        confidence = torch.sigmoid(raw)
+
+        return confidence.squeeze(0) if confidence.shape[0] == 1 else confidence
+
+    def learn_monitoring(
+        self,
+        input_pattern: torch.Tensor,
+        target_confidence: float,
+        learning_rate: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Learn to predict confidence/correctness from input patterns.
+
+        Uses delta rule to train prefrontal to output target confidence.
+
+        Args:
+            input_pattern: Input pattern [n_input] or [batch, n_input]
+            target_confidence: Target confidence value (0-1)
+            learning_rate: Optional override for learning rate
+
+        Returns:
+            Dictionary with learning metrics
+        """
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+
+        lr = learning_rate if learning_rate is not None else self.pfc_config.wm_lr
+
+        # Current confidence prediction
+        raw = torch.matmul(input_pattern, self.weights.t())
+        confidence = torch.sigmoid(raw)
+
+        # Error
+        error = target_confidence - confidence.mean()
+
+        # Delta rule update: dW = lr * error * input
+        dW = lr * error * input_pattern.mean(dim=0, keepdim=True)
+
+        with torch.no_grad():
+            self.weights.data += dW
+            self.weights.data.clamp_(self.config.w_min, self.config.w_max)
+
+        return {
+            "target": target_confidence,
+            "predicted": float(confidence.mean().item()),
+            "error": float(error.item()),
+            "weight_change_norm": float(dW.norm().item())
+        }

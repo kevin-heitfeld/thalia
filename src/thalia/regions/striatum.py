@@ -360,3 +360,38 @@ class Striatum(BrainRegion):
         self.last_action = None
         if self.neurons is not None:
             self.neurons.reset_state(1)
+
+    # =========================================================================
+    # RATE-CODED API
+    # =========================================================================
+
+    def encode_rate(self, input_pattern: torch.Tensor) -> torch.Tensor:
+        """Rate-coded forward pass through weights."""
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+        output = torch.matmul(input_pattern, self.weights.t())
+        return output.squeeze(0) if output.shape[0] == 1 else output
+
+    def learn_rate(
+        self,
+        input_pattern: torch.Tensor,
+        target_value: float,
+        learning_rate: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Simple supervised learning for value function."""
+        if input_pattern.dim() == 1:
+            input_pattern = input_pattern.unsqueeze(0)
+
+        lr = learning_rate if learning_rate is not None else self.striatum_config.three_factor_lr
+
+        # Current prediction
+        pred = torch.matmul(input_pattern, self.weights.t())
+        error = target_value - pred.squeeze()
+
+        # Gradient update
+        dW = lr * error * input_pattern
+        with torch.no_grad():
+            self.weights.data += dW
+            self.weights.data.clamp_(self.striatum_config.w_min, self.striatum_config.w_max)
+
+        return {"error": float(error.item()), "lr": lr}

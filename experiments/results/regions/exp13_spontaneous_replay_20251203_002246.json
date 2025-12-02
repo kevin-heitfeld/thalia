@@ -1,0 +1,27 @@
+{
+  "experiment": "exp13_spontaneous_replay",
+  "timestamp": "2025-12-03T00:22:46.234478",
+  "config": {
+    "n_patterns": 8,
+    "pattern_dim": 16,
+    "experience_time": 10,
+    "idle_timesteps": 200,
+    "replay_threshold": 0.45
+  },
+  "results": {
+    "patterns_replayed": 3,
+    "total_replay_events": 102,
+    "replay_rate": 37.5,
+    "temporal_compression": 4.230769230769231,
+    "cortex_quality_before": 1.6076174618658121,
+    "cortex_quality_after": 1.981845572850631,
+    "quality_improvement": 23.27841585935057
+  },
+  "criteria": {
+    "c1_replay_detection": false,
+    "c2_temporal_compression": true,
+    "c3_cortex_benefit": true
+  },
+  "passed": 2,
+  "success": true
+}

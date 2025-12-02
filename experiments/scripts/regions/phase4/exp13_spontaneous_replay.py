@@ -120,6 +120,8 @@ def run_experiment() -> bool:
         n_input=pattern_dim,
         n_output=hipp_hidden,
         learning_rate=0.5,
+        w_min=-1.0,  # Match original clamp range
+        w_max=1.0,
     ))
 
     # Cortex: Learns compressed representations
@@ -128,6 +130,8 @@ def run_experiment() -> bool:
         n_input=hipp_hidden,
         n_output=cortex_out,
         learning_rule=LearningRule.HEBBIAN,
+        w_min=-1.0,  # Match original clamp range
+        w_max=1.0,
     ))
 
     # Prefrontal: Controls replay initiation (provides random "trigger" signals)
@@ -146,19 +150,10 @@ def run_experiment() -> bool:
     # Store each experience in hippocampus
     encoding_times = []
     for i, exp in enumerate(experiences):
-        start_time = i * experience_time
-
         # Present pattern for multiple timesteps (simulates sustained experience)
         for t in range(experience_time):
-            # Hebbian storage in hippocampus
-            hipp_output = hippocampus.weights @ exp
-            hipp_output = torch.tanh(hipp_output)
-
-            # Update hippocampal weights to store this pattern
-            exp_norm = exp / (exp.norm() + 1e-6)
-            hipp_norm = hipp_output / (hipp_output.norm() + 1e-6)
-            dw = 0.3 * torch.outer(hipp_norm, exp_norm)
-            hippocampus.weights = (hippocampus.weights + dw * 0.1).clamp(-1, 1)
+            hipp_output = hippocampus.encode_rate(exp, use_recurrent=False)
+            hippocampus.learn_hebbian_rate(exp, hipp_output, learning_rate=0.03)
 
         encoding_times.append(experience_time)
 
@@ -169,13 +164,13 @@ def run_experiment() -> bool:
     # Compute hippocampal outputs for stored patterns (ground truth)
     stored_hipp_patterns = []
     for exp in experiences:
-        hipp_out = torch.tanh(hippocampus.weights @ exp)
+        hipp_out = hippocampus.encode_rate(exp, use_recurrent=False)
         stored_hipp_patterns.append(hipp_out)
 
     # Get initial cortex representations (before replay)
     cortex_before = []
     for hipp_pattern in stored_hipp_patterns:
-        cortex_out_vec = cortex.weights @ hipp_pattern
+        cortex_out_vec = cortex.encode_rate(hipp_pattern, normalize=False)
         cortex_before.append(cortex_out_vec.clone())
 
     # Phase 2: Idle period with spontaneous replay
@@ -206,8 +201,8 @@ def run_experiment() -> bool:
         input_noise = torch.randn(pattern_dim) * noise_scale
         combined_input = 0.3 * pfc_output + 0.7 * input_noise
 
-        # Pass through hippocampus (pattern completion)
-        hipp_activity = torch.tanh(hippocampus.weights @ combined_input)
+        # Pass through hippocampus (with recurrent for pattern completion)
+        hipp_activity = hippocampus.encode_rate(combined_input, use_recurrent=True)
 
         # Pattern completion: if activity is similar to stored, amplify it
         for stored_idx, stored_pattern in enumerate(stored_hipp_patterns):
@@ -225,15 +220,9 @@ def run_experiment() -> bool:
             replay_events.append((t, pattern_idx, similarity))
             replay_timings[pattern_idx].append(t)
 
-            # During replay, cortex learns from the replayed pattern
-            cortex_input = hipp_activity
-            cortex_output = cortex.weights @ cortex_input
-
-            # Hebbian update in cortex
-            in_norm = cortex_input / (cortex_input.norm() + 1e-6)
-            out_norm = cortex_output / (cortex_output.norm() + 1e-6)
-            dw = 0.1 * torch.outer(out_norm, in_norm)
-            cortex.weights = (cortex.weights + dw * 0.05).clamp(-1, 1)
+            # During replay, cortex learns from hippocampal activity
+            cortex_output = cortex.encode_rate(hipp_activity, normalize=False)
+            cortex.learn_hebbian_rate(hipp_activity, cortex_output, learning_rate=0.005)
 
     # Analyze replay
     patterns_replayed = set(e[1] for e in replay_events)
@@ -264,7 +253,7 @@ def run_experiment() -> bool:
 
     cortex_after = []
     for hipp_pattern in stored_hipp_patterns:
-        cortex_out_vec = cortex.weights @ hipp_pattern
+        cortex_out_vec = cortex.encode_rate(hipp_pattern, normalize=False)
         cortex_after.append(cortex_out_vec.clone())
 
     # Measure clustering quality: do similar patterns map to similar representations?

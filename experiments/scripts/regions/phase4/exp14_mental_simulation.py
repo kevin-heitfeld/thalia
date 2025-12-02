@@ -109,6 +109,8 @@ def run_experiment() -> bool:
         n_input=n_states,
         n_output=16,
         learning_rule=LearningRule.HEBBIAN,
+        w_min=-2.0,
+        w_max=2.0,
     ))
 
     # Hippocampus: For each (state, action) pair, store the transition
@@ -118,6 +120,8 @@ def run_experiment() -> bool:
         hipp = Hippocampus(HippocampusConfig(
             n_input=n_states,
             n_output=n_states,
+            w_min=-2.0,
+            w_max=2.0,
         ))
         hippocampi.append(hipp)
 
@@ -132,6 +136,8 @@ def run_experiment() -> bool:
         n_input=n_states * 2,
         n_output=1,
         three_factor_lr=0.1,
+        w_min=-2.0,
+        w_max=2.0,
     ))
 
     print(f"  Cortex: {n_states} → 16")
@@ -154,10 +160,7 @@ def run_experiment() -> bool:
 
             # Hebbian association: state → next_state for this action
             hipp = hippocampi[action]
-            state_norm = state_enc / (state_enc.norm() + 1e-6)
-            next_norm = next_enc / (next_enc.norm() + 1e-6)
-            dw = 0.8 * torch.outer(next_norm, state_norm)
-            hipp.weights = (hipp.weights + dw).clamp(-2, 2)
+            hipp.store_association(state_enc, next_enc, learning_rate=0.8)
 
     # Test memory retrieval accuracy
     correct_retrievals = 0
@@ -166,13 +169,12 @@ def run_experiment() -> bool:
     for state in range(n_states):
         state_enc = torch.zeros(n_states)
         state_enc[state] = 1.0
-
         for action in range(n_actions):
             true_next = env.get_next_state(state, action)
 
             # Retrieve from hippocampus
             hipp = hippocampi[action]
-            pred = hipp.weights @ state_enc
+            pred = hipp.retrieve_association(state_enc)
             pred_state = int(pred.argmax().item())
 
             if pred_state == true_next:
@@ -201,11 +203,7 @@ def run_experiment() -> bool:
             value = 1.0 - dist / max_dist  # Normalize to [0, 1]
 
             combined = torch.cat([state_enc, goal_enc])
-            pred_value = striatum.weights @ combined
-
-            error = value - pred_value.squeeze()
-            dw = 0.1 * error * combined
-            striatum.weights = (striatum.weights + dw.unsqueeze(0) * 0.1).clamp(-2, 2)
+            striatum.learn_rate(combined, value, learning_rate=0.01)
 
     # Phase 3: Compare planning vs reactive
     print("\n[5/7] Comparing planning vs reactive agents...")
@@ -217,14 +215,14 @@ def run_experiment() -> bool:
         goal_enc = torch.zeros(n_states)
         goal_enc[goal] = 1.0
         combined = torch.cat([state_enc, goal_enc])
-        return float((striatum.weights @ combined).squeeze().item())
+        return float(striatum.encode_rate(combined).squeeze().item())
 
     def simulate_next(state: int, action: int) -> int:
         """Use hippocampus to simulate next state."""
         state_enc = torch.zeros(n_states)
         state_enc[state] = 1.0
         hipp = hippocampi[action]
-        pred = hipp.weights @ state_enc
+        pred = hipp.retrieve_association(state_enc)
         return int(pred.argmax().item())
 
     def plan_one_step(state: int, goal: int) -> int:

@@ -63,6 +63,8 @@ def run_experiment() -> bool:
         n_input=input_dim,
         n_output=hidden_dim,
         learning_rule=LearningRule.HEBBIAN,
+        w_min=-2.0,
+        w_max=2.0,
     ))
 
     # Hippocampus: memory storage (hidden_dim -> hidden_dim, autoassociative)
@@ -70,6 +72,8 @@ def run_experiment() -> bool:
         n_input=hidden_dim,
         n_output=hidden_dim,
         learning_rate=0.5,
+        w_min=-2.0,
+        w_max=2.0,
     ))
 
     # Prefrontal: metacognitive monitor (hidden_dim*2 -> 1)
@@ -77,6 +81,8 @@ def run_experiment() -> bool:
     prefrontal = Prefrontal(PrefrontalConfig(
         n_input=hidden_dim * 2,
         n_output=1,
+        w_min=-2.0,
+        w_max=2.0,
     ))
 
     print(f"  Cortex: {input_dim} → {hidden_dim}")
@@ -100,22 +106,18 @@ def run_experiment() -> bool:
     for epoch in range(100):
         for pattern in known_patterns:
             # Cortex encodes pattern
-            cortex_out = torch.tanh(cortex.weights @ pattern)
+            cortex_out = cortex.encode_rate(pattern)
 
             # Hebbian learning in cortex
-            pattern_norm = pattern / (pattern.norm() + 1e-6)
-            cortex_norm = cortex_out / (cortex_out.norm() + 1e-6)
-            dw_cortex = 0.1 * torch.outer(cortex_norm, pattern_norm)
-            cortex.weights = (cortex.weights + dw_cortex * 0.05).clamp(-2, 2)
+            cortex.learn_hebbian_rate(pattern, cortex_out, learning_rate=0.005)
 
             # Store in hippocampus (autoassociative)
-            hipp_out = torch.tanh(hippocampus.weights @ cortex_out)
-            dw_hipp = 0.2 * torch.outer(hipp_out, cortex_out)
-            hippocampus.weights = (hippocampus.weights + dw_hipp * 0.05).clamp(-2, 2)
+            hipp_out = hippocampus.encode_rate(cortex_out, use_recurrent=False)
+            hippocampus.learn_hebbian_rate(cortex_out, hipp_out, learning_rate=0.01)
 
     # Cache cortex outputs for known patterns
     for pattern in known_patterns:
-        cortex_out = torch.tanh(cortex.weights @ pattern)
+        cortex_out = cortex.encode_rate(pattern)
         cortex_outputs.append(cortex_out.detach().clone())
 
     print(f"  Learned {n_patterns} patterns")
@@ -140,8 +142,8 @@ def run_experiment() -> bool:
             noisy_pattern = pattern
 
         # Forward through system
-        cortex_out = torch.tanh(cortex.weights @ noisy_pattern)
-        hipp_out = torch.tanh(hippocampus.weights @ cortex_out)
+        cortex_out = cortex.encode_rate(noisy_pattern)
+        hipp_out = hippocampus.encode_rate(cortex_out, use_recurrent=False)
 
         # Measure retrieval quality (how close to stored representation?)
         stored_cortex = cortex_outputs[pattern_idx]
@@ -158,15 +160,7 @@ def run_experiment() -> bool:
     # Train prefrontal to predict correctness
     for epoch in range(100):
         for combined, target, _ in metacog_data:
-            # Prefrontal predicts confidence
-            raw_conf = prefrontal.weights @ combined
-            confidence = torch.sigmoid(raw_conf)
-
-            # Learn to predict correctness
-            error = target - float(confidence.item())
-            with torch.no_grad():
-                prefrontal.weights += 0.05 * error * combined.unsqueeze(0)
-                prefrontal.weights.clamp_(-2, 2)
+            prefrontal.learn_monitoring(combined, target, learning_rate=0.05)
 
     print("  Prefrontal trained to monitor confidence")
 
@@ -188,13 +182,12 @@ def run_experiment() -> bool:
                 noisy = pattern.clone()
 
             # Forward through system
-            cortex_out = torch.tanh(cortex.weights @ noisy)
-            hipp_out = torch.tanh(hippocampus.weights @ cortex_out)
+            cortex_out = cortex.encode_rate(noisy)
+            hipp_out = hippocampus.encode_rate(cortex_out, use_recurrent=False)
             combined = torch.cat([cortex_out, hipp_out])
 
             # Get confidence from prefrontal
-            raw_conf = prefrontal.weights @ combined
-            confidence = float(torch.sigmoid(raw_conf).item())
+            confidence = float(prefrontal.compute_confidence(combined).item())
 
             # Measure actual correctness
             retrieval_sim = float((cortex_out @ stored_cortex) /
@@ -218,7 +211,7 @@ def run_experiment() -> bool:
 
     novel_patterns: List[torch.Tensor] = []
     for _ in range(n_novel):
-        pattern = torch.randn(input_dim) * 0.5  # Random novel patterns
+        pattern = torch.randn(input_dim) * 0.5
         novel_patterns.append(pattern)
 
     known_confidences: List[float] = []
@@ -226,20 +219,18 @@ def run_experiment() -> bool:
 
     # Confidence on known patterns (clean, no noise)
     for pattern in known_patterns[:10]:
-        cortex_out = torch.tanh(cortex.weights @ pattern)
-        hipp_out = torch.tanh(hippocampus.weights @ cortex_out)
+        cortex_out = cortex.encode_rate(pattern)
+        hipp_out = hippocampus.encode_rate(cortex_out, use_recurrent=False)
         combined = torch.cat([cortex_out, hipp_out])
-        raw_conf = prefrontal.weights @ combined
-        conf = float(torch.sigmoid(raw_conf).item())
+        conf = float(prefrontal.compute_confidence(combined).item())
         known_confidences.append(conf)
 
     # Confidence on novel patterns
     for pattern in novel_patterns:
-        cortex_out = torch.tanh(cortex.weights @ pattern)
-        hipp_out = torch.tanh(hippocampus.weights @ cortex_out)
+        cortex_out = cortex.encode_rate(pattern)
+        hipp_out = hippocampus.encode_rate(cortex_out, use_recurrent=False)
         combined = torch.cat([cortex_out, hipp_out])
-        raw_conf = prefrontal.weights @ combined
-        conf = float(torch.sigmoid(raw_conf).item())
+        conf = float(prefrontal.compute_confidence(combined).item())
         novel_confidences.append(conf)
 
     avg_known_conf = float(np.mean(known_confidences))
@@ -266,12 +257,11 @@ def run_experiment() -> bool:
         noise = float(np.random.uniform(0, 0.5))
         noisy = pattern + torch.randn(input_dim) * noise
 
-        cortex_out = torch.tanh(cortex.weights @ noisy)
-        hipp_out = torch.tanh(hippocampus.weights @ cortex_out)
+        cortex_out = cortex.encode_rate(noisy, normalize=False)
+        hipp_out = hippocampus.encode_rate(cortex_out, use_recurrent=False)
         combined = torch.cat([cortex_out, hipp_out])
 
-        raw_conf = prefrontal.weights @ combined
-        confidence = float(torch.sigmoid(raw_conf).item())
+        confidence = prefrontal.compute_confidence(combined).item()
 
         # System predicts error when confidence is low
         predicts_error = confidence < 0.5
