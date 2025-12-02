@@ -1,0 +1,25 @@
+{
+  "experiment": "exp12_cognitive_control",
+  "timestamp": "2025-12-02T22:25:14.137961",
+  "config": {
+    "n_train": 600,
+    "n_test": 200,
+    "switch_every": 25,
+    "n_epochs": 40
+  },
+  "test_results": {
+    "accuracy": 86.5,
+    "task0_accuracy": 73.0,
+    "task1_accuracy": 100.0,
+    "switch_cost": 15.618060695780898,
+    "baseline_accuracy": 72.5,
+    "advantage": 14.0
+  },
+  "criteria": {
+    "c1_accuracy": true,
+    "c2_switch_cost": true,
+    "c3_advantage": true
+  },
+  "passed": 3,
+  "success": true
+}

@@ -1,0 +1,10 @@
+{
+  "experiment": "exp7_hippocampus_prefrontal",
+  "timestamp": "20251202_140452",
+  "passed": true,
+  "criteria_met": 3,
+  "acc_correct_context": 64.7032961227943,
+  "acc_wrong_context": 45.77289322002615,
+  "context_difference": 18.93040290276815,
+  "wm_similarity": 0.998924970626831
+}

@@ -1,0 +1,173 @@
+{
+  "experiment": "exp6_cortex_striatum",
+  "timestamp": "20251202_135754",
+  "passed": true,
+  "criteria_met": 3,
+  "test_accuracy": 75.0,
+  "baseline_test_accuracy": 82.0,
+  "final_train_accuracy": 66.5,
+  "history": [
+    {
+      "epoch": 0,
+      "accuracy": 25.5
+    },
+    {
+      "epoch": 1,
+      "accuracy": 24.75
+    },
+    {
+      "epoch": 2,
+      "accuracy": 21.75
+    },
+    {
+      "epoch": 3,
+      "accuracy": 26.75
+    },
+    {
+      "epoch": 4,
+      "accuracy": 23.5
+    },
+    {
+      "epoch": 5,
+      "accuracy": 23.5
+    },
+    {
+      "epoch": 6,
+      "accuracy": 27.500000000000004
+    },
+    {
+      "epoch": 7,
+      "accuracy": 28.999999999999996
+    },
+    {
+      "epoch": 8,
+      "accuracy": 35.75
+    },
+    {
+      "epoch": 9,
+      "accuracy": 44.25
+    },
+    {
+      "epoch": 10,
+      "accuracy": 48.0
+    },
+    {
+      "epoch": 11,
+      "accuracy": 58.75
+    },
+    {
+      "epoch": 12,
+      "accuracy": 62.74999999999999
+    },
+    {
+      "epoch": 13,
+      "accuracy": 66.25
+    },
+    {
+      "epoch": 14,
+      "accuracy": 67.25
+    },
+    {
+      "epoch": 15,
+      "accuracy": 65.0
+    },
+    {
+      "epoch": 16,
+      "accuracy": 63.24999999999999
+    },
+    {
+      "epoch": 17,
+      "accuracy": 70.25
+    },
+    {
+      "epoch": 18,
+      "accuracy": 67.75
+    },
+    {
+      "epoch": 19,
+      "accuracy": 66.5
+    }
+  ],
+  "baseline_history": [
+    {
+      "epoch": 0,
+      "accuracy": 71.75
+    },
+    {
+      "epoch": 1,
+      "accuracy": 79.5
+    },
+    {
+      "epoch": 2,
+      "accuracy": 79.75
+    },
+    {
+      "epoch": 3,
+      "accuracy": 80.75
+    },
+    {
+      "epoch": 4,
+      "accuracy": 81.5
+    },
+    {
+      "epoch": 5,
+      "accuracy": 84.0
+    },
+    {
+      "epoch": 6,
+      "accuracy": 80.25
+    },
+    {
+      "epoch": 7,
+      "accuracy": 78.25
+    },
+    {
+      "epoch": 8,
+      "accuracy": 82.5
+    },
+    {
+      "epoch": 9,
+      "accuracy": 81.0
+    },
+    {
+      "epoch": 10,
+      "accuracy": 84.0
+    },
+    {
+      "epoch": 11,
+      "accuracy": 86.75
+    },
+    {
+      "epoch": 12,
+      "accuracy": 84.5
+    },
+    {
+      "epoch": 13,
+      "accuracy": 82.25
+    },
+    {
+      "epoch": 14,
+      "accuracy": 82.25
+    },
+    {
+      "epoch": 15,
+      "accuracy": 84.0
+    },
+    {
+      "epoch": 16,
+      "accuracy": 85.0
+    },
+    {
+      "epoch": 17,
+      "accuracy": 84.5
+    },
+    {
+      "epoch": 18,
+      "accuracy": 83.0
+    },
+    {
+      "epoch": 19,
+      "accuracy": 85.25
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "experiment": "exp8_cerebellum_cortex",
+  "timestamp": "20251202_140846",
+  "passed": true,
+  "criteria_met": 3,
+  "test_accuracy": 59.0,
+  "baseline_test_accuracy": 100.0,
+  "final_train_accuracy": 32.5,
+  "history": [
+    {
+      "epoch": 0,
+      "accuracy": 20.0
+    },
+    {
+      "epoch": 1,
+      "accuracy": 27.0
+    },
+    {
+      "epoch": 2,
+      "accuracy": 26.0
+    },
+    {
+      "epoch": 3,
+      "accuracy": 21.5
+    },
+    {
+      "epoch": 4,
+      "accuracy": 24.5
+    },
+    {
+      "epoch": 5,
+      "accuracy": 20.0
+    },
+    {
+      "epoch": 6,
+      "accuracy": 21.0
+    },
+    {
+      "epoch": 7,
+      "accuracy": 27.500000000000004
+    },
+    {
+      "epoch": 8,
+      "accuracy": 25.0
+    },
+    {
+      "epoch": 9,
+      "accuracy": 26.0
+    },
+    {
+      "epoch": 10,
+      "accuracy": 28.499999999999996
+    },
+    {
+      "epoch": 11,
+      "accuracy": 28.000000000000004
+    },
+    {
+      "epoch": 12,
+      "accuracy": 30.0
+    },
+    {
+      "epoch": 13,
+      "accuracy": 33.0
+    },
+    {
+      "epoch": 14,
+      "accuracy": 32.5
+    }
+  ],
+  "baseline_history": [
+    {
+      "epoch": 0,
+      "accuracy": 90.5
+    },
+    {
+      "epoch": 1,
+      "accuracy": 99.0
+    },
+    {
+      "epoch": 2,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 3,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 4,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 5,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 6,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 7,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 8,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 9,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 10,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 11,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 12,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 13,
+      "accuracy": 100.0
+    },
+    {
+      "epoch": 14,
+      "accuracy": 100.0
+    }
+  ]
+}

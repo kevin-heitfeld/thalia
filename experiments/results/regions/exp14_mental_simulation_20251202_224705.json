@@ -1,0 +1,26 @@
+{
+  "experiment": "exp14_mental_simulation",
+  "timestamp": "2025-12-02T22:47:05.678522",
+  "config": {
+    "grid_size": 4,
+    "n_states": 16,
+    "n_actions": 4,
+    "n_test": 30
+  },
+  "results": {
+    "memory_accuracy": 100.0,
+    "planning_success_rate": 53.333333333333336,
+    "reactive_success_rate": 50.0,
+    "avg_planning_steps": 11.0,
+    "avg_reactive_steps": 15.133333333333333,
+    "planning_benefit": 4.133333333333333,
+    "goal_flexibility": 25.0
+  },
+  "criteria": {
+    "c1_memory_accuracy": true,
+    "c2_planning_benefit": true,
+    "c3_goal_flexibility": false
+  },
+  "passed": 2,
+  "success": true
+}
