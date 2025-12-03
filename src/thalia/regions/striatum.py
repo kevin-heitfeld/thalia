@@ -80,6 +80,12 @@ class StriatumConfig(RegionConfig):
 
     # Weight constraints
     soft_bounds: bool = True
+    
+    # REWARD_MODULATED_STDP parameters (spike-based RL)
+    learning_rule: LearningRule = LearningRule.THREE_FACTOR
+    stdp_tau_ms: float = 20.0         # STDP time constant for traces
+    stdp_lr: float = 0.005            # STDP learning rate
+    heterosynaptic_ratio: float = 0.3  # LTD/LTP ratio
 
 
 class DopamineSystem(NeuromodulatorSystem):
@@ -234,6 +240,13 @@ class Striatum(BrainRegion):
 
         # Track last action for credit assignment
         self.last_action: Optional[int] = None
+        
+        # STDP traces for REWARD_MODULATED_STDP (spike-based learning)
+        self.input_trace = torch.zeros(config.n_input, device=self.device)
+        self.output_trace = torch.zeros(config.n_output, device=self.device)
+        self.stdp_eligibility = torch.zeros(
+            config.n_output, config.n_input, device=self.device
+        )
 
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.THREE_FACTOR
@@ -302,7 +315,29 @@ class Striatum(BrainRegion):
         correct: Optional[bool] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Apply three-factor learning rule.
+        """Apply learning rule based on configuration.
+
+        For THREE_FACTOR: Δw = learning_rate × eligibility × dopamine
+        For REWARD_MODULATED_STDP: Δw = STDP_eligibility × dopamine (spike-based)
+        """
+        # Dispatch to appropriate learning rule
+        if self.striatum_config.learning_rule == LearningRule.REWARD_MODULATED_STDP:
+            return self._reward_modulated_stdp_learn(
+                input_spikes, output_spikes, reward, correct
+            )
+        else:
+            return self._three_factor_learn(
+                input_spikes, output_spikes, reward, correct
+            )
+    
+    def _three_factor_learn(
+        self,
+        input_spikes: torch.Tensor,
+        output_spikes: torch.Tensor,
+        reward: Optional[float] = None,
+        correct: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Classic three-factor learning with rate-coded eligibility.
 
         Δw = learning_rate × eligibility × dopamine
 
@@ -345,6 +380,121 @@ class Striatum(BrainRegion):
             "eligibility_max": eligibility.max().item(),
         }
 
+    def _reward_modulated_stdp_learn(
+        self,
+        input_spikes: torch.Tensor,
+        output_spikes: torch.Tensor,
+        reward: Optional[float] = None,
+        correct: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Reward-modulated STDP learning (spike-based three-factor rule).
+        
+        This combines:
+        1. Real spiking dynamics with STDP eligibility traces
+        2. Dopamine as the third factor that gates learning
+        
+        Key differences from THREE_FACTOR:
+        - Eligibility is computed from spike TIMING, not just correlation
+        - STDP creates direction-dependent eligibility (LTP vs LTD based on timing)
+        - Dopamine modulates the magnitude, not direction
+        
+        Weight update: Δw = STDP_eligibility × dopamine × soft_bounds
+        
+        This is biologically realistic: Yagishita et al. (2014) showed that
+        dopamine arriving within ~1-2 seconds of spike correlation converts
+        eligibility traces into lasting weight changes.
+        """
+        if input_spikes.dim() == 1:
+            input_spikes = input_spikes.unsqueeze(0)
+        if output_spikes.dim() == 1:
+            output_spikes = output_spikes.unsqueeze(0)
+            
+        dt = self.config.dt_ms
+        cfg = self.striatum_config
+        
+        # ======================================================================
+        # Step 1: Update STDP eligibility traces from spike timing
+        # ======================================================================
+        trace_decay = 1.0 - dt / cfg.stdp_tau_ms
+        self.input_trace = self.input_trace * trace_decay + input_spikes.squeeze()
+        self.output_trace = self.output_trace * trace_decay + output_spikes.squeeze()
+        
+        # STDP rule:
+        # - LTP: post spike with pre trace → strengthen
+        # - LTD: pre spike with post trace → weaken
+        ltp = torch.outer(output_spikes.squeeze(), self.input_trace)
+        ltd = torch.outer(self.output_trace, input_spikes.squeeze())
+        
+        # Soft bounds: reduce learning as weights approach limits
+        w_normalized = (self.weights - self.config.w_min) / (self.config.w_max - self.config.w_min)
+        ltp_factor = 1.0 - w_normalized
+        ltd_factor = w_normalized
+        
+        soft_ltp = ltp * ltp_factor
+        soft_ltd = ltd * ltd_factor
+        
+        # Competitive anti-Hebbian: non-spiking neurons get weaker to active inputs
+        non_spiking = 1.0 - output_spikes.squeeze()
+        anti_hebbian = torch.outer(non_spiking, input_spikes.squeeze()) * w_normalized
+        
+        # Compute STDP weight change (direction from spike timing)
+        stdp_dw = cfg.stdp_lr * (soft_ltp - cfg.heterosynaptic_ratio * soft_ltd - 0.1 * anti_hebbian)
+        
+        # Accumulate into eligibility trace (long timescale: 500-2000ms)
+        eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
+        self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
+        
+        # ======================================================================
+        # Step 2: Compute dopamine signal
+        # ======================================================================
+        if reward is not None or correct is not None:
+            self.dopamine.compute(reward=reward, correct=correct)
+        
+        da_level = self.dopamine.level
+        
+        # ======================================================================
+        # Step 3: Apply dopamine-gated learning
+        # ======================================================================
+        # Key difference from THREE_FACTOR: STDP eligibility already has direction
+        # Dopamine gates the MAGNITUDE of learning, not direction
+        # Positive DA → apply eligibility (strengthen what STDP says)
+        # Negative DA → apply OPPOSITE of eligibility (weaken what STDP says)
+        # Zero DA → no learning (eligibility decays unused)
+        
+        if abs(da_level) < 0.01:
+            # No dopamine = no learning, but track metrics
+            return {
+                "dopamine": da_level,
+                "ltp": soft_ltp.sum().item(),
+                "ltd": soft_ltd.sum().item(),
+                "net_change": 0.0,
+                "eligibility_max": self.stdp_eligibility.abs().max().item(),
+            }
+        
+        # Apply eligibility modulated by dopamine
+        # Positive DA: apply eligibility as-is
+        # Negative DA: apply opposite of eligibility (reverse STDP direction)
+        dw = self.stdp_eligibility * da_level
+        
+        old_weights = self.weights.clone()
+        self.weights = (self.weights + dw).clamp(self.config.w_min, self.config.w_max)
+        
+        # Note: Unlike Cortex, we DON'T normalize weights here.
+        # For RL, we want weights to differentiate (some actions get stronger).
+        # Normalization would destroy the learned action preferences.
+        
+        actual_dw = self.weights - old_weights
+        ltp_total = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
+        ltd_total = actual_dw[actual_dw < 0].sum().item() if (actual_dw < 0).any() else 0.0
+        
+        return {
+            "dopamine": da_level,
+            "ltp": ltp_total,
+            "ltd": ltd_total,
+            "net_change": ltp_total + ltd_total,
+            "eligibility_max": self.stdp_eligibility.abs().max().item(),
+        }
+
     def deliver_reward(self, reward: float, expected: float = 0.0) -> float:
         """Deliver reward signal and trigger learning.
 
@@ -358,6 +508,10 @@ class Striatum(BrainRegion):
         self.dopamine.reset()
         self.recent_spikes.zero_()
         self.last_action = None
+        # Reset STDP traces for REWARD_MODULATED_STDP
+        self.input_trace.zero_()
+        self.output_trace.zero_()
+        self.stdp_eligibility.zero_()
         if self.neurons is not None:
             self.neurons.reset_state(1)
 

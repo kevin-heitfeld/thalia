@@ -31,6 +31,7 @@ class LearningRule(Enum):
     # Reinforcement learning (Striatum)
     THREE_FACTOR = auto()      # Δw ∝ eligibility × dopamine
     ACTOR_CRITIC = auto()      # Policy gradient with value function
+    REWARD_MODULATED_STDP = auto()  # Δw ∝ STDP_eligibility × dopamine (spike-based)
 
     # Episodic learning (Hippocampus)
     ONE_SHOT = auto()          # Single-exposure learning
