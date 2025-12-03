@@ -32,17 +32,16 @@ from thalia.regions.base import LearningRule
 
 
 def create_patterns(n_patterns: int = 4, pattern_size: int = 64) -> List[torch.Tensor]:
-    """Create distinct sparse patterns."""
+    """Create distinct sparse patterns with clear separation."""
     patterns = []
     for i in range(n_patterns):
         pattern = torch.zeros(pattern_size)
-        # Each pattern activates a different quadrant
+        # Each pattern activates a different half (for 2 patterns)
+        # or quarter (for 4 patterns) with high activity
         start = (pattern_size // n_patterns) * i
         end = start + pattern_size // n_patterns
-        pattern[start:end] = 1.0
-        # Add some noise for realism
-        pattern = pattern + torch.randn(pattern_size) * 0.1
-        pattern = pattern.clamp(0.0, 1.0)
+        pattern[start:end] = 1.0  # Maximum activation in the pattern's region
+        # Zero elsewhere for maximum contrast
         patterns.append(pattern)
     return patterns
 
@@ -59,7 +58,7 @@ def run_experiment(
     n_patterns: int = 2,  # Simpler task: 2 patterns
     n_input: int = 64,
     n_actions: int = 2,   # 2 actions
-    n_epochs: int = 100,
+    n_epochs: int = 200,  # More training epochs
     n_timesteps: int = 50,  # Timesteps per trial
     verbose: bool = True,
     seed: int | None = None,
@@ -70,23 +69,27 @@ def run_experiment(
         np.random.seed(seed)
 
     # Create striatum - try both learning rules
-    use_stdp = False  # Set to False to test THREE_FACTOR baseline
+    use_stdp = True  # Set to True for REWARD_MODULATED_STDP, False for THREE_FACTOR baseline
     
     if use_stdp:
         config = StriatumConfig(
             n_input=n_input,
             n_output=n_actions,
             learning_rule=LearningRule.REWARD_MODULATED_STDP,
-            stdp_lr=0.02,
+            stdp_lr=0.03,  # Increased learning rate
             stdp_tau_ms=20.0,
-            eligibility_tau_ms=100.0,
-            dopamine_burst=2.0,
-            dopamine_dip=-0.5,
+            eligibility_tau_ms=200.0,  # Longer eligibility trace
+            dopamine_burst=3.0,  # Stronger reward signal (asymmetric)
+            dopamine_dip=-0.3,   # Weaker punishment (asymmetric for exploration)
             lateral_inhibition=True,
-            inhibition_strength=0.3,
+            inhibition_strength=1.0,  # Stronger inhibition for winner-take-all
             dt_ms=1.0,
             w_max=1.0,
             w_min=0.0,
+            # Exploration parameters
+            exploration_epsilon=0.5,   # Start with more exploration
+            exploration_decay=0.97,
+            min_epsilon=0.05,
         )
     else:
         # Baseline: THREE_FACTOR (rate-coded)
@@ -103,6 +106,10 @@ def run_experiment(
             dt_ms=1.0,
             w_max=1.0,
             w_min=0.0,
+            # Exploration parameters
+            exploration_epsilon=0.4,
+            exploration_decay=0.98,
+            min_epsilon=0.05,
         )
     striatum = Striatum(config)
     print(f"Using learning rule: {config.learning_rule.name}")
@@ -154,7 +161,7 @@ def run_experiment(
             total_output = torch.zeros(n_actions)
             for t in range(n_timesteps):
                 input_spikes = spike_train[t].unsqueeze(0)
-                output_spikes = striatum.forward(input_spikes)
+                output_spikes = striatum.forward(input_spikes, explore=True)  # Training: explore
                 total_output += output_spikes.squeeze()
 
                 # Build up eligibility during presentation (NO reward yet)
@@ -162,7 +169,7 @@ def run_experiment(
                 striatum.learn(input_spikes, output_spikes, reward=None)
 
             # Determine selected action (most active neuron)
-            selected_action = total_output.argmax().item()
+            selected_action = int(total_output.argmax().item())
 
             # Compute reward based on action correctness
             if selected_action == correct_action:
@@ -174,12 +181,8 @@ def run_experiment(
             epoch_rewards.append(reward)
 
             # NOW deliver reward - this triggers the actual weight update
-            # Use the last spikes as context (eligibility is already accumulated)
-            last_input = spike_train[-1].unsqueeze(0)
-            last_output = torch.zeros(n_actions).unsqueeze(0)
-            last_output[0, selected_action] = 1.0  # Mark which action was taken
-            
-            metrics = striatum.learn(last_input, last_output, reward=reward)
+            # deliver_reward() applies accumulated STDP eligibility × dopamine
+            metrics = striatum.deliver_reward(reward)
             epoch_dopamine.append(metrics.get("dopamine", 0.0))
 
         # Track metrics
@@ -196,7 +199,11 @@ def run_experiment(
             w_means = striatum.weights.mean(dim=1).tolist()
             print(f"Epoch {epoch+1}/{n_epochs}: accuracy={accuracy:.1f}%, "
                   f"reward={np.mean(epoch_rewards):.2f}, Δw={weight_change:.5f}, "
+                  f"eps={striatum.current_epsilon:.2f}, "
                   f"w_per_action={[f'{w:.3f}' for w in w_means]}")
+        
+        # Decay exploration at end of each epoch
+        striatum.decay_exploration()
 
     # Final evaluation (multiple test trials)
     print("\n" + "-" * 60)
@@ -206,20 +213,41 @@ def run_experiment(
     test_correct = 0
     n_test_trials = n_patterns * 10
 
-    for _ in range(n_test_trials // n_patterns):
+    # Debug: show weight structure before test
+    print(f"\nWeight matrix before test:")
+    print(f"  Action 0 to inputs 0-31: {striatum.weights[0, :32].mean().item():.3f}")
+    print(f"  Action 0 to inputs 32-63: {striatum.weights[0, 32:].mean().item():.3f}")
+    print(f"  Action 1 to inputs 0-31: {striatum.weights[1, :32].mean().item():.3f}")
+    print(f"  Action 1 to inputs 32-63: {striatum.weights[1, 32:].mean().item():.3f}")
+
+    for trial in range(n_test_trials // n_patterns):
         for pattern_idx, pattern in enumerate(patterns):
             correct_action = correct_actions[pattern_idx]
             striatum.reset()
 
             spike_train = rate_to_spikes(pattern, n_timesteps)
             total_output = torch.zeros(n_actions)
+            total_input_drive = torch.zeros(n_actions)  # Track weighted input
 
             for t in range(n_timesteps):
                 input_spikes = spike_train[t].unsqueeze(0)
-                output_spikes = striatum.forward(input_spikes)
+                # Compute weighted input directly (more reliable than spikes)
+                weighted_input = torch.matmul(input_spikes, striatum.weights.T)
+                total_input_drive += weighted_input.squeeze()
+                
+                output_spikes = striatum.forward(input_spikes, explore=False)  # Eval: no exploration
                 total_output += output_spikes.squeeze()
 
-            selected_action = total_output.argmax().item()
+            # Use weighted input sum for decision (continuous, not discrete spikes)
+            selected_action = int(total_input_drive.argmax().item())
+            
+            # Debug first few trials
+            if trial < 2:
+                print(f"  Pattern {pattern_idx} (correct={correct_action}): "
+                      f"spikes=[{total_output[0].item():.1f}, {total_output[1].item():.1f}] "
+                      f"drive=[{total_input_drive[0].item():.1f}, {total_input_drive[1].item():.1f}] "
+                      f"→ selected {selected_action} {'✓' if selected_action == correct_action else '✗'}")
+            
             if selected_action == correct_action:
                 test_correct += 1
 
@@ -273,6 +301,25 @@ def run_experiment(
     print(f"Initial weights: mean={initial_weights.mean():.4f}, std={initial_weights.std():.4f}")
     print(f"Final weights: mean={final_weights.mean():.4f}, std={final_weights.std():.4f}")
     print(f"Weight change: mean={np.abs(weight_delta).mean():.5f}, max={np.abs(weight_delta).max():.4f}")
+    
+    # Weight matrix structure (for 2-pattern task)
+    if n_patterns == 2 and n_actions == 2:
+        # Action 0's weights to first half vs second half
+        a0_first = final_weights[0, :n_input//2].mean()
+        a0_second = final_weights[0, n_input//2:].mean()
+        # Action 1's weights to first half vs second half
+        a1_first = final_weights[1, :n_input//2].mean()
+        a1_second = final_weights[1, n_input//2:].mean()
+        print(f"\nWeight Structure (for pattern discrimination):")
+        print(f"  Action 0: w[0,0:32]={a0_first:.3f}, w[0,32:64]={a0_second:.3f}")
+        print(f"  Action 1: w[1,0:32]={a1_first:.3f}, w[1,32:64]={a1_second:.3f}")
+        print(f"  Ideal: Action 0 prefers first half, Action 1 prefers second half")
+        if a0_first > a0_second and a1_second > a1_first:
+            print(f"  ✓ Weights show correct discrimination!")
+        elif a0_first < a0_second and a1_second < a1_first:
+            print(f"  ✗ Weights are inverted (learn wrong mapping)")
+        else:
+            print(f"  ✗ Weights don't show clear discrimination")
 
     # Plot results
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
@@ -327,4 +374,4 @@ def run_experiment(
 
 
 if __name__ == "__main__":
-    results = run_experiment(verbose=True)
+    results = run_experiment(verbose=True, seed=42)

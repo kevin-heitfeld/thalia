@@ -86,6 +86,11 @@ class StriatumConfig(RegionConfig):
     stdp_tau_ms: float = 20.0         # STDP time constant for traces
     stdp_lr: float = 0.005            # STDP learning rate
     heterosynaptic_ratio: float = 0.3  # LTD/LTP ratio
+    
+    # Exploration parameters (epsilon-greedy)
+    exploration_epsilon: float = 0.3   # Initial exploration rate
+    exploration_decay: float = 0.995   # Per-episode decay factor
+    min_epsilon: float = 0.01          # Minimum exploration rate
 
 
 class DopamineSystem(NeuromodulatorSystem):
@@ -247,6 +252,10 @@ class Striatum(BrainRegion):
         self.stdp_eligibility = torch.zeros(
             config.n_output, config.n_input, device=self.device
         )
+        
+        # Exploration state
+        self.current_epsilon = self.striatum_config.exploration_epsilon
+        self.exploring = False  # Track if current action was exploratory
 
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.THREE_FACTOR
@@ -270,9 +279,16 @@ class Striatum(BrainRegion):
     def forward(
         self,
         input_spikes: torch.Tensor,
+        explore: bool = True,
         **kwargs: Any,
     ) -> torch.Tensor:
-        """Process input and select action."""
+        """Process input and select action.
+        
+        Args:
+            input_spikes: Input spike tensor
+            explore: If True, use epsilon-greedy exploration. Set to False
+                    during evaluation to use greedy action selection.
+        """
         if input_spikes.dim() == 1:
             input_spikes = input_spikes.unsqueeze(0)
 
@@ -287,13 +303,22 @@ class Striatum(BrainRegion):
 
         # Forward through neurons
         output_spikes, _ = self.neurons(g_exc, g_inh)
+        
+        # Epsilon-greedy exploration
+        self.exploring = False
+        if explore and torch.rand(1).item() < self.current_epsilon:
+            # Random action: force a random neuron to spike
+            self.exploring = True
+            random_action = int(torch.randint(0, self.config.n_output, (1,)).item())
+            output_spikes = torch.zeros_like(output_spikes)
+            output_spikes[0, random_action] = 1.0
 
         # Update eligibility traces
         self.eligibility.update(input_spikes, output_spikes, self.config.dt_ms)
 
         # Track which action was taken
         if output_spikes.sum() > 0:
-            self.last_action = output_spikes.squeeze().argmax().item()
+            self.last_action = int(output_spikes.squeeze().argmax().item())
 
         # Decay dopamine
         self.dopamine.decay(self.config.dt_ms)
@@ -306,6 +331,16 @@ class Striatum(BrainRegion):
         self.state.t += 1
 
         return output_spikes
+    
+    def decay_exploration(self) -> None:
+        """Decay epsilon for epsilon-greedy exploration.
+        
+        Call this at the end of each episode/trial.
+        """
+        self.current_epsilon = max(
+            self.striatum_config.min_epsilon,
+            self.current_epsilon * self.striatum_config.exploration_decay
+        )
 
     def learn(
         self,
@@ -495,12 +530,82 @@ class Striatum(BrainRegion):
             "eligibility_max": self.stdp_eligibility.abs().max().item(),
         }
 
-    def deliver_reward(self, reward: float, expected: float = 0.0) -> float:
+    def deliver_reward(self, reward: float, expected: float = 0.0, learn_from_exploration: bool = False) -> Dict[str, Any]:
         """Deliver reward signal and trigger learning.
 
-        Convenience method for RL tasks.
+        For REWARD_MODULATED_STDP, this applies the accumulated eligibility
+        modulated by dopamine WITHOUT adding new STDP traces.
+        
+        Args:
+            reward: Reward signal (positive = good, negative = bad)
+            expected: Expected reward (for computing RPE)
+            learn_from_exploration: If False and last action was exploratory,
+                                   skip learning to avoid credit misassignment.
+        
+        Returns:
+            Metrics dict with dopamine level and weight changes.
         """
-        return self.dopamine.compute(reward=reward, expected_reward=expected)
+        # Compute dopamine signal
+        da_level = self.dopamine.compute(reward=reward, expected_reward=expected)
+        
+        # For REWARD_MODULATED_STDP, apply eligibility now
+        if self.striatum_config.learning_rule == LearningRule.REWARD_MODULATED_STDP:
+            # Skip learning from exploratory actions to avoid credit misassignment
+            if self.exploring and not learn_from_exploration:
+                return {
+                    "dopamine": da_level,
+                    "ltp": 0.0,
+                    "ltd": 0.0,
+                    "net_change": 0.0,
+                    "eligibility_max": self.stdp_eligibility.abs().max().item(),
+                    "skipped": True,
+                    "reason": "exploratory_action",
+                }
+            
+            if abs(da_level) < 0.01:
+                return {
+                    "dopamine": da_level,
+                    "ltp": 0.0,
+                    "ltd": 0.0,
+                    "net_change": 0.0,
+                    "eligibility_max": self.stdp_eligibility.abs().max().item(),
+                }
+            
+            # Apply eligibility modulated by dopamine
+            # CRITICAL: Only update the SELECTED action's weights
+            # This ensures correct credit assignment
+            if self.last_action is not None:
+                # Mask eligibility to only the selected action
+                action_mask = torch.zeros(self.config.n_output, device=self.device)
+                action_mask[self.last_action] = 1.0
+                masked_eligibility = self.stdp_eligibility * action_mask.unsqueeze(1)
+                
+                # Also apply anti-Hebbian to non-selected actions
+                # If reward is positive: weaken non-selected actions' weights to active inputs
+                non_action_mask = 1.0 - action_mask
+                anti_hebbian_strength = 0.3 if da_level > 0 else 0.0
+                anti_hebbian = non_action_mask.unsqueeze(1) * self.stdp_eligibility.abs() * anti_hebbian_strength
+                
+                dw = masked_eligibility * da_level - anti_hebbian * da_level
+            else:
+                dw = self.stdp_eligibility * da_level
+            
+            old_weights = self.weights.clone()
+            self.weights = (self.weights + dw).clamp(self.config.w_min, self.config.w_max)
+            
+            actual_dw = self.weights - old_weights
+            ltp_total = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
+            ltd_total = actual_dw[actual_dw < 0].sum().item() if (actual_dw < 0).any() else 0.0
+            
+            return {
+                "dopamine": da_level,
+                "ltp": ltp_total,
+                "ltd": ltd_total,
+                "net_change": ltp_total + ltd_total,
+                "eligibility_max": self.stdp_eligibility.abs().max().item(),
+            }
+        else:
+            return {"dopamine": da_level}
 
     def reset(self) -> None:
         super().reset()
@@ -512,8 +617,16 @@ class Striatum(BrainRegion):
         self.input_trace.zero_()
         self.output_trace.zero_()
         self.stdp_eligibility.zero_()
+        self.exploring = False
         if self.neurons is not None:
             self.neurons.reset_state(1)
+    
+    def reset_exploration(self) -> None:
+        """Reset exploration epsilon to initial value.
+        
+        Call this when starting a new training run.
+        """
+        self.current_epsilon = self.striatum_config.exploration_epsilon
 
     # =========================================================================
     # RATE-CODED API
