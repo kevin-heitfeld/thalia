@@ -294,13 +294,23 @@ class CortexConfig(RegionConfig):
     # ==========================================================================
     # The cortex supports multiple learning paradigms:
     # - HEBBIAN (default): Spike-timing dependent plasticity (STDP)
-    # - PREDICTIVE: Predictive coding - minimize prediction error
+    # - PREDICTIVE: Predictive coding - minimize prediction error (rate-coded)
+    # - PREDICTIVE_STDP: True spiking with prediction error modulation
+    #
+    # PREDICTIVE_STDP combines:
+    # 1. Real spikes for forward pass (LIF neurons)
+    # 2. STDP eligibility traces from spike timing
+    # 3. Prediction error as the "third factor" that gates learning
+    #
+    # Weight update: Δw ∝ STDP(pre, post) × |prediction_error|
+    # This is biologically plausible: only surprising inputs cause learning.
     #
     # Use LearningRule enum to select the learning mode.
     learning_rule: LearningRule = LearningRule.HEBBIAN
 
     # ==========================================================================
-    # PREDICTIVE CODING PARAMETERS (used when learning_rule=PREDICTIVE)
+    # PREDICTIVE CODING PARAMETERS 
+    # (used when learning_rule=PREDICTIVE or PREDICTIVE_STDP)
     # ==========================================================================
     # Based on Rao & Ballard (1999) and Friston's Free Energy Principle
     # Each layer predicts its input; learning minimizes prediction error
@@ -323,6 +333,20 @@ class CortexConfig(RegionConfig):
     
     # Precision (inverse variance) of predictions - higher = trust predictions more
     predictive_precision: float = 1.0
+    
+    # ==========================================================================
+    # PREDICTIVE STDP PARAMETERS (used when learning_rule=PREDICTIVE_STDP)
+    # ==========================================================================
+    # Combines spiking dynamics with prediction error modulation
+    
+    # How strongly prediction error modulates STDP (0 = pure STDP, 1 = full gating)
+    pred_error_modulation: float = 0.8
+    
+    # Time constant for error signal (smooths bursty prediction errors)
+    pred_error_tau_ms: float = 50.0
+    
+    # Minimum modulation (prevents complete learning shutdown)
+    pred_error_min_mod: float = 0.1
 
 
 class AcetylcholineSystem(NeuromodulatorSystem):
@@ -526,6 +550,26 @@ class Cortex(BrainRegion):
             
             # Prediction error (input - prediction)
             self.pc_error = torch.zeros(config.n_input, device=self.device)
+        elif self.cortex_config.learning_rule == LearningRule.PREDICTIVE_STDP:
+            # PREDICTIVE_STDP: Spiking + prediction error modulation
+            # Need prediction weights to generate predictions from output spike rates
+            self.prediction_weights = torch.randn(
+                config.n_output, config.n_input, device=self.device
+            ) * 0.1 / (config.n_output ** 0.5)
+            
+            # Smoothed prediction error for modulating STDP
+            self.pred_error_smooth = torch.zeros(1, device=self.device)
+            
+            # Running estimate of output firing rate (for prediction)
+            self.output_rate_estimate = torch.zeros(config.n_output, device=self.device)
+            
+            # STDP eligibility traces (per synapse)
+            self.stdp_eligibility = torch.zeros(config.n_output, config.n_input, device=self.device)
+            
+            # Not used in PREDICTIVE_STDP mode
+            self.error_weights = None
+            self.pc_representation = None
+            self.pc_error = None
         else:
             self.prediction_weights = None
             self.error_weights = None
@@ -981,6 +1025,155 @@ class Cortex(BrainRegion):
             "dw_error": dW_error.abs().mean().item(),
         }
 
+    def _predictive_stdp_learn(
+        self,
+        input_spikes: torch.Tensor,
+        output_spikes: torch.Tensor,
+    ) -> Dict[str, Any]:
+        """STDP learning modulated by prediction error.
+        
+        This combines:
+        1. Real spiking dynamics (already happened in forward())
+        2. STDP eligibility from spike timing correlations
+        3. Prediction error as the "third factor" that gates learning
+        
+        Key insight: Only surprising inputs should cause learning.
+        If the network correctly predicts its input, no weight change.
+        If prediction error is high, STDP is allowed to update weights.
+        
+        Weight update: Δw = lr × STDP(pre, post) × |prediction_error|
+        
+        Args:
+            input_spikes: Pre-synaptic spikes from this timestep
+            output_spikes: Post-synaptic spikes from this timestep
+            
+        Returns:
+            Dict with learning metrics
+        """
+        if input_spikes.dim() == 1:
+            input_spikes = input_spikes.unsqueeze(0)
+        if output_spikes.dim() == 1:
+            output_spikes = output_spikes.unsqueeze(0)
+        
+        dt = self.config.dt_ms
+        cfg = self.cortex_config
+        
+        # ======================================================================
+        # Step 1: Update firing rate estimate (exponential moving average)
+        # ======================================================================
+        rate_decay = 1.0 - dt / 100.0  # ~100ms time constant
+        spike_rate = output_spikes.squeeze()  # Instantaneous (0 or 1)
+        self.output_rate_estimate = self.output_rate_estimate * rate_decay + spike_rate * (1 - rate_decay)
+        
+        # ======================================================================
+        # Step 2: Compute prediction error
+        # ======================================================================
+        # Generate prediction of input from current output firing rate
+        # prediction_weights: (n_output, n_input) - maps output rate to predicted input
+        predicted_input = torch.sigmoid(self.output_rate_estimate @ self.prediction_weights)
+        
+        # Compare to actual input (convert spikes to rate-like signal)
+        input_rate = input_spikes.squeeze()
+        
+        # Prediction error: MSE between predicted and actual input
+        pred_error = (predicted_input - input_rate).pow(2).mean()
+        
+        # Smooth the prediction error (prevents noisy modulation)
+        error_decay = 1.0 - dt / cfg.pred_error_tau_ms
+        self.pred_error_smooth = self.pred_error_smooth * error_decay + pred_error * (1 - error_decay)
+        
+        # ======================================================================
+        # Step 3: Compute STDP eligibility update
+        # ======================================================================
+        # Update pre and post traces (exponential decay + spike)
+        trace_decay = 1.0 - dt / cfg.stdp_tau_plus_ms
+        self.input_trace = self.input_trace * trace_decay + input_spikes.squeeze()
+        self.output_trace = self.output_trace * trace_decay + output_spikes.squeeze()
+        
+        # STDP rule: 
+        # - LTP: post spike with pre trace → strengthen (outer product)
+        # - LTD: pre spike with post trace → weaken (outer product)
+        # dw shape: (n_output, n_input)
+        ltp = torch.outer(output_spikes.squeeze(), self.input_trace)  # post spike × pre trace
+        ltd = torch.outer(self.output_trace, input_spikes.squeeze())  # post trace × pre spike
+        
+        # COMPETITIVE LEARNING: Anti-Hebbian for non-winners
+        # Neurons that DIDN'T spike when inputs were present should get weaker
+        # This forces specialization - only winners get to keep their inputs
+        non_spiking = 1.0 - output_spikes.squeeze()  # (n_output,)
+        anti_hebbian = torch.outer(non_spiking, input_spikes.squeeze())  # loser × active inputs
+        
+        # Soft bounds: reduce learning as weights approach limits
+        # This prevents saturation and allows stable learning
+        w_normalized = (self.weights - self.config.w_min) / (self.config.w_max - self.config.w_min)
+        ltp_factor = 1.0 - w_normalized  # More room to grow → more LTP
+        ltd_factor = w_normalized         # Higher weight → more LTD
+        
+        # Apply soft bounds to STDP
+        soft_ltp = ltp * ltp_factor
+        soft_ltd = ltd * ltd_factor
+        soft_anti_hebbian = anti_hebbian * w_normalized  # Only subtract if weights are high
+        
+        # Net STDP (before modulation) with competitive component
+        # LTP for winners, LTD for normal STDP, anti-Hebbian for losers
+        stdp_dw = cfg.hebbian_lr * (soft_ltp - cfg.heterosynaptic_ratio * soft_ltd - 0.1 * soft_anti_hebbian)
+        
+        # Accumulate into eligibility trace (decays over time)
+        eligibility_decay = 1.0 - dt / 200.0  # ~200ms eligibility window
+        self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
+        
+        # ======================================================================
+        # Step 4: Modulate eligibility by prediction error
+        # ======================================================================
+        # High error → more learning; low error → less learning
+        # This is the "third factor" that gates STDP
+        error_modulation = cfg.pred_error_min_mod + (1.0 - cfg.pred_error_min_mod) * torch.sigmoid(
+            cfg.pred_error_modulation * 10.0 * (self.pred_error_smooth - 0.1)
+        )
+        
+        # Apply only CURRENT timestep's STDP modulated by error (not accumulated!)
+        # The eligibility trace is for tracking timing relationships, but we apply
+        # the instantaneous stdp_dw modulated by error, not the accumulated trace
+        dw = stdp_dw * error_modulation
+        self.weights = (self.weights + dw).clamp(self.config.w_min, self.config.w_max)
+        
+        # WEIGHT NORMALIZATION: Normalize each neuron's weights to prevent homogenization
+        # This forces neurons to specialize - they can't just increase all weights
+        row_sums = self.weights.sum(dim=1, keepdim=True)
+        target_sum = self.config.n_input * 0.3  # Target: average weight of 0.3
+        self.weights = self.weights * (target_sum / (row_sums + 1e-6))
+        self.weights = self.weights.clamp(self.config.w_min, self.config.w_max)
+        
+        # ======================================================================
+        # Step 5: Update prediction weights (learn to predict input)
+        # ======================================================================
+        # Gradient descent on prediction error
+        pred_error_grad = predicted_input - input_rate  # (n_input,)
+        dW_pred = -cfg.predictive_lr * torch.outer(self.output_rate_estimate, pred_error_grad)
+        self.prediction_weights = (self.prediction_weights + dW_pred).clamp(-2.0, 2.0)
+        
+        # ======================================================================
+        # Step 6: BCM homeostasis (prevent runaway)
+        # ======================================================================
+        output_rate_hz = output_spikes.mean(dim=0) * (1000.0 / dt)
+        self.bcm_threshold = update_bcm_threshold(
+            self.bcm_threshold,
+            avg_activity_hz=output_rate_hz.unsqueeze(0),
+            target_rate_hz=cfg.bcm_target_rate_hz,
+            tau=cfg.bcm_tau_ms,
+            min_threshold=0.1,
+            max_threshold=0.9,
+        )
+        
+        return {
+            "pred_error": pred_error.item(),
+            "pred_error_smooth": self.pred_error_smooth.item(),
+            "error_modulation": error_modulation.item(),
+            "dw_mean": dw.abs().mean().item(),
+            "ltp": soft_ltp.sum().item(),
+            "ltd": soft_ltd.sum().item(),
+        }
+
     def learn(
         self,
         input_spikes: torch.Tensor,
@@ -993,12 +1186,19 @@ class Cortex(BrainRegion):
         
         For Hebbian mode: updates weights based on spike correlations.
         For Predictive Coding mode: updates prediction weights to minimize error.
+        For Predictive STDP mode: STDP modulated by prediction error.
         """
         # ======================================================================
-        # PREDICTIVE CODING LEARNING
+        # PREDICTIVE CODING LEARNING (rate-coded)
         # ======================================================================
         if self.cortex_config.learning_rule == LearningRule.PREDICTIVE:
             return self._predictive_learn(input_spikes)
+        
+        # ======================================================================
+        # PREDICTIVE STDP LEARNING (spiking + prediction error modulation)
+        # ======================================================================
+        if self.cortex_config.learning_rule == LearningRule.PREDICTIVE_STDP:
+            return self._predictive_stdp_learn(input_spikes, output_spikes)
         
         # ======================================================================
         # HEBBIAN LEARNING (default)

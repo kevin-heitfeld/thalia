@@ -38,6 +38,9 @@ class LearningRule(Enum):
 
     # Predictive coding (Cortex alternative)
     PREDICTIVE = auto()        # Δw minimizes prediction error
+    
+    # Predictive STDP: combines spiking with prediction error modulation
+    PREDICTIVE_STDP = auto()   # Δw ∝ STDP × prediction_error (three-factor)
 
 
 @dataclass
