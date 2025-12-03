@@ -91,6 +91,15 @@ class StriatumConfig(RegionConfig):
     exploration_epsilon: float = 0.3   # Initial exploration rate
     exploration_decay: float = 0.995   # Per-episode decay factor
     min_epsilon: float = 0.01          # Minimum exploration rate
+    
+    # =========================================================================
+    # POPULATION CODING
+    # =========================================================================
+    # Instead of 1 neuron per action, use a POPULATION of neurons per action.
+    # Decision = which population has highest total activity
+    # Benefits: noise reduction, redundancy, graded confidence
+    population_coding: bool = False   # Enable population coding
+    neurons_per_action: int = 10      # Number of neurons per action
 
 
 class DopamineSystem(NeuromodulatorSystem):
@@ -205,6 +214,11 @@ class Striatum(BrainRegion):
     - Eligibility traces tag recently active synapses
     - Dopamine signal converts eligibility to plasticity
     - No learning without dopamine (unlike Hebbian)
+    
+    Population Coding (optional):
+    - Instead of 1 neuron per action, use N neurons per action
+    - Decision = which population has highest total spike count
+    - Benefits: noise reduction, redundancy, graded confidence
     """
 
     def __init__(self, config: RegionConfig):
@@ -222,6 +236,52 @@ class Striatum(BrainRegion):
             )
 
         self.striatum_config: StriatumConfig = config  # type: ignore
+        
+        # =====================================================================
+        # POPULATION CODING SETUP
+        # =====================================================================
+        # If population_coding is enabled, we create N neurons per action
+        # n_output in config = number of ACTIONS
+        # actual neurons = n_actions * neurons_per_action
+        self.n_actions = config.n_output
+        if self.striatum_config.population_coding:
+            self.neurons_per_action = self.striatum_config.neurons_per_action
+            # Override n_output to be the total number of neurons
+            actual_n_output = self.n_actions * self.neurons_per_action
+            # Create modified config with expanded output
+            config = StriatumConfig(
+                n_input=config.n_input,
+                n_output=actual_n_output,  # Total neurons
+                neuron_type=config.neuron_type,
+                learning_rate=config.learning_rate,
+                w_max=config.w_max,
+                w_min=config.w_min,
+                target_firing_rate_hz=config.target_firing_rate_hz,
+                dt_ms=config.dt_ms,
+                device=config.device,
+                # Copy striatum-specific config
+                eligibility_tau_ms=self.striatum_config.eligibility_tau_ms,
+                dopamine_burst=self.striatum_config.dopamine_burst,
+                dopamine_dip=self.striatum_config.dopamine_dip,
+                dopamine_tau_ms=self.striatum_config.dopamine_tau_ms,
+                three_factor_lr=self.striatum_config.three_factor_lr,
+                lateral_inhibition=self.striatum_config.lateral_inhibition,
+                inhibition_strength=self.striatum_config.inhibition_strength,
+                soft_bounds=self.striatum_config.soft_bounds,
+                learning_rule=self.striatum_config.learning_rule,
+                stdp_tau_ms=self.striatum_config.stdp_tau_ms,
+                stdp_lr=self.striatum_config.stdp_lr,
+                heterosynaptic_ratio=self.striatum_config.heterosynaptic_ratio,
+                exploration_epsilon=self.striatum_config.exploration_epsilon,
+                exploration_decay=self.striatum_config.exploration_decay,
+                min_epsilon=self.striatum_config.min_epsilon,
+                population_coding=True,
+                neurons_per_action=self.neurons_per_action,
+            )
+            self.striatum_config = config
+        else:
+            self.neurons_per_action = 1
+        
         super().__init__(config)
 
         # Eligibility traces (synapse-specific)
@@ -256,6 +316,39 @@ class Striatum(BrainRegion):
         # Exploration state
         self.current_epsilon = self.striatum_config.exploration_epsilon
         self.exploring = False  # Track if current action was exploratory
+    
+    def _get_action_population_indices(self, action: int) -> slice:
+        """Get the slice of neuron indices for a given action.
+        
+        With population coding enabled:
+        - Action 0 → neurons 0 to neurons_per_action-1
+        - Action 1 → neurons neurons_per_action to 2*neurons_per_action-1
+        - etc.
+        """
+        start = action * self.neurons_per_action
+        end = start + self.neurons_per_action
+        return slice(start, end)
+    
+    def _decode_action_from_spikes(self, spikes: torch.Tensor) -> int:
+        """Decode action from spike pattern using population voting.
+        
+        Returns the action whose population has the most spikes.
+        """
+        spikes = spikes.squeeze()
+        
+        if not self.striatum_config.population_coding:
+            # Simple argmax for single-neuron coding
+            if spikes.sum() == 0:
+                return 0  # Default action
+            return int(spikes.argmax().item())
+        
+        # Population coding: sum spikes per action population
+        votes = torch.zeros(self.n_actions, device=self.device)
+        for action in range(self.n_actions):
+            pop_slice = self._get_action_population_indices(action)
+            votes[action] = spikes[pop_slice].sum()
+        
+        return int(votes.argmax().item())
 
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.THREE_FACTOR
@@ -288,6 +381,11 @@ class Striatum(BrainRegion):
             input_spikes: Input spike tensor
             explore: If True, use epsilon-greedy exploration. Set to False
                     during evaluation to use greedy action selection.
+        
+        With population coding:
+        - Each action has N neurons (neurons_per_action)
+        - Action is selected by which population has most spikes
+        - Exploration activates a random population, not just one neuron
         """
         if input_spikes.dim() == 1:
             input_spikes = input_spikes.unsqueeze(0)
@@ -307,18 +405,28 @@ class Striatum(BrainRegion):
         # Epsilon-greedy exploration
         self.exploring = False
         if explore and torch.rand(1).item() < self.current_epsilon:
-            # Random action: force a random neuron to spike
+            # Random action exploration
             self.exploring = True
-            random_action = int(torch.randint(0, self.config.n_output, (1,)).item())
+            random_action = int(torch.randint(0, self.n_actions, (1,)).item())
             output_spikes = torch.zeros_like(output_spikes)
-            output_spikes[0, random_action] = 1.0
+            
+            if self.striatum_config.population_coding:
+                # With population coding: activate several neurons in the random population
+                pop_slice = self._get_action_population_indices(random_action)
+                # Activate ~50% of the population (stochastic)
+                n_to_activate = max(1, self.neurons_per_action // 2)
+                indices = torch.randperm(self.neurons_per_action)[:n_to_activate]
+                for idx in indices:
+                    output_spikes[0, pop_slice.start + idx] = 1.0
+            else:
+                # Without population coding: activate single neuron
+                output_spikes[0, random_action] = 1.0
 
         # Update eligibility traces
         self.eligibility.update(input_spikes, output_spikes, self.config.dt_ms)
 
-        # Track which action was taken
-        if output_spikes.sum() > 0:
-            self.last_action = int(output_spikes.squeeze().argmax().item())
+        # Track which action was taken (using population decoding)
+        self.last_action = self._decode_action_from_spikes(output_spikes)
 
         # Decay dopamine
         self.dopamine.decay(self.config.dt_ms)
@@ -331,6 +439,39 @@ class Striatum(BrainRegion):
         self.state.t += 1
 
         return output_spikes
+    
+    def get_selected_action(self) -> Optional[int]:
+        """Get the last selected action.
+        
+        Returns:
+            Action index (0 to n_actions-1), or None if no action taken.
+        """
+        return self.last_action
+    
+    def get_population_votes(self, spikes: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Get the spike count for each action population.
+        
+        Useful for analyzing decision confidence with population coding.
+        
+        Args:
+            spikes: Spike tensor to analyze. If None, uses last output.
+            
+        Returns:
+            Tensor of shape (n_actions,) with vote counts per action.
+        """
+        if spikes is None:
+            spikes = self.state.spikes
+        if spikes is None:
+            return torch.zeros(self.n_actions, device=self.device)
+            
+        spikes = spikes.squeeze()
+        votes = torch.zeros(self.n_actions, device=self.device)
+        
+        for action in range(self.n_actions):
+            pop_slice = self._get_action_population_indices(action)
+            votes[action] = spikes[pop_slice].sum()
+            
+        return votes
     
     def decay_exploration(self) -> None:
         """Decay epsilon for epsilon-greedy exploration.
@@ -574,10 +715,18 @@ class Striatum(BrainRegion):
             # Apply eligibility modulated by dopamine
             # CRITICAL: Only update the SELECTED action's weights
             # This ensures correct credit assignment
+            # With population coding: update ALL neurons in the selected population
             if self.last_action is not None:
-                # Mask eligibility to only the selected action
+                # Create mask for selected action's population
                 action_mask = torch.zeros(self.config.n_output, device=self.device)
-                action_mask[self.last_action] = 1.0
+                if self.striatum_config.population_coding:
+                    # Mask entire population for the selected action
+                    pop_slice = self._get_action_population_indices(self.last_action)
+                    action_mask[pop_slice] = 1.0
+                else:
+                    # Single neuron mask
+                    action_mask[self.last_action] = 1.0
+                    
                 masked_eligibility = self.stdp_eligibility * action_mask.unsqueeze(1)
                 
                 # Also apply anti-Hebbian to non-selected actions

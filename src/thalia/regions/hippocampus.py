@@ -54,6 +54,8 @@ class HippocampusConfig(RegionConfig):
     stdp_tau_plus: float = 20.0  # ms, for forward sequences
     stdp_tau_minus: float = 10.0  # ms, for backward (weaker)
     stdp_asymmetry: float = 3.0  # Forward/backward ratio
+    stdp_lr: float = 0.1  # STDP learning rate
+    heterosynaptic_ratio: float = 0.3  # LTD for non-active synapses
     
     # Pattern completion
     recurrent_strength: float = 0.3  # CA3-like recurrence
@@ -62,6 +64,14 @@ class HippocampusConfig(RegionConfig):
     # Weight constraints (override defaults)
     w_max: float = 3.0  # Allow stronger weights for episodic memory
     w_min: float = 0.0
+    
+    # Soft bounds for stable learning
+    soft_bounds: bool = True
+    
+    # Synaptic scaling for homeostasis
+    synaptic_scaling_enabled: bool = True
+    synaptic_scaling_target: float = 0.5  # Target mean weight
+    synaptic_scaling_rate: float = 0.001  # Slow scaling rate
     
     # Neuron configuration
     neuron_config: Optional[ConductanceLIFConfig] = None
@@ -375,7 +385,15 @@ class Hippocampus(BrainRegion):
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Apply one-shot Hebbian learning gated by theta phase.
+        Apply spike-based STDP learning gated by theta phase.
+        
+        Uses asymmetric STDP for sequence learning:
+        - Forward sequences (pre before post) → strong LTP
+        - Backward sequences (post before pre) → weaker LTP/LTD
+        
+        Learning is modulated by theta phase:
+        - Encoding phase: high learning rate for one-shot memory
+        - Retrieval phase: minimal plasticity to protect stored patterns
         
         Args:
             input_spikes: Presynaptic activity [batch, n_input]
@@ -387,50 +405,85 @@ class Hippocampus(BrainRegion):
         Returns:
             Dictionary with learning metrics
         """
+        if input_spikes.dim() == 1:
+            input_spikes = input_spikes.unsqueeze(0)
+        if output_spikes.dim() == 1:
+            output_spikes = output_spikes.unsqueeze(0)
+            
+        cfg = self.hippocampus_config
+        
         # Determine learning rate based on theta phase
         if force_encoding or self.state.is_encoding:
-            lr = self.hippocampus_config.learning_rate
+            lr = cfg.stdp_lr
             mode = "encoding"
         else:
-            lr = self.hippocampus_config.learning_rate_retrieval
+            lr = cfg.stdp_lr * 0.01  # Minimal learning during retrieval
             mode = "retrieval"
         
-        # === Feedforward weight update (one-shot Hebbian) ===
-        # Simple Hebbian: dW = lr * post * pre^T
-        pre_mean = input_spikes.float().mean(dim=0)
-        post_mean = output_spikes.float().mean(dim=0)
+        # ======================================================================
+        # STDP-based Feedforward Weight Update
+        # ======================================================================
+        # Use spike traces for proper temporal credit assignment
+        if self.state.pre_trace is None or self.state.post_trace is None:
+            self._update_stdp_traces(input_spikes, output_spikes, dt)
         
-        # Outer product for Hebbian learning
-        dW_ff = lr * torch.outer(post_mean, pre_mean)
+        # LTP: post spike when pre trace is high (pre before post)
+        ltp = torch.outer(output_spikes.squeeze(), self.state.pre_trace.squeeze())
         
-        # Apply update
+        # LTD: pre spike when post trace is high (post before pre) - weaker
+        ltd = torch.outer(self.state.post_trace.squeeze(), input_spikes.squeeze())
+        
+        # Apply soft bounds if enabled
+        if cfg.soft_bounds:
+            w_normalized = (self.weights - cfg.w_min) / (cfg.w_max - cfg.w_min + 1e-6)
+            ltp_factor = 1.0 - w_normalized  # More room for LTP when weights are low
+            ltd_factor = w_normalized  # More room for LTD when weights are high
+            ltp = ltp * ltp_factor
+            ltd = ltd * ltd_factor
+        
+        # Compute weight change with asymmetry (forward sequences stronger)
+        dW_ff = lr * (cfg.stdp_asymmetry * ltp - cfg.heterosynaptic_ratio * ltd)
+        
+        # Apply feedforward weight update
         with torch.no_grad():
             self.weights.data += dW_ff
-            self.weights.data.clamp_(self.hippocampus_config.w_min, self.hippocampus_config.w_max)
+            self.weights.data.clamp_(cfg.w_min, cfg.w_max)
+            
+            # Synaptic scaling for homeostasis
+            if cfg.synaptic_scaling_enabled:
+                mean_weight = self.weights.data.mean()
+                scaling_factor = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
+                self.weights.data *= scaling_factor
+                self.weights.data.clamp_(cfg.w_min, cfg.w_max)
         
-        # === Recurrent weight update (auto-association) ===
-        # CA3-like pattern storage: connect co-active neurons
-        # But asymmetric for sequences
-        if self.state.pre_trace is not None and self.state.post_trace is not None:
-            # Asymmetric STDP for sequences
-            # Forward: pre before post -> LTP (strong)
-            # Backward: post before pre -> LTP (weaker) or LTD
-            
-            pre_trace_mean = self.state.pre_trace.mean(dim=0)
-            post_trace_mean = self.state.post_trace.mean(dim=0)
-            
-            # Forward sequence (pre trace × current post)
-            dW_forward = torch.outer(post_mean, pre_trace_mean[:self.config.n_output]) * self.hippocampus_config.stdp_asymmetry
-            
-            # Backward (current pre × post trace) - weaker
-            dW_backward = torch.outer(post_trace_mean, pre_mean[:self.config.n_output])
-            
-            dW_rec = lr * 0.5 * (dW_forward + dW_backward)
-            
-            with torch.no_grad():
-                self.rec_weights.data += dW_rec
-                self.rec_weights.data.fill_diagonal_(0.0)  # No self-connections
-                self.rec_weights.data.clamp_(self.hippocampus_config.w_min, self.hippocampus_config.w_max)
+        # ======================================================================
+        # STDP-based Recurrent Weight Update (CA3-like auto-association)
+        # ======================================================================
+        # Asymmetric STDP for sequences: connect neurons that fire in sequence
+        pre_trace_mean = self.state.pre_trace.mean(dim=0)
+        post_trace_mean = self.state.post_trace.mean(dim=0)
+        post_mean = output_spikes.float().mean(dim=0)
+        pre_mean = input_spikes.float().mean(dim=0)
+        
+        # Forward sequence (pre trace × current post) - strong for sequences
+        n_out = min(self.config.n_output, pre_trace_mean.shape[0])
+        dW_forward = torch.outer(post_mean, pre_trace_mean[:n_out]) * cfg.stdp_asymmetry
+        
+        # Backward (current pre × post trace) - weaker
+        n_out = min(self.config.n_output, pre_mean.shape[0])
+        dW_backward = torch.outer(post_trace_mean, pre_mean[:n_out])
+        
+        dW_rec = lr * 0.5 * (dW_forward + dW_backward)
+        
+        # Apply soft bounds to recurrent weights
+        if cfg.soft_bounds:
+            w_rec_norm = (self.rec_weights - cfg.w_min) / (cfg.w_max - cfg.w_min + 1e-6)
+            dW_rec = torch.where(dW_rec > 0, dW_rec * (1 - w_rec_norm), dW_rec * w_rec_norm)
+        
+        with torch.no_grad():
+            self.rec_weights.data += dW_rec
+            self.rec_weights.data.fill_diagonal_(0.0)  # No self-connections
+            self.rec_weights.data.clamp_(cfg.w_min, cfg.w_max)
         
         # Compute metrics
         total_ltp = (dW_ff > 0).sum().item()
