@@ -4,11 +4,7 @@ Auto-generated API documentation.
 
 ## Modules
 
-- `thalia.core` - Core SNN components
-- `thalia.learning` - Learning rules
-- `thalia.dynamics` - Attractor dynamics
-- `thalia.memory` - Working memory
-- `thalia.hierarchy` - Hierarchical processing
-- `thalia.cognition` - Cognitive functions
-- `thalia.encoding` - Spike encoding
-- `thalia.visualization` - Visualization tools
+- `thalia.core` - Core SNN components (neurons, layers)
+- `thalia.learning` - Learning rules (STDP, homeostatic, reward-modulated)
+- `thalia.regions` - Brain regions (cortex, striatum, hippocampus, etc.)
+- `thalia.integration` - Brain system integration and pathways

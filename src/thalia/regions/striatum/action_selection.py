@@ -1,0 +1,271 @@
+"""
+Action Selection for Striatum
+
+This module provides action selection functionality as a mixin class.
+It handles population coding, UCB exploration, softmax selection,
+and vote accumulation across timesteps.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import TYPE_CHECKING, Optional, Dict, Any, List
+
+import torch
+
+if TYPE_CHECKING:
+    from thalia.regions.striatum.config import StriatumConfig
+
+
+class ActionSelectionMixin:
+    """Mixin providing action selection methods for Striatum.
+    
+    Handles population coding, UCB exploration, softmax selection,
+    and vote accumulation across timesteps.
+    
+    Expects the following attributes on the mixed-in class:
+    - striatum_config: StriatumConfig
+    - n_actions: int
+    - neurons_per_action: int
+    - device: torch.device
+    - d1_weights, d2_weights: torch.Tensor
+    - state: with .spikes attribute
+    - _d1_votes_accumulated, _d2_votes_accumulated: torch.Tensor
+    - _action_counts: torch.Tensor
+    - _total_trials: int
+    - tonic_dopamine: float
+    - last_action: Optional[int]
+    - exploring: bool
+    """
+    
+    # Type hints for mixin - these are provided by Striatum
+    striatum_config: "StriatumConfig"
+    n_actions: int
+    neurons_per_action: int
+    device: torch.device
+    d1_weights: torch.Tensor
+    d2_weights: torch.Tensor
+    _d1_votes_accumulated: torch.Tensor
+    _d2_votes_accumulated: torch.Tensor
+    _action_counts: torch.Tensor
+    _total_trials: int
+    tonic_dopamine: float
+    last_action: Optional[int]
+    exploring: bool
+    state: Any
+
+    def _get_action_population_indices(self, action: int) -> slice:
+        """Get the slice of neuron indices for a given action.
+
+        With population coding enabled:
+        - Action 0 → neurons 0 to neurons_per_action-1
+        - Action 1 → neurons neurons_per_action to 2*neurons_per_action-1
+        - etc.
+        """
+        start = action * self.neurons_per_action
+        end = start + self.neurons_per_action
+        return slice(start, end)
+
+    def _decode_action_from_spikes(self, spikes: torch.Tensor) -> int:
+        """Decode action from spike pattern using population voting.
+
+        Returns the action whose population has the most spikes.
+        """
+        spikes = spikes.squeeze()
+
+        if not self.striatum_config.population_coding:
+            # Simple argmax for single-neuron coding
+            if spikes.sum() == 0:
+                return 0  # Default action
+            return int(spikes.argmax().item())
+
+        # Population coding: sum spikes per action population
+        votes = torch.zeros(self.n_actions, device=self.device)
+        for action in range(self.n_actions):
+            pop_slice = self._get_action_population_indices(action)
+            votes[action] = spikes[pop_slice].sum()
+
+        return int(votes.argmax().item())
+
+    def _count_population_votes(self, spikes: torch.Tensor) -> torch.Tensor:
+        """Count spike votes for each action population.
+
+        Used for D1-D2 subtraction to compute NET signal per action.
+
+        Args:
+            spikes: Spike tensor of shape (batch, n_output)
+
+        Returns:
+            Tensor of shape (n_actions,) with vote counts per action.
+        """
+        spikes = spikes.squeeze()
+        votes = torch.zeros(self.n_actions, device=self.device)
+
+        for action in range(self.n_actions):
+            pop_slice = self._get_action_population_indices(action)
+            votes[action] = spikes[pop_slice].sum()
+
+        return votes
+
+    def _get_action_net_values(self) -> List[float]:
+        """Get NET (D1-D2) value for each action.
+
+        Used for uncertainty-driven exploration: when NET values are similar
+        across actions, we're uncertain and should explore more.
+
+        Returns:
+            List of NET values, one per action.
+        """
+        nets = []
+        for action in range(self.n_actions):
+            start = action * self.neurons_per_action
+            end = start + self.neurons_per_action
+
+            d1_mean = self.d1_weights[start:end].mean().item()
+            d2_mean = self.d2_weights[start:end].mean().item()
+            nets.append(d1_mean - d2_mean)
+
+        return nets
+
+    def get_selected_action(self) -> Optional[int]:
+        """Get the last selected action.
+
+        Returns:
+            Action index (0 to n_actions-1), or None if no action taken.
+        """
+        return self.last_action
+
+    def get_accumulated_net_votes(self) -> torch.Tensor:
+        """Get accumulated D1-D2 (NET) votes across all timesteps.
+
+        This integrates sparse spiking evidence over the trial for robust
+        action selection. Call this at the end of a trial, then use
+        reset_accumulated_votes() before the next trial.
+
+        Returns:
+            Tensor of shape (n_actions,) with NET = D1_total - D2_total per action.
+        """
+        return self._d1_votes_accumulated - self._d2_votes_accumulated
+
+    def reset_accumulated_votes(self) -> None:
+        """Reset D1/D2 vote accumulators for a new trial."""
+        self._d1_votes_accumulated.zero_()
+        self._d2_votes_accumulated.zero_()
+
+    def update_action_counts(self, action: int) -> None:
+        """Update UCB action counts after a trial completes.
+
+        This should be called ONCE per trial by the brain_system after
+        action selection is finalized. Not called inside forward() because
+        forward() runs multiple times per timestep.
+
+        Args:
+            action: The action that was selected (0 to n_actions-1)
+        """
+        self._action_counts[action] += 1
+        self._total_trials += 1
+
+    def finalize_action(self, explore: bool = True) -> Dict[str, Any]:
+        """Finalize action selection at the end of a trial.
+
+        This consolidates the accumulated NET votes, applies UCB bonus,
+        performs softmax (or argmax) selection, updates action counts ONCE,
+        and returns diagnostics.
+
+        Args:
+            explore: Whether to allow exploration (bias-correcting + tonic DA)
+
+        Returns:
+            Dict with keys: selected_action, probs (if softmax), ucb_bonus,
+            net_votes, exploring (bool), exploration_prob
+        """
+        net_votes = self.get_accumulated_net_votes()
+
+        # UCB bonus
+        ucb_bonus = torch.zeros_like(net_votes)
+        if self.striatum_config.ucb_exploration and self._total_trials > 0:
+            c = self.striatum_config.ucb_coefficient
+            log_t = math.log(self._total_trials + 1)
+            for a in range(self.n_actions):
+                n_a = max(1, int(self._action_counts[a].item()))
+                ucb_bonus[a] = c * math.sqrt(log_t / n_a)
+
+        selection_values = net_votes + ucb_bonus
+
+        # Compute bias-correcting exploration probability (same as forward)
+        exploration_prob = 0.0
+        if explore:
+            action_nets = selection_values.tolist()
+            if len(action_nets) > 1:
+                net_range = max(action_nets) - min(action_nets)
+                temperature = self.striatum_config.uncertainty_temperature
+                bias_factor = net_range / (temperature + net_range) if (temperature + net_range) > 0 else 0.0
+                min_boost = self.striatum_config.min_exploration_boost
+                max_boost = 0.5
+                exploration_prob = min_boost + bias_factor * (max_boost - min_boost)
+
+            # tonic modulation
+            if self.striatum_config.tonic_modulates_exploration:
+                tonic_boost = self.tonic_dopamine * self.striatum_config.tonic_exploration_scale
+                exploration_prob = min(0.6, exploration_prob + tonic_boost)
+
+        self.exploring = False
+        probs = None
+        selected_action = 0
+
+        if explore and torch.rand(1).item() < exploration_prob:
+            # Random exploration
+            self.exploring = True
+            selected_action = int(torch.randint(0, self.n_actions, (1,)).item())
+        else:
+            if self.striatum_config.softmax_action_selection:
+                temperature = self.striatum_config.softmax_temperature
+                selection_values_norm = selection_values - selection_values.max()
+                probs = torch.softmax(selection_values_norm / temperature, dim=0)
+                selected_action = int(torch.multinomial(probs, 1).item())
+            else:
+                max_val = selection_values.max().item()
+                max_indices = (selection_values == max_val).nonzero(as_tuple=True)[0]
+                if len(max_indices) > 1:
+                    idx = int(torch.randint(len(max_indices), (1,)).item())
+                    selected_action = int(max_indices[idx].item())
+                else:
+                    selected_action = int(max_indices[0].item())
+
+        # Update bookkeeping ONCE per trial
+        self.last_action = selected_action
+        self.update_action_counts(selected_action)
+
+        return {
+            "selected_action": selected_action,
+            "probs": probs,
+            "ucb_bonus": ucb_bonus,
+            "net_votes": net_votes,
+            "exploring": self.exploring,
+            "exploration_prob": exploration_prob,
+        }
+
+    def get_population_votes(self, spikes: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Get the spike count for each action population.
+
+        Useful for analyzing decision confidence with population coding.
+
+        Args:
+            spikes: Spike tensor to analyze. If None, uses last output.
+
+        Returns:
+            Tensor of shape (n_actions,) with vote counts per action.
+        """
+        if spikes is None:
+            spikes = self.state.spikes
+        if spikes is None:
+            return torch.zeros(self.n_actions, device=self.device)
+
+        spikes = spikes.squeeze()
+        votes = torch.zeros(self.n_actions, device=self.device)
+
+        for action in range(self.n_actions):
+            pop_slice = self._get_action_population_indices(action)
+            votes[action] = spikes[pop_slice].sum()
+
+        return votes

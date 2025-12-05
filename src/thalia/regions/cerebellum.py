@@ -59,12 +59,12 @@ from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 @dataclass
 class CerebellumConfig(RegionConfig):
     """Configuration specific to cerebellar regions.
-    
+
     The cerebellum implements ERROR-CORRECTIVE learning through:
     1. Parallel fiber → Purkinje cell connections (learned)
     2. Climbing fiber error signals from inferior olive
     3. LTD when climbing fiber active with parallel fiber
-    
+
     Key biological features:
     - Error signal triggers immediate learning (not delayed like RL)
     - Can learn arbitrary input-output mappings quickly
@@ -74,21 +74,21 @@ class CerebellumConfig(RegionConfig):
     # Learning rates
     learning_rate_ltp: float = 0.02   # Rate for strengthening correct
     learning_rate_ltd: float = 0.02   # Rate for weakening incorrect
-    stdp_lr: float = 0.05  # STDP learning rate for spike-based version
-    
+    stdp_lr: float = 0.02  # STDP learning rate for spike-based version
+
     # Error signaling
     error_threshold: float = 0.01     # Minimum error to trigger learning
     temporal_window_ms: float = 10.0  # Window for coincidence detection
-    
+
     # Spike-based learning
     stdp_tau_ms: float = 20.0  # STDP trace decay constant
-    eligibility_tau_ms: float = 100.0  # Eligibility trace decay (for delayed error)
+    eligibility_tau_ms: float = 500.0  # Eligibility trace decay (increased for delayed error)
     heterosynaptic_ratio: float = 0.2  # LTD for non-active synapses
-    
+
     # Weight bounds
     soft_bounds: bool = True
     input_trace_tau_ms: float = 20.0  # Input trace decay
-    
+
     # Synaptic scaling
     synaptic_scaling_enabled: bool = True
     synaptic_scaling_target: float = 0.3
@@ -162,10 +162,10 @@ class Cerebellum(BrainRegion):
 
         self.input_trace = torch.zeros(config.n_input, device=self.device)
         self.input_trace_tau = self.cerebellum_config.input_trace_tau_ms
-        
+
         # STDP traces for spike-based learning
         self.output_trace = torch.zeros(config.n_output, device=self.device)
-        
+
         # Eligibility trace for temporal credit assignment
         # Stores pending weight changes until error signal arrives
         self.stdp_eligibility = torch.zeros(
@@ -195,9 +195,19 @@ class Cerebellum(BrainRegion):
     def forward(
         self,
         input_spikes: torch.Tensor,
+        dt: float = 1.0,
+        encoding_mod: float = 1.0,
+        retrieval_mod: float = 1.0,
         **kwargs: Any,
     ) -> torch.Tensor:
-        """Process input through cerebellar circuit."""
+        """Process input through cerebellar circuit.
+
+        Args:
+            input_spikes: Input spike pattern [batch, n_input]
+            dt: Time step in ms (currently uses config.dt_ms)
+            encoding_mod: Theta modulation for encoding (scales input gain)
+            retrieval_mod: Theta modulation for retrieval (scales output correction)
+        """
         if input_spikes.dim() == 1:
             input_spikes = input_spikes.unsqueeze(0)
 
@@ -206,35 +216,46 @@ class Cerebellum(BrainRegion):
 
         dt = self.config.dt_ms
         cfg = self.cerebellum_config
-        
-        # Update STDP traces
+
+        # ======================================================================
+        # THETA MODULATION
+        # ======================================================================
+        # Encoding phase: stronger input drive for error detection
+        # Retrieval phase: stronger output for motor correction
+        input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
+
+        # Update STDP traces (1D - designed for single timestep processing)
         trace_decay = 1.0 - dt / cfg.stdp_tau_ms
-        self.input_trace = self.input_trace * trace_decay + input_spikes.squeeze()
+        input_1d = input_spikes.squeeze(0) if input_spikes.dim() == 2 and input_spikes.shape[0] == 1 else input_spikes
+        self.input_trace = self.input_trace * trace_decay + input_1d
         self.output_trace = self.output_trace * trace_decay
 
-        # Compute synaptic input
-        g_exc = torch.matmul(input_spikes, self.weights.T)
+        # Compute synaptic input - modulated by encoding phase
+        g_exc = torch.matmul(input_spikes, self.weights.T) * input_gain
 
         # Forward through neurons
         output_spikes, _ = self.neurons(g_exc, None)
-        
+
         # Update output trace after spiking
-        self.output_trace = self.output_trace + output_spikes.squeeze()
-        
+        output_1d = output_spikes.squeeze(0) if output_spikes.dim() == 2 and output_spikes.shape[0] == 1 else output_spikes
+        self.output_trace = self.output_trace + output_1d
+
         # ======================================================================
         # Update STDP eligibility (spike-timing based)
         # ======================================================================
         # LTP: post spike with pre trace → strengthen (for target neurons)
         # LTD: pre spike with post trace → weaken (for wrong neurons)
-        ltp = torch.outer(output_spikes.squeeze(), self.input_trace)
-        ltd = torch.outer(self.output_trace, input_spikes.squeeze())
-        
-        # Compute STDP weight change direction
-        stdp_dw = cfg.stdp_lr * (ltp - cfg.heterosynaptic_ratio * ltd)
-        
-        # Accumulate into eligibility trace
-        eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
-        self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
+        # Note: STDP traces are 1D, designed for batch_size=1 temporal processing
+        if output_1d.dim() == 1 and input_1d.dim() == 1:
+            ltp = torch.outer(output_1d, self.input_trace)
+            ltd = torch.outer(self.output_trace, input_1d)
+
+            # Compute STDP weight change direction
+            stdp_dw = cfg.stdp_lr * (ltp - cfg.heterosynaptic_ratio * ltd)
+
+            # Accumulate into eligibility trace
+            eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
+            self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
 
         self.state.spikes = output_spikes
         self.state.t += 1
@@ -250,13 +271,13 @@ class Cerebellum(BrainRegion):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Apply spike-based error-corrective learning.
-        
+
         Uses STDP eligibility traces modulated by error signal:
         - Eligibility accumulates spike-timing correlations
         - Error signal (climbing fiber) gates weight changes
         - Positive error → apply eligibility (LTP for correct timing)
         - Negative error → apply anti-eligibility (LTD for incorrect timing)
-        
+
         This combines the temporal precision of STDP with the supervised
         error signal of cerebellar learning.
 
@@ -266,7 +287,7 @@ class Cerebellum(BrainRegion):
             target: Target output [batch, n_output] or None
             target_neuron: Single target neuron index (alternative to target)
             **kwargs: Additional arguments (ignored)
-            
+
         Returns:
             Dictionary with learning metrics
         """
@@ -292,7 +313,7 @@ class Cerebellum(BrainRegion):
         # Compute error via climbing fiber system
         # ======================================================================
         error = self.climbing_fiber.compute_error(output_spikes, target)
-        
+
         if error.abs().max() < cfg.error_threshold:
             return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
 
@@ -302,16 +323,16 @@ class Cerebellum(BrainRegion):
         # The key insight: use error to select WHICH neurons update
         # - Neurons with positive error (should have fired more) → LTP
         # - Neurons with negative error (fired too much) → LTD
-        
+
         error_squeezed = error.squeeze()
         if error_squeezed.dim() == 0:
             error_squeezed = error_squeezed.unsqueeze(0)
-        
+
         # Scale eligibility by per-neuron error direction
         # Positive error → apply eligibility (strengthen timing correlations)
         # Negative error → apply anti-eligibility (weaken timing correlations)
         error_sign = torch.sign(error_squeezed).unsqueeze(1)  # [n_output, 1]
-        
+
         # Modulate eligibility by error magnitude and sign
         dw = self.stdp_eligibility * error_sign * error_squeezed.abs().unsqueeze(1)
 
@@ -324,7 +345,7 @@ class Cerebellum(BrainRegion):
 
         old_weights = self.weights.clone()
         self.weights = (self.weights + dw).clamp(self.config.w_min, self.config.w_max)
-        
+
         # Synaptic scaling for homeostasis
         if cfg.synaptic_scaling_enabled:
             with torch.no_grad():
@@ -343,30 +364,30 @@ class Cerebellum(BrainRegion):
             "net_change": ltp + ltd,
             "eligibility_max": self.stdp_eligibility.abs().max().item(),
         }
-    
+
     def deliver_error(
         self,
         target: torch.Tensor,
         output_spikes: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         """Deliver error signal and apply learning from eligibility traces.
-        
+
         This allows delayed error delivery - accumulate eligibility over
         multiple timesteps, then apply learning when error is known.
-        
+
         Args:
             target: Target output pattern
             output_spikes: Current output (if None, uses last state)
-            
+
         Returns:
             Learning metrics
         """
         if output_spikes is None:
             output_spikes = self.state.spikes
-        
+
         if output_spikes is None:
             return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
-        
+
         # Use the regular learn method with accumulated eligibility
         return self.learn(
             input_spikes=torch.zeros(1, self.config.n_input, device=self.device),

@@ -37,10 +37,7 @@ class LearningRule(Enum):
     ONE_SHOT = auto()          # Single-exposure learning
     THETA_PHASE = auto()       # Phase-dependent encoding/retrieval
 
-    # Predictive coding (Cortex alternative)
-    PREDICTIVE = auto()        # Δw minimizes prediction error
-    
-    # Predictive STDP: combines spiking with prediction error modulation
+    # Predictive STDP: combines spiking with prediction error modulation (Cortex)
     PREDICTIVE_STDP = auto()   # Δw ∝ STDP × prediction_error (three-factor)
 
 
@@ -68,7 +65,7 @@ class RegionConfig:
     homeostatic_tau_ms: float = 1000.0
 
     # Timing
-    dt_ms: float = 0.1
+    dt_ms: float = 1.0
 
     # Device
     device: str = "cpu"
@@ -166,12 +163,18 @@ class BrainRegion(ABC):
     def forward(
         self,
         input_spikes: torch.Tensor,
+        dt: float = 1.0,
+        encoding_mod: float = 1.0,
+        retrieval_mod: float = 1.0,
         **kwargs
     ) -> torch.Tensor:
         """Process input through the region.
 
         Args:
             input_spikes: Input spike tensor, shape (batch, n_input)
+            dt: Time step in milliseconds
+            encoding_mod: Theta modulation for encoding (0-1, high at theta trough)
+            retrieval_mod: Theta modulation for retrieval (0-1, high at theta peak)
             **kwargs: Additional region-specific inputs
 
         Returns:
@@ -199,10 +202,21 @@ class BrainRegion(ABC):
         pass
 
     def reset(self) -> None:
-        """Reset the region's dynamic state.
+        """Reset the region's dynamic state to initial conditions.
 
-        Called between trials or episodes to clear transient state
-        while preserving learned weights.
+        This is primarily for:
+        - Testing (deterministic initial state)
+        - True episode boundaries (new game, new environment)
+        - Initialization after construction
+
+        WARNING: Do NOT use this between trials in a continuous task!
+        Real brains don't "reset" between trials. Instead, neural activity
+        decays naturally through membrane time constants. For trial-to-trial
+        transitions, use BrainSystem.inter_trial_interval() which lets
+        activity decay naturally via LIF dynamics.
+
+        This method clears ALL transient state (membrane potentials, traces,
+        spike history) while preserving learned weights.
         """
         self.state = RegionState()
         if hasattr(self.neurons, 'reset'):

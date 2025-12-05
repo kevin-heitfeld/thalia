@@ -1,0 +1,1113 @@
+"""
+EventDrivenBrain: High-level brain system using event-driven architecture.
+
+This module provides a brain system that uses the event-driven infrastructure
+for biologically realistic parallel computation.
+
+Key Differences from BrainSystem:
+=================================
+1. EVENT-DRIVEN: Regions communicate via events with axonal delays
+2. PARALLEL-READY: Can run regions on separate processes
+3. NATURAL RHYTHMS: Theta arrives at regions with phase offsets (via delays)
+4. ASYNCHRONOUS: No artificial synchronization barriers
+
+Architecture:
+=============
+
+    Sensory Input
+         │
+         ▼ (5ms delay)
+    ┌─────────┐
+    │  CORTEX │──────────────────────────────────────┐
+    │  (L4→   │                                      │
+    │   L2/3→ │                                      │
+    │   L5)   │                                      │
+    └────┬────┘                                      │
+         │                                           │
+    ┌────┴────┬─────────────┐                       │
+    │         │             │                       │
+    ▼(3ms)    ▼(6ms)        ▼(5ms)                 ▼(5ms)
+┌───────────┐ ┌─────┐    ┌──────────┐         ┌──────────┐
+│HIPPOCAMPUS│ │ PFC │    │ STRIATUM │         │ STRIATUM │
+│ (DG→CA3→  │ │     │◄───│  (D1/D2) │◄────────│  (L5→)   │
+│   CA1)    │ │     │    │          │         │          │
+└─────┬─────┘ └──┬──┘    └────┬─────┘         └──────────┘
+      │          │            │
+      ▼(5ms)     │            │
+    ┌─────┐      │            │
+    │ PFC │◄─────┘            │
+    │     │                   │
+    └──┬──┘                   │
+       │                      │
+       ▼(4ms)                 │
+    ┌──────────┐              │
+    │ STRIATUM │◄─────────────┘
+    │  (PFC→)  │
+    └────┬─────┘
+         │
+         ▼
+    Motor Output
+
+Author: Thalia Project
+Date: December 2025
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, Optional, Any
+import torch
+import torch.nn as nn
+
+from .event_system import (
+    Event, EventType, EventScheduler, ThetaGenerator, TrialPhase,
+    SpikePayload, DopaminePayload,
+    get_axonal_delay,
+)
+from .event_regions import (
+    EventDrivenCortex, EventDrivenHippocampus, EventDrivenPFC, EventDrivenStriatum,
+    EventDrivenCerebellum, EventRegionConfig,
+)
+from .parallel_executor import _ParallelExecutor
+from .sleep import SleepSystemMixin
+
+# Import actual region implementations
+from ..regions.cortex import LayeredCortex, LayeredCortexConfig
+from ..regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
+from ..regions.prefrontal import Prefrontal, PrefrontalConfig
+from ..regions.striatum import Striatum, StriatumConfig
+from ..regions.cerebellum import Cerebellum, CerebellumConfig
+from ..regions.theta_dynamics import TemporalIntegrationLayer
+
+# Import pathways for top-down modulation and consolidation
+from ..integration.pathways.spiking_attention import (
+    SpikingAttentionPathway, SpikingAttentionPathwayConfig
+)
+from ..integration.pathways.spiking_replay import (
+    SpikingReplayPathway, SpikingReplayPathwayConfig
+)
+
+
+@dataclass
+class EventDrivenBrainConfig:
+    """Configuration for the event-driven brain system.
+
+    This is a simplified configuration focusing on the key parameters.
+    For full control, create regions directly and pass them in.
+    """
+    # Region sizes
+    input_size: int = 256
+    cortex_size: int = 128
+    hippocampus_size: int = 64
+    pfc_size: int = 32
+    n_actions: int = 2
+
+    # Time settings
+    dt_ms: float = 1.0
+    theta_frequency_hz: float = 8.0
+
+    # Default timesteps for trial phases
+    encoding_timesteps: int = 15
+    delay_timesteps: int = 10
+    test_timesteps: int = 15
+
+    # Striatum settings
+    neurons_per_action: int = 10
+
+    # Execution mode
+    parallel: bool = False  # Use multiprocessing for regions
+
+    device: str = "cpu"
+
+
+class EventDrivenBrain(SleepSystemMixin, nn.Module):
+    """
+    Event-driven brain system with biologically realistic timing.
+
+    Provides high-level trial APIs similar to BrainSystem, but uses
+    event-driven infrastructure for natural temporal dynamics.
+
+    Key features:
+    1. Regions communicate via events with axonal delays
+    2. Theta rhythm arrives at regions with natural phase offsets
+    3. Spikes propagate with realistic timing
+    4. Can run in parallel mode for performance
+
+    Example:
+        brain = EventDrivenBrain(EventDrivenBrainConfig(
+            input_size=256,
+            cortex_size=128,
+            n_actions=2,
+        ))
+
+        # Process sample (encoding phase)
+        sample_result = brain.process_sample(pattern, n_timesteps=15)
+
+        # Delay period
+        delay_result = brain.delay(n_timesteps=10)
+
+        # Test and respond
+        test_result = brain.process_test(test_pattern, n_timesteps=15)
+
+        # Get action selection
+        action, confidence = brain.select_action()
+
+        # Learn from reward
+        brain.deliver_reward(reward=1.0)
+    """
+
+    def __init__(self, config: EventDrivenBrainConfig):
+        super().__init__()
+        self.config = config
+
+        # Current simulation time
+        self._current_time: float = 0.0
+
+        # Trial state
+        self._trial_phase = TrialPhase.ENCODE
+
+        # =====================================================================
+        # CREATE BRAIN REGIONS
+        # =====================================================================
+
+        # 1. CORTEX: Feature extraction (LayeredCortex with L4→L2/3→L5)
+        self.cortex = LayeredCortex(LayeredCortexConfig(
+            n_input=config.input_size,
+            n_output=config.cortex_size,
+            dt_ms=config.dt_ms,
+            device=config.device,
+        ))
+        self.cortex.reset_state(batch_size=1)
+
+        # Get cortex layer sizes
+        self._cortex_l23_size = self.cortex.l23_size
+        self._cortex_l5_size = self.cortex.l5_size
+        cortex_to_hippo_size = self._cortex_l23_size
+
+        # 2. HIPPOCAMPUS: Episodic memory
+        self.hippocampus = TrisynapticHippocampus(TrisynapticConfig(
+            n_input=cortex_to_hippo_size,
+            n_output=config.hippocampus_size,
+            dt_ms=config.dt_ms,
+            ec_l3_input_size=config.input_size,
+            device=config.device,
+        ))
+
+        # 3. PFC: Working memory
+        pfc_input_size = cortex_to_hippo_size + config.hippocampus_size
+        self.pfc = Prefrontal(PrefrontalConfig(
+            n_input=pfc_input_size,
+            n_output=config.pfc_size,
+            dt_ms=config.dt_ms,
+            device=config.device,
+        ))
+        self.pfc.reset_state(batch_size=1)
+
+        # 4. STRIATUM: Action selection
+        # Receives: cortex L5 + hippocampus + PFC
+        striatum_input = self._cortex_l5_size + config.hippocampus_size + config.pfc_size
+        self.striatum = Striatum(StriatumConfig(
+            n_input=striatum_input,
+            n_output=config.n_actions * config.neurons_per_action,
+            device=config.device,
+        ))
+        self.striatum.reset()
+
+        # 5. CEREBELLUM: Motor refinement
+        # Receives: striatum output (action signals)
+        cerebellum_input = config.n_actions * config.neurons_per_action
+        self.cerebellum = Cerebellum(CerebellumConfig(
+            n_input=cerebellum_input,
+            n_output=config.n_actions,  # Refined motor output
+            device=config.device,
+        ))
+
+        # =====================================================================
+        # CREATE EVENT-DRIVEN ADAPTERS
+        # =====================================================================
+
+        self.event_cortex = EventDrivenCortex(
+            EventRegionConfig(
+                name="cortex",
+                output_targets=["hippocampus", "pfc", "striatum"],
+            ),
+            self.cortex,
+            pfc_size=config.pfc_size,  # For top-down projection
+        )
+
+        self.event_hippocampus = EventDrivenHippocampus(
+            EventRegionConfig(
+                name="hippocampus",
+                output_targets=["pfc", "striatum"],
+            ),
+            self.hippocampus,
+        )
+
+        self.event_pfc = EventDrivenPFC(
+            EventRegionConfig(
+                name="pfc",
+                output_targets=["striatum", "cortex"],  # Top-down to cortex
+            ),
+            self.pfc,
+            cortex_input_size=self._cortex_l23_size,
+            hippocampus_input_size=config.hippocampus_size,
+        )
+
+        self.event_striatum = EventDrivenStriatum(
+            EventRegionConfig(
+                name="striatum",
+                output_targets=["cerebellum"],  # Striatum -> Cerebellum
+            ),
+            self.striatum,
+            cortex_input_size=self._cortex_l5_size,
+            hippocampus_input_size=config.hippocampus_size,
+            pfc_input_size=config.pfc_size,
+        )
+
+        self.event_cerebellum = EventDrivenCerebellum(
+            EventRegionConfig(
+                name="cerebellum",
+                output_targets=[],  # Final motor output
+            ),
+            self.cerebellum,
+        )
+
+        # Region lookup
+        self.regions = {
+            "cortex": self.event_cortex,
+            "hippocampus": self.event_hippocampus,
+            "pfc": self.event_pfc,
+            "striatum": self.event_striatum,
+            "cerebellum": self.event_cerebellum,
+        }
+
+        # =====================================================================
+        # TEMPORAL INTEGRATION LAYER
+        # =====================================================================
+
+        self.cortex_to_hippo_integrator = TemporalIntegrationLayer(
+            n_neurons=cortex_to_hippo_size,
+            tau=50.0,
+            threshold=0.5,
+            gain=2.0,
+            device=torch.device(config.device),
+        )
+
+        # =====================================================================
+        # THETA RHYTHM
+        # =====================================================================
+
+        self.theta = ThetaGenerator(
+            frequency_hz=config.theta_frequency_hz,
+            connected_regions=list(self.regions.keys()),
+        )
+
+        # =====================================================================
+        # LEARNABLE PATHWAYS
+        # =====================================================================
+
+        # Attention pathway: PFC → Cortex top-down modulation
+        self.attention_pathway = SpikingAttentionPathway(
+            SpikingAttentionPathwayConfig(
+                source_size=config.pfc_size,
+                target_size=config.input_size,
+            )
+        )
+
+        # Replay pathway: Hippocampus → Cortex consolidation (during sleep)
+        self.replay_pathway = SpikingReplayPathway(
+            SpikingReplayPathwayConfig(
+                source_size=config.hippocampus_size,
+                target_size=config.cortex_size,
+            )
+        )
+
+        # =====================================================================
+        # EVENT SCHEDULER (for sequential mode)
+        # =====================================================================
+
+        self.scheduler = EventScheduler()
+
+        # =====================================================================
+        # PARALLEL EXECUTION (optional)
+        # =====================================================================
+
+        self._parallel_executor: Optional[_ParallelExecutor] = None
+        if config.parallel:
+            self._init_parallel_executor()
+
+        # State tracking
+        self._last_cortex_output: Optional[torch.Tensor] = None
+        self._last_hippo_output: Optional[torch.Tensor] = None
+        self._last_pfc_output: Optional[torch.Tensor] = None
+        self._last_action: Optional[int] = None
+        self._global_dopamine: float = 0.0
+
+        # Monitoring
+        self._spike_counts: Dict[str, int] = {name: 0 for name in self.regions}
+        self._events_processed: int = 0
+
+    def _init_parallel_executor(self) -> None:
+        """Initialize parallel executor with region creators.
+        
+        Note: Parallel mode is experimental. On Windows, multiprocessing uses
+        "spawn" which requires pickleable region creators. This implementation
+        uses the existing module-level creator functions from parallel_executor.py
+        for now. For full config customization in parallel mode, consider using
+        the sequential mode (parallel=False).
+        """
+        from .parallel_executor import (
+            _create_real_cortex, _create_real_hippocampus,
+            _create_real_pfc, _create_real_striatum,
+        )
+        
+        # Create parallel executor with module-level creators
+        # These are pickle-able because they're defined at module level
+        self._parallel_executor = _ParallelExecutor(
+            region_creators={
+                "cortex": _create_real_cortex,
+                "hippocampus": _create_real_hippocampus,
+                "pfc": _create_real_pfc,
+                "striatum": _create_real_striatum,
+            },
+            theta_frequency=self.config.theta_frequency_hz,
+        )
+        self._parallel_executor.start()
+
+    def __del__(self):
+        """Clean up parallel executor if active."""
+        if hasattr(self, '_parallel_executor') and self._parallel_executor is not None:
+            try:
+                self._parallel_executor.stop()
+            except Exception:
+                pass  # Ignore errors during cleanup
+
+    # =========================================================================
+    # HIGH-LEVEL TRIAL APIs
+    # =========================================================================
+
+    def process_sample(
+        self,
+        sample_pattern: torch.Tensor,
+        n_timesteps: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Process sample pattern (encoding phase).
+
+        Routes information through:
+        1. Sensory → Cortex (feature extraction)
+        2. Cortex → Hippocampus (encoding via CA3 attractors)
+        3. Cortex + Hippo → PFC (working memory)
+
+        Args:
+            sample_pattern: Input pattern to encode [input_size]
+            n_timesteps: Number of timesteps to process
+
+        Returns:
+            Dict with region activities for monitoring
+        """
+        n_timesteps = n_timesteps or self.config.encoding_timesteps
+
+        # Set trial phase
+        self._trial_phase = TrialPhase.ENCODE
+        self.theta.align_to_encoding()
+
+        # Prepare hippocampus for new trial
+        self.hippocampus.new_trial()
+        self.cortex_to_hippo_integrator.clear()
+
+        # Process timesteps
+        results = self._run_timesteps(
+            sensory_input=sample_pattern,
+            n_timesteps=n_timesteps,
+            trial_phase=TrialPhase.ENCODE,
+        )
+
+        return results
+
+    def delay(
+        self,
+        n_timesteps: Optional[int] = None,
+        dopamine: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Delay period (maintenance phase).
+
+        PFC maintains working memory, other regions decay.
+
+        Args:
+            n_timesteps: Number of delay timesteps
+            dopamine: Tonic dopamine level during delay
+
+        Returns:
+            Dict with region activities
+        """
+        n_timesteps = n_timesteps or self.config.delay_timesteps
+        self._trial_phase = TrialPhase.DELAY
+
+        results = self._run_timesteps(
+            sensory_input=None,
+            n_timesteps=n_timesteps,
+            trial_phase=TrialPhase.DELAY,
+            dopamine=dopamine,
+        )
+
+        return results
+
+    def process_test(
+        self,
+        test_pattern: torch.Tensor,
+        n_timesteps: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Process test pattern (retrieval/comparison phase).
+
+        Hippocampus compares test to stored sample via NMDA mechanism.
+
+        Args:
+            test_pattern: Test pattern to compare [input_size]
+            n_timesteps: Number of timesteps
+
+        Returns:
+            Dict with region activities and comparison result
+        """
+        n_timesteps = n_timesteps or self.config.test_timesteps
+
+        # Set trial phase
+        self._trial_phase = TrialPhase.RETRIEVE
+        self.theta.align_to_retrieval()
+
+        results = self._run_timesteps(
+            sensory_input=test_pattern,
+            n_timesteps=n_timesteps,
+            trial_phase=TrialPhase.RETRIEVE,
+        )
+
+        return results
+
+    def select_action(self, explore: bool = True) -> tuple[int, float]:
+        """Select action based on current striatum state.
+
+        Uses the striatum's finalize_action method which handles:
+        - Accumulated NET votes (D1-D2)
+        - UCB exploration bonus
+        - Softmax selection
+
+        Args:
+            explore: Whether to allow exploration
+
+        Returns:
+            (action, confidence): Selected action index and confidence [0, 1]
+        """
+        # Use striatum's finalize_action method
+        result = self.striatum.finalize_action(explore=explore)
+
+        action = result.get("selected_action", 0)
+        probs = result.get("probs", None)
+
+        if probs is not None:
+            confidence = float(probs[action].item())
+        else:
+            confidence = 1.0
+
+        self._last_action = action
+
+        return action, confidence
+
+    def deliver_reward(
+        self,
+        reward: float,
+        learning_rate: Optional[float] = None,
+    ) -> None:
+        """Deliver reward signal for learning.
+
+        Broadcasts dopamine to all regions and triggers plasticity.
+
+        Args:
+            reward: Reward value (-1 to +1)
+            learning_rate: Optional learning rate override
+        """
+        # Set global dopamine
+        self._global_dopamine = reward
+
+        # Create dopamine events for all regions
+        for region_name in self.regions:
+            delay = get_axonal_delay("vta", region_name)
+            event = Event(
+                time=self._current_time + delay,
+                event_type=EventType.DOPAMINE,
+                source="reward_system",
+                target=region_name,
+                payload=DopaminePayload(
+                    level=reward,
+                    is_burst=reward > 0.5,
+                    is_dip=reward < -0.5,
+                ),
+            )
+            self.scheduler.schedule(event)
+
+        # Process dopamine events
+        self._process_pending_events()
+
+        # Trigger striatum learning
+        if self._last_action is not None:
+            self.striatum.deliver_reward(reward)
+
+    def store_experience(
+        self,
+        is_match: bool,
+        selected_action: int,
+        correct: bool,
+        reward: float,
+        sample_pattern: Optional[torch.Tensor] = None,
+        test_pattern: Optional[torch.Tensor] = None,
+    ) -> None:
+        """Store experience for later replay.
+
+        Delegates to hippocampus with priority boosting for
+        rare/important experiences. This should be called after
+        deliver_reward() to store the completed trial.
+
+        Args:
+            is_match: Whether trial was a match
+            selected_action: Action that was taken (0=MATCH, 1=NO-MATCH)
+            correct: Whether action was correct
+            reward: Reward received
+            sample_pattern: Original sample (optional)
+            test_pattern: Test pattern (optional)
+        """
+        priority_boost = 0.0
+
+        # Boost correct NOMATCH selections (rare!)
+        if correct and selected_action == 1:
+            priority_boost += 3.0
+
+        # Boost NO-MATCH trials generally (minority class)
+        if not is_match:
+            priority_boost += 1.5
+
+        # Construct state from current brain activity
+        # Combine cortex L5 + hippocampus + PFC as the state
+        cortex_L5 = self.cortex.state.l5_spikes
+        if cortex_L5 is None:
+            cortex_L5 = torch.zeros(1, self._cortex_l5_size)
+
+        hippo_out = self.hippocampus.state.ca1_spikes
+        if hippo_out is None:
+            hippo_out = torch.zeros(1, self.config.hippocampus_size)
+
+        pfc_out = self.pfc.state.spikes
+        if pfc_out is None:
+            pfc_out = torch.zeros(1, self.config.pfc_size)
+
+        combined_state = torch.cat([
+            cortex_L5.view(-1),
+            hippo_out.view(-1),
+            pfc_out.view(-1),
+        ])
+
+        self.hippocampus.store_episode(
+            state=combined_state,
+            action=selected_action,
+            reward=reward,
+            correct=correct,
+            context=sample_pattern,
+            metadata={
+                "is_match": is_match,
+                "test_pattern": test_pattern.clone() if test_pattern is not None else None,
+            },
+            priority_boost=priority_boost,
+        )
+
+    def reset(self) -> None:
+        """Reset brain state for new episode."""
+        self._current_time = 0.0
+        self._trial_phase = TrialPhase.ENCODE
+        self.theta.reset()
+        self.scheduler = EventScheduler()
+
+        # Reset regions
+        self.cortex.reset_state(batch_size=1)
+        self.pfc.reset_state(batch_size=1)
+        self.striatum.reset()
+        self.hippocampus.new_trial()
+        self.cortex_to_hippo_integrator.clear()
+
+        # Reset monitoring
+        self._spike_counts = {name: 0 for name in self.regions}
+        self._events_processed = 0
+        self._last_action = None
+
+    def inter_trial_interval(
+        self,
+        n_timesteps: int = 50,
+        dopamine: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Run network with null input to let states decay naturally.
+
+        This handles both:
+        1. Between-trial rest (default, dopamine=0.0)
+        2. Within-trial delay period (dopamine=-0.3 for gate closed)
+
+        What happens during this period:
+        1. No sensory input (just baseline noise)
+        2. Membrane potentials naturally decay via LIF dynamics
+        3. Spike-frequency adaptation (SFA) decays back to baseline
+        4. Lateral inhibition (recent_spikes) decays
+        5. CA1 membranes decay (critical for match/mismatch detection!)
+        6. Striatum membranes decay (prevent carryover between trials!)
+        7. Weights (memories) are PRESERVED
+
+        Note: Default of 50 timesteps allows adaptation states to decay
+        significantly (SFA: 50 steps at tau=200 → ~78% decay of exp(-50/200)).
+        For the cortex lateral inhibition (0.9 decay), 50 steps → 0.9^50 ≈ 0.5%
+
+        Args:
+            n_timesteps: Duration of rest period (default 50 = ~50ms)
+            dopamine: PFC dopamine level (0.0 = neutral, -0.3 = gate closed)
+
+        Returns:
+            Dict with PFC activity and processing stats
+        """
+        # Null input for each region
+        null_input = torch.zeros(1, self.config.input_size)
+        pfc_total = torch.zeros(self.config.pfc_size)
+
+        # Create null striatum input (L5 + hippo + PFC)
+        striatum_null = torch.zeros(
+            1,
+            self._cortex_l5_size + self.config.hippocampus_size + self.config.pfc_size
+        )
+
+        for _ in range(n_timesteps):
+            # Advance global theta rhythm
+            self.theta.advance()
+            self._current_time += self.config.dt_ms
+
+            # Get current theta modulation
+            enc_mod = self.theta.encoding_strength
+            ret_mod = self.theta.retrieval_strength
+
+            # Cortex processes null input - membrane decays naturally
+            cortex_out = self.cortex.forward(
+                null_input,
+                encoding_mod=enc_mod,
+                retrieval_mod=ret_mod,
+            )
+
+            # Get L2/3 for hippocampus and PFC (use layer spikes from state)
+            cortex_L23 = self.cortex.state.l23_spikes
+            if cortex_L23 is None:
+                cortex_L23 = torch.zeros(1, self._cortex_l23_size)
+
+            # Hippocampus in DELAY phase: CA3 maintains, CA1 idles
+            hippo_input = self.cortex_to_hippo_integrator.integrate(cortex_L23)
+            hippo_out = self.hippocampus.forward(
+                hippo_input,
+                phase=TrialPhase.DELAY,
+                encoding_mod=enc_mod,
+                retrieval_mod=ret_mod,
+            )
+
+            # PFC receives cortex L2/3 + hippo concatenated
+            pfc_input = torch.cat([cortex_L23.view(-1), hippo_out.view(-1)])
+            pfc_out = self.pfc.forward(
+                pfc_input.unsqueeze(0),
+                dopamine_signal=dopamine,
+                encoding_mod=enc_mod,
+                retrieval_mod=ret_mod,
+            )
+            pfc_total += pfc_out.squeeze()
+
+            # CRITICAL: Run striatum with null input so membrane potentials decay!
+            # Without this, striatum neurons accumulate activity across trials
+            self.striatum.forward(striatum_null, explore=False)
+
+        return {
+            "pfc": pfc_total,
+            "timesteps": n_timesteps,
+            "current_time": self._current_time,
+        }
+
+    # =========================================================================
+    # COMPARISON SIGNAL (MATCH/MISMATCH DETECTION)
+    # =========================================================================
+
+    def _compute_comparison_signal(
+        self,
+        hippo_activity: torch.Tensor,
+        n_timesteps: int,
+        current_timestep: int,
+    ) -> torch.Tensor:
+        """Compute match/mismatch comparison signal using temporal burst coding.
+
+        Accumulates CA1 activity over the test phase, then generates synchronized
+        bursts in the decision window to signal match vs mismatch.
+
+        Args:
+            hippo_activity: Current hippocampal output [batch, hippo_size]
+            n_timesteps: Total timesteps in phase
+            current_timestep: Current timestep index
+
+        Returns:
+            Comparison signal [batch, comparison_size] for striatum
+        """
+        comparison_size = getattr(self.config, 'comparison_size', 4)
+        batch_size = hippo_activity.shape[0] if hippo_activity.dim() > 1 else 1
+
+        # Accumulate CA1 activity
+        if not hasattr(self, '_ca1_accumulated'):
+            self._ca1_accumulated = 0.0
+
+        ca1_sum = hippo_activity.sum().item()
+        self._ca1_accumulated += ca1_sum
+
+        # Decision window: last 20% of phase
+        decision_start = int(n_timesteps * 0.8)
+
+        if current_timestep >= decision_start:
+            # Compute similarity from accumulated activity
+            # High activity = match (CA3 retrieval succeeded)
+            # Low activity = mismatch (pattern not in CA3)
+
+            avg_activity = self._ca1_accumulated / (current_timestep + 1)
+
+            # Threshold for match/mismatch decision
+            match_threshold = 0.5  # Tunable parameter
+
+            if avg_activity > match_threshold:
+                # MATCH: Strong synchronized burst to match neurons
+                signal = torch.zeros(batch_size, comparison_size)
+                signal[:, :comparison_size // 2] = 1.0  # Match neurons fire
+                self._last_comparison_decision = 'MATCH'
+            else:
+                # MISMATCH: Strong synchronized burst to mismatch neurons
+                signal = torch.zeros(batch_size, comparison_size)
+                signal[:, comparison_size // 2:] = 1.0  # Mismatch neurons fire
+                self._last_comparison_decision = 'MISMATCH'
+
+            self._last_similarity = avg_activity
+            return signal.squeeze() if batch_size == 1 else signal
+        else:
+            # Not in decision window - return zeros
+            return torch.zeros(comparison_size)
+
+    # =========================================================================
+    # COUNTERFACTUAL LEARNING
+    # =========================================================================
+
+    def deliver_reward_with_counterfactual(
+        self,
+        reward: float,
+        is_match: bool,
+        selected_action: int,
+        counterfactual_scale: float = 0.5,
+    ) -> Dict[str, Any]:
+        """Deliver reward with counterfactual learning for non-selected action.
+
+        Implements model-based RL: after experiencing a real outcome, we also
+        simulate "what would have happened if I had chosen differently?"
+
+        This solves asymmetric learning where only the selected action updates.
+        Now BOTH actions learn on every trial:
+        - Selected action: learns from actual outcome
+        - Non-selected action: learns from counterfactual (imagined) outcome
+
+        Args:
+            reward: Actual reward received
+            is_match: Whether this was a match trial
+            selected_action: Action that was actually taken (0=MATCH, 1=NOMATCH)
+            counterfactual_scale: How much to scale counterfactual learning (0-1)
+
+        Returns:
+            Dict with both real and counterfactual learning metrics
+        """
+        # Get novelty-based learning boost if available
+        novelty_boost = self._get_novelty_boost()
+        modulated_reward = reward * novelty_boost
+        self._global_dopamine = modulated_reward
+
+        # 1. Real learning: update striatum for SELECTED action
+        real_result = self.striatum.deliver_reward(modulated_reward)
+
+        # 2. Counterfactual: what would the OTHER action have gotten?
+        other_action = 1 - selected_action
+
+        # Determine counterfactual reward:
+        # - If trial is MATCH: MATCH action (0) would get +1, NOMATCH (1) would get -1
+        # - If trial is NOMATCH: NOMATCH action (1) would get +1, MATCH (0) would get -1
+        correct_action = 0 if is_match else 1
+        counterfactual_reward = 1.0 if (other_action == correct_action) else -1.0
+
+        # Apply counterfactual learning
+        counterfactual_result = {}
+        if hasattr(self.striatum, 'deliver_counterfactual_reward'):
+            counterfactual_result = self.striatum.deliver_counterfactual_reward(
+                reward=counterfactual_reward,
+                action=other_action,
+                counterfactual_scale=counterfactual_scale,
+            )
+
+        # Reset eligibility after both learnings
+        if hasattr(self.striatum, 'reset_eligibility'):
+            self.striatum.reset_eligibility()
+
+        # Update attention pathway
+        attention_result = self.attention_pathway.learn(
+            source_activity=torch.zeros(self.config.pfc_size),
+            target_activity=torch.zeros(self.config.cortex_size),
+            dopamine=modulated_reward,
+        )
+
+        return {
+            "real": real_result,
+            "counterfactual": counterfactual_result,
+            "selected_action": selected_action,
+            "other_action": other_action,
+            "counterfactual_reward": counterfactual_reward,
+            "attention_pathway": attention_result,
+            "novelty_boost": novelty_boost,
+        }
+
+    def _get_novelty_boost(self) -> float:
+        """Get novelty-based learning rate multiplier."""
+        # Simple implementation - can be enhanced with actual novelty detection
+        if not hasattr(self, '_novelty_signal'):
+            self._novelty_signal = 1.0
+        return max(1.0, self._novelty_signal)
+
+    # =========================================================================
+    # INTERNAL METHODS
+    # =========================================================================
+
+    def _run_timesteps(
+        self,
+        sensory_input: Optional[torch.Tensor],
+        n_timesteps: int,
+        trial_phase: TrialPhase,
+        dopamine: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Run simulation for specified timesteps.
+        
+        Delegates to parallel executor if parallel mode is enabled,
+        otherwise runs sequentially in the main process.
+        """
+        if self._parallel_executor is not None:
+            return self._run_timesteps_parallel(
+                sensory_input, n_timesteps, trial_phase, dopamine
+            )
+        return self._run_timesteps_sequential(
+            sensory_input, n_timesteps, trial_phase, dopamine
+        )
+
+    def _run_timesteps_parallel(
+        self,
+        sensory_input: Optional[torch.Tensor],
+        n_timesteps: int,
+        trial_phase: TrialPhase,
+        dopamine: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Run simulation using parallel executor."""
+        assert self._parallel_executor is not None
+        
+        end_time = self._current_time + n_timesteps * self.config.dt_ms
+        
+        # Inject sensory input if provided
+        if sensory_input is not None:
+            self._parallel_executor.inject_sensory_input(
+                sensory_input, 
+                target="cortex",
+                time=self._current_time,
+            )
+        
+        # Inject dopamine if specified
+        if abs(dopamine) > 1e-6:
+            self._parallel_executor.inject_reward(dopamine, time=self._current_time)
+        
+        # Run parallel simulation
+        result = self._parallel_executor.run_until(end_time)
+        
+        # Update local state
+        self._current_time = end_time
+        self._spike_counts = result["spike_counts"]
+        self._events_processed = result["events_processed"]
+        
+        return {
+            "cortex_activity": torch.zeros(self._cortex_l23_size),
+            "hippocampus_activity": torch.zeros(self.config.hippocampus_size),
+            "pfc_activity": torch.zeros(self.config.pfc_size),
+            "spike_counts": self._spike_counts.copy(),
+            "events_processed": self._events_processed,
+            "final_time": self._current_time,
+        }
+
+    def _run_timesteps_sequential(
+        self,
+        sensory_input: Optional[torch.Tensor],
+        n_timesteps: int,
+        trial_phase: TrialPhase,
+        dopamine: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Run simulation sequentially in main process."""
+
+        # Track activities for monitoring
+        cortex_total = torch.zeros(self._cortex_l23_size)
+        hippo_total = torch.zeros(self.config.hippocampus_size)
+        pfc_total = torch.zeros(self.config.pfc_size)
+
+        for t in range(n_timesteps):
+            step_time = self._current_time + t * self.config.dt_ms
+
+            # Advance theta and schedule theta events
+            theta_events = self.theta.advance_to(step_time)
+            self.scheduler.schedule_many(theta_events)
+
+            # Schedule sensory input if provided
+            if sensory_input is not None:
+                delay = get_axonal_delay("sensory", "cortex")
+                event = Event(
+                    time=step_time + delay,
+                    event_type=EventType.SENSORY,
+                    source="sensory_input",
+                    target="cortex",
+                    payload=SpikePayload(spikes=sensory_input),
+                )
+                self.scheduler.schedule(event)
+
+            # Schedule dopamine if specified
+            if abs(dopamine) > 1e-6:
+                for region_name in ["striatum", "pfc"]:
+                    delay = get_axonal_delay("vta", region_name)
+                    event = Event(
+                        time=step_time + delay,
+                        event_type=EventType.DOPAMINE,
+                        source="tonic_dopamine",
+                        target=region_name,
+                        payload=DopaminePayload(level=dopamine),
+                    )
+                    self.scheduler.schedule(event)
+
+        # Update time
+        end_time = self._current_time + n_timesteps * self.config.dt_ms
+
+        # Process all events up to end_time
+        self._process_events_until(end_time)
+
+        self._current_time = end_time
+
+        return {
+            "cortex_activity": cortex_total,
+            "hippocampus_activity": hippo_total,
+            "pfc_activity": pfc_total,
+            "spike_counts": self._spike_counts.copy(),
+            "events_processed": self._events_processed,
+            "final_time": self._current_time,
+        }
+
+    def _process_events_until(self, end_time: float) -> None:
+        """Process all scheduled events up to end_time."""
+        while True:
+            event = self.scheduler.pop_next()
+            if event is None or event.time > end_time:
+                # Put event back if we overshot
+                if event is not None:
+                    self.scheduler.schedule(event)
+                break
+
+            # Route event to target region
+            if event.target in self.regions:
+                region = self.regions[event.target]
+                output_events = region.process_event(event)
+
+                # Schedule output events
+                for out_event in output_events:
+                    self.scheduler.schedule(out_event)
+
+                    # Track spikes
+                    if out_event.event_type == EventType.SPIKE:
+                        payload = out_event.payload
+                        if isinstance(payload, SpikePayload):
+                            self._spike_counts[event.target] += int(payload.spikes.sum().item())
+
+                self._events_processed += 1
+
+    def _process_pending_events(self) -> None:
+        """Process all pending events (used for reward delivery)."""
+        max_time = self._current_time + 100.0  # Process up to 100ms ahead
+        self._process_events_until(max_time)
+
+    # =========================================================================
+    # DIAGNOSTICS
+    # =========================================================================
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostic information about brain state."""
+        return {
+            "current_time": self._current_time,
+            "trial_phase": self._trial_phase.value,
+            "theta_phase": self.theta.phase,
+            "encoding_strength": self.theta.encoding_strength,
+            "retrieval_strength": self.theta.retrieval_strength,
+            "spike_counts": self._spike_counts.copy(),
+            "events_processed": self._events_processed,
+            "global_dopamine": self._global_dopamine,
+            "last_action": self._last_action,
+        }
+
+
+# =============================================================================
+# SIMPLE TEST
+# =============================================================================
+
+def test_event_driven_brain():
+    """Basic test of EventDrivenBrain."""
+    print("\n=== Test: EventDrivenBrain ===")
+
+    config = EventDrivenBrainConfig(
+        input_size=100,
+        cortex_size=64,
+        hippocampus_size=40,
+        pfc_size=20,
+        n_actions=2,
+    )
+
+    brain = EventDrivenBrain(config)
+    print(f"  Created brain with {len(brain.regions)} regions")
+
+    # Create sample pattern
+    sample = (torch.rand(100) > 0.5).float()
+    print(f"  Sample pattern: {sample.sum().item():.0f}/100 active")
+
+    # Process sample
+    print("\n  Processing sample (encoding)...")
+    result = brain.process_sample(sample, n_timesteps=10)
+    print(f"    Events processed: {result['events_processed']}")
+    print(f"    Spike counts: {result['spike_counts']}")
+
+    # Delay
+    print("\n  Delay period...")
+    result = brain.delay(n_timesteps=5)
+    print(f"    Events processed: {result['events_processed']}")
+
+    # Process test (same pattern = match)
+    print("\n  Processing test (retrieval)...")
+    result = brain.process_test(sample, n_timesteps=10)
+    print(f"    Events processed: {result['events_processed']}")
+
+    # Select action
+    action, confidence = brain.select_action()
+    print(f"\n  Selected action: {action} (confidence: {confidence:.2f})")
+
+    # Deliver reward
+    print("  Delivering reward...")
+    brain.deliver_reward(reward=1.0)
+
+    # Diagnostics
+    diag = brain.get_diagnostics()
+    print(f"\n  Final state:")
+    print(f"    Time: {diag['current_time']:.1f}ms")
+    print(f"    Phase: {diag['trial_phase']}")
+    print(f"    Total events: {diag['events_processed']}")
+
+    print("\n  PASSED: EventDrivenBrain works correctly")
+
+
+if __name__ == "__main__":
+    test_event_driven_brain()

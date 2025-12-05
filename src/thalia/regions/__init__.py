@@ -46,11 +46,11 @@ Example Usage:
 ==============
 
 ```python
-from thalia.regions import Cortex, Cerebellum, Striatum
+from thalia.regions import LayeredCortex, LayeredCortexConfig, Cerebellum, Striatum
 
-# Unsupervised feature learning
-cortex = Cortex(n_input=20, n_output=10)
-cortex.learn(input_pattern)  # Discovers structure via Hebbian learning
+# Unsupervised feature learning (layered cortex with L4→L2/3→L5)
+config = LayeredCortexConfig(n_input=20, n_output=10)
+cortex = LayeredCortex(config)
 
 # Supervised sequence learning
 cerebellum = Cerebellum(n_input=20, n_output=10)
@@ -70,11 +70,12 @@ Biological References:
 """
 
 from thalia.regions.base import BrainRegion, LearningRule, RegionConfig, RegionState
-from thalia.regions.cortex import Cortex, CortexConfig
+from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 from thalia.regions.striatum import Striatum, StriatumConfig
-from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
+from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
+from thalia.regions.theta_dynamics import TrialPhase, ThetaState, ThetaConfig, FeedforwardInhibition
 
 __all__ = [
     # Base classes
@@ -82,15 +83,24 @@ __all__ = [
     "LearningRule",
     "RegionConfig",
     "RegionState",
-    # Regions
-    "Cortex",
-    "CortexConfig",
+    # Cortex (LayeredCortex with L4→L2/3→L5)
+    "LayeredCortex",
+    "LayeredCortexConfig",
+    # Cerebellum
     "Cerebellum",
     "CerebellumConfig",
+    # Striatum
     "Striatum",
     "StriatumConfig",
-    "Hippocampus",
-    "HippocampusConfig",
+    # Prefrontal
     "Prefrontal",
     "PrefrontalConfig",
+    # Hippocampus (Trisynaptic: DG→CA3→CA1)
+    "TrisynapticHippocampus",
+    "TrisynapticConfig",
+    # Theta dynamics
+    "TrialPhase",
+    "ThetaState",
+    "ThetaConfig",
+    "FeedforwardInhibition",
 ]

@@ -4,15 +4,12 @@ import pytest
 import torch
 
 from thalia.core.neuron import LIFNeuron, LIFConfig, ConductanceLIF, ConductanceLIFConfig
-from thalia.core.layer import SNNLayer
-from thalia.core.network import SNNNetwork
 from thalia.core.dendritic import (
     DendriticBranch,
     DendriticBranchConfig,
     DendriticNeuron,
     DendriticNeuronConfig,
     create_clustered_input,
-    create_scattered_input,
 )
 
 
@@ -81,82 +78,6 @@ class TestLIFNeuron:
 
         assert spikes.sum() > 0
         assert ((spikes == 0) | (spikes == 1)).all()
-
-
-class TestSNNLayer:
-    """Tests for SNN layer."""
-
-    def test_layer_forward(self):
-        """Test layer forward pass."""
-        layer = SNNLayer(n_neurons=100, input_size=50)
-        layer.reset_state(batch_size=16)
-
-        input_spikes = (torch.rand(16, 50) > 0.8).float()
-        spikes, voltages = layer(input_spikes=input_spikes)
-
-        assert spikes.shape == (16, 100)
-        assert voltages.shape == (16, 100)
-        assert spikes.dtype == torch.float32
-        assert ((spikes == 0) | (spikes == 1)).all()
-
-    def test_recurrent_connections(self):
-        """Test layer with recurrent weights."""
-        layer = SNNLayer(n_neurons=50, input_size=30, recurrent=True)
-        layer.reset_state(batch_size=8)
-
-        input_spikes = (torch.rand(8, 30) > 0.8).float()
-        spikes, _ = layer(input_spikes=input_spikes)
-
-        assert spikes.shape == (8, 50)
-
-    def test_layer_no_input_size(self):
-        """Test layer without external input."""
-        layer = SNNLayer(n_neurons=50, recurrent=True)
-        layer.reset_state(batch_size=4)
-
-        # Can run with just external current
-        spikes, _ = layer(external_current=torch.randn(4, 50) * 0.5)
-
-        assert spikes.shape == (4, 50)
-
-
-class TestSNNNetwork:
-    """Tests for multi-layer network."""
-
-    def test_network_construction(self):
-        """Test network builds correctly."""
-        network = SNNNetwork(layer_sizes=[784, 400, 100])
-
-        assert len(network.layers) == 2  # 2 layers (not counting input)
-        assert network.layers[0].n_neurons == 400
-        assert network.layers[1].n_neurons == 100
-
-    def test_network_forward(self):
-        """Test full network forward pass."""
-        network = SNNNetwork(layer_sizes=[100, 50, 10])
-        network.reset_state(batch_size=8)
-
-        input_spikes = (torch.rand(8, 100) > 0.8).float()
-        output, all_spikes = network(input_spikes)
-
-        assert output.shape == (8, 10)
-        assert len(all_spikes) == 2  # One output per layer
-
-    def test_network_with_recurrence(self):
-        """Test network with recurrent layers."""
-        network = SNNNetwork(
-            layer_sizes=[50, 30, 10],
-            recurrent=True,
-            recurrent_connectivity=0.1
-        )
-        network.reset_state(batch_size=4)
-
-        # Run multiple timesteps
-        for t in range(10):
-            input_spikes = (torch.rand(4, 50) > 0.9).float()
-            output, _ = network(input_spikes)
-
-        assert output.shape == (4, 10)
 
 
 class TestConductanceLIF:

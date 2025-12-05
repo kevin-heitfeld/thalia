@@ -32,23 +32,6 @@ pip install -e ".[dev]"
 pip install -e ".[all]"
 ```
 
-## Quick Start
-
-```python
-from thalia.core import LIFNeuron, SNNLayer
-from thalia.learning import STDP
-
-# Create a layer of 100 LIF neurons
-layer = SNNLayer(n_neurons=100, neuron_type=LIFNeuron)
-
-# Simulate for 1000ms
-spikes = layer.simulate(duration=1000, dt=1.0)
-
-# Visualize
-from thalia.visualization import plot_raster
-plot_raster(spikes)
-```
-
 ## Project Status
 
 ✅ **v0.9.2** — All 9 phases complete, 387 tests passing, 6 experiments validated
