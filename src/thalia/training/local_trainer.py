@@ -281,6 +281,7 @@ class LocalTrainer:
 
             # Compute local learning signals
             learning_signals = self._compute_learning_signals(
+                model=model,
                 result=result,
                 target_ids=target_ids,
             )
@@ -289,7 +290,7 @@ class LocalTrainer:
             self._apply_learning(model, learning_signals)
 
             # Compute metrics
-            accuracy = self._compute_accuracy(result, target_ids)
+            accuracy = self._compute_accuracy(model, result, target_ids)
             spike_rate = result.get("spike_rate", 0.0)
 
             epoch_accuracies.append(accuracy)
@@ -352,6 +353,7 @@ class LocalTrainer:
 
     def _compute_learning_signals(
         self,
+        model: "LanguageBrainInterface",
         result: Dict[str, Any],
         target_ids: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
@@ -362,20 +364,47 @@ class LocalTrainer:
         - STDP: spike timing differences
         - BCM: activity relative to threshold
         - Error: prediction vs target mismatch
+
+        Args:
+            model: LanguageBrainInterface with decoder for prediction error
+            result: Forward pass result containing brain outputs
+            target_ids: Ground truth token IDs for computing error
+
+        Returns:
+            Dictionary of learning signals for weight updates
         """
-        signals = {}
+        signals: Dict[str, torch.Tensor] = {}
 
-        # Simple prediction error signal
-        # This is a LOCAL signal based on activity mismatch
-        if "predicted_pattern" in result:
-            # Compare predicted pattern to actual next pattern
-            # (This would be more sophisticated with actual targets)
-            signals["prediction_error"] = torch.randn(1) * 0.1  # Placeholder
+        # Compute prediction error signal from decoded output vs targets
+        if len(model.output_buffer) > 0:
+            try:
+                # Decode brain outputs to token logits
+                logits = model.decode_output(temperature=1.0)  # [n_tokens, vocab_size]
 
-        # Spike rate for BCM
+                # Flatten target_ids if needed
+                if target_ids.dim() > 1:
+                    target_ids = target_ids.squeeze(0)
+
+                # Compute cross-entropy-like error for each position
+                n_compare = min(len(logits), len(target_ids))
+                if n_compare > 0:
+                    # Get probabilities
+                    probs = torch.softmax(logits[:n_compare], dim=-1)
+
+                    # Error = 1 - probability of correct token (normalized)
+                    target_probs = probs.gather(1, target_ids[:n_compare].unsqueeze(1)).squeeze(1)
+                    prediction_error = (1.0 - target_probs).mean()
+                    signals["prediction_error"] = prediction_error.unsqueeze(0)
+            except Exception:
+                # If decoding fails, use zero error
+                signals["prediction_error"] = torch.tensor([0.0])
+        else:
+            signals["prediction_error"] = torch.tensor([0.0])
+
+        # Spike rate for BCM threshold adaptation
         signals["spike_rate"] = torch.tensor(result.get("spike_rate", 0.0))
 
-        # Eligibility signal (recent activity)
+        # Eligibility signal (recent activity for credit assignment)
         if "results" in result and result["results"]:
             # Use cortex activity as eligibility proxy
             last_result = result["results"][-1]
@@ -426,22 +455,56 @@ class LocalTrainer:
 
     def _compute_accuracy(
         self,
+        model: "LanguageBrainInterface",
         result: Dict[str, Any],
         target_ids: torch.Tensor,
     ) -> float:
         """
-        Compute prediction accuracy.
+        Compute prediction accuracy by decoding brain output.
 
-        For now, this is a placeholder that returns a rough
-        estimate based on spike activity patterns.
+        Uses the model's decoder to convert brain activity to token
+        predictions, then compares against target tokens.
+
+        Args:
+            model: LanguageBrainInterface with decoder
+            result: Forward pass result containing brain outputs
+            target_ids: Ground truth token IDs [batch, seq_len] or [seq_len]
+
+        Returns:
+            Accuracy as fraction of correct predictions (0.0 to 1.0)
         """
-        # Real accuracy would compare decoded output to targets
-        # For now, return a proxy based on activity
-        spike_rate = result.get("spike_rate", 0.0)
+        # Check if we have output to decode
+        if len(model.output_buffer) == 0:
+            return 0.0
 
-        # Higher spike rate during training = better learning
-        # (This is a very rough approximation)
-        return min(spike_rate / 10.0, 1.0)  # Normalize to 0-1
+        try:
+            # Decode brain outputs to token logits
+            logits = model.decode_output(temperature=1.0)  # [n_tokens, vocab_size]
+
+            # Get predicted tokens (argmax over vocabulary)
+            predicted_ids = logits.argmax(dim=-1)  # [n_tokens]
+
+            # Flatten target_ids if needed
+            if target_ids.dim() > 1:
+                target_ids = target_ids.squeeze(0)  # [seq_len]
+
+            # Align lengths (predictions are for next-token, so offset by 1)
+            # predicted[i] should match target[i] (target is already shifted)
+            n_compare = min(len(predicted_ids), len(target_ids))
+
+            if n_compare == 0:
+                return 0.0
+
+            # Compare predictions to targets
+            correct = (predicted_ids[:n_compare] == target_ids[:n_compare]).float()
+            accuracy = correct.mean().item()
+
+            return accuracy
+
+        except Exception:
+            # Fall back to activity-based proxy if decoding fails
+            spike_rate = result.get("spike_rate", 0.0)
+            return min(spike_rate / 1000.0, 0.1)  # Very conservative estimate
 
     def save_checkpoint(self, path: Path) -> None:
         """Save training checkpoint."""
