@@ -44,6 +44,22 @@ from thalia.core.event_system import (
     get_axonal_delay,
     AXONAL_DELAYS,
 )
+from thalia.core.predictive_coding import (
+    PredictiveCodingLayer,
+    PredictiveCodingConfig,
+    PredictiveCodingState,
+    HierarchicalPredictiveCoding,
+    ErrorType,
+)
+from thalia.core.scalable_attention import (
+    ScalableSpikingAttention,
+    ScalableAttentionConfig,
+    AttentionType,
+    CoincidenceAttention,
+    WinnerTakeAllAttention,
+    GammaPhaseAttention,
+    MultiScaleSpikingAttention,
+)
 
 __all__ = [
     "LIFNeuron",
@@ -86,4 +102,18 @@ __all__ = [
     "Connection",
     "get_axonal_delay",
     "AXONAL_DELAYS",
+    # Predictive Coding
+    "PredictiveCodingLayer",
+    "PredictiveCodingConfig",
+    "PredictiveCodingState",
+    "HierarchicalPredictiveCoding",
+    "ErrorType",
+    # Scalable Spiking Attention
+    "ScalableSpikingAttention",
+    "ScalableAttentionConfig",
+    "AttentionType",
+    "CoincidenceAttention",
+    "WinnerTakeAllAttention",
+    "GammaPhaseAttention",
+    "MultiScaleSpikingAttention",
 ]

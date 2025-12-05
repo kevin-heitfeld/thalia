@@ -14,9 +14,7 @@ Usage:
 from .config import StriatumConfig
 from .dopamine import DopamineSystem, EligibilityTraces
 from .action_selection import ActionSelectionMixin
-
-# Import Striatum from legacy file until full migration is complete
-from thalia.regions._legacy_striatum import Striatum
+from .striatum import Striatum
 
 __all__ = [
     "Striatum",

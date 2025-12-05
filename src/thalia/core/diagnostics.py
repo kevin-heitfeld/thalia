@@ -182,6 +182,16 @@ class DiagnosticsManager:
         self._epoch_count += 1
         self._trial_count = 0
 
+    @property
+    def trial_count(self) -> int:
+        """Get current trial count."""
+        return self._trial_count
+
+    @property
+    def epoch_count(self) -> int:
+        """Get current epoch count."""
+        return self._epoch_count
+
     # =========================================================================
     # FORMATTED OUTPUT
     # =========================================================================

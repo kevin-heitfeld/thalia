@@ -17,8 +17,8 @@ Usage:
 
 from .config import Episode, TrisynapticConfig, TrisynapticState
 
-# Import main class from legacy file until full migration
-from thalia.regions._legacy_hippocampus import TrisynapticHippocampus
+# Import main class from package
+from .trisynaptic import TrisynapticHippocampus
 
 __all__ = [
     "TrisynapticHippocampus",

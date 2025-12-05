@@ -70,6 +70,13 @@ from .event_regions import (
 )
 from .parallel_executor import _ParallelExecutor
 from .sleep import SleepSystemMixin
+from .diagnostics import (
+    DiagnosticsManager,
+    DiagnosticLevel,
+    StriatumDiagnostics,
+    HippocampusDiagnostics,
+    BrainSystemDiagnostics,
+)
 
 # Import actual region implementations
 from ..regions.cortex import LayeredCortex, LayeredCortexConfig
@@ -116,6 +123,9 @@ class EventDrivenBrainConfig:
 
     # Execution mode
     parallel: bool = False  # Use multiprocessing for regions
+
+    # Diagnostics
+    diagnostic_level: DiagnosticLevel = DiagnosticLevel.SUMMARY
 
     device: str = "cpu"
 
@@ -346,6 +356,17 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # Monitoring
         self._spike_counts: Dict[str, int] = {name: 0 for name in self.regions}
         self._events_processed: int = 0
+
+        # =====================================================================
+        # DIAGNOSTICS
+        # =====================================================================
+
+        self.diagnostics = DiagnosticsManager(level=config.diagnostic_level)
+        self.diagnostics.configure_component("striatum", enabled=True)
+        self.diagnostics.configure_component("hippocampus", enabled=True)
+        self.diagnostics.configure_component("cortex", enabled=True)
+        self.diagnostics.configure_component("pfc", enabled=True)
+        self.diagnostics.configure_component("cerebellum", enabled=True)
 
     def _init_parallel_executor(self) -> None:
         """Initialize parallel executor with region creators.
@@ -1037,9 +1058,100 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
     # DIAGNOSTICS
     # =========================================================================
 
+    def _collect_striatum_diagnostics(self) -> StriatumDiagnostics:
+        """Collect structured diagnostics from striatum."""
+        striatum = self.striatum
+        n_actions = self.config.n_actions
+        neurons_per = self.config.neurons_per_action
+
+        # Per-action weight means
+        d1_per_action = []
+        d2_per_action = []
+        net_per_action = []
+
+        for a in range(n_actions):
+            start = a * neurons_per
+            end = start + neurons_per
+            d1_mean = striatum.d1_weights[start:end].mean().item()
+            d2_mean = striatum.d2_weights[start:end].mean().item()
+            d1_per_action.append(d1_mean)
+            d2_per_action.append(d2_mean)
+            net_per_action.append(d1_mean - d2_mean)
+
+        # Eligibility traces
+        d1_elig_per_action = []
+        d2_elig_per_action = []
+        for a in range(n_actions):
+            start = a * neurons_per
+            end = start + neurons_per
+            d1_elig_per_action.append(striatum.d1_eligibility[start:end].abs().mean().item())
+            d2_elig_per_action.append(striatum.d2_eligibility[start:end].abs().mean().item())
+
+        # UCB and exploration
+        action_counts = [int(c) for c in striatum._action_counts.tolist()] if hasattr(striatum, '_action_counts') else []
+        total_trials = int(striatum._total_trials) if hasattr(striatum, '_total_trials') else 0
+        exploration_prob = getattr(striatum, '_last_exploration_prob', 0.0)
+
+        return StriatumDiagnostics(
+            d1_per_action=d1_per_action,
+            d2_per_action=d2_per_action,
+            net_per_action=net_per_action,
+            d1_elig_per_action=d1_elig_per_action,
+            d2_elig_per_action=d2_elig_per_action,
+            last_action=self._last_action,
+            exploring=getattr(striatum, '_last_exploring', False),
+            exploration_prob=exploration_prob,
+            action_counts=action_counts,
+            total_trials=total_trials,
+        )
+
+    def _collect_hippocampus_diagnostics(self) -> HippocampusDiagnostics:
+        """Collect structured diagnostics from hippocampus."""
+        hippo = self.hippocampus
+
+        # CA1 activity (key for match/mismatch)
+        ca1_spikes = hippo.state.ca1_spikes
+        ca1_total = ca1_spikes.sum().item() if ca1_spikes is not None else 0.0
+
+        # Normalize by hippocampus size
+        ca1_normalized = ca1_total / max(1, self.config.hippocampus_size)
+
+        # Layer activity
+        dg_spikes = hippo.state.dg_spikes.sum().item() if hippo.state.dg_spikes is not None else 0.0
+        ca3_spikes = hippo.state.ca3_spikes.sum().item() if hippo.state.ca3_spikes is not None else 0.0
+
+        # Memory metrics
+        n_stored = len(hippo.episode_buffer) if hasattr(hippo, 'episode_buffer') else 0
+
+        # Get comparison decision if available
+        comparison_decision = getattr(self, '_last_comparison_decision', 'UNKNOWN')
+
+        return HippocampusDiagnostics(
+            ca1_total_spikes=ca1_total,
+            ca1_normalized=ca1_normalized,
+            ca1_similarity=getattr(self, '_last_similarity', 0.0),
+            comparison_decision=comparison_decision,
+            dg_spikes=dg_spikes,
+            ca3_spikes=ca3_spikes,
+            ca1_spikes=ca1_total,
+            n_stored_episodes=n_stored,
+        )
+
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information about brain state."""
+        """Get diagnostic information about brain state.
+        
+        Returns both structured component diagnostics and raw metrics.
+        """
+        # Collect structured component diagnostics
+        striatum_diag = self._collect_striatum_diagnostics()
+        hippo_diag = self._collect_hippocampus_diagnostics()
+
+        # Record to diagnostics manager
+        self.diagnostics.record("striatum", striatum_diag.to_dict())
+        self.diagnostics.record("hippocampus", hippo_diag.to_dict())
+
         return {
+            # Brain state
             "current_time": self._current_time,
             "trial_phase": self._trial_phase.value,
             "theta_phase": self.theta.phase,
@@ -1049,7 +1161,33 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             "events_processed": self._events_processed,
             "global_dopamine": self._global_dopamine,
             "last_action": self._last_action,
+            # Structured component diagnostics
+            "striatum": striatum_diag.to_dict(),
+            "hippocampus": hippo_diag.to_dict(),
+            # Summary for quick access
+            "summary": {
+                "last_action": self._last_action,
+                "exploring": striatum_diag.exploring,
+                "net_weight_means": striatum_diag.net_per_action,
+                "ca1_spikes": hippo_diag.ca1_spikes,
+                "dopamine": self._global_dopamine,
+            },
         }
+
+    def get_structured_diagnostics(self) -> BrainSystemDiagnostics:
+        """Get fully structured diagnostics as a dataclass.
+        
+        Returns:
+            BrainSystemDiagnostics with all component data
+        """
+        return BrainSystemDiagnostics(
+            trial_num=self.diagnostics.trial_count,
+            is_match=getattr(self, '_last_is_match', False),
+            selected_action=self._last_action or 0,
+            correct=getattr(self, '_last_correct', False),
+            striatum=self._collect_striatum_diagnostics(),
+            hippocampus=self._collect_hippocampus_diagnostics(),
+        )
 
 
 # =============================================================================

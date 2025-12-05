@@ -35,11 +35,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .base import BrainRegion, LearningRule
-from .theta_dynamics import TrialPhase, FeedforwardInhibition
-from .hippocampus.config import Episode, TrisynapticConfig, TrisynapticState
-from ..core.neuron import LIFNeuron, LIFConfig
-from ..core.stp import ShortTermPlasticity, STPConfig
+from thalia.core.neuron import LIFNeuron, LIFConfig
+from thalia.core.stp import ShortTermPlasticity, STPConfig
+from thalia.regions.base import BrainRegion, LearningRule
+from thalia.regions.theta_dynamics import TrialPhase, FeedforwardInhibition
+from .config import Episode, TrisynapticConfig, TrisynapticState
 
 
 class TrisynapticHippocampus(BrainRegion):

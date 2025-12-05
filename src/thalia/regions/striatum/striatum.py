@@ -56,7 +56,6 @@ from thalia.regions.base import (
     BrainRegion,
     RegionConfig,
     LearningRule,
-    NeuromodulatorSystem,
 )
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.learning.unified_homeostasis import (
@@ -64,10 +63,9 @@ from thalia.learning.unified_homeostasis import (
     UnifiedHomeostasisConfig,
 )
 
-# Import from the striatum package
-from thalia.regions.striatum.config import StriatumConfig
-from thalia.regions.striatum.dopamine import DopamineSystem, EligibilityTraces
-from thalia.regions.striatum.action_selection import ActionSelectionMixin
+from .config import StriatumConfig
+from .dopamine import DopamineSystem, EligibilityTraces
+from .action_selection import ActionSelectionMixin
 
 
 class Striatum(ActionSelectionMixin, BrainRegion):
