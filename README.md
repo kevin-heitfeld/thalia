@@ -32,6 +32,42 @@ pip install -e ".[dev]"
 pip install -e ".[all]"
 ```
 
+## Quick Start
+
+```python
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from thalia.core.brain import EventDrivenBrain
+
+# Create unified configuration
+config = ThaliaConfig(
+    global_=GlobalConfig(device="cpu"),
+    brain=BrainConfig(
+        sizes=RegionSizes(
+            input_size=256,
+            cortex_size=128,
+            hippocampus_size=64,
+            pfc_size=32,
+            n_actions=2,
+        ),
+    ),
+)
+
+# Show configuration summary
+config.print_summary()
+
+# Create brain from config
+brain = EventDrivenBrain.from_thalia_config(config)
+
+# Process input pattern
+result = brain.process_sample(input_pattern)
+
+# Select action
+action, confidence = brain.select_action()
+
+# Learn from reward
+brain.deliver_reward(reward=1.0)
+```
+
 ## Project Status
 
 ✅ **v0.9.2** — All 9 phases complete, 387 tests passing, 6 experiments validated
