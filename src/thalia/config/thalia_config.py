@@ -156,77 +156,91 @@ class ThaliaConfig:
         """Create EventDrivenBrainConfig for legacy API.
 
         This creates the old-style config object for backward compatibility.
+        Deprecation warning is suppressed since this is intentional internal use.
         """
+        import warnings
+
         # Import here to avoid circular imports
         from thalia.core.brain import EventDrivenBrainConfig
         from thalia.core.diagnostics import DiagnosticLevel
 
-        return EventDrivenBrainConfig(
-            input_size=self.brain.sizes.input_size,
-            cortex_size=self.brain.sizes.cortex_size,
-            hippocampus_size=self.brain.sizes.hippocampus_size,
-            pfc_size=self.brain.sizes.pfc_size,
-            n_actions=self.brain.sizes.n_actions,
-            dt_ms=self.global_.dt_ms,
-            theta_frequency_hz=self.global_.theta_frequency_hz,
-            encoding_timesteps=self.brain.encoding_timesteps,
-            delay_timesteps=self.brain.delay_timesteps,
-            test_timesteps=self.brain.test_timesteps,
-            neurons_per_action=self.brain.striatum.neurons_per_action,
-            parallel=self.brain.parallel,
-            diagnostic_level=DiagnosticLevel.SUMMARY,
-            device=self.global_.device,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return EventDrivenBrainConfig(
+                input_size=self.brain.sizes.input_size,
+                cortex_size=self.brain.sizes.cortex_size,
+                hippocampus_size=self.brain.sizes.hippocampus_size,
+                pfc_size=self.brain.sizes.pfc_size,
+                n_actions=self.brain.sizes.n_actions,
+                dt_ms=self.global_.dt_ms,
+                theta_frequency_hz=self.global_.theta_frequency_hz,
+                encoding_timesteps=self.brain.encoding_timesteps,
+                delay_timesteps=self.brain.delay_timesteps,
+                test_timesteps=self.brain.test_timesteps,
+                neurons_per_action=self.brain.striatum.neurons_per_action,
+                parallel=self.brain.parallel,
+                diagnostic_level=DiagnosticLevel.SUMMARY,
+                device=self.global_.device,
+            )
 
     def to_language_interface_config(self) -> Any:
         """Create LanguageInterfaceConfig for legacy API."""
+        import warnings
         from thalia.language.model import LanguageInterfaceConfig
 
-        return LanguageInterfaceConfig(
-            vocab_size=self.global_.vocab_size,
-            n_timesteps=self.language.encoding.n_timesteps,
-            sparsity=self.language.encoding.get_sparsity(self.global_),
-            max_seq_len=self.language.position.max_positions,
-            brain_input_size=self.brain.sizes.input_size,
-            device=self.global_.device,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return LanguageInterfaceConfig(
+                vocab_size=self.global_.vocab_size,
+                n_timesteps=self.language.encoding.n_timesteps,
+                sparsity=self.language.encoding.get_sparsity(self.global_),
+                max_seq_len=self.language.position.max_positions,
+                brain_input_size=self.brain.sizes.input_size,
+                device=self.global_.device,
+            )
 
     def to_sequence_memory_config(self) -> Any:
         """Create SequenceMemoryConfig for legacy API."""
+        import warnings
         from thalia.memory.sequence import SequenceMemoryConfig
 
-        return SequenceMemoryConfig(
-            vocab_size=self.global_.vocab_size,
-            n_neurons=self.brain.sizes.hippocampus_size * 2,  # Larger for sequence storage
-            context_length=self.language.sequence_memory.context_length,
-            theta_frequency=self.global_.theta_frequency_hz,
-            gamma_frequency=self.global_.gamma_frequency_hz,
-            association_strength=self.language.sequence_memory.association_strength,
-            retrieval_threshold=self.language.sequence_memory.retrieval_threshold,
-            max_stored_contexts=self.language.sequence_memory.max_stored_contexts,
-            learning_rate=self.language.sequence_memory.learning_rate,
-            device=self.global_.device,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return SequenceMemoryConfig(
+                vocab_size=self.global_.vocab_size,
+                n_neurons=self.brain.sizes.hippocampus_size * 2,  # Larger for sequence storage
+                context_length=self.language.sequence_memory.context_length,
+                theta_frequency=self.global_.theta_frequency_hz,
+                gamma_frequency=self.global_.gamma_frequency_hz,
+                association_strength=self.language.sequence_memory.association_strength,
+                retrieval_threshold=self.language.sequence_memory.retrieval_threshold,
+                max_stored_contexts=self.language.sequence_memory.max_stored_contexts,
+                learning_rate=self.language.sequence_memory.learning_rate,
+                device=self.global_.device,
+            )
 
     def to_training_config(self) -> Any:
         """Create TrainingConfig for legacy API."""
+        import warnings
         from thalia.training.local_trainer import TrainingConfig as LegacyTrainingConfig
 
-        return LegacyTrainingConfig(
-            n_epochs=self.training.n_epochs,
-            log_every=self.training.logging.log_every,
-            save_every=self.training.checkpoint.save_every,
-            use_stdp=self.training.use_stdp,
-            use_bcm=self.training.use_bcm,
-            use_eligibility=self.training.use_eligibility,
-            use_hebbian=self.training.use_hebbian,
-            stdp_lr=self.training.learning_rates.stdp,
-            bcm_lr=self.training.learning_rates.bcm,
-            hebbian_lr=self.training.learning_rates.hebbian,
-            reward_signal=self.training.reward_scale,
-            checkpoint_dir=self.training.checkpoint.checkpoint_dir,
-            device=self.global_.device,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return LegacyTrainingConfig(
+                n_epochs=self.training.n_epochs,
+                log_every=self.training.logging.log_every,
+                save_every=self.training.checkpoint.save_every,
+                use_stdp=self.training.use_stdp,
+                use_bcm=self.training.use_bcm,
+                use_eligibility=self.training.use_eligibility,
+                use_hebbian=self.training.use_hebbian,
+                stdp_lr=self.training.learning_rates.stdp,
+                bcm_lr=self.training.learning_rates.bcm,
+                hebbian_lr=self.training.learning_rates.hebbian,
+                reward_signal=self.training.reward_scale,
+                checkpoint_dir=self.training.checkpoint.checkpoint_dir,
+                device=self.global_.device,
+            )
 
     # =========================================================================
     # SERIALIZATION

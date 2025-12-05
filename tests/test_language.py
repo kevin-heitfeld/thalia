@@ -29,10 +29,10 @@ from thalia.language.position import (
 )
 from thalia.language.model import (
     LanguageBrainInterface,
-    LanguageInterfaceConfig,
     MinimalSpikingLM,
 )
-from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+from thalia.core.brain import EventDrivenBrain
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes, LanguageConfig, EncodingConfig
 
 
 # ============================================================================
@@ -481,48 +481,55 @@ class TestLanguageBrainInterface:
         # NOTE: Using CPU explicitly due to device propagation issues in complex systems
         device = "cpu"
 
-        # Create a minimal brain configuration
-        brain_config = EventDrivenBrainConfig(
-            input_size=small_n_neurons,
-            cortex_size=small_n_neurons,
-            hippocampus_size=32,
-            pfc_size=16,
-            n_actions=10,
-            device=device,
+        # Create unified configuration
+        config = ThaliaConfig(
+            global_=GlobalConfig(
+                device=device,
+                vocab_size=small_vocab_size,
+            ),
+            brain=BrainConfig(
+                sizes=RegionSizes(
+                    input_size=small_n_neurons,
+                    cortex_size=small_n_neurons,
+                    hippocampus_size=32,
+                    pfc_size=16,
+                    n_actions=10,
+                ),
+            ),
+            language=LanguageConfig(
+                encoding=EncodingConfig(n_timesteps=5),
+            ),
         )
-        brain = EventDrivenBrain(brain_config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
-        # Create language interface
-        config = LanguageInterfaceConfig(
-            vocab_size=small_vocab_size,
-            brain_input_size=small_n_neurons,
-            n_timesteps=5,
-            device=device,
-        )
-        interface = LanguageBrainInterface(brain, config)
+        # Create language interface from same config
+        interface = LanguageBrainInterface.from_thalia_config(brain, config)
         assert interface is not None
 
     def test_process_tokens(self, small_vocab_size, small_n_neurons):
         """Test token processing through brain."""
         device = "cpu"
 
-        brain_config = EventDrivenBrainConfig(
-            input_size=small_n_neurons,
-            cortex_size=small_n_neurons,
-            hippocampus_size=32,
-            pfc_size=16,
-            n_actions=10,
-            device=device,
+        config = ThaliaConfig(
+            global_=GlobalConfig(
+                device=device,
+                vocab_size=small_vocab_size,
+            ),
+            brain=BrainConfig(
+                sizes=RegionSizes(
+                    input_size=small_n_neurons,
+                    cortex_size=small_n_neurons,
+                    hippocampus_size=32,
+                    pfc_size=16,
+                    n_actions=10,
+                ),
+            ),
+            language=LanguageConfig(
+                encoding=EncodingConfig(n_timesteps=5),
+            ),
         )
-        brain = EventDrivenBrain(brain_config)
-
-        config = LanguageInterfaceConfig(
-            vocab_size=small_vocab_size,
-            brain_input_size=small_n_neurons,
-            n_timesteps=5,
-            device=device,
-        )
-        interface = LanguageBrainInterface(brain, config)
+        brain = EventDrivenBrain.from_thalia_config(config)
+        interface = LanguageBrainInterface.from_thalia_config(brain, config)
 
         # Process tokens
         token_ids = torch.randint(0, small_vocab_size, (1, 5), device=device)
@@ -538,23 +545,26 @@ class TestLanguageBrainInterface:
         """Test diagnostics output."""
         device = "cpu"
 
-        brain_config = EventDrivenBrainConfig(
-            input_size=small_n_neurons,
-            cortex_size=small_n_neurons,
-            hippocampus_size=32,
-            pfc_size=16,
-            n_actions=10,
-            device=device,
+        config = ThaliaConfig(
+            global_=GlobalConfig(
+                device=device,
+                vocab_size=small_vocab_size,
+            ),
+            brain=BrainConfig(
+                sizes=RegionSizes(
+                    input_size=small_n_neurons,
+                    cortex_size=small_n_neurons,
+                    hippocampus_size=32,
+                    pfc_size=16,
+                    n_actions=10,
+                ),
+            ),
+            language=LanguageConfig(
+                encoding=EncodingConfig(n_timesteps=5),
+            ),
         )
-        brain = EventDrivenBrain(brain_config)
-
-        config = LanguageInterfaceConfig(
-            vocab_size=small_vocab_size,
-            brain_input_size=small_n_neurons,
-            n_timesteps=5,
-            device=device,
-        )
-        interface = LanguageBrainInterface(brain, config)
+        brain = EventDrivenBrain.from_thalia_config(config)
+        interface = LanguageBrainInterface.from_thalia_config(brain, config)
 
         diagnostics = interface.get_diagnostics()
 
