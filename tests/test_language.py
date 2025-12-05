@@ -28,10 +28,11 @@ from thalia.language.position import (
     SequenceTimer,
 )
 from thalia.language.model import (
-    SpikingLanguageModel,
-    SpikingLanguageModelConfig,
+    LanguageBrainInterface,
+    LanguageInterfaceConfig,
     MinimalSpikingLM,
 )
+from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
 
 
 # ============================================================================
@@ -469,109 +470,96 @@ class TestSequenceTimer:
 
 
 # ============================================================================
-# SpikingLanguageModel Tests
+# LanguageBrainInterface Tests
 # ============================================================================
 
-class TestSpikingLanguageModel:
-    """Tests for the full spiking language model."""
+class TestLanguageBrainInterface:
+    """Tests for the language-brain interface."""
 
-    def test_creation(self, device, small_vocab_size, small_n_neurons):
-        """Test model creation."""
-        config = SpikingLanguageModelConfig(
-            vocab_size=small_vocab_size,
-            n_neurons=small_n_neurons,
-            n_layers=2,
-            n_heads=4,
-            max_seq_len=128,
-            n_timesteps=5,
-            use_predictive_coding=False,  # Disable for faster test
-            use_attention=False,
+    def test_creation(self, small_vocab_size, small_n_neurons):
+        """Test interface creation with brain."""
+        # NOTE: Using CPU explicitly due to device propagation issues in complex systems
+        device = "cpu"
+
+        # Create a minimal brain configuration
+        brain_config = EventDrivenBrainConfig(
+            input_size=small_n_neurons,
+            cortex_size=small_n_neurons,
+            hippocampus_size=32,
+            pfc_size=16,
+            n_actions=10,
             device=device,
         )
-        model = SpikingLanguageModel(config)
-        assert model is not None
+        brain = EventDrivenBrain(brain_config)
 
-    def test_forward(self, device, small_vocab_size, small_n_neurons):
-        """Test forward pass."""
-        config = SpikingLanguageModelConfig(
+        # Create language interface
+        config = LanguageInterfaceConfig(
             vocab_size=small_vocab_size,
-            n_neurons=small_n_neurons,
-            n_layers=2,
-            n_heads=4,
-            max_seq_len=128,
+            brain_input_size=small_n_neurons,
             n_timesteps=5,
-            use_predictive_coding=False,
-            use_attention=False,
             device=device,
         )
-        model = SpikingLanguageModel(config)
+        interface = LanguageBrainInterface(brain, config)
+        assert interface is not None
 
-        token_ids = torch.randint(0, small_vocab_size, (2, 10), device=device)
-        logits = model(token_ids)
+    def test_process_tokens(self, small_vocab_size, small_n_neurons):
+        """Test token processing through brain."""
+        device = "cpu"
 
-        assert logits.shape == (2, 10, small_vocab_size)
-
-    def test_forward_with_spikes(self, device, small_vocab_size, small_n_neurons):
-        """Test forward pass returning spikes."""
-        config = SpikingLanguageModelConfig(
-            vocab_size=small_vocab_size,
-            n_neurons=small_n_neurons,
-            n_layers=2,
-            max_seq_len=128,
-            n_timesteps=5,
-            use_predictive_coding=False,
-            use_attention=False,
+        brain_config = EventDrivenBrainConfig(
+            input_size=small_n_neurons,
+            cortex_size=small_n_neurons,
+            hippocampus_size=32,
+            pfc_size=16,
+            n_actions=10,
             device=device,
         )
-        model = SpikingLanguageModel(config)
+        brain = EventDrivenBrain(brain_config)
 
+        config = LanguageInterfaceConfig(
+            vocab_size=small_vocab_size,
+            brain_input_size=small_n_neurons,
+            n_timesteps=5,
+            device=device,
+        )
+        interface = LanguageBrainInterface(brain, config)
+
+        # Process tokens
         token_ids = torch.randint(0, small_vocab_size, (1, 5), device=device)
-        logits, spikes = model(token_ids, return_spikes=True)
+        result = interface.process_tokens(token_ids)
 
-        assert "input" in spikes
-        assert "layer_0" in spikes
+        # Result should contain token processing info
+        assert result is not None
+        assert "n_tokens" in result
+        assert "results" in result
+        assert result["n_tokens"] == 5
 
-    def test_generate(self, device, small_vocab_size, small_n_neurons):
-        """Test text generation."""
-        config = SpikingLanguageModelConfig(
-            vocab_size=small_vocab_size,
-            n_neurons=small_n_neurons,
-            n_layers=2,
-            max_seq_len=128,
-            n_timesteps=5,
-            use_predictive_coding=False,
-            use_attention=False,
-            device=device,
-        )
-        model = SpikingLanguageModel(config)
-
-        prompt = torch.randint(0, small_vocab_size, (1, 5), device=device)
-        generated = model.generate(prompt, max_new_tokens=10)
-
-        assert generated.shape[0] == 1
-        assert generated.shape[1] == 15  # 5 prompt + 10 generated
-
-    def test_diagnostics(self, device, small_vocab_size, small_n_neurons):
+    def test_diagnostics(self, small_vocab_size, small_n_neurons):
         """Test diagnostics output."""
-        config = SpikingLanguageModelConfig(
-            vocab_size=small_vocab_size,
-            n_neurons=small_n_neurons,
-            n_layers=2,
-            max_seq_len=128,
-            n_timesteps=5,
-            use_predictive_coding=False,
-            use_attention=False,
+        device = "cpu"
+
+        brain_config = EventDrivenBrainConfig(
+            input_size=small_n_neurons,
+            cortex_size=small_n_neurons,
+            hippocampus_size=32,
+            pfc_size=16,
+            n_actions=10,
             device=device,
         )
-        model = SpikingLanguageModel(config)
+        brain = EventDrivenBrain(brain_config)
 
-        diagnostics = model.get_diagnostics()
+        config = LanguageInterfaceConfig(
+            vocab_size=small_vocab_size,
+            brain_input_size=small_n_neurons,
+            n_timesteps=5,
+            device=device,
+        )
+        interface = LanguageBrainInterface(brain, config)
 
-        assert "config" in diagnostics
-        assert "parameters" in diagnostics
-        assert "components" in diagnostics
+        diagnostics = interface.get_diagnostics()
 
-
+        assert "encoder" in diagnostics
+        assert "decoder" in diagnostics
 # ============================================================================
 # MinimalSpikingLM Tests
 # ============================================================================

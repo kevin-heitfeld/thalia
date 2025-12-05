@@ -8,7 +8,8 @@ Components:
 - SpikeEncoder: Token embeddings → Sparse spike patterns
 - SpikeDecoder: Spike patterns → Token probabilities
 - PositionEncoder: Sequence position via oscillatory phase
-- SpikingLanguageModel: Full language model wrapper
+- LanguageBrain: Language-enabled brain (integrates with EventDrivenBrain)
+- MinimalSpikingLM: Lightweight standalone model for testing
 """
 
 from thalia.language.encoder import (
@@ -25,6 +26,10 @@ from thalia.language.position import (
     PositionEncoderConfig,
 )
 from thalia.language.model import (
+    LanguageBrainInterface,
+    LanguageInterfaceConfig,
+    MinimalSpikingLM,
+    # Backward compatibility aliases
     SpikingLanguageModel,
     SpikingLanguageModelConfig,
 )
@@ -40,7 +45,12 @@ __all__ = [
     # Position
     "OscillatoryPositionEncoder",
     "PositionEncoderConfig",
-    # Model
+    # Model (Brain Integration)
+    "LanguageBrainInterface",
+    "LanguageInterfaceConfig",
+    # Model (Minimal/Testing)
+    "MinimalSpikingLM",
+    # Backward compatibility
     "SpikingLanguageModel",
     "SpikingLanguageModelConfig",
 ]

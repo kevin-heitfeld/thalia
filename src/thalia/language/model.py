@@ -1,29 +1,50 @@
 """
-Spiking Language Model - Full language model using spiking neural networks.
+Language Model Integration - Connecting language to the unified brain.
 
-This module integrates the encoder, decoder, position encoder, and core
-SNN components into a complete language model.
+This module provides utilities for integrating language processing
+with the EventDrivenBrain. Instead of a standalone language model,
+language is just another sensory modality feeding into the unified brain.
 
 Architecture:
-=============
+============
 
-1. INPUT PROCESSING
-   Text → Tokens → SDR → Spike Trains (with position encoding)
+    Text Input
+         │
+         ▼
+    ┌──────────────┐
+    │ LanguagePathway │  (from thalia.sensory)
+    │   Token → SDR   │
+    │   → Spikes      │
+    └───────┬────────┘
+            │
+            ▼
+    ┌──────────────────┐
+    │ EventDrivenBrain │  (our unified brain)
+    │  Cortex → Hippo  │
+    │  → PFC → Action  │
+    └───────┬──────────┘
+            │
+            ▼
+    ┌──────────────┐
+    │ SpikeDecoder │  (for language output)
+    │ Spikes → Text│
+    └──────────────┘
 
-2. CORE PROCESSING
-   Spike trains flow through:
-   - Predictive Cortex (hierarchical prediction)
-   - Scalable Spiking Attention (context aggregation)
-   - Hippocampus (memory/retrieval)
+Usage:
+======
 
-3. OUTPUT GENERATION
-   Processed spikes → Token probabilities → Text
-
-Key Design Principles:
-- Event-driven: Only process when spikes occur
-- Local learning: No global backpropagation
-- Biologically plausible: Based on real neural circuits
-- Scalable: O(n) or O(n·k) operations where possible
+    from thalia.core import EventDrivenBrain
+    from thalia.language import LanguageBrainInterface
+    
+    # Create brain with language interface
+    brain = EventDrivenBrain(config)
+    lang_interface = LanguageBrainInterface(brain)
+    
+    # Process text through the brain
+    result = lang_interface.process_text("Hello world")
+    
+    # Generate text from brain state
+    generated = lang_interface.generate(prompt_ids, max_tokens=50)
 
 Author: Thalia Project
 Date: December 2025
@@ -31,15 +52,15 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, Tuple, Dict, Any, List
+from dataclasses import dataclass
+from typing import Optional, Tuple, Dict, Any, List, TYPE_CHECKING
 import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# Import from language module
+# Import encoding/decoding components
 from thalia.language.encoder import (
     SpikeEncoder,
     SpikeEncoderConfig,
@@ -56,542 +77,304 @@ from thalia.language.position import (
     PositionEncodingType,
 )
 
-# Import core components (conditional to avoid circular imports)
-try:
-    from thalia.core.predictive_coding import (
-        HierarchicalPredictiveCoding,
-        PredictiveCodingConfig,
-    )
-    from thalia.core.scalable_attention import (
-        ScalableSpikingAttention,
-        AttentionConfig,
-        AttentionType,
-    )
-    HAS_PREDICTIVE = True
-except ImportError:
-    HAS_PREDICTIVE = False
-    HierarchicalPredictiveCoding = None
-    PredictiveCodingConfig = None
-    ScalableSpikingAttention = None
-    AttentionConfig = None
-    AttentionType = None
+# Type checking imports
+if TYPE_CHECKING:
+    from thalia.core.brain import EventDrivenBrain
 
 
 @dataclass
-class SpikingLanguageModelConfig:
-    """Configuration for spiking language model.
+class LanguageInterfaceConfig:
+    """Configuration for language-brain interface.
     
     Attributes:
         vocab_size: Size of token vocabulary
-        n_neurons: Number of neurons per layer
-        n_layers: Number of processing layers
-        n_heads: Number of attention heads (for attention layers)
+        n_timesteps: Timesteps per token for spike encoding
+        sparsity: SDR sparsity
         max_seq_len: Maximum sequence length
-        n_timesteps: Number of timesteps per token
         
-        # Encoding
-        encoding_type: Type of spike encoding
-        sparsity: Target sparsity for SDR
-        
-        # Position encoding
-        position_type: Type of position encoding
-        
-        # Attention
-        use_attention: Whether to use spiking attention
-        attention_type: Type of spiking attention
-        
-        # Predictive coding
-        use_predictive_coding: Whether to use predictive coding
-        
-        # Learning
-        learning_rate: Learning rate for local rules
-        use_eligibility_traces: Whether to use eligibility traces
+        # These should match brain's input_size
+        brain_input_size: Size expected by brain's cortex input
         
         device: Computation device
     """
     vocab_size: int = 50257
-    n_neurons: int = 1024
-    n_layers: int = 4
-    n_heads: int = 8
-    max_seq_len: int = 1024
     n_timesteps: int = 20
-    
-    # Encoding
-    encoding_type: EncodingType = EncodingType.SDR
     sparsity: float = 0.05
+    max_seq_len: int = 1024
     
-    # Position
-    position_type: PositionEncodingType = PositionEncodingType.NESTED_GAMMA
-    
-    # Attention
-    use_attention: bool = True
-    attention_type: str = "gamma_phase"  # Will be converted to AttentionType
-    
-    # Predictive coding
-    use_predictive_coding: bool = True
-    
-    # Learning
-    learning_rate: float = 0.01
-    use_eligibility_traces: bool = True
+    brain_input_size: int = 256
     
     device: str = "cpu"
 
 
-class SpikingLanguageModel(nn.Module):
+class LanguageBrainInterface(nn.Module):
     """
-    Complete spiking neural network language model.
+    Interface between language and the EventDrivenBrain.
     
-    This model can process text and generate text using only
-    spiking neural networks with local learning rules.
+    This class handles:
+    1. Encoding text tokens to spikes (via SpikeEncoder)
+    2. Feeding spikes through the brain's processing pipeline
+    3. Decoding brain output to token probabilities (via SpikeDecoder)
     
-    Architecture Overview:
-    ---------------------
-    
-    Input: Token IDs [batch, seq_len]
-        ↓ (SpikeEncoder)
-    Spike Patterns [batch, seq_len, n_timesteps, n_neurons]
-        ↓ (+ OscillatoryPositionEncoder)
-    Position-Encoded Spikes
-        ↓ (ProcessingStack: Predictive Coding + Attention)
-    Processed Spikes
-        ↓ (SpikeDecoder)
-    Token Logits [batch, seq_len, vocab_size]
-        ↓ (Sampling)
-    Output: Token IDs [batch, seq_len]
+    The key insight is that language is just another sensory input -
+    once converted to spikes, the brain processes it like any other modality.
     
     Usage:
-        model = SpikingLanguageModel(SpikingLanguageModelConfig(
-            vocab_size=50000,
-            n_neurons=1024,
-            n_layers=4,
-        ))
+        brain = EventDrivenBrain(config)
+        lang_interface = LanguageBrainInterface(brain, LanguageInterfaceConfig())
         
-        # Forward pass
-        token_ids = torch.tensor([[1, 42, 100, 5]])
-        logits = model(token_ids)
+        # Process text
+        token_ids = tokenizer.encode("Hello world")
+        result = lang_interface.process_tokens(token_ids)
         
-        # Generate text
-        generated = model.generate(prompt_ids, max_new_tokens=100)
+        # Generate continuation
+        generated = lang_interface.generate(token_ids, max_new_tokens=50)
     """
     
-    def __init__(self, config: SpikingLanguageModelConfig):
+    def __init__(
+        self,
+        brain: "EventDrivenBrain",
+        config: Optional[LanguageInterfaceConfig] = None,
+    ):
         super().__init__()
+        
+        if config is None:
+            config = LanguageInterfaceConfig(
+                brain_input_size=brain.config.input_size,
+                device=brain.config.device,
+            )
+        
         self.config = config
+        self.brain = brain
         self.device = torch.device(config.device)
         
-        # 1. Token Encoder
+        # Token → Spike encoder
         encoder_config = SpikeEncoderConfig(
             vocab_size=config.vocab_size,
-            n_neurons=config.n_neurons,
-            sparsity=config.sparsity,
+            n_neurons=config.brain_input_size,
             n_timesteps=config.n_timesteps,
-            encoding_type=config.encoding_type,
+            sparsity=config.sparsity,
             device=config.device,
         )
         self.encoder = SpikeEncoder(encoder_config)
         
-        # 2. Position Encoder
-        position_config = PositionEncoderConfig(
-            n_neurons=config.n_neurons // 4,  # Smaller position encoding
+        # Position encoder
+        pos_config = PositionEncoderConfig(
+            n_neurons=config.brain_input_size // 4,
             max_positions=config.max_seq_len,
-            encoding_type=config.position_type,
             n_timesteps=config.n_timesteps,
             device=config.device,
         )
-        self.position_encoder = OscillatoryPositionEncoder(position_config)
+        self.position_encoder = OscillatoryPositionEncoder(pos_config)
         
-        # 3. Position mixing layer
+        # Combine content + position
         self.position_mixer = nn.Linear(
-            config.n_neurons + config.n_neurons // 4,
-            config.n_neurons,
+            config.brain_input_size + config.brain_input_size // 4,
+            config.brain_input_size,
             bias=False,
         )
         
-        # 4. Processing Stack
-        self._build_processing_stack()
-        
-        # 5. Token Decoder
+        # Spike → Token decoder
+        # Decodes from PFC output (which holds the processed representation)
         decoder_config = SpikeDecoderConfig(
-            n_neurons=config.n_neurons,
+            n_neurons=brain.config.pfc_size,
             vocab_size=config.vocab_size,
-            decoding_type=DecodingType.POPULATION,
             n_timesteps=config.n_timesteps,
             device=config.device,
         )
         self.decoder = SpikeDecoder(decoder_config)
         
-        # 6. Eligibility traces for learning
-        if config.use_eligibility_traces:
-            self._init_eligibility_traces()
+        # Buffer for collecting brain output spikes
+        self.output_buffer: List[torch.Tensor] = []
         
-        # Move to device
         self.to(self.device)
     
-    def _build_processing_stack(self) -> None:
-        """Build the main processing layers."""
-        config = self.config
-        
-        self.processing_layers = nn.ModuleList()
-        
-        for layer_idx in range(config.n_layers):
-            layer_modules = nn.ModuleDict()
-            
-            # Predictive coding layer
-            if config.use_predictive_coding and HAS_PREDICTIVE:
-                pc_config = PredictiveCodingConfig(
-                    n_input=config.n_neurons,
-                    n_prediction=config.n_neurons,
-                    n_error=config.n_neurons // 4,
-                    learning_rate=config.learning_rate,
-                    device=config.device,
-                )
-                layer_modules["predictive"] = HierarchicalPredictiveCoding(
-                    layer_configs=[pc_config],
-                )
-            
-            # Attention layer
-            if config.use_attention and HAS_PREDICTIVE:
-                # Map string to AttentionType if needed
-                if AttentionType is not None:
-                    att_type = AttentionType(config.attention_type)
-                else:
-                    att_type = config.attention_type
-                    
-                att_config = AttentionConfig(
-                    n_neurons=config.n_neurons,
-                    n_heads=config.n_heads,
-                    attention_type=att_type,
-                    device=config.device,
-                )
-                layer_modules["attention"] = ScalableSpikingAttention(att_config)
-            
-            # Simple feedforward if no special layers
-            if len(layer_modules) == 0:
-                layer_modules["feedforward"] = nn.Sequential(
-                    nn.Linear(config.n_neurons, config.n_neurons * 2),
-                    nn.GELU(),
-                    nn.Linear(config.n_neurons * 2, config.n_neurons),
-                )
-            
-            self.processing_layers.append(layer_modules)
-    
-    def _init_eligibility_traces(self) -> None:
-        """Initialize eligibility traces for three-factor learning."""
-        # Traces decay over time and are modulated by reward signal
-        self.eligibility_traces: Dict[str, torch.Tensor] = {}
-        self.trace_decay = 0.95
-    
-    def forward(
+    def process_tokens(
         self,
         token_ids: torch.Tensor,
-        position_ids: Optional[torch.Tensor] = None,
-        return_spikes: bool = False,
-    ) -> torch.Tensor | Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        n_timesteps_per_token: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
-        Forward pass through the model.
+        Process a sequence of tokens through the brain.
+        
+        Each token is encoded to spikes and fed through brain.process_sample().
         
         Args:
-            token_ids: Token indices [batch, seq_len]
-            position_ids: Optional position indices [batch, seq_len]
-            return_spikes: Whether to return intermediate spike patterns
+            token_ids: Token indices [batch, seq_len] or [seq_len]
+            n_timesteps_per_token: Timesteps to process each token
             
         Returns:
-            logits: Token logits [batch, seq_len, vocab_size]
-            spikes: (optional) Dictionary of spike patterns
+            result: Dictionary with processing results
         """
+        if token_ids.dim() == 1:
+            token_ids = token_ids.unsqueeze(0)
+        
         batch, seq_len = token_ids.shape
+        n_timesteps = n_timesteps_per_token or self.config.n_timesteps
         
-        # Generate position IDs if not provided
-        if position_ids is None:
-            position_ids = torch.arange(seq_len, device=self.device).unsqueeze(0).expand(batch, -1)
-        
-        # 1. Encode tokens to spikes
+        # Encode all tokens to spikes
+        position_ids = torch.arange(seq_len, device=self.device).unsqueeze(0).expand(batch, -1)
         content_spikes, sdr = self.encoder(token_ids, position_ids)
         # content_spikes: [batch, seq_len, n_timesteps, n_neurons]
         
-        # 2. Get position encoding
-        position_spikes = self.position_encoder(position_ids, as_spikes=True)
-        # position_spikes: [batch, seq_len, n_timesteps, n_pos_neurons]
+        # Add position encoding
+        pos_spikes = self.position_encoder(position_ids, as_spikes=True)
+        combined = self._combine_content_position(content_spikes, pos_spikes)
         
-        # 3. Combine content and position
-        combined_spikes = self._combine_content_position(content_spikes, position_spikes)
-        # combined_spikes: [batch, seq_len, n_timesteps, n_neurons]
+        # Clear output buffer
+        self.output_buffer = []
         
-        # 4. Process through layers
-        spikes_dict = {"input": combined_spikes}
+        # Process each token through the brain
+        all_results = []
+        for t in range(seq_len):
+            # Get spikes for this token
+            token_spikes = combined[:, t, :, :]  # [batch, n_timesteps, n_neurons]
+            
+            # Average over timesteps for single-vector input to brain
+            # (brain expects [input_size] per call)
+            token_input = token_spikes.mean(dim=1).squeeze(0)  # [input_size]
+            
+            # Process through brain
+            result = self.brain.process_sample(token_input, n_timesteps=n_timesteps)
+            all_results.append(result)
+            
+            # Collect PFC output for decoding
+            if hasattr(self.brain, '_last_pfc_output') and self.brain._last_pfc_output is not None:
+                self.output_buffer.append(self.brain._last_pfc_output.clone())
         
-        processed = combined_spikes
-        for layer_idx, layer_modules in enumerate(self.processing_layers):
-            processed = self._process_layer(processed, layer_modules, layer_idx)
-            spikes_dict[f"layer_{layer_idx}"] = processed
-        
-        # 5. Decode to logits
-        logits = self.decoder(processed)
-        
-        if return_spikes:
-            return logits, spikes_dict
-        return logits
+        return {
+            "n_tokens": seq_len,
+            "results": all_results,
+            "sdr_sparsity": sdr.mean().item(),
+        }
     
     def _combine_content_position(
         self,
         content_spikes: torch.Tensor,
         position_spikes: torch.Tensor,
     ) -> torch.Tensor:
-        """Combine content and position spike patterns."""
+        """Combine content and position encodings."""
         batch, seq_len, n_timesteps, n_content = content_spikes.shape
-        _, _, _, n_position = position_spikes.shape
         
-        # Concatenate along neuron dimension
+        # Concatenate
         combined = torch.cat([content_spikes, position_spikes], dim=-1)
-        # combined: [batch, seq_len, n_timesteps, n_content + n_position]
         
-        # Reshape for linear layer
-        combined_flat = combined.view(batch * seq_len * n_timesteps, -1)
+        # Mix
+        shape = combined.shape
+        combined_flat = combined.view(-1, shape[-1])
         mixed = self.position_mixer(combined_flat)
-        mixed = mixed.view(batch, seq_len, n_timesteps, -1)
+        mixed = mixed.view(shape[0], shape[1], shape[2], -1)
         
-        # Convert back to spikes via threshold
-        spikes = (mixed > 0.5).float()
-        
-        return spikes
+        # Re-binarize
+        return (mixed > 0.5).float()
     
-    def _process_layer(
+    def decode_output(
         self,
-        spikes: torch.Tensor,
-        layer_modules: nn.ModuleDict,
-        layer_idx: int,
+        temperature: float = 1.0,
     ) -> torch.Tensor:
-        """Process spikes through one layer."""
-        batch, seq_len, n_timesteps, n_neurons = spikes.shape
+        """
+        Decode collected brain outputs to token probabilities.
         
-        residual = spikes
+        Returns:
+            logits: Token logits [n_tokens, vocab_size]
+        """
+        if len(self.output_buffer) == 0:
+            raise ValueError("No output collected. Call process_tokens first.")
         
-        # Predictive coding
-        if "predictive" in layer_modules:
-            # Process through predictive coding
-            # Need to reshape: [batch, seq, time, neurons] -> process each position
-            output_spikes = torch.zeros_like(spikes)
-            
-            for s in range(seq_len):
-                # Get spikes for this position
-                pos_spikes = spikes[:, s, :, :]  # [batch, time, neurons]
-                
-                # Process through predictive coding (time as sequence)
-                pc_output = layer_modules["predictive"](pos_spikes)
-                
-                # Get output spikes from the result
-                if isinstance(pc_output, dict) and "output" in pc_output:
-                    output_spikes[:, s, :, :] = pc_output["output"]
-                else:
-                    output_spikes[:, s, :, :] = pos_spikes  # Passthrough if failed
-            
-            spikes = output_spikes + residual * 0.1  # Residual connection
+        # Stack outputs: [n_tokens, pfc_size]
+        pfc_outputs = torch.stack(self.output_buffer, dim=0)
         
-        # Attention
-        if "attention" in layer_modules:
-            # Reshape for attention: [batch, seq, time, neurons] -> [batch, time, seq, neurons]
-            spikes_t = spikes.permute(0, 2, 1, 3)
-            
-            # Process each timestep
-            attended = torch.zeros_like(spikes_t)
-            for t in range(n_timesteps):
-                step_spikes = spikes_t[:, t, :, :]  # [batch, seq, neurons]
-                
-                # Spiking attention
-                att_output = layer_modules["attention"](step_spikes, step_spikes, step_spikes)
-                if isinstance(att_output, tuple):
-                    attended[:, t, :, :] = att_output[0]
-                else:
-                    attended[:, t, :, :] = att_output
-            
-            # Reshape back
-            spikes = attended.permute(0, 2, 1, 3) + residual * 0.1
+        # Expand to fake timestep dimension for decoder
+        n_tokens = pfc_outputs.shape[0]
+        pfc_outputs = pfc_outputs.unsqueeze(0)  # [1, n_tokens, pfc_size]
         
-        # Feedforward
-        if "feedforward" in layer_modules:
-            # Simple feedforward on integrated spikes
-            integrated = spikes.mean(dim=2)  # [batch, seq, neurons]
-            ff_out = layer_modules["feedforward"](integrated)
-            
-            # Broadcast back to all timesteps and add
-            ff_out = ff_out.unsqueeze(2)  # [batch, seq, 1, neurons]
-            spikes = spikes + ff_out * 0.1
+        # Create fake spike patterns (treat pfc_output as firing rates)
+        n_timesteps = self.config.n_timesteps
+        fake_spikes = pfc_outputs.unsqueeze(2).expand(-1, -1, n_timesteps, -1)
+        fake_spikes = (torch.rand_like(fake_spikes) < torch.sigmoid(fake_spikes)).float()
         
-        return spikes
+        # Decode
+        logits = self.decoder(fake_spikes)  # [1, n_tokens, vocab_size]
+        logits = logits.squeeze(0) / temperature
+        
+        return logits
     
     @torch.no_grad()
     def generate(
         self,
         prompt_ids: torch.Tensor,
-        max_new_tokens: int = 100,
+        max_new_tokens: int = 50,
         temperature: float = 1.0,
         top_k: Optional[int] = 50,
         top_p: Optional[float] = 0.9,
     ) -> torch.Tensor:
         """
-        Generate tokens autoregressively.
+        Generate tokens autoregressively using the brain.
         
         Args:
-            prompt_ids: Starting token IDs [batch, prompt_len]
-            max_new_tokens: Maximum new tokens to generate
+            prompt_ids: Starting token IDs [seq_len] or [1, seq_len]
+            max_new_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             top_k: Top-k filtering
             top_p: Nucleus sampling threshold
             
         Returns:
-            generated_ids: Full sequence including prompt [batch, prompt_len + generated]
+            generated_ids: Full sequence [1, prompt_len + generated]
         """
-        self.eval()
+        if prompt_ids.dim() == 1:
+            prompt_ids = prompt_ids.unsqueeze(0)
         
         current_ids = prompt_ids.clone()
         
+        # Process prompt
+        self.process_tokens(current_ids)
+        
         for _ in range(max_new_tokens):
-            # Get logits for current sequence
-            logits = self(current_ids)  # [batch, seq_len, vocab_size]
+            # Get logits from brain state
+            logits = self.decode_output(temperature)
+            last_logits = logits[-1, :]  # [vocab_size]
             
-            # Only need the last position
-            last_logits = logits[:, -1, :] / temperature  # [batch, vocab_size]
-            
-            # Apply top-k filtering
+            # Apply filtering
             if top_k is not None:
-                indices_to_remove = last_logits < torch.topk(last_logits, top_k, dim=-1).values[:, -1:]
+                indices_to_remove = last_logits < torch.topk(last_logits, top_k).values[-1]
                 last_logits[indices_to_remove] = float('-inf')
             
-            # Apply nucleus (top-p) filtering
             if top_p is not None:
-                sorted_logits, sorted_indices = torch.sort(last_logits, descending=True, dim=-1)
+                sorted_logits, sorted_indices = torch.sort(last_logits, descending=True)
                 cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-                
                 sorted_indices_to_remove = cumulative_probs > top_p
-                sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
-                sorted_indices_to_remove[:, 0] = 0
-                
+                sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].clone()
+                sorted_indices_to_remove[0] = 0
                 indices_to_remove = sorted_indices_to_remove.scatter(
-                    -1, sorted_indices, sorted_indices_to_remove
+                    0, sorted_indices, sorted_indices_to_remove
                 )
                 last_logits[indices_to_remove] = float('-inf')
             
-            # Sample next token
+            # Sample
             probs = F.softmax(last_logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)  # [batch, 1]
+            next_token = torch.multinomial(probs, num_samples=1)
             
-            # Append to sequence
-            current_ids = torch.cat([current_ids, next_token], dim=1)
+            # Append and process
+            current_ids = torch.cat([current_ids, next_token.unsqueeze(0)], dim=1)
             
-            # Check for EOS (assuming 0 is EOS)
-            if (next_token == 0).all():
+            # Process just the new token
+            self.process_tokens(next_token.unsqueeze(0))
+            
+            # Check for EOS
+            if next_token.item() == 0:  # Assuming 0 is EOS
                 break
         
         return current_ids
     
-    def learn_from_reward(
-        self,
-        reward: float,
-        token_ids: Optional[torch.Tensor] = None,
-    ) -> Dict[str, float]:
-        """
-        Apply three-factor learning based on reward signal.
-        
-        This is how the model learns without backpropagation:
-        - Eligibility traces mark recent synaptic activity
-        - Reward modulates trace → weight change
-        - Positive reward strengthens active synapses
-        - Negative reward weakens them
-        
-        Args:
-            reward: Reward signal (positive = good, negative = bad)
-            token_ids: Optional token sequence that generated the reward
-            
-        Returns:
-            stats: Learning statistics
-        """
-        if not hasattr(self, "eligibility_traces") or len(self.eligibility_traces) == 0:
-            return {"error": "No eligibility traces available"}
-        
-        stats = {
-            "reward": reward,
-            "weight_updates": 0,
-            "mean_trace": 0.0,
-        }
-        
-        # Apply eligibility-modulated learning to all parameters
-        lr = self.config.learning_rate
-        
-        for name, param in self.named_parameters():
-            if name in self.eligibility_traces and param.requires_grad:
-                trace = self.eligibility_traces[name]
-                
-                # Three-factor rule: Δw = η * reward * trace
-                weight_update = lr * reward * trace
-                param.data.add_(weight_update)
-                
-                stats["weight_updates"] += weight_update.abs().sum().item()
-                stats["mean_trace"] += trace.abs().mean().item()
-        
-        # Decay traces
-        for name in self.eligibility_traces:
-            self.eligibility_traces[name] *= self.trace_decay
-        
-        return stats
-    
-    def update_eligibility(
-        self,
-        pre_spikes: torch.Tensor,
-        post_spikes: torch.Tensor,
-        layer_name: str,
-    ) -> None:
-        """
-        Update eligibility traces based on spike correlations.
-        
-        Called after each forward pass to update traces based on
-        pre/post synaptic spike correlations.
-        
-        Args:
-            pre_spikes: Presynaptic spikes [batch, n_pre]
-            post_spikes: Postsynaptic spikes [batch, n_post]
-            layer_name: Name of the layer (for trace storage)
-        """
-        # STDP-like eligibility: trace increases when pre fires before post
-        # Simplified: just use outer product of spike rates
-        pre_rate = pre_spikes.mean(dim=0)
-        post_rate = post_spikes.mean(dim=0)
-        
-        # Create trace from outer product
-        trace = torch.outer(pre_rate, post_rate)
-        
-        # Store or update trace
-        if layer_name in self.eligibility_traces:
-            self.eligibility_traces[layer_name] = (
-                self.eligibility_traces[layer_name] * self.trace_decay + trace
-            )
-        else:
-            self.eligibility_traces[layer_name] = trace
-    
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get model diagnostics."""
-        n_params = sum(p.numel() for p in self.parameters())
-        n_trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        
+        """Get interface diagnostics."""
         return {
-            "config": {
-                "vocab_size": self.config.vocab_size,
-                "n_neurons": self.config.n_neurons,
-                "n_layers": self.config.n_layers,
-                "n_heads": self.config.n_heads,
-                "max_seq_len": self.config.max_seq_len,
-                "n_timesteps": self.config.n_timesteps,
-            },
-            "parameters": {
-                "total": n_params,
-                "trainable": n_trainable,
-            },
-            "components": {
-                "encoder": self.encoder.get_diagnostics(),
-                "decoder": self.decoder.get_diagnostics(),
-                "position": self.position_encoder.get_diagnostics(),
-            },
-            "has_predictive_coding": self.config.use_predictive_coding and HAS_PREDICTIVE,
-            "has_attention": self.config.use_attention and HAS_PREDICTIVE,
+            "vocab_size": self.config.vocab_size,
+            "brain_input_size": self.config.brain_input_size,
+            "n_timesteps": self.config.n_timesteps,
+            "buffer_size": len(self.output_buffer),
+            "encoder": self.encoder.get_diagnostics(),
+            "decoder": self.decoder.get_diagnostics(),
         }
 
 
@@ -599,9 +382,10 @@ class MinimalSpikingLM(nn.Module):
     """
     Minimal spiking language model for testing.
     
-    This is a simplified version without the full predictive coding
-    and attention stack - useful for testing the encoding/decoding
-    pipeline.
+    This is a simplified standalone version for testing the
+    encoding/decoding pipeline WITHOUT the full brain.
+    
+    For actual use, use LanguageBrainInterface with EventDrivenBrain.
     """
     
     def __init__(
@@ -613,6 +397,9 @@ class MinimalSpikingLM(nn.Module):
     ):
         super().__init__()
         self.device = torch.device(device)
+        self.vocab_size = vocab_size
+        self.n_neurons = n_neurons
+        self.n_timesteps = n_timesteps
         
         # Simple encoder
         self.encoder = SpikeEncoder(SpikeEncoderConfig(
@@ -623,7 +410,7 @@ class MinimalSpikingLM(nn.Module):
             device=device,
         ))
         
-        # Simple processing layer
+        # Simple processing layer (simulates brain processing)
         self.process = nn.Sequential(
             nn.Linear(n_neurons, n_neurons * 2),
             nn.ReLU(),
@@ -653,8 +440,7 @@ class MinimalSpikingLM(nn.Module):
         processed = self.process(integrated)
         
         # Convert back to spikes for decoder
-        n_timesteps = spikes.shape[2]
-        processed_spikes = processed.unsqueeze(2).expand(-1, -1, n_timesteps, -1)
+        processed_spikes = processed.unsqueeze(2).expand(-1, -1, self.n_timesteps, -1)
         processed_spikes = (torch.rand_like(processed_spikes) < torch.sigmoid(processed_spikes)).float()
         
         # Decode
@@ -671,6 +457,9 @@ class MinimalSpikingLM(nn.Module):
         """Simple greedy generation."""
         self.eval()
         
+        if prompt_ids.dim() == 1:
+            prompt_ids = prompt_ids.unsqueeze(0)
+        
         current_ids = prompt_ids.clone()
         
         for _ in range(max_new_tokens):
@@ -679,3 +468,26 @@ class MinimalSpikingLM(nn.Module):
             current_ids = torch.cat([current_ids, next_token], dim=1)
         
         return current_ids
+
+
+# Backward compatibility aliases
+SpikingLanguageModel = MinimalSpikingLM
+
+@dataclass
+class SpikingLanguageModelConfig:
+    """DEPRECATED: Use LanguageInterfaceConfig with LanguageBrainInterface."""
+    vocab_size: int = 50257
+    n_neurons: int = 1024
+    n_layers: int = 4
+    n_heads: int = 8
+    max_seq_len: int = 1024
+    n_timesteps: int = 20
+    encoding_type: EncodingType = EncodingType.SDR
+    sparsity: float = 0.05
+    position_type: PositionEncodingType = PositionEncodingType.NESTED_GAMMA
+    use_attention: bool = True
+    attention_type: str = "gamma_phase"
+    use_predictive_coding: bool = True
+    learning_rate: float = 0.01
+    use_eligibility_traces: bool = True
+    device: str = "cpu"
