@@ -215,16 +215,20 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         # 4. STRIATUM: Action selection
         # Receives: cortex L5 + hippocampus + PFC
+        # NOTE: Pass n_output=n_actions (not n_actions*neurons_per_action)
+        # The Striatum internally handles population coding expansion
         striatum_input = self._cortex_l5_size + config.hippocampus_size + config.pfc_size
         self.striatum = Striatum(StriatumConfig(
             n_input=striatum_input,
-            n_output=config.n_actions * config.neurons_per_action,
+            n_output=config.n_actions,  # Number of actions, NOT total neurons
+            neurons_per_action=config.neurons_per_action,
             device=config.device,
         ))
         self.striatum.reset()
 
         # 5. CEREBELLUM: Motor refinement
         # Receives: striatum output (action signals)
+        # After population coding, striatum outputs n_actions * neurons_per_action
         cerebellum_input = config.n_actions * config.neurons_per_action
         self.cerebellum = Cerebellum(CerebellumConfig(
             n_input=cerebellum_input,

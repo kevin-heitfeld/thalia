@@ -35,14 +35,14 @@ Usage:
 
     from thalia.core import EventDrivenBrain
     from thalia.language import LanguageBrainInterface
-    
+
     # Create brain with language interface
     brain = EventDrivenBrain(config)
     lang_interface = LanguageBrainInterface(brain)
-    
+
     # Process text through the brain
     result = lang_interface.process_text("Hello world")
-    
+
     # Generate text from brain state
     generated = lang_interface.generate(prompt_ids, max_tokens=50)
 
@@ -85,69 +85,69 @@ if TYPE_CHECKING:
 @dataclass
 class LanguageInterfaceConfig:
     """Configuration for language-brain interface.
-    
+
     Attributes:
         vocab_size: Size of token vocabulary
         n_timesteps: Timesteps per token for spike encoding
         sparsity: SDR sparsity
         max_seq_len: Maximum sequence length
-        
+
         # These should match brain's input_size
         brain_input_size: Size expected by brain's cortex input
-        
+
         device: Computation device
     """
     vocab_size: int = 50257
     n_timesteps: int = 20
     sparsity: float = 0.05
     max_seq_len: int = 1024
-    
+
     brain_input_size: int = 256
-    
+
     device: str = "cpu"
 
 
 class LanguageBrainInterface(nn.Module):
     """
     Interface between language and the EventDrivenBrain.
-    
+
     This class handles:
     1. Encoding text tokens to spikes (via SpikeEncoder)
     2. Feeding spikes through the brain's processing pipeline
     3. Decoding brain output to token probabilities (via SpikeDecoder)
-    
+
     The key insight is that language is just another sensory input -
     once converted to spikes, the brain processes it like any other modality.
-    
+
     Usage:
         brain = EventDrivenBrain(config)
         lang_interface = LanguageBrainInterface(brain, LanguageInterfaceConfig())
-        
+
         # Process text
         token_ids = tokenizer.encode("Hello world")
         result = lang_interface.process_tokens(token_ids)
-        
+
         # Generate continuation
         generated = lang_interface.generate(token_ids, max_new_tokens=50)
     """
-    
+
     def __init__(
         self,
         brain: "EventDrivenBrain",
         config: Optional[LanguageInterfaceConfig] = None,
     ):
         super().__init__()
-        
+
         if config is None:
             config = LanguageInterfaceConfig(
                 brain_input_size=brain.config.input_size,
                 device=brain.config.device,
             )
-        
+
         self.config = config
         self.brain = brain
         self.device = torch.device(config.device)
-        
+
         # Token → Spike encoder
         encoder_config = SpikeEncoderConfig(
             vocab_size=config.vocab_size,
@@ -157,7 +157,7 @@ class LanguageBrainInterface(nn.Module):
             device=config.device,
         )
         self.encoder = SpikeEncoder(encoder_config)
-        
+
         # Position encoder
         pos_config = PositionEncoderConfig(
             n_neurons=config.brain_input_size // 4,
@@ -166,14 +166,14 @@ class LanguageBrainInterface(nn.Module):
             device=config.device,
         )
         self.position_encoder = OscillatoryPositionEncoder(pos_config)
-        
+
         # Combine content + position
         self.position_mixer = nn.Linear(
             config.brain_input_size + config.brain_input_size // 4,
             config.brain_input_size,
             bias=False,
         )
-        
+
         # Spike → Token decoder
         # Decodes from PFC output (which holds the processed representation)
         decoder_config = SpikeDecoderConfig(
@@ -183,12 +183,12 @@ class LanguageBrainInterface(nn.Module):
             device=config.device,
         )
         self.decoder = SpikeDecoder(decoder_config)
-        
+
         # Buffer for collecting brain output spikes
         self.output_buffer: List[torch.Tensor] = []
-        
+
         self.to(self.device)
-    
+
     def process_tokens(
         self,
         token_ids: torch.Tensor,
@@ -196,58 +196,57 @@ class LanguageBrainInterface(nn.Module):
     ) -> Dict[str, Any]:
         """
         Process a sequence of tokens through the brain.
-        
+
         Each token is encoded to spikes and fed through brain.process_sample().
-        
+
         Args:
             token_ids: Token indices [batch, seq_len] or [seq_len]
             n_timesteps_per_token: Timesteps to process each token
-            
+
         Returns:
             result: Dictionary with processing results
         """
         if token_ids.dim() == 1:
             token_ids = token_ids.unsqueeze(0)
-        
+
         batch, seq_len = token_ids.shape
         n_timesteps = n_timesteps_per_token or self.config.n_timesteps
-        
+
         # Encode all tokens to spikes
         position_ids = torch.arange(seq_len, device=self.device).unsqueeze(0).expand(batch, -1)
         content_spikes, sdr = self.encoder(token_ids, position_ids)
         # content_spikes: [batch, seq_len, n_timesteps, n_neurons]
-        
+
         # Add position encoding
         pos_spikes = self.position_encoder(position_ids, as_spikes=True)
         combined = self._combine_content_position(content_spikes, pos_spikes)
-        
+
         # Clear output buffer
         self.output_buffer = []
-        
+
         # Process each token through the brain
         all_results = []
         for t in range(seq_len):
             # Get spikes for this token
             token_spikes = combined[:, t, :, :]  # [batch, n_timesteps, n_neurons]
-            
-            # Average over timesteps for single-vector input to brain
+
+            # Sum over timesteps for single-vector input to brain
             # (brain expects [input_size] per call)
-            token_input = token_spikes.mean(dim=1).squeeze(0)  # [input_size]
-            
+            # Scale by gain to reach neuron threshold (SDR spikes ~0.05, need ~1.0+ input)
+            token_input = token_spikes.sum(dim=1).squeeze(0) * 2.0  # [input_size]
+
             # Process through brain
             result = self.brain.process_sample(token_input, n_timesteps=n_timesteps)
-            all_results.append(result)
-            
-            # Collect PFC output for decoding
+            all_results.append(result)            # Collect PFC output for decoding
             if hasattr(self.brain, '_last_pfc_output') and self.brain._last_pfc_output is not None:
                 self.output_buffer.append(self.brain._last_pfc_output.clone())
-        
+
         return {
             "n_tokens": seq_len,
             "results": all_results,
             "sdr_sparsity": sdr.mean().item(),
         }
-    
+
     def _combine_content_position(
         self,
         content_spikes: torch.Tensor,
@@ -255,50 +254,50 @@ class LanguageBrainInterface(nn.Module):
     ) -> torch.Tensor:
         """Combine content and position encodings."""
         batch, seq_len, n_timesteps, n_content = content_spikes.shape
-        
+
         # Concatenate
         combined = torch.cat([content_spikes, position_spikes], dim=-1)
-        
+
         # Mix
         shape = combined.shape
         combined_flat = combined.view(-1, shape[-1])
         mixed = self.position_mixer(combined_flat)
         mixed = mixed.view(shape[0], shape[1], shape[2], -1)
-        
+
         # Re-binarize
         return (mixed > 0.5).float()
-    
+
     def decode_output(
         self,
         temperature: float = 1.0,
     ) -> torch.Tensor:
         """
         Decode collected brain outputs to token probabilities.
-        
+
         Returns:
             logits: Token logits [n_tokens, vocab_size]
         """
         if len(self.output_buffer) == 0:
             raise ValueError("No output collected. Call process_tokens first.")
-        
+
         # Stack outputs: [n_tokens, pfc_size]
         pfc_outputs = torch.stack(self.output_buffer, dim=0)
-        
+
         # Expand to fake timestep dimension for decoder
         n_tokens = pfc_outputs.shape[0]
         pfc_outputs = pfc_outputs.unsqueeze(0)  # [1, n_tokens, pfc_size]
-        
+
         # Create fake spike patterns (treat pfc_output as firing rates)
         n_timesteps = self.config.n_timesteps
         fake_spikes = pfc_outputs.unsqueeze(2).expand(-1, -1, n_timesteps, -1)
         fake_spikes = (torch.rand_like(fake_spikes) < torch.sigmoid(fake_spikes)).float()
-        
+
         # Decode
         logits = self.decoder(fake_spikes)  # [1, n_tokens, vocab_size]
         logits = logits.squeeze(0) / temperature
-        
+
         return logits
-    
+
     @torch.no_grad()
     def generate(
         self,
@@ -310,35 +309,35 @@ class LanguageBrainInterface(nn.Module):
     ) -> torch.Tensor:
         """
         Generate tokens autoregressively using the brain.
-        
+
         Args:
             prompt_ids: Starting token IDs [seq_len] or [1, seq_len]
             max_new_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             top_k: Top-k filtering
             top_p: Nucleus sampling threshold
-            
+
         Returns:
             generated_ids: Full sequence [1, prompt_len + generated]
         """
         if prompt_ids.dim() == 1:
             prompt_ids = prompt_ids.unsqueeze(0)
-        
+
         current_ids = prompt_ids.clone()
-        
+
         # Process prompt
         self.process_tokens(current_ids)
-        
+
         for _ in range(max_new_tokens):
             # Get logits from brain state
             logits = self.decode_output(temperature)
             last_logits = logits[-1, :]  # [vocab_size]
-            
+
             # Apply filtering
             if top_k is not None:
                 indices_to_remove = last_logits < torch.topk(last_logits, top_k).values[-1]
                 last_logits[indices_to_remove] = float('-inf')
-            
+
             if top_p is not None:
                 sorted_logits, sorted_indices = torch.sort(last_logits, descending=True)
                 cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
@@ -349,23 +348,23 @@ class LanguageBrainInterface(nn.Module):
                     0, sorted_indices, sorted_indices_to_remove
                 )
                 last_logits[indices_to_remove] = float('-inf')
-            
+
             # Sample
             probs = F.softmax(last_logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)
-            
+
             # Append and process
             current_ids = torch.cat([current_ids, next_token.unsqueeze(0)], dim=1)
-            
+
             # Process just the new token
             self.process_tokens(next_token.unsqueeze(0))
-            
+
             # Check for EOS
             if next_token.item() == 0:  # Assuming 0 is EOS
                 break
-        
+
         return current_ids
-    
+
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get interface diagnostics."""
         return {
@@ -381,13 +380,13 @@ class LanguageBrainInterface(nn.Module):
 class MinimalSpikingLM(nn.Module):
     """
     Minimal spiking language model for testing.
-    
+
     This is a simplified standalone version for testing the
     encoding/decoding pipeline WITHOUT the full brain.
-    
+
     For actual use, use LanguageBrainInterface with EventDrivenBrain.
     """
-    
+
     def __init__(
         self,
         vocab_size: int = 1000,
@@ -400,7 +399,7 @@ class MinimalSpikingLM(nn.Module):
         self.vocab_size = vocab_size
         self.n_neurons = n_neurons
         self.n_timesteps = n_timesteps
-        
+
         # Simple encoder
         self.encoder = SpikeEncoder(SpikeEncoderConfig(
             vocab_size=vocab_size,
@@ -409,14 +408,14 @@ class MinimalSpikingLM(nn.Module):
             encoding_type=EncodingType.SDR,
             device=device,
         ))
-        
+
         # Simple processing layer (simulates brain processing)
         self.process = nn.Sequential(
             nn.Linear(n_neurons, n_neurons * 2),
             nn.ReLU(),
             nn.Linear(n_neurons * 2, n_neurons),
         )
-        
+
         # Simple decoder
         self.decoder = SpikeDecoder(SpikeDecoderConfig(
             n_neurons=n_neurons,
@@ -424,9 +423,9 @@ class MinimalSpikingLM(nn.Module):
             n_timesteps=n_timesteps,
             device=device,
         ))
-        
+
         self.to(self.device)
-    
+
     def forward(
         self,
         token_ids: torch.Tensor,
@@ -434,20 +433,20 @@ class MinimalSpikingLM(nn.Module):
         """Forward pass."""
         # Encode
         spikes, _ = self.encoder(token_ids)
-        
+
         # Process (integrate spikes first)
         integrated = spikes.mean(dim=2)  # [batch, seq, neurons]
         processed = self.process(integrated)
-        
+
         # Convert back to spikes for decoder
         processed_spikes = processed.unsqueeze(2).expand(-1, -1, self.n_timesteps, -1)
         processed_spikes = (torch.rand_like(processed_spikes) < torch.sigmoid(processed_spikes)).float()
-        
+
         # Decode
         logits = self.decoder(processed_spikes)
-        
+
         return logits
-    
+
     @torch.no_grad()
     def generate(
         self,
@@ -456,17 +455,17 @@ class MinimalSpikingLM(nn.Module):
     ) -> torch.Tensor:
         """Simple greedy generation."""
         self.eval()
-        
+
         if prompt_ids.dim() == 1:
             prompt_ids = prompt_ids.unsqueeze(0)
-        
+
         current_ids = prompt_ids.clone()
-        
+
         for _ in range(max_new_tokens):
             logits = self(current_ids)
             next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
             current_ids = torch.cat([current_ids, next_token], dim=1)
-        
+
         return current_ids
 
 
