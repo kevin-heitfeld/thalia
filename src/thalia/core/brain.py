@@ -99,6 +99,10 @@ from ..integration.pathways.spiking_replay import (
 class EventDrivenBrainConfig:
     """Configuration for the event-driven brain system.
 
+    .. deprecated:: 0.2.0
+        Use :class:`thalia.config.ThaliaConfig` instead for unified configuration.
+        Create brain with ``EventDrivenBrain.from_thalia_config(config)``.
+
     This is a simplified configuration focusing on the key parameters.
     For full control, create regions directly and pass them in.
     """
@@ -128,6 +132,18 @@ class EventDrivenBrainConfig:
     diagnostic_level: DiagnosticLevel = DiagnosticLevel.SUMMARY
 
     device: str = "cpu"
+
+    def __post_init__(self):
+        """Emit deprecation warning."""
+        import warnings
+        warnings.warn(
+            "EventDrivenBrainConfig is deprecated. Use ThaliaConfig instead:\n"
+            "  from thalia.config import ThaliaConfig\n"
+            "  config = ThaliaConfig(...)\n"
+            "  brain = EventDrivenBrain.from_thalia_config(config)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
 
 class EventDrivenBrain(SleepSystemMixin, nn.Module):

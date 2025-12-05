@@ -89,6 +89,10 @@ class SequenceContext:
 class SequenceMemoryConfig:
     """Configuration for sequence memory.
 
+    .. deprecated:: 0.2.0
+        Use :class:`thalia.config.ThaliaConfig` instead for unified configuration.
+        Create memory with ``SequenceMemory.from_thalia_config(config)``.
+
     Attributes:
         vocab_size: Size of token vocabulary
         n_neurons: Size of hippocampal representations
@@ -123,6 +127,18 @@ class SequenceMemoryConfig:
 
     device: str = "cpu"
 
+    def __post_init__(self):
+        """Emit deprecation warning."""
+        import warnings
+        warnings.warn(
+            "SequenceMemoryConfig is deprecated. Use ThaliaConfig instead:\n"
+            "  from thalia.config import ThaliaConfig\n"
+            "  config = ThaliaConfig(...)\n"
+            "  memory = SequenceMemory.from_thalia_config(config)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
 
 class SequenceMemory(nn.Module):
     """
@@ -134,8 +150,9 @@ class SequenceMemory(nn.Module):
     3. Recall next tokens given context (pattern completion)
 
     Example:
-        >>> config = SequenceMemoryConfig(vocab_size=1000, n_neurons=256)
-        >>> memory = SequenceMemory(config)
+        >>> from thalia.config import ThaliaConfig
+        >>> config = ThaliaConfig(...)
+        >>> memory = SequenceMemory.from_thalia_config(config)
         >>>
         >>> # Encode a sequence
         >>> tokens = torch.tensor([[1, 5, 3, 7, 9]])  # [batch, seq]
@@ -204,6 +221,29 @@ class SequenceMemory(nn.Module):
         }
 
         self.to(self.device)
+
+    @classmethod
+    def from_thalia_config(cls, config: "ThaliaConfig") -> "SequenceMemory":
+        """Create SequenceMemory from unified ThaliaConfig.
+
+        This is the recommended way to create a sequence memory.
+
+        Args:
+            config: ThaliaConfig with all settings
+
+        Returns:
+            SequenceMemory instance
+
+        Example:
+            from thalia.config import ThaliaConfig
+
+            config = ThaliaConfig(...)
+            memory = SequenceMemory.from_thalia_config(config)
+        """
+        from thalia.config import ThaliaConfig
+
+        legacy_config = config.to_sequence_memory_config()
+        return cls(legacy_config)
 
     def reset(self) -> None:
         """Reset memory state for new sequence."""

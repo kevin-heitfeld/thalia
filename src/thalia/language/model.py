@@ -80,11 +80,16 @@ from thalia.language.position import (
 # Type checking imports
 if TYPE_CHECKING:
     from thalia.core.brain import EventDrivenBrain
+    from thalia.config import ThaliaConfig
 
 
 @dataclass
 class LanguageInterfaceConfig:
     """Configuration for language-brain interface.
+
+    .. deprecated:: 0.2.0
+        Use :class:`thalia.config.ThaliaConfig` instead for unified configuration.
+        Create interface with ``LanguageBrainInterface.from_thalia_config(brain, config)``.
 
     Attributes:
         vocab_size: Size of token vocabulary
@@ -105,6 +110,18 @@ class LanguageInterfaceConfig:
     brain_input_size: int = 256
 
     device: str = "cpu"
+
+    def __post_init__(self):
+        """Emit deprecation warning."""
+        import warnings
+        warnings.warn(
+            "LanguageInterfaceConfig is deprecated. Use ThaliaConfig instead:\n"
+            "  from thalia.config import ThaliaConfig\n"
+            "  config = ThaliaConfig(...)\n"
+            "  interface = LanguageBrainInterface.from_thalia_config(brain, config)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
 
 class LanguageBrainInterface(nn.Module):
@@ -188,6 +205,36 @@ class LanguageBrainInterface(nn.Module):
         self.output_buffer: List[torch.Tensor] = []
 
         self.to(self.device)
+
+    @classmethod
+    def from_thalia_config(
+        cls,
+        brain: "EventDrivenBrain",
+        config: "ThaliaConfig",
+    ) -> "LanguageBrainInterface":
+        """Create LanguageBrainInterface from unified ThaliaConfig.
+
+        This is the recommended way to create a language interface.
+
+        Args:
+            brain: EventDrivenBrain instance (created from same ThaliaConfig)
+            config: ThaliaConfig with all settings
+
+        Returns:
+            LanguageBrainInterface instance
+
+        Example:
+            from thalia.config import ThaliaConfig
+            from thalia.core.brain import EventDrivenBrain
+
+            config = ThaliaConfig(...)
+            brain = EventDrivenBrain.from_thalia_config(config)
+            interface = LanguageBrainInterface.from_thalia_config(brain, config)
+        """
+        from thalia.config import ThaliaConfig
+
+        legacy_config = config.to_language_interface_config()
+        return cls(brain, legacy_config)
 
     def process_tokens(
         self,

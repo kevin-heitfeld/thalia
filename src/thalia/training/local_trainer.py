@@ -108,6 +108,10 @@ class TrainingMetrics:
 class TrainingConfig:
     """Configuration for local learning trainer.
 
+    .. deprecated:: 0.2.0
+        Use :class:`thalia.config.ThaliaConfig` instead for unified configuration.
+        Create trainer with ``LocalTrainer.from_thalia_config(config)``.
+
     Attributes:
         n_epochs: Number of training epochs
         log_every: Log metrics every N steps
@@ -152,6 +156,18 @@ class TrainingConfig:
 
     device: str = "cpu"
 
+    def __post_init__(self):
+        """Emit deprecation warning."""
+        import warnings
+        warnings.warn(
+            "TrainingConfig is deprecated. Use ThaliaConfig instead:\n"
+            "  from thalia.config import ThaliaConfig\n"
+            "  config = ThaliaConfig(...)\n"
+            "  trainer = LocalTrainer.from_thalia_config(config)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
 
 class LocalTrainer:
     """
@@ -163,10 +179,9 @@ class LocalTrainer:
     - Uses STDP, BCM, and eligibility traces
 
     Example:
-        >>> from thalia.training import LocalTrainer, TrainingConfig
-        >>> from thalia.language import LanguageBrainInterface
-        >>>
-        >>> trainer = LocalTrainer(TrainingConfig(n_epochs=5))
+        >>> from thalia.config import ThaliaConfig
+        >>> config = ThaliaConfig(...)
+        >>> trainer = LocalTrainer.from_thalia_config(config)
         >>>
         >>> # Train on sequences
         >>> metrics = trainer.train(
@@ -189,6 +204,29 @@ class LocalTrainer:
 
         # Step counter
         self.global_step = 0
+
+    @classmethod
+    def from_thalia_config(cls, config: "ThaliaConfig") -> "LocalTrainer":
+        """Create LocalTrainer from unified ThaliaConfig.
+
+        This is the recommended way to create a trainer.
+
+        Args:
+            config: ThaliaConfig with all settings
+
+        Returns:
+            LocalTrainer instance
+
+        Example:
+            from thalia.config import ThaliaConfig
+
+            config = ThaliaConfig(...)
+            trainer = LocalTrainer.from_thalia_config(config)
+        """
+        from thalia.config import ThaliaConfig
+
+        legacy_config = config.to_training_config()
+        return cls(legacy_config)
 
     def train(
         self,

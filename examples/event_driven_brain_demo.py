@@ -13,7 +13,7 @@ The demo runs a Delayed Match-to-Sample task:
 5. Sleep: Hippocampus replays to Cortex for consolidation
 
 Key features:
-- Uses EventDrivenBrain from thalia.core.brain
+- Uses ThaliaConfig for unified configuration
 - Input buffering for proper dimension handling
 - Learnable pathways: PFC→Cortex (attention), Hippo→Cortex (replay)
 - D1/D2 opponent process in Striatum
@@ -25,8 +25,11 @@ from dataclasses import dataclass
 import torch
 import numpy as np
 
-# Import the new event-driven brain system
-from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+# Import the unified configuration system
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+
+# Import the brain system
+from thalia.core.brain import EventDrivenBrain
 
 
 @dataclass
@@ -194,15 +197,26 @@ def main():
     trials_per_epoch = 20
     sleep_every = 5
 
-    # Create brain
-    print("\n[1] Creating EventDrivenBrain...")
-    brain = EventDrivenBrain(EventDrivenBrainConfig(
-        input_size=pattern_size,
-        cortex_size=96,
-        hippocampus_size=64,
-        pfc_size=20,
-        n_actions=2,  # MATCH or NO-MATCH
-    ))
+    # Create brain using unified ThaliaConfig
+    print("\n[1] Creating EventDrivenBrain with ThaliaConfig...")
+
+    config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu"),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=pattern_size,
+                cortex_size=96,
+                hippocampus_size=64,
+                pfc_size=20,
+                n_actions=2,  # MATCH or NO-MATCH
+            ),
+        ),
+    )
+
+    # Show configuration summary
+    print(config.summary())
+
+    brain = EventDrivenBrain.from_thalia_config(config)
 
     # Create patterns
     print("\n[2] Creating distinct patterns...")
