@@ -144,6 +144,16 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
     4. Can run in parallel mode for performance
 
     Example:
+        # Using unified config (recommended)
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cuda"),
+            brain=BrainConfig(sizes=RegionSizes(cortex_size=256)),
+        )
+        brain = EventDrivenBrain.from_thalia_config(config)
+
+        # Or using legacy config
         brain = EventDrivenBrain(EventDrivenBrainConfig(
             input_size=256,
             cortex_size=128,
@@ -371,6 +381,34 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self.diagnostics.configure_component("cortex", enabled=True)
         self.diagnostics.configure_component("pfc", enabled=True)
         self.diagnostics.configure_component("cerebellum", enabled=True)
+
+    @classmethod
+    def from_thalia_config(cls, config: "ThaliaConfig") -> "EventDrivenBrain":
+        """Create EventDrivenBrain from unified ThaliaConfig.
+
+        This is the recommended way to create a brain, as it uses the
+        unified configuration system that eliminates parameter duplication.
+
+        Args:
+            config: ThaliaConfig with all settings
+
+        Returns:
+            EventDrivenBrain instance
+
+        Example:
+            from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig
+
+            config = ThaliaConfig(
+                global_=GlobalConfig(device="cuda"),
+                brain=BrainConfig(sizes=RegionSizes(cortex_size=256)),
+            )
+            brain = EventDrivenBrain.from_thalia_config(config)
+        """
+        # Import here to avoid circular imports
+        from thalia.config import ThaliaConfig
+
+        legacy_config = config.to_event_driven_brain_config()
+        return cls(legacy_config)
 
     def _init_parallel_executor(self) -> None:
         """Initialize parallel executor with region creators.

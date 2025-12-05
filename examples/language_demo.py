@@ -3,10 +3,11 @@
 Language Demo for THALIA - Spiking Neural Network Language Processing.
 
 This demo shows:
-1. Loading text data and tokenizing
-2. Processing through the LanguageBrainInterface
-3. Training with local learning rules (no backprop!)
-4. Simple next-character prediction
+1. Using the unified ThaliaConfig system
+2. Loading text data and tokenizing
+3. Processing through the LanguageBrainInterface
+4. Training with local learning rules (no backprop!)
+5. Simple next-character prediction
 
 The goal is to validate the full pipeline works end-to-end,
 even though the model is small and learning is limited.
@@ -27,11 +28,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import torch
 import time
 
-from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
-from thalia.language.model import LanguageBrainInterface, LanguageInterfaceConfig
-from thalia.memory.sequence import SequenceMemory, SequenceMemoryConfig
+# New unified configuration
+from thalia.config import (
+    ThaliaConfig,
+    GlobalConfig,
+    BrainConfig,
+    RegionSizes,
+    LanguageConfig,
+    TrainingConfig as UnifiedTrainingConfig,
+)
+
+# Core components
+from thalia.core.brain import EventDrivenBrain
+from thalia.language.model import LanguageBrainInterface
+from thalia.memory.sequence import SequenceMemory
 from thalia.training.data_pipeline import TextDataPipeline, DataConfig
-from thalia.training.local_trainer import LocalTrainer, TrainingConfig
+from thalia.training.local_trainer import LocalTrainer
 
 
 # Sample text for demo (small enough for quick testing)
@@ -56,10 +68,49 @@ def main():
     print("=" * 60)
     print()
 
-    # Configuration
-    device = "cpu"  # Use CPU for compatibility
+    # =========================================================================
+    # UNIFIED CONFIGURATION
+    # =========================================================================
+    print("1. Creating unified configuration...")
+    print("-" * 40)
 
-    print("1. Setting up data pipeline...")
+    # Create ThaliaConfig - single source of truth for all settings
+    n_neurons = 128  # Keep small for demo speed
+
+    config = ThaliaConfig(
+        # Global settings - inherited by all modules
+        global_=GlobalConfig(
+            device="cpu",
+            vocab_size=100,  # Will be updated after loading data
+            theta_frequency_hz=8.0,
+        ),
+        # Brain architecture
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=n_neurons,
+                cortex_size=n_neurons,
+                hippocampus_size=64,
+                pfc_size=32,
+                n_actions=2,  # Match/no-match (not per-character actions)
+            ),
+            encoding_timesteps=5,  # Short for speed
+        ),
+        # Language processing
+        language=LanguageConfig(),
+        # Training settings
+        training=UnifiedTrainingConfig(
+            n_epochs=2,  # Quick demo
+            use_stdp=True,
+            use_bcm=True,
+            use_hebbian=True,
+        ),
+    )
+
+    # Show configuration summary
+    print(config.summary())
+    print()
+
+    print("2. Setting up data pipeline...")
     print("-" * 40)
 
     # Create data pipeline
@@ -77,44 +128,28 @@ def main():
     print(f"   Context length: {data_config.context_length}")
     print()
 
-    print("2. Creating brain and language interface...")
+    # Update config with actual vocab size
+    config.global_.vocab_size = data_pipeline.vocab_size
+
+    print("3. Creating brain and language interface...")
     print("-" * 40)
 
-    # Create brain with appropriate sizes
-    n_neurons = 128  # Keep small for demo speed
+    # Create brain using unified config
+    brain = EventDrivenBrain.from_thalia_config(config)
 
-    brain_config = EventDrivenBrainConfig(
-        input_size=n_neurons,
-        cortex_size=n_neurons,
-        hippocampus_size=64,
-        pfc_size=32,
-        n_actions=2,  # Keep small - brain does match/no-match, not per-character actions
-        device=device,
-    )
-    brain = EventDrivenBrain(brain_config)
-
-    # Create language interface
-    lang_config = LanguageInterfaceConfig(
-        vocab_size=data_pipeline.vocab_size,
-        brain_input_size=n_neurons,
-        n_timesteps=5,  # Short for speed
-        device=device,
-    )
+    # Create language interface using config's factory method
+    lang_config = config.to_language_interface_config()
     lang_interface = LanguageBrainInterface(brain, lang_config)
 
     print(f"   Brain created with {n_neurons} neurons per region")
     print(f"   Regions: Cortex, Hippocampus, PFC, Striatum, Cerebellum")
     print()
 
-    print("3. Creating sequence memory (hippocampal)...")
+    print("4. Creating sequence memory (hippocampal)...")
     print("-" * 40)
 
-    memory_config = SequenceMemoryConfig(
-        vocab_size=data_pipeline.vocab_size,
-        n_neurons=n_neurons,
-        context_length=data_config.context_length,
-        device=device,
-    )
+    # Create sequence memory using config's factory method
+    memory_config = config.to_sequence_memory_config()
     sequence_memory = SequenceMemory(memory_config)
 
     print(f"   Hippocampus: DG={sequence_memory.hippocampus.dg_size}, "
@@ -122,19 +157,11 @@ def main():
           f"CA1={sequence_memory.hippocampus.ca1_size}")
     print()
 
-    print("4. Training with local learning rules...")
+    print("5. Training with local learning rules...")
     print("-" * 40)
 
-    # Create trainer with local rules
-    train_config = TrainingConfig(
-        n_epochs=2,  # Quick demo
-        log_every=10,
-        use_stdp=True,
-        use_bcm=True,
-        use_hebbian=True,
-        device=device,
-    )
-
+    # Create trainer using config's factory method
+    train_config = config.to_training_config()
     trainer = LocalTrainer(train_config)
 
     # Training callback for progress
@@ -158,7 +185,7 @@ def main():
     print(f"   Final metrics: {final_metrics.to_dict()}")
     print()
 
-    print("5. Testing next-character prediction...")
+    print("6. Testing next-character prediction...")
     print("-" * 40)
 
     # Test prompts
@@ -211,6 +238,7 @@ def main():
     print("  ✓ STDP, BCM, and Hebbian rules for synaptic plasticity")
     print("  ✓ Hippocampus stores sequence associations")
     print("  ✓ Theta-phase encoding for temporal order")
+    print("  ✓ Unified ThaliaConfig eliminates parameter duplication")
     print("=" * 60)
 
 
