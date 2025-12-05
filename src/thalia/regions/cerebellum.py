@@ -48,6 +48,8 @@ from typing import Optional, Dict, Any
 
 import torch
 
+from thalia.core.utils import ensure_batch_dim
+from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.regions.base import (
     BrainRegion,
     RegionConfig,
@@ -129,7 +131,7 @@ class ClimbingFiberSystem:
         self.error = torch.zeros(self.n_output, device=self.device)
 
 
-class Cerebellum(BrainRegion):
+class Cerebellum(DiagnosticsMixin, BrainRegion):
     """Cerebellar region with supervised error-corrective learning.
 
     Implements the cerebellar learning rule:
@@ -208,8 +210,7 @@ class Cerebellum(BrainRegion):
             encoding_mod: Theta modulation for encoding (scales input gain)
             retrieval_mod: Theta modulation for retrieval (scales output correction)
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
 
         if self.neurons.membrane is None:
             self.neurons.reset_state(input_spikes.shape[0])
@@ -291,10 +292,8 @@ class Cerebellum(BrainRegion):
         Returns:
             Dictionary with learning metrics
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
-        if output_spikes.dim() == 1:
-            output_spikes = output_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
+        output_spikes = ensure_batch_dim(output_spikes)
 
         cfg = self.cerebellum_config
 
@@ -306,8 +305,7 @@ class Cerebellum(BrainRegion):
         if target is None:
             return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
 
-        if target.dim() == 1:
-            target = target.unsqueeze(0)
+        target = ensure_batch_dim(target)
 
         # ======================================================================
         # Compute error via climbing fiber system

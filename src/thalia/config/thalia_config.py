@@ -200,13 +200,13 @@ class ThaliaConfig:
             )
 
     def to_sequence_memory_config(self) -> Any:
-        """Create SequenceMemoryConfig for legacy API."""
+        """Create LegacySequenceMemoryConfig for legacy API."""
         import warnings
-        from thalia.memory.sequence import SequenceMemoryConfig
+        from thalia.memory.sequence import LegacySequenceMemoryConfig
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            return SequenceMemoryConfig(
+            return LegacySequenceMemoryConfig(
                 vocab_size=self.global_.vocab_size,
                 n_neurons=self.brain.sizes.hippocampus_size * 2,  # Larger for sequence storage
                 context_length=self.language.sequence_memory.context_length,
@@ -220,9 +220,9 @@ class ThaliaConfig:
             )
 
     def to_training_config(self) -> Any:
-        """Create TrainingConfig for legacy API."""
+        """Create LegacyTrainingConfig for legacy API."""
         import warnings
-        from thalia.training.local_trainer import TrainingConfig as LegacyTrainingConfig
+        from thalia.training.local_trainer import LegacyTrainingConfig
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)

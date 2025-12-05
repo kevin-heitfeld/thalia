@@ -33,6 +33,7 @@ import torch.nn as nn
 import numpy as np
 
 from ..core.stp import ShortTermPlasticity, STPConfig, STPType
+from ..core.utils import clamp_weights
 from ..learning.bcm import BCMRule, BCMConfig
 
 
@@ -556,7 +557,7 @@ class SpikingPathway(nn.Module):
         # Update weights
         if isinstance(dw, torch.Tensor):
             self.weights.data += dw
-            self.weights.data.clamp_(cfg.w_min, cfg.w_max)
+            clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
 
     def _apply_synaptic_scaling(self, dt: float) -> None:
         """Apply homeostatic synaptic scaling."""
@@ -571,7 +572,7 @@ class SpikingPathway(nn.Module):
 
         # Apply to outgoing weights of each target neuron
         self.weights.data *= scale_factor.unsqueeze(1)
-        self.weights.data.clamp_(cfg.w_min, cfg.w_max)
+        clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
 
     def reset(self) -> None:
         """Reset all state (call between trials)."""
@@ -654,7 +655,7 @@ class SpikingPathway(nn.Module):
                 dw = dw * (cfg.w_max - self.weights.data) * (self.weights.data - cfg.w_min)
 
             self.weights.data += dw
-            self.weights.data.clamp_(cfg.w_min, cfg.w_max)
+            clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
 
             self.total_ltp += ltp.sum().item()
 

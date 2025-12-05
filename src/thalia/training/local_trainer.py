@@ -105,33 +105,15 @@ class TrainingMetrics:
 
 
 @dataclass
-class TrainingConfig:
-    """Configuration for local learning trainer.
+class LegacyTrainingConfig:
+    """Legacy configuration for local learning trainer.
 
     .. deprecated:: 0.2.0
-        Use :class:`thalia.config.ThaliaConfig` instead for unified configuration.
+        Use :class:`thalia.config.TrainingConfig` instead for unified configuration.
         Create trainer with ``LocalTrainer.from_thalia_config(config)``.
 
-    Attributes:
-        n_epochs: Number of training epochs
-        log_every: Log metrics every N steps
-        save_every: Save checkpoint every N steps
-
-        # Learning rule selection
-        use_stdp: Enable STDP learning
-        use_bcm: Enable BCM threshold
-        use_eligibility: Enable eligibility traces
-        use_hebbian: Enable simple Hebbian
-
-        # Learning rate scaling
-        stdp_lr: STDP learning rate
-        bcm_lr: BCM threshold adaptation rate
-        hebbian_lr: Hebbian learning rate
-
-        # Neuromodulation
-        reward_signal: Base reward signal for three-factor
-
-        device: Computation device
+    This class exists only for backwards compatibility. New code should use
+    ``thalia.config.TrainingConfig`` directly.
     """
     n_epochs: int = 10
     log_every: int = 100
@@ -160,13 +142,16 @@ class TrainingConfig:
         """Emit deprecation warning."""
         import warnings
         warnings.warn(
-            "TrainingConfig is deprecated. Use ThaliaConfig instead:\n"
-            "  from thalia.config import ThaliaConfig\n"
-            "  config = ThaliaConfig(...)\n"
-            "  trainer = LocalTrainer.from_thalia_config(config)",
+            "LegacyTrainingConfig is deprecated. Use thalia.config.TrainingConfig instead:\n"
+            "  from thalia.config import TrainingConfig\n"
+            "  config = TrainingConfig(...)",
             DeprecationWarning,
             stacklevel=2,
         )
+
+
+# Alias for backwards compatibility (deprecated)
+TrainingConfig = LegacyTrainingConfig
 
 
 class LocalTrainer:

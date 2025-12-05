@@ -52,6 +52,7 @@ from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 
+from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe
 from thalia.regions.base import (
     BrainRegion,
     RegionConfig,
@@ -431,10 +432,8 @@ class Prefrontal(BrainRegion):
         Returns:
             Dictionary with learning metrics
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
-        if output_spikes.dim() == 1:
-            output_spikes = output_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
+        output_spikes = ensure_batch_dim(output_spikes)
             
         cfg = self.pfc_config
         
@@ -475,14 +474,14 @@ class Prefrontal(BrainRegion):
             
             with torch.no_grad():
                 self.weights.data += dW
-                self.weights.data.clamp_(self.config.w_min, self.config.w_max)
+                clamp_weights(self.weights.data, self.config.w_min, self.config.w_max)
                 
                 # Synaptic scaling for homeostasis
                 if cfg.synaptic_scaling_enabled:
                     mean_weight = self.weights.data.mean()
                     scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
                     self.weights.data *= scaling
-                    self.weights.data.clamp_(self.config.w_min, self.config.w_max)
+                    clamp_weights(self.weights.data, self.config.w_min, self.config.w_max)
         else:
             dW = torch.zeros_like(self.weights)
 
@@ -518,8 +517,7 @@ class Prefrontal(BrainRegion):
         Args:
             context: Context pattern [batch, n_output] or [n_output]
         """
-        if context.dim() == 1:
-            context = context.unsqueeze(0)
+        context = ensure_batch_dim(context)
 
         self.state.working_memory = context.to(self.device).float()
         self.state.active_rule = context.to(self.device).float()
@@ -556,9 +554,9 @@ class Prefrontal(BrainRegion):
 
         final_wm = self.state.working_memory
 
-        # Compute retention
-        retention = torch.nn.functional.cosine_similarity(
-            initial_wm.flatten(), final_wm.flatten(), dim=0
+        # Compute retention using safe cosine similarity
+        retention = cosine_similarity_safe(
+            initial_wm.flatten(), final_wm.flatten()
         ).item()
 
         return {

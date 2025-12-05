@@ -60,6 +60,42 @@ from thalia.core.scalable_attention import (
     GammaPhaseAttention,
     MultiScaleSpikingAttention,
 )
+from thalia.core.utils import (
+    ensure_batch_dim,
+    ensure_batch_dims,
+    remove_batch_dim,
+    clamp_weights,
+    apply_soft_bounds,
+    cosine_similarity_safe,
+    zeros_like_config,
+    ones_like_config,
+)
+from thalia.core.protocols import (
+    Resettable,
+    BatchResettable,
+    Learnable,
+    Forwardable,
+    Diagnosable,
+    WeightContainer,
+    Configurable,
+    BrainRegionProtocol,
+)
+from thalia.core.diagnostics_mixin import DiagnosticsMixin
+from thalia.core.traces import (
+    SpikeTrace,
+    PairedTraces,
+    TraceConfig,
+    compute_stdp_update,
+    create_trace,
+    update_trace,
+    compute_decay,
+)
+from thalia.core.sleep import (
+    SleepStage,
+    StageConfig,
+    STAGE_CONFIGS,
+    SleepSystemMixin,
+)
 
 __all__ = [
     "LIFNeuron",
@@ -116,4 +152,37 @@ __all__ = [
     "WinnerTakeAllAttention",
     "GammaPhaseAttention",
     "MultiScaleSpikingAttention",
+    # Utilities
+    "ensure_batch_dim",
+    "ensure_batch_dims",
+    "remove_batch_dim",
+    "clamp_weights",
+    "apply_soft_bounds",
+    "cosine_similarity_safe",
+    "zeros_like_config",
+    "ones_like_config",
+    # Protocols
+    "Resettable",
+    "BatchResettable",
+    "Learnable",
+    "Forwardable",
+    "Diagnosable",
+    "WeightContainer",
+    "Configurable",
+    "BrainRegionProtocol",
+    # Diagnostics Mixin
+    "DiagnosticsMixin",
+    # Spike Traces
+    "SpikeTrace",
+    "PairedTraces",
+    "TraceConfig",
+    "compute_stdp_update",
+    "create_trace",
+    "update_trace",
+    "compute_decay",
+    # Sleep System
+    "SleepStage",
+    "StageConfig",
+    "STAGE_CONFIGS",
+    "SleepSystemMixin",
 ]

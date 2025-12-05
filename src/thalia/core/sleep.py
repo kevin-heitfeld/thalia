@@ -16,12 +16,70 @@ Sleep Architecture:
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Dict, Any, List
+from dataclasses import dataclass
+from enum import Enum, auto
+from typing import TYPE_CHECKING, Dict, Any, List, Optional
 
 import torch
 
 if TYPE_CHECKING:
     from ..regions.hippocampus import Episode
+
+
+class SleepStage(Enum):
+    """Sleep stages with distinct replay characteristics."""
+    N2 = auto()   # Light sleep - moderate learning
+    SWS = auto()  # Slow-wave sleep - full learning + consolidation
+    REM = auto()  # REM - reduced learning + noise
+
+
+@dataclass
+class StageConfig:
+    """Configuration for a sleep stage's replay behavior.
+    
+    Attributes:
+        reward_multiplier: Scale factor for reward delivery (0.0-1.0)
+        add_noise: Whether to add stochastic noise during replay
+        noise_scale: Base amplitude of noise (if add_noise is True)
+        do_consolidation: Whether to run hippocampus→cortex consolidation
+        temperature: Softmax temperature for episode sampling (higher = more uniform)
+        priority_noise: Noise added to priorities before sampling
+    """
+    reward_multiplier: float = 1.0
+    add_noise: bool = False
+    noise_scale: float = 0.0
+    do_consolidation: bool = False
+    temperature: float = 1.0
+    priority_noise: float = 0.0
+
+
+# Default configurations for each sleep stage
+STAGE_CONFIGS: Dict[SleepStage, StageConfig] = {
+    SleepStage.N2: StageConfig(
+        reward_multiplier=0.6,
+        add_noise=False,
+        noise_scale=0.0,
+        do_consolidation=False,
+        temperature=1.0,
+        priority_noise=0.3,
+    ),
+    SleepStage.SWS: StageConfig(
+        reward_multiplier=1.0,
+        add_noise=False,
+        noise_scale=0.0,
+        do_consolidation=True,
+        temperature=float('inf'),  # Use prioritized sampling directly
+        priority_noise=0.0,
+    ),
+    SleepStage.REM: StageConfig(
+        reward_multiplier=0.3,
+        add_noise=True,
+        noise_scale=0.1,
+        do_consolidation=False,
+        temperature=2.0,  # More uniform sampling
+        priority_noise=0.5,
+    ),
+}
 
 
 class SleepSystemMixin:
@@ -185,55 +243,201 @@ class SleepSystemMixin:
         for _ in range(n_timesteps):
             self.cortex.forward(null_input)
 
+    # ========================================================================
+    # Issue 8: Striatum Input Builder Helper
+    # ========================================================================
+    
+    def _get_striatum_input_size(self) -> int:
+        """Get the expected input size for striatum (cortex_l5 + hippocampus + pfc)."""
+        return (
+            self._cortex_l5_size +
+            self.config.hippocampus_size +
+            self.config.pfc_size
+        )
+    
+    def _build_striatum_input(self, episode: "Episode") -> torch.Tensor:
+        """Build striatum input tensor from an episode's hippocampal state.
+        
+        The striatum expects concatenated input from cortex L5, hippocampus, 
+        and PFC. This helper constructs that input by placing the episode's
+        hippocampal state in the correct position.
+        
+        Args:
+            episode: Episode containing hippocampal state to replay
+            
+        Returns:
+            Tensor of shape (1, striatum_input_size) ready for striatum.forward()
+        """
+        striatum_input_size = self._get_striatum_input_size()
+        striatum_input = torch.zeros(1, striatum_input_size)
+        
+        # Place hippocampus activity in the correct position (after cortex L5)
+        hippo_start = self._cortex_l5_size
+        state_size = min(episode.state.shape[0], self.config.hippocampus_size)
+        striatum_input[0, hippo_start:hippo_start + state_size] = episode.state[:state_size]
+        
+        return striatum_input
+
+    # ========================================================================
+    # Issue 9: Unified Episode Sampling
+    # ========================================================================
+    
+    def _sample_episodes(
+        self,
+        n: int,
+        temperature: float = 1.0,
+        priority_noise: float = 0.0,
+    ) -> List["Episode"]:
+        """Sample episodes with configurable priority bias and stochasticity.
+        
+        Uses softmax over (noisy) priorities with temperature control:
+        - temperature → ∞: Use hippocampus.sample_episodes_prioritized() directly
+        - temperature = 1.0: Standard priority-weighted sampling
+        - temperature > 1.0: More uniform sampling (less priority bias)
+        - temperature < 1.0: Sharper priority bias
+        
+        Args:
+            n: Number of episodes to sample
+            temperature: Softmax temperature (higher = more uniform)
+            priority_noise: Gaussian noise scale added to priorities
+            
+        Returns:
+            List of sampled episodes
+        """
+        buffer = self.hippocampus.episode_buffer
+        if len(buffer) == 0:
+            return []
+        
+        n = min(n, len(buffer))
+        
+        # Special case: infinite temperature means use prioritized sampling directly
+        if temperature == float('inf'):
+            return self.hippocampus.sample_episodes_prioritized(n)
+        
+        # Compute priorities with optional noise
+        priorities = torch.tensor([ep.priority for ep in buffer])
+        
+        if priority_noise > 0:
+            priorities = priorities + torch.randn_like(priorities) * priority_noise
+        
+        # Apply temperature: divide logits by temperature before softmax
+        # (equivalent to softmax(x * (1/temperature)))
+        probs = torch.softmax(priorities / temperature, dim=0)
+        
+        indices = torch.multinomial(probs, n, replacement=False)
+        return [buffer[i] for i in indices.tolist()]
+
+    # ========================================================================
+    # Issue 7: Unified Stage Replay Method
+    # ========================================================================
+    
+    def _run_stage_replays(
+        self,
+        stage: SleepStage,
+        n_replays: int,
+        n_timesteps: int,
+        stage_config: Optional[StageConfig] = None,
+    ) -> Dict[str, Any]:
+        """Run replays for a sleep stage with stage-specific parameters.
+        
+        This unified method handles all sleep stages (N2, SWS, REM) with
+        configurable behavior for:
+        - Episode sampling strategy (temperature, priority noise)
+        - Reward scaling
+        - Noise injection (REM)
+        - Hippocampus→Cortex consolidation (SWS)
+        
+        Args:
+            stage: Sleep stage (N2, SWS, or REM)
+            n_replays: Number of episodes to replay
+            n_timesteps: Timesteps per replay
+            stage_config: Optional custom configuration (defaults to STAGE_CONFIGS[stage])
+            
+        Returns:
+            Dict with replay metrics: replays, match, nomatch counts
+        """
+        config = stage_config or STAGE_CONFIGS[stage]
+        
+        # Sample episodes using unified sampler
+        episodes = self._sample_episodes(
+            n_replays,
+            temperature=config.temperature,
+            priority_noise=config.priority_noise,
+        )
+        
+        match_count = 0
+        nomatch_count = 0
+        
+        for episode in episodes:
+            self._settle_for_replay(n_timesteps=5)
+            
+            # Build input using helper (Issue 8)
+            striatum_input = self._build_striatum_input(episode)
+            
+            # Run timesteps with optional noise (REM)
+            for t in range(n_timesteps):
+                current_input = striatum_input
+                
+                if config.add_noise:
+                    # Theta modulation (~6 Hz during REM)
+                    theta_phase = 2 * math.pi * 6.0 * t / 1000.0
+                    theta_mod = 0.5 * (1 + math.cos(theta_phase))
+                    noise = torch.randn_like(striatum_input) * config.noise_scale * theta_mod
+                    current_input = striatum_input + noise
+                
+                self.striatum.forward(current_input, explore=False)
+                self.striatum.last_action = episode.action
+            
+            # Deliver scaled reward
+            self.striatum.deliver_reward(reward=episode.reward * config.reward_multiplier)
+            
+            # SWS-specific: Hippocampus → Cortex consolidation
+            if config.do_consolidation and episode.context is not None:
+                self._run_consolidation(episode)
+            
+            # Track match/nomatch
+            is_match = episode.metadata.get("is_match", True) if episode.metadata else True
+            if is_match:
+                match_count += 1
+            else:
+                nomatch_count += 1
+        
+        return {
+            "replays": len(episodes),
+            "match": match_count,
+            "nomatch": nomatch_count,
+        }
+    
+    def _run_consolidation(self, episode: "Episode") -> None:
+        """Run hippocampus → cortex consolidation for an episode (SWS-specific)."""
+        hippo_activity = episode.state[:self.config.hippocampus_size].unsqueeze(0)
+        self.replay_pathway.trigger_ripple()
+        replay_signal = self.replay_pathway.replay_step(dt=1.0)
+        
+        if replay_signal is not None:
+            cortex_input = torch.zeros(1, self.config.input_size)
+            min_size = min(replay_signal.shape[1], self.config.input_size)
+            cortex_input[:, :min_size] = replay_signal[:, :min_size]
+            cortex_activity = self.cortex.forward(cortex_input)
+            
+            self.replay_pathway.learn(
+                pre_spikes=hippo_activity,
+                post_spikes=cortex_activity,
+                reward=0.5,
+                dt=1.0,
+            )
+
+    # ========================================================================
+    # Stage-Specific Methods (now delegate to unified method)
+    # ========================================================================
+
     def _run_n2_replays(
         self,
         n_replays: int,
         n_timesteps: int,
     ) -> Dict[str, Any]:
         """Run N2 (light sleep) replays with moderate learning."""
-        n2_match = 0
-        n2_nomatch = 0
-
-        # Sample with moderate priority bias for N2 spindles
-        episodes = self._sample_episodes_for_n2(n_replays)
-
-        # Striatum expects: cortex_l5 + hippocampus + pfc
-        striatum_input_size = (
-            self._cortex_l5_size +
-            self.config.hippocampus_size +
-            self.config.pfc_size
-        )
-
-        for episode in episodes:
-            self._settle_for_replay(n_timesteps=5)
-
-            # Build striatum input from episode state
-            # Episode state is hippocampus activity, pad with zeros for cortex/pfc
-            striatum_input = torch.zeros(1, striatum_input_size)
-            # Place hippocampus activity in the right position
-            hippo_start = self._cortex_l5_size
-            state_size = min(episode.state.shape[0], self.config.hippocampus_size)
-            striatum_input[0, hippo_start:hippo_start + state_size] = episode.state[:state_size]
-
-            # Replay through striatum with moderate learning
-            for _ in range(n_timesteps):
-                self.striatum.forward(striatum_input, explore=False)
-                self.striatum.last_action = episode.action
-
-            # Moderate reward strength during N2 (60%)
-            self.striatum.deliver_reward(reward=episode.reward * 0.6)
-
-            is_match = episode.metadata.get("is_match", True) if episode.metadata else True
-            if is_match:
-                n2_match += 1
-            else:
-                n2_nomatch += 1
-
-        return {
-            "replays": len(episodes),
-            "match": n2_match,
-            "nomatch": n2_nomatch,
-        }
+        return self._run_stage_replays(SleepStage.N2, n_replays, n_timesteps)
 
     def _run_sws_replays(
         self,
@@ -241,66 +445,7 @@ class SleepSystemMixin:
         n_timesteps: int,
     ) -> Dict[str, Any]:
         """Run SWS (slow-wave sleep) replays with FULL learning."""
-        sws_match = 0
-        sws_nomatch = 0
-
-        # Priority-weighted sampling for SWS
-        episodes = self.hippocampus.sample_episodes_prioritized(n_replays)
-
-        # Striatum expects: cortex_l5 + hippocampus + pfc
-        striatum_input_size = (
-            self._cortex_l5_size +
-            self.config.hippocampus_size +
-            self.config.pfc_size
-        )
-
-        for episode in episodes:
-            self._settle_for_replay(n_timesteps=5)
-
-            # Build striatum input from episode state
-            striatum_input = torch.zeros(1, striatum_input_size)
-            hippo_start = self._cortex_l5_size
-            state_size = min(episode.state.shape[0], self.config.hippocampus_size)
-            striatum_input[0, hippo_start:hippo_start + state_size] = episode.state[:state_size]
-
-            # Replay with FULL learning during SWS
-            for _ in range(n_timesteps):
-                self.striatum.forward(striatum_input, explore=False)
-                self.striatum.last_action = episode.action
-
-            # FULL reward strength during SWS
-            self.striatum.deliver_reward(reward=episode.reward)
-
-            # Hippocampus → Cortex consolidation via replay pathway
-            if episode.context is not None:
-                hippo_activity = episode.state[:self.config.hippocampus_size].unsqueeze(0)
-                self.replay_pathway.trigger_ripple()
-                replay_signal = self.replay_pathway.replay_step(dt=1.0)
-
-                if replay_signal is not None:
-                    cortex_input = torch.zeros(1, self.config.input_size)
-                    min_size = min(replay_signal.shape[1], self.config.input_size)
-                    cortex_input[:, :min_size] = replay_signal[:, :min_size]
-                    cortex_activity = self.cortex.forward(cortex_input)
-
-                    self.replay_pathway.learn(
-                        pre_spikes=hippo_activity,
-                        post_spikes=cortex_activity,
-                        reward=0.5,
-                        dt=1.0,
-                    )
-
-            is_match = episode.metadata.get("is_match", True) if episode.metadata else True
-            if is_match:
-                sws_match += 1
-            else:
-                sws_nomatch += 1
-
-        return {
-            "replays": len(episodes),
-            "match": sws_match,
-            "nomatch": sws_nomatch,
-        }
+        return self._run_stage_replays(SleepStage.SWS, n_replays, n_timesteps)
 
     def _run_rem_replays(
         self,
@@ -308,128 +453,24 @@ class SleepSystemMixin:
         n_timesteps: int,
     ) -> Dict[str, Any]:
         """Run REM replays with reduced learning and stochastic noise."""
-        rem_match = 0
-        rem_nomatch = 0
+        return self._run_stage_replays(SleepStage.REM, n_replays, n_timesteps)
 
-        # Stochastic sampling for REM (generalization, less priority bias)
-        episodes = self._sample_episodes_for_rem(n_replays)
-
-        # Striatum expects: cortex_l5 + hippocampus + pfc
-        striatum_input_size = (
-            self._cortex_l5_size +
-            self.config.hippocampus_size +
-            self.config.pfc_size
-        )
-
-        for episode in episodes:
-            self._settle_for_replay(n_timesteps=5)
-
-            # Build striatum input from episode state
-            striatum_input = torch.zeros(1, striatum_input_size)
-            hippo_start = self._cortex_l5_size
-            state_size = min(episode.state.shape[0], self.config.hippocampus_size)
-            striatum_input[0, hippo_start:hippo_start + state_size] = episode.state[:state_size]
-
-            # Replay with REDUCED learning and theta modulation
-            for t in range(n_timesteps):
-                # Theta modulation (~6 Hz during REM)
-                theta_phase = 2 * math.pi * 6.0 * t / 1000.0
-                theta_mod = 0.5 * (1 + math.cos(theta_phase))
-
-                # Add stochastic noise for REM-like variability
-                noise = torch.randn_like(striatum_input) * 0.1 * theta_mod
-                self.striatum.forward(striatum_input + noise, explore=False)
-                self.striatum.last_action = episode.action
-
-            # REDUCED reward strength during REM (30%)
-            self.striatum.deliver_reward(reward=episode.reward * 0.3)
-
-            is_match = episode.metadata.get("is_match", True) if episode.metadata else True
-            if is_match:
-                rem_match += 1
-            else:
-                rem_nomatch += 1
-
-        return {
-            "replays": len(episodes),
-            "match": rem_match,
-            "nomatch": rem_nomatch,
-        }
-
+    # Legacy methods kept for backwards compatibility
+    # (now delegate to unified _sample_episodes)
+    
     def _sample_episodes_random(self, n: int) -> List["Episode"]:
-        """Sample episodes randomly (for N2 and REM)."""
+        """Sample episodes randomly. DEPRECATED: Use _sample_episodes(n, temperature=float('inf'))."""
         buffer = self.hippocampus.episode_buffer
         if len(buffer) == 0:
             return []
-
         n = min(n, len(buffer))
-        indices = torch.randperm(len(buffer))[:n].tolist()
+        indices: List[int] = torch.randperm(len(buffer))[:n].tolist()
         return [buffer[i] for i in indices]
 
     def _sample_episodes_for_n2(self, n: int) -> List["Episode"]:
-        """
-        Sample episodes for N2 (light sleep with spindles).
-
-        N2 spindles have moderate priority bias - between random and
-        fully priority-weighted. Spindles help transfer memories from
-        hippocampus to cortex.
-
-        Args:
-            n: Number of episodes to sample
-
-        Returns:
-            List of sampled episodes
-        """
-        buffer = self.hippocampus.episode_buffer
-        if len(buffer) == 0:
-            return []
-
-        n = min(n, len(buffer))
-
-        # Moderate priority bias for spindle-related consolidation
-        priorities = torch.tensor([
-            ep.priority for ep in buffer
-        ])
-
-        # Add moderate noise (less than REM, more than SWS)
-        noisy_priorities = priorities + torch.randn_like(priorities) * 0.3
-
-        # Softmax with moderate temperature
-        probs = torch.softmax(noisy_priorities * 1.0, dim=0)  # temperature = 1.0
-
-        indices = torch.multinomial(probs, n, replacement=False)
-        return [buffer[i] for i in indices.tolist()]
+        """Sample episodes for N2. DEPRECATED: Use _sample_episodes(n, temperature=1.0, priority_noise=0.3)."""
+        return self._sample_episodes(n, temperature=1.0, priority_noise=0.3)
 
     def _sample_episodes_for_rem(self, n: int) -> List["Episode"]:
-        """
-        Sample episodes for REM sleep with less priority bias.
-
-        REM sleep is characterized by more stochastic/random replay,
-        which helps with generalization and creative associations.
-
-        Args:
-            n: Number of episodes to sample
-
-        Returns:
-            List of sampled episodes
-        """
-        buffer = self.hippocampus.episode_buffer
-        if len(buffer) == 0:
-            return []
-
-        n = min(n, len(buffer))
-
-        # Use softmax with lower temperature for more uniform sampling
-        # (less priority-biased than SWS)
-        priorities = torch.tensor([
-            ep.priority for ep in buffer
-        ])
-
-        # Add noise to priorities for stochasticity
-        noisy_priorities = priorities + torch.randn_like(priorities) * 0.5
-
-        # Softmax with lower temperature (more uniform)
-        probs = torch.softmax(noisy_priorities * 0.5, dim=0)  # temperature = 2.0
-
-        indices = torch.multinomial(probs, n, replacement=False)
-        return [buffer[i] for i in indices.tolist()]
+        """Sample episodes for REM. DEPRECATED: Use _sample_episodes(n, temperature=2.0, priority_noise=0.5)."""
+        return self._sample_episodes(n, temperature=2.0, priority_noise=0.5)

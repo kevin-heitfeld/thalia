@@ -49,11 +49,14 @@ from thalia.regions.base import BrainRegion, RegionConfig, LearningRule
 from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
+from thalia.core.utils import ensure_batch_dim, clamp_weights
+from thalia.core.traces import update_trace
+from thalia.core.diagnostics_mixin import DiagnosticsMixin
 
 from .config import LayeredCortexConfig, LayeredCortexState
 
 
-class LayeredCortex(BrainRegion):
+class LayeredCortex(DiagnosticsMixin, BrainRegion):
     """
     Multi-layer cortical microcircuit with proper layer separation.
 
@@ -241,8 +244,7 @@ class LayeredCortex(BrainRegion):
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input through layered cortical circuit."""
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
 
         batch_size = input_spikes.shape[0]
 
@@ -327,14 +329,13 @@ class LayeredCortex(BrainRegion):
         l5_spikes = self._apply_sparsity(l5_spikes, cfg.l5_sparsity)
         self.state.l5_spikes = l5_spikes
 
-        # Update STDP traces
-        decay = torch.exp(torch.tensor(-dt / cfg.stdp_tau_plus))
+        # Update STDP traces using utility function
         if self.state.l4_trace is not None:
-            self.state.l4_trace = self.state.l4_trace * decay + l4_spikes.float()
+            update_trace(self.state.l4_trace, l4_spikes, tau=cfg.stdp_tau_plus, dt=dt)
         if self.state.l23_trace is not None:
-            self.state.l23_trace = self.state.l23_trace * decay + l23_spikes.float()
+            update_trace(self.state.l23_trace, l23_spikes, tau=cfg.stdp_tau_plus, dt=dt)
         if self.state.l5_trace is not None:
-            self.state.l5_trace = self.state.l5_trace * decay + l5_spikes.float()
+            update_trace(self.state.l5_trace, l5_spikes, tau=cfg.stdp_tau_plus, dt=dt)
 
         self.state.spikes = l5_spikes
 
@@ -426,7 +427,7 @@ class LayeredCortex(BrainRegion):
             )
             with torch.no_grad():
                 self.w_input_l4.data += dw
-                self.w_input_l4.data.clamp_(cfg.w_min, cfg.w_max)
+                clamp_weights(self.w_input_l4.data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
         # L4 → L2/3
@@ -438,7 +439,7 @@ class LayeredCortex(BrainRegion):
             )
             with torch.no_grad():
                 self.w_l4_l23.data += dw
-                self.w_l4_l23.data.clamp_(cfg.w_min, cfg.w_max)
+                clamp_weights(self.w_l4_l23.data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
         # L2/3 recurrent
@@ -449,7 +450,7 @@ class LayeredCortex(BrainRegion):
             with torch.no_grad():
                 self.w_l23_recurrent.data += dw
                 self.w_l23_recurrent.data.fill_diagonal_(0.0)
-                self.w_l23_recurrent.data.clamp_(cfg.w_min, cfg.w_max)
+                clamp_weights(self.w_l23_recurrent.data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
         # L2/3 → L5
@@ -461,7 +462,7 @@ class LayeredCortex(BrainRegion):
             )
             with torch.no_grad():
                 self.w_l23_l5.data += dw
-                self.w_l23_l5.data.clamp_(cfg.w_min, cfg.w_max)
+                clamp_weights(self.w_l23_l5.data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
         return {"weight_change": total_change}
@@ -483,33 +484,29 @@ class LayeredCortex(BrainRegion):
         return self.state.l5_spikes
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get layer-specific diagnostics."""
-        return {
+        """Get layer-specific diagnostics using DiagnosticsMixin helpers."""
+        diag: Dict[str, Any] = {
             "l4_size": self.l4_size,
             "l23_size": self.l23_size,
             "l5_size": self.l5_size,
-            "l4_firing_rate": (
-                self.state.l4_spikes.mean().item()
-                if self.state.l4_spikes is not None
-                else 0
-            ),
-            "l23_firing_rate": (
-                self.state.l23_spikes.mean().item()
-                if self.state.l23_spikes is not None
-                else 0
-            ),
-            "l5_firing_rate": (
-                self.state.l5_spikes.mean().item()
-                if self.state.l5_spikes is not None
-                else 0
-            ),
-            "l23_recurrent_activity": (
-                self.state.l23_recurrent_activity.mean().item()
-                if self.state.l23_recurrent_activity is not None
-                else 0
-            ),
-            "w_input_l4_mean": self.w_input_l4.data.mean().item(),
-            "w_l4_l23_mean": self.w_l4_l23.data.mean().item(),
-            "w_l23_recurrent_mean": self.w_l23_recurrent.data.mean().item(),
-            "w_l23_l5_mean": self.w_l23_l5.data.mean().item(),
         }
+        
+        # Spike diagnostics for each layer
+        if self.state.l4_spikes is not None:
+            diag.update(self.spike_diagnostics(self.state.l4_spikes, "l4"))
+        if self.state.l23_spikes is not None:
+            diag.update(self.spike_diagnostics(self.state.l23_spikes, "l23"))
+        if self.state.l5_spikes is not None:
+            diag.update(self.spike_diagnostics(self.state.l5_spikes, "l5"))
+        
+        # Recurrent activity
+        if self.state.l23_recurrent_activity is not None:
+            diag["l23_recurrent_mean"] = self.state.l23_recurrent_activity.mean().item()
+        
+        # Weight diagnostics for inter-layer connections
+        diag.update(self.weight_diagnostics(self.w_input_l4.data, "input_l4"))
+        diag.update(self.weight_diagnostics(self.w_l4_l23.data, "l4_l23"))
+        diag.update(self.weight_diagnostics(self.w_l23_recurrent.data, "l23_rec"))
+        diag.update(self.weight_diagnostics(self.w_l23_l5.data, "l23_l5"))
+        
+        return diag

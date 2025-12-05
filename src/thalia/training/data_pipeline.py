@@ -16,8 +16,8 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Iterator, Tuple, Union
+from dataclasses import dataclass
+from typing import List, Dict, Iterator, Tuple, Union
 from pathlib import Path
 import random
 

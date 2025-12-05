@@ -57,6 +57,7 @@ from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
 from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig, EncodingType
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.core.event_system import TrialPhase
+from thalia.core.utils import cosine_similarity_safe
 
 
 @dataclass
@@ -86,26 +87,15 @@ class SequenceContext:
 
 
 @dataclass
-class SequenceMemoryConfig:
-    """Configuration for sequence memory.
+class LegacySequenceMemoryConfig:
+    """Legacy configuration for sequence memory.
 
     .. deprecated:: 0.2.0
-        Use :class:`thalia.config.ThaliaConfig` instead for unified configuration.
+        Use :class:`thalia.config.SequenceMemoryConfig` instead for unified configuration.
         Create memory with ``SequenceMemory.from_thalia_config(config)``.
 
-    Attributes:
-        vocab_size: Size of token vocabulary
-        n_neurons: Size of hippocampal representations
-        context_length: How many tokens to use as context
-
-        theta_frequency: Theta oscillation frequency (Hz)
-        gamma_frequency: Gamma oscillation frequency (Hz)
-
-        association_strength: How strongly to link consecutive tokens
-        retrieval_threshold: Threshold for considering a pattern "recalled"
-
-        max_stored_contexts: Maximum contexts to store (LRU eviction)
-        device: Computation device
+    This class exists only for backwards compatibility. New code should use
+    ``thalia.config.SequenceMemoryConfig`` directly.
     """
     vocab_size: int = 50257
     n_neurons: int = 512
@@ -131,13 +121,16 @@ class SequenceMemoryConfig:
         """Emit deprecation warning."""
         import warnings
         warnings.warn(
-            "SequenceMemoryConfig is deprecated. Use ThaliaConfig instead:\n"
-            "  from thalia.config import ThaliaConfig\n"
-            "  config = ThaliaConfig(...)\n"
-            "  memory = SequenceMemory.from_thalia_config(config)",
+            "LegacySequenceMemoryConfig is deprecated. Use thalia.config.SequenceMemoryConfig:\n"
+            "  from thalia.config import SequenceMemoryConfig\n"
+            "  config = SequenceMemoryConfig(...)",
             DeprecationWarning,
             stacklevel=2,
         )
+
+
+# Alias for backwards compatibility (deprecated)
+SequenceMemoryConfig = LegacySequenceMemoryConfig
 
 
 class SequenceMemory(nn.Module):
@@ -398,7 +391,7 @@ class SequenceMemory(nn.Module):
         # Compare to stored patterns (if any)
         similarities = []
         for ctx in self.stored_contexts:
-            sim = torch.cosine_similarity(
+            sim = cosine_similarity_safe(
                 predicted_pattern.unsqueeze(0),
                 ctx.activations.float().unsqueeze(0),
             )
@@ -451,7 +444,7 @@ class SequenceMemory(nn.Module):
         # Compute similarities
         similarities = []
         for ctx in self.stored_contexts:
-            sim = torch.cosine_similarity(
+            sim = cosine_similarity_safe(
                 query_pattern.float().unsqueeze(0),
                 ctx.activations.float().unsqueeze(0),
             )

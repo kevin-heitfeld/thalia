@@ -76,6 +76,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.core.neuron import LIFNeuron, LIFConfig, ConductanceLIF, ConductanceLIFConfig
+from thalia.core.diagnostics_mixin import DiagnosticsMixin
 
 
 class ErrorType(Enum):
@@ -162,7 +163,7 @@ class PredictiveCodingState:
     eligibility: Optional[torch.Tensor] = None
 
 
-class PredictiveCodingLayer(nn.Module):
+class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
     """
     Predictive Coding Layer with local, backprop-free learning.
     
@@ -604,16 +605,34 @@ class PredictiveCodingLayer(nn.Module):
         return error_term + complexity_term
     
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information about the layer."""
-        return {
-            "prediction_mean": self.state.prediction.mean().item() if self.state.prediction is not None else 0,
-            "error_mean": self.state.error.mean().item() if self.state.error is not None else 0,
-            "error_abs_mean": self.state.error.abs().mean().item() if self.state.error is not None else 0,
-            "precision_mean": self.precision.mean().item(),
-            "precision_std": self.precision.std().item(),
+        """Get diagnostic information using DiagnosticsMixin helpers."""
+        diag: Dict[str, Any] = {
             "free_energy": self.get_free_energy().item(),
-            "weight_norm": torch.norm(self.W_pred).item(),
         }
+        
+        # Prediction state
+        if self.state.prediction is not None:
+            diag["prediction_mean"] = self.state.prediction.mean().item()
+            diag["prediction_std"] = self.state.prediction.std().item()
+        
+        # Error diagnostics
+        if self.state.error is not None:
+            diag.update(self.spike_diagnostics(self.state.error, "error"))
+        
+        # Precision (attention) statistics
+        diag["precision_mean"] = self.precision.mean().item()
+        diag["precision_std"] = self.precision.std().item()
+        diag["precision_min"] = self.precision.min().item()
+        diag["precision_max"] = self.precision.max().item()
+        
+        # Weight diagnostics
+        diag.update(self.weight_diagnostics(self.W_pred, "pred"))
+        
+        # Eligibility trace diagnostics (if available)
+        if self.state.eligibility is not None:
+            diag.update(self.trace_diagnostics(self.state.eligibility, "elig"))
+        
+        return diag
 
 
 class HierarchicalPredictiveCoding(nn.Module):

@@ -52,6 +52,8 @@ from typing import Optional, Dict, Any, List, Generator
 
 import torch
 
+from thalia.core.utils import ensure_batch_dim
+from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.regions.base import (
     BrainRegion,
     RegionConfig,
@@ -68,7 +70,7 @@ from .dopamine import DopamineSystem, EligibilityTraces
 from .action_selection import ActionSelectionMixin
 
 
-class Striatum(ActionSelectionMixin, BrainRegion):
+class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     """Striatal region with three-factor reinforcement learning.
 
     Implements dopamine-modulated learning:
@@ -371,10 +373,8 @@ class Striatum(ActionSelectionMixin, BrainRegion):
             input_spikes: Input spike tensor
             output_spikes: Output spike tensor
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
-        if output_spikes.dim() == 1:
-            output_spikes = output_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
+        output_spikes = ensure_batch_dim(output_spikes)
 
         dt = self.config.dt_ms
         cfg = self.striatum_config
@@ -430,12 +430,9 @@ class Striatum(ActionSelectionMixin, BrainRegion):
             d2_spikes: D2 neuron population spikes
             chosen_action: If provided, only build eligibility for this action's neurons
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
-        if d1_spikes.dim() == 1:
-            d1_spikes = d1_spikes.unsqueeze(0)
-        if d2_spikes.dim() == 1:
-            d2_spikes = d2_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
+        d1_spikes = ensure_batch_dim(d1_spikes)
+        d2_spikes = ensure_batch_dim(d2_spikes)
 
         # STDP traces are 1D - designed for batch_size=1 temporal processing
         # Skip eligibility updates for batched inputs
@@ -646,8 +643,7 @@ class Striatum(ActionSelectionMixin, BrainRegion):
         - NET = D1_votes - D2_votes
         - Selected action = argmax(NET)
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
 
         # Reset D1 and D2 neuron states if needed
         if self.d1_neurons.membrane is None:
@@ -1064,10 +1060,8 @@ class Striatum(ActionSelectionMixin, BrainRegion):
         dopamine arriving within ~1-2 seconds of spike correlation converts
         eligibility traces into lasting weight changes.
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
-        if output_spikes.dim() == 1:
-            output_spikes = output_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
+        output_spikes = ensure_batch_dim(output_spikes)
 
         dt = self.config.dt_ms
         cfg = self.striatum_config
@@ -1640,7 +1634,7 @@ class Striatum(ActionSelectionMixin, BrainRegion):
     # =========================================================================
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get comprehensive diagnostics for debugging.
+        """Get comprehensive diagnostics using DiagnosticsMixin helpers.
 
         Returns consolidated diagnostic information about:
         - D1/D2 pathway weights and balance
@@ -1671,33 +1665,19 @@ class Striatum(ActionSelectionMixin, BrainRegion):
         d2_votes = self._d2_votes_accumulated.tolist()
         net_votes = self.get_accumulated_net_votes().tolist()
 
-        # Weight statistics
-        weight_stats = {
-            "d1": {
-                "mean": self.d1_weights.mean().item(),
-                "std": self.d1_weights.std().item(),
-                "min": self.d1_weights.min().item(),
-                "max": self.d1_weights.max().item(),
-            },
-            "d2": {
-                "mean": self.d2_weights.mean().item(),
-                "std": self.d2_weights.std().item(),
-                "min": self.d2_weights.min().item(),
-                "max": self.d2_weights.max().item(),
-            },
-            "d1_minus_d2": {
-                "mean": (self.d1_weights - self.d2_weights).mean().item(),
-                "std": (self.d1_weights - self.d2_weights).std().item(),
-            },
+        # Use mixin helpers for weight statistics
+        d1_weight_stats = self.weight_diagnostics(self.d1_weights, "d1")
+        d2_weight_stats = self.weight_diagnostics(self.d2_weights, "d2")
+        
+        # Additional NET statistics
+        net_weights = self.d1_weights - self.d2_weights
+        net_stats = {
+            "net_weight_mean": net_weights.mean().item(),
+            "net_weight_std": net_weights.std().item(),
         }
 
         # Dopamine state
-        dopamine_state = {
-            "current_level": self.dopamine.level,
-            "tonic": self.tonic_dopamine,
-            "avg_abs_rpe": self.dopamine.avg_abs_rpe,
-            "rpe_history_count": self.dopamine.rpe_history_count,
-        }
+        dopamine_state = self.dopamine.get_diagnostics()
 
         # Exploration state
         exploration_state = {
@@ -1719,12 +1699,10 @@ class Striatum(ActionSelectionMixin, BrainRegion):
         if self.value_estimates is not None:
             value_estimates = self.value_estimates.tolist()
 
-        # Eligibility trace magnitudes
+        # Use mixin helpers for eligibility trace diagnostics
         eligibility_state = {
-            "d1_max": self.d1_eligibility.abs().max().item(),
-            "d2_max": self.d2_eligibility.abs().max().item(),
-            "d1_mean": self.d1_eligibility.abs().mean().item(),
-            "d2_mean": self.d2_eligibility.abs().mean().item(),
+            **self.trace_diagnostics(self.d1_eligibility, "d1_elig"),
+            **self.trace_diagnostics(self.d2_eligibility, "d2_elig"),
         }
 
         return {
@@ -1740,8 +1718,10 @@ class Striatum(ActionSelectionMixin, BrainRegion):
             "d1_votes": d1_votes,
             "d2_votes": d2_votes,
             "net_votes": net_votes,
-            # Weight statistics
-            "weight_stats": weight_stats,
+            # Weight statistics (from mixin)
+            **d1_weight_stats,
+            **d2_weight_stats,
+            **net_stats,
             # Dopamine
             "dopamine": dopamine_state,
             # Exploration
@@ -1749,6 +1729,6 @@ class Striatum(ActionSelectionMixin, BrainRegion):
             "ucb": ucb_state,
             # Value estimates
             "value_estimates": value_estimates,
-            # Eligibility
+            # Eligibility (from mixin)
             "eligibility": eligibility_state,
         }

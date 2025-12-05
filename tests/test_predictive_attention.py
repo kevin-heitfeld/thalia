@@ -150,7 +150,7 @@ class TestPredictiveCodingLayer:
         diag = layer.get_diagnostics()
 
         assert "prediction_mean" in diag
-        assert "error_mean" in diag
+        assert "error_mean_activity" in diag
         assert "precision_mean" in diag
         assert "free_energy" in diag
 

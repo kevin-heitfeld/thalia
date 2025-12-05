@@ -520,10 +520,10 @@ class TestLayeredCortex:
         assert "l4_size" in diag
         assert "l23_size" in diag
         assert "l5_size" in diag
-        assert "l4_firing_rate" in diag
-        assert "l23_firing_rate" in diag
-        assert "l5_firing_rate" in diag
-        assert "l23_recurrent_activity" in diag
+        assert "l4_firing_rate_hz" in diag
+        assert "l23_firing_rate_hz" in diag
+        assert "l5_firing_rate_hz" in diag
+        assert "l23_recurrent_mean" in diag
 
 
 if __name__ == "__main__":

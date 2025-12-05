@@ -37,12 +37,15 @@ import torch.nn.functional as F
 
 from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig
+from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe
+from thalia.core.traces import update_trace
+from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.regions.base import BrainRegion, LearningRule
 from thalia.regions.theta_dynamics import TrialPhase, FeedforwardInhibition
 from .config import Episode, TrisynapticConfig, TrisynapticState
 
 
-class TrisynapticHippocampus(BrainRegion):
+class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     """
     Biologically-accurate hippocampus with DG→CA3→CA1 trisynaptic circuit.
 
@@ -440,8 +443,7 @@ class TrisynapticHippocampus(BrainRegion):
             - EC layer III: Optional separate input for direct EC→CA1 (biologically
               accurate - EC L3 carries raw sensory info, EC L2 goes through DG)
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        input_spikes = ensure_batch_dim(input_spikes)
 
         batch_size = input_spikes.shape[0]
 
@@ -635,7 +637,7 @@ class TrisynapticHippocampus(BrainRegion):
                 with torch.no_grad():
                     self.w_ca3_ca3.data += dW
                     self.w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
-                    self.w_ca3_ca3.data.clamp_(self.tri_config.w_min, self.tri_config.w_max)
+                    clamp_weights(self.w_ca3_ca3.data, self.tri_config.w_min, self.tri_config.w_max)
 
         # =====================================================================
         # 3. CA1: Coincidence Detection with Plastic EC→CA1 Pathway
@@ -783,10 +785,10 @@ class TrisynapticHippocampus(BrainRegion):
                     # Update the appropriate weight matrix
                     if ec_direct_input is not None and self.w_ec_l3_ca1 is not None:
                         self.w_ec_l3_ca1.data += dW
-                        self.w_ec_l3_ca1.data.clamp_(cfg.w_min, cfg.w_max)
+                        clamp_weights(self.w_ec_l3_ca1.data, cfg.w_min, cfg.w_max)
                     else:
                         self.w_ec_ca1.data += dW
-                        self.w_ec_ca1.data.clamp_(cfg.w_min, cfg.w_max)
+                        clamp_weights(self.w_ec_ca1.data, cfg.w_min, cfg.w_max)
 
         else:  # phase == TrialPhase.RETRIEVE
             # -------------------------------------------------------------
@@ -846,11 +848,10 @@ class TrisynapticHippocampus(BrainRegion):
         # =====================================================================
         # Update STDP Traces (for learning, not comparison)
         # =====================================================================
-        decay = torch.exp(torch.tensor(-dt / self.tri_config.stdp_tau_plus))
         if self.state.dg_trace is not None:
-            self.state.dg_trace = self.state.dg_trace * decay + dg_spikes.float()
+            update_trace(self.state.dg_trace, dg_spikes, tau=self.tri_config.stdp_tau_plus, dt=dt)
         if self.state.ca3_trace is not None:
-            self.state.ca3_trace = self.state.ca3_trace * decay + ca3_spikes.float()
+            update_trace(self.state.ca3_trace, ca3_spikes, tau=self.tri_config.stdp_tau_plus, dt=dt)
 
         # Store spikes in base state for compatibility
         # CA1 spikes ARE the output - downstream learns from these patterns!
@@ -932,7 +933,7 @@ class TrisynapticHippocampus(BrainRegion):
             with torch.no_grad():
                 self.w_ca3_ca3.data += dW
                 self.w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
-                self.w_ca3_ca3.data.clamp_(cfg.w_min, cfg.w_max)
+                clamp_weights(self.w_ca3_ca3.data, cfg.w_min, cfg.w_max)
 
         return {
             "ca3_weight_mean": self.w_ca3_ca3.data.mean().item(),
@@ -1000,7 +1001,7 @@ class TrisynapticHippocampus(BrainRegion):
         return [self.episode_buffer[i] for i in indices]
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get comprehensive diagnostics for debugging.
+        """Get comprehensive diagnostics using DiagnosticsMixin helpers.
 
         Returns consolidated diagnostic information about:
         - Layer activity (spikes and rates)
@@ -1015,83 +1016,61 @@ class TrisynapticHippocampus(BrainRegion):
         cfg = self.tri_config
         state = self.state
 
-        # Layer activity
-        dg_activity = {
-            "spikes": state.dg_spikes.sum().item() if state.dg_spikes is not None else 0,
-            "rate": state.dg_spikes.float().mean().item() if state.dg_spikes is not None else 0.0,
-            "target_sparsity": cfg.dg_sparsity,
-        }
+        # Layer activity using spike_diagnostics helper
+        dg_activity: Dict[str, Any] = {"target_sparsity": cfg.dg_sparsity}
+        if state.dg_spikes is not None:
+            dg_activity.update(self.spike_diagnostics(state.dg_spikes, ""))
+        
+        ca3_activity: Dict[str, Any] = {"target_sparsity": cfg.ca3_sparsity}
+        if state.ca3_spikes is not None:
+            ca3_activity.update(self.spike_diagnostics(state.ca3_spikes, ""))
+        
+        ca1_activity: Dict[str, Any] = {"target_sparsity": cfg.ca1_sparsity}
+        if state.ca1_spikes is not None:
+            ca1_activity.update(self.spike_diagnostics(state.ca1_spikes, ""))
 
-        ca3_activity = {
-            "spikes": state.ca3_spikes.sum().item() if state.ca3_spikes is not None else 0,
-            "rate": state.ca3_spikes.float().mean().item() if state.ca3_spikes is not None else 0.0,
-            "target_sparsity": cfg.ca3_sparsity,
-        }
+        # CA3 bistable dynamics using trace_diagnostics
+        ca3_persistent: Dict[str, Any] = {}
+        if state.ca3_persistent is not None:
+            ca3_persistent.update(self.trace_diagnostics(state.ca3_persistent, ""))
+            ca3_persistent["nonzero_count"] = (state.ca3_persistent > 0.1).sum().item()
 
-        ca1_activity = {
-            "spikes": state.ca1_spikes.sum().item() if state.ca1_spikes is not None else 0,
-            "rate": state.ca1_spikes.float().mean().item() if state.ca1_spikes is not None else 0.0,
-            "target_sparsity": cfg.ca1_sparsity,
-        }
-
-        # CA3 bistable dynamics
-        ca3_persistent = {
-            "mean": state.ca3_persistent.mean().item() if state.ca3_persistent is not None else 0.0,
-            "max": state.ca3_persistent.max().item() if state.ca3_persistent is not None else 0.0,
-            "nonzero_count": (state.ca3_persistent > 0.1).sum().item() if state.ca3_persistent is not None else 0,
-        }
-
-        # CA1 NMDA comparison mechanism
-        nmda_diagnostics = {
-            "trace_mean": state.nmda_trace.mean().item() if state.nmda_trace is not None else 0.0,
-            "trace_max": state.nmda_trace.max().item() if state.nmda_trace is not None else 0.0,
-            "trace_std": state.nmda_trace.std().item() if state.nmda_trace is not None else 0.0,
-            "threshold": cfg.nmda_threshold,
-            "above_threshold_count": (state.nmda_trace > cfg.nmda_threshold).sum().item() if state.nmda_trace is not None else 0,
-        }
-
-        # Compute Mg block removal (sigmoid of (trace - threshold) * steepness)
+        # CA1 NMDA comparison mechanism using trace_diagnostics
+        nmda_diagnostics: Dict[str, Any] = {"threshold": cfg.nmda_threshold}
         if state.nmda_trace is not None:
+            nmda_diagnostics.update(self.trace_diagnostics(state.nmda_trace, ""))
+            nmda_diagnostics["trace_std"] = state.nmda_trace.std().item()
+            nmda_diagnostics["above_threshold_count"] = (state.nmda_trace > cfg.nmda_threshold).sum().item()
+            
+            # Compute Mg block removal (sigmoid of (trace - threshold) * steepness)
             mg_removal = torch.sigmoid(
                 (state.nmda_trace - cfg.nmda_threshold) * cfg.nmda_steepness
             )
             nmda_diagnostics["mg_block_removal_mean"] = mg_removal.mean().item()
             nmda_diagnostics["mg_block_removal_max"] = mg_removal.max().item()
             nmda_diagnostics["gated_neurons"] = (mg_removal > 0.5).sum().item()
-        else:
-            nmda_diagnostics["mg_block_removal_mean"] = 0.0
-            nmda_diagnostics["mg_block_removal_max"] = 0.0
-            nmda_diagnostics["gated_neurons"] = 0
 
         # Stored pattern comparison (for match/mismatch)
-        pattern_comparison = {
+        pattern_comparison: Dict[str, Any] = {
             "has_stored_pattern": state.stored_dg_pattern is not None,
         }
         if state.stored_dg_pattern is not None and state.dg_spikes is not None:
             stored = state.stored_dg_pattern.float().squeeze()
             current = state.dg_spikes.float().squeeze()
             # Cosine similarity between stored and current DG patterns
-            norm_stored = stored.norm() + 1e-8
-            norm_current = current.norm() + 1e-8
-            similarity = (stored @ current) / (norm_stored * norm_current)
+            similarity = cosine_similarity_safe(stored, current)
             pattern_comparison["dg_similarity"] = similarity.item()
             pattern_comparison["stored_active"] = (stored > 0).sum().item()
             pattern_comparison["current_active"] = (current > 0).sum().item()
             pattern_comparison["overlap"] = ((stored > 0) & (current > 0)).sum().item()
-        else:
-            pattern_comparison["dg_similarity"] = 0.0
-            pattern_comparison["stored_active"] = 0
-            pattern_comparison["current_active"] = 0
-            pattern_comparison["overlap"] = 0
 
-        # Weight statistics
-        weight_stats = {
-            "ec_dg_mean": self.w_ec_dg.data.mean().item(),
-            "dg_ca3_mean": self.w_dg_ca3.data.mean().item(),
-            "ca3_ca3_mean": self.w_ca3_ca3.data.mean().item(),
-            "ca3_ca1_mean": self.w_ca3_ca1.data.mean().item(),
-            "ec_ca1_mean": self.w_ec_ca1.data.mean().item(),
-        }
+        # Weight statistics using weight_diagnostics helper
+        weight_stats: Dict[str, Any] = {}
+        weight_stats.update(self.weight_diagnostics(self.w_ec_dg.data, "ec_dg"))
+        weight_stats.update(self.weight_diagnostics(self.w_dg_ca3.data, "dg_ca3"))
+        weight_stats.update(self.weight_diagnostics(self.w_ca3_ca3.data, "ca3_ca3"))
+        weight_stats.update(self.weight_diagnostics(self.w_ca3_ca1.data, "ca3_ca1"))
+        weight_stats.update(self.weight_diagnostics(self.w_ec_ca1.data, "ec_ca1"))
 
         # Feedforward inhibition state
         ffi_state = {
@@ -1114,7 +1093,7 @@ class TrisynapticHippocampus(BrainRegion):
             # Comparison mechanism (critical for match/mismatch)
             "nmda": nmda_diagnostics,
             "pattern_comparison": pattern_comparison,
-            # Weights
+            # Weights (now with full stats from mixin)
             "weight_stats": weight_stats,
             # Inhibition
             "ffi": ffi_state,
