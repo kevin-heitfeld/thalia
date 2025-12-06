@@ -8,7 +8,7 @@ trisynaptic hippocampus (DG→CA3→CA1).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import torch
 
@@ -23,8 +23,15 @@ class Episode:
     Episodes are stored with priority for experience replay,
     where more important episodes (high reward, correct trials)
     are replayed more frequently.
+    
+    Episodes can store either:
+    - A single state (traditional): Just the activity pattern at decision time
+    - A sequence (extended): List of states from each gamma slot during encoding
+    
+    During sleep replay, sequences are replayed time-compressed using
+    the gamma oscillator to drive slot-by-slot reactivation.
     """
-    state: torch.Tensor          # Activity pattern at decision time
+    state: torch.Tensor          # Activity pattern at decision time (or final state)
     action: int                   # Selected action
     reward: float                 # Received reward
     correct: bool                 # Whether the action was correct
@@ -32,6 +39,7 @@ class Episode:
     metadata: Optional[Dict[str, Any]] = None  # Additional info
     priority: float = 1.0         # Replay priority
     timestamp: int = 0            # When this episode occurred
+    sequence: Optional[List[torch.Tensor]] = None  # Sequence of states for gamma-driven replay
 
 
 @dataclass
@@ -124,6 +132,85 @@ class TrisynapticConfig(RegionConfig):
     stp_mossy_type: STPType = STPType.FACILITATING_STRONG  # DG→CA3 (MF)
     stp_schaffer_type: STPType = STPType.DEPRESSING        # CA3→CA1 (SC)
     stp_ec_ca1_type: STPType = STPType.DEPRESSING          # EC→CA1 direct
+    # CA3→CA3 recurrent: DEPRESSING - prevents frozen attractors
+    # Without STD, the same neurons fire every timestep because recurrent
+    # connections reinforce active neurons. With STD, frequently-firing
+    # synapses get temporarily weaker, allowing pattern transitions.
+    stp_ca3_recurrent_type: STPType = STPType.DEPRESSING_FAST
+
+    # =========================================================================
+    # SPIKE-FREQUENCY ADAPTATION (SFA)
+    # =========================================================================
+    # Real CA3 pyramidal neurons show strong adaptation: Ca²⁺ influx during
+    # spikes activates K⁺ channels (I_AHP) that hyperpolarize the neuron.
+    # This prevents the same neurons from dominating activity.
+    ca3_adapt_increment: float = 0.5  # Adaptation per spike (0 = disabled)
+    ca3_adapt_tau: float = 100.0      # Adaptation time constant (ms)
+
+    # =========================================================================
+    # ACTIVITY-DEPENDENT INHIBITION
+    # =========================================================================
+    # Feedback inhibition from interneurons scales with total CA3 activity.
+    # When many CA3 neurons fire, inhibition increases, making it harder
+    # for the same neurons to fire again.
+    ca3_feedback_inhibition: float = 0.3  # Inhibition per total activity
+
+    # =========================================================================
+    # HETEROSYNAPTIC PLASTICITY
+    # =========================================================================
+    # Synapses to inactive postsynaptic neurons weaken when nearby neurons
+    # fire strongly. This prevents winner-take-all dynamics from freezing.
+    heterosynaptic_ratio: float = 0.1  # LTD for inactive synapses
+
+    # =========================================================================
+    # THETA-PHASE RESETS
+    # =========================================================================
+    # Reset persistent activity at the start of each theta cycle to prevent
+    # stale attractors from dominating. In real brains, theta troughs
+    # (encoding phase) partially reset the network.
+    theta_reset_persistent: bool = True  # Reset ca3_persistent at theta trough
+    theta_reset_fraction: float = 0.5    # How much to decay (0=none, 1=full)
+
+    # =========================================================================
+    # SYNAPTIC SCALING (Homeostatic)
+    # =========================================================================
+    # Synaptic scaling maintains stable firing rates by multiplicatively
+    # adjusting all synapses to a neuron. If a neuron fires too much/little,
+    # all its input synapses scale down/up together.
+    synaptic_scaling_enabled: bool = True
+    synaptic_scaling_target: float = 0.3  # Target mean weight
+    synaptic_scaling_rate: float = 0.001  # Slow adaptation rate
+
+    # =========================================================================
+    # INTRINSIC PLASTICITY
+    # =========================================================================
+    # Neurons adjust their own excitability based on firing history.
+    # High activity → higher threshold (less excitable)
+    # Low activity → lower threshold (more excitable)
+    # This operates on LONGER timescales than SFA.
+    intrinsic_plasticity_enabled: bool = True
+    intrinsic_target_rate: float = 0.1    # Target firing rate
+    intrinsic_adaptation_rate: float = 0.01  # How fast threshold adapts
+
+    # =========================================================================
+    # THETA-GAMMA COUPLING
+    # =========================================================================
+    # Gamma oscillations (30-100 Hz) nested within theta enable:
+    # 1. Sequence encoding: items at different gamma phases within theta
+    # 2. Working memory capacity: ~7 gamma slots per theta cycle
+    # 3. Phase coding: temporal order encoded in gamma phase
+    theta_gamma_enabled: bool = True     # Enable theta-gamma coupling
+    gamma_freq_hz: float = 40.0           # Gamma frequency (30-100 Hz typical)
+    gamma_n_slots: int = 7                # Working memory slots per theta cycle
+    gamma_coupling_strength: float = 0.8  # How much theta modulates gamma
+    gamma_gating_strength: float = 0.5    # How much gamma gates CA3 activity
+    
+    # Slot mode determines how items are assigned to gamma slots:
+    # - "item": Each forward() call advances to next slot (position-based)
+    #           Best for discrete token sequences where timing is variable
+    # - "time": Slot determined by oscillator phase (time-based)
+    #           Best for continuous input or replay where timing matters
+    gamma_slot_mode: str = "item"  # "item" or "time"
 
 
 @dataclass

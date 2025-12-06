@@ -255,6 +255,12 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         # Metrics for monitoring
         self._total_free_energy = 0.0
         self._timesteps = 0
+        self._last_plasticity_delta = 0.0
+        
+        # Cumulative spike counters (for diagnostics across timesteps)
+        self._cumulative_l4_spikes = 0
+        self._cumulative_l23_spikes = 0
+        self._cumulative_l5_spikes = 0
     
     # =========================================================================
     # ABSTRACT METHOD IMPLEMENTATIONS (from BrainRegion)
@@ -282,10 +288,21 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         if self.attention is not None:
             self.attention.reset_state(batch_size)
 
-        self.state = PredictiveCortexState()
+        # Sync state from inner cortex (don't leave as None!)
+        # The inner LayeredCortex initializes proper zero tensors
+        self.state = PredictiveCortexState(
+            l4_spikes=self.cortex.state.l4_spikes,
+            l23_spikes=self.cortex.state.l23_spikes,
+            l5_spikes=self.cortex.state.l5_spikes,
+        )
         self._total_free_energy = 0.0
         self._timesteps = 0
         self._last_plasticity_delta = 0.0
+        
+        # Reset cumulative spike counters (for diagnostics across timesteps)
+        self._cumulative_l4_spikes = 0
+        self._cumulative_l23_spikes = 0
+        self._cumulative_l5_spikes = 0
 
     def forward(
         self,
@@ -355,6 +372,14 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self.state.l4_spikes = l4_output
         self.state.l23_spikes = l23_output
         self.state.l5_spikes = l5_output
+        
+        # Update cumulative spike counters (for diagnostics)
+        if l4_output is not None:
+            self._cumulative_l4_spikes += int(l4_output.sum().item())
+        if l23_output is not None:
+            self._cumulative_l23_spikes += int(l23_output.sum().item())
+        if l5_output is not None:
+            self._cumulative_l5_spikes += int(l5_output.sum().item())
 
         # =====================================================================
         # STEP 2: Predictive coding (L5 → L4 prediction, compute error)
@@ -454,15 +479,25 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         """Get layer-specific diagnostics using DiagnosticsMixin helpers.
         
         Uses the same format as LayeredCortex for consistency.
+        
+        Note: Reports both instantaneous (l4_active_count) and cumulative
+        (l4_cumulative_spikes) counts. During consolidation phases with
+        zero input, instantaneous L4 will be 0 but cumulative shows
+        total activity since last reset.
         """
         diag: Dict[str, Any] = {
             "l4_size": self.l4_size,
             "l23_size": self.l23_size,
             "l5_size": self.l5_size,
             "last_plasticity_delta": getattr(self, "_last_plasticity_delta", 0.0),
+            # Cumulative spike counts (since last reset_state)
+            "l4_cumulative_spikes": getattr(self, "_cumulative_l4_spikes", 0),
+            "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
+            "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
         }
         
         # Spike diagnostics for each layer (same format as LayeredCortex)
+        # These are INSTANTANEOUS counts from the last forward pass
         if self.state.l4_spikes is not None:
             diag.update(self.spike_diagnostics(self.state.l4_spikes, "l4"))
         if self.state.l23_spikes is not None:

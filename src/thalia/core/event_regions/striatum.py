@@ -50,7 +50,7 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         pfc_input_size: int = 0,
     ):
         super().__init__(config)
-        self.striatum = striatum
+        self._striatum = striatum
 
         # Input sizes for buffering
         self._cortex_input_size = cortex_input_size
@@ -72,6 +72,22 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         self._recent_input: Optional[torch.Tensor] = None
         self._recent_output: Optional[torch.Tensor] = None
         self._selected_action: Optional[int] = None
+
+    @property
+    def impl(self) -> Any:
+        """Return the underlying striatum implementation."""
+        return self._striatum
+
+    @property
+    def state(self) -> Any:
+        """Delegate state access to the underlying implementation."""
+        return getattr(self.impl, "state", None)
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostics from the underlying striatum implementation."""
+        if hasattr(self.impl, "get_diagnostics"):
+            return self.impl.get_diagnostics()
+        return {}
 
     def configure_inputs(
         self,
@@ -96,15 +112,15 @@ class EventDrivenStriatum(EventDrivenRegionBase):
 
         # Decay D1 and D2 pathway neurons
         if (
-            hasattr(self.striatum, "d1_neurons")
-            and self.striatum.d1_neurons.membrane is not None
+            hasattr(self.impl, "d1_neurons")
+            and self.impl.d1_neurons.membrane is not None
         ):
-            self.striatum.d1_neurons.membrane *= decay_factor
+            self.impl.d1_neurons.membrane *= decay_factor
         if (
-            hasattr(self.striatum, "d2_neurons")
-            and self.striatum.d2_neurons.membrane is not None
+            hasattr(self.impl, "d2_neurons")
+            and self.impl.d2_neurons.membrane is not None
         ):
-            self.striatum.d2_neurons.membrane *= decay_factor
+            self.impl.d2_neurons.membrane *= decay_factor
 
     def _on_dopamine(self, payload: DopaminePayload) -> None:
         """Handle dopamine for reinforcement learning.
@@ -118,11 +134,11 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         deliver_reward() can be called for immediate learning.
         """
         # Set dopamine level on the underlying region for continuous plasticity
-        self.striatum.state.dopamine = payload.level
-        
+        self.impl.state.dopamine = payload.level
+
         # Also trigger immediate learning via deliver_reward if there's a clear reward signal
-        if hasattr(self.striatum, "deliver_reward") and abs(payload.level) > 0.1:
-            self.striatum.deliver_reward(reward=payload.level)
+        if hasattr(self.impl, "deliver_reward") and abs(payload.level) > 0.1:
+            self.impl.deliver_reward(reward=payload.level)
 
     def _process_spikes(
         self,
@@ -224,7 +240,7 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         self._recent_input = combined_input.clone()
 
         # Forward through striatum
-        output = self.striatum.forward(
+        output = self.impl.forward(
             combined_input,
             dt=1.0,
             encoding_mod=self._encoding_strength,
@@ -236,8 +252,8 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         self._recent_output = output.clone()
 
         # Track selected action
-        if hasattr(self.striatum, "get_selected_action"):
-            self._selected_action = self.striatum.get_selected_action()
+        if hasattr(self.impl, "get_selected_action"):
+            self._selected_action = self.impl.get_selected_action()
         elif output is not None:
             self._selected_action = int(output.argmax().item())
 
@@ -252,7 +268,7 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         state = super().get_state()
         state["selected_action"] = self._selected_action
 
-        if hasattr(self.striatum, "get_diagnostics"):
-            state["striatum"] = self.striatum.get_diagnostics()
+        if hasattr(self.impl, "get_diagnostics"):
+            state["impl"] = self.impl.get_diagnostics()
 
         return state

@@ -55,6 +55,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+import shutil
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -105,6 +106,16 @@ class BrainDiagnosticsSnapshot:
     pfc_spikes: float = 0.0
     pfc_wm_active: float = 0.0
 
+    # Striatum metrics (D1/D2 pathways)
+    striatum_d1_weight_mean: float = 0.0
+    striatum_d2_weight_mean: float = 0.0
+    striatum_net_weight_mean: float = 0.0
+    striatum_weight_change: float = 0.0  # Change in D1/D2 weights
+    
+    # Hippocampus weight metrics
+    hippo_weight_mean: float = 0.0
+    hippo_weight_change: float = 0.0
+
     # VTA Dopamine System (centralized in brain)
     dopamine_global: float = 0.0   # Combined signal to regions
     dopamine_tonic: float = 0.0    # Slow baseline (intrinsic prediction quality)
@@ -125,6 +136,8 @@ class BrainDiagnosticsTracker:
         self.brain = brain
         self.snapshots: List[BrainDiagnosticsSnapshot] = []
         self._prev_cortex_weights: Optional[torch.Tensor] = None
+        self._prev_striatum_weights: Optional[torch.Tensor] = None
+        self._prev_hippo_weights: Optional[torch.Tensor] = None
         self._start_time = time.time()
 
     def snapshot(self, step: int) -> BrainDiagnosticsSnapshot:
@@ -138,10 +151,32 @@ class BrainDiagnosticsTracker:
         cortex = self.brain.cortex
         cortex_diag = cortex.get_diagnostics()
 
-        # Both cortex types now use spike_diagnostics with "l4_active_count" format
-        snap.cortex_l4_spikes = cortex_diag.get("l4_active_count", 0.0)
-        snap.cortex_l23_spikes = cortex_diag.get("l23_active_count", 0.0)
-        snap.cortex_l5_spikes = cortex_diag.get("l5_active_count", 0.0)
+        # DEBUG: Print all diagnostics keys containing 'l4'
+        l4_keys = {k: v for k, v in cortex_diag.items() if 'l4' in k.lower()}
+        print(f"    [DEBUG] L4 diagnostics: {l4_keys}")
+        
+        # Also check state directly
+        if hasattr(cortex, 'state') and cortex.state is not None:
+            l4_state = cortex.state.l4_spikes
+            if l4_state is not None:
+                print(f"    [DEBUG] cortex.state.l4_spikes sum: {l4_state.sum().item()}")
+            else:
+                print(f"    [DEBUG] cortex.state.l4_spikes is None")
+
+        # Use CUMULATIVE counts if available (shows total activity during stimulus),
+        # otherwise fall back to instantaneous counts
+        snap.cortex_l4_spikes = cortex_diag.get(
+            "l4_cumulative_spikes",
+            cortex_diag.get("l4_active_count", 0.0)
+        )
+        snap.cortex_l23_spikes = cortex_diag.get(
+            "l23_cumulative_spikes",
+            cortex_diag.get("l23_active_count", 0.0)
+        )
+        snap.cortex_l5_spikes = cortex_diag.get(
+            "l5_cumulative_spikes",
+            cortex_diag.get("l5_active_count", 0.0)
+        )
 
         # Weight statistics - check different weight sources
         # LayeredCortex: l4_l23_weight_mean, PredictiveCortex: pred_weight_mean
@@ -155,12 +190,14 @@ class BrainDiagnosticsTracker:
         )
 
         # Compute weight change from previous snapshot
+        # Access weights via .impl since cortex is an adapter
+        cortex_impl = cortex.impl
         weights = None
-        if hasattr(cortex, 'w_l4_l23'):
-            weights = cortex.w_l4_l23.data
-        elif hasattr(cortex, 'prediction_layer') and cortex.prediction_layer is not None:
-            if hasattr(cortex.prediction_layer, 'W_pred'):
-                weights = cortex.prediction_layer.W_pred.data
+        if hasattr(cortex_impl, 'w_l4_l23'):
+            weights = cortex_impl.w_l4_l23.data
+        elif hasattr(cortex_impl, 'prediction_layer') and cortex_impl.prediction_layer is not None:
+            if hasattr(cortex_impl.prediction_layer, 'W_pred'):
+                weights = cortex_impl.prediction_layer.W_pred.data
 
         if weights is not None:
             if self._prev_cortex_weights is not None:
@@ -192,6 +229,43 @@ class BrainDiagnosticsTracker:
         snap.dopamine_global = self.brain._global_dopamine
         snap.dopamine_tonic = self.brain._tonic_dopamine
         snap.dopamine_phasic = self.brain._phasic_dopamine
+
+        # Striatum weight diagnostics - track D1/D2 pathway learning
+        striatum = self.brain.striatum
+        striatum_diag = striatum.get_diagnostics()
+        snap.striatum_d1_weight_mean = striatum_diag.get("d1_weight_mean", 0.0)
+        snap.striatum_d2_weight_mean = striatum_diag.get("d2_weight_mean", 0.0)
+        snap.striatum_net_weight_mean = striatum_diag.get("net_weight_mean", 0.0)
+        
+        # Track striatum weight changes via impl
+        striatum_impl = striatum.impl
+        if hasattr(striatum_impl, 'd1_weights') and hasattr(striatum_impl, 'd2_weights'):
+            combined = torch.cat([striatum_impl.d1_weights.flatten(), 
+                                  striatum_impl.d2_weights.flatten()])
+            if self._prev_striatum_weights is not None:
+                snap.striatum_weight_change = (combined - self._prev_striatum_weights).abs().mean().item()
+            self._prev_striatum_weights = combined.clone()
+
+        # Hippocampus weight diagnostics - track CA3-CA3 recurrent learning
+        hippo_weight_stats = hippo_diag.get("weight_stats", {})
+        ca3_ca3_stats = hippo_weight_stats.get("ca3_ca3", {})
+        snap.hippo_weight_mean = ca3_ca3_stats.get("mean", 0.0)
+        
+        # Track hippocampus weight changes via impl
+        hippo_impl = hippo.impl
+        if hasattr(hippo_impl, 'w_ca3_ca3'):
+            hippo_weights = hippo_impl.w_ca3_ca3.flatten()
+            if self._prev_hippo_weights is not None:
+                snap.hippo_weight_change = (hippo_weights - self._prev_hippo_weights).abs().mean().item()
+            self._prev_hippo_weights = hippo_weights.clone()
+            
+            # Debug: check hippo state
+            if hasattr(hippo_impl, 'state'):
+                state = hippo_impl.state
+                ca3_trace_sum = state.ca3_trace.sum().item() if state.ca3_trace is not None else -1
+                ca3_spikes_sum = state.ca3_spikes.sum().item() if state.ca3_spikes is not None else -1
+                print(f"    [HIPPO DEBUG] ca3_trace_sum={ca3_trace_sum:.2f}, ca3_spikes_sum={ca3_spikes_sum:.0f}, "
+                      f"dopamine={hippo_impl.state.dopamine:.3f}, plasticity={hippo_impl.plasticity_enabled}")
 
         # Predictive coding metrics (if using predictive cortex)
         if hasattr(cortex, '_total_free_energy'):
@@ -241,6 +315,17 @@ class BrainDiagnosticsTracker:
         print(f"  DG spikes:  first={first.hippo_dg_spikes:.1f}, last={last.hippo_dg_spikes:.1f}")
         print(f"  CA3 spikes: first={first.hippo_ca3_spikes:.1f}, last={last.hippo_ca3_spikes:.1f}")
         print(f"  CA1 spikes: first={first.hippo_ca1_spikes:.1f}, last={last.hippo_ca1_spikes:.1f}")
+        print(f"  CA3-CA3 weight mean: first={first.hippo_weight_mean:.4f}, last={last.hippo_weight_mean:.4f}")
+        avg_hippo_weight_change = sum(s.hippo_weight_change for s in self.snapshots) / len(self.snapshots)
+        print(f"  Avg weight change per step: {avg_hippo_weight_change:.6f}")
+
+        # Striatum
+        print("\n--- STRIATUM ---")
+        print(f"  D1 weight mean: first={first.striatum_d1_weight_mean:.4f}, last={last.striatum_d1_weight_mean:.4f}")
+        print(f"  D2 weight mean: first={first.striatum_d2_weight_mean:.4f}, last={last.striatum_d2_weight_mean:.4f}")
+        print(f"  NET weight mean (D1-D2): first={first.striatum_net_weight_mean:.4f}, last={last.striatum_net_weight_mean:.4f}")
+        avg_striatum_weight_change = sum(s.striatum_weight_change for s in self.snapshots) / len(self.snapshots)
+        print(f"  Avg weight change per step: {avg_striatum_weight_change:.6f}")
 
         # PFC
         print("\n--- PFC ---")
@@ -422,6 +507,12 @@ class LanguageLearningExperiment:
 
         # Create model components
         brain = EventDrivenBrain.from_thalia_config(thalia_config)
+        
+        # Enable hippocampus debug output for learning investigation
+        if hasattr(brain.hippocampus.impl, '_debug_hippo'):
+            brain.hippocampus.impl._debug_hippo = True
+            print("[DEBUG] Hippocampus debug output enabled")
+        
         lang_interface = LanguageBrainInterface(
             brain,
             thalia_config.to_language_interface_config()
@@ -439,22 +530,22 @@ class LanguageLearningExperiment:
         spike_rate_history: List[float] = []
 
         def progress_callback(epoch: int, step: int, metrics):
-            if step % 10 == 0:
-                # Store for results
-                accuracy_history.append(metrics.prediction_accuracy)
-                spike_rate_history.append(metrics.spike_rate)
+            # Capture every step for more insight (was every 10)
+            # Store for results
+            accuracy_history.append(metrics.prediction_accuracy)
+            spike_rate_history.append(metrics.spike_rate)
 
-                # Collect brain diagnostics
-                snap = diagnostics_tracker.snapshot(step)
+            # Collect brain diagnostics
+            snap = diagnostics_tracker.snapshot(step)
 
-                # Print brain internals (not decoder accuracy)
-                print(f"  Step {step}: "
-                      f"L4={snap.cortex_l4_spikes:.0f}, "
-                      f"L2/3={snap.cortex_l23_spikes:.0f}, "
-                      f"L5={snap.cortex_l5_spikes:.0f}, "
-                      f"CA3={snap.hippo_ca3_spikes:.0f}, "
-                      f"DA={snap.dopamine_global:.3f}, "
-                      f"dW={snap.cortex_weight_change:.5f}")
+            # Print brain internals (not decoder accuracy)
+            print(f"  Step {step}: "
+                  f"L4={snap.cortex_l4_spikes:.0f}, "
+                  f"L2/3={snap.cortex_l23_spikes:.0f}, "
+                  f"L5={snap.cortex_l5_spikes:.0f}, "
+                  f"CA3={snap.hippo_ca3_spikes:.0f}, "
+                  f"DA={snap.dopamine_global:.3f}, "
+                  f"dW={snap.cortex_weight_change:.5f}")
 
         # Train
         start_time = time.time()
@@ -679,6 +770,71 @@ def get_full_configs() -> List[ExperimentConfig]:
 
 
 # =============================================================================
+# OUTPUT REDIRECTION
+# =============================================================================
+
+class OutputRedirector:
+    """Manage output redirection to files for comparison between runs.
+    
+    Rotates output files so we can compare:
+    - exp01_output.txt: Previous run
+    - exp01_output_new.txt: Current run
+    
+    Args:
+        output_dir: Directory to write output files to
+        quiet: If True, only write to file (no console output)
+    """
+    
+    def __init__(self, output_dir: Path, quiet: bool = False):
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.old_file = output_dir / "exp01_output.txt"
+        self.new_file = output_dir / "exp01_output_new.txt"
+        self.quiet = quiet
+        self._original_stdout = None
+        self._file_handle = None
+    
+    def __enter__(self):
+        # Rotate: new -> old
+        if self.new_file.exists():
+            shutil.move(self.new_file, self.old_file)
+        
+        # Open new file and redirect stdout
+        self._original_stdout = sys.stdout
+        self._file_handle = open(self.new_file, 'w', encoding='utf-8')
+        
+        if self.quiet:
+            # File only - no console output
+            sys.stdout = self._file_handle
+        else:
+            # Tee to both console and file
+            sys.stdout = _TeeWriter(self._original_stdout, self._file_handle)
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout = self._original_stdout
+        if self._file_handle:
+            self._file_handle.close()
+        return False
+
+
+class _TeeWriter:
+    """Write to multiple streams simultaneously."""
+    
+    def __init__(self, *streams):
+        self.streams = streams
+    
+    def write(self, text):
+        for stream in self.streams:
+            stream.write(text)
+            stream.flush()
+    
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -697,8 +853,32 @@ def main():
         default=Path(__file__).parent.parent / "results" / "exp01",
         help="Output directory for results",
     )
+    parser.add_argument(
+        "--no-redirect",
+        action="store_true",
+        help="Don't redirect output to files (console only)",
+    )
+    parser.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        help="Suppress console output (file only, implies redirect)",
+    )
     args = parser.parse_args()
 
+    # Output redirection: temp/exp01_output.txt (old) and temp/exp01_output_new.txt (new)
+    temp_dir = Path(__file__).parent.parent.parent / "temp"
+    
+    if args.no_redirect and not args.quiet:
+        # Console only, no file
+        _run_experiment(args)
+    else:
+        # File output (with or without console depending on --quiet)
+        with OutputRedirector(temp_dir, quiet=args.quiet):
+            _run_experiment(args)
+
+
+def _run_experiment(args):
+    """Run the actual experiment (separated for output redirection)."""
     # Select configurations
     if args.quick:
         configs = get_quick_configs()

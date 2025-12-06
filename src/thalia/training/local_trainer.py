@@ -368,7 +368,7 @@ class LocalTrainer:
         """
         # Reset spike counts before processing (they're cumulative in the brain)
         if hasattr(model.brain, '_spike_counts'):
-            model.brain._spike_counts = {name: 0 for name in model.brain.regions}
+            model.brain._spike_counts = {name: 0 for name in model.brain.adapters}
 
         # Process through language interface
         result = model.process_tokens(input_ids)

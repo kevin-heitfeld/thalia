@@ -227,7 +227,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         else:
             # Create default config
             base_cortex_config = LayeredCortexConfig(n_input=0, n_output=0)
-        
+
         # Merge with sizes from this config (sizes always come from here)
         cortex_config = replace(
             base_cortex_config,
@@ -236,7 +236,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             dt_ms=config.dt_ms,
             device=config.device,
         )
-        
+
         # Select implementation based on config
         if config.cortex_type == CortexType.PREDICTIVE:
             # PredictiveCortex with local error learning
@@ -274,19 +274,19 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                 prediction_enabled=True,
                 use_attention=True,
             )
-            self.cortex = PredictiveCortex(pred_config)
+            _cortex_impl = PredictiveCortex(pred_config)
         else:
             # Default LayeredCortex (L4→L2/3→L5)
-            self.cortex = LayeredCortex(cortex_config)
-        self.cortex.reset_state(batch_size=1)
+            _cortex_impl = LayeredCortex(cortex_config)
+        _cortex_impl.reset_state(batch_size=1)
 
         # Get cortex layer sizes
-        self._cortex_l23_size = self.cortex.l23_size
-        self._cortex_l5_size = self.cortex.l5_size
+        self._cortex_l23_size = _cortex_impl.l23_size
+        self._cortex_l5_size = _cortex_impl.l5_size
         cortex_to_hippo_size = self._cortex_l23_size
 
         # 2. HIPPOCAMPUS: Episodic memory
-        self.hippocampus = TrisynapticHippocampus(TrisynapticConfig(
+        _hippocampus_impl = TrisynapticHippocampus(TrisynapticConfig(
             n_input=cortex_to_hippo_size,
             n_output=config.hippocampus_size,
             dt_ms=config.dt_ms,
@@ -296,32 +296,32 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         # 3. PFC: Working memory
         pfc_input_size = cortex_to_hippo_size + config.hippocampus_size
-        self.pfc = Prefrontal(PrefrontalConfig(
+        _pfc_impl = Prefrontal(PrefrontalConfig(
             n_input=pfc_input_size,
             n_output=config.pfc_size,
             dt_ms=config.dt_ms,
             device=config.device,
         ))
-        self.pfc.reset_state(batch_size=1)
+        _pfc_impl.reset_state(batch_size=1)
 
         # 4. STRIATUM: Action selection
         # Receives: cortex L5 + hippocampus + PFC
         # NOTE: Pass n_output=n_actions (not n_actions*neurons_per_action)
         # The Striatum internally handles population coding expansion
         striatum_input = self._cortex_l5_size + config.hippocampus_size + config.pfc_size
-        self.striatum = Striatum(StriatumConfig(
+        _striatum_impl = Striatum(StriatumConfig(
             n_input=striatum_input,
             n_output=config.n_actions,  # Number of actions, NOT total neurons
             neurons_per_action=config.neurons_per_action,
             device=config.device,
         ))
-        self.striatum.reset()
+        _striatum_impl.reset()
 
         # 5. CEREBELLUM: Motor refinement
         # Receives: striatum output (action signals)
         # After population coding, striatum outputs n_actions * neurons_per_action
         cerebellum_input = config.n_actions * config.neurons_per_action
-        self.cerebellum = Cerebellum(CerebellumConfig(
+        _cerebellum_impl = Cerebellum(CerebellumConfig(
             n_input=cerebellum_input,
             n_output=config.n_actions,  # Refined motor output
             device=config.device,
@@ -330,60 +330,61 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # =====================================================================
         # CREATE EVENT-DRIVEN ADAPTERS
         # =====================================================================
+        # These ARE the brain regions - access underlying implementations via .impl
 
-        self.event_cortex = EventDrivenCortex(
+        self.cortex = EventDrivenCortex(
             EventRegionConfig(
                 name="cortex",
                 output_targets=["hippocampus", "pfc", "striatum"],
             ),
-            self.cortex,
+            _cortex_impl,
             pfc_size=config.pfc_size,  # For top-down projection
         )
 
-        self.event_hippocampus = EventDrivenHippocampus(
+        self.hippocampus = EventDrivenHippocampus(
             EventRegionConfig(
                 name="hippocampus",
                 output_targets=["pfc", "striatum"],
             ),
-            self.hippocampus,
+            _hippocampus_impl,
         )
 
-        self.event_pfc = EventDrivenPFC(
+        self.pfc = EventDrivenPFC(
             EventRegionConfig(
                 name="pfc",
                 output_targets=["striatum", "cortex"],  # Top-down to cortex
             ),
-            self.pfc,
+            _pfc_impl,
             cortex_input_size=self._cortex_l23_size,
             hippocampus_input_size=config.hippocampus_size,
         )
 
-        self.event_striatum = EventDrivenStriatum(
+        self.striatum = EventDrivenStriatum(
             EventRegionConfig(
                 name="striatum",
                 output_targets=["cerebellum"],  # Striatum -> Cerebellum
             ),
-            self.striatum,
+            _striatum_impl,
             cortex_input_size=self._cortex_l5_size,
             hippocampus_input_size=config.hippocampus_size,
             pfc_input_size=config.pfc_size,
         )
 
-        self.event_cerebellum = EventDrivenCerebellum(
+        self.cerebellum = EventDrivenCerebellum(
             EventRegionConfig(
                 name="cerebellum",
                 output_targets=[],  # Final motor output
             ),
-            self.cerebellum,
+            _cerebellum_impl,
         )
 
-        # Region lookup
-        self.regions = {
-            "cortex": self.event_cortex,
-            "hippocampus": self.event_hippocampus,
-            "pfc": self.event_pfc,
-            "striatum": self.event_striatum,
-            "cerebellum": self.event_cerebellum,
+        # Region lookup (now just references the adapters directly)
+        self.adapters = {
+            "cortex": self.cortex,
+            "hippocampus": self.hippocampus,
+            "pfc": self.pfc,
+            "striatum": self.striatum,
+            "cerebellum": self.cerebellum,
         }
 
         # =====================================================================
@@ -404,7 +405,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         self.theta = ThetaGenerator(
             frequency_hz=config.theta_frequency_hz,
-            connected_regions=list(self.regions.keys()),
+            connected_regions=list(self.adapters.keys()),
         )
 
         # =====================================================================
@@ -477,7 +478,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self._vta_rpe_clip: float = 2.0  # Clip normalized RPE to this range
 
         # Monitoring
-        self._spike_counts: Dict[str, int] = {name: 0 for name in self.regions}
+        self._spike_counts: Dict[str, int] = {name: 0 for name in self.adapters}
         self._events_processed: int = 0
 
         # =====================================================================
@@ -521,7 +522,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
     def _init_parallel_executor(self) -> None:
         """Initialize parallel executor with region creators.
-        
+
         Note: Parallel mode is experimental. On Windows, multiprocessing uses
         "spawn" which requires pickleable region creators. This implementation
         uses the existing module-level creator functions from parallel_executor.py
@@ -532,7 +533,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             _create_real_cortex, _create_real_hippocampus,
             _create_real_pfc, _create_real_striatum,
         )
-        
+
         # Create parallel executor with module-level creators
         # These are pickle-able because they're defined at module level
         self._parallel_executor = _ParallelExecutor(
@@ -581,6 +582,14 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         Returns:
             Dict with region activities for monitoring
         """
+        # =====================================================================
+        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
+        # =====================================================================
+        assert sample_pattern.shape[-1] == self.config.input_size, (
+            f"EventDrivenBrain.process_sample: sample_pattern has shape {sample_pattern.shape} "
+            f"but input_size={self.config.input_size}. Check that input matches brain config."
+        )
+
         n_timesteps = n_timesteps or self.config.encoding_timesteps
 
         # Set trial phase
@@ -590,6 +599,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # Note: No new_trial()/clear() calls here - continuous processing
         # State transitions happen via natural dynamics (decay, FFI)
         # Call new_sequence() explicitly when starting unrelated sequences
+        # Gamma slot auto-advances in hippocampus forward() - no explicit position needed
 
         # Process timesteps
         results = self._run_timesteps(
@@ -599,11 +609,11 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         )
 
         # Capture PFC output for decoder (language model uses this)
-        if hasattr(self.pfc, 'state') and self.pfc.state is not None:
-            if self.pfc.state.working_memory is not None:
-                self._last_pfc_output = self.pfc.state.working_memory.squeeze(0).clone()
-            elif self.pfc.state.spikes is not None:
-                self._last_pfc_output = self.pfc.state.spikes.squeeze(0).clone()
+        if hasattr(self.pfc.impl, 'state') and self.pfc.impl.state is not None:
+            if self.pfc.impl.state.working_memory is not None:
+                self._last_pfc_output = self.pfc.impl.state.working_memory.squeeze(0).clone()
+            elif self.pfc.impl.state.spikes is not None:
+                self._last_pfc_output = self.pfc.impl.state.spikes.squeeze(0).clone()
 
         return results
 
@@ -651,6 +661,14 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         Returns:
             Dict with region activities and comparison result
         """
+        # =====================================================================
+        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
+        # =====================================================================
+        assert test_pattern.shape[-1] == self.config.input_size, (
+            f"EventDrivenBrain.process_test: test_pattern has shape {test_pattern.shape} "
+            f"but input_size={self.config.input_size}. Check that input matches brain config."
+        )
+
         n_timesteps = n_timesteps or self.config.test_timesteps
 
         # Set trial phase
@@ -670,22 +688,22 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         n_timesteps: int = 50,
     ) -> Dict[str, Any]:
         """Run consolidation timesteps without sensory input.
-        
+
         This allows eligibility traces to interact with phasic dopamine
         after reward delivery. The brain continues processing internally:
         - Phasic dopamine decays naturally (τ ~ 200ms)
-        - Eligibility traces also decay (τ ~ 100-1000ms)  
+        - Eligibility traces also decay (τ ~ 100-1000ms)
         - Learning occurs where traces × dopamine are both non-zero
-        
+
         Typical usage (two-phase training):
         1. process_sample() → builds eligibility traces
         2. select_action() → commits to an action
         3. deliver_reward() → sets phasic dopamine
         4. run_consolidation() → allows learning to occur
-        
+
         Args:
             n_timesteps: Number of consolidation timesteps (default 50)
-            
+
         Returns:
             Dict with region activities during consolidation
         """
@@ -694,7 +712,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             n_timesteps=n_timesteps,
             trial_phase=self._trial_phase,  # Keep current phase
         )
-        
+
         return results
 
     def select_action(self, explore: bool = True) -> tuple[int, float]:
@@ -712,7 +730,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             (action, confidence): Selected action index and confidence [0, 1]
         """
         # Use striatum's finalize_action method
-        result = self.striatum.finalize_action(explore=explore)
+        result = self.striatum.impl.finalize_action(explore=explore)
 
         action = result.get("selected_action", 0)
         probs = result.get("probs", None)
@@ -755,7 +773,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # =====================================================================
         # STEP 2: Get expected value from striatum
         # =====================================================================
-        expected = self.striatum.get_expected_value(self._last_action)
+        expected = self.striatum.impl.get_expected_value(self._last_action)
 
         # =====================================================================
         # STEP 3: Compute reward prediction error
@@ -789,14 +807,14 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # =====================================================================
         # STEP 6: Broadcast to ALL regions
         # =====================================================================
-        self.cortex.set_dopamine(self._global_dopamine)
-        self.hippocampus.set_dopamine(self._global_dopamine)
-        self.pfc.set_dopamine(self._global_dopamine)
-        self.striatum.set_dopamine(self._global_dopamine)
-        self.cerebellum.set_dopamine(self._global_dopamine)
+        self.cortex.impl.set_dopamine(self._global_dopamine)
+        self.hippocampus.impl.set_dopamine(self._global_dopamine)
+        self.pfc.impl.set_dopamine(self._global_dopamine)
+        self.striatum.impl.set_dopamine(self._global_dopamine)
+        self.cerebellum.impl.set_dopamine(self._global_dopamine)
 
         # Create dopamine events for all regions (event-driven pathway)
-        for region_name in self.regions:
+        for region_name in self.adapters:
             delay = get_axonal_delay("vta", region_name)
             event = Event(
                 time=self._current_time + delay,
@@ -820,13 +838,13 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # Use the external reward for striatum value updates
         reward_for_striatum = external_reward if external_reward != 0.0 else self._compute_intrinsic_reward()
         if self._last_action is not None:
-            self.striatum.deliver_reward(reward_for_striatum)
+            self.striatum.impl.deliver_reward(reward_for_striatum)
 
         # =====================================================================
         # STEP 8: Update value estimate in striatum
         # =====================================================================
         if self._last_action is not None:
-            self.striatum.update_value_estimate(self._last_action, reward_for_striatum)
+            self.striatum.impl.update_value_estimate(self._last_action, reward_for_striatum)
 
     def _compute_normalized_dopamine(self, rpe: float) -> float:
         """Compute normalized dopamine from raw RPE.
@@ -891,8 +909,8 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # 1. CORTEX PREDICTIVE CODING (free energy minimization)
         # =====================================================================
         # Low prediction error = good model of the world = reward
-        if hasattr(self.cortex, 'state') and hasattr(self.cortex.state, 'free_energy'):
-            free_energy = self.cortex.state.free_energy
+        if hasattr(self.cortex.impl, 'state') and hasattr(self.cortex.impl.state, 'free_energy'):
+            free_energy = self.cortex.impl.state.free_energy
 
             # Free energy is typically 0-10, lower is better
             # Map: 0 → +1 (perfect prediction), 5 → 0, 10+ → -1 (bad prediction)
@@ -902,8 +920,8 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             n_sources += 1
 
         # Fallback: check for accumulated free energy in PredictiveCortex
-        elif hasattr(self.cortex, '_total_free_energy'):
-            total_fe = self.cortex._total_free_energy
+        elif hasattr(self.cortex.impl, '_total_free_energy'):
+            total_fe = self.cortex.impl._total_free_energy
             cortex_reward = 1.0 - 0.1 * min(total_fe, 20.0)
             cortex_reward = max(-1.0, min(1.0, cortex_reward))
             reward += cortex_reward
@@ -913,8 +931,8 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # 2. HIPPOCAMPUS PATTERN COMPLETION (memory recall quality)
         # =====================================================================
         # High pattern similarity = successful memory retrieval = reward
-        if hasattr(self.hippocampus, 'get_pattern_similarity'):
-            similarity = self.hippocampus.get_pattern_similarity()
+        if hasattr(self.hippocampus.impl, 'get_pattern_similarity'):
+            similarity = self.hippocampus.impl.get_pattern_similarity()
             if similarity is not None:
                 # Similarity is 0-1, map to [-1, 1]
                 hippo_reward = 2.0 * similarity - 1.0
@@ -985,11 +1003,11 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # =====================================================================
         # 4. BROADCAST TO ALL REGIONS
         # =====================================================================
-        self.cortex.set_dopamine(self._global_dopamine)
-        self.hippocampus.set_dopamine(self._global_dopamine)
-        self.pfc.set_dopamine(self._global_dopamine)
-        self.striatum.set_dopamine(self._global_dopamine)
-        self.cerebellum.set_dopamine(self._global_dopamine)
+        self.cortex.impl.set_dopamine(self._global_dopamine)
+        self.hippocampus.impl.set_dopamine(self._global_dopamine)
+        self.pfc.impl.set_dopamine(self._global_dopamine)
+        self.striatum.impl.set_dopamine(self._global_dopamine)
+        self.cerebellum.impl.set_dopamine(self._global_dopamine)
 
 
     def store_experience(
@@ -1027,15 +1045,15 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         # Construct state from current brain activity
         # Combine cortex L5 + hippocampus + PFC as the state
-        cortex_L5 = self.cortex.state.l5_spikes
+        cortex_L5 = self.cortex.impl.state.l5_spikes
         if cortex_L5 is None:
             cortex_L5 = torch.zeros(1, self._cortex_l5_size)
 
-        hippo_out = self.hippocampus.state.ca1_spikes
+        hippo_out = self.hippocampus.impl.state.ca1_spikes
         if hippo_out is None:
             hippo_out = torch.zeros(1, self.config.hippocampus_size)
 
-        pfc_out = self.pfc.state.spikes
+        pfc_out = self.pfc.impl.state.spikes
         if pfc_out is None:
             pfc_out = torch.zeros(1, self.config.pfc_size)
 
@@ -1045,7 +1063,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             pfc_out.view(-1),
         ])
 
-        self.hippocampus.store_episode(
+        self.hippocampus.impl.store_episode(
             state=combined_state,
             action=selected_action,
             reward=reward,
@@ -1060,7 +1078,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
     def reset(self) -> None:
         """Reset brain state for new episode.
-        
+
         This is a HARD reset - use for completely new, unrelated episodes.
         For starting a new sequence within the same session, use new_sequence().
         """
@@ -1070,28 +1088,28 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self.scheduler = EventScheduler()
 
         # Reset regions (full state reset)
-        self.cortex.reset_state(batch_size=1)
-        self.pfc.reset_state(batch_size=1)
-        self.striatum.reset()
-        self.hippocampus.new_trial()
+        self.cortex.impl.reset_state(batch_size=1)
+        self.pfc.impl.reset_state(batch_size=1)
+        self.striatum.impl.reset()
+        self.hippocampus.impl.new_trial()
 
         # Reset monitoring
-        self._spike_counts = {name: 0 for name in self.regions}
+        self._spike_counts = {name: 0 for name in self.adapters}
         self._events_processed = 0
         self._last_action = None
 
     def new_sequence(self) -> None:
         """Prepare for a new sequence while preserving learned representations.
-        
+
         Unlike reset(), this only clears what's needed for a new sequence:
         - Hippocampus stored patterns (for new comparisons)
         - Does NOT reset neural states (let natural decay handle transitions)
         - Does NOT reset weights (preserves learning)
-        
+
         Call this between unrelated text sequences during training, but NOT
         between tokens within a sequence.
         """
-        self.hippocampus.new_trial()
+        self.hippocampus.impl.new_trial()
 
     # =========================================================================
     # COMPARISON SIGNAL (MATCH/MISMATCH DETECTION)
@@ -1192,7 +1210,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self._global_dopamine = modulated_reward
 
         # 1. Real learning: update striatum for SELECTED action
-        real_result = self.striatum.deliver_reward(modulated_reward)
+        real_result = self.striatum.impl.deliver_reward(modulated_reward)
 
         # 2. Counterfactual: what would the OTHER action have gotten?
         other_action = 1 - selected_action
@@ -1205,16 +1223,16 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         # Apply counterfactual learning
         counterfactual_result = {}
-        if hasattr(self.striatum, 'deliver_counterfactual_reward'):
-            counterfactual_result = self.striatum.deliver_counterfactual_reward(
+        if hasattr(self.striatum.impl, 'deliver_counterfactual_reward'):
+            counterfactual_result = self.striatum.impl.deliver_counterfactual_reward(
                 reward=counterfactual_reward,
                 action=other_action,
                 counterfactual_scale=counterfactual_scale,
             )
 
         # Reset eligibility after both learnings
-        if hasattr(self.striatum, 'reset_eligibility'):
-            self.striatum.reset_eligibility()
+        if hasattr(self.striatum.impl, 'reset_eligibility'):
+            self.striatum.impl.reset_eligibility()
 
         # Update attention pathway
         attention_result = self.attention_pathway.learn(
@@ -1244,6 +1262,25 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
     # INTERNAL METHODS
     # =========================================================================
 
+    def _get_cortex_input(self, sensory_input: Optional[torch.Tensor]) -> torch.Tensor:
+        """Get cortex input, defaulting to zeros for consolidation.
+
+        During consolidation (sensory_input=None), we still need to call
+        cortex.forward() with zero input so that:
+        1. L2/3 recurrent dynamics can continue
+        2. Eligibility traces can decay properly
+        3. The cortex state is updated each timestep
+
+        Args:
+            sensory_input: External input or None for consolidation
+
+        Returns:
+            Tensor of shape [input_size] - either the input or zeros
+        """
+        if sensory_input is not None:
+            return sensory_input
+        return torch.zeros(self.config.input_size)
+
     def _run_timesteps(
         self,
         sensory_input: Optional[torch.Tensor],
@@ -1252,7 +1289,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         dopamine: float = 0.0,
     ) -> Dict[str, Any]:
         """Run simulation for specified timesteps.
-        
+
         Delegates to parallel executor if parallel mode is enabled,
         otherwise runs sequentially in the main process.
         """
@@ -1273,29 +1310,31 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
     ) -> Dict[str, Any]:
         """Run simulation using parallel executor."""
         assert self._parallel_executor is not None
-        
+
         end_time = self._current_time + n_timesteps * self.config.dt_ms
-        
-        # Inject sensory input if provided
-        if sensory_input is not None:
-            self._parallel_executor.inject_sensory_input(
-                sensory_input, 
-                target="cortex",
-                time=self._current_time,
-            )
-        
+
+        # Get effective input (zero tensor for consolidation, allows recurrent dynamics)
+        cortex_input = self._get_cortex_input(sensory_input)
+
+        # Inject sensory input (always - even zeros for consolidation)
+        self._parallel_executor.inject_sensory_input(
+            cortex_input,
+            target="cortex",
+            time=self._current_time,
+        )
+
         # Inject dopamine if specified
         if abs(dopamine) > 1e-6:
             self._parallel_executor.inject_reward(dopamine, time=self._current_time)
-        
+
         # Run parallel simulation
         result = self._parallel_executor.run_until(end_time)
-        
+
         # Update local state
         self._current_time = end_time
         self._spike_counts = result["spike_counts"]
         self._events_processed = result["events_processed"]
-        
+
         return {
             "cortex_activity": torch.zeros(self._cortex_l23_size),
             "hippocampus_activity": torch.zeros(self.config.hippocampus_size),
@@ -1326,17 +1365,17 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             theta_events = self.theta.advance_to(step_time)
             self.scheduler.schedule_many(theta_events)
 
-            # Schedule sensory input if provided
-            if sensory_input is not None:
-                delay = get_axonal_delay("sensory", "cortex")
-                event = Event(
-                    time=step_time + delay,
-                    event_type=EventType.SENSORY,
-                    source="sensory_input",
-                    target="cortex",
-                    payload=SpikePayload(spikes=sensory_input),
-                )
-                self.scheduler.schedule(event)
+            # Schedule sensory input (or zero input for consolidation)
+            cortex_input = self._get_cortex_input(sensory_input)
+            delay = get_axonal_delay("sensory", "cortex")
+            event = Event(
+                time=step_time + delay,
+                event_type=EventType.SENSORY,
+                source="sensory_input",
+                target="cortex",
+                payload=SpikePayload(spikes=cortex_input),
+            )
+            self.scheduler.schedule(event)
 
             # Schedule dopamine if specified (external override)
             if abs(dopamine) > 1e-6:
@@ -1387,9 +1426,9 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                 break
 
             # Route event to target region
-            if event.target in self.regions:
-                region = self.regions[event.target]
-                output_events = region.process_event(event)
+            if event.target in self.adapters:
+                region_impl = self.adapters[event.target]
+                output_events = region_impl.process_event(event)
 
                 # Schedule output events
                 for out_event in output_events:
@@ -1493,7 +1532,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information about brain state.
-        
+
         Returns both structured component diagnostics and raw metrics.
         """
         # Collect structured component diagnostics
@@ -1514,7 +1553,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             "spike_counts": self._spike_counts.copy(),
             "events_processed": self._events_processed,
             "last_action": self._last_action,
-            
+
             # VTA Dopamine System (centralized)
             "dopamine": {
                 "global": self._global_dopamine,  # Combined signal to regions
@@ -1528,14 +1567,14 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                 "rpe_history_count": self._vta_rpe_history_count,
                 "rpe_clip": self._vta_rpe_clip,
             },
-            
+
             # Legacy key for backwards compatibility
             "global_dopamine": self._global_dopamine,
-            
+
             # Structured component diagnostics
             "striatum": striatum_diag.to_dict(),
             "hippocampus": hippo_diag.to_dict(),
-            
+
             # Summary for quick access
             "summary": {
                 "last_action": self._last_action,
@@ -1550,7 +1589,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
     def get_structured_diagnostics(self) -> BrainSystemDiagnostics:
         """Get fully structured diagnostics as a dataclass.
-        
+
         Returns:
             BrainSystemDiagnostics with all component data
         """
@@ -1581,7 +1620,7 @@ def test_event_driven_brain():
     )
 
     brain = EventDrivenBrain(config)
-    print(f"  Created brain with {len(brain.regions)} regions")
+    print(f"  Created brain with {len(brain.adapters)} adapters")
 
     # Create sample pattern
     sample = (torch.rand(100) > 0.5).float()

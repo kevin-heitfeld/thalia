@@ -43,7 +43,7 @@ class EventDrivenCortex(EventDrivenRegionBase):
         pfc_size: int = 0,  # Size of PFC output for top-down projection
     ):
         super().__init__(config)
-        self.cortex = cortex
+        self._cortex = cortex
         self._pfc_size = pfc_size
 
         # Track pending top-down modulation
@@ -66,6 +66,16 @@ class EventDrivenCortex(EventDrivenRegionBase):
                 std=0.1 / pfc_size**0.5,
             )
 
+    @property
+    def impl(self) -> Any:
+        """Return the underlying cortex implementation."""
+        return self._cortex
+
+    @property
+    def state(self) -> Any:
+        """Delegate state access to the underlying implementation."""
+        return getattr(self.impl, "state", None)
+
     def _apply_decay(self, dt_ms: float) -> None:
         """Apply decay to cortex neurons.
 
@@ -76,16 +86,16 @@ class EventDrivenCortex(EventDrivenRegionBase):
 
         # Decay each layer's neurons
         for layer_name in ["l4_neurons", "l23_neurons", "l5_neurons"]:
-            neurons = getattr(self.cortex, layer_name, None)
+            neurons = getattr(self.impl, layer_name, None)
             if neurons is not None and hasattr(neurons, "membrane"):
                 if neurons.membrane is not None:
                     neurons.membrane *= decay_factor
 
         # Also decay the recurrent activity trace (if the cortex type has it)
-        if hasattr(self.cortex, "state") and self.cortex.state is not None:
-            if hasattr(self.cortex.state, "l23_recurrent_activity"):
-                if self.cortex.state.l23_recurrent_activity is not None:
-                    self.cortex.state.l23_recurrent_activity *= decay_factor
+        if hasattr(self.impl, "state") and self.impl.state is not None:
+            if hasattr(self.impl.state, "l23_recurrent_activity"):
+                if self.impl.state.l23_recurrent_activity is not None:
+                    self.impl.state.l23_recurrent_activity *= decay_factor
 
     def _process_spikes(
         self,
@@ -110,7 +120,7 @@ class EventDrivenCortex(EventDrivenRegionBase):
             return None  # Top-down alone doesn't drive output
 
         # Forward through cortex with current theta modulation
-        output = self.cortex.forward(
+        output = self.impl.forward(
             input_spikes,
             encoding_mod=self._encoding_strength,
             retrieval_mod=self._retrieval_strength,
@@ -136,9 +146,9 @@ class EventDrivenCortex(EventDrivenRegionBase):
         l23_spikes = None
         l5_spikes = None
 
-        if hasattr(self.cortex, "state") and self.cortex.state is not None:
-            l23_spikes = self.cortex.state.l23_spikes
-            l5_spikes = self.cortex.state.l5_spikes
+        if hasattr(self.impl, "state") and self.impl.state is not None:
+            l23_spikes = self.impl.state.l23_spikes
+            l5_spikes = self.impl.state.l5_spikes
 
         # If we don't have separate layer outputs, use the combined output
         if l23_spikes is None or l5_spikes is None:
@@ -174,10 +184,16 @@ class EventDrivenCortex(EventDrivenRegionBase):
 
         return events
 
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostics from the underlying cortex implementation."""
+        if hasattr(self.impl, "get_diagnostics"):
+            return self.impl.get_diagnostics()
+        return {}
+
     def get_state(self) -> Dict[str, Any]:
         """Return cortex state."""
         state = super().get_state()
         # Add cortex-specific diagnostics
-        if hasattr(self.cortex, "get_diagnostics"):
-            state["cortex"] = self.cortex.get_diagnostics()
+        if hasattr(self.impl, "get_diagnostics"):
+            state["impl"] = self.impl.get_diagnostics()
         return state

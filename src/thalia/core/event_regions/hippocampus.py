@@ -38,7 +38,7 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
         hippocampus: Any,  # TrisynapticHippocampus instance
     ):
         super().__init__(config)
-        self.hippocampus = hippocampus
+        self._hippocampus = hippocampus
 
         # Track EC direct input (from sensory, bypasses cortex)
         self._ec_direct_input: Optional[torch.Tensor] = None
@@ -47,6 +47,22 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
         from thalia.regions.theta_dynamics import TrialPhase
 
         self._TrialPhase = TrialPhase
+
+    @property
+    def impl(self) -> Any:
+        """Return the underlying hippocampus implementation."""
+        return self._hippocampus
+
+    @property
+    def state(self) -> Any:
+        """Delegate state access to the underlying implementation."""
+        return getattr(self.impl, "state", None)
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostics from the underlying hippocampus implementation."""
+        if hasattr(self.impl, "get_diagnostics"):
+            return self.impl.get_diagnostics()
+        return {}
 
     def _get_trial_phase(self) -> Any:
         """Determine trial phase from theta modulation.
@@ -68,19 +84,19 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
 
         # Decay neurons in each subregion
         for layer_name in ["dg_neurons", "ca3_neurons", "ca1_neurons"]:
-            neurons = getattr(self.hippocampus, layer_name, None)
+            neurons = getattr(self.impl, layer_name, None)
             if neurons is not None and hasattr(neurons, "membrane"):
                 if neurons.membrane is not None:
                     neurons.membrane *= decay_factor
 
         # Decay NMDA trace (slower time constant)
         if (
-            hasattr(self.hippocampus, "state")
-            and self.hippocampus.state is not None
+            hasattr(self.impl, "state")
+            and self.impl.state is not None
         ):
-            if self.hippocampus.state.nmda_trace is not None:
+            if self.impl.state.nmda_trace is not None:
                 nmda_decay = math.exp(-dt_ms / 100.0)  # ~100ms NMDA time constant
-                self.hippocampus.state.nmda_trace *= nmda_decay
+                self.impl.state.nmda_trace *= nmda_decay
 
     def _handle_spikes(self, event: Any) -> List[Any]:
         """Override to handle EC direct input specially."""
@@ -121,7 +137,7 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
         phase = self._get_trial_phase()
 
         # Forward through hippocampus
-        output = self.hippocampus.forward(
+        output = self.impl.forward(
             input_spikes,
             phase=phase,
             encoding_mod=self._encoding_strength,
@@ -134,14 +150,14 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
 
     def new_trial(self) -> None:
         """Signal new trial to hippocampus."""
-        if hasattr(self.hippocampus, "new_trial"):
-            self.hippocampus.new_trial()
+        if hasattr(self.impl, "new_trial"):
+            self.impl.new_trial()
         self._ec_direct_input = None
 
     def get_state(self) -> Dict[str, Any]:
         """Return hippocampus state."""
         state = super().get_state()
         state["trial_phase"] = self._get_trial_phase().name
-        if hasattr(self.hippocampus, "get_diagnostics"):
-            state["hippocampus"] = self.hippocampus.get_diagnostics()
+        if hasattr(self.impl, "get_diagnostics"):
+            state["impl"] = self.impl.get_diagnostics()
         return state

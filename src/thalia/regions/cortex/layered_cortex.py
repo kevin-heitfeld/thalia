@@ -47,6 +47,7 @@ import torch.nn.functional as F
 
 from thalia.regions.base import BrainRegion, RegionConfig, LearningRule
 from thalia.core.neuron import LIFNeuron, LIFConfig
+from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
 from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights
@@ -149,6 +150,15 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         # State
         self.state = LayeredCortexState()
 
+        # Cumulative spike counters (for diagnostics across timesteps)
+        self._cumulative_l4_spikes = 0
+        self._cumulative_l23_spikes = 0
+        self._cumulative_l5_spikes = 0
+        
+        # Intrinsic plasticity tracking (initialized in _init_layers)
+        self._l23_threshold_offset: Optional[torch.Tensor] = None
+        self._l23_activity_history: Optional[torch.Tensor] = None
+
     def _get_learning_rule(self) -> LearningRule:
         """Cortex uses unsupervised Hebbian learning."""
         return LearningRule.HEBBIAN
@@ -165,48 +175,73 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
 
     def _init_layers(self) -> None:
         """Initialize LIF neurons for each layer."""
+        cfg = self.layer_config
+
         l4_config = LIFConfig(tau_mem=15.0, v_threshold=1.0)
-        l23_config = LIFConfig(tau_mem=20.0, v_threshold=1.0)
+        # L2/3 gets spike-frequency adaptation to prevent frozen attractors
+        l23_config = LIFConfig(
+            tau_mem=20.0,
+            v_threshold=1.0,
+            adapt_increment=cfg.l23_adapt_increment,  # SFA enabled!
+            tau_adapt=cfg.l23_adapt_tau,
+        )
         l5_config = LIFConfig(tau_mem=20.0, v_threshold=0.9)
 
         self.l4_neurons = LIFNeuron(self.l4_size, l4_config)
         self.l23_neurons = LIFNeuron(self.l23_size, l23_config)
         self.l5_neurons = LIFNeuron(self.l5_size, l5_config)
 
+        # =====================================================================
+        # SHORT-TERM PLASTICITY for L2/3 recurrent connections
+        # =====================================================================
+        # L2/3 recurrent connections show SHORT-TERM DEPRESSION, preventing
+        # frozen attractors. Without STD, the same neurons fire every timestep.
+        if cfg.stp_l23_recurrent_enabled:
+            device = torch.device(cfg.device)
+            self.stp_l23_recurrent = ShortTermPlasticity(
+                n_pre=self.l23_size,
+                n_post=self.l23_size,
+                config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt_ms),
+                per_synapse=True,
+            )
+            self.stp_l23_recurrent.to(device)
+        else:
+            self.stp_l23_recurrent = None
+
     def _init_weights(self) -> None:
         """Initialize inter-layer weight matrices.
-        
+
         Feedforward weights use positive initialization to ensure sparse
         presynaptic activity can drive postsynaptic neurons above threshold.
         With ~10-15% sparsity, we need weights scaled so that:
             sum(w_ij * spike_j) * strength ~ threshold
-        
+
         Using uniform [0, max] with max scaled by fan-in and expected sparsity.
         """
         device = torch.device(self.layer_config.device)
         cfg = self.layer_config
-        
+
         # Expected number of active inputs given sparsity
         expected_active_l4 = max(1, int(self.l4_size * cfg.l4_sparsity))
         expected_active_l23 = max(1, int(self.l23_size * cfg.l23_sparsity))
-        
+
         # Feedforward weights: positive, scaled so sparse input reaches threshold
         # With n_active inputs, threshold ~1.0, strength factor applied later:
         # target = threshold / (n_active * strength) ≈ 1.0 / (n_active * strength)
         # We initialize to mean ≈ target, with some variance for diversity
-        
+
         # Input → L4: positive excitatory weights
         w_scale_input = 1.0 / max(1, int(cfg.n_input * 0.15))  # Assume 15% input sparsity
         self.w_input_l4 = nn.Parameter(
             torch.abs(torch.randn(self.l4_size, cfg.n_input, device=device)) * w_scale_input
         )
-        
+
         # L4 → L2/3: positive excitatory weights
         w_scale_l4_l23 = 1.0 / expected_active_l4
         self.w_l4_l23 = nn.Parameter(
             torch.abs(torch.randn(self.l23_size, self.l4_size, device=device)) * w_scale_l4_l23
         )
-        
+
         # L2/3 recurrent: SIGNED weights (compact E/I approximation)
         # Unlike feedforward connections which are positive-only (Dale's law),
         # recurrent lateral connections use signed weights to approximate the
@@ -218,13 +253,13 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         )
         with torch.no_grad():
             self.w_l23_recurrent.data.fill_diagonal_(0.0)
-        
+
         # L2/3 → L5: positive excitatory weights
         w_scale_l23_l5 = 1.0 / expected_active_l23
         self.w_l23_l5 = nn.Parameter(
             torch.abs(torch.randn(self.l5_size, self.l23_size, device=device)) * w_scale_l23_l5
         )
-        
+
         # L2/3 inhibition: positive (inhibitory connections suppress)
         self.w_l23_inhib = nn.Parameter(
             torch.ones(self.l23_size, self.l23_size, device=device) * 0.3
@@ -247,6 +282,10 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         self.l23_neurons.reset_state(batch_size)
         self.l5_neurons.reset_state(batch_size)
 
+        # Reset STP state for L2/3 recurrent
+        if self.stp_l23_recurrent is not None:
+            self.stp_l23_recurrent.reset_state(batch_size)
+
         self.state = LayeredCortexState(
             l4_spikes=torch.zeros(batch_size, self.l4_size, device=dev),
             l23_spikes=torch.zeros(batch_size, self.l23_size, device=dev),
@@ -258,6 +297,11 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             top_down_modulation=None,
             ffi_strength=0.0,
         )
+
+        # Reset cumulative spike counters (for diagnostics across timesteps)
+        self._cumulative_l4_spikes = 0
+        self._cumulative_l23_spikes = 0
+        self._cumulative_l5_spikes = 0
 
         # Note: FFI state decays naturally, no hard reset needed
 
@@ -271,7 +315,7 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input through layered cortical circuit with continuous plasticity.
-        
+
         This method both processes spikes AND applies synaptic plasticity. Learning
         happens continuously at each timestep, modulated by neuromodulators (dopamine).
         This is how biological cortex works - plasticity is part of the dynamics,
@@ -280,6 +324,23 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         input_spikes = ensure_batch_dim(input_spikes)
 
         batch_size = input_spikes.shape[0]
+
+        # =====================================================================
+        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
+        # =====================================================================
+        assert input_spikes.shape[-1] == self.layer_config.n_input, (
+            f"LayeredCortex.forward: input_spikes has shape {input_spikes.shape} "
+            f"but n_input={self.layer_config.n_input}. Check that input matches cortex config."
+        )
+        if top_down is not None:
+            assert top_down.shape[-1] == self.l23_size, (
+                f"LayeredCortex.forward: top_down has shape {top_down.shape} "
+                f"but L2/3 size={self.l23_size}. Top-down must match L2/3 for modulation."
+            )
+            assert top_down.shape[0] == batch_size, (
+                f"LayeredCortex.forward: top_down batch size {top_down.shape[0]} "
+                f"doesn't match input_spikes batch size {batch_size}."
+            )
 
         if self.state.l4_spikes is None:
             self.reset_state(batch_size)
@@ -295,6 +356,13 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         l4_spikes, _ = self.l4_neurons(l4_input)
         l4_spikes = self._apply_sparsity(l4_spikes, cfg.l4_sparsity)
         self.state.l4_spikes = l4_spikes
+
+        # Inter-layer shape check: L4 → L2/3
+        assert l4_spikes.shape == (batch_size, self.l4_size), (
+            f"LayeredCortex: L4 spikes have shape {l4_spikes.shape} "
+            f"but expected ({batch_size}, {self.l4_size}). "
+            f"Check L4 sparsity or input→L4 weights shape."
+        )
 
         # L2/3: Processing with recurrence
         l23_ff = (
@@ -312,18 +380,40 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             )
             ffi_suppression = 1.0 - self.state.ffi_strength * cfg.ffi_strength
 
-        # Recurrent
+        # =====================================================================
+        # RECURRENT L2/3 WITH STP (prevents frozen attractors)
+        # =====================================================================
+        # Without STP, recurrent connections cause the same neurons to fire
+        # every timestep (frozen attractor). With DEPRESSING STP, frequently-
+        # used synapses get temporarily weaker, allowing pattern transitions.
         if self.state.l23_recurrent_activity is not None:
             recurrent_scale = 0.5 + 0.5 * retrieval_mod
-            l23_rec = (
-                torch.matmul(
-                    self.state.l23_recurrent_activity,
-                    self.w_l23_recurrent.t(),
+
+            if self.stp_l23_recurrent is not None:
+                # Apply STP to recurrent connections
+                stp_efficacy = self.stp_l23_recurrent(
+                    self.state.l23_recurrent_activity.float()
+                ).squeeze(0)
+                effective_w_rec = self.w_l23_recurrent * stp_efficacy.T
+                l23_rec = (
+                    torch.matmul(
+                        self.state.l23_recurrent_activity,
+                        effective_w_rec.t(),
+                    )
+                    * cfg.l23_recurrent_strength
+                    * recurrent_scale
+                    * ffi_suppression
                 )
-                * cfg.l23_recurrent_strength
-                * recurrent_scale
-                * ffi_suppression
-            )
+            else:
+                l23_rec = (
+                    torch.matmul(
+                        self.state.l23_recurrent_activity,
+                        self.w_l23_recurrent.t(),
+                    )
+                    * cfg.l23_recurrent_strength
+                    * recurrent_scale
+                    * ffi_suppression
+                )
         else:
             l23_rec = torch.zeros_like(l23_ff)
 
@@ -340,9 +430,23 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             )
             l23_input = l23_input - l23_inhib
 
+        # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
+        # Neurons that fire too much have higher thresholds (less excitable)
+        cfg = self.layer_config
+        if (cfg.intrinsic_plasticity_enabled and 
+            self._l23_threshold_offset is not None):
+            l23_input = l23_input - self._l23_threshold_offset.unsqueeze(0)
+
         l23_spikes, _ = self.l23_neurons(F.relu(l23_input))
         l23_spikes = self._apply_sparsity(l23_spikes, cfg.l23_sparsity)
         self.state.l23_spikes = l23_spikes
+
+        # Inter-layer shape check: L2/3 → L5
+        assert l23_spikes.shape == (batch_size, self.l23_size), (
+            f"LayeredCortex: L2/3 spikes have shape {l23_spikes.shape} "
+            f"but expected ({batch_size}, {self.l23_size}). "
+            f"Check L2/3 sparsity or L4→L2/3 weights shape."
+        )
 
         # Update recurrent activity trace
         if self.state.l23_recurrent_activity is not None:
@@ -362,6 +466,18 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         l5_spikes = self._apply_sparsity(l5_spikes, cfg.l5_sparsity)
         self.state.l5_spikes = l5_spikes
 
+        # Inter-layer shape check: L5 output
+        assert l5_spikes.shape == (batch_size, self.l5_size), (
+            f"LayeredCortex: L5 spikes have shape {l5_spikes.shape} "
+            f"but expected ({batch_size}, {self.l5_size}). "
+            f"Check L5 sparsity or L2/3→L5 weights shape."
+        )
+
+        # Update cumulative spike counters (for diagnostics)
+        self._cumulative_l4_spikes += int(l4_spikes.sum().item())
+        self._cumulative_l23_spikes += int(l23_spikes.sum().item())
+        self._cumulative_l5_spikes += int(l5_spikes.sum().item())
+
         # Update STDP traces using utility function
         if self.state.l4_trace is not None:
             update_trace(self.state.l4_trace, l4_spikes, tau=cfg.stdp_tau_plus, dt=dt)
@@ -371,10 +487,10 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             update_trace(self.state.l5_trace, l5_spikes, tau=cfg.stdp_tau_plus, dt=dt)
 
         self.state.spikes = l5_spikes
-        
+
         # Store input for plasticity
         self.state.input_spikes = input_spikes
-        
+
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity()
 
@@ -411,10 +527,10 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
 
     def _apply_plasticity(self) -> None:
         """Apply continuous STDP learning with BCM modulation.
-        
+
         This is called automatically at each forward() timestep.
         Learning rate is modulated by dopamine (via get_effective_learning_rate).
-        
+
         In biological cortex, synaptic plasticity happens continuously based on
         pre/post spike timing. Dopamine doesn't trigger learning - it modulates
         how much weight change occurs from the spike-timing-based plasticity.
@@ -423,11 +539,11 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             return
 
         cfg = self.layer_config
-        
+
         # Get dopamine-modulated learning rate
         base_lr = cfg.stdp_lr
         effective_lr = self.get_effective_learning_rate(base_lr)
-        
+
         # Early exit if learning rate is too small
         if effective_lr < 1e-8:
             self.state.last_plasticity_delta = 0.0
@@ -491,9 +607,24 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             # Uses dedicated bounds [l23_recurrent_w_min, l23_recurrent_w_max] to allow
             # both excitatory and inhibitory-like lateral connections.
             # This is a simplification of explicit E/I interneuron populations.
+            l23_activity = l23_spikes.float()
             dw = effective_lr * 0.5 * bcm_to_scale(l23_bcm_mod) * torch.outer(
-                l23_spikes.float(), l23_spikes.float()
+                l23_activity, l23_activity
             )
+
+            # =========================================================
+            # HETEROSYNAPTIC PLASTICITY: Weaken inactive synapses
+            # =========================================================
+            # Synapses to inactive postsynaptic neurons get weakened when
+            # nearby neurons fire strongly. This prevents winner-take-all
+            # dynamics from permanently dominating.
+            if cfg.heterosynaptic_ratio > 0:
+                inactive_post = (l23_activity < 0.5).float()  # Inactive neurons
+                active_pre = l23_activity  # Active neurons
+                hetero_ltd = cfg.heterosynaptic_ratio * effective_lr
+                hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
+                dw = dw + hetero_dW
+
             with torch.no_grad():
                 self.w_l23_recurrent.data += dw
                 self.w_l23_recurrent.data.fill_diagonal_(0.0)
@@ -502,7 +633,46 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
                     cfg.l23_recurrent_w_min,
                     cfg.l23_recurrent_w_max,
                 )
+
+                # =============================================================
+                # SYNAPTIC SCALING (Homeostatic)
+                # =============================================================
+                # Multiplicatively adjust weights towards target mean.
+                if cfg.synaptic_scaling_enabled:
+                    mean_weight = self.w_l23_recurrent.data.abs().mean()
+                    scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
+                    self.w_l23_recurrent.data *= scaling
+                    self.w_l23_recurrent.data.fill_diagonal_(0.0)
+                    clamp_weights(
+                        self.w_l23_recurrent.data,
+                        cfg.l23_recurrent_w_min,
+                        cfg.l23_recurrent_w_max,
+                    )
             total_change += dw.abs().mean().item()
+
+            # =================================================================
+            # INTRINSIC PLASTICITY: Update per-neuron threshold offsets
+            # =================================================================
+            # This operates on LONGER timescales than SFA.
+            if cfg.intrinsic_plasticity_enabled:
+                l23_spikes_1d = l23_activity
+                
+                # Initialize if needed
+                if self._l23_activity_history is None:
+                    self._l23_activity_history = torch.zeros(self.l23_size, device=l23_spikes_1d.device)
+                if self._l23_threshold_offset is None:
+                    self._l23_threshold_offset = torch.zeros(self.l23_size, device=l23_spikes_1d.device)
+                
+                # Update activity history (exponential moving average)
+                self._l23_activity_history = (
+                    0.99 * self._l23_activity_history + 0.01 * l23_spikes_1d
+                )
+                
+                # Adjust threshold: high activity → higher threshold (less excitable)
+                rate_error = self._l23_activity_history - cfg.intrinsic_target_rate
+                self._l23_threshold_offset = (
+                    self._l23_threshold_offset + cfg.intrinsic_adaptation_rate * rate_error
+                ).clamp(-0.5, 0.5)  # Limit threshold adjustment range
 
             # L2/3 → L5
             if l5_spikes is not None:
@@ -535,7 +705,13 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         return self.state.l5_spikes
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get layer-specific diagnostics using DiagnosticsMixin helpers."""
+        """Get layer-specific diagnostics using DiagnosticsMixin helpers.
+
+        Note: Reports both instantaneous (l4_active_count) and cumulative
+        (l4_cumulative_spikes) counts. During consolidation phases with
+        zero input, instantaneous L4 will be 0 but cumulative shows
+        total activity since last reset.
+        """
         cfg = self.layer_config
         diag: Dict[str, Any] = {
             "l4_size": self.l4_size,
@@ -546,24 +722,28 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             "config_w_max": cfg.w_max,
             "config_l23_rec_w_min": cfg.l23_recurrent_w_min,
             "config_l23_rec_w_max": cfg.l23_recurrent_w_max,
+            # Cumulative spike counts (since last reset_state)
+            "l4_cumulative_spikes": getattr(self, "_cumulative_l4_spikes", 0),
+            "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
+            "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
         }
-        
-        # Spike diagnostics for each layer
+
+        # Spike diagnostics for each layer (instantaneous)
         if self.state.l4_spikes is not None:
             diag.update(self.spike_diagnostics(self.state.l4_spikes, "l4"))
         if self.state.l23_spikes is not None:
             diag.update(self.spike_diagnostics(self.state.l23_spikes, "l23"))
         if self.state.l5_spikes is not None:
             diag.update(self.spike_diagnostics(self.state.l5_spikes, "l5"))
-        
+
         # Recurrent activity
         if self.state.l23_recurrent_activity is not None:
             diag["l23_recurrent_mean"] = self.state.l23_recurrent_activity.mean().item()
-        
+
         # Weight diagnostics for inter-layer connections
         diag.update(self.weight_diagnostics(self.w_input_l4.data, "input_l4"))
         diag.update(self.weight_diagnostics(self.w_l4_l23.data, "l4_l23"))
         diag.update(self.weight_diagnostics(self.w_l23_recurrent.data, "l23_rec"))
         diag.update(self.weight_diagnostics(self.w_l23_l5.data, "l23_l5"))
-        
+
         return diag

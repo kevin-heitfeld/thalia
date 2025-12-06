@@ -409,23 +409,59 @@ class SleepSystemMixin:
         }
     
     def _run_consolidation(self, episode: "Episode") -> None:
-        """Run hippocampus → cortex consolidation for an episode (SWS-specific)."""
-        hippo_activity = episode.state[:self.config.hippocampus_size].unsqueeze(0)
-        self.replay_pathway.trigger_ripple()
-        replay_signal = self.replay_pathway.replay_step(dt=1.0)
+        """Run hippocampus → cortex consolidation for an episode (SWS-specific).
         
-        if replay_signal is not None:
-            cortex_input = torch.zeros(1, self.config.input_size)
-            min_size = min(replay_signal.shape[1], self.config.input_size)
-            cortex_input[:, :min_size] = replay_signal[:, :min_size]
-            cortex_activity = self.cortex.forward(cortex_input)
-            
-            self.replay_pathway.learn(
-                pre_spikes=hippo_activity,
-                post_spikes=cortex_activity,
-                reward=0.5,
+        This method uses gamma-driven replay when sequences are available.
+        During sleep, sequences that took seconds to encode are replayed
+        time-compressed (~5-20x faster), with the gamma oscillator driving
+        slot-by-slot reactivation.
+        
+        For episodes without sequences, falls back to single-state replay.
+        """
+        # Try gamma-driven sequence replay first
+        if hasattr(self.hippocampus, 'replay_sequence') and episode.sequence is not None:
+            # Use gamma oscillator for time-compressed sequence replay
+            replay_result = self.hippocampus.replay_sequence(
+                episode,
+                compression_factor=5.0,  # 5x faster than encoding
                 dt=1.0,
             )
+            
+            # Consolidate each replayed pattern to cortex
+            for pattern in replay_result.get("replayed_patterns", []):
+                if pattern is not None:
+                    cortex_input = torch.zeros(1, self.config.input_size)
+                    if pattern.dim() == 1:
+                        pattern = pattern.unsqueeze(0)
+                    min_size = min(pattern.shape[1], self.config.input_size)
+                    cortex_input[:, :min_size] = pattern[:, :min_size]
+                    cortex_activity = self.cortex.forward(cortex_input)
+                    
+                    # Learning during replay
+                    self.replay_pathway.learn(
+                        pre_spikes=pattern,
+                        post_spikes=cortex_activity,
+                        reward=0.5,
+                        dt=1.0,
+                    )
+        else:
+            # Fall back to original single-state replay
+            hippo_activity = episode.state[:self.config.hippocampus_size].unsqueeze(0)
+            self.replay_pathway.trigger_ripple()
+            replay_signal = self.replay_pathway.replay_step(dt=1.0)
+            
+            if replay_signal is not None:
+                cortex_input = torch.zeros(1, self.config.input_size)
+                min_size = min(replay_signal.shape[1], self.config.input_size)
+                cortex_input[:, :min_size] = replay_signal[:, :min_size]
+                cortex_activity = self.cortex.forward(cortex_input)
+                
+                self.replay_pathway.learn(
+                    pre_spikes=hippo_activity,
+                    post_spikes=cortex_activity,
+                    reward=0.5,
+                    dt=1.0,
+                )
 
     # ========================================================================
     # Stage-Specific Methods (now delegate to unified method)

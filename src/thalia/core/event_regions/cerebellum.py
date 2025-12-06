@@ -41,40 +41,56 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
         cerebellum: Any,  # Cerebellum instance
     ):
         super().__init__(config)
-        self.cerebellum = cerebellum
+        self._cerebellum = cerebellum
 
         # Track recent activity for learning
         self._recent_input: Optional[torch.Tensor] = None
         self._recent_output: Optional[torch.Tensor] = None
         self._pending_error: Optional[torch.Tensor] = None
 
+    @property
+    def impl(self) -> Any:
+        """Return the underlying cerebellum implementation."""
+        return self._cerebellum
+
+    @property
+    def state(self) -> Any:
+        """Delegate state access to the underlying implementation."""
+        return getattr(self.impl, "state", None)
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostics from the underlying cerebellum implementation."""
+        if hasattr(self.impl, "get_diagnostics"):
+            return self.impl.get_diagnostics()
+        return {}
+
     def _apply_decay(self, dt_ms: float) -> None:
         """Apply decay to cerebellar neurons."""
         decay_factor = math.exp(-dt_ms / self._membrane_tau)
 
         if (
-            hasattr(self.cerebellum, "neurons")
-            and self.cerebellum.neurons.membrane is not None
+            hasattr(self.impl, "neurons")
+            and self.impl.neurons.membrane is not None
         ):
-            self.cerebellum.neurons.membrane *= decay_factor
+            self.impl.neurons.membrane *= decay_factor
 
     def _on_dopamine(self, payload: DopaminePayload) -> None:
         """Handle dopamine signals.
 
         In the cerebellum, dopamine modulates climbing fiber sensitivity.
         We use the dopamine signal as a proxy for error feedback.
-        
+
         Note: Cerebellum uses error-corrective learning which requires an
         explicit target signal. Dopamine in the cerebellum primarily modulates
         plasticity rate, not direction. For proper cerebellar learning, use
         learn_with_error() with an explicit target.
         """
         # Set dopamine level for plasticity modulation
-        self.cerebellum.state.dopamine = payload.level
-        
+        self.impl.state.dopamine = payload.level
+
         # Only apply immediate learning if we have both input/output AND a clear error signal
         if self._recent_input is not None and self._recent_output is not None:
-            if abs(payload.level) > 0.1 and hasattr(self.cerebellum, "learn"):
+            if abs(payload.level) > 0.1 and hasattr(self.impl, "learn"):
                 # Create target based on dopamine direction
                 # Positive: reinforce current output
                 # Negative: suppress current output
@@ -88,7 +104,7 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
                     # Neutral - no learning
                     return
 
-                self.cerebellum.learn(
+                self.impl.learn(
                     input_spikes=self._recent_input,
                     output_spikes=self._recent_output,
                     target=target,
@@ -107,7 +123,7 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
         self._recent_input = input_spikes.clone()
 
         # Forward through cerebellum
-        output = self.cerebellum.forward(
+        output = self.impl.forward(
             input_spikes,
             dt=1.0,
             encoding_mod=self._encoding_strength,
@@ -137,7 +153,7 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
         if self._recent_input is None or self._recent_output is None:
             return {"error": "No recent activity to learn from"}
 
-        return self.cerebellum.learn(
+        return self.impl.learn(
             input_spikes=self._recent_input,
             output_spikes=self._recent_output,
             target=target,
@@ -147,10 +163,10 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
         """Return cerebellum state."""
         state = super().get_state()
 
-        if hasattr(self.cerebellum, "climbing_fiber"):
-            state["error"] = self.cerebellum.climbing_fiber.error.clone()
+        if hasattr(self.impl, "climbing_fiber"):
+            state["error"] = self.impl.climbing_fiber.error.clone()
 
-        if hasattr(self.cerebellum, "get_diagnostics"):
-            state["cerebellum"] = self.cerebellum.get_diagnostics()
+        if hasattr(self.impl, "get_diagnostics"):
+            state["impl"] = self.impl.get_diagnostics()
 
         return state

@@ -53,8 +53,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any, List, TYPE_CHECKING
-import math
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -69,7 +68,6 @@ from thalia.language.encoder import (
 from thalia.language.decoder import (
     SpikeDecoder,
     SpikeDecoderConfig,
-    DecodingType,
 )
 from thalia.language.position import (
     OscillatoryPositionEncoder,
@@ -231,10 +229,17 @@ class LanguageBrainInterface(nn.Module):
             brain = EventDrivenBrain.from_thalia_config(config)
             interface = LanguageBrainInterface.from_thalia_config(brain, config)
         """
-        from thalia.config import ThaliaConfig
-
+        # Import here to avoid circular imports
         legacy_config = config.to_language_interface_config()
         return cls(brain, legacy_config)
+
+    def forward(
+        self,
+        token_ids: torch.Tensor,
+        n_timesteps_per_token: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Forward pass - delegates to process_tokens for nn.Module compatibility."""
+        return self.process_tokens(token_ids, n_timesteps_per_token)
 
     def process_tokens(
         self,
@@ -283,6 +288,7 @@ class LanguageBrainInterface(nn.Module):
             token_input = token_spikes.sum(dim=1).squeeze(0) * 2.0  # [input_size]
 
             # Process through brain
+            # Gamma slot auto-advances in hippocampus - no explicit position needed
             result = self.brain.process_sample(token_input, n_timesteps=n_timesteps)
             all_results.append(result)            # Collect PFC output for decoding
             if hasattr(self.brain, '_last_pfc_output') and self.brain._last_pfc_output is not None:
@@ -300,7 +306,8 @@ class LanguageBrainInterface(nn.Module):
         position_spikes: torch.Tensor,
     ) -> torch.Tensor:
         """Combine content and position encodings."""
-        batch, seq_len, n_timesteps, n_content = content_spikes.shape
+        # Unpack shape (only need for concatenation dimension check)
+        _ = content_spikes.shape  # batch, seq_len, n_timesteps, n_content
 
         # Concatenate
         combined = torch.cat([content_spikes, position_spikes], dim=-1)
@@ -331,7 +338,6 @@ class LanguageBrainInterface(nn.Module):
         pfc_outputs = torch.stack(self.output_buffer, dim=0)
 
         # Expand to fake timestep dimension for decoder
-        n_tokens = pfc_outputs.shape[0]
         pfc_outputs = pfc_outputs.unsqueeze(0)  # [1, n_tokens, pfc_size]
 
         # Create fake spike patterns (treat pfc_output as firing rates)

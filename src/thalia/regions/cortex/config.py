@@ -81,6 +81,50 @@ class LayeredCortexConfig(RegionConfig):
     l23_recurrent_w_min: float = -1.5  # Allows inhibitory-like connections
     l23_recurrent_w_max: float = 1.0   # Symmetric by default
 
+    # =========================================================================
+    # SPIKE-FREQUENCY ADAPTATION (SFA)
+    # =========================================================================
+    # Cortical pyramidal neurons show strong spike-frequency adaptation.
+    # This prevents the same neurons from dominating activity and enables
+    # temporal decorrelation of neural responses.
+    l23_adapt_increment: float = 0.3  # Adaptation per spike
+    l23_adapt_tau: float = 100.0      # Adaptation time constant (ms)
+
+    # =========================================================================
+    # SHORT-TERM PLASTICITY (STP) for L2/3 recurrent
+    # =========================================================================
+    # L2/3 recurrent connections show SHORT-TERM DEPRESSION, preventing
+    # frozen attractors. Without STD, the same neurons fire every timestep.
+    stp_l23_recurrent_enabled: bool = True
+    # DEPRESSING_FAST: High U (0.8), fast depression, quick recovery
+    # This allows pattern transitions rather than frozen attractors.
+
+    # =========================================================================
+    # HETEROSYNAPTIC PLASTICITY
+    # =========================================================================
+    # When active neurons strengthen their connections (LTP), inactive
+    # synapses to the same postsynaptic neurons weaken (heterosynaptic LTD).
+    # This maintains homeostasis and enables competition between inputs.
+    heterosynaptic_ratio: float = 0.1  # LTD for inactive synapses
+
+    # =========================================================================
+    # SYNAPTIC SCALING (Homeostatic)
+    # =========================================================================
+    # Multiplicatively adjust all weights to maintain stable firing rates.
+    synaptic_scaling_enabled: bool = True
+    synaptic_scaling_target: float = 0.3  # Target mean weight
+    synaptic_scaling_rate: float = 0.001  # Slow adaptation rate
+
+    # =========================================================================
+    # INTRINSIC PLASTICITY
+    # =========================================================================
+    # Neurons adjust their own excitability based on firing history.
+    # High activity → higher threshold (less excitable)
+    # This operates on LONGER timescales than SFA.
+    intrinsic_plasticity_enabled: bool = True
+    intrinsic_target_rate: float = 0.1    # Target firing rate
+    intrinsic_adaptation_rate: float = 0.01  # How fast threshold adapts
+
     # Which layer to use as output to next region
     output_layer: str = "L5"  # "L2/3" for cortical, "L5" for subcortical
 

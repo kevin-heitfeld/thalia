@@ -17,6 +17,7 @@ Date: December 2025
 from __future__ import annotations
 
 import math
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 
@@ -89,6 +90,16 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
     @property
     def name(self) -> str:
         return self._name
+
+    @property
+    @abstractmethod
+    def impl(self) -> Any:
+        """Return the underlying brain region implementation.
+        
+        This provides a consistent interface to access the wrapped region
+        regardless of which adapter type is being used.
+        """
+        ...
 
     def get_connections(self) -> List[Connection]:
         return self._connections

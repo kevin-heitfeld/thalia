@@ -50,7 +50,7 @@ class EventDrivenPFC(EventDrivenRegionBase):
         hippocampus_input_size: int = 0,
     ):
         super().__init__(config)
-        self.pfc = pfc
+        self._pfc = pfc
 
         # Input sizes for buffering (set via configure_inputs)
         self._cortex_input_size = cortex_input_size
@@ -67,6 +67,22 @@ class EventDrivenPFC(EventDrivenRegionBase):
 
         # Accumulate dopamine signal for next forward pass
         self._pending_dopamine_signal: float = 0.0
+
+    @property
+    def impl(self) -> Any:
+        """Return the underlying PFC implementation."""
+        return self._pfc
+
+    @property
+    def state(self) -> Any:
+        """Delegate state access to the underlying implementation."""
+        return getattr(self.impl, "state", None)
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostics from the underlying PFC implementation."""
+        if hasattr(self.impl, "get_diagnostics"):
+            return self.impl.get_diagnostics()
+        return {}
 
     def configure_inputs(
         self,
@@ -90,14 +106,14 @@ class EventDrivenPFC(EventDrivenRegionBase):
         decay_factor = math.exp(-dt_ms / self._membrane_tau)
 
         # Decay PFC neurons
-        if hasattr(self.pfc, "neurons") and hasattr(self.pfc.neurons, "membrane"):
-            if self.pfc.neurons.membrane is not None:
-                self.pfc.neurons.membrane *= decay_factor
+        if hasattr(self.impl, "neurons") and hasattr(self.impl.neurons, "membrane"):
+            if self.impl.neurons.membrane is not None:
+                self.impl.neurons.membrane *= decay_factor
 
         # Dopamine decays via update() call with 0 signal
         # The update() method handles decay internally
-        if hasattr(self.pfc, "dopamine_system"):
-            self.pfc.dopamine_system.update(0.0, dt_ms)
+        if hasattr(self.impl, "dopamine_system"):
+            self.impl.dopamine_system.update(0.0, dt_ms)
 
     def _on_dopamine(self, payload: DopaminePayload) -> None:
         """Handle dopamine signal for PFC.
@@ -105,13 +121,13 @@ class EventDrivenPFC(EventDrivenRegionBase):
         DA level gets passed to PFC.forward() which uses it to:
         - Gate what enters working memory (high DA = update WM)
         - Modulate learning (via dopamine-gated STDP)
-        
+
         With continuous plasticity, dopamine modulates the learning rate
         in forward(). We store it both on the PFC state and for gating.
         """
         # Set dopamine on region state for continuous plasticity modulation
-        self.pfc.state.dopamine = payload.level
-        
+        self.impl.state.dopamine = payload.level
+
         # Store dopamine signal for next forward pass (WM gating)
         self._pending_dopamine_signal = payload.level
 
@@ -195,7 +211,7 @@ class EventDrivenPFC(EventDrivenRegionBase):
     def _forward_pfc(self, combined_input: torch.Tensor) -> torch.Tensor:
         """Forward combined input through PFC."""
         # Forward through PFC with theta modulation and dopamine
-        output = self.pfc.forward(
+        output = self.impl.forward(
             combined_input,
             dt=1.0,  # Event-driven doesn't use fixed dt
             encoding_mod=self._encoding_strength,
@@ -215,8 +231,8 @@ class EventDrivenPFC(EventDrivenRegionBase):
         reward: float = 0.0,
     ) -> None:
         """Apply dopamine-gated STDP learning."""
-        if hasattr(self.pfc, "learn"):
-            self.pfc.learn(
+        if hasattr(self.impl, "learn"):
+            self.impl.learn(
                 input_spikes=input_spikes,
                 output_spikes=output_spikes,
                 reward=reward,
@@ -225,13 +241,13 @@ class EventDrivenPFC(EventDrivenRegionBase):
     def get_state(self) -> Dict[str, Any]:
         """Return PFC state."""
         state = super().get_state()
-        if hasattr(self.pfc, "state") and self.pfc.state is not None:
-            state["wm_active"] = self.pfc.state.working_memory is not None
-            if self.pfc.state.working_memory is not None:
-                state["wm_mean"] = float(self.pfc.state.working_memory.mean())
+        if hasattr(self.impl, "state") and self.impl.state is not None:
+            state["wm_active"] = self.impl.state.working_memory is not None
+            if self.impl.state.working_memory is not None:
+                state["wm_mean"] = float(self.impl.state.working_memory.mean())
             state["gate_value"] = (
-                float(self.pfc.dopamine_system.get_gate())
-                if hasattr(self.pfc, "dopamine_system")
+                float(self.impl.dopamine_system.get_gate())
+                if hasattr(self.impl, "dopamine_system")
                 else 0.0
             )
         return state
