@@ -451,15 +451,26 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
 
             if self.stp_l23_recurrent is not None:
                 # Apply STP to recurrent connections
+                # STP returns (batch, n_pre, n_post) efficacy
                 stp_efficacy = self.stp_l23_recurrent(
                     self.state.l23_recurrent_activity.float()
-                ).squeeze(0)
-                effective_w_rec = self.w_l23_recurrent * stp_efficacy.T
-                l23_rec = (
-                    torch.matmul(
-                        self.state.l23_recurrent_activity,
+                )  # (batch, l23_size, l23_size)
+                
+                # Apply efficacy: for each batch, modulate weights by efficacy
+                # effective_w = w * efficacy for each sample in batch
+                # l23_recurrent_activity @ (w * efficacy).T
+                batch_size = stp_efficacy.shape[0]
+                l23_rec = torch.zeros(batch_size, self.l23_size, device=stp_efficacy.device)
+                
+                for b in range(batch_size):
+                    effective_w_rec = self.w_l23_recurrent * stp_efficacy[b]
+                    l23_rec[b] = torch.matmul(
+                        self.state.l23_recurrent_activity[b],
                         effective_w_rec.t(),
                     )
+                
+                l23_rec = (
+                    l23_rec
                     * cfg.l23_recurrent_strength
                     * recurrent_scale
                     * ffi_suppression
