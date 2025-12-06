@@ -669,12 +669,18 @@ class TestRobustnessConfig:
         assert config.enable_metabolic is False
     
     def test_minimal_preset(self):
-        """Test minimal preset."""
+        """Test minimal preset (updated based on ablation study).
+        
+        Minimal now includes divisive norm (CRITICAL mechanism).
+        """
         config = RobustnessConfig.minimal()
         
         assert config.enable_ei_balance is False
-        assert config.enable_divisive_norm is False
-        assert len(config.get_enabled_mechanisms()) == 0
+        assert config.enable_divisive_norm is True  # CRITICAL mechanism
+        assert config.enable_intrinsic_plasticity is False
+        assert config.enable_criticality is False
+        assert config.enable_metabolic is False
+        assert len(config.get_enabled_mechanisms()) == 1  # Just divisive norm
     
     def test_full_preset(self):
         """Test full preset."""
@@ -703,11 +709,11 @@ class TestRobustnessConfig:
     
     def test_summary(self):
         """Test summary output."""
-        config = RobustnessConfig.biological()
+        config = RobustnessConfig.stable()  # Use stable instead of biological
         summary = config.summary()
         
         assert "E/I Balance: ON" in summary
-        assert "Criticality: ON" in summary
+        assert "Divisive Norm: ON" in summary
 
 
 if __name__ == "__main__":
