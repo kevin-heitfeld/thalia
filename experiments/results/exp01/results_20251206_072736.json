@@ -1,0 +1,10 @@
+[
+  {
+    "config": {
+      "name": "quick_predictive",
+      "n_neurons": 64,
+      "n_epochs": 1,
+      "use_stdp": true,
+      "use_bcm": true,
+      "use_hebbian": true,
+      "cortex_type": 

@@ -172,6 +172,7 @@ class ThaliaConfig:
                 hippocampus_size=self.brain.sizes.hippocampus_size,
                 pfc_size=self.brain.sizes.pfc_size,
                 n_actions=self.brain.sizes.n_actions,
+                cortex_type=self.brain.cortex_type,
                 dt_ms=self.global_.dt_ms,
                 theta_frequency_hz=self.global_.theta_frequency_hz,
                 encoding_timesteps=self.brain.encoding_timesteps,

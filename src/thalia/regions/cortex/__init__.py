@@ -9,16 +9,23 @@ This package provides a biologically realistic cortical column with distinct lay
 Usage:
     from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 
+    # Or use predictive cortex with local error learning:
+    from thalia.regions.cortex import PredictiveCortex, PredictiveCortexConfig
+
 Author: Thalia Project
 Date: December 2025
 """
 
 from .config import CorticalLayer, LayeredCortexConfig, LayeredCortexState
 from .layered_cortex import LayeredCortex
+from .predictive_cortex import PredictiveCortex, PredictiveCortexConfig, PredictiveCortexState
 
 __all__ = [
     "CorticalLayer",
     "LayeredCortex",
     "LayeredCortexConfig",
     "LayeredCortexState",
+    "PredictiveCortex",
+    "PredictiveCortexConfig",
+    "PredictiveCortexState",
 ]

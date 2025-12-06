@@ -134,6 +134,11 @@ class PredictiveCodingConfig:
     precision_min: float = 0.1
     precision_max: float = 10.0
     
+    # Temporal variance tracking for precision learning
+    # Precision is updated based on variance of errors over recent history
+    error_history_size: int = 50  # Number of timesteps to track for variance
+    precision_update_interval: int = 10  # Update precision every N timesteps
+    
     # Architecture
     error_type: ErrorType = ErrorType.SIGNED
     use_spiking: bool = True
@@ -295,6 +300,14 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # =================================================================
         self.state = PredictiveCodingState()
         
+        # =================================================================
+        # TEMPORAL VARIANCE TRACKING FOR PRECISION LEARNING
+        # =================================================================
+        # Maintain a circular buffer of recent errors for variance estimation
+        # This allows precision to adapt based on how predictable inputs have been
+        self._error_history: list[torch.Tensor] = []
+        self._timestep_counter: int = 0
+        
         # Decay factors
         self.register_buffer(
             "prediction_decay",
@@ -317,6 +330,10 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 device=self.device
             ),
         )
+        
+        # Clear temporal variance tracking
+        self._error_history.clear()
+        self._timestep_counter = 0
         
         if self.config.use_spiking:
             self.error_neurons.reset_state(batch_size)
@@ -420,9 +437,9 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         Process one timestep of predictive coding.
         
         Args:
-            actual_input: Bottom-up input (sensory or from lower layer)
-            representation: Current representation from higher layer
-            top_down_prediction: Optional direct prediction from above
+            actual_input: Bottom-up input (sensory or from lower layer) [batch, n_input]
+            representation: Current representation from higher layer [batch, n_representation]
+            top_down_prediction: Optional direct prediction from above [batch, n_input]
             
         Returns:
             error: Prediction error (goes UP to higher layers)
@@ -430,6 +447,25 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             representation_update: Suggested update to representation
         """
         batch_size = actual_input.shape[0]
+        
+        # =====================================================================
+        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
+        # =====================================================================
+        assert actual_input.shape[-1] == self.config.n_input, (
+            f"PredictiveCodingLayer.forward: actual_input has shape {actual_input.shape} "
+            f"but n_input={self.config.n_input}. Check that you're passing L4 output."
+        )
+        if representation is not None:
+            assert representation.shape[-1] == self.config.n_representation, (
+                f"PredictiveCodingLayer.forward: representation has shape {representation.shape} "
+                f"but n_representation={self.config.n_representation}. Check that you're passing L5 output."
+            )
+        if top_down_prediction is not None:
+            assert top_down_prediction.shape[-1] == self.config.n_input, (
+                f"PredictiveCodingLayer.forward: top_down_prediction has shape {top_down_prediction.shape} "
+                f"but must match n_input={self.config.n_input}. "
+                f"Did you pass L2/3 modulation (size {top_down_prediction.shape[-1]}) instead of L4 prediction?"
+            )
         
         # Initialize state if needed
         if self.state.prediction is None:
@@ -554,22 +590,48 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
     
     def _update_precision(self) -> None:
         """
-        Update precision (inverse variance) based on recent errors.
+        Update precision (inverse variance) based on TEMPORAL error history.
         
-        Precision should be:
-        - High when errors are consistently small (reliable predictions)
-        - Low when errors are variable (unreliable input)
+        Precision reflects how predictable inputs have been recently:
+        - High precision: errors have been consistently small (reliable predictions)
+        - Low precision: errors have been variable (unreliable/surprising input)
         
-        This implements a simple variance estimation:
-            precision = 1 / (variance(error) + epsilon)
+        This is biologically plausible - synaptic precision should adapt based
+        on recent prediction history, not parallel samples.
+        
+        Implementation:
+        - Maintain a circular buffer of recent errors (across timesteps)
+        - Compute variance over the temporal dimension
+        - Update precision periodically (not every timestep)
         """
         if self.state.error is None:
             return
         
-        # Estimate variance from recent errors
-        error_var = self.state.error.var(dim=0)  # Per-input variance
+        # Add current error to history (mean across batch for single value per input)
+        # Detach to avoid gradient accumulation
+        error_snapshot = self.state.error.detach().mean(dim=0)  # [n_input]
+        self._error_history.append(error_snapshot)
+        
+        # Keep buffer at configured size (circular buffer behavior)
+        if len(self._error_history) > self.config.error_history_size:
+            self._error_history.pop(0)
+        
+        # Increment timestep counter
+        self._timestep_counter += 1
+        
+        # Only update precision periodically and when we have enough history
+        if (self._timestep_counter % self.config.precision_update_interval != 0 or
+            len(self._error_history) < 10):  # Need at least 10 samples for meaningful variance
+            return
+        
+        # Stack history into tensor: [history_size, n_input]
+        error_history_tensor = torch.stack(self._error_history, dim=0)
+        
+        # Compute variance over time dimension (dim=0)
+        error_var = error_history_tensor.var(dim=0, correction=1)  # [n_input]
         
         # Update log precision (in log space for stability)
+        # precision = 1 / variance, so log_precision = -log(variance)
         target_log_precision = -torch.log(error_var + 1e-6)
         
         with torch.no_grad():
@@ -578,9 +640,9 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 self.config.precision_learning_rate * target_log_precision
             )
             
-            # Clamp
-            min_log = torch.log(torch.tensor(self.config.precision_min))
-            max_log = torch.log(torch.tensor(self.config.precision_max))
+            # Clamp to valid range
+            min_log = torch.log(torch.tensor(self.config.precision_min, device=self.device))
+            max_log = torch.log(torch.tensor(self.config.precision_max, device=self.device))
             self.log_precision.data = torch.clamp(self.log_precision.data, min_log, max_log)
     
     def get_free_energy(self) -> torch.Tensor:
@@ -624,6 +686,15 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         diag["precision_std"] = self.precision.std().item()
         diag["precision_min"] = self.precision.min().item()
         diag["precision_max"] = self.precision.max().item()
+        
+        # Temporal variance tracking stats
+        diag["error_history_size"] = len(self._error_history)
+        diag["timestep_counter"] = self._timestep_counter
+        if len(self._error_history) >= 2:
+            # Compute current temporal variance estimate
+            error_history_tensor = torch.stack(self._error_history, dim=0)
+            temporal_var = error_history_tensor.var(dim=0).mean().item()
+            diag["temporal_error_variance"] = temporal_var
         
         # Weight diagnostics
         diag.update(self.weight_diagnostics(self.W_pred, "pred"))

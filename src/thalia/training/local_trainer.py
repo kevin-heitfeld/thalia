@@ -425,14 +425,40 @@ class LocalTrainer:
         - STDP if spike timing available
         - BCM threshold adaptation
         - Hebbian correlation
+        - Predictive coding (if PredictiveCortex is used)
         """
         # Access the brain through the interface
         brain = model.brain
 
-        # Apply learning to each region
-        # The brain's regions already have their own learning rules
-        # We just need to trigger them
+        # =====================================================================
+        # PREDICTIVE CORTEX LEARNING
+        # =====================================================================
+        # If using PredictiveCortex, call its learn() method which uses
+        # local prediction errors (no backprop!)
+        if hasattr(brain.cortex, 'learn') and callable(brain.cortex.learn):
+            # Get reward signal from prediction error if available
+            reward_signal = None
+            if "prediction_error" in learning_signals:
+                # Invert prediction error: low error = high reward
+                pred_error = learning_signals["prediction_error"]
+                reward_signal = 1.0 - pred_error.clamp(0, 1)
+            
+            # Get input/output spikes from eligibility if available
+            input_spikes = learning_signals.get("eligibility", torch.zeros(1))
+            output_spikes = learning_signals.get("eligibility", torch.zeros(1))
+            
+            # Trigger local learning in predictive cortex
+            # BrainRegion.learn signature: (input_spikes, output_spikes, **kwargs)
+            cortex_metrics = brain.cortex.learn(
+                input_spikes=input_spikes,
+                output_spikes=output_spikes,
+                reward_signal=reward_signal,
+            )
+            # Could log cortex_metrics here if needed
 
+        # =====================================================================
+        # GLOBAL LEARNING RULE MODULATION
+        # =====================================================================
         if self.config.use_stdp:
             # STDP is typically applied within regions during forward pass
             # Here we can modulate the learning rate globally

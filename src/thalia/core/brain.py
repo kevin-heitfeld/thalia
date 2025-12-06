@@ -80,11 +80,15 @@ from .diagnostics import (
 
 # Import actual region implementations
 from ..regions.cortex import LayeredCortex, LayeredCortexConfig
+from ..regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
 from ..regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
 from ..regions.prefrontal import Prefrontal, PrefrontalConfig
 from ..regions.striatum import Striatum, StriatumConfig
 from ..regions.cerebellum import Cerebellum, CerebellumConfig
 from ..regions.theta_dynamics import TemporalIntegrationLayer
+
+# Import config types
+from ..config.brain_config import CortexType
 
 # Import pathways for top-down modulation and consolidation
 from ..integration.pathways.spiking_attention import (
@@ -112,6 +116,10 @@ class EventDrivenBrainConfig:
     hippocampus_size: int = 64
     pfc_size: int = 32
     n_actions: int = 2
+
+    # Region type selection
+    cortex_type: CortexType = CortexType.LAYERED
+    """Which cortex implementation to use. PREDICTIVE enables local error learning."""
 
     # Time settings
     dt_ms: float = 1.0
@@ -206,13 +214,26 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # CREATE BRAIN REGIONS
         # =====================================================================
 
-        # 1. CORTEX: Feature extraction (LayeredCortex with L4→L2/3→L5)
-        self.cortex = LayeredCortex(LayeredCortexConfig(
-            n_input=config.input_size,
-            n_output=config.cortex_size,
-            dt_ms=config.dt_ms,
-            device=config.device,
-        ))
+        # 1. CORTEX: Feature extraction
+        # Select implementation based on config
+        if config.cortex_type == CortexType.PREDICTIVE:
+            # PredictiveCortex with local error learning
+            self.cortex = PredictiveCortex(PredictiveCortexConfig(
+                n_input=config.input_size,
+                n_output=config.cortex_size,
+                dt_ms=config.dt_ms,
+                device=config.device,
+                prediction_enabled=True,
+                use_attention=True,
+            ))
+        else:
+            # Default LayeredCortex (L4→L2/3→L5)
+            self.cortex = LayeredCortex(LayeredCortexConfig(
+                n_input=config.input_size,
+                n_output=config.cortex_size,
+                dt_ms=config.dt_ms,
+                device=config.device,
+            ))
         self.cortex.reset_state(batch_size=1)
 
         # Get cortex layer sizes

@@ -376,11 +376,30 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         output_spikes: torch.Tensor,
         **kwargs: Any,
     ) -> Dict[str, float]:
-        """Apply STDP learning to inter-layer connections with optional BCM modulation."""
+        """Apply STDP learning to inter-layer connections with optional BCM modulation.
+        
+        Args:
+            input_spikes: The original sensory input [batch, n_input] that drove forward()
+            output_spikes: The output produced [batch, n_output]
+            **kwargs: Additional arguments (ignored)
+            
+        Returns:
+            metrics: Dictionary with weight change statistics
+        """
         if self.state.l4_spikes is None:
             return {"weight_change": 0.0}
 
         cfg = self.layer_config
+        
+        # =====================================================================
+        # SHAPE ASSERTION - ensure input_spikes matches what we expect
+        # =====================================================================
+        assert input_spikes.shape[-1] == cfg.n_input, (
+            f"LayeredCortex.learn: input_spikes has shape {input_spikes.shape} "
+            f"but n_input={cfg.n_input}. "
+            f"Make sure you're passing the original sensory input, not eligibility signals."
+        )
+        
         total_change = 0.0
 
         l4_spikes = self.state.l4_spikes

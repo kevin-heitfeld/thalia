@@ -27,6 +27,16 @@ class RegionType(Enum):
     CEREBELLUM = "cerebellum"
 
 
+class CortexType(Enum):
+    """Types of cortex implementation.
+    
+    LAYERED: Standard feedforward layered cortex (L4 → L2/3 → L5)
+    PREDICTIVE: Layered cortex with predictive coding (local error signals)
+    """
+    LAYERED = "layered"
+    PREDICTIVE = "predictive"
+
+
 @dataclass
 class RegionSizes:
     """Size configuration for brain regions.
@@ -264,6 +274,10 @@ class BrainConfig:
     pfc: PFCConfig = field(default_factory=PFCConfig)
     cerebellum: CerebellumConfig = field(default_factory=CerebellumConfig)
 
+    # Region type selection (allows swapping implementations)
+    cortex_type: CortexType = CortexType.LAYERED
+    """Which cortex implementation to use. PREDICTIVE enables local error learning."""
+
     # Timing (trial phases)
     encoding_timesteps: int = 15
     delay_timesteps: int = 10
@@ -277,6 +291,9 @@ class BrainConfig:
         lines = [
             "=== Brain Configuration ===",
             self.sizes.summary(),
+            "",
+            "--- Region Types ---",
+            f"  Cortex: {self.cortex_type.value}",
             "",
             "--- Trial Timing ---",
             f"  Encoding: {self.encoding_timesteps} timesteps",

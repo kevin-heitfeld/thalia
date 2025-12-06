@@ -81,10 +81,11 @@ class EventDrivenCortex(EventDrivenRegionBase):
                 if neurons.membrane is not None:
                     neurons.membrane *= decay_factor
 
-        # Also decay the recurrent activity trace
+        # Also decay the recurrent activity trace (if the cortex type has it)
         if hasattr(self.cortex, "state") and self.cortex.state is not None:
-            if self.cortex.state.l23_recurrent_activity is not None:
-                self.cortex.state.l23_recurrent_activity *= decay_factor
+            if hasattr(self.cortex.state, "l23_recurrent_activity"):
+                if self.cortex.state.l23_recurrent_activity is not None:
+                    self.cortex.state.l23_recurrent_activity *= decay_factor
 
     def _process_spikes(
         self,

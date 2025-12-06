@@ -67,6 +67,7 @@ from thalia.config import (
     RegionSizes,
     LanguageConfig,
     TrainingConfig,
+    CortexType,
 )
 from thalia.core.brain import EventDrivenBrain
 from thalia.language.model import LanguageBrainInterface
@@ -117,6 +118,7 @@ class ExperimentConfig:
     use_stdp: bool
     use_bcm: bool
     use_hebbian: bool
+    cortex_type: CortexType = CortexType.LAYERED
     seed: int = 42
     context_length: int = 32
     
@@ -136,6 +138,7 @@ class ExperimentResult:
     timestamp: str
     
     def to_dict(self) -> Dict[str, Any]:
+        """Convert to JSON-serializable dictionary."""
         return asdict(self)
 
 
@@ -157,6 +160,7 @@ class LanguageLearningExperiment:
         print(f"Running: {exp_config.name}")
         print(f"  Neurons: {exp_config.n_neurons}")
         print(f"  Epochs: {exp_config.n_epochs}")
+        print(f"  Cortex: {exp_config.cortex_type.value}")
         print(f"  Rules: STDP={exp_config.use_stdp}, BCM={exp_config.use_bcm}, Hebbian={exp_config.use_hebbian}")
         print(f"{'='*60}")
         
@@ -178,6 +182,7 @@ class LanguageLearningExperiment:
                     pfc_size=exp_config.n_neurons // 4,
                     n_actions=2,
                 ),
+                cortex_type=exp_config.cortex_type,
                 encoding_timesteps=5,
             ),
             language=LanguageConfig(),
@@ -241,9 +246,12 @@ class LanguageLearningExperiment:
             exp_config.context_length,
         )
         
-        # Create result
+        # Create result - convert enum to string for JSON serialization
+        config_dict = asdict(exp_config)
+        config_dict["cortex_type"] = exp_config.cortex_type.value
+        
         result = ExperimentResult(
-            config=asdict(exp_config),
+            config=config_dict,
             final_accuracy=final_metrics.prediction_accuracy,
             final_spike_rate=final_metrics.spike_rate,
             training_time_s=training_time,
@@ -353,12 +361,13 @@ def get_quick_configs() -> List[ExperimentConfig]:
     """Minimal configs for quick testing."""
     return [
         ExperimentConfig(
-            name="quick_test",
+            name="quick_predictive",
             n_neurons=64,
             n_epochs=1,
             use_stdp=True,
             use_bcm=True,
             use_hebbian=True,
+            cortex_type=CortexType.PREDICTIVE,
         ),
     ]
 
@@ -367,62 +376,71 @@ def get_full_configs() -> List[ExperimentConfig]:
     """Full sweep of configurations."""
     configs = []
     
-    # Size sweep with all rules
+    # ==========================================================================
+    # CORTEX TYPE COMPARISON (key experiment!)
+    # ==========================================================================
+    # Compare layered vs predictive cortex with same settings
+    for cortex_type in [CortexType.LAYERED, CortexType.PREDICTIVE]:
+        configs.append(ExperimentConfig(
+            name=f"cortex_{cortex_type.value}_128",
+            n_neurons=128,
+            n_epochs=2,
+            use_stdp=True,
+            use_bcm=True,
+            use_hebbian=True,
+            cortex_type=cortex_type,
+        ))
+    
+    # ==========================================================================
+    # SIZE SWEEP (with predictive cortex)
+    # ==========================================================================
     for n_neurons in [64, 128, 256]:
         configs.append(ExperimentConfig(
-            name=f"size_{n_neurons}_all_rules",
+            name=f"predictive_size_{n_neurons}",
             n_neurons=n_neurons,
             n_epochs=2,
             use_stdp=True,
             use_bcm=True,
             use_hebbian=True,
+            cortex_type=CortexType.PREDICTIVE,
         ))
     
-    # Learning rule ablation (128 neurons)
+    # ==========================================================================
+    # LEARNING RULE ABLATION (128 neurons, predictive cortex)
+    # ==========================================================================
     configs.extend([
         ExperimentConfig(
-            name="ablation_stdp_only",
+            name="predictive_stdp_only",
             n_neurons=128,
             n_epochs=2,
             use_stdp=True,
             use_bcm=False,
             use_hebbian=False,
+            cortex_type=CortexType.PREDICTIVE,
         ),
         ExperimentConfig(
-            name="ablation_bcm_only",
-            n_neurons=128,
-            n_epochs=2,
-            use_stdp=False,
-            use_bcm=True,
-            use_hebbian=False,
-        ),
-        ExperimentConfig(
-            name="ablation_hebbian_only",
-            n_neurons=128,
-            n_epochs=2,
-            use_stdp=False,
-            use_bcm=False,
-            use_hebbian=True,
-        ),
-        ExperimentConfig(
-            name="ablation_no_rules",
+            name="predictive_no_global_rules",
             n_neurons=128,
             n_epochs=2,
             use_stdp=False,
             use_bcm=False,
             use_hebbian=False,
+            cortex_type=CortexType.PREDICTIVE,
         ),
     ])
     
-    # Epoch sweep (128 neurons, all rules)
+    # ==========================================================================
+    # EPOCH SWEEP (128 neurons, predictive cortex)
+    # ==========================================================================
     for n_epochs in [1, 2, 5]:
         configs.append(ExperimentConfig(
-            name=f"epochs_{n_epochs}",
+            name=f"predictive_epochs_{n_epochs}",
             n_neurons=128,
             n_epochs=n_epochs,
             use_stdp=True,
             use_bcm=True,
             use_hebbian=True,
+            cortex_type=CortexType.PREDICTIVE,
         ))
     
     return configs
