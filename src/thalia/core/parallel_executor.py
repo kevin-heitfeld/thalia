@@ -423,10 +423,6 @@ class _ParallelExecutor:
         }
 
 
-# Backward compatibility alias (deprecated)
-ParallelEventSimulation = _ParallelExecutor
-
-
 # =============================================================================
 # Convenience class for simpler parallel simulation (without separate processes)
 # =============================================================================

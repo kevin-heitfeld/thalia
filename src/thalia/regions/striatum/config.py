@@ -79,7 +79,8 @@ class StriatumConfig(RegionConfig):
     # HOMEOSTATIC PLASTICITY
     # =========================================================================
     homeostatic_enabled: bool = True
-    homeostatic_weight_budget: float = 144.0
+    # NOTE: weight_budget is computed dynamically from initialized weights
+    # to automatically adapt to any architecture (population_coding, n_input, etc.)
     homeostatic_soft: bool = True
     homeostatic_rate: float = 0.1
 

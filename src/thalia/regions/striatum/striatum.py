@@ -66,7 +66,7 @@ from thalia.learning.unified_homeostasis import (
 )
 
 from .config import StriatumConfig
-from .dopamine import DopamineSystem, EligibilityTraces
+from .dopamine import EligibilityTraces
 from .action_selection import ActionSelectionMixin
 
 
@@ -126,17 +126,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             device=config.device,
         )
 
-        # Dopamine system with adaptive RPE normalization
-        self.dopamine = DopamineSystem(
-            tau_ms=self.striatum_config.dopamine_tau_ms,
-            burst_magnitude=self.striatum_config.dopamine_burst,
-            dip_magnitude=self.striatum_config.dopamine_dip,
-            device=config.device,
-            # RPE normalization for stable learning
-            normalize_rpe=self.striatum_config.normalize_rpe,
-            rpe_avg_tau=self.striatum_config.rpe_avg_tau,
-            rpe_clip=self.striatum_config.rpe_clip,
-        )
+        # NOTE: Dopamine is now managed centrally by Brain (acting as VTA).
+        # The Brain computes RPE and broadcasts normalized dopamine via set_dopamine().
+        # We no longer have a local DopamineSystem here.
 
         # Recent spikes for lateral inhibition
         self.recent_spikes = torch.zeros(config.n_output, device=self.device)
@@ -253,9 +245,18 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # - Neither pathway can completely dominate
         # - If D1 grows, D2 must shrink (and vice versa)
         # - Stable equilibrium is enforced mathematically
+        #
+        # DYNAMIC BUDGET: Computed from actual initialized weights to adapt to
+        # any architecture (population_coding on/off, different n_input, etc.)
         if self.striatum_config.homeostatic_enabled:
+            # Compute budget from initialized weights (per-action sum of D1+D2)
+            # This ensures the budget matches the actual weight scale
+            with torch.no_grad():
+                d1_d2_sum = self.d1_weights.sum() + self.d2_weights.sum()
+                dynamic_budget = (d1_d2_sum / self.n_actions).item()
+            
             unified_config = UnifiedHomeostasisConfig(
-                weight_budget=self.striatum_config.homeostatic_weight_budget,
+                weight_budget=dynamic_budget,
                 soft_normalization=self.striatum_config.homeostatic_soft,
                 normalization_rate=self.striatum_config.homeostatic_rate,
                 w_min=self.config.w_min,
@@ -331,6 +332,59 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             yield
         finally:
             self._plasticity_frozen = old_value
+
+    # =========================================================================
+    # VALUE ESTIMATION (for centralized RPE computation in Brain/VTA)
+    # =========================================================================
+
+    def get_expected_value(self, action: Optional[int] = None) -> float:
+        """Get expected value for an action (used by Brain for RPE computation).
+
+        The striatum maintains value estimates for each action as "Q-values".
+        The Brain (acting as VTA) queries these to compute reward prediction error:
+            RPE = actual_reward - expected_value
+
+        Args:
+            action: Action index to get value for. If None, uses last_action.
+
+        Returns:
+            Expected value for the action. Returns 0.0 if:
+            - rpe_enabled is False (no value tracking)
+            - action is None and no last_action recorded
+            - action index is out of range
+        """
+        if self.value_estimates is None:
+            return 0.0
+
+        if action is None:
+            action = self.last_action
+
+        if action is None or action < 0 or action >= self.n_actions:
+            return 0.0
+
+        return float(self.value_estimates[action].item())
+
+    def update_value_estimate(self, action: int, reward: float) -> None:
+        """Update value estimate for an action towards actual reward.
+
+        Called by Brain after computing RPE, to update the Q-value:
+            V(a) ← V(a) + α * (reward - V(a))
+
+        Args:
+            action: Action index to update
+            reward: Actual reward received
+        """
+        if self.value_estimates is None:
+            return
+
+        if action < 0 or action >= self.n_actions:
+            return
+
+        cfg = self.striatum_config
+        self.value_estimates[action] = (
+            self.value_estimates[action]
+            + cfg.rpe_learning_rate * (reward - self.value_estimates[action])
+        )
 
     def _initialize_pathway_weights(self) -> torch.Tensor:
         """Initialize weights for D1 or D2 pathway with balanced, principled scaling.
@@ -784,8 +838,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         if self.striatum_config.learning_rule == LearningRule.REWARD_MODULATED_STDP:
             self._update_stdp_eligibility(input_spikes, output_spikes)
 
-        # Decay dopamine
-        self.dopamine.decay(self.config.dt_ms)
+        # NOTE: Dopamine is now managed centrally by Brain (VTA).
+        # No local dopamine decay needed - the Brain sets dopamine via set_dopamine()
+        # and it persists until the next reward delivery.
 
         # Update recent spikes (based on D1 output)
         self.recent_spikes = self.recent_spikes * 0.9 + d1_spikes.squeeze()
@@ -799,7 +854,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self._last_d2_spikes = d2_spikes
 
         self.state.spikes = output_spikes
-        self.state.dopamine = self.dopamine.level
+        # self.state.dopamine is set by Brain via set_dopamine(), no need to update here
         self.state.t += 1
 
         return output_spikes
@@ -963,197 +1018,22 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             "target_net": target,
         }
 
-    def learn(
-        self,
-        input_spikes: torch.Tensor,
-        output_spikes: torch.Tensor,
-        reward: Optional[float] = None,
-        correct: Optional[bool] = None,
-        **kwargs: Any,
-    ) -> Dict[str, Any]:
-        """Apply learning rule based on configuration.
+    # NOTE: The learn() method and _three_factor_learn/_reward_modulated_stdp_learn
+    # have been removed. With the continuous learning paradigm:
+    # - forward() builds eligibility traces during activity
+    # - deliver_reward() applies D1/D2 plasticity when dopamine arrives
+    # This is biologically correct: striatum uses three-factor learning where
+    # plasticity is gated by dopamine, not continuous like cortical STDP.
 
-        For THREE_FACTOR: Δw = learning_rate × eligibility × dopamine
-        For REWARD_MODULATED_STDP: Δw = STDP_eligibility × dopamine (spike-based)
-        """
-        # Dispatch to appropriate learning rule
-        if self.striatum_config.learning_rule == LearningRule.REWARD_MODULATED_STDP:
-            return self._reward_modulated_stdp_learn(
-                input_spikes, output_spikes, reward, correct
-            )
-        else:
-            return self._three_factor_learn(
-                input_spikes, output_spikes, reward, correct
-            )
-
-    def _three_factor_learn(
-        self,
-        input_spikes: torch.Tensor,
-        output_spikes: torch.Tensor,
-        reward: Optional[float] = None,
-        correct: Optional[bool] = None,
-    ) -> Dict[str, Any]:
-        """Classic three-factor learning with rate-coded eligibility.
-
-        Δw = learning_rate × eligibility × dopamine
-
-        This is fundamentally different from Hebbian:
-        - No dopamine → NO learning (not reduced learning)
-        - Dopamine sign determines LTP vs LTD direction
-        """
-        # Compute dopamine signal
-        if reward is not None or correct is not None:
-            self.dopamine.compute(reward=reward, correct=correct)
-
-        da_level = self.dopamine.level
-
-        # No learning without dopamine signal
-        if abs(da_level) < 0.01:
-            return {"dopamine": da_level, "ltp": 0.0, "ltd": 0.0, "net_change": 0.0}
-
-        # Three-factor rule: Δw = lr × eligibility × dopamine
-        eligibility = self.eligibility.get()
-        dw = self.striatum_config.three_factor_lr * eligibility * da_level
-
-        # Soft bounds
-        if self.striatum_config.soft_bounds:
-            headroom = (self.config.w_max - self.weights) / self.config.w_max
-            footroom = (self.weights - self.config.w_min) / self.config.w_max
-            dw = torch.where(dw > 0, dw * headroom.clamp(0, 1), dw * footroom.clamp(0, 1))
-
-        old_weights = self.weights.clone()
-        self.weights = (self.weights + dw).clamp(self.config.w_min, self.config.w_max)
-
-        actual_dw = self.weights - old_weights
-        ltp = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
-        ltd = actual_dw[actual_dw < 0].sum().item() if (actual_dw < 0).any() else 0.0
-
-        return {
-            "dopamine": da_level,
-            "ltp": ltp,
-            "ltd": ltd,
-            "net_change": ltp + ltd,
-            "eligibility_max": eligibility.max().item(),
-        }
-
-    def _reward_modulated_stdp_learn(
-        self,
-        input_spikes: torch.Tensor,
-        output_spikes: torch.Tensor,
-        reward: Optional[float] = None,
-        correct: Optional[bool] = None,
-    ) -> Dict[str, Any]:
-        """Reward-modulated STDP learning (spike-based three-factor rule).
-
-        This combines:
-        1. Real spiking dynamics with STDP eligibility traces
-        2. Dopamine as the third factor that gates learning
-
-        Key differences from THREE_FACTOR:
-        - Eligibility is computed from spike TIMING, not just correlation
-        - STDP creates direction-dependent eligibility (LTP vs LTD based on timing)
-        - Dopamine modulates the magnitude, not direction
-
-        Weight update: Δw = STDP_eligibility × dopamine × soft_bounds
-
-        This is biologically realistic: Yagishita et al. (2014) showed that
-        dopamine arriving within ~1-2 seconds of spike correlation converts
-        eligibility traces into lasting weight changes.
-        """
-        input_spikes = ensure_batch_dim(input_spikes)
-        output_spikes = ensure_batch_dim(output_spikes)
-
-        dt = self.config.dt_ms
-        cfg = self.striatum_config
-
-        # ======================================================================
-        # Step 1: Update STDP eligibility traces from spike timing
-        # ======================================================================
-        trace_decay = 1.0 - dt / cfg.stdp_tau_ms
-        self.input_trace = self.input_trace * trace_decay + input_spikes.squeeze()
-        self.output_trace = self.output_trace * trace_decay + output_spikes.squeeze()
-
-        # STDP rule:
-        # - LTP: post spike with pre trace → strengthen
-        # - LTD: pre spike with post trace → weaken
-        ltp = torch.outer(output_spikes.squeeze(), self.input_trace)
-        ltd = torch.outer(self.output_trace, input_spikes.squeeze())
-
-        # Soft bounds: reduce learning as weights approach limits
-        w_normalized = (self.weights - self.config.w_min) / (self.config.w_max - self.config.w_min)
-        ltp_factor = 1.0 - w_normalized
-        ltd_factor = w_normalized
-
-        soft_ltp = ltp * ltp_factor
-        soft_ltd = ltd * ltd_factor
-
-        # Competitive anti-Hebbian: non-spiking neurons get weaker to active inputs
-        non_spiking = 1.0 - output_spikes.squeeze()
-        anti_hebbian = torch.outer(non_spiking, input_spikes.squeeze()) * w_normalized
-
-        # Compute STDP weight change (direction from spike timing)
-        stdp_dw = cfg.stdp_lr * (soft_ltp - cfg.heterosynaptic_ratio * soft_ltd - 0.1 * anti_hebbian)
-
-        # Accumulate into eligibility trace (long timescale: 500-2000ms)
-        eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
-        self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
-
-        # ======================================================================
-        # Step 2: Compute dopamine signal
-        # ======================================================================
-        if reward is not None or correct is not None:
-            self.dopamine.compute(reward=reward, correct=correct)
-
-        da_level = self.dopamine.level
-
-        # ======================================================================
-        # Step 3: Apply dopamine-gated learning
-        # ======================================================================
-        # Key difference from THREE_FACTOR: STDP eligibility already has direction
-        # Dopamine gates the MAGNITUDE of learning, not direction
-        # Positive DA → apply eligibility (strengthen what STDP says)
-        # Negative DA → apply OPPOSITE of eligibility (weaken what STDP says)
-        # Zero DA → no learning (eligibility decays unused)
-
-        if abs(da_level) < 0.01:
-            # No dopamine = no learning, but track metrics
-            return {
-                "dopamine": da_level,
-                "ltp": soft_ltp.sum().item(),
-                "ltd": soft_ltd.sum().item(),
-                "net_change": 0.0,
-                "eligibility_max": self.stdp_eligibility.abs().max().item(),
-            }
-
-        # Apply eligibility modulated by dopamine
-        # Positive DA: apply eligibility as-is
-        # Negative DA: apply opposite of eligibility (reverse STDP direction)
-        dw = self.stdp_eligibility * da_level
-
-        old_weights = self.weights.clone()
-        self.weights = (self.weights + dw).clamp(self.config.w_min, self.config.w_max)
-
-        # Note: Unlike Cortex, we DON'T normalize weights here.
-        # For RL, we want weights to differentiate (some actions get stronger).
-        # Normalization would destroy the learned action preferences.
-
-        actual_dw = self.weights - old_weights
-        ltp_total = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
-        ltd_total = actual_dw[actual_dw < 0].sum().item() if (actual_dw < 0).any() else 0.0
-
-        return {
-            "dopamine": da_level,
-            "ltp": ltp_total,
-            "ltd": ltd_total,
-            "net_change": ltp_total + ltd_total,
-            "eligibility_max": self.stdp_eligibility.abs().max().item(),
-        }
-
-    def deliver_reward(self, reward: float, expected: float = 0.0) -> Dict[str, Any]:
-        """Deliver reward signal and trigger learning.
+    def deliver_reward(self, reward: float) -> Dict[str, Any]:
+        """Deliver reward signal and trigger D1/D2 learning.
 
         The brain ALWAYS LEARNS — there is no "evaluation mode" in biology.
         Every experience shapes plasticity.
+
+        IMPORTANT: The Brain (acting as VTA) has already computed the reward
+        prediction error and set our dopamine level via set_dopamine(). This
+        method just applies D1/D2 learning using that pre-computed dopamine.
 
         For D1/D2 opponent process, applies OPPOSITE learning rules:
         - D1 pathway: DA+ → LTP, DA- → LTD (standard)
@@ -1167,14 +1047,8 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
           - D1 strengthens (more GO signal)
           - D2 weakens (less NOGO signal)
 
-        RPE (Reward Prediction Error):
-        When rpe_enabled=True, we use prediction error instead of raw reward:
-          DA = actual_reward - expected_reward
-        This prevents runaway winners (high expectation → small surprise)
-
         Args:
-            reward: Reward signal (positive = good, negative = bad)
-            expected: Expected reward (for computing RPE) - ignored if rpe_enabled
+            reward: Raw reward signal (for adaptive exploration tracking only)
 
         Returns:
             Metrics dict with dopamine level and weight changes.
@@ -1182,35 +1056,15 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         cfg = self.striatum_config
 
         # =====================================================================
-        # REWARD PREDICTION ERROR (RPE) - if enabled
+        # USE DOPAMINE FROM BRAIN (VTA)
         # =====================================================================
-        # DA = actual_reward - expected_reward
-        # This prevents runaway winners: high expectation → small surprise
-        if cfg.rpe_enabled and self.value_estimates is not None and self.last_action is not None:
-            # Get expected value for the action that was taken
-            action_expected = self.value_estimates[self.last_action].item()
+        # The Brain has already computed RPE and set our dopamine via set_dopamine().
+        # We just use that value for learning.
+        da_level = self.state.dopamine
 
-            # Compute prediction error
-            rpe = reward - action_expected
-
-            # Update value estimate towards actual reward
-            # V(a) ← V(a) + α * (reward - V(a))
-            self.value_estimates[self.last_action] = (
-                self.value_estimates[self.last_action]
-                + cfg.rpe_learning_rate * (reward - self.value_estimates[self.last_action])
-            )
-
-            # Use RPE as dopamine signal
-            da_level = self.dopamine.compute(reward=rpe, expected_reward=0.0)
-
-            # Store for diagnostics
-            self._last_rpe = rpe
-            self._last_expected = action_expected
-        else:
-            # Fall back to raw reward
-            da_level = self.dopamine.compute(reward=reward, expected_reward=expected)
-            self._last_rpe = reward
-            self._last_expected = expected
+        # Store for diagnostics (RPE now computed in Brain, but we track locally too)
+        self._last_rpe = da_level  # Dopamine IS the normalized RPE
+        self._last_expected = 0.0  # No longer tracked here
 
         # =====================================================================
         # ADAPTIVE EXPLORATION: Adjust tonic DA based on recent performance
@@ -1494,6 +1348,10 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         2. We want real experience to dominate over simulation
         3. The brain uses this for exploration guidance, not primary learning
 
+        NOTE: For counterfactual learning, we compute dopamine locally since
+        the Brain's VTA doesn't handle counterfactuals. This is a local
+        simulation within the striatum's "model" of outcomes.
+
         Args:
             reward: The counterfactual reward (what WOULD have happened)
             action: The action to update (the one NOT taken)
@@ -1504,9 +1362,13 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         """
         cfg = self.striatum_config
 
-        # Compute dopamine from counterfactual reward (scaled down)
-        da_level = self.dopamine.compute(reward=reward, expected_reward=0.0)
-        da_level = da_level * counterfactual_scale
+        # For counterfactual learning, compute local dopamine signal
+        # This is a simplified version - just use reward directly, scaled down
+        # We don't need full RPE since this is imagined, not real experience
+        da_level = reward * counterfactual_scale
+
+        # Clip to reasonable range
+        da_level = max(-2.0, min(2.0, da_level))
 
         if abs(da_level) < 0.01:
             return {"dopamine": da_level, "net_change": 0.0, "counterfactual": True}
@@ -1598,7 +1460,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     def reset(self) -> None:
         super().reset()
         self.eligibility.reset()
-        self.dopamine.reset()
+        # NOTE: Dopamine is now managed by Brain, no local dopamine system to reset
         self.recent_spikes.zero_()
         self.last_action = None
         # Reset STDP traces for REWARD_MODULATED_STDP
@@ -1668,7 +1530,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Use mixin helpers for weight statistics
         d1_weight_stats = self.weight_diagnostics(self.d1_weights, "d1")
         d2_weight_stats = self.weight_diagnostics(self.d2_weights, "d2")
-        
+
         # Additional NET statistics
         net_weights = self.d1_weights - self.d2_weights
         net_stats = {
@@ -1676,8 +1538,11 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             "net_weight_std": net_weights.std().item(),
         }
 
-        # Dopamine state
-        dopamine_state = self.dopamine.get_diagnostics()
+        # Dopamine state (now managed by Brain, but we track local state)
+        dopamine_state = {
+            "current_level": self.state.dopamine,
+            "tonic_dopamine": self.tonic_dopamine,
+        }
 
         # Exploration state
         exploration_state = {

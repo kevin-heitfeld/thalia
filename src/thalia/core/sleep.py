@@ -454,23 +454,3 @@ class SleepSystemMixin:
     ) -> Dict[str, Any]:
         """Run REM replays with reduced learning and stochastic noise."""
         return self._run_stage_replays(SleepStage.REM, n_replays, n_timesteps)
-
-    # Legacy methods kept for backwards compatibility
-    # (now delegate to unified _sample_episodes)
-    
-    def _sample_episodes_random(self, n: int) -> List["Episode"]:
-        """Sample episodes randomly. DEPRECATED: Use _sample_episodes(n, temperature=float('inf'))."""
-        buffer = self.hippocampus.episode_buffer
-        if len(buffer) == 0:
-            return []
-        n = min(n, len(buffer))
-        indices: List[int] = torch.randperm(len(buffer))[:n].tolist()
-        return [buffer[i] for i in indices]
-
-    def _sample_episodes_for_n2(self, n: int) -> List["Episode"]:
-        """Sample episodes for N2. DEPRECATED: Use _sample_episodes(n, temperature=1.0, priority_noise=0.3)."""
-        return self._sample_episodes(n, temperature=1.0, priority_noise=0.3)
-
-    def _sample_episodes_for_rem(self, n: int) -> List["Episode"]:
-        """Sample episodes for REM. DEPRECATED: Use _sample_episodes(n, temperature=2.0, priority_noise=0.5)."""
-        return self._sample_episodes(n, temperature=2.0, priority_noise=0.5)

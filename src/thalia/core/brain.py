@@ -404,6 +404,21 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self._last_action: Optional[int] = None
         self._global_dopamine: float = 0.0
 
+        # =====================================================================
+        # VTA DOPAMINE SYSTEM (centralized RPE computation)
+        # =====================================================================
+        # Brain acts as VTA: computes reward prediction error and broadcasts
+        # normalized dopamine signal to all regions. This centralizes what
+        # was previously in Striatum's DopamineSystem.
+        #
+        # Adaptive normalization prevents saturation from reward scaling:
+        # - Tracks running average of |RPE| to adapt to reward statistics
+        # - Outputs normalized RPE in range [-rpe_clip, +rpe_clip]
+        self._vta_avg_abs_rpe: float = 0.5  # Running average of |RPE|
+        self._vta_rpe_history_count: int = 0  # Number of rewards seen
+        self._vta_rpe_avg_tau: float = 0.9  # EMA decay for running average
+        self._vta_rpe_clip: float = 2.0  # Clip normalized RPE to this range
+
         # Monitoring
         self._spike_counts: Dict[str, int] = {name: 0 for name in self.regions}
         self._events_processed: int = 0
@@ -611,30 +626,52 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         return action, confidence
 
-    def deliver_reward(
-        self,
-        reward: float,
-        learning_rate: Optional[float] = None,
-    ) -> None:
+    def deliver_reward(self, reward: float) -> None:
         """Deliver reward signal for learning.
 
-        Broadcasts dopamine to all regions for continuous plasticity.
-        With the continuous learning paradigm, dopamine modulates the
-        learning rate in each region's forward() method.
+        Brain acts as VTA (ventral tegmental area):
+        1. Queries striatum for expected value of the action taken
+        2. Computes reward prediction error (RPE = reward - expected)
+        3. Normalizes RPE using adaptive scaling
+        4. Broadcasts normalized dopamine to ALL regions
+
+        This centralized dopamine system ensures all regions receive the
+        same RPE-based learning signal, which is biologically correct:
+        VTA dopamine neurons project broadly to cortex, hippocampus,
+        striatum, and prefrontal areas.
 
         Args:
             reward: Reward value (-1 to +1)
-            learning_rate: Optional learning rate override (deprecated)
         """
-        # Set global dopamine
-        self._global_dopamine = reward
+        # =====================================================================
+        # STEP 1: Get expected value from striatum
+        # =====================================================================
+        expected = self.striatum.get_expected_value(self._last_action)
+
+        # =====================================================================
+        # STEP 2: Compute reward prediction error
+        # =====================================================================
+        rpe = reward - expected
+
+        # =====================================================================
+        # STEP 3: Normalize RPE (adaptive to reward statistics)
+        # =====================================================================
+        # This prevents saturation when reward magnitudes vary
+        da_level = self._compute_normalized_dopamine(rpe)
+
+        # =====================================================================
+        # STEP 4: Broadcast to ALL regions (centralized VTA output)
+        # =====================================================================
+        self._global_dopamine = da_level
 
         # Set dopamine directly on all underlying regions for continuous plasticity
-        # This ensures plasticity is modulated even outside the event system
-        self.cortex.set_dopamine(reward)
-        self.hippocampus.set_dopamine(reward)
-        self.pfc.set_dopamine(reward)
-        # Striatum has its own dopamine system, handled via deliver_reward below
+        # This mirrors VTA dopamine projections to cortex, hippocampus, striatum,
+        # prefrontal, and cerebellum (modulates motor learning gain)
+        self.cortex.set_dopamine(da_level)
+        self.hippocampus.set_dopamine(da_level)
+        self.pfc.set_dopamine(da_level)
+        self.striatum.set_dopamine(da_level)
+        self.cerebellum.set_dopamine(da_level)
 
         # Create dopamine events for all regions (event-driven pathway)
         for region_name in self.regions:
@@ -645,9 +682,9 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                 source="reward_system",
                 target=region_name,
                 payload=DopaminePayload(
-                    level=reward,
-                    is_burst=reward > 0.5,
-                    is_dip=reward < -0.5,
+                    level=da_level,
+                    is_burst=da_level > 0.5,
+                    is_dip=da_level < -0.5,
                 ),
             )
             self.scheduler.schedule(event)
@@ -655,9 +692,55 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # Process dopamine events
         self._process_pending_events()
 
-        # Trigger striatum learning (striatum has specialized three-factor rule)
+        # =====================================================================
+        # STEP 5: Trigger striatum learning (D1/D2 plasticity)
+        # =====================================================================
+        # Striatum applies three-factor learning using the dopamine we just set
         if self._last_action is not None:
             self.striatum.deliver_reward(reward)
+
+        # =====================================================================
+        # STEP 6: Update value estimate in striatum
+        # =====================================================================
+        if self._last_action is not None:
+            self.striatum.update_value_estimate(self._last_action, reward)
+
+    def _compute_normalized_dopamine(self, rpe: float) -> float:
+        """Compute normalized dopamine from raw RPE.
+
+        Uses adaptive normalization to prevent saturation:
+        - Tracks running average of |RPE| to adapt to reward statistics
+        - Outputs normalized RPE in range [-rpe_clip, +rpe_clip]
+
+        This is the VTA's core computation: converting prediction error
+        into a normalized dopamine signal suitable for learning.
+
+        Args:
+            rpe: Raw reward prediction error
+
+        Returns:
+            Normalized dopamine level
+        """
+        abs_rpe = abs(rpe)
+        self._vta_rpe_history_count += 1
+
+        # Adaptive smoothing: slower early on for stability
+        if self._vta_rpe_history_count < 10:
+            alpha = 1.0 / self._vta_rpe_history_count
+        else:
+            alpha = 1.0 - self._vta_rpe_avg_tau
+
+        # Update running average of |RPE|
+        self._vta_avg_abs_rpe = (
+            self._vta_rpe_avg_tau * self._vta_avg_abs_rpe + alpha * abs_rpe
+        )
+
+        # Normalize RPE by running average (with epsilon for stability)
+        epsilon = 0.1
+        normalized_rpe = rpe / (self._vta_avg_abs_rpe + epsilon)
+
+        # Clip to prevent extreme updates
+        return max(-self._vta_rpe_clip, min(self._vta_rpe_clip, normalized_rpe))
 
     def store_experience(
         self,

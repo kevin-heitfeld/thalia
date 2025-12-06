@@ -263,49 +263,33 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
 
         return output_spikes
 
-    def learn(
+    def _apply_error_learning(
         self,
-        input_spikes: torch.Tensor,
         output_spikes: torch.Tensor,
-        target: Optional[torch.Tensor] = None,
-        target_neuron: Optional[int] = None,
-        **kwargs: Any,
+        target: torch.Tensor,
     ) -> Dict[str, Any]:
-        """Apply spike-based error-corrective learning.
+        """Apply error-corrective learning using accumulated eligibility.
 
+        This is the core plasticity mechanism, called by deliver_error().
         Uses STDP eligibility traces modulated by error signal:
-        - Eligibility accumulates spike-timing correlations
+        - Eligibility accumulates spike-timing correlations during forward()
         - Error signal (climbing fiber) gates weight changes
         - Positive error → apply eligibility (LTP for correct timing)
         - Negative error → apply anti-eligibility (LTD for incorrect timing)
 
-        This combines the temporal precision of STDP with the supervised
-        error signal of cerebellar learning.
+        Dopamine modulates the overall learning rate (arousal/attention effect).
 
         Args:
-            input_spikes: Input spike pattern [batch, n_input]
             output_spikes: Output spike pattern [batch, n_output]
-            target: Target output [batch, n_output] or None
-            target_neuron: Single target neuron index (alternative to target)
-            **kwargs: Additional arguments (ignored)
+            target: Target output [batch, n_output]
 
         Returns:
             Dictionary with learning metrics
         """
-        input_spikes = ensure_batch_dim(input_spikes)
         output_spikes = ensure_batch_dim(output_spikes)
+        target = ensure_batch_dim(target)
 
         cfg = self.cerebellum_config
-
-        # Build target tensor if target_neuron provided
-        if target is None and target_neuron is not None:
-            target = torch.zeros(1, self.config.n_output, device=self.device)
-            target[0, target_neuron] = 1.0
-
-        if target is None:
-            return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
-
-        target = ensure_batch_dim(target)
 
         # ======================================================================
         # Compute error via climbing fiber system
@@ -332,7 +316,9 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         error_sign = torch.sign(error_squeezed).unsqueeze(1)  # [n_output, 1]
 
         # Modulate eligibility by error magnitude and sign
-        dw = self.stdp_eligibility * error_sign * error_squeezed.abs().unsqueeze(1)
+        # Dopamine provides arousal/attention modulation (from VTA via Brain)
+        effective_lr = self.get_effective_learning_rate()
+        dw = self.stdp_eligibility * error_sign * error_squeezed.abs().unsqueeze(1) * effective_lr
 
         # Apply soft bounds
         if cfg.soft_bounds:
@@ -367,31 +353,43 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         self,
         target: torch.Tensor,
         output_spikes: Optional[torch.Tensor] = None,
+        target_neuron: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Deliver error signal and apply learning from eligibility traces.
+        """Deliver error signal (climbing fiber) and apply learning.
 
-        This allows delayed error delivery - accumulate eligibility over
-        multiple timesteps, then apply learning when error is known.
+        This is the main learning API for cerebellum - analogous to
+        deliver_reward() for striatum. The pattern is:
+        1. Run forward() to build eligibility traces (spike-timing correlations)
+        2. Call deliver_error() when target/error is known
+
+        The climbing fiber carries the error signal from inferior olive:
+        - Positive error (target - actual > 0): should have fired more → LTP
+        - Negative error (target - actual < 0): fired too much → LTD
+
+        Dopamine (set via set_dopamine()) modulates learning rate,
+        providing arousal/attention effects on motor learning.
 
         Args:
-            target: Target output pattern
-            output_spikes: Current output (if None, uses last state)
+            target: Target output pattern [n_output] or [batch, n_output]
+            output_spikes: Current output (if None, uses last state from forward())
+            target_neuron: Single target neuron index (alternative to target tensor)
 
         Returns:
-            Learning metrics
+            Learning metrics dict with error, ltp, ltd, net_change
         """
+        # Handle target_neuron convenience parameter
+        if target_neuron is not None:
+            target = torch.zeros(1, self.config.n_output, device=self.device)
+            target[0, target_neuron] = 1.0
+
         if output_spikes is None:
             output_spikes = self.state.spikes
 
         if output_spikes is None:
             return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
 
-        # Use the regular learn method with accumulated eligibility
-        return self.learn(
-            input_spikes=torch.zeros(1, self.config.n_input, device=self.device),
-            output_spikes=output_spikes,
-            target=target,
-        )
+        # Apply error-corrective learning using accumulated eligibility
+        return self._apply_error_learning(output_spikes, target)
 
     def learn_from_phase(
         self,
