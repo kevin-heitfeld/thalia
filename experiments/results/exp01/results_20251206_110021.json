@@ -1,0 +1,60 @@
+[
+  {
+    "config": {
+      "name": "quick_predictive",
+      "n_neurons": 64,
+      "n_epochs": 1,
+      "use_stdp": true,
+      "use_bcm": true,
+      "use_hebbian": true,
+      "cortex_type": "predictive",
+      "seed": 42,
+      "context_length": 32
+    },
+    "final_accuracy": 0.0,
+    "final_spike_rate": 4839.470588235294,
+    "training_time_s": 145.91172552108765,
+    "epochs_completed": 1,
+    "sequences_processed": 34,
+    "accuracy_history": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "spike_rate_history": [
+      3172.0,
+      4890.0,
+      4890.0,
+      4890.0
+    ],
+    "test_results": {
+      "The quick brown": {
+        "cortex_active_neurons": 0,
+        "events_processed": 189101,
+        "memory_active_neurons": 27
+      },
+      "To be or": {
+        "cortex_active_neurons": 0,
+        "events_processed": 190570,
+        "memory_active_neurons": 22
+      },
+      "Knowledge is": {
+        "cortex_active_neurons": 0,
+        "events_processed": 192689,
+        "memory_active_neurons": 24
+      },
+      "I think": {
+        "cortex_active_neurons": 0,
+        "events_processed": 193999,
+        "memory_active_neurons": 34
+      },
+      "All that": {
+        "cortex_active_neurons": 0,
+        "events_processed": 195465,
+        "memory_active_neurons": 34
+      }
+    },
+    "timestamp": "2025-12-06T11:00:12.606700"
+  }
+]

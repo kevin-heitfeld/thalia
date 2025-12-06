@@ -610,6 +610,38 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         return results
 
+    def run_consolidation(
+        self,
+        n_timesteps: int = 50,
+    ) -> Dict[str, Any]:
+        """Run consolidation timesteps without sensory input.
+        
+        This allows eligibility traces to interact with phasic dopamine
+        after reward delivery. The brain continues processing internally:
+        - Phasic dopamine decays naturally (τ ~ 200ms)
+        - Eligibility traces also decay (τ ~ 100-1000ms)  
+        - Learning occurs where traces × dopamine are both non-zero
+        
+        Typical usage (two-phase training):
+        1. process_sample() → builds eligibility traces
+        2. select_action() → commits to an action
+        3. deliver_reward() → sets phasic dopamine
+        4. run_consolidation() → allows learning to occur
+        
+        Args:
+            n_timesteps: Number of consolidation timesteps (default 50)
+            
+        Returns:
+            Dict with region activities during consolidation
+        """
+        results = self._run_timesteps(
+            sensory_input=None,
+            n_timesteps=n_timesteps,
+            trial_phase=self._trial_phase,  # Keep current phase
+        )
+        
+        return results
+
     def select_action(self, explore: bool = True) -> tuple[int, float]:
         """Select action based on current striatum state.
 

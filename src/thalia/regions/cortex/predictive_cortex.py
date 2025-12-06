@@ -62,7 +62,7 @@ from typing import Optional, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 
-from thalia.regions.base import BrainRegion, RegionConfig, LearningRule
+from thalia.regions.base import BrainRegion, RegionConfig, RegionState, LearningRule
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.predictive_coding import (
@@ -102,9 +102,13 @@ class PredictiveCortexConfig(LayeredCortexConfig):
 
 
 @dataclass
-class PredictiveCortexState:
-    """State for predictive cortex."""
-    # From LayeredCortex
+class PredictiveCortexState(RegionState):
+    """State for predictive cortex.
+    
+    Extends RegionState with cortex-specific fields for layer spikes,
+    predictive coding, and attention.
+    """
+    # Layer-specific spikes (cortex has L4→L2/3→L5 microcircuit)
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None

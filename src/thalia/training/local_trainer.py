@@ -133,6 +133,11 @@ class LegacyTrainingConfig:
     # Neuromodulation
     reward_signal: float = 1.0
 
+    # Two-phase training (stimulus → reward/consolidation)
+    two_phase_enabled: bool = True
+    reward_delay_timesteps: int = 10
+    consolidation_timesteps: int = 50
+
     # Checkpointing
     checkpoint_dir: Optional[str] = None
 
@@ -264,10 +269,24 @@ class LocalTrainer:
         epoch: int,
         progress_callback: Optional[Callable],
     ) -> TrainingMetrics:
-        """Train for one epoch."""
+        """Train for one epoch using two-phase training.
+        
+        Two-Phase Training:
+        1. Stimulus Phase: Process input tokens, build eligibility traces
+        2. Reward/Consolidation Phase: Deliver intrinsic reward, run consolidation
+           to allow eligibility-dopamine interaction
+        
+        This mimics biological temporal credit assignment where:
+        - Eligibility traces mark "what just happened" (τ ~ 100-1000ms)
+        - Phasic dopamine decays slowly (τ ~ 200ms)
+        - Learning occurs where traces × dopamine are both non-zero
+        """
 
-        epoch_accuracies = []
-        epoch_spike_rates = []
+        epoch_accuracies: list[float] = []
+        epoch_spike_rates: list[float] = []
+        
+        use_two_phase = getattr(self.config, 'two_phase_enabled', True)
+        consolidation_steps = getattr(self.config, 'consolidation_timesteps', 50)
 
         for batch in data_pipeline.get_batches():
             step_start = time.time()
@@ -276,7 +295,9 @@ class LocalTrainer:
             input_ids = batch["input"].to(self.device)
             target_ids = batch["target"].to(self.device)
 
-            # Process through model
+            # =========================================================
+            # PHASE 1: Stimulus Processing (builds eligibility traces)
+            # =========================================================
             result = self._forward_step(model, input_ids, memory)
 
             # Compute local learning signals
@@ -286,11 +307,29 @@ class LocalTrainer:
                 target_ids=target_ids,
             )
 
-            # Apply weight updates (brain + decoder)
+            # Apply weight updates (decoder learns to read brain)
             self._apply_learning(model, learning_signals, target_ids)
 
-            # Compute metrics
-            accuracy = self._compute_accuracy(model, result, target_ids)
+            # =========================================================
+            # PHASE 2: Reward & Consolidation (two-phase training)
+            # =========================================================
+            if use_two_phase and hasattr(model.brain, 'run_consolidation'):
+                # Compute intrinsic reward from prediction accuracy
+                accuracy = self._compute_accuracy(model, result, target_ids)
+                
+                # Convert accuracy to reward signal (-1 to +1 scale)
+                # Good prediction → positive reward, poor → negative
+                intrinsic_reward = (accuracy - 0.5) * 2.0  # Maps [0,1] → [-1,1]
+                
+                # Deliver reward (sets phasic dopamine)
+                model.brain.deliver_reward(external_reward=intrinsic_reward)
+                
+                # Run consolidation timesteps
+                # This allows eligibility traces to interact with phasic dopamine
+                model.brain.run_consolidation(n_timesteps=consolidation_steps)
+            else:
+                accuracy = self._compute_accuracy(model, result, target_ids)
+            
             spike_rate = result.get("spike_rate", 0.0)
 
             epoch_accuracies.append(accuracy)

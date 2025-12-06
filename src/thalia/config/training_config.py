@@ -77,6 +77,35 @@ class LoggingConfig:
 
 
 @dataclass
+class TwoPhaseConfig:
+    """Configuration for two-phase training (stimulus → reward/consolidation).
+    
+    Two-phase training separates:
+    1. Stimulus Phase: Present input, process through brain, build eligibility traces
+    2. Reward Phase: Deliver reward, run consolidation timesteps for eligibility-dopamine interaction
+    
+    This mimics biological temporal credit assignment where:
+    - Eligibility traces mark "what just happened" (τ ~ 100-1000ms)
+    - Phasic dopamine decays slowly (τ ~ 200ms) 
+    - Learning occurs where traces and dopamine overlap
+    """
+    
+    enabled: bool = True
+    
+    # Number of timesteps between action and reward delivery
+    # Simulates delay between action and outcome
+    reward_delay_timesteps: int = 10
+    
+    # Number of timesteps after reward to allow eligibility-dopamine interaction
+    # This is the "consolidation window" where learning actually happens
+    consolidation_timesteps: int = 50
+    
+    # Whether to clear eligibility traces at trial end
+    # If False, traces persist across trials (longer temporal credit)
+    clear_traces_at_trial_end: bool = True
+
+
+@dataclass
 class TrainingConfig:
     """Complete training configuration.
 
@@ -100,6 +129,9 @@ class TrainingConfig:
     # Neuromodulation
     base_dopamine: float = 0.0  # Tonic dopamine level
     reward_scale: float = 1.0  # Scale factor for reward signals
+
+    # Two-phase training (stimulus → reward/consolidation)
+    two_phase: TwoPhaseConfig = field(default_factory=TwoPhaseConfig)
 
     # Checkpointing and logging
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
