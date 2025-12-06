@@ -30,19 +30,15 @@ class StriatumConfig(RegionConfig):
     # Eligibility trace parameters (biological: 500-2000ms)
     eligibility_tau_ms: float = 1000.0
 
-    # Learning rate
+    # Learning rate for homeostatic normalization
     learning_rate: float = 0.005
 
-    # Legacy learning rates (for compatibility)
-    three_factor_lr: float = 0.005
+    # STDP learning rate for weight updates
     stdp_lr: float = 0.005
 
     # Action selection
     lateral_inhibition: bool = True
     inhibition_strength: float = 2.0
-
-    # Weight constraints
-    soft_bounds: bool = True
 
     # REWARD_MODULATED_STDP parameters
     learning_rule: LearningRule = LearningRule.REWARD_MODULATED_STDP
@@ -58,13 +54,10 @@ class StriatumConfig(RegionConfig):
     # =========================================================================
     # D1/D2 OPPONENT PATHWAYS
     # =========================================================================
-    d1_d2_enabled: bool = True
-    d1_fraction: float = 0.5
     d1_lr_scale: float = 1.0
     d2_lr_scale: float = 1.0
     d1_da_sensitivity: float = 1.0
     d2_da_sensitivity: float = 1.0
-    d1_d2_balance: float = 1.0
 
     # =========================================================================
     # HOMEOSTATIC PLASTICITY
@@ -130,6 +123,3 @@ class StriatumConfig(RegionConfig):
     tonic_d1_gain_scale: float = 0.5
     tonic_modulates_exploration: bool = True
     tonic_exploration_scale: float = 0.1
-
-    # BCM METAPLASTICITY - DISABLED
-    bcm_enabled: bool = False
