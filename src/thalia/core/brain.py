@@ -402,7 +402,6 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self._last_hippo_output: Optional[torch.Tensor] = None
         self._last_pfc_output: Optional[torch.Tensor] = None
         self._last_action: Optional[int] = None
-        self._global_dopamine: float = 0.0
 
         # =====================================================================
         # VTA DOPAMINE SYSTEM (centralized RPE computation)
@@ -411,6 +410,20 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # normalized dopamine signal to all regions. This centralizes what
         # was previously in Striatum's DopamineSystem.
         #
+        # We separate TONIC and PHASIC dopamine (biologically accurate):
+        # - TONIC: Slow, continuous signal from intrinsic prediction quality
+        # - PHASIC: Sharp bursts/dips from external rewards, decays over time
+        #
+        # Regions receive: global_dopamine = tonic + phasic
+        self._tonic_dopamine: float = 0.0   # Slow baseline (intrinsic)
+        self._phasic_dopamine: float = 0.0  # Fast bursts (external rewards)
+        self._global_dopamine: float = 0.0  # Combined signal to regions
+
+        # Phasic dopamine decay parameters
+        # τ = 200ms for dopamine reuptake (decay = exp(-dt/τ))
+        # At dt=1ms: decay = exp(-1/200) ≈ 0.995 per timestep
+        self._phasic_decay: float = 0.995  # Per-timestep decay factor
+
         # Adaptive normalization prevents saturation from reward scaling:
         # - Tracks running average of |RPE| to adapt to reward statistics
         # - Outputs normalized RPE in range [-rpe_clip, +rpe_clip]
@@ -644,50 +657,56 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             external_reward: Task-based reward value (-1 to +1), default 0.0
         """
         # =====================================================================
-        # STEP 1: Combine external reward with current intrinsic state
+        # STEP 1: Compute phasic dopamine from external reward
         # =====================================================================
-        # Intrinsic reward is already flowing continuously via _update_tonic_dopamine()
-        # External reward adds a phasic component
-        intrinsic = self._compute_intrinsic_reward()
-        
-        if external_reward != 0.0:
-            # When external signal is present, weight it higher (phasic burst)
-            total_reward = 0.3 * intrinsic + 0.7 * external_reward
-        else:
-            total_reward = intrinsic
-
-        # Clamp to valid range
-        total_reward = max(-1.0, min(1.0, total_reward))
+        # External rewards create PHASIC bursts/dips that add to tonic baseline.
+        # The tonic component already flows continuously via _update_tonic_dopamine().
+        #
+        # If no external reward (0.0), we just compute the phasic component from
+        # the current state for the striatum value update.
 
         # =====================================================================
-        # STEP 3: Get expected value from striatum
+        # STEP 2: Get expected value from striatum
         # =====================================================================
         expected = self.striatum.get_expected_value(self._last_action)
 
         # =====================================================================
-        # STEP 4: Compute reward prediction error
+        # STEP 3: Compute reward prediction error
         # =====================================================================
-        rpe = total_reward - expected
+        # RPE = actual - expected
+        # For external rewards, the "actual" is the external signal
+        # For pure intrinsic (external=0), compute from current intrinsic
+        if external_reward != 0.0:
+            rpe = external_reward - expected
+        else:
+            intrinsic = self._compute_intrinsic_reward()
+            rpe = intrinsic - expected
 
         # =====================================================================
-        # STEP 5: Normalize RPE (adaptive to reward statistics)
+        # STEP 4: Normalize RPE (adaptive to reward statistics)
         # =====================================================================
-        # This prevents saturation when reward magnitudes vary
         da_level = self._compute_normalized_dopamine(rpe)
 
         # =====================================================================
-        # STEP 6: Broadcast to ALL regions (centralized VTA output)
+        # STEP 5: SET PHASIC DOPAMINE (this is the key change!)
         # =====================================================================
-        self._global_dopamine = da_level
+        # Instead of directly setting _global_dopamine, we set the PHASIC component.
+        # This will decay over time via _update_tonic_dopamine(), giving the
+        # eligibility traces time to overlap with the dopamine signal.
+        self._phasic_dopamine = da_level
 
-        # Set dopamine directly on all underlying regions for continuous plasticity
-        # This mirrors VTA dopamine projections to cortex, hippocampus, striatum,
-        # prefrontal, and cerebellum (modulates motor learning gain)
-        self.cortex.set_dopamine(da_level)
-        self.hippocampus.set_dopamine(da_level)
-        self.pfc.set_dopamine(da_level)
-        self.striatum.set_dopamine(da_level)
-        self.cerebellum.set_dopamine(da_level)
+        # Update global immediately (regions get the sum)
+        self._global_dopamine = self._tonic_dopamine + self._phasic_dopamine
+        self._global_dopamine = max(-2.0, min(2.0, self._global_dopamine))
+
+        # =====================================================================
+        # STEP 6: Broadcast to ALL regions
+        # =====================================================================
+        self.cortex.set_dopamine(self._global_dopamine)
+        self.hippocampus.set_dopamine(self._global_dopamine)
+        self.pfc.set_dopamine(self._global_dopamine)
+        self.striatum.set_dopamine(self._global_dopamine)
+        self.cerebellum.set_dopamine(self._global_dopamine)
 
         # Create dopamine events for all regions (event-driven pathway)
         for region_name in self.regions:
@@ -698,9 +717,9 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                 source="reward_system",
                 target=region_name,
                 payload=DopaminePayload(
-                    level=da_level,
-                    is_burst=da_level > 0.5,
-                    is_dip=da_level < -0.5,
+                    level=self._global_dopamine,
+                    is_burst=self._phasic_dopamine > 0.5,
+                    is_dip=self._phasic_dopamine < -0.5,
                 ),
             )
             self.scheduler.schedule(event)
@@ -711,15 +730,16 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # =====================================================================
         # STEP 7: Trigger striatum learning (D1/D2 plasticity)
         # =====================================================================
-        # Striatum applies three-factor learning using the dopamine we just set
+        # Use the external reward for striatum value updates
+        reward_for_striatum = external_reward if external_reward != 0.0 else self._compute_intrinsic_reward()
         if self._last_action is not None:
-            self.striatum.deliver_reward(total_reward)
+            self.striatum.deliver_reward(reward_for_striatum)
 
         # =====================================================================
         # STEP 8: Update value estimate in striatum
         # =====================================================================
         if self._last_action is not None:
-            self.striatum.update_value_estimate(self._last_action, total_reward)
+            self.striatum.update_value_estimate(self._last_action, reward_for_striatum)
 
     def _compute_normalized_dopamine(self, rpe: float) -> float:
         """Compute normalized dopamine from raw RPE.
@@ -827,29 +847,57 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         return max(-1.0, min(1.0, reward))
 
     def _update_tonic_dopamine(self) -> None:
-        """Update tonic dopamine level based on continuous intrinsic reward.
+        """Update dopamine levels every timestep.
 
-        This should be called every timestep. It computes the brain's
-        self-evaluation (prediction quality) and sets a tonic dopamine level
-        that modulates ongoing plasticity.
+        This handles both dopamine channels:
 
-        Unlike phasic dopamine (from deliver_reward), tonic dopamine:
-        - Varies slowly and continuously
-        - Reflects ongoing prediction quality
-        - Modulates learning rates rather than triggering discrete updates
+        1. TONIC DOPAMINE (slow, intrinsic):
+           - Updates based on current prediction quality
+           - Smoothed with EMA (τ ~100ms)
+           - Represents ongoing "mood"/motivation
 
-        This is biologically correct: VTA neurons fire tonically at ~4-5Hz
-        and this baseline is modulated by ongoing prediction errors.
+        2. PHASIC DOPAMINE (fast, external):
+           - Decays toward zero each timestep (τ ~200ms)
+           - Set by deliver_reward() when external rewards arrive
+           - Represents reward prediction error bursts/dips
+
+        GLOBAL DOPAMINE = tonic + phasic
+        This is what regions receive for plasticity modulation.
+
+        Biologically:
+        - VTA neurons fire tonically at ~4-5Hz (baseline)
+        - Phasic bursts (5-20 spikes) for unexpected rewards
+        - Phasic pauses for unexpected punishments
+        - Both components sum at target synapses
         """
-        # Compute current intrinsic reward
+        # =====================================================================
+        # 1. UPDATE TONIC DOPAMINE (slow, intrinsic)
+        # =====================================================================
         intrinsic = self._compute_intrinsic_reward()
 
-        # Smooth the dopamine signal (tonic = slow changes)
-        # Use exponential moving average with tau ~100ms
-        alpha = 0.1  # Smoothing factor per timestep
-        self._global_dopamine = (1 - alpha) * self._global_dopamine + alpha * intrinsic
+        # Smooth the tonic signal (slow changes)
+        # alpha = 0.1 → τ ≈ 10ms at dt=1ms (could make slower)
+        tonic_alpha = 0.05  # Slower smoothing for tonic baseline
+        self._tonic_dopamine = (1 - tonic_alpha) * self._tonic_dopamine + tonic_alpha * intrinsic
 
-        # Set dopamine on all regions (they use it for ongoing plasticity)
+        # =====================================================================
+        # 2. DECAY PHASIC DOPAMINE (fast, external)
+        # =====================================================================
+        # Exponential decay with τ ~200ms
+        # decay = 0.995 per ms → after 200ms: 0.995^200 ≈ 0.37 (≈ 1/e)
+        self._phasic_dopamine *= self._phasic_decay
+
+        # =====================================================================
+        # 3. COMPUTE GLOBAL DOPAMINE (sum of both)
+        # =====================================================================
+        self._global_dopamine = self._tonic_dopamine + self._phasic_dopamine
+
+        # Clip to reasonable range (dopamine has physiological limits)
+        self._global_dopamine = max(-2.0, min(2.0, self._global_dopamine))
+
+        # =====================================================================
+        # 4. BROADCAST TO ALL REGIONS
+        # =====================================================================
         self.cortex.set_dopamine(self._global_dopamine)
         self.hippocampus.set_dopamine(self._global_dopamine)
         self.pfc.set_dopamine(self._global_dopamine)

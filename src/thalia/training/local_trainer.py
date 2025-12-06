@@ -444,16 +444,18 @@ class LocalTrainer:
         3. Decoder is chasing a moving target
         4. Brain shouldn't be blamed for decoder's inability to read it
         """
-        brain = model.brain
-
         # =====================================================================
-        # BRAIN LEARNING (intrinsic reward computed internally)
+        # BRAIN LEARNING (handled internally via continuous tonic dopamine)
         # =====================================================================
-        # deliver_reward now computes intrinsic reward INSIDE the brain.
-        # The brain rewards itself for good predictions (free energy principle).
-        # We pass 0.0 as external reward for self-supervised language learning.
-        # External rewards would be provided by task-specific trainers.
-        brain.deliver_reward(external_reward=0.0)
+        # The brain computes intrinsic reward CONTINUOUSLY every timestep via
+        # _update_tonic_dopamine(). For self-supervised language learning,
+        # there's no external reward signal - the brain learns purely from
+        # minimizing its own prediction errors (free energy principle).
+        #
+        # We DON'T call deliver_reward() here because:
+        # 1. Tonic dopamine already flows continuously
+        # 2. deliver_reward() is for EXTERNAL task rewards (e.g., game score)
+        # 3. Self-supervised learning has no external reward signal
 
         # =====================================================================
         # DECODER LEARNING (separate, supervised)
