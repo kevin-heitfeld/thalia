@@ -1362,16 +1362,45 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         """
         cfg = self.striatum_config
 
-        # For counterfactual learning, compute local dopamine signal
-        # This is a simplified version - just use reward directly, scaled down
-        # We don't need full RPE since this is imagined, not real experience
-        da_level = reward * counterfactual_scale
+        # =====================================================================
+        # COMPUTE COUNTERFACTUAL RPE
+        # =====================================================================
+        # Use proper reward prediction error instead of raw reward.
+        # If we imagined taking action X and it would have been rewarded,
+        # but we expected X to be bad (low value), this is a POSITIVE surprise.
+        # If we expected X to be good and it would have been rewarded, small surprise.
+        expected_cf = self.get_expected_value(action)
+        raw_rpe = reward - expected_cf
+
+        # Scale down because this is imagined, not real experience.
+        # We don't normalize like Brain does - just use scaled raw RPE.
+        da_level = raw_rpe * counterfactual_scale
 
         # Clip to reasonable range
         da_level = max(-2.0, min(2.0, da_level))
 
+        # =====================================================================
+        # PARTIAL VALUE ESTIMATE UPDATE
+        # =====================================================================
+        # Update our expectation for the counterfactual action, but with reduced
+        # learning rate since we didn't actually experience this outcome.
+        # This prevents value estimates from becoming stale for unexplored actions.
+        if self.value_estimates is not None and 0 <= action < self.n_actions:
+            cf_lr = cfg.rpe_learning_rate * counterfactual_scale
+            self.value_estimates[action] = (
+                self.value_estimates[action]
+                + cf_lr * (reward - self.value_estimates[action])
+            )
+
         if abs(da_level) < 0.01:
-            return {"dopamine": da_level, "net_change": 0.0, "counterfactual": True}
+            return {
+                "dopamine": da_level,
+                "raw_rpe": raw_rpe,
+                "expected_value": expected_cf,
+                "net_change": 0.0,
+                "counterfactual": True,
+                "action": action,
+            }
 
         # Create action mask for the COUNTERFACTUAL action (not the one we took)
         action_mask = torch.zeros(self.config.n_output, device=self.device)
@@ -1407,6 +1436,8 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
         return {
             "dopamine": da_level,
+            "raw_rpe": raw_rpe,
+            "expected_value": expected_cf,
             "d1_change": d1_change,
             "d2_change": d2_change,
             "net_change": d1_change + d2_change,
