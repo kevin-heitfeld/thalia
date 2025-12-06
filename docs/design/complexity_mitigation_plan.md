@@ -6,15 +6,24 @@
 
 **Prerequisites**: ✅ Hyperparameter Robustness (Completed)
 
-**Current Phase**: ✅ Phase 4: Observability Dashboard (COMPLETED)
+**Current Phase**: ✅ Phase 1: Complexity Layers (IN PROGRESS - 70% complete)
 
-**Next Phase**: Phase 1: Complexity Layers (Starting Next)
+**Next Phase**: Phase 2: Configuration Presets
 
 ## Context
 
 After successfully implementing all robustness mechanisms (E/I balance, divisive
 normalization, intrinsic plasticity, criticality monitoring, metabolic constraints),
 we now focus on making the system more understandable and maintainable.
+
+**Phase 1 Progress** (commit be111b3):
+- ✅ Created architecture.md documenting 5-level complexity hierarchy
+- ✅ Reorganized tests: 184 unit tests in tests/unit/
+- ✅ Created integration test framework in tests/integration/
+- ✅ Implemented 7 integration tests for cortex + robustness (all passing)
+- ✅ Fixed conftest.py fixtures with correct APIs
+- ⏳ TODO: More integration tests for learning+stability interactions
+- ⏳ TODO: Ablation test framework (stub exists)
 
 ## Problem Statement
 
