@@ -281,6 +281,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self.state = PredictiveCortexState()
         self._total_free_energy = 0.0
         self._timesteps = 0
+        self._last_plasticity_delta = 0.0
 
     def forward(
         self,
@@ -424,71 +425,26 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             output = l5_output
         else:
             output = cortex_output
+            
+        # =====================================================================
+        # CONTINUOUS LEARNING (plasticity happens as part of forward dynamics)
+        # =====================================================================
+        # The underlying LayeredCortex already does continuous STDP in its forward()
+        # Here we also update the prediction weights based on accumulated error
+        if self.prediction_layer is not None:
+            # Get dopamine-modulated learning rate from base class
+            effective_lr = self.get_effective_learning_rate(
+                self.predictive_config.prediction_learning_rate
+            )
+            if effective_lr > 1e-8:  # Only learn if not fully suppressed
+                # Learn prediction weights based on current error
+                # Pass None for reward_signal since we're doing continuous learning
+                # Reward will modulate dopamine, which is handled via modulation
+                pred_metrics = self.prediction_layer.learn(reward_signal=None)
+                # Store plasticity delta on the prediction layer state
+                self._last_plasticity_delta = pred_metrics.get("weight_update", 0.0)
 
         return output
-
-    def learn(
-        self,
-        input_spikes: torch.Tensor,
-        output_spikes: torch.Tensor,
-        reward_signal: Optional[torch.Tensor] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        """
-        Update weights based on accumulated prediction errors.
-
-        This is where learning happens WITHOUT backpropagation!
-        
-        The key insight: we don't need input/output spikes directly because
-        the prediction error is computed during forward() and stored in state.
-        The prediction layer learns to minimize this error locally.
-
-        Args:
-            input_spikes: Input that caused the output (for BrainRegion interface)
-            output_spikes: Output produced (for BrainRegion interface)
-            reward_signal: Optional reward for three-factor learning
-            **kwargs: Additional arguments (e.g., target for supervised regions)
-
-        Returns:
-            metrics: Learning metrics for monitoring
-        """
-        metrics: Dict[str, Any] = {}
-
-        # Learn prediction weights using LOCAL prediction errors
-        if self.prediction_layer is not None:
-            pred_metrics = self.prediction_layer.learn(reward_signal)
-            metrics.update({f"pred_{k}": v for k, v in pred_metrics.items()})
-
-        # Learn attention weights
-        if self.attention is not None and self.state.attention_weights is not None:
-            attn_metrics = self.attention.learn_from_attention(
-                self.state.attention_weights,
-                reward_signal,
-            )
-            metrics.update({f"attn_{k}": v for k, v in attn_metrics.items()})
-        
-        # Also allow the base cortex to learn (STDP/BCM)
-        # Use the stored input_spikes from forward() to ensure correct dimensions
-        stored_input = self.state.input_spikes if self.state.input_spikes is not None else input_spikes
-        
-        # =====================================================================
-        # SHAPE ASSERTION - ensure we pass correctly-sized input to cortex.learn()
-        # =====================================================================
-        assert stored_input.shape[-1] == self.predictive_config.n_input, (
-            f"PredictiveCortex.learn: stored_input has shape {stored_input.shape} "
-            f"but n_input={self.predictive_config.n_input}. "
-            f"This usually means forward() wasn't called before learn(), "
-            f"or the trainer passed wrong-sized eligibility signals."
-        )
-        
-        cortex_metrics = self.cortex.learn(stored_input, output_spikes, **kwargs)
-        metrics.update({f"cortex_{k}": v for k, v in cortex_metrics.items()})
-
-        # Add summary metrics
-        if self._timesteps > 0:
-            metrics["avg_free_energy"] = self._total_free_energy / self._timesteps
-
-        return metrics
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information."""
@@ -496,6 +452,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             "l4_spikes": self.state.l4_spikes.sum().item() if self.state.l4_spikes is not None else 0,
             "l23_spikes": self.state.l23_spikes.sum().item() if self.state.l23_spikes is not None else 0,
             "l5_spikes": self.state.l5_spikes.sum().item() if self.state.l5_spikes is not None else 0,
+            "last_plasticity_delta": getattr(self, "_last_plasticity_delta", 0.0),
         }
 
         if self.prediction_layer is not None:
@@ -599,22 +556,10 @@ class PredictiveHierarchy(nn.Module):
 
         return current, states
 
-    def learn(
-        self,
-        reward_signal: Optional[torch.Tensor] = None,
-    ) -> Dict[str, float]:
-        """Learn at all areas."""
-        all_metrics = {}
-        for i, area in enumerate(self.areas):
-            metrics = area.learn(reward_signal)
-            for k, v in metrics.items():
-                all_metrics[f"area{i}_{k}"] = v
-        return all_metrics
-
     def get_total_free_energy(self) -> float:
         """Sum of free energy across all areas."""
         total = 0.0
         for area in self.areas:
-            if area.prediction_layer is not None:
+            if hasattr(area, 'prediction_layer') and area.prediction_layer is not None:
                 total += area.prediction_layer.get_free_energy().item()
         return total

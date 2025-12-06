@@ -80,6 +80,33 @@ def remove_batch_dim(tensor: torch.Tensor, had_batch: bool) -> torch.Tensor:
     return tensor
 
 
+def ensure_1d(tensor: torch.Tensor) -> torch.Tensor:
+    """Ensure tensor is 1D by squeezing or averaging batch dimension.
+    
+    For 2D tensors with batch_size=1, squeezes to 1D.
+    For 2D tensors with batch_size>1, averages across batch dimension.
+    Already 1D tensors are returned unchanged.
+    
+    This is useful for operations like torch.outer() that require 1D inputs.
+    
+    Args:
+        tensor: Input tensor (1D or 2D)
+        
+    Returns:
+        1D tensor
+        
+    Example:
+        >>> x = torch.randn(1, 100)  # Shape: [1, 100]
+        >>> x = ensure_1d(x)  # Shape: [100]
+        
+        >>> y = torch.randn(32, 100)  # Shape: [32, 100]  
+        >>> y = ensure_1d(y)  # Shape: [100] (averaged across batch)
+    """
+    if tensor.dim() == 2:
+        return tensor.squeeze(0) if tensor.shape[0] == 1 else tensor.mean(dim=0)
+    return tensor
+
+
 def clamp_weights(
     weights: torch.Tensor,
     w_min: float = 0.0,

@@ -113,20 +113,16 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         - Positive DA (burst) → strengthen eligible synapses (D1 LTP, D2 LTD)
         - Negative DA (dip) → weaken eligible synapses (D1 LTD, D2 LTP)
 
-        The actual learning is applied via striatum.learn() method.
+        With continuous plasticity, we set the dopamine level on the region
+        and let the next forward pass apply the plasticity. Alternatively,
+        deliver_reward() can be called for immediate learning.
         """
-        if self._recent_input is not None and self._recent_output is not None:
-            # Compute reward from dopamine level
-            reward = payload.level
-            correct = payload.is_burst  # Burst indicates correct/rewarded
-
-            if hasattr(self.striatum, "learn"):
-                self.striatum.learn(
-                    input_spikes=self._recent_input,
-                    output_spikes=self._recent_output,
-                    correct=correct,
-                    reward=reward,
-                )
+        # Set dopamine level on the underlying region for continuous plasticity
+        self.striatum.state.dopamine = payload.level
+        
+        # Also trigger immediate learning via deliver_reward if there's a clear reward signal
+        if hasattr(self.striatum, "deliver_reward") and abs(payload.level) > 0.1:
+            self.striatum.deliver_reward(reward=payload.level)
 
     def _process_spikes(
         self,

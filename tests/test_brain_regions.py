@@ -332,7 +332,11 @@ class TestPrefrontal:
         assert overlap_a > 0.1, f"WM overlap {overlap_a:.3f} too low"
     
     def test_learning(self, prefrontal):
-        """Test that learning updates weights."""
+        """Test that learning updates weights via continuous plasticity in forward().
+        
+        In the new paradigm, learning happens automatically during forward()
+        when dopamine is present. There is no separate learn() call.
+        """
         prefrontal.reset_state(1)
         
         initial_weights = prefrontal.weights.clone()
@@ -340,12 +344,14 @@ class TestPrefrontal:
         input_pattern = torch.zeros(1, prefrontal.config.n_input)
         input_pattern[0, :10] = 1.0
         
-        # Run with high DA to open gate
+        # Set dopamine to enable learning
+        prefrontal.set_dopamine(0.5)
+        
+        # Run forward - learning happens continuously as part of forward()
         for _ in range(10):
             output = prefrontal.forward(input_pattern, dopamine_signal=0.5)
-            prefrontal.learn(input_pattern, output)
         
-        # Weights should have changed
+        # Weights should have changed (learning happens in forward)
         weight_change = (prefrontal.weights - initial_weights).abs().sum().item()
         assert weight_change > 0
 
@@ -383,7 +389,12 @@ class TestIntegration:
         assert Prefrontal(PrefrontalConfig(n_input=10, n_output=10)).learning_rule == LearningRule.HEBBIAN
     
     def test_pipeline_cortex_to_cerebellum(self):
-        """Test a pipeline from cortex feature extraction to cerebellum classification."""
+        """Test a pipeline from cortex feature extraction to cerebellum classification.
+        
+        In the new paradigm:
+        - Cortex learns continuously during forward() (no explicit learn() call)
+        - Cerebellum learns via deliver_error() when error signal is provided
+        """
         # LayeredCortex extracts features
         cortex = LayeredCortex(LayeredCortexConfig(n_input=20, n_output=10))
         
@@ -406,9 +417,9 @@ class TestIntegration:
         
         assert final_output.shape == (batch_size, 3)
         
-        # Learn
-        cerebellum.learn(l23_output, final_output, target=target)
-        cortex.learn(raw_input, cortex_output)  # Unsupervised
+        # Cerebellum uses deliver_error for supervised learning
+        cerebellum.deliver_error(target=target, output_spikes=final_output)
+        # Cortex learns continuously in forward() - no explicit call needed
 
 
 class TestLayeredCortex:
@@ -492,21 +503,29 @@ class TestLayeredCortex:
         # (exact values depend on weights, but trace should exist)
     
     def test_learning(self, layered_cortex):
-        """Test that learning updates inter-layer weights."""
+        """Test that learning updates inter-layer weights via continuous plasticity.
+        
+        In the new paradigm, learning happens automatically during forward()
+        when there is activity. There is no separate learn() call.
+        """
         input_spikes = torch.ones(1, 64)
         
         layered_cortex.reset()
-        output = layered_cortex.forward(input_spikes)
         
         # Record initial weights
         w_input_l4_before = layered_cortex.w_input_l4.data.clone()
         w_l4_l23_before = layered_cortex.w_l4_l23.data.clone()
         
-        # Learn
-        result = layered_cortex.learn(input_spikes, output)
+        # Learning happens in forward() - run multiple steps
+        for _ in range(5):
+            output = layered_cortex.forward(input_spikes)
         
-        # Weights should change (if there was activity)
-        assert "weight_change" in result
+        # Weights should change (learning happens continuously in forward)
+        w_input_l4_change = (layered_cortex.w_input_l4.data - w_input_l4_before).abs().sum().item()
+        w_l4_l23_change = (layered_cortex.w_l4_l23.data - w_l4_l23_before).abs().sum().item()
+        
+        # At least one weight matrix should have changed
+        assert w_input_l4_change > 0 or w_l4_l23_change > 0, "Weights should change via continuous plasticity"
     
     def test_diagnostics(self, layered_cortex):
         """Test that diagnostics returns layer-specific information."""

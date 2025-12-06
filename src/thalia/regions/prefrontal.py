@@ -52,7 +52,7 @@ from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 
-from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe
+from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights, cosine_similarity_safe
 from thalia.regions.base import (
     BrainRegion,
     RegionConfig,
@@ -402,51 +402,54 @@ class Prefrontal(BrainRegion):
 
         # Store state
         self.state.spikes = output_spikes
+        
+        # Apply continuous plasticity (learning happens as part of forward dynamics)
+        self._apply_plasticity(input_spikes, output_spikes, dt)
 
         return output_spikes
 
-    def learn(
+    def _apply_plasticity(
         self,
         input_spikes: torch.Tensor,
         output_spikes: torch.Tensor,
-        reward: float = 0.0,
         dt: float = 1.0,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        """
-        Apply dopamine-gated STDP learning.
+    ) -> None:
+        """Apply dopamine-gated STDP learning continuously.
         
+        This is called automatically at each forward() timestep.
         Uses spike-timing dependent plasticity gated by dopamine:
         - STDP creates eligibility traces from spike timing
         - Dopamine gates whether eligibility becomes lasting plasticity
         - High DA → learn associations (eligibility → weight change)
         - Low DA → protect existing patterns (eligibility decays unused)
-
-        Args:
-            input_spikes: Input spikes [batch, n_input]
-            output_spikes: Output spikes [batch, n_output]
-            reward: Reward signal (triggers DA burst)
-            dt: Time step in ms
-            **kwargs: Additional learning signals
-
-        Returns:
-            Dictionary with learning metrics
         """
+        if not self.plasticity_enabled:
+            return
+            
         input_spikes = ensure_batch_dim(input_spikes)
         output_spikes = ensure_batch_dim(output_spikes)
             
         cfg = self.pfc_config
         
+        # Get effective learning rate (dopamine modulated)
+        effective_lr = self.get_effective_learning_rate(cfg.stdp_lr)
+        if effective_lr < 1e-8:
+            return
+        
+        # Get 1D versions for torch.outer
+        input_1d = ensure_1d(input_spikes)
+        output_1d = ensure_1d(output_spikes)
+        
         # ======================================================================
         # Update STDP traces
         # ======================================================================
         trace_decay = 1.0 - dt / cfg.stdp_tau_ms
-        self.input_trace = self.input_trace * trace_decay + input_spikes.squeeze()
-        self.output_trace = self.output_trace * trace_decay + output_spikes.squeeze()
+        self.input_trace = self.input_trace * trace_decay + input_1d
+        self.output_trace = self.output_trace * trace_decay + output_1d
         
         # STDP rule: post spike with pre trace → LTP
-        ltp = torch.outer(output_spikes.squeeze(), self.input_trace)
-        ltd = torch.outer(self.output_trace, input_spikes.squeeze())
+        ltp = torch.outer(output_1d, self.input_trace)
+        ltd = torch.outer(self.output_trace, input_1d)
         
         # Apply soft bounds
         if cfg.soft_bounds:
@@ -456,8 +459,8 @@ class Prefrontal(BrainRegion):
             ltp = ltp * ltp_factor
             ltd = ltd * ltd_factor
         
-        # Compute STDP weight change
-        stdp_dw = cfg.stdp_lr * (ltp - cfg.heterosynaptic_ratio * ltd)
+        # Compute STDP weight change with dopamine-modulated learning rate
+        stdp_dw = effective_lr * (ltp - cfg.heterosynaptic_ratio * ltd)
         
         # Accumulate into eligibility trace
         eligibility_decay = 1.0 - dt / 100.0  # 100ms eligibility window
@@ -482,13 +485,11 @@ class Prefrontal(BrainRegion):
                     scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
                     self.weights.data *= scaling
                     clamp_weights(self.weights.data, self.config.w_min, self.config.w_max)
-        else:
-            dW = torch.zeros_like(self.weights)
 
         # ======================================================================
         # Update recurrent weights to strengthen WM patterns
         # ======================================================================
-        if self.state.working_memory is not None:
+        if self.state.working_memory is not None and gate > 0.1:
             wm_mean = self.state.working_memory.mean(dim=0)
             dW_rec = cfg.rule_lr * gate * torch.outer(wm_mean, wm_mean)
             with torch.no_grad():
@@ -497,16 +498,6 @@ class Prefrontal(BrainRegion):
                     cfg.recurrent_strength
                 )  # Maintain self-excitation
                 self.rec_weights.data.clamp_(0.0, 1.0)
-
-        return {
-            "gate_value": gate,
-            "dopamine": self.state.dopamine,
-            "ltp": (dW > 0).sum().item(),
-            "ltd": (dW < 0).sum().item(),
-            "eligibility_max": self.stdp_eligibility.abs().max().item(),
-            "wm_activity": self.state.working_memory.mean().item()
-            if self.state.working_memory is not None else 0.0,
-        }
 
     def set_context(self, context: torch.Tensor) -> None:
         """

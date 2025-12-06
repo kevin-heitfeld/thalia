@@ -106,6 +106,9 @@ class LayeredCortexConfig(RegionConfig):
 class LayeredCortexState(RegionState):
     """State for layered cortex."""
 
+    # Input stored for continuous plasticity
+    input_spikes: Optional[torch.Tensor] = None
+
     # Per-layer spike states
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
@@ -124,3 +127,6 @@ class LayeredCortexState(RegionState):
 
     # Feedforward inhibition strength (0-1, 1 = max suppression)
     ffi_strength: float = 0.0
+    
+    # Last plasticity delta (for monitoring continuous learning)
+    last_plasticity_delta: float = 0.0

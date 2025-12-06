@@ -105,8 +105,14 @@ class EventDrivenPFC(EventDrivenRegionBase):
         DA level gets passed to PFC.forward() which uses it to:
         - Gate what enters working memory (high DA = update WM)
         - Modulate learning (via dopamine-gated STDP)
+        
+        With continuous plasticity, dopamine modulates the learning rate
+        in forward(). We store it both on the PFC state and for gating.
         """
-        # Store dopamine signal for next forward pass
+        # Set dopamine on region state for continuous plasticity modulation
+        self.pfc.state.dopamine = payload.level
+        
+        # Store dopamine signal for next forward pass (WM gating)
         self._pending_dopamine_signal = payload.level
 
     def _process_spikes(

@@ -49,7 +49,7 @@ from thalia.regions.base import BrainRegion, RegionConfig, LearningRule
 from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
-from thalia.core.utils import ensure_batch_dim, clamp_weights
+from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 
@@ -243,7 +243,13 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         top_down: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
-        """Process input through layered cortical circuit."""
+        """Process input through layered cortical circuit with continuous plasticity.
+        
+        This method both processes spikes AND applies synaptic plasticity. Learning
+        happens continuously at each timestep, modulated by neuromodulators (dopamine).
+        This is how biological cortex works - plasticity is part of the dynamics,
+        not a separate training phase.
+        """
         input_spikes = ensure_batch_dim(input_spikes)
 
         batch_size = input_spikes.shape[0]
@@ -338,6 +344,12 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             update_trace(self.state.l5_trace, l5_spikes, tau=cfg.stdp_tau_plus, dt=dt)
 
         self.state.spikes = l5_spikes
+        
+        # Store input for plasticity
+        self.state.input_spikes = input_spikes
+        
+        # Apply continuous plasticity (learning happens as part of forward dynamics)
+        self._apply_plasticity()
 
         # Construct output
         if cfg.dual_output:
@@ -370,47 +382,37 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
 
         return sparse_spikes
 
-    def learn(
-        self,
-        input_spikes: torch.Tensor,
-        output_spikes: torch.Tensor,
-        **kwargs: Any,
-    ) -> Dict[str, float]:
-        """Apply STDP learning to inter-layer connections with optional BCM modulation.
+    def _apply_plasticity(self) -> None:
+        """Apply continuous STDP learning with BCM modulation.
         
-        Args:
-            input_spikes: The original sensory input [batch, n_input] that drove forward()
-            output_spikes: The output produced [batch, n_output]
-            **kwargs: Additional arguments (ignored)
-            
-        Returns:
-            metrics: Dictionary with weight change statistics
+        This is called automatically at each forward() timestep.
+        Learning rate is modulated by dopamine (via get_effective_learning_rate).
+        
+        In biological cortex, synaptic plasticity happens continuously based on
+        pre/post spike timing. Dopamine doesn't trigger learning - it modulates
+        how much weight change occurs from the spike-timing-based plasticity.
         """
-        if self.state.l4_spikes is None:
-            return {"weight_change": 0.0}
+        if self.state.l4_spikes is None or self.state.input_spikes is None:
+            return
 
         cfg = self.layer_config
         
-        # =====================================================================
-        # SHAPE ASSERTION - ensure input_spikes matches what we expect
-        # =====================================================================
-        assert input_spikes.shape[-1] == cfg.n_input, (
-            f"LayeredCortex.learn: input_spikes has shape {input_spikes.shape} "
-            f"but n_input={cfg.n_input}. "
-            f"Make sure you're passing the original sensory input, not eligibility signals."
-        )
+        # Get dopamine-modulated learning rate
+        base_lr = cfg.stdp_lr
+        effective_lr = self.get_effective_learning_rate(base_lr)
         
+        # Early exit if learning rate is too small
+        if effective_lr < 1e-8:
+            self.state.last_plasticity_delta = 0.0
+            return
+
+        # Get 1D versions of spike tensors for torch.outer
+        l4_spikes = ensure_1d(self.state.l4_spikes)
+        l23_spikes = ensure_1d(self.state.l23_spikes) if self.state.l23_spikes is not None else None
+        l5_spikes = ensure_1d(self.state.l5_spikes) if self.state.l5_spikes is not None else None
+        input_spikes = ensure_1d(self.state.input_spikes)
+
         total_change = 0.0
-
-        l4_spikes = self.state.l4_spikes
-        l23_spikes = self.state.l23_spikes
-        l5_spikes = self.state.l5_spikes
-        l4_trace = self.state.l4_trace
-        l23_trace = self.state.l23_trace
-        l5_trace = self.state.l5_trace
-
-        if l4_spikes is None or l23_spikes is None or l5_spikes is None:
-            return {"weight_change": 0.0}
 
         # BCM modulation factors
         l4_bcm_mod = 1.0
@@ -422,69 +424,65 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             l4_bcm_mod = self.bcm_l4.compute_phi(l4_activity)
             self.bcm_l4.update_threshold(l4_activity)
 
-        if self.bcm_l23 is not None:
+        if self.bcm_l23 is not None and l23_spikes is not None:
             l23_activity = l23_spikes.mean()
             l23_bcm_mod = self.bcm_l23.compute_phi(l23_activity)
             self.bcm_l23.update_threshold(l23_activity)
 
-        if self.bcm_l5 is not None:
+        if self.bcm_l5 is not None and l5_spikes is not None:
             l5_activity = l5_spikes.mean()
             l5_bcm_mod = self.bcm_l5.compute_phi(l5_activity)
             self.bcm_l5.update_threshold(l5_activity)
 
-        def bcm_to_scale(mod):
+        def bcm_to_scale(mod: Any) -> float:
             if isinstance(mod, torch.Tensor):
-                return 1.0 + 0.5 * torch.tanh(mod)
+                return float(1.0 + 0.5 * torch.tanh(mod).item())
             return 1.0 + 0.5 * torch.tanh(torch.tensor(mod)).item()
 
         # Input → L4
-        if l4_trace is not None:
-            effective_lr = cfg.stdp_lr * bcm_to_scale(l4_bcm_mod)
-            dw = effective_lr * torch.outer(
-                l4_spikes.squeeze().float(),
-                input_spikes.squeeze().float(),
-            )
-            with torch.no_grad():
-                self.w_input_l4.data += dw
-                clamp_weights(self.w_input_l4.data, cfg.w_min, cfg.w_max)
-            total_change += dw.abs().mean().item()
+        dw = effective_lr * bcm_to_scale(l4_bcm_mod) * torch.outer(
+            l4_spikes.float(),
+            input_spikes.float(),
+        )
+        with torch.no_grad():
+            self.w_input_l4.data += dw
+            clamp_weights(self.w_input_l4.data, cfg.w_min, cfg.w_max)
+        total_change += dw.abs().mean().item()
 
         # L4 → L2/3
-        if l4_trace is not None and l23_trace is not None:
-            effective_lr = cfg.stdp_lr * bcm_to_scale(l23_bcm_mod)
-            dw = effective_lr * torch.outer(
-                l23_spikes.squeeze().float(),
-                l4_spikes.squeeze().float(),
+        if l23_spikes is not None:
+            dw = effective_lr * bcm_to_scale(l23_bcm_mod) * torch.outer(
+                l23_spikes.float(),
+                l4_spikes.float(),
             )
             with torch.no_grad():
                 self.w_l4_l23.data += dw
                 clamp_weights(self.w_l4_l23.data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
-        # L2/3 recurrent
-        if l23_trace is not None:
-            l23_activity = l23_spikes.squeeze().float()
-            effective_lr = cfg.stdp_lr * 0.5 * bcm_to_scale(l23_bcm_mod)
-            dw = effective_lr * torch.outer(l23_activity, l23_activity)
+            # L2/3 recurrent
+            dw = effective_lr * 0.5 * bcm_to_scale(l23_bcm_mod) * torch.outer(
+                l23_spikes.float(), l23_spikes.float()
+            )
             with torch.no_grad():
                 self.w_l23_recurrent.data += dw
                 self.w_l23_recurrent.data.fill_diagonal_(0.0)
                 clamp_weights(self.w_l23_recurrent.data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
-        # L2/3 → L5
-        if l23_trace is not None and l5_trace is not None:
-            effective_lr = cfg.stdp_lr * bcm_to_scale(l5_bcm_mod)
-            dw = effective_lr * torch.outer(
-                l5_spikes.squeeze().float(),
-                l23_spikes.squeeze().float(),
-            )
-            with torch.no_grad():
-                self.w_l23_l5.data += dw
-                clamp_weights(self.w_l23_l5.data, cfg.w_min, cfg.w_max)
-            total_change += dw.abs().mean().item()
+            # L2/3 → L5
+            if l5_spikes is not None:
+                dw = effective_lr * bcm_to_scale(l5_bcm_mod) * torch.outer(
+                    l5_spikes.float(),
+                    l23_spikes.float(),
+                )
+                with torch.no_grad():
+                    self.w_l23_l5.data += dw
+                    clamp_weights(self.w_l23_l5.data, cfg.w_min, cfg.w_max)
+                total_change += dw.abs().mean().item()
 
-        return {"weight_change": total_change}
+        # Store for monitoring
+        self.state.last_plasticity_delta = total_change
 
     def get_layer_outputs(self) -> Dict[str, Optional[torch.Tensor]]:
         """Get outputs from all layers."""

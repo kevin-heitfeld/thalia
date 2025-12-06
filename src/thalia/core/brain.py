@@ -618,16 +618,25 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
     ) -> None:
         """Deliver reward signal for learning.
 
-        Broadcasts dopamine to all regions and triggers plasticity.
+        Broadcasts dopamine to all regions for continuous plasticity.
+        With the continuous learning paradigm, dopamine modulates the
+        learning rate in each region's forward() method.
 
         Args:
             reward: Reward value (-1 to +1)
-            learning_rate: Optional learning rate override
+            learning_rate: Optional learning rate override (deprecated)
         """
         # Set global dopamine
         self._global_dopamine = reward
 
-        # Create dopamine events for all regions
+        # Set dopamine directly on all underlying regions for continuous plasticity
+        # This ensures plasticity is modulated even outside the event system
+        self.cortex.set_dopamine(reward)
+        self.hippocampus.set_dopamine(reward)
+        self.pfc.set_dopamine(reward)
+        # Striatum has its own dopamine system, handled via deliver_reward below
+
+        # Create dopamine events for all regions (event-driven pathway)
         for region_name in self.regions:
             delay = get_axonal_delay("vta", region_name)
             event = Event(
@@ -646,7 +655,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # Process dopamine events
         self._process_pending_events()
 
-        # Trigger striatum learning
+        # Trigger striatum learning (striatum has specialized three-factor rule)
         if self._last_action is not None:
             self.striatum.deliver_reward(reward)
 

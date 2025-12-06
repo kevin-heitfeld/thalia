@@ -10,10 +10,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, List
 
 import torch
-import torch.nn as nn
 
 
 class LearningRule(Enum):
@@ -91,10 +90,10 @@ class RegionState:
     # Eligibility traces (for RL)
     eligibility: Optional[torch.Tensor] = None
 
-    # Neuromodulator levels
-    dopamine: float = 0.0
-    acetylcholine: float = 0.0
-    norepinephrine: float = 0.0
+    # Neuromodulator levels (modulate plasticity)
+    dopamine: float = 0.0           # Reward signal: high = consolidate, low = exploratory
+    acetylcholine: float = 0.0      # Attention/novelty
+    norepinephrine: float = 0.0     # Arousal/flexibility
 
     # Homeostatic variables
     firing_rate_estimate: Optional[torch.Tensor] = None
@@ -114,6 +113,19 @@ class BrainRegion(ABC):
 
     The key insight is that different brain regions use fundamentally
     different learning algorithms, optimized for different tasks.
+
+    CONTINUOUS PLASTICITY
+    =====================
+    Unlike traditional ML models, brain regions learn CONTINUOUSLY during
+    forward passes. The learning rate is modulated by neuromodulators:
+
+    - Dopamine: Modulates learning rate. High dopamine = consolidate good patterns.
+    - Acetylcholine: Modulates attention and novelty detection.
+    - Norepinephrine: Modulates arousal and flexibility.
+
+    The `forward()` method applies plasticity at each timestep, modulated by
+    neuromodulators. There is no separate `learn()` method - this is intentional!
+    In biological brains, learning IS dynamics, not a separate phase.
     """
 
     def __init__(self, config: RegionConfig):
@@ -136,6 +148,73 @@ class BrainRegion(ABC):
 
         # Learning rule for this region
         self.learning_rule = self._get_learning_rule()
+
+        # =================================================================
+        # CONTINUOUS PLASTICITY SETTINGS
+        # =================================================================
+        self.plasticity_enabled: bool = True       # Can be disabled for eval
+        self.base_learning_rate: float = config.learning_rate
+
+    def set_dopamine(self, level: float) -> None:
+        """Set dopamine level (modulates plasticity rate).
+
+        Args:
+            level: Dopamine level, typically in [-1, 1].
+                   Positive = reward, consolidate current patterns
+                   Negative = punishment, reduce current patterns
+                   Zero = baseline learning rate
+        """
+        self.state.dopamine = level
+
+    def decay_neuromodulators(
+        self,
+        dt_ms: float = 1.0,
+        dopamine_tau_ms: float = 200.0,
+        acetylcholine_tau_ms: float = 50.0,
+        norepinephrine_tau_ms: float = 100.0,
+    ) -> None:
+        """Decay neuromodulator levels toward baseline.
+
+        Call this at each timestep for realistic dynamics.
+        Uses exponential decay toward zero (baseline).
+
+        Args:
+            dt_ms: Time step in milliseconds
+            dopamine_tau_ms: Dopamine decay time constant (default 200ms)
+            acetylcholine_tau_ms: ACh decay time constant (default 50ms)
+            norepinephrine_tau_ms: NE decay time constant (default 100ms)
+
+        Note:
+            Subclasses can override defaults or use region-specific configs.
+            E.g., Striatum uses striatum_config.dopamine_tau_ms.
+        """
+        import math
+        self.state.dopamine *= math.exp(-dt_ms / dopamine_tau_ms)
+        self.state.acetylcholine *= math.exp(-dt_ms / acetylcholine_tau_ms)
+        self.state.norepinephrine *= math.exp(-dt_ms / norepinephrine_tau_ms)
+
+    def get_effective_learning_rate(self, base_lr: Optional[float] = None) -> float:
+        """Compute learning rate modulated by dopamine.
+
+        The effective learning rate is:
+            base_lr * (1 + dopamine)
+
+        This means:
+            - dopamine = 0: baseline learning
+            - dopamine = 1: 2x learning rate (strong consolidation)
+            - dopamine = -0.5: 0.5x learning rate (reduced learning)
+            - dopamine = -1: no learning (fully suppressed)
+
+        Args:
+            base_lr: Base learning rate to modulate. If None, uses self.base_learning_rate
+
+        Returns:
+            Effective learning rate for this timestep
+        """
+        # Clamp to prevent negative learning rates
+        modulation = max(0.0, 1.0 + self.state.dopamine)
+        lr = base_lr if base_lr is not None else self.base_learning_rate
+        return lr * modulation
 
     @abstractmethod
     def _get_learning_rule(self) -> LearningRule:
@@ -168,7 +247,11 @@ class BrainRegion(ABC):
         retrieval_mod: float = 1.0,
         **kwargs
     ) -> torch.Tensor:
-        """Process input through the region.
+        """Process input through the region AND apply continuous plasticity.
+
+        This is the main computation method. Unlike traditional ML models,
+        brain regions learn CONTINUOUSLY during forward passes. Plasticity
+        is applied at each timestep, modulated by neuromodulators (dopamine).
 
         Args:
             input_spikes: Input spike tensor, shape (batch, n_input)
@@ -179,25 +262,6 @@ class BrainRegion(ABC):
 
         Returns:
             Output spikes, shape (batch, n_output)
-        """
-        pass
-
-    @abstractmethod
-    def learn(
-        self,
-        input_spikes: torch.Tensor,
-        output_spikes: torch.Tensor,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """Apply the region's learning rule.
-
-        Args:
-            input_spikes: Input that caused the output
-            output_spikes: Output produced by the region
-            **kwargs: Learning signal (target, reward, error, etc.)
-
-        Returns:
-            Dictionary with learning statistics (weight changes, etc.)
         """
         pass
 

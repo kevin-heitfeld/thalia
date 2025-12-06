@@ -286,8 +286,8 @@ class LocalTrainer:
                 target_ids=target_ids,
             )
 
-            # Apply weight updates
-            self._apply_learning(model, learning_signals)
+            # Apply weight updates (brain + decoder)
+            self._apply_learning(model, learning_signals, target_ids)
 
             # Compute metrics
             accuracy = self._compute_accuracy(model, result, target_ids)
@@ -331,6 +331,10 @@ class LocalTrainer:
         This processes tokens through the brain and collects
         spike activity for learning.
         """
+        # Reset spike counts before processing (they're cumulative in the brain)
+        if hasattr(model.brain, '_spike_counts'):
+            model.brain._spike_counts = {name: 0 for name in model.brain.regions}
+        
         # Process through language interface
         result = model.process_tokens(input_ids)
 
@@ -417,67 +421,61 @@ class LocalTrainer:
         self,
         model: "LanguageBrainInterface",
         learning_signals: Dict[str, torch.Tensor],
+        target_ids: torch.Tensor,
     ) -> None:
         """
-        Apply local learning rules to update weights.
+        Trigger learning in the brain and decoder.
 
-        This modifies weights using:
-        - STDP if spike timing available
-        - BCM threshold adaptation
-        - Hebbian correlation
-        - Predictive coding (if PredictiveCortex is used)
+        The brain learns through dopamine-modulated plasticity:
+        1. Forward pass accumulated eligibility traces (who fired with whom)
+        2. Reward signal is computed from prediction accuracy
+        3. deliver_reward() broadcasts dopamine to all regions
+        4. Each region uses eligibility + dopamine to update weights
+
+        The decoder learns separately via Hebbian delta rule (it's outside
+        the brain - a measurement device that maps activity to tokens).
         """
-        # Access the brain through the interface
         brain = model.brain
 
         # =====================================================================
-        # PREDICTIVE CORTEX LEARNING
+        # COMPUTE REWARD SIGNAL
         # =====================================================================
-        # If using PredictiveCortex, call its learn() method which uses
-        # local prediction errors (no backprop!)
-        if hasattr(brain.cortex, 'learn') and callable(brain.cortex.learn):
-            # Get reward signal from prediction error if available
-            reward_signal = None
-            if "prediction_error" in learning_signals:
-                # Invert prediction error: low error = high reward
-                pred_error = learning_signals["prediction_error"]
-                reward_signal = 1.0 - pred_error.clamp(0, 1)
-            
-            # Get input/output spikes from eligibility if available
-            input_spikes = learning_signals.get("eligibility", torch.zeros(1))
-            output_spikes = learning_signals.get("eligibility", torch.zeros(1))
-            
-            # Trigger local learning in predictive cortex
-            # BrainRegion.learn signature: (input_spikes, output_spikes, **kwargs)
-            cortex_metrics = brain.cortex.learn(
-                input_spikes=input_spikes,
-                output_spikes=output_spikes,
-                reward_signal=reward_signal,
-            )
-            # Could log cortex_metrics here if needed
+        # Convert prediction error to reward: low error = high reward
+        reward = 0.0
+        if "prediction_error" in learning_signals:
+            pred_error = learning_signals["prediction_error"]
+            # Reward ranges from -1 (all wrong) to +1 (all correct)
+            # pred_error is 0-1, so reward = 1 - 2*error maps [0,1] to [1,-1]
+            if isinstance(pred_error, torch.Tensor):
+                pred_error = pred_error.mean().item()
+            reward = 1.0 - 2.0 * pred_error
+            reward = max(-1.0, min(1.0, reward))  # Clamp to [-1, 1]
 
         # =====================================================================
-        # GLOBAL LEARNING RULE MODULATION
+        # BRAIN LEARNING (via dopamine)
         # =====================================================================
-        if self.config.use_stdp:
-            # STDP is typically applied within regions during forward pass
-            # Here we can modulate the learning rate globally
-            pass
+        # deliver_reward broadcasts dopamine to ALL regions, triggering:
+        # - Striatum: reward-modulated STDP for action selection
+        # - Cortex: dopamine-gated plasticity (via event system)
+        # - Hippocampus: experience encoding for replay
+        brain.deliver_reward(reward)
 
-        if self.config.use_bcm:
-            # BCM threshold adaptation would update based on activity
-            spike_rate = learning_signals.get("spike_rate", torch.tensor(0.0))
-            # Regions handle their own BCM internally
-
-        if self.config.use_hebbian:
-            # Simple Hebbian: correlate pre and post activity
-            if "eligibility" in learning_signals:
-                # Regions handle Hebbian learning internally
-                pass
-
-        # Note: The actual weight updates happen within the brain regions
-        # during their forward pass via their built-in learning rules.
-        # This method is mainly for global coordination and modulation.
+        # =====================================================================
+        # DECODER LEARNING (Hebbian delta rule)
+        # =====================================================================
+        # The decoder is OUTSIDE the brain - it's a readout layer that maps
+        # brain activity patterns to token probabilities. It learns via a
+        # local delta rule: W += lr * outer(error, activity)
+        if hasattr(model.decoder, 'learn') and callable(model.decoder.learn):
+            decoder_metrics = model.decoder.learn(target_ids=target_ids)
+            # Log decoder learning progress periodically
+            if self.global_step % 10 == 0 and decoder_metrics:
+                if decoder_metrics.get("skipped"):
+                    print(f"  [Decoder] Skipped - no features stored")
+                else:
+                    print(f"  [Decoder] error={decoder_metrics.get('error', 0):.4f}, "
+                          f"updates={decoder_metrics.get('n_updates', 0)}, "
+                          f"reward={reward:.3f}")
 
     def _compute_accuracy(
         self,

@@ -63,13 +63,18 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
 
         In the cerebellum, dopamine modulates climbing fiber sensitivity.
         We use the dopamine signal as a proxy for error feedback.
+        
+        Note: Cerebellum uses error-corrective learning which requires an
+        explicit target signal. Dopamine in the cerebellum primarily modulates
+        plasticity rate, not direction. For proper cerebellar learning, use
+        learn_with_error() with an explicit target.
         """
-        # Convert dopamine to error signal for learning
+        # Set dopamine level for plasticity modulation
+        self.cerebellum.state.dopamine = payload.level
+        
+        # Only apply immediate learning if we have both input/output AND a clear error signal
         if self._recent_input is not None and self._recent_output is not None:
-            # Use dopamine as teaching signal
-            # Positive dopamine = correct, negative = error
-            error_magnitude = abs(payload.level)
-            if error_magnitude > 0.1 and hasattr(self.cerebellum, "learn"):
+            if abs(payload.level) > 0.1 and hasattr(self.cerebellum, "learn"):
                 # Create target based on dopamine direction
                 # Positive: reinforce current output
                 # Negative: suppress current output

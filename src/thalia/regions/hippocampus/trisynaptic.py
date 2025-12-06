@@ -856,6 +856,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Store spikes in base state for compatibility
         # CA1 spikes ARE the output - downstream learns from these patterns!
         self.state.spikes = ca1_spikes
+        
+        # Apply continuous plasticity (learning happens as part of forward dynamics)
+        self._apply_plasticity(input_spikes, ca1_spikes, dt)
 
         return ca1_spikes
 
@@ -905,19 +908,28 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self.state.dg_trace = None
         self.state.ca3_trace = None
 
-    def learn(
+    def _apply_plasticity(
         self,
         input_spikes: torch.Tensor,
         output_spikes: torch.Tensor,
         dt: float = 1.0,
-        **kwargs
-    ) -> Dict[str, Any]:
+    ) -> None:
         """
-        Apply STDP learning to circuit weights.
-
+        Apply continuous STDP learning to circuit weights.
+        
+        Called automatically at each forward() timestep.
         CA3 recurrent connections learn via STDP to create attractors.
+        Learning rate is modulated by dopamine (via get_effective_learning_rate).
         """
+        if not self.plasticity_enabled:
+            return
+            
         cfg = self.tri_config
+        
+        # Get dopamine-modulated learning rate
+        effective_lr = self.get_effective_learning_rate(cfg.ca3_learning_rate)
+        if effective_lr < 1e-8:
+            return
 
         # CA3 recurrent STDP: strengthen connections between co-active neurons
         if self.state.ca3_trace is not None and self.state.ca3_spikes is not None:
@@ -928,18 +940,12 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             ltp = torch.outer(ca3_post, ca3_trace)
             ltd = torch.outer(ca3_trace, ca3_post) * 0.5  # Weaker LTD
 
-            dW = cfg.ca3_learning_rate * (ltp - ltd)
+            dW = effective_lr * (ltp - ltd)
 
             with torch.no_grad():
                 self.w_ca3_ca3.data += dW
                 self.w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
                 clamp_weights(self.w_ca3_ca3.data, cfg.w_min, cfg.w_max)
-
-        return {
-            "ca3_weight_mean": self.w_ca3_ca3.data.mean().item(),
-            "dg_sparsity": self.state.dg_spikes.float().mean().item() if self.state.dg_spikes is not None else 0,
-            "ca3_sparsity": self.state.ca3_spikes.float().mean().item() if self.state.ca3_spikes is not None else 0,
-        }
 
     def get_state(self) -> TrisynapticState:
         """Get current state."""
