@@ -158,26 +158,34 @@ class TestDendriticNeuronProperties:
     @given(
         n_neurons=st.integers(min_value=1, max_value=100),
         n_branches=st.integers(min_value=1, max_value=10),
-        n_inputs_per_branch=st.integers(min_value=1, max_value=50),
+        inputs_per_branch=st.integers(min_value=1, max_value=50),
         batch_size=st.integers(min_value=1, max_value=32),
     )
     @settings(max_examples=30, deadline=2000)
-    def test_dendritic_shape_consistency(self, n_neurons, n_branches, n_inputs_per_branch, batch_size):
+    def test_dendritic_shape_consistency(self, n_neurons, n_branches, inputs_per_branch, batch_size):
         """Test dendritic neuron maintains correct shapes."""
         config = DendriticNeuronConfig(
             n_branches=n_branches,
-            n_inputs_per_branch=n_inputs_per_branch,
+            inputs_per_branch=inputs_per_branch,
         )
         neuron = DendriticNeuron(n_neurons=n_neurons, config=config)
         neuron.reset_state(batch_size=batch_size)
 
-        total_inputs = n_branches * n_inputs_per_branch
+        total_inputs = n_branches * inputs_per_branch
         input_spikes = torch.randn(batch_size, total_inputs)
 
         output = neuron(input_spikes)
-
-        assert output.shape == (batch_size, n_neurons), \
-            f"Expected shape ({batch_size}, {n_neurons}), got {output.shape}"
+        
+        # DendriticNeuron returns (spikes, membrane) tuple
+        if isinstance(output, tuple):
+            spikes, membrane = output
+            assert spikes.shape == (batch_size, n_neurons), \
+                f"Expected spike shape ({batch_size}, {n_neurons}), got {spikes.shape}"
+            assert membrane.shape == (batch_size, n_neurons), \
+                f"Expected membrane shape ({batch_size}, {n_neurons}), got {membrane.shape}"
+        else:
+            assert output.shape == (batch_size, n_neurons), \
+                f"Expected shape ({batch_size}, {n_neurons}), got {output.shape}"
 
 
 @pytest.mark.unit

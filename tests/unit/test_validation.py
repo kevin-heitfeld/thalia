@@ -263,18 +263,18 @@ class TestDendriticNeuronValidation:
     def test_rejects_zero_branches(self):
         """Test that zero branches is rejected."""
         with pytest.raises((ValueError, AssertionError)):
-            DendriticNeuronConfig(n_branches=0, n_inputs_per_branch=10)
+            DendriticNeuronConfig(n_branches=0, inputs_per_branch=10)
 
     def test_rejects_zero_inputs(self):
         """Test that zero inputs per branch is rejected."""
         with pytest.raises((ValueError, AssertionError)):
-            DendriticNeuronConfig(n_branches=5, n_inputs_per_branch=0)
+            DendriticNeuronConfig(n_branches=5, inputs_per_branch=0)
 
     def test_handles_single_branch(self):
         """Test edge case of single dendritic branch."""
         config = DendriticNeuronConfig(
             n_branches=1,
-            n_inputs_per_branch=10,
+            inputs_per_branch=10,
         )
         neuron = DendriticNeuron(n_neurons=5, config=config)
         neuron.reset_state(batch_size=2)
