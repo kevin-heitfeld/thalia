@@ -12,14 +12,13 @@ Usage:
 """
 
 from .config import StriatumConfig
-from .dopamine import DopamineSystem, EligibilityTraces
+from .eligibility import EligibilityTraces
 from .action_selection import ActionSelectionMixin
 from .striatum import Striatum
 
 __all__ = [
     "Striatum",
     "StriatumConfig",
-    "DopamineSystem",
     "EligibilityTraces",
     "ActionSelectionMixin",
 ]

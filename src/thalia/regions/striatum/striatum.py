@@ -66,7 +66,7 @@ from thalia.learning.unified_homeostasis import (
 )
 
 from .config import StriatumConfig
-from .dopamine import EligibilityTraces
+from .eligibility import EligibilityTraces
 from .action_selection import ActionSelectionMixin
 
 

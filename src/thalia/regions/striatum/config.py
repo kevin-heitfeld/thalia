@@ -22,22 +22,13 @@ class StriatumConfig(RegionConfig):
     2. D1/D2 OPPONENT PATHWAYS: Go/No-Go balance
     3. POPULATION CODING: Multiple neurons per action
     4. ADAPTIVE EXPLORATION: UCB + uncertainty-driven
+    
+    Note: Dopamine/RPE computation has been centralized at the Brain level
+    (Brain acts as VTA). Striatum receives dopamine via set_dopamine().
     """
 
     # Eligibility trace parameters (biological: 500-2000ms)
     eligibility_tau_ms: float = 1000.0
-
-    # =========================================================================
-    # UNIFIED RPE NORMALIZATION
-    # =========================================================================
-    normalize_rpe: bool = True
-    rpe_avg_tau: float = 0.9
-    rpe_clip: float = 2.0
-
-    # Legacy dopamine parameters (only used if normalize_rpe=False)
-    dopamine_burst: float = 1.0
-    dopamine_dip: float = -1.0
-    dopamine_tau_ms: float = 200.0
 
     # Learning rate
     learning_rate: float = 0.005
