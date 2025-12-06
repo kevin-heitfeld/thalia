@@ -113,7 +113,8 @@ def run_trial(
     correct = (action == correct_action)
     reward = 1.0 if correct else -1.0
 
-    brain.deliver_reward(reward)
+    # External reward adds to intrinsic rewards (which flow continuously)
+    brain.deliver_reward(external_reward=reward)
     
     # 6. Store experience for later replay during sleep
     brain.store_experience(

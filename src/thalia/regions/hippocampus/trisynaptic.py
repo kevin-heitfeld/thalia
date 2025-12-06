@@ -1106,3 +1106,23 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # Episode buffer
             "episode_buffer_size": len(self.episode_buffer),
         }
+
+    def get_pattern_similarity(self) -> Optional[float]:
+        """Get similarity between stored and current DG patterns.
+
+        This measures how well the current input matches the stored memory,
+        providing an intrinsic reward signal for pattern completion.
+        High similarity = successful recall = good memory system.
+
+        Returns:
+            Cosine similarity (0.0 to 1.0), or None if no stored pattern
+        """
+        if (self.state.stored_dg_pattern is None or 
+            self.state.dg_spikes is None):
+            return None
+
+        stored = self.state.stored_dg_pattern.float().squeeze()
+        current = self.state.dg_spikes.float().squeeze()
+
+        similarity = cosine_similarity_safe(stored, current)
+        return similarity.item()

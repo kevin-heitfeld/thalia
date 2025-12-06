@@ -23,7 +23,7 @@ Example usage:
     result = brain.delay(10)
     result = brain.process_test(test_pattern)
     action, confidence = brain.select_action()
-    brain.deliver_reward(reward=1.0)
+    brain.deliver_reward(external_reward=1.0)  # Intrinsic rewards flow continuously
     
     # Sleep consolidation
     brain.sleep_epoch(n_cycles=5)

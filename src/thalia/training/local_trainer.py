@@ -447,21 +447,13 @@ class LocalTrainer:
         brain = model.brain
 
         # =====================================================================
-        # INTRINSIC BRAIN REWARD (self-supervised)
+        # BRAIN LEARNING (intrinsic reward computed internally)
         # =====================================================================
-        # The brain learns via its own internal objectives, NOT decoder accuracy.
-        # This is biologically correct: the brain minimizes surprise/free energy,
-        # it doesn't have access to an external "correctness" signal.
-        intrinsic_reward = self._compute_intrinsic_reward(brain)
-
-        # =====================================================================
-        # BRAIN LEARNING (via dopamine from intrinsic reward)
-        # =====================================================================
-        # deliver_reward broadcasts dopamine to ALL regions, triggering:
-        # - Striatum: reward-modulated STDP for action selection
-        # - Cortex: dopamine-gated plasticity
-        # - Hippocampus: experience encoding
-        brain.deliver_reward(intrinsic_reward)
+        # deliver_reward now computes intrinsic reward INSIDE the brain.
+        # The brain rewards itself for good predictions (free energy principle).
+        # We pass 0.0 as external reward for self-supervised language learning.
+        # External rewards would be provided by task-specific trainers.
+        brain.deliver_reward(external_reward=0.0)
 
         # =====================================================================
         # DECODER LEARNING (separate, supervised)
@@ -478,99 +470,7 @@ class LocalTrainer:
                     print(f"  [Decoder] Skipped - no features stored")
                 else:
                     print(f"  [Decoder] error={decoder_metrics.get('error', 0):.4f}, "
-                          f"updates={decoder_metrics.get('n_updates', 0)}, "
-                          f"intrinsic_reward={intrinsic_reward:.3f}")
-
-    def _compute_intrinsic_reward(self, brain: Any) -> float:
-        """
-        Compute reward from brain's internal objectives (self-supervised).
-
-        The brain should be rewarded for good INTERNAL predictions,
-        not for decoder accuracy. This implements the free energy principle:
-        the brain minimizes surprise by improving its predictive model.
-
-        Intrinsic reward sources:
-        1. Cortex predictive coding: Low prediction error → good model → reward
-        2. Hippocampus pattern completion: Successful recall → reward
-        3. Activity homeostasis: Stable firing rates → reward
-
-        This is biologically plausible:
-        - Dopamine neurons respond to prediction errors
-        - Reward = "better than expected" = negative surprise
-        - The brain rewards itself for learning the world's structure
-
-        Args:
-            brain: Brain instance with cortex and hippocampus
-
-        Returns:
-            Intrinsic reward in range [-1, 1]
-        """
-        reward = 0.0
-        n_sources = 0
-
-        # =====================================================================
-        # 1. CORTEX PREDICTIVE CODING (free energy minimization)
-        # =====================================================================
-        # The cortex predicts its inputs. Low prediction error = good model.
-        # PredictiveCortex stores free_energy in its state.
-        if hasattr(brain, 'cortex') and brain.cortex is not None:
-            cortex = brain.cortex
-
-            # Check for PredictiveCortex with free_energy
-            if hasattr(cortex, 'state') and hasattr(cortex.state, 'free_energy'):
-                free_energy = cortex.state.free_energy
-
-                # Free energy is typically 0-10, where lower is better
-                # Map to reward: 0 → +1, 5 → 0, 10+ → -1
-                # Using: reward = 1 - 0.2 * free_energy, clamped to [-1, 1]
-                cortex_reward = 1.0 - 0.2 * min(free_energy, 10.0)
-                cortex_reward = max(-1.0, min(1.0, cortex_reward))
-                reward += cortex_reward
-                n_sources += 1
-
-            # Fallback: check for accumulated free energy
-            elif hasattr(cortex, '_total_free_energy'):
-                total_fe = cortex._total_free_energy
-                # Normalize by some expected range
-                cortex_reward = 1.0 - 0.1 * min(total_fe, 20.0)
-                cortex_reward = max(-1.0, min(1.0, cortex_reward))
-                reward += cortex_reward
-                n_sources += 1
-
-        # =====================================================================
-        # 2. HIPPOCAMPUS PATTERN COMPLETION (memory recall quality)
-        # =====================================================================
-        # The hippocampus tries to complete/recognize patterns.
-        # Successful pattern completion = good episodic memory.
-        if hasattr(brain, 'hippocampus') and brain.hippocampus is not None:
-            hippo = brain.hippocampus
-
-            # Check for pattern match quality from last retrieval
-            if hasattr(hippo, 'state') and hasattr(hippo.state, 'retrieval_similarity'):
-                similarity = hippo.state.retrieval_similarity
-                if similarity is not None:
-                    # Similarity is typically 0-1, map to [-1, 1]
-                    hippo_reward = 2.0 * similarity - 1.0
-                    reward += 0.5 * hippo_reward  # Weight less than cortex
-                    n_sources += 1
-
-        # =====================================================================
-        # 3. ACTIVITY HOMEOSTASIS (implicit via firing rate)
-        # =====================================================================
-        # Stable, moderate firing rates are healthy.
-        # This is mostly handled by unified homeostasis, but we can add a small
-        # bonus for being in a good activity regime.
-        # (Currently implicit - could add if needed)
-
-        # Average across sources
-        if n_sources > 0:
-            reward = reward / n_sources
-        else:
-            # No intrinsic signals available - use neutral reward
-            # This shouldn't happen with a properly configured brain
-            reward = 0.0
-
-        return max(-1.0, min(1.0, reward))
+                          f"updates={decoder_metrics.get('n_updates', 0)}")
 
     def _compute_accuracy(
         self,

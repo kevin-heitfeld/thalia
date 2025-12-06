@@ -196,8 +196,8 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # Get action selection
         action, confidence = brain.select_action()
 
-        # Learn from reward
-        brain.deliver_reward(reward=1.0)
+        # Learn from external reward (intrinsic rewards are computed continuously)
+        brain.deliver_reward(external_reward=1.0)
     """
 
     def __init__(self, config: EventDrivenBrainConfig):
@@ -626,41 +626,57 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         return action, confidence
 
-    def deliver_reward(self, reward: float) -> None:
-        """Deliver reward signal for learning.
+    def deliver_reward(self, external_reward: float = 0.0) -> None:
+        """Deliver external reward signal for learning.
 
         Brain acts as VTA (ventral tegmental area):
-        1. Queries striatum for expected value of the action taken
-        2. Computes reward prediction error (RPE = reward - expected)
-        3. Normalizes RPE using adaptive scaling
-        4. Broadcasts normalized dopamine to ALL regions
+        1. Combines external reward with current intrinsic reward
+        2. Queries striatum for expected value of the action taken
+        3. Computes reward prediction error (RPE = reward - expected)
+        4. Normalizes RPE using adaptive scaling
+        5. Broadcasts normalized dopamine to ALL regions
 
-        This centralized dopamine system ensures all regions receive the
-        same RPE-based learning signal, which is biologically correct:
-        VTA dopamine neurons project broadly to cortex, hippocampus,
-        striatum, and prefrontal areas.
+        Note: Intrinsic reward (from prediction errors) is computed CONTINUOUSLY
+        during `_run_timesteps_sequential`. This method adds external reward
+        on top for task-based learning.
 
         Args:
-            reward: Reward value (-1 to +1)
+            external_reward: Task-based reward value (-1 to +1), default 0.0
         """
         # =====================================================================
-        # STEP 1: Get expected value from striatum
+        # STEP 1: Combine external reward with current intrinsic state
+        # =====================================================================
+        # Intrinsic reward is already flowing continuously via _update_tonic_dopamine()
+        # External reward adds a phasic component
+        intrinsic = self._compute_intrinsic_reward()
+        
+        if external_reward != 0.0:
+            # When external signal is present, weight it higher (phasic burst)
+            total_reward = 0.3 * intrinsic + 0.7 * external_reward
+        else:
+            total_reward = intrinsic
+
+        # Clamp to valid range
+        total_reward = max(-1.0, min(1.0, total_reward))
+
+        # =====================================================================
+        # STEP 3: Get expected value from striatum
         # =====================================================================
         expected = self.striatum.get_expected_value(self._last_action)
 
         # =====================================================================
-        # STEP 2: Compute reward prediction error
+        # STEP 4: Compute reward prediction error
         # =====================================================================
-        rpe = reward - expected
+        rpe = total_reward - expected
 
         # =====================================================================
-        # STEP 3: Normalize RPE (adaptive to reward statistics)
+        # STEP 5: Normalize RPE (adaptive to reward statistics)
         # =====================================================================
         # This prevents saturation when reward magnitudes vary
         da_level = self._compute_normalized_dopamine(rpe)
 
         # =====================================================================
-        # STEP 4: Broadcast to ALL regions (centralized VTA output)
+        # STEP 6: Broadcast to ALL regions (centralized VTA output)
         # =====================================================================
         self._global_dopamine = da_level
 
@@ -693,17 +709,17 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self._process_pending_events()
 
         # =====================================================================
-        # STEP 5: Trigger striatum learning (D1/D2 plasticity)
+        # STEP 7: Trigger striatum learning (D1/D2 plasticity)
         # =====================================================================
         # Striatum applies three-factor learning using the dopamine we just set
         if self._last_action is not None:
-            self.striatum.deliver_reward(reward)
+            self.striatum.deliver_reward(total_reward)
 
         # =====================================================================
-        # STEP 6: Update value estimate in striatum
+        # STEP 8: Update value estimate in striatum
         # =====================================================================
         if self._last_action is not None:
-            self.striatum.update_value_estimate(self._last_action, reward)
+            self.striatum.update_value_estimate(self._last_action, total_reward)
 
     def _compute_normalized_dopamine(self, rpe: float) -> float:
         """Compute normalized dopamine from raw RPE.
@@ -741,6 +757,105 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         # Clip to prevent extreme updates
         return max(-self._vta_rpe_clip, min(self._vta_rpe_clip, normalized_rpe))
+
+    def _compute_intrinsic_reward(self) -> float:
+        """Compute intrinsic reward from the brain's internal objectives.
+
+        This implements the free energy principle: the brain rewards itself
+        for minimizing prediction error (surprise). Intrinsic reward is
+        ALWAYS computed - it's the brain's continuous self-evaluation.
+
+        Sources:
+        1. **Cortex predictive coding**: Low free energy → good predictions → reward
+        2. **Hippocampus pattern completion**: High similarity → successful recall → reward
+
+        This is biologically plausible:
+        - VTA dopamine neurons respond to internal prediction errors
+        - Curiosity and "eureka" moments are intrinsically rewarding
+        - The brain learns even without external feedback
+
+        Returns:
+            Intrinsic reward in range [-1, 1]
+        """
+        reward = 0.0
+        n_sources = 0
+
+        # =====================================================================
+        # 1. CORTEX PREDICTIVE CODING (free energy minimization)
+        # =====================================================================
+        # Low prediction error = good model of the world = reward
+        if hasattr(self.cortex, 'state') and hasattr(self.cortex.state, 'free_energy'):
+            free_energy = self.cortex.state.free_energy
+
+            # Free energy is typically 0-10, lower is better
+            # Map: 0 → +1 (perfect prediction), 5 → 0, 10+ → -1 (bad prediction)
+            cortex_reward = 1.0 - 0.2 * min(free_energy, 10.0)
+            cortex_reward = max(-1.0, min(1.0, cortex_reward))
+            reward += cortex_reward
+            n_sources += 1
+
+        # Fallback: check for accumulated free energy in PredictiveCortex
+        elif hasattr(self.cortex, '_total_free_energy'):
+            total_fe = self.cortex._total_free_energy
+            cortex_reward = 1.0 - 0.1 * min(total_fe, 20.0)
+            cortex_reward = max(-1.0, min(1.0, cortex_reward))
+            reward += cortex_reward
+            n_sources += 1
+
+        # =====================================================================
+        # 2. HIPPOCAMPUS PATTERN COMPLETION (memory recall quality)
+        # =====================================================================
+        # High pattern similarity = successful memory retrieval = reward
+        if hasattr(self.hippocampus, 'get_pattern_similarity'):
+            similarity = self.hippocampus.get_pattern_similarity()
+            if similarity is not None:
+                # Similarity is 0-1, map to [-1, 1]
+                hippo_reward = 2.0 * similarity - 1.0
+                # Weight slightly less than cortex (memory is secondary to prediction)
+                reward += 0.5 * hippo_reward
+                n_sources += 1
+
+        # =====================================================================
+        # Average across sources
+        # =====================================================================
+        if n_sources > 0:
+            reward = reward / n_sources
+        else:
+            # No intrinsic signals available - neutral
+            reward = 0.0
+
+        return max(-1.0, min(1.0, reward))
+
+    def _update_tonic_dopamine(self) -> None:
+        """Update tonic dopamine level based on continuous intrinsic reward.
+
+        This should be called every timestep. It computes the brain's
+        self-evaluation (prediction quality) and sets a tonic dopamine level
+        that modulates ongoing plasticity.
+
+        Unlike phasic dopamine (from deliver_reward), tonic dopamine:
+        - Varies slowly and continuously
+        - Reflects ongoing prediction quality
+        - Modulates learning rates rather than triggering discrete updates
+
+        This is biologically correct: VTA neurons fire tonically at ~4-5Hz
+        and this baseline is modulated by ongoing prediction errors.
+        """
+        # Compute current intrinsic reward
+        intrinsic = self._compute_intrinsic_reward()
+
+        # Smooth the dopamine signal (tonic = slow changes)
+        # Use exponential moving average with tau ~100ms
+        alpha = 0.1  # Smoothing factor per timestep
+        self._global_dopamine = (1 - alpha) * self._global_dopamine + alpha * intrinsic
+
+        # Set dopamine on all regions (they use it for ongoing plasticity)
+        self.cortex.set_dopamine(self._global_dopamine)
+        self.hippocampus.set_dopamine(self._global_dopamine)
+        self.pfc.set_dopamine(self._global_dopamine)
+        self.striatum.set_dopamine(self._global_dopamine)
+        self.cerebellum.set_dopamine(self._global_dopamine)
+
 
     def store_experience(
         self,
@@ -1163,7 +1278,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                 )
                 self.scheduler.schedule(event)
 
-            # Schedule dopamine if specified
+            # Schedule dopamine if specified (external override)
             if abs(dopamine) > 1e-6:
                 for region_name in ["striatum", "pfc"]:
                     delay = get_axonal_delay("vta", region_name)
@@ -1175,6 +1290,14 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                         payload=DopaminePayload(level=dopamine),
                     )
                     self.scheduler.schedule(event)
+
+            # =========================================================
+            # CONTINUOUS INTRINSIC DOPAMINE (tonic modulation)
+            # =========================================================
+            # Update tonic dopamine based on ongoing prediction quality.
+            # This happens every timestep - the brain continuously
+            # evaluates its own predictions and modulates learning rates.
+            self._update_tonic_dopamine()
 
         # Update time
         end_time = self._current_time + n_timesteps * self.config.dt_ms
@@ -1404,9 +1527,9 @@ def test_event_driven_brain():
     action, confidence = brain.select_action()
     print(f"\n  Selected action: {action} (confidence: {confidence:.2f})")
 
-    # Deliver reward
-    print("  Delivering reward...")
-    brain.deliver_reward(reward=1.0)
+    # Deliver external reward (intrinsic rewards flow continuously)
+    print("  Delivering external reward...")
+    brain.deliver_reward(external_reward=1.0)
 
     # Diagnostics
     diag = brain.get_diagnostics()
