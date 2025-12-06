@@ -138,6 +138,10 @@ class LegacyTrainingConfig:
     reward_delay_timesteps: int = 10
     consolidation_timesteps: int = 50
 
+    # Decoder learning delay (brain pre-training)
+    # Don't train decoder until brain has stabilized for N steps
+    decoder_learning_start_step: int = 1000
+
     # Checkpointing
     checkpoint_dir: Optional[str] = None
 
@@ -311,25 +315,20 @@ class LocalTrainer:
             self._apply_learning(model, learning_signals, target_ids)
 
             # =========================================================
-            # PHASE 2: Reward & Consolidation (two-phase training)
+            # PHASE 2: Consolidation (let brain process with intrinsic rewards)
             # =========================================================
+            # Note: We do NOT call deliver_reward() here because:
+            # 1. Intrinsic rewards (from prediction quality) flow continuously
+            #    via the brain's _update_tonic_dopamine() mechanism
+            # 2. deliver_reward() is for EXTERNAL task rewards (e.g., game score)
+            #    which we don't have during unsupervised pre-training
+            # 3. The brain learns from its own prediction errors automatically
             if use_two_phase and hasattr(model.brain, 'run_consolidation'):
-                # Compute intrinsic reward from prediction accuracy
-                accuracy = self._compute_accuracy(model, result, target_ids)
-                
-                # Convert accuracy to reward signal (-1 to +1 scale)
-                # Good prediction → positive reward, poor → negative
-                intrinsic_reward = (accuracy - 0.5) * 2.0  # Maps [0,1] → [-1,1]
-                
-                # Deliver reward (sets phasic dopamine)
-                model.brain.deliver_reward(external_reward=intrinsic_reward)
-                
                 # Run consolidation timesteps
-                # This allows eligibility traces to interact with phasic dopamine
+                # This allows eligibility traces to interact with tonic dopamine
                 model.brain.run_consolidation(n_timesteps=consolidation_steps)
-            else:
-                accuracy = self._compute_accuracy(model, result, target_ids)
             
+            accuracy = self._compute_accuracy(model, result, target_ids)
             spike_rate = result.get("spike_rate", 0.0)
 
             epoch_accuracies.append(accuracy)
@@ -503,6 +502,16 @@ class LocalTrainer:
         # It maps brain patterns → tokens using delta rule.
         # This is like training an fMRI decoder - purely observational.
         # The decoder's performance does NOT affect the brain's reward.
+        #
+        # IMPORTANT: We delay decoder learning until the brain has stabilized.
+        # Early brain representations are noisy and rapidly changing - training
+        # the decoder on these would be like trying to learn a moving target.
+        decoder_start = getattr(self.config, 'decoder_learning_start_step', 0)
+        if self.global_step < decoder_start:
+            if self.global_step % 100 == 0:
+                print(f"  [Decoder] Waiting for brain pre-training ({self.global_step}/{decoder_start})")
+            return
+        
         if hasattr(model.decoder, 'learn') and callable(model.decoder.learn):
             decoder_metrics = model.decoder.learn(target_ids=target_ids)
             # Log decoder learning progress periodically

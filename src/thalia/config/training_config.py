@@ -130,6 +130,11 @@ class TrainingConfig:
     base_dopamine: float = 0.0  # Tonic dopamine level
     reward_scale: float = 1.0  # Scale factor for reward signals
 
+    # Decoder learning
+    # Don't train decoder until brain has stabilized for N steps
+    # This prevents chasing a moving target (brain representations change early)
+    decoder_learning_start_step: int = 100  # Reduced from 1000 for faster experiments
+
     # Two-phase training (stimulus → reward/consolidation)
     two_phase: TwoPhaseConfig = field(default_factory=TwoPhaseConfig)
 

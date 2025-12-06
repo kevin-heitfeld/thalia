@@ -15,14 +15,14 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 import json
 from pathlib import Path
 
 from .global_config import GlobalConfig
-from .brain_config import BrainConfig, RegionSizes, CortexConfig, HippocampusConfig, StriatumConfig
-from .language_config import LanguageConfig, EncodingConfig, DecodingConfig
-from .training_config import TrainingConfig, LearningRatesConfig
+from .brain_config import BrainConfig, RegionSizes
+from .language_config import LanguageConfig
+from .training_config import TrainingConfig
 
 
 @dataclass
@@ -173,6 +173,7 @@ class ThaliaConfig:
                 pfc_size=self.brain.sizes.pfc_size,
                 n_actions=self.brain.sizes.n_actions,
                 cortex_type=self.brain.cortex_type,
+                cortex_config=self.brain.cortex,  # Pass the full cortex config
                 dt_ms=self.global_.dt_ms,
                 theta_frequency_hz=self.global_.theta_frequency_hz,
                 encoding_timesteps=self.brain.encoding_timesteps,
@@ -239,6 +240,9 @@ class ThaliaConfig:
                 bcm_lr=self.training.learning_rates.bcm,
                 hebbian_lr=self.training.learning_rates.hebbian,
                 reward_signal=self.training.reward_scale,
+                two_phase_enabled=self.training.two_phase.enabled,
+                consolidation_timesteps=self.training.two_phase.consolidation_timesteps,
+                decoder_learning_start_step=self.training.decoder_learning_start_step,
                 checkpoint_dir=self.training.checkpoint.checkpoint_dir,
                 device=self.global_.device,
             )

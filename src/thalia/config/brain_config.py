@@ -10,12 +10,15 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from enum import Enum
 
 if TYPE_CHECKING:
     from .global_config import GlobalConfig
+
+# Import cortex configs from the canonical location
+from thalia.regions.cortex.config import LayeredCortexConfig
 
 
 class RegionType(Enum):
@@ -114,47 +117,8 @@ class RegionSizes:
         return "\n".join(lines)
 
 
-@dataclass
-class CortexConfig:
-    """Configuration specific to layered cortex.
-
-    These are cortex-specific parameters that don't apply to other regions.
-    Global parameters (device, dt_ms, etc.) come from GlobalConfig.
-    """
-
-    # Layer sparsity (fraction of neurons active)
-    l4_sparsity: float = 0.15
-    l23_sparsity: float = 0.10
-    l5_sparsity: float = 0.20
-
-    # Recurrence in L2/3
-    l23_recurrent_strength: float = 0.3
-    l23_recurrent_decay: float = 0.9
-
-    # Connection strengths
-    input_to_l4_strength: float = 0.5
-    l4_to_l23_strength: float = 0.4
-    l23_to_l5_strength: float = 0.4
-    l23_top_down_strength: float = 0.2
-
-    # STDP learning parameters
-    stdp_lr: float = 0.01
-    stdp_tau_plus: float = 20.0
-    stdp_tau_minus: float = 20.0
-
-    # Feedforward inhibition
-    ffi_enabled: bool = True
-    ffi_threshold: float = 0.3
-    ffi_strength: float = 0.8
-    ffi_tau: float = 5.0
-
-    # BCM sliding threshold
-    bcm_enabled: bool = False
-    bcm_tau_theta: float = 5000.0
-
-    # Output configuration
-    output_layer: str = "L5"
-    dual_output: bool = True
+# NOTE: CortexConfig has been removed - use LayeredCortexConfig from thalia.regions.cortex
+# for all cortex configuration. This is the single source of truth for cortex params.
 
 
 @dataclass
@@ -256,19 +220,35 @@ class CerebellumConfig:
     climbing_fiber_strength: float = 1.0
 
 
+def _default_cortex_config() -> LayeredCortexConfig:
+    """Create default cortex config with placeholder sizes.
+    
+    Note: n_input and n_output are set to 0 here because EventDrivenBrain
+    will override them based on RegionSizes. The actual layer sizes are
+    computed from RegionSizes.input_size and RegionSizes.cortex_size.
+    """
+    return LayeredCortexConfig(n_input=0, n_output=0)
+
+
 @dataclass
 class BrainConfig:
     """Complete brain configuration.
 
     Combines region sizes with region-specific parameters.
     Global parameters come from GlobalConfig.
+    
+    Note: cortex uses LayeredCortexConfig from thalia.regions.cortex.
+    The n_input/n_output in cortex config are ignored - sizes come from
+    RegionSizes.input_size and RegionSizes.cortex_size instead.
     """
 
     # Region sizes
     sizes: RegionSizes = field(default_factory=RegionSizes)
 
     # Region-specific configs
-    cortex: CortexConfig = field(default_factory=CortexConfig)
+    # Cortex: uses LayeredCortexConfig (or PredictiveCortexConfig for predictive mode)
+    # n_input/n_output are placeholders - actual sizes come from RegionSizes
+    cortex: LayeredCortexConfig = field(default_factory=_default_cortex_config)
     hippocampus: HippocampusConfig = field(default_factory=HippocampusConfig)
     striatum: StriatumConfig = field(default_factory=StriatumConfig)
     pfc: PFCConfig = field(default_factory=PFCConfig)

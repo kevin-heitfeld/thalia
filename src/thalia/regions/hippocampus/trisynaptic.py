@@ -354,32 +354,21 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self._init_state(batch_size=1)
 
     def new_trial(self) -> None:
-        """Prepare for a new trial (biologically-realistic alternative to reset).
+        """Prepare for a new sequence/episode.
 
-        This is the preferred method to call between trials because it:
-        1. Clears FFI input history (new stimulus = new comparison baseline)
-        2. Clears NMDA trace (prevents accumulation across trials)
-        3. Does NOT reset membrane potentials (let natural decay handle it)
+        With continuous learning, most state transitions happen via natural
+        dynamics (decay, FFI). This method only clears what MUST be cleared
+        for a new sequence - the stored patterns used for comparison.
 
-        The idea is that real neurons don't "reset" - they just receive new
-        input and the dynamics naturally transition. FFI handles the state
-        transitions that resets were approximating.
-
-        Note: Theta phase alignment is handled by BrainSystem since theta
-        is a global oscillation across all brain regions.
+        Call this when starting a completely new sequence where the previous
+        stored pattern is irrelevant. For continuous text processing within
+        a sequence, do NOT call this.
         """
-        # Clear FFI history so first stimulus triggers inhibition
-        self.feedforward_inhibition.clear()
-
-        # Clear stored patterns (this IS needed for new trial)
+        # Clear stored patterns - these are explicitly per-trial
         self.state.stored_dg_pattern = None
         self.state.sample_trace = None
 
-        # Clear NMDA trace to prevent accumulation across trials
-        # The NMDA trace is used for coincidence detection during RETRIEVE,
-        # and should start fresh for each trial's comparison
-        if self.state.nmda_trace is not None:
-            self.state.nmda_trace.zero_()
+        # Note: FFI and NMDA traces now decay naturally - no hard reset
 
     def _init_state(self, batch_size: int = 1) -> None:
         """Initialize all layer states (internal method)."""
@@ -402,9 +391,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             stored_dg_pattern=None,  # Set during sample phase
             ffi_strength=0.0,
         )
-
-        # Clear FFI history
-        self.feedforward_inhibition.clear()
 
     def forward(
         self,

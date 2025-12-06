@@ -53,9 +53,11 @@ class LayeredCortexConfig(RegionConfig):
     l23_recurrent_decay: float = 0.9  # Recurrent activity decay
 
     # Feedforward connection strengths
-    input_to_l4_strength: float = 0.5  # External input → L4
-    l4_to_l23_strength: float = 0.4  # L4 → L2/3
-    l23_to_l5_strength: float = 0.4  # L2/3 → L5
+    # These need to be strong enough that sparse L4 activity can drive L2/3 above threshold
+    # With ~10% L4 sparsity and random weights, we need ~1.5x strength to reliably activate L2/3
+    input_to_l4_strength: float = 1.0  # External input → L4
+    l4_to_l23_strength: float = 1.5    # L4 → L2/3 (was 0.4, too weak)
+    l23_to_l5_strength: float = 1.5    # L2/3 → L5 (was 0.4, too weak)
 
     # Top-down modulation (for attention pathway)
     l23_top_down_strength: float = 0.2  # Feedback to L2/3

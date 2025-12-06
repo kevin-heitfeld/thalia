@@ -54,7 +54,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Optional, Any
 import torch
 import torch.nn as nn
@@ -120,6 +120,11 @@ class EventDrivenBrainConfig:
     # Region type selection
     cortex_type: CortexType = CortexType.LAYERED
     """Which cortex implementation to use. PREDICTIVE enables local error learning."""
+
+    # Region-specific configs (optional - uses defaults if not provided)
+    # These are the full configs from thalia.regions.*
+    cortex_config: Optional[LayeredCortexConfig] = None
+    """Full cortex config. n_input/n_output will be overridden by sizes above."""
 
     # Time settings
     dt_ms: float = 1.0
@@ -215,25 +220,64 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # =====================================================================
 
         # 1. CORTEX: Feature extraction
+        # Build cortex config by merging user config with computed sizes
+        if config.cortex_config is not None:
+            # Use provided config, but override sizes
+            base_cortex_config = config.cortex_config
+        else:
+            # Create default config
+            base_cortex_config = LayeredCortexConfig(n_input=0, n_output=0)
+        
+        # Merge with sizes from this config (sizes always come from here)
+        cortex_config = replace(
+            base_cortex_config,
+            n_input=config.input_size,
+            n_output=config.cortex_size,
+            dt_ms=config.dt_ms,
+            device=config.device,
+        )
+        
         # Select implementation based on config
         if config.cortex_type == CortexType.PREDICTIVE:
             # PredictiveCortex with local error learning
-            self.cortex = PredictiveCortex(PredictiveCortexConfig(
-                n_input=config.input_size,
-                n_output=config.cortex_size,
-                dt_ms=config.dt_ms,
-                device=config.device,
+            # Convert LayeredCortexConfig to PredictiveCortexConfig
+            pred_config = PredictiveCortexConfig(
+                n_input=cortex_config.n_input,
+                n_output=cortex_config.n_output,
+                dt_ms=cortex_config.dt_ms,
+                device=cortex_config.device,
+                # Copy layer parameters
+                l4_ratio=cortex_config.l4_ratio,
+                l23_ratio=cortex_config.l23_ratio,
+                l5_ratio=cortex_config.l5_ratio,
+                l4_sparsity=cortex_config.l4_sparsity,
+                l23_sparsity=cortex_config.l23_sparsity,
+                l5_sparsity=cortex_config.l5_sparsity,
+                l23_recurrent_strength=cortex_config.l23_recurrent_strength,
+                l23_recurrent_decay=cortex_config.l23_recurrent_decay,
+                input_to_l4_strength=cortex_config.input_to_l4_strength,
+                l4_to_l23_strength=cortex_config.l4_to_l23_strength,
+                l23_to_l5_strength=cortex_config.l23_to_l5_strength,
+                l23_top_down_strength=cortex_config.l23_top_down_strength,
+                stdp_lr=cortex_config.stdp_lr,
+                stdp_tau_plus=cortex_config.stdp_tau_plus,
+                stdp_tau_minus=cortex_config.stdp_tau_minus,
+                ffi_enabled=cortex_config.ffi_enabled,
+                ffi_threshold=cortex_config.ffi_threshold,
+                ffi_strength=cortex_config.ffi_strength,
+                ffi_tau=cortex_config.ffi_tau,
+                bcm_enabled=cortex_config.bcm_enabled,
+                bcm_tau_theta=cortex_config.bcm_tau_theta,
+                output_layer=cortex_config.output_layer,
+                dual_output=cortex_config.dual_output,
+                # Predictive-specific defaults
                 prediction_enabled=True,
                 use_attention=True,
-            ))
+            )
+            self.cortex = PredictiveCortex(pred_config)
         else:
             # Default LayeredCortex (L4→L2/3→L5)
-            self.cortex = LayeredCortex(LayeredCortexConfig(
-                n_input=config.input_size,
-                n_output=config.cortex_size,
-                dt_ms=config.dt_ms,
-                device=config.device,
-            ))
+            self.cortex = LayeredCortex(cortex_config)
         self.cortex.reset_state(batch_size=1)
 
         # Get cortex layer sizes
@@ -526,6 +570,10 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         2. Cortex → Hippocampus (encoding via CA3 attractors)
         3. Cortex + Hippo → PFC (working memory)
 
+        With continuous learning, state transitions happen via natural dynamics
+        (decay, FFI) rather than explicit resets. Call new_sequence() only when
+        starting a completely new, unrelated sequence.
+
         Args:
             sample_pattern: Input pattern to encode [input_size]
             n_timesteps: Number of timesteps to process
@@ -539,9 +587,9 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self._trial_phase = TrialPhase.ENCODE
         self.theta.align_to_encoding()
 
-        # Prepare hippocampus for new trial
-        self.hippocampus.new_trial()
-        self.cortex_to_hippo_integrator.clear()
+        # Note: No new_trial()/clear() calls here - continuous processing
+        # State transitions happen via natural dynamics (decay, FFI)
+        # Call new_sequence() explicitly when starting unrelated sequences
 
         # Process timesteps
         results = self._run_timesteps(
@@ -549,6 +597,13 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             n_timesteps=n_timesteps,
             trial_phase=TrialPhase.ENCODE,
         )
+
+        # Capture PFC output for decoder (language model uses this)
+        if hasattr(self.pfc, 'state') and self.pfc.state is not None:
+            if self.pfc.state.working_memory is not None:
+                self._last_pfc_output = self.pfc.state.working_memory.squeeze(0).clone()
+            elif self.pfc.state.spikes is not None:
+                self._last_pfc_output = self.pfc.state.spikes.squeeze(0).clone()
 
         return results
 
@@ -1004,114 +1059,39 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         )
 
     def reset(self) -> None:
-        """Reset brain state for new episode."""
+        """Reset brain state for new episode.
+        
+        This is a HARD reset - use for completely new, unrelated episodes.
+        For starting a new sequence within the same session, use new_sequence().
+        """
         self._current_time = 0.0
         self._trial_phase = TrialPhase.ENCODE
         self.theta.reset()
         self.scheduler = EventScheduler()
 
-        # Reset regions
+        # Reset regions (full state reset)
         self.cortex.reset_state(batch_size=1)
         self.pfc.reset_state(batch_size=1)
         self.striatum.reset()
         self.hippocampus.new_trial()
-        self.cortex_to_hippo_integrator.clear()
 
         # Reset monitoring
         self._spike_counts = {name: 0 for name in self.regions}
         self._events_processed = 0
         self._last_action = None
 
-    def inter_trial_interval(
-        self,
-        n_timesteps: int = 50,
-        dopamine: float = 0.0,
-    ) -> Dict[str, Any]:
-        """Run network with null input to let states decay naturally.
-
-        This handles both:
-        1. Between-trial rest (default, dopamine=0.0)
-        2. Within-trial delay period (dopamine=-0.3 for gate closed)
-
-        What happens during this period:
-        1. No sensory input (just baseline noise)
-        2. Membrane potentials naturally decay via LIF dynamics
-        3. Spike-frequency adaptation (SFA) decays back to baseline
-        4. Lateral inhibition (recent_spikes) decays
-        5. CA1 membranes decay (critical for match/mismatch detection!)
-        6. Striatum membranes decay (prevent carryover between trials!)
-        7. Weights (memories) are PRESERVED
-
-        Note: Default of 50 timesteps allows adaptation states to decay
-        significantly (SFA: 50 steps at tau=200 → ~78% decay of exp(-50/200)).
-        For the cortex lateral inhibition (0.9 decay), 50 steps → 0.9^50 ≈ 0.5%
-
-        Args:
-            n_timesteps: Duration of rest period (default 50 = ~50ms)
-            dopamine: PFC dopamine level (0.0 = neutral, -0.3 = gate closed)
-
-        Returns:
-            Dict with PFC activity and processing stats
+    def new_sequence(self) -> None:
+        """Prepare for a new sequence while preserving learned representations.
+        
+        Unlike reset(), this only clears what's needed for a new sequence:
+        - Hippocampus stored patterns (for new comparisons)
+        - Does NOT reset neural states (let natural decay handle transitions)
+        - Does NOT reset weights (preserves learning)
+        
+        Call this between unrelated text sequences during training, but NOT
+        between tokens within a sequence.
         """
-        # Null input for each region
-        null_input = torch.zeros(1, self.config.input_size)
-        pfc_total = torch.zeros(self.config.pfc_size)
-
-        # Create null striatum input (L5 + hippo + PFC)
-        striatum_null = torch.zeros(
-            1,
-            self._cortex_l5_size + self.config.hippocampus_size + self.config.pfc_size
-        )
-
-        for _ in range(n_timesteps):
-            # Advance global theta rhythm
-            self.theta.advance()
-            self._current_time += self.config.dt_ms
-
-            # Get current theta modulation
-            enc_mod = self.theta.encoding_strength
-            ret_mod = self.theta.retrieval_strength
-
-            # Cortex processes null input - membrane decays naturally
-            cortex_out = self.cortex.forward(
-                null_input,
-                encoding_mod=enc_mod,
-                retrieval_mod=ret_mod,
-            )
-
-            # Get L2/3 for hippocampus and PFC (use layer spikes from state)
-            cortex_L23 = self.cortex.state.l23_spikes
-            if cortex_L23 is None:
-                cortex_L23 = torch.zeros(1, self._cortex_l23_size)
-
-            # Hippocampus in DELAY phase: CA3 maintains, CA1 idles
-            hippo_input = self.cortex_to_hippo_integrator.integrate(cortex_L23)
-            hippo_out = self.hippocampus.forward(
-                hippo_input,
-                phase=TrialPhase.DELAY,
-                encoding_mod=enc_mod,
-                retrieval_mod=ret_mod,
-            )
-
-            # PFC receives cortex L2/3 + hippo concatenated
-            pfc_input = torch.cat([cortex_L23.view(-1), hippo_out.view(-1)])
-            pfc_out = self.pfc.forward(
-                pfc_input.unsqueeze(0),
-                dopamine_signal=dopamine,
-                encoding_mod=enc_mod,
-                retrieval_mod=ret_mod,
-            )
-            pfc_total += pfc_out.squeeze()
-
-            # CRITICAL: Run striatum with null input so membrane potentials decay!
-            # Without this, striatum neurons accumulate activity across trials
-            self.striatum.forward(striatum_null, explore=False)
-
-        return {
-            "pfc": pfc_total,
-            "timesteps": n_timesteps,
-            "current_time": self._current_time,
-        }
+        self.hippocampus.new_trial()
 
     # =========================================================================
     # COMPARISON SIGNAL (MATCH/MISMATCH DETECTION)
@@ -1533,18 +1513,38 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             "retrieval_strength": self.theta.retrieval_strength,
             "spike_counts": self._spike_counts.copy(),
             "events_processed": self._events_processed,
-            "global_dopamine": self._global_dopamine,
             "last_action": self._last_action,
+            
+            # VTA Dopamine System (centralized)
+            "dopamine": {
+                "global": self._global_dopamine,  # Combined signal to regions
+                "tonic": self._tonic_dopamine,    # Slow baseline (intrinsic)
+                "phasic": self._phasic_dopamine,  # Fast bursts (external rewards)
+                "phasic_decay": self._phasic_decay,
+            },
+            # VTA normalization state
+            "vta": {
+                "avg_abs_rpe": self._vta_avg_abs_rpe,
+                "rpe_history_count": self._vta_rpe_history_count,
+                "rpe_clip": self._vta_rpe_clip,
+            },
+            
+            # Legacy key for backwards compatibility
+            "global_dopamine": self._global_dopamine,
+            
             # Structured component diagnostics
             "striatum": striatum_diag.to_dict(),
             "hippocampus": hippo_diag.to_dict(),
+            
             # Summary for quick access
             "summary": {
                 "last_action": self._last_action,
                 "exploring": striatum_diag.exploring,
                 "net_weight_means": striatum_diag.net_per_action,
                 "ca1_spikes": hippo_diag.ca1_spikes,
-                "dopamine": self._global_dopamine,
+                "dopamine_global": self._global_dopamine,
+                "dopamine_tonic": self._tonic_dopamine,
+                "dopamine_phasic": self._phasic_dopamine,
             },
         }
 

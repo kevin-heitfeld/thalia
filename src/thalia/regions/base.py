@@ -275,9 +275,9 @@ class BrainRegion(ABC):
 
         WARNING: Do NOT use this between trials in a continuous task!
         Real brains don't "reset" between trials. Instead, neural activity
-        decays naturally through membrane time constants. For trial-to-trial
-        transitions, use BrainSystem.inter_trial_interval() which lets
-        activity decay naturally via LIF dynamics.
+        decays naturally through membrane time constants. With continuous
+        learning, state transitions happen via natural dynamics (decay, FFI).
+        Use brain.new_sequence() only when starting completely unrelated sequences.
 
         This method clears ALL transient state (membrane potentials, traces,
         spike history) while preserving learned weights.

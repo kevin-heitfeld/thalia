@@ -32,13 +32,14 @@ from .global_config import GlobalConfig
 from .brain_config import (
     BrainConfig,
     RegionSizes,
-    CortexConfig,
     CortexType,
     HippocampusConfig,
     StriatumConfig,
     PFCConfig,
     CerebellumConfig,
 )
+# Re-export LayeredCortexConfig as the canonical cortex config
+from thalia.regions.cortex.config import LayeredCortexConfig
 from .language_config import (
     LanguageConfig,
     EncodingConfig,
@@ -62,7 +63,7 @@ __all__ = [
     # Brain
     "BrainConfig",
     "RegionSizes",
-    "CortexConfig",
+    "LayeredCortexConfig",  # Canonical cortex config (replaces CortexConfig)
     "CortexType",
     "HippocampusConfig",
     "StriatumConfig",

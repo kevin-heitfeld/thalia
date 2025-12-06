@@ -451,18 +451,36 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         return output
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information."""
-        diag = {
-            "l4_spikes": self.state.l4_spikes.sum().item() if self.state.l4_spikes is not None else 0,
-            "l23_spikes": self.state.l23_spikes.sum().item() if self.state.l23_spikes is not None else 0,
-            "l5_spikes": self.state.l5_spikes.sum().item() if self.state.l5_spikes is not None else 0,
+        """Get layer-specific diagnostics using DiagnosticsMixin helpers.
+        
+        Uses the same format as LayeredCortex for consistency.
+        """
+        diag: Dict[str, Any] = {
+            "l4_size": self.l4_size,
+            "l23_size": self.l23_size,
+            "l5_size": self.l5_size,
             "last_plasticity_delta": getattr(self, "_last_plasticity_delta", 0.0),
         }
-
+        
+        # Spike diagnostics for each layer (same format as LayeredCortex)
+        if self.state.l4_spikes is not None:
+            diag.update(self.spike_diagnostics(self.state.l4_spikes, "l4"))
+        if self.state.l23_spikes is not None:
+            diag.update(self.spike_diagnostics(self.state.l23_spikes, "l23"))
+        if self.state.l5_spikes is not None:
+            diag.update(self.spike_diagnostics(self.state.l5_spikes, "l5"))
+        
+        # Weight diagnostics from prediction layer (if available)
         if self.prediction_layer is not None:
             pred_diag = self.prediction_layer.get_diagnostics()
             diag.update({f"pred_{k}": v for k, v in pred_diag.items()})
+            # Add weight diagnostics for consistency with LayeredCortex
+            if hasattr(self.prediction_layer, 'W_pred'):
+                diag.update(self.weight_diagnostics(self.prediction_layer.W_pred.data, "pred"))
+            if hasattr(self.prediction_layer, 'W_encode'):
+                diag.update(self.weight_diagnostics(self.prediction_layer.W_encode.data, "encode"))
 
+        # Attention diagnostics
         if self.attention is not None:
             complexity = self.attention.get_complexity_estimate()
             diag.update({f"attn_{k}": v for k, v in complexity.items()})

@@ -174,24 +174,53 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         self.l5_neurons = LIFNeuron(self.l5_size, l5_config)
 
     def _init_weights(self) -> None:
-        """Initialize inter-layer weight matrices."""
+        """Initialize inter-layer weight matrices.
+        
+        Feedforward weights use positive initialization to ensure sparse
+        presynaptic activity can drive postsynaptic neurons above threshold.
+        With ~10-15% sparsity, we need weights scaled so that:
+            sum(w_ij * spike_j) * strength ~ threshold
+        
+        Using uniform [0, max] with max scaled by fan-in and expected sparsity.
+        """
         device = torch.device(self.layer_config.device)
         cfg = self.layer_config
-
+        
+        # Expected number of active inputs given sparsity
+        expected_active_l4 = max(1, int(self.l4_size * cfg.l4_sparsity))
+        expected_active_l23 = max(1, int(self.l23_size * cfg.l23_sparsity))
+        
+        # Feedforward weights: positive, scaled so sparse input reaches threshold
+        # With n_active inputs, threshold ~1.0, strength factor applied later:
+        # target = threshold / (n_active * strength) ≈ 1.0 / (n_active * strength)
+        # We initialize to mean ≈ target, with some variance for diversity
+        
+        # Input → L4: positive excitatory weights
+        w_scale_input = 1.0 / max(1, int(cfg.n_input * 0.15))  # Assume 15% input sparsity
         self.w_input_l4 = nn.Parameter(
-            torch.randn(self.l4_size, cfg.n_input, device=device) * 0.3
+            torch.abs(torch.randn(self.l4_size, cfg.n_input, device=device)) * w_scale_input
         )
+        
+        # L4 → L2/3: positive excitatory weights
+        w_scale_l4_l23 = 1.0 / expected_active_l4
         self.w_l4_l23 = nn.Parameter(
-            torch.randn(self.l23_size, self.l4_size, device=device) * 0.3
+            torch.abs(torch.randn(self.l23_size, self.l4_size, device=device)) * w_scale_l4_l23
         )
+        
+        # L2/3 recurrent: can be positive or negative (E/I balance)
         self.w_l23_recurrent = nn.Parameter(
             torch.randn(self.l23_size, self.l23_size, device=device) * 0.2
         )
         with torch.no_grad():
             self.w_l23_recurrent.data.fill_diagonal_(0.0)
+        
+        # L2/3 → L5: positive excitatory weights
+        w_scale_l23_l5 = 1.0 / expected_active_l23
         self.w_l23_l5 = nn.Parameter(
-            torch.randn(self.l5_size, self.l23_size, device=device) * 0.3
+            torch.abs(torch.randn(self.l5_size, self.l23_size, device=device)) * w_scale_l23_l5
         )
+        
+        # L2/3 inhibition: positive (inhibitory connections suppress)
         self.w_l23_inhib = nn.Parameter(
             torch.ones(self.l23_size, self.l23_size, device=device) * 0.3
         )
@@ -225,14 +254,7 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             ffi_strength=0.0,
         )
 
-        if self.feedforward_inhibition is not None:
-            self.feedforward_inhibition.clear()
-
-    def new_trial(self) -> None:
-        """Prepare cortex for a new trial."""
-        if self.feedforward_inhibition is not None:
-            self.feedforward_inhibition.clear()
-        self.state.ffi_strength = 0.0
+        # Note: FFI state decays naturally, no hard reset needed
 
     def forward(
         self,

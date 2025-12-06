@@ -143,11 +143,6 @@ class FeedforwardInhibition:
     def current_inhibition(self) -> float:
         """Current inhibition level."""
         return self._current_inhibition
-    
-    def clear(self) -> None:
-        """Clear input history (for new trials/episodes)."""
-        self._prev_input = None
-        self._current_inhibition = 0.0
 
 
 class TemporalIntegrationLayer:
@@ -260,12 +255,7 @@ class TemporalIntegrationLayer:
     def get_rate(self) -> Optional[torch.Tensor]:
         """Get current integration trace (for debugging)."""
         return self._trace.clone() if self._trace is not None else None
-    
-    def clear(self) -> None:
-        """Clear integration trace (for new trials)."""
+
+    def reset(self) -> None:
+        """Reset integration state (for hard episode boundaries only)."""
         self._trace = None
-    
-    def reset_trace(self) -> None:
-        """Reset trace to zero but keep tensor allocated."""
-        if self._trace is not None:
-            self._trace.zero_()
