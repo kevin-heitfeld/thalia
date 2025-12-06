@@ -43,7 +43,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
-    "pytest-cov",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.0",
+    "pytest-benchmark>=4.0",
+    "hypothesis>=6.0",
     "black",
     "isort",
     "mypy",
@@ -88,3 +91,33 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/thalia"]
+omit = [
+    "*/tests/*",
+    "*/temp/*",
+    "*/experiments/*",
+    "*/__pycache__/*",
+]
+branch = true
+
+[tool.coverage.report]
+# Fail CI if coverage drops below this threshold
+fail_under = 80
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "@abc.abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

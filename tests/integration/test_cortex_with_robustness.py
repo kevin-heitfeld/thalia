@@ -15,6 +15,7 @@ from thalia.regions.cortex import LayeredCortexConfig
 from thalia.config import RobustnessConfig
 
 
+@pytest.mark.integration
 class TestCortexWithRobustness:
     """Test LayeredCortex with robustness mechanisms enabled."""
 
@@ -28,23 +29,27 @@ class TestCortexWithRobustness:
         )
         cortex = LayeredCortex(config)
 
-        # Very weak input that could cause activity collapse
-        # Generate fresh input for each timestep
+        # Pre-generate consistent test sequence for reproducibility
+        test_inputs = torch.randn(100, 1, 32) * 0.5  # Moderate input, not too weak
 
+        # Reset once, then let it run - no adaptation mechanisms to track
+        cortex.reset_state()
+        
         # Run for a while
-        total_spikes = 0
+        spike_counts = []
         for t in range(100):
-            cortex.reset_state()
-            weak_input = torch.randn(1, 32) * 0.01  # (batch, features)
-            output = cortex.forward(weak_input)
-            total_spikes += cortex.state.l5_spikes.sum().item()
+            output = cortex.forward(test_inputs[t])
+            spike_counts.append(cortex.state.l5_spikes.sum().item())
 
-        # Without robustness, may have very low activity
+        # Without robustness, may show instability
         # (This documents the problem that robustness solves)
-        avg_spikes_per_step = total_spikes / 100
+        avg_spikes = sum(spike_counts) / len(spike_counts)
+        variance = torch.tensor(spike_counts).var().item()
 
-        # Just document what happens (may or may not collapse)
-        print(f"Without robustness: avg {avg_spikes_per_step:.1f} spikes/step")
+        print(f"Without robustness: avg {avg_spikes:.1f} ± {variance**0.5:.1f} spikes/step")
+        
+        # Document behavior without strict assertions (for baseline comparison)
+        # Main purpose is to show what happens WITHOUT robustness
 
     def test_cortex_with_robustness_maintains_activity(self, health_monitor):
         """Test that robustness mechanisms maintain healthy activity levels."""
@@ -56,28 +61,37 @@ class TestCortexWithRobustness:
         )
         cortex = LayeredCortex(config)
 
-        # Same weak input  - generate fresh for each timestep
+        # Pre-generate consistent test sequence
+        test_inputs = torch.randn(100, 1, 32) * 0.5
 
-        # Run for a while - DON'T reset state so mechanisms can adapt
+        # CRITICAL: Reset once, then let robustness mechanisms adapt over time
+        cortex.reset_state()
+        
         spike_counts = []
-        for _ in range(100):
-            weak_input = torch.randn(1, 32) * 0.3  # Slightly stronger input
-            output = cortex.forward(weak_input)
-            spike_counts.append(cortex.state.l5_spikes.sum().item())        # Check health
+        for t in range(100):
+            output = cortex.forward(test_inputs[t])
+            spike_counts.append(cortex.state.l5_spikes.sum().item())
+            
+        # Check health after adaptation period
         diagnostics = cortex.get_diagnostics()
         report = health_monitor.check_health(diagnostics)
 
         # With robustness, should maintain reasonable activity
         avg_spikes = sum(spike_counts) / len(spike_counts)
-        print(f"With robustness: avg {avg_spikes:.1f} spikes/step")
+        variance = torch.tensor(spike_counts).var().item()
+        
+        print(f"With robustness: avg {avg_spikes:.1f} ± {variance**0.5:.1f} spikes/step")
         print(f"Health: {report.summary}")
+        print(f"Health severity: {report.overall_severity:.1f}/100")
 
-        # Should not completely collapse (allow lower activity with weak input)
-        assert avg_spikes > 0.1, "Activity collapsed completely despite robustness"
-
-        # With very weak input, health system may report activity_collapse
-        # This is expected behavior - just document it
-        print(f"Health severity: {report.overall_severity} (100=activity_collapse expected with weak input)")
+        # Meaningful threshold: Should maintain at least 2 spikes per timestep on average
+        MIN_HEALTHY_ACTIVITY = 2.0
+        assert avg_spikes > MIN_HEALTHY_ACTIVITY, \
+            f"Activity too low: {avg_spikes:.1f} < {MIN_HEALTHY_ACTIVITY} (robustness failed)"
+        
+        # Should maintain stability (low variance relative to mean)
+        cv = (variance ** 0.5) / (avg_spikes + 1e-6)  # Coefficient of variation
+        assert cv < 1.5, f"Activity too unstable: CV={cv:.2f}"
 
     def test_cortex_ei_balance_prevents_runaway(self, health_monitor):
         """Test that E/I balance prevents runaway excitation."""
@@ -95,14 +109,15 @@ class TestCortexWithRobustness:
         )
         cortex = LayeredCortex(config)
 
-        # Strong input that could cause runaway
+        # Pre-generate strong input sequence
+        test_inputs = torch.randn(200, 1, 32) * 2.0
 
-        # Run for many steps
+        # CRITICAL: Reset once, let E/I balance adapt over time
+        cortex.reset_state()
+        
         spike_history = []
         for t in range(200):
-            cortex.reset_state()
-            strong_input = torch.randn(1, 32) * 2.0  # (batch, features)
-            output = cortex.forward(strong_input)
+            output = cortex.forward(test_inputs[t])
             spike_history.append(cortex.state.l5_spikes.sum().item())
 
         # Check that activity doesn't explode
@@ -112,9 +127,10 @@ class TestCortexWithRobustness:
         print(f"Early activity: {early_spikes:.1f} spikes/step")
         print(f"Late activity: {late_spikes:.1f} spikes/step")
 
-        # Activity should not explode (E/I balance should regulate)
-        assert late_spikes < early_spikes * 2, \
-            "Activity exploded despite E/I balance"
+        # Activity should stabilize or decrease (E/I balance should regulate)
+        RUNAWAY_THRESHOLD = 2.0  # 2x growth indicates runaway
+        assert late_spikes < early_spikes * RUNAWAY_THRESHOLD, \
+            f"Activity exploded despite E/I balance: {early_spikes:.1f} → {late_spikes:.1f}"
 
         # Check diagnostics
         diagnostics = cortex.get_diagnostics()
@@ -124,7 +140,7 @@ class TestCortexWithRobustness:
             ei_ratio = diagnostics["robustness_ei_ratio"]
             print(f"E/I ratio: {ei_ratio:.2f}")
 
-            # Should be in reasonable range
+            # Should be in reasonable range (typical biological E/I ~ 4:1)
             assert 1.0 < ei_ratio < 15.0, \
                 f"E/I ratio out of bounds: {ei_ratio}"
 
@@ -185,21 +201,25 @@ class TestCortexWithRobustness:
         )
         cortex = LayeredCortex(config)
 
-        # Consistent input
+        # Pre-generate consistent input sequence
+        test_inputs = torch.randn(150, 1, 32) * 0.8
 
+        # CRITICAL: Reset once, let IP adapt over time
+        cortex.reset_state()
+        
         # Track firing rates over time
         firing_rates = []
         for t in range(150):
-            cortex.reset_state()
-            test_input = torch.randn(1, 32) * 0.8  # (batch, features)
-            output = cortex.forward(test_input)
+            output = cortex.forward(test_inputs[t])
 
             # Compute L2/3 firing rate (where IP is applied)
             l23_spikes = cortex.state.l23_spikes
             if l23_spikes is not None:
                 firing_rates.append(l23_spikes.mean().item())
             else:
-                firing_rates.append(0.0)        # Check adaptation
+                firing_rates.append(0.0)
+                
+        # Check adaptation
         early_rate = sum(firing_rates[:30]) / 30
         late_rate = sum(firing_rates[120:]) / 30
 
@@ -207,10 +227,9 @@ class TestCortexWithRobustness:
         print(f"Late L2/3 rate: {late_rate:.3f}")
 
         # IP should be adapting excitability to regulate rate
-        # (exact convergence depends on target rate, but should adapt)
-        # Just verify it's having some effect
-        assert abs(early_rate - late_rate) > 0.001 or late_rate > 0.01, \
-            "Intrinsic plasticity not adapting"
+        # Either rate should be non-trivial (IP working), or show clear adaptation
+        assert late_rate > 0.01 or abs(early_rate - late_rate) > 0.001, \
+            "Intrinsic plasticity not adapting or network inactive"
 
 
 class TestCortexRobustnessInteractions:

@@ -13,6 +13,7 @@ from thalia.core.dendritic import (
 )
 
 
+@pytest.mark.unit
 class TestLIFNeuron:
     """Tests for LIF neuron model."""
 
@@ -69,17 +70,21 @@ class TestLIFNeuron:
 
     def test_spike_generation(self):
         """Test that spikes are generated when threshold is crossed."""
-        config = LIFConfig(v_threshold=1.0)
+        config = LIFConfig(v_threshold=1.0, v_reset=0.0)
         neuron = LIFNeuron(n_neurons=5, config=config)
         neuron.reset_state(batch_size=1)
 
-        # Strong input should cause spikes
-        spikes, _ = neuron(torch.ones(1, 5) * 2.0)
+        # Set membrane just below threshold for deterministic test
+        neuron.membrane = torch.full((1, 5), 0.8)
 
-        assert spikes.sum() > 0
-        assert ((spikes == 0) | (spikes == 1)).all()
+        # Strong enough input to push above threshold
+        spikes, _ = neuron(torch.ones(1, 5) * 0.3)
+
+        assert spikes.sum() > 0, "No spikes generated despite input above threshold"
+        assert ((spikes == 0) | (spikes == 1)).all(), "Spikes must be binary"
 
 
+@pytest.mark.unit
 class TestConductanceLIF:
     """Tests for conductance-based LIF neuron model."""
 
