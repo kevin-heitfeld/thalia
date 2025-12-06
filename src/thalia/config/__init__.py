@@ -53,11 +53,12 @@ from .training_config import (
     CheckpointConfig,
     LoggingConfig,
 )
-from .thalia_config import ThaliaConfig
+from .thalia_config import ThaliaConfig, print_config
 
 __all__ = [
     # Main config
     "ThaliaConfig",
+    "print_config",
     # Global
     "GlobalConfig",
     # Brain

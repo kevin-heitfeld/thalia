@@ -53,9 +53,12 @@ class LayeredCortexConfig(RegionConfig):
     l23_recurrent_decay: float = 0.9  # Recurrent activity decay
 
     # Feedforward connection strengths
-    # These need to be strong enough that sparse L4 activity can drive L2/3 above threshold
-    # With ~10% L4 sparsity and random weights, we need ~1.5x strength to reliably activate L2/3
-    input_to_l4_strength: float = 1.0  # External input → L4
+    # These need to be strong enough that sparse activity can drive next layer above threshold.
+    # Weight initialization uses abs(randn) * scale, where scale = 1/expected_active.
+    # abs(randn) has mean ~0.8, so we need ~1.5-2.0x strength to compensate.
+    # With ~10-15% sparsity and random weights, we need ~2.0x strength for input layer
+    # and ~1.5x for subsequent layers to reliably activate postsynaptic neurons.
+    input_to_l4_strength: float = 2.0  # External input → L4 (was 1.0, too weak for sparse input)
     l4_to_l23_strength: float = 1.5    # L4 → L2/3 (was 0.4, too weak)
     l23_to_l5_strength: float = 1.5    # L2/3 → L5 (was 0.4, too weak)
 

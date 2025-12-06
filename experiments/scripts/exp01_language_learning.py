@@ -51,7 +51,7 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -69,9 +69,9 @@ from thalia.config import (
     LanguageConfig,
     TrainingConfig,
     CortexType,
+    print_config,
 )
 from thalia.core.brain import EventDrivenBrain
-from thalia.core.diagnostics import DiagnosticLevel
 from thalia.language.model import LanguageBrainInterface
 from thalia.memory.sequence import SequenceMemory
 from thalia.training.data_pipeline import TextDataPipeline, DataConfig
@@ -413,6 +413,13 @@ class LanguageLearningExperiment:
         # Update vocab size
         thalia_config.global_.vocab_size = data_pipeline.vocab_size
 
+        # Print full configuration using library function
+        print_config(thalia_config, title="EXPERIMENT CONFIGURATION", extra={
+            "Name": exp_config.name,
+            "Seed": exp_config.seed,
+            "Context length": exp_config.context_length,
+        })
+
         # Create model components
         brain = EventDrivenBrain.from_thalia_config(thalia_config)
         lang_interface = LanguageBrainInterface(
@@ -427,18 +434,27 @@ class LanguageLearningExperiment:
         # Create brain diagnostics tracker
         diagnostics_tracker = BrainDiagnosticsTracker(brain)
 
-        # Track accuracy history
+        # Track history for results
         accuracy_history: List[float] = []
         spike_rate_history: List[float] = []
 
         def progress_callback(epoch: int, step: int, metrics):
             if step % 10 == 0:
+                # Store for results
                 accuracy_history.append(metrics.prediction_accuracy)
                 spike_rate_history.append(metrics.spike_rate)
-                print(f"  Step {step}: acc={metrics.prediction_accuracy:.4f}, "
-                      f"spikes={metrics.spike_rate:.1f}")
-                # Collect brain diagnostics every 10 steps
-                diagnostics_tracker.snapshot(step)
+
+                # Collect brain diagnostics
+                snap = diagnostics_tracker.snapshot(step)
+
+                # Print brain internals (not decoder accuracy)
+                print(f"  Step {step}: "
+                      f"L4={snap.cortex_l4_spikes:.0f}, "
+                      f"L2/3={snap.cortex_l23_spikes:.0f}, "
+                      f"L5={snap.cortex_l5_spikes:.0f}, "
+                      f"CA3={snap.hippo_ca3_spikes:.0f}, "
+                      f"DA={snap.dopamine_global:.3f}, "
+                      f"dW={snap.cortex_weight_change:.5f}")
 
         # Train
         start_time = time.time()

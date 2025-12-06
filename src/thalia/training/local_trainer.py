@@ -51,13 +51,12 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Callable, TYPE_CHECKING
 from pathlib import Path
 import time
 
 import torch
-import torch.nn as nn
 
 if TYPE_CHECKING:
     from thalia.language.model import LanguageBrainInterface
@@ -241,9 +240,8 @@ class LocalTrainer:
         Returns:
             Final training metrics
         """
-        print(f"Starting training for {self.config.n_epochs} epochs...")
+        print(f"\nStarting training for {self.config.n_epochs} epochs...")
         print(f"Data: {data_pipeline.n_sequences} sequences")
-        print(f"Learning rules: STDP={self.config.use_stdp}, BCM={self.config.use_bcm}")
 
         start_time = time.time()
 
@@ -256,12 +254,11 @@ class LocalTrainer:
                 progress_callback=progress_callback,
             )
 
-            print(f"Epoch {epoch + 1}/{self.config.n_epochs}: "
-                  f"accuracy={epoch_metrics.prediction_accuracy:.4f}, "
-                  f"spike_rate={epoch_metrics.spike_rate:.4f}")
+            print(f"Epoch {epoch + 1}/{self.config.n_epochs} complete: "
+                  f"spike_rate={epoch_metrics.spike_rate:.1f}")
 
         total_time = time.time() - start_time
-        print(f"Training complete in {total_time:.2f}s")
+        print(f"Training complete in {total_time:.2f}s\n")
 
         return self.metrics
 
@@ -274,12 +271,12 @@ class LocalTrainer:
         progress_callback: Optional[Callable],
     ) -> TrainingMetrics:
         """Train for one epoch using two-phase training.
-        
+
         Two-Phase Training:
         1. Stimulus Phase: Process input tokens, build eligibility traces
         2. Reward/Consolidation Phase: Deliver intrinsic reward, run consolidation
            to allow eligibility-dopamine interaction
-        
+
         This mimics biological temporal credit assignment where:
         - Eligibility traces mark "what just happened" (τ ~ 100-1000ms)
         - Phasic dopamine decays slowly (τ ~ 200ms)
@@ -288,7 +285,7 @@ class LocalTrainer:
 
         epoch_accuracies: list[float] = []
         epoch_spike_rates: list[float] = []
-        
+
         use_two_phase = getattr(self.config, 'two_phase_enabled', True)
         consolidation_steps = getattr(self.config, 'consolidation_timesteps', 50)
 
@@ -327,7 +324,7 @@ class LocalTrainer:
                 # Run consolidation timesteps
                 # This allows eligibility traces to interact with tonic dopamine
                 model.brain.run_consolidation(n_timesteps=consolidation_steps)
-            
+
             accuracy = self._compute_accuracy(model, result, target_ids)
             spike_rate = result.get("spike_rate", 0.0)
 
@@ -372,7 +369,7 @@ class LocalTrainer:
         # Reset spike counts before processing (they're cumulative in the brain)
         if hasattr(model.brain, '_spike_counts'):
             model.brain._spike_counts = {name: 0 for name in model.brain.regions}
-        
+
         # Process through language interface
         result = model.process_tokens(input_ids)
 
@@ -511,7 +508,7 @@ class LocalTrainer:
             if self.global_step % 100 == 0:
                 print(f"  [Decoder] Waiting for brain pre-training ({self.global_step}/{decoder_start})")
             return
-        
+
         if hasattr(model.decoder, 'learn') and callable(model.decoder.learn):
             decoder_metrics = model.decoder.learn(target_ids=target_ids)
             # Log decoder learning progress periodically

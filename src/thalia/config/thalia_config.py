@@ -15,7 +15,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import json
 from pathlib import Path
 
@@ -23,6 +23,154 @@ from .global_config import GlobalConfig
 from .brain_config import BrainConfig, RegionSizes
 from .language_config import LanguageConfig
 from .training_config import TrainingConfig
+
+
+def print_config(
+    config: "ThaliaConfig",
+    title: str = "CONFIGURATION",
+    extra: Optional[Dict[str, Any]] = None,
+    width: int = 70,
+) -> None:
+    """Print a comprehensive, formatted configuration summary.
+
+    This is the main function for printing configuration in experiments.
+    It shows all important parameters in a clear, organized format.
+
+    Args:
+        config: ThaliaConfig to print
+        title: Title for the configuration block
+        extra: Additional key-value pairs to print (experiment-specific)
+        width: Width of the output box
+
+    Example:
+        from thalia.config import ThaliaConfig, print_config
+
+        config = ThaliaConfig(...)
+        print_config(config, title="EXPERIMENT CONFIG", extra={
+            "experiment_name": "exp01",
+            "run_id": 42,
+        })
+    """
+    print("\n" + "=" * width)
+    print(title.center(width))
+    print("=" * width)
+
+    # Extra experiment-specific info first
+    if extra:
+        print("\n--- EXPERIMENT ---")
+        for key, value in extra.items():
+            print(f"  {key}: {value}")
+
+    # Global
+    print("\n--- GLOBAL ---")
+    print(f"  Device: {config.global_.device}")
+    print(f"  Vocab size: {config.global_.vocab_size}")
+    print(f"  Default sparsity: {config.global_.default_sparsity}")
+
+    # Global learning toggles (from training config)
+    print("\n--- TRAINING ---")
+    print(f"  STDP enabled: {config.training.use_stdp}")
+    print(f"  BCM enabled: {config.training.use_bcm}")
+    print(f"  Hebbian enabled: {config.training.use_hebbian}")
+    print(f"  N epochs: {config.training.n_epochs}")
+
+    # Language encoding/decoding
+    print("\n--- LANGUAGE ---")
+    enc_cfg = config.language.encoding
+    dec_cfg = config.language.decoding
+    print(f"  Encoding type: {enc_cfg.encoding_type.value}")
+    print(f"  Decoding type: {dec_cfg.decoding_type.value}")
+    print(f"  Embedding dim: {enc_cfg.embedding_dim}")
+    print(f"  Encoding timesteps: {enc_cfg.n_timesteps}")
+    print(f"  Learnable embedding: {enc_cfg.learnable_embedding}")
+    if enc_cfg.sparsity is not None:
+        print(f"  SDR sparsity: {enc_cfg.sparsity}")
+    print(f"  SDR overlap: {enc_cfg.sdr_overlap}")
+
+    # Timing
+    print("\n--- TIMING ---")
+    print(f"  Brain encoding timesteps: {config.brain.encoding_timesteps}")
+    print(f"  Delay timesteps: {config.brain.delay_timesteps}")
+    print(f"  Test timesteps: {config.brain.test_timesteps}")
+    print(f"  Theta frequency: {config.global_.theta_frequency_hz} Hz")
+    print(f"  dt: {config.global_.dt_ms} ms")
+
+    # Brain sizes
+    print("\n--- BRAIN SIZES ---")
+    sizes = config.brain.sizes
+    print(f"  Input size: {sizes.input_size}")
+    print(f"  Cortex size: {sizes.cortex_size}")
+    print(f"  Hippocampus size: {sizes.hippocampus_size}")
+    print(f"  PFC size: {sizes.pfc_size}")
+    print(f"  N actions: {sizes.n_actions}")
+
+    # Cortex config
+    print("\n--- CORTEX ---")
+    print(f"  Type: {config.brain.cortex_type.value}")
+    cortex_cfg = config.brain.cortex
+    print(f"  L4 sparsity: {cortex_cfg.l4_sparsity}")
+    print(f"  L2/3 sparsity: {cortex_cfg.l23_sparsity}")
+    print(f"  L5 sparsity: {cortex_cfg.l5_sparsity}")
+    print(f"  Input -> L4 strength: {cortex_cfg.input_to_l4_strength}")
+    print(f"  L4 -> L2/3 strength: {cortex_cfg.l4_to_l23_strength}")
+    print(f"  L2/3 -> L5 strength: {cortex_cfg.l23_to_l5_strength}")
+    print(f"  L2/3 recurrent strength: {cortex_cfg.l23_recurrent_strength}")
+    print(f"  L2/3 recurrent decay: {cortex_cfg.l23_recurrent_decay}")
+    print(f"  FFI enabled: {cortex_cfg.ffi_enabled}")
+    print(f"  FFI strength: {cortex_cfg.ffi_strength}")
+
+    # Weight bounds (cortex)
+    print("\n--- CORTEX WEIGHT BOUNDS ---")
+    print(f"  Feedforward: [{cortex_cfg.w_min}, {cortex_cfg.w_max}]")
+    print(f"  L2/3 recurrent: [{cortex_cfg.l23_recurrent_w_min}, {cortex_cfg.l23_recurrent_w_max}]")
+
+    # Cortex learning parameters
+    print("\n--- CORTEX LEARNING ---")
+    print(f"  STDP LR: {cortex_cfg.stdp_lr}")
+    print(f"  STDP tau+: {cortex_cfg.stdp_tau_plus} ms")
+    print(f"  STDP tau-: {cortex_cfg.stdp_tau_minus} ms")
+    # BCM config if available
+    if hasattr(cortex_cfg, 'bcm_config') and cortex_cfg.bcm_config is not None:
+        bcm = cortex_cfg.bcm_config
+        print(f"  BCM tau theta: {bcm.tau_theta} ms")
+        print(f"  BCM theta init: {bcm.theta_init}")
+
+    # Hippocampus
+    hippo_cfg = config.brain.hippocampus
+    print("\n--- HIPPOCAMPUS ---")
+    print(f"  DG sparsity: {hippo_cfg.dg_sparsity}")
+    print(f"  CA3 sparsity: {hippo_cfg.ca3_sparsity}")
+    print(f"  CA3 recurrent strength: {hippo_cfg.ca3_recurrent_strength}")
+    print(f"  CA1 sparsity: {hippo_cfg.ca1_sparsity}")
+    print(f"  CA3 learning rate: {hippo_cfg.ca3_learning_rate}")
+    print(f"  NMDA tau: {hippo_cfg.nmda_tau} ms")
+
+    # Striatum
+    striatum_cfg = config.brain.striatum
+    print("\n--- STRIATUM ---")
+    print(f"  Population coding: {striatum_cfg.population_coding}")
+    print(f"  Neurons per action: {striatum_cfg.neurons_per_action}")
+    print(f"  D1/D2 pathways: {striatum_cfg.d1_d2_enabled}")
+    print(f"  Learning rate: {striatum_cfg.learning_rate}")
+    print(f"  Eligibility tau: {striatum_cfg.eligibility_tau_ms} ms")
+
+    # PFC
+    pfc_cfg = config.brain.pfc
+    print("\n--- PFC ---")
+    print(f"  WM decay: {pfc_cfg.wm_decay}")
+    print(f"  WM capacity: {pfc_cfg.wm_capacity}")
+    print(f"  Attention gain: {pfc_cfg.attention_gain}")
+    print(f"  Sparsity: {pfc_cfg.sparsity}")
+
+    # Cerebellum
+    cereb_cfg = config.brain.cerebellum
+    print("\n--- CEREBELLUM ---")
+    print(f"  Granule cell expansion: {cereb_cfg.gc_expansion}x")
+    print(f"  Granule cell sparsity: {cereb_cfg.gc_sparsity}")
+    print(f"  Purkinje LR: {cereb_cfg.purkinje_lr}")
+    print(f"  Climbing fiber strength: {cereb_cfg.climbing_fiber_strength}")
+
+    print("=" * width + "\n")
 
 
 @dataclass
