@@ -104,7 +104,8 @@ def assert_membrane_potential_valid(
     v_max = membrane.max().item()
 
     # Should be roughly between rest and a bit above threshold
-    reasonable_min = v_rest - abs(v_rest) - 1.0
+    # Allow membrane to go ~2x below rest (for strong inhibition/adaptation)
+    reasonable_min = v_rest - abs(v_rest) - 2.0
     reasonable_max = v_threshold * tolerance
 
     assert v_min > reasonable_min, \

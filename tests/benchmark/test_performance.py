@@ -228,7 +228,7 @@ class TestDendriticPerformance:
         """Benchmark dendritic neuron forward pass."""
         config = DendriticNeuronConfig(
             n_branches=5,
-            n_inputs_per_branch=20,
+            inputs_per_branch=20,
         )
         neuron = DendriticNeuron(n_neurons=100, config=config)
         neuron.reset_state(batch_size=32)
