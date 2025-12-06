@@ -53,6 +53,9 @@ from thalia.learning.bcm import BCMRule, BCMConfig
 from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
+from thalia.learning.ei_balance import EIBalanceRegulator, LayerEIBalance
+from thalia.core.normalization import DivisiveNormalization
+from thalia.learning.intrinsic_plasticity import PopulationIntrinsicPlasticity
 
 from .config import LayeredCortexConfig, LayeredCortexState
 
@@ -159,6 +162,11 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         self._l23_threshold_offset: Optional[torch.Tensor] = None
         self._l23_activity_history: Optional[torch.Tensor] = None
 
+        # =====================================================================
+        # ROBUSTNESS MECHANISMS (from RobustnessConfig)
+        # =====================================================================
+        self._init_robustness_mechanisms()
+
     def _get_learning_rule(self) -> LearningRule:
         """Cortex uses unsupervised Hebbian learning."""
         return LearningRule.HEBBIAN
@@ -207,6 +215,53 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             self.stp_l23_recurrent.to(device)
         else:
             self.stp_l23_recurrent = None
+
+    def _init_robustness_mechanisms(self) -> None:
+        """Initialize robustness mechanisms from RobustnessConfig.
+        
+        These mechanisms provide hyperparameter robustness similar to
+        biological homeostatic regulation:
+        - E/I Balance: Tracks excitation vs inhibition, scales inhibitory gain
+        - Divisive Normalization: Automatic gain control on L4 inputs
+        - Population Intrinsic Plasticity: Activity-dependent threshold adaptation
+        """
+        cfg = self.layer_config
+        rob = cfg.robustness
+        device = torch.device(cfg.device)
+        
+        # Default: no robustness mechanisms
+        self.ei_balance: Optional[LayerEIBalance] = None
+        self.divisive_norm_l4: Optional[DivisiveNormalization] = None
+        self.pop_intrinsic_plasticity: Optional[PopulationIntrinsicPlasticity] = None
+        
+        if rob is None:
+            return
+        
+        # E/I Balance Regulator for L2/3 layer
+        # Tracks excitatory (L2/3 pyramidal) vs inhibitory (lateral inhibition) activity
+        if rob.enable_ei_balance:
+            self.ei_balance = LayerEIBalance(
+                n_exc=self.l23_size,
+                n_inh=self.l23_size,  # Approximation: use L2/3 size for inhibition
+                config=rob.ei_balance,
+                device=device,
+            )
+        
+        # Divisive Normalization for L4 input processing
+        # Provides automatic gain control regardless of input intensity
+        if rob.enable_divisive_norm:
+            self.divisive_norm_l4 = DivisiveNormalization(
+                config=rob.divisive_norm,
+                n_features=self.l4_size,
+                device=device,
+            )
+        
+        # Population Intrinsic Plasticity for L2/3
+        # Global excitability modulation based on population activity
+        if rob.enable_intrinsic_plasticity:
+            self.pop_intrinsic_plasticity = PopulationIntrinsicPlasticity(
+                config=rob.intrinsic_plasticity,
+            )
 
     def _init_weights(self) -> None:
         """Initialize inter-layer weight matrices.
@@ -353,6 +408,11 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             * cfg.input_to_l4_strength
         )
         l4_input = l4_input * (0.5 + 0.5 * encoding_mod)
+        
+        # Apply Divisive Normalization to L4 input (automatic gain control)
+        if self.divisive_norm_l4 is not None:
+            l4_input = self.divisive_norm_l4(l4_input)
+        
         l4_spikes, _ = self.l4_neurons(l4_input)
         l4_spikes = self._apply_sparsity(l4_spikes, cfg.l4_sparsity)
         self.state.l4_spikes = l4_spikes
@@ -428,7 +488,23 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
                 self.state.l23_spikes.float(),
                 self.w_l23_inhib.t(),
             )
+            
+            # E/I Balance: Scale inhibition to maintain healthy E/I ratio
+            if self.ei_balance is not None:
+                # Track E/I balance using L2/3 excitation vs inhibition
+                _ = self.ei_balance.update(
+                    self.state.l23_spikes,  # Excitatory activity
+                    self.state.l23_spikes,  # Proxy for inhibitory (scaled below)
+                )
+                # Scale inhibition to maintain target E/I ratio
+                l23_inhib = self.ei_balance.scale_inhibition(l23_inhib)
+            
             l23_input = l23_input - l23_inhib
+        
+        # Population Intrinsic Plasticity: Modulate input based on population rate
+        if self.pop_intrinsic_plasticity is not None and self.state.l23_spikes is not None:
+            self.pop_intrinsic_plasticity.update(self.state.l23_spikes)
+            l23_input = self.pop_intrinsic_plasticity.modulate_input(l23_input)
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
         # Neurons that fire too much have higher thresholds (less excitable)
@@ -745,5 +821,20 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         diag.update(self.weight_diagnostics(self.w_l4_l23.data, "l4_l23"))
         diag.update(self.weight_diagnostics(self.w_l23_recurrent.data, "l23_rec"))
         diag.update(self.weight_diagnostics(self.w_l23_l5.data, "l23_l5"))
+
+        # Robustness mechanism diagnostics
+        if self.ei_balance is not None:
+            ei_diag = self.ei_balance.get_diagnostics()
+            diag["robustness_ei_ratio"] = ei_diag.get("current_ratio", 0.0)
+            diag["robustness_ei_scale"] = ei_diag.get("inh_scale", 1.0)
+            diag["robustness_ei_status"] = ei_diag.get("status", "unknown")
+        
+        if self.divisive_norm_l4 is not None:
+            diag["robustness_divisive_norm_enabled"] = True
+        
+        if self.pop_intrinsic_plasticity is not None:
+            ip_diag = self.pop_intrinsic_plasticity.get_diagnostics()
+            diag["robustness_ip_rate_avg"] = ip_diag.get("rate_avg", 0.0)
+            diag["robustness_ip_excitability"] = ip_diag.get("excitability", 1.0)
 
         return diag

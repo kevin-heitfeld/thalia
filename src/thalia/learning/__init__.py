@@ -8,6 +8,10 @@ This module provides:
    - HebbianStrategy, STDPStrategy, BCMStrategy
    - ThreeFactorStrategy, ErrorCorrectiveStrategy
    - CompositeStrategy for combining strategies
+4. Robustness Mechanisms:
+   - EIBalanceRegulator - E/I balance regulation
+   - IntrinsicPlasticity - threshold adaptation
+   - MetabolicConstraint - energy-based regularization
 """
 
 from thalia.learning.bcm import (
@@ -18,6 +22,21 @@ from thalia.learning.unified_homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
     StriatumHomeostasis,
+)
+from thalia.learning.ei_balance import (
+    EIBalanceConfig,
+    EIBalanceRegulator,
+    LayerEIBalance,
+)
+from thalia.learning.intrinsic_plasticity import (
+    IntrinsicPlasticityConfig,
+    IntrinsicPlasticity,
+    PopulationIntrinsicPlasticity,
+)
+from thalia.learning.metabolic import (
+    MetabolicConfig,
+    MetabolicConstraint,
+    RegionalMetabolicBudget,
 )
 from thalia.learning.strategies import (
     # Base classes
@@ -48,6 +67,18 @@ __all__ = [
     "UnifiedHomeostasis",
     "UnifiedHomeostasisConfig",
     "StriatumHomeostasis",
+    # E/I Balance Regulation
+    "EIBalanceConfig",
+    "EIBalanceRegulator",
+    "LayerEIBalance",
+    # Intrinsic Plasticity
+    "IntrinsicPlasticityConfig",
+    "IntrinsicPlasticity",
+    "PopulationIntrinsicPlasticity",
+    # Metabolic Constraints
+    "MetabolicConfig",
+    "MetabolicConstraint",
+    "RegionalMetabolicBudget",
     # Learning Strategies (new pluggable system)
     "LearningConfig",
     "BaseStrategy",

@@ -78,6 +78,9 @@ from .diagnostics import (
     BrainSystemDiagnostics,
 )
 
+# Robustness mechanisms
+from ..diagnostics.criticality import CriticalityMonitor, CriticalityState
+
 # Import actual region implementations
 from ..regions.cortex import LayeredCortex, LayeredCortexConfig
 from ..regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
@@ -482,6 +485,14 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self._events_processed: int = 0
 
         # =====================================================================
+        # CRITICALITY MONITOR (Optional robustness diagnostic)
+        # =====================================================================
+        # Tracks network criticality via branching ratio.
+        # Enabled when robustness config has criticality enabled.
+        self.criticality_monitor: Optional[CriticalityMonitor] = None
+        self._total_spikes_for_criticality: int = 0
+
+        # =====================================================================
         # DIAGNOSTICS
         # =====================================================================
 
@@ -518,7 +529,13 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         from thalia.config import ThaliaConfig
 
         legacy_config = config.to_event_driven_brain_config()
-        return cls(legacy_config)
+        brain = cls(legacy_config)
+        
+        # Initialize CriticalityMonitor if robustness config enables it
+        if config.robustness.enable_criticality:
+            brain.criticality_monitor = CriticalityMonitor(config.robustness.criticality)
+        
+        return brain
 
     def _init_parallel_executor(self) -> None:
         """Initialize parallel executor with region creators.
@@ -1438,7 +1455,12 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                     if out_event.event_type == EventType.SPIKE:
                         payload = out_event.payload
                         if isinstance(payload, SpikePayload):
-                            self._spike_counts[event.target] += int(payload.spikes.sum().item())
+                            spike_count = int(payload.spikes.sum().item())
+                            self._spike_counts[event.target] += spike_count
+                            
+                            # Update criticality monitor if enabled
+                            if self.criticality_monitor is not None:
+                                self.criticality_monitor.update(payload.spikes)
 
                 self._events_processed += 1
 
@@ -1585,7 +1607,19 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                 "dopamine_tonic": self._tonic_dopamine,
                 "dopamine_phasic": self._phasic_dopamine,
             },
+            
+            # Robustness/Criticality diagnostics
+            "criticality": self._get_criticality_diagnostics(),
         }
+
+    def _get_criticality_diagnostics(self) -> Dict[str, Any]:
+        """Get criticality diagnostics if monitor is enabled."""
+        if self.criticality_monitor is None:
+            return {"enabled": False}
+        
+        diag = self.criticality_monitor.get_diagnostics()
+        diag["enabled"] = True
+        return diag
 
     def get_structured_diagnostics(self) -> BrainSystemDiagnostics:
         """Get fully structured diagnostics as a dataclass.

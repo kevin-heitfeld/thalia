@@ -53,6 +53,7 @@ from .training_config import (
     CheckpointConfig,
     LoggingConfig,
 )
+from .robustness_config import RobustnessConfig
 from .thalia_config import ThaliaConfig, print_config
 
 __all__ = [
@@ -81,4 +82,6 @@ __all__ = [
     "LearningRatesConfig",
     "CheckpointConfig",
     "LoggingConfig",
+    # Robustness
+    "RobustnessConfig",
 ]

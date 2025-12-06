@@ -9,7 +9,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from enum import Enum
 
@@ -17,6 +17,7 @@ import torch
 
 from thalia.regions.base import RegionConfig, RegionState
 from thalia.learning.bcm import BCMConfig
+from thalia.config.robustness_config import RobustnessConfig
 
 
 class CorticalLayer(Enum):
@@ -156,6 +157,17 @@ class LayeredCortexConfig(RegionConfig):
     bcm_tau_theta: float = 5000.0  # Threshold adaptation time constant (ms)
     bcm_theta_init: float = 0.01  # Initial sliding threshold
     bcm_config: Optional[BCMConfig] = None  # Custom BCM configuration
+
+    # =========================================================================
+    # ROBUSTNESS MECHANISMS
+    # =========================================================================
+    # Unified configuration for hyperparameter robustness mechanisms:
+    # - E/I Balance: Maintains healthy excitation/inhibition ratio
+    # - Divisive Normalization: Automatic gain control for inputs
+    # - Intrinsic Plasticity: Activity-dependent threshold adaptation
+    # - Criticality: Maintains network near critical point (optional)
+    # - Metabolic: Energy-based regularization for sparsity (optional)
+    robustness: Optional[RobustnessConfig] = field(default=None)
 
 
 @dataclass
