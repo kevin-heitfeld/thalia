@@ -67,9 +67,16 @@ class LayeredCortexConfig(RegionConfig):
     stdp_tau_plus: float = 20.0
     stdp_tau_minus: float = 20.0
 
-    # Weight bounds
+    # Weight bounds for feedforward connections (positive-only, Dale's law)
     w_max: float = 1.0
     w_min: float = 0.0
+
+    # Weight bounds for L2/3 recurrent connections (signed, compact E/I approximation)
+    # Unlike feedforward connections, recurrent lateral connections use signed weights
+    # to approximate the mixed excitatory/inhibitory microcircuit within a cortical layer.
+    # Positive weights = local excitation, negative weights = lateral inhibition.
+    l23_recurrent_w_min: float = -1.5  # Allows inhibitory-like connections
+    l23_recurrent_w_max: float = 1.0   # Symmetric by default
 
     # Which layer to use as output to next region
     output_layer: str = "L5"  # "L2/3" for cortical, "L5" for subcortical
@@ -129,6 +136,6 @@ class LayeredCortexState(RegionState):
 
     # Feedforward inhibition strength (0-1, 1 = max suppression)
     ffi_strength: float = 0.0
-    
+
     # Last plasticity delta (for monitoring continuous learning)
     last_plasticity_delta: float = 0.0

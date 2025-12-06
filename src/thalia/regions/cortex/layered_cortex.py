@@ -207,7 +207,12 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             torch.abs(torch.randn(self.l23_size, self.l4_size, device=device)) * w_scale_l4_l23
         )
         
-        # L2/3 recurrent: can be positive or negative (E/I balance)
+        # L2/3 recurrent: SIGNED weights (compact E/I approximation)
+        # Unlike feedforward connections which are positive-only (Dale's law),
+        # recurrent lateral connections use signed weights to approximate the
+        # mixed excitatory/inhibitory microcircuit within a cortical layer.
+        # Positive weights = local excitation, negative weights = lateral inhibition.
+        # Uses dedicated bounds [l23_recurrent_w_min, l23_recurrent_w_max] during learning.
         self.w_l23_recurrent = nn.Parameter(
             torch.randn(self.l23_size, self.l23_size, device=device) * 0.2
         )
@@ -482,14 +487,21 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
                 clamp_weights(self.w_l4_l23.data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
-            # L2/3 recurrent
+            # L2/3 recurrent (signed weights - compact E/I approximation)
+            # Uses dedicated bounds [l23_recurrent_w_min, l23_recurrent_w_max] to allow
+            # both excitatory and inhibitory-like lateral connections.
+            # This is a simplification of explicit E/I interneuron populations.
             dw = effective_lr * 0.5 * bcm_to_scale(l23_bcm_mod) * torch.outer(
                 l23_spikes.float(), l23_spikes.float()
             )
             with torch.no_grad():
                 self.w_l23_recurrent.data += dw
                 self.w_l23_recurrent.data.fill_diagonal_(0.0)
-                clamp_weights(self.w_l23_recurrent.data, cfg.w_min, cfg.w_max)
+                clamp_weights(
+                    self.w_l23_recurrent.data,
+                    cfg.l23_recurrent_w_min,
+                    cfg.l23_recurrent_w_max,
+                )
             total_change += dw.abs().mean().item()
 
             # L2/3 → L5
@@ -524,10 +536,16 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get layer-specific diagnostics using DiagnosticsMixin helpers."""
+        cfg = self.layer_config
         diag: Dict[str, Any] = {
             "l4_size": self.l4_size,
             "l23_size": self.l23_size,
             "l5_size": self.l5_size,
+            # Config weight bounds for reference
+            "config_w_min": cfg.w_min,
+            "config_w_max": cfg.w_max,
+            "config_l23_rec_w_min": cfg.l23_recurrent_w_min,
+            "config_l23_rec_w_max": cfg.l23_recurrent_w_max,
         }
         
         # Spike diagnostics for each layer
