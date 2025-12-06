@@ -2,9 +2,13 @@
 
 > Reducing complexity risk while maintaining architectural integrity
 
-**Status**: 🔄 **IN PLANNING** (December 6, 2025)
+**Status**: 🔄 **IN PROGRESS** (December 6, 2025)
 
 **Prerequisites**: ✅ Hyperparameter Robustness (Completed)
+
+**Current Phase**: ✅ Phase 4: Observability Dashboard (COMPLETED)
+
+**Next Phase**: Phase 1: Complexity Layers (Starting Next)
 
 ## Context
 
@@ -185,50 +189,145 @@ def run_ablation(
 
 ## Phase 4: Observability Dashboard (Week 4-5)
 
+**Status**: ✅ **COMPLETED** (December 6, 2025)
+
 ### 4.1 Real-time Monitoring
 
-Create a diagnostic dashboard that shows:
+Created a diagnostic dashboard that shows:
 - Per-region spike rates (with target bands)
 - E/I ratio over time
 - Weight magnitude distributions
 - Dopamine levels (tonic/phasic)
 - Branching ratio (criticality measure)
+- Overall health score (0-100)
 
 ### 4.2 Anomaly Detection
+
+**Implementation**: `thalia/diagnostics/health_monitor.py`
 
 ```python
 class HealthMonitor:
     """Detect unhealthy network states."""
     
-    def check_health(self, brain: EventDrivenBrain) -> HealthReport:
-        issues = []
+    def check_health(self, diagnostics: Dict[str, Any]) -> HealthReport:
+        # Detects:
+        # - ACTIVITY_COLLAPSE: spike rate < 0.01
+        # - SEIZURE_RISK: spike rate > 0.5
+        # - WEIGHT_EXPLOSION: weights > 5.0
+        # - WEIGHT_COLLAPSE: weights < 0.001
+        # - EI_IMBALANCE: ratio outside [1.0, 10.0]
+        # - CRITICALITY_DRIFT: branching ratio outside [0.8, 1.2]
+        # - DOPAMINE_SATURATION: dopamine > 2.0
         
-        # Check for seizure (too much activity)
-        if brain.get_avg_spike_rate() > 0.5:
-            issues.append(HealthIssue.SEIZURE_RISK)
-        
-        # Check for collapse (too little activity)
-        if brain.get_avg_spike_rate() < 0.01:
-            issues.append(HealthIssue.ACTIVITY_COLLAPSE)
-        
-        # Check for weight explosion
-        if brain.get_max_weight() > 10.0:
-            issues.append(HealthIssue.WEIGHT_EXPLOSION)
-        
-        # Check E/I imbalance
-        if brain.get_ei_ratio() > 10.0:
-            issues.append(HealthIssue.EI_IMBALANCE)
-        
-        return HealthReport(issues=issues, ...)
+        # Returns:
+        # - is_healthy: bool
+        # - overall_severity: 0-100 (higher = worse)
+        # - issues: List[IssueReport] with recommendations
+        # - summary: One-line status message
 ```
 
-### 4.3 Tasks
+### 4.3 Dashboard Visualization
 
-- [ ] Create `thalia/diagnostics/health_monitor.py`
-- [ ] Define health metrics and thresholds
-- [ ] Add optional health check in `brain.process_sample()`
-- [ ] Create matplotlib dashboard for experiments
-- [ ] Log warnings when health issues detected
+**Implementation**: `thalia/diagnostics/dashboard.py`
+
+Features:
+- Real-time matplotlib dashboard with 6 subplots
+- Windowed time series (configurable, default 100 timesteps)
+- Color-coded health zones (green/orange/red)
+- Current issue display with recommendations
+- Summary statistics and trend analysis
+- Save reports to PNG/PDF
+
+### 4.4 Tasks
+
+- [x] Create `thalia/diagnostics/health_monitor.py`
+- [x] Define health metrics and thresholds
+- [x] Implement `HealthMonitor.check_health()` with severity scoring
+- [x] Create `Dashboard` class with matplotlib visualization
+- [x] Add health checks to diagnostics export
+- [x] Create demo script (`experiments/scripts/demo_dashboard.py`)
+- [x] Write comprehensive tests (20 tests covering all issue types)
+
+### 4.5 Testing
+
+**File**: `tests/test_health_dashboard.py`
+
+Test Coverage:
+- 14 tests for `HealthMonitor` (all issue types, severity, trends)
+- 6 tests for `Dashboard` (creation, updates, windowing, summary)
+- All 20 tests passing
+
+### 4.6 Usage Example
+
+```python
+from thalia.diagnostics import Dashboard, HealthConfig
+
+# Create dashboard
+dashboard = Dashboard(
+    health_config=HealthConfig(),
+    window_size=50,
+)
+
+# Training loop
+for epoch in range(num_epochs):
+    diagnostics = brain.get_diagnostics()
+    dashboard.update(diagnostics)
+    
+    # Show every 5 steps
+    if epoch % 5 == 0:
+        dashboard.show(block=False)
+
+# Final report
+dashboard.print_summary()
+dashboard.save_report("training_health.png")
+```
+
+### 4.7 Implementation Summary
+
+**Files Created**:
+- `src/thalia/diagnostics/health_monitor.py` (412 lines)
+  - `HealthConfig`: Configurable thresholds
+  - `HealthMonitor`: Main health checking logic
+  - `HealthReport`: Health status with issues and severity
+  - `IssueReport`: Individual issue with recommendations
+  - `HealthIssue`: Enum of 8 issue types
+
+- `src/thalia/diagnostics/dashboard.py` (343 lines)
+  - `Dashboard`: Interactive matplotlib visualization
+  - 6 subplot layout (health score, spike rate, E/I, criticality, dopamine, issues)
+  - Trend tracking and summary statistics
+  - Save to file functionality
+
+- `experiments/scripts/demo_dashboard.py` (96 lines)
+  - Demonstrates dashboard with simulated phases
+  - Shows activity collapse, recovery, and normal operation
+
+- `tests/test_health_dashboard.py` (498 lines, 20 tests)
+  - Comprehensive coverage of all health checks
+  - Dashboard functionality testing
+  - All tests passing
+
+**Total**: 1,349 lines of code + tests
+
+### 4.8 Success Metrics
+
+✅ Can detect all 8 pathological states automatically
+✅ Provides actionable recommendations for each issue
+✅ Real-time visualization works in experiment scripts
+✅ All tests pass (20/20)
+✅ Severity scoring allows filtering of minor issues
+✅ Trend analysis detects gradual degradation
+✅ Dashboard can save reports for documentation
+
+### 4.9 Next Steps
+
+With observability infrastructure complete, we can now:
+1. Use dashboard during Phase 1 (Complexity Layers) test reorganization
+2. Validate Phase 2 (Config Profiles) with health metrics
+3. Use health scores in Phase 3 (Ablation Framework) comparisons
+
+The dashboard provides the foundation for data-driven development
+throughout the remaining complexity mitigation work.
 
 ---
 

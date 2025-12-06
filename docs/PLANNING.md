@@ -60,17 +60,6 @@ thalia/
 │   │   ├── dynamics.md
 │   │   └── cognition.md
 │   │
-│   ├── tutorials/                 # Getting started guides
-│   │   ├── 00-quickstart.md
-│   │   ├── 01-first-network.md
-│   │   ├── 02-training-stdp.md
-│   │   └── 03-building-attractors.md
-│   │
-│   ├── guides/                    # In-depth how-to guides
-│   │   ├── encoding-strategies.md
-│   │   ├── visualization.md
-│   │   └── debugging-snns.md
-│   │
 │   ├── conversations/             # AI collaboration logs
 │   │   └── 2025-11-28_conversation_with_claude.json
 │   │
