@@ -58,6 +58,9 @@ from thalia.learning.strategies import (
     # Factory
     create_strategy,
 )
+from thalia.learning.strategy_mixin import (
+    LearningStrategyMixin,
+)
 
 __all__ = [
     # BCM (Bienenstock-Cooper-Munro) - legacy
@@ -94,4 +97,6 @@ __all__ = [
     "ErrorCorrectiveStrategy",
     "CompositeStrategy",
     "create_strategy",
+    # Strategy Mixin for Regions
+    "LearningStrategyMixin",
 ]

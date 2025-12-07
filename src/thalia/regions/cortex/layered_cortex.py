@@ -50,6 +50,7 @@ from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
+from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig, CompositeStrategy
 from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights, assert_single_instance
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
@@ -60,7 +61,7 @@ from thalia.learning.intrinsic_plasticity import PopulationIntrinsicPlasticity
 from .config import LayeredCortexConfig, LayeredCortexState
 
 
-class LayeredCortex(DiagnosticsMixin, BrainRegion):
+class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
     """
     Multi-layer cortical microcircuit with proper layer separation.
 
@@ -323,6 +324,23 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             self.w_l23_inhib.data.fill_diagonal_(0.0)
 
         self.weights = self.w_input_l4
+
+        # Initialize learning strategy (STDP for cortical learning)
+        # We use a single STDP strategy instance that we'll apply to different
+        # weight matrices (input->L4, L4->L2/3, L2/3->L5, L2/3 recurrent)
+        self.learning_strategy = STDPStrategy(
+            STDPConfig(
+                learning_rate=cfg.stdp_lr,
+                a_plus=0.01,
+                a_minus=0.012,
+                tau_plus=20.0,
+                tau_minus=20.0,
+                dt=cfg.dt_ms,
+                w_min=cfg.w_min,
+                w_max=cfg.w_max,
+                soft_bounds=cfg.soft_bounds,
+            )
+        )
 
     def reset_state(self) -> None:
         """Reset all layer states.

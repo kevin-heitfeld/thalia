@@ -52,6 +52,8 @@ from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 
+from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig, CompositeStrategy
+
 from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights, cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.regions.base import (
@@ -93,7 +95,10 @@ class PrefrontalConfig(RegionConfig):
 
     # STDP parameters
     stdp_tau_ms: float = 20.0  # STDP trace decay
+    stdp_a_plus: float = 0.01  # LTP amplitude
+    stdp_a_minus: float = 0.012  # LTD amplitude (slightly larger for stability)
     heterosynaptic_ratio: float = 0.3  # LTD for non-active synapses
+    dt_ms: float = 1.0  # Simulation timestep
 
     # Recurrent connections for WM maintenance
     recurrent_strength: float = 0.8  # Self-excitation for persistence
@@ -201,7 +206,7 @@ class DopamineGatingSystem:
         )).item())
 
 
-class Prefrontal(BrainRegion):
+class Prefrontal(LearningStrategyMixin, BrainRegion):
     """
     Prefrontal Cortex implementation with gated working memory.
 
@@ -250,13 +255,19 @@ class Prefrontal(BrainRegion):
             device=config.device,
         )
 
-        # STDP traces for spike-based learning
-        self.input_trace = torch.zeros(config.n_input, device=self.device)
-        self.output_trace = torch.zeros(config.n_output, device=self.device)
-
-        # Eligibility trace for dopamine-gated learning
-        self.stdp_eligibility = torch.zeros(
-            config.n_output, config.n_input, device=self.device
+        # Initialize learning strategy (STDP with dopamine gating)
+        self.learning_strategy = STDPStrategy(
+            STDPConfig(
+                learning_rate=config.stdp_lr,
+                a_plus=config.stdp_a_plus,
+                a_minus=config.stdp_a_minus,
+                tau_plus=config.stdp_tau_ms,
+                tau_minus=config.stdp_tau_ms,
+                dt=config.dt_ms,
+                w_min=config.w_min,
+                w_max=config.w_max,
+                soft_bounds=config.soft_bounds,
+            )
         )
 
         # Initialize working memory state
@@ -324,10 +335,9 @@ class Prefrontal(BrainRegion):
         if hasattr(self, 'stp_recurrent') and self.stp_recurrent is not None:
             self.stp_recurrent.reset_state()
 
-        # Reset STDP traces
-        self.input_trace.zero_()
-        self.output_trace.zero_()
-        self.stdp_eligibility.zero_()
+        # Reset learning strategy state (traces, eligibility)
+        if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
+            self.learning_strategy.reset_state()
 
         self.state = PrefrontalState(
             membrane=torch.zeros(1, self.config.n_output, device=self.device),
@@ -344,7 +354,7 @@ class Prefrontal(BrainRegion):
         encoding_mod: float = 1.0,
         retrieval_mod: float = 1.0,
         dopamine_signal: float = 0.0,
-        **kwargs,
+        **kwargs: Any,
     ) -> torch.Tensor:
         """
         Process input through prefrontal cortex.
@@ -478,95 +488,42 @@ class Prefrontal(BrainRegion):
         output_spikes: torch.Tensor,
         dt: float = 1.0,
     ) -> None:
-        """Apply dopamine-gated STDP learning continuously.
+        """Apply dopamine-gated STDP learning using strategy pattern.
 
         This is called automatically at each forward() timestep.
-        Uses spike-timing dependent plasticity gated by dopamine:
-        - STDP creates eligibility traces from spike timing
-        - Dopamine gates whether eligibility becomes lasting plasticity
-        - High DA → learn associations (eligibility → weight change)
-        - Low DA → protect existing patterns (eligibility decays unused)
+        Uses the learning strategy system for consistent plasticity application.
         """
         if not self.plasticity_enabled:
             return
 
+        cfg = self.pfc_config
         input_spikes = ensure_batch_dim(input_spikes)
         output_spikes = ensure_batch_dim(output_spikes)
 
-        cfg = self.pfc_config
+        # Apply STDP learning via strategy
+        # Dopamine modulation is handled automatically by apply_strategy_learning
+        metrics = self.apply_strategy_learning(
+            pre_activity=input_spikes,
+            post_activity=output_spikes,
+            weights=self.weights,
+        )
 
-        # Get effective learning rate (dopamine modulated)
-        effective_lr = self.get_effective_learning_rate(cfg.stdp_lr)
-        if effective_lr < 1e-8:
-            return
-
-        # Get 1D versions for torch.outer
-        input_1d = ensure_1d(input_spikes)
-        output_1d = ensure_1d(output_spikes)
-
-        # ======================================================================
-        # Update STDP traces
-        # ======================================================================
-        trace_decay = 1.0 - dt / cfg.stdp_tau_ms
-        self.input_trace = self.input_trace * trace_decay + input_1d
-        self.output_trace = self.output_trace * trace_decay + output_1d
-
-        # STDP rule: post spike with pre trace → LTP
-        ltp = torch.outer(output_1d, self.input_trace)
-        ltd = torch.outer(self.output_trace, input_1d)
-
-        # Apply soft bounds
-        if cfg.soft_bounds:
-            w_normalized = (self.weights - self.config.w_min) / (self.config.w_max - self.config.w_min + 1e-6)
-            ltp_factor = 1.0 - w_normalized
-            ltd_factor = w_normalized
-            ltp = ltp * ltp_factor
-            ltd = ltd * ltd_factor
-
-        # Compute STDP weight change with dopamine-modulated learning rate
-        stdp_dw = effective_lr * (ltp - ltd)
-
-        # ======================================================================
-        # HETEROSYNAPTIC PLASTICITY
-        # ======================================================================
-        # When a postsynaptic neuron fires but a presynaptic neuron was INACTIVE,
-        # weaken that synapse. This prevents dominant synapses from monopolizing
-        # the neuron and allows flexible working memory updates.
-        # inactive_pre[i,j] = 1 if pre j was inactive when post i fired
-        inactive_pre = output_1d.unsqueeze(1) * (1.0 - self.input_trace.unsqueeze(0))
-        hetero_ltd = cfg.heterosynaptic_ratio * effective_lr * inactive_pre
-        stdp_dw = stdp_dw - hetero_ltd
-
-        # Accumulate into eligibility trace
-        eligibility_decay = 1.0 - dt / 100.0  # 100ms eligibility window
-        self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
-
-        # ======================================================================
-        # Dopamine-gated learning
-        # ======================================================================
-        gate = self.dopamine_system.get_gate()
-
-        # Only apply eligibility if gate is open (high DA)
-        if gate > 0.1:  # Minimum gate to trigger learning
-            dW = self.stdp_eligibility * gate
-
+        # Optional: Apply synaptic scaling for homeostasis
+        if cfg.synaptic_scaling_enabled and metrics:
             with torch.no_grad():
-                self.weights.data += dW
+                mean_weight = self.weights.data.mean()
+                scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
+                self.weights.data *= scaling
                 clamp_weights(self.weights.data, self.config.w_min, self.config.w_max)
-
-                # Synaptic scaling for homeostasis
-                if cfg.synaptic_scaling_enabled:
-                    mean_weight = self.weights.data.mean()
-                    scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
-                    self.weights.data *= scaling
-                    clamp_weights(self.weights.data, self.config.w_min, self.config.w_max)
 
         # ======================================================================
         # Update recurrent weights to strengthen WM patterns
         # ======================================================================
-        if self.state.working_memory is not None and gate > 0.1:
+        # Rule learning now happens via dopamine-modulated STDP in _apply_plasticity
+        # This simple Hebbian update for recurrent connections maintains WM patterns
+        if self.state.working_memory is not None:
             wm_mean = self.state.working_memory.mean(dim=0)
-            dW_rec = cfg.rule_lr * gate * torch.outer(wm_mean, wm_mean)
+            dW_rec = cfg.rule_lr * torch.outer(wm_mean, wm_mean)
             with torch.no_grad():
                 self.rec_weights.data += dW_rec
                 self.rec_weights.data.fill_diagonal_(
