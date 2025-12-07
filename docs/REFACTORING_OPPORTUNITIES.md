@@ -203,16 +203,48 @@ for region_name in config.active_regions:
 
 ## Medium-Priority Opportunities
 
-### 6. 🔲 Consolidate Similarity Computation Methods
-**Estimated Effort**: 1-2 hours  
-**Impact**: Low-Medium
+### 6. ✅ COMPLETED: Consolidate Similarity Computation Methods
+**Estimated Effort**: 1-2 hours → **Actual: 1 hour**  
+**Impact**: Low-Medium  
+**Status**: ✅ COMPLETED (commit 20f83e4)
 
 **Problem**:
-- `cosine_similarity_safe()` appears in multiple places
+- `cosine_similarity_safe()` appeared in multiple places
 - Similar jaccard/overlap computations duplicated
-- `DiagnosticsMixin.similarity_diagnostics()` exists but not used everywhere
+- `DiagnosticsMixin.similarity_diagnostics()` existed but not used everywhere
 
-**Solution**: Standardize on mixin method, remove duplicates
+**Solution Implemented**:
+1. Made `cosine_similarity_safe()` in `core/utils.py` the canonical implementation
+2. Refactored `DiagnosticsMixin.similarity_diagnostics()` to use canonical cosine
+3. Refactored `compute_spike_similarity()` to delegate cosine method to utility
+4. Documented inline similarity in `unified_homeostasis.py`
+
+**Results**:
+- Single source of truth for cosine similarity with consistent epsilon handling
+- ~15 lines of duplicate code eliminated
+- 22 comprehensive tests added (`test_similarity.py`)
+- All similarity implementations now use same underlying logic
+
+**Before**:
+```python
+# diagnostics_mixin.py - duplicate cosine logic
+norm_a = a.norm() + eps
+norm_b = b.norm() + eps
+cosine = (a @ b) / (norm_a * norm_b)
+
+# spike_coding.py - duplicate cosine logic  
+norm1 = flat1.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+norm2 = flat2.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+similarity = (flat1 * flat2).sum(dim=-1) / (norm1.squeeze(-1) * norm2.squeeze(-1))
+```
+
+**After**:
+```python
+# All use canonical implementation
+from thalia.core.utils import cosine_similarity_safe
+cosine = cosine_similarity_safe(a, b, eps=eps)
+similarity = cosine_similarity_safe(flat1, flat2, eps=1e-6, dim=-1)
+```
 
 ---
 
@@ -324,21 +356,21 @@ class NeuromodulatorMixin:
 | 3. Encoder/Decoder patterns | 200-300 | 4 | 3-4 (✅ 2) | ✅ Done | High |
 | 4. Learning strategies | 150-250 | 4 | 4-5 (✅ 2) | ✅ Done | High |
 | 5. Region factory | 50-100 | 3 | 2-3 (✅ 1) | ✅ Done | Medium |
-| 6. Similarity methods | 30-50 | 5-8 | 1-2 | 🔲 Todo | Medium |
+| 6. Similarity methods | 30-50 | 4 | 1-2 (✅ 1) | ✅ Done | Medium |
 | 7. Test utilities | 100-150 | 10-15 | 2-3 | 🔲 Todo | Medium |
 | 8. State access | 50-80 | 10-12 | 2-3 | 🔲 Todo | Medium |
 | 9. Neuromodulator mixin | 80-120 | 8-10 | 2 | 🔲 Todo | Medium |
 | 10. Replay consolidation | 100-150 | 3-4 | 3-4 | 🔲 Todo | Medium |
-| **Total** | **1010-1600** | **75-105** | **27-35** | **5/10** | - |
+| **Total** | **1010-1600** | **75-105** | **27-35** | **6/10** | - |
 
-**Progress**: 4 high-priority + 1 medium-priority items completed (10.5 hours actual vs 14-19 estimated)
+**Progress**: 4 high-priority + 2 medium-priority items completed (11.5 hours actual vs 15-20 estimated)
 
 ---
 
 ## Recommendations
 
-### Phase 4 Completed ✅
-All four high-priority items have been completed:
+### Phase 5 Continuing ✅
+Six of ten items have been completed (4 high-priority + 2 medium-priority):
 
 1. ✅ **Reset Standardization** (#1) - Commit 248b0f9
    - Unified on `reset_state()` interface across 50+ files
@@ -368,14 +400,21 @@ All four high-priority items have been completed:
    - Enables dynamic, config-driven brain construction
    - Comprehensive test coverage
 
-**Total Impact**:
-- ~520 lines of boilerplate eliminated (with infrastructure added)
-- 63+ files updated
-- 10.5 hours actual (vs 14-19 estimated)
-- 7 commits (5 implementation, 2 documentation)
+6. ✅ **Similarity Consolidation** (#6) - Commit 20f83e4
+   - Unified all similarity methods on cosine_similarity_safe()
+   - DiagnosticsMixin and spike_coding now use canonical implementation
+   - Eliminated ~15 lines of duplicate cosine similarity logic
+   - 22 comprehensive tests added
 
-### Next Phase (Phase 5)
-Medium-priority improvements to consider:
+**Total Impact**:
+- ~535 lines of boilerplate eliminated (with infrastructure added)
+- 67+ files updated
+- 11.5 hours actual (vs 15-20 estimated)
+- 8 commits (6 implementation, 2 documentation)
+
+### Next Phase (Phase 5 continued)
+Remaining medium-priority improvements:
+
 
 5. Region Factory (#5) - Dynamic brain construction
 6. Similarity Methods (#6) - Consolidate diagnostic utils
