@@ -206,16 +206,15 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
 
         Args:
             input_spikes: Input spike pattern [batch, n_input]
-            dt: Time step in ms (currently uses config.dt_ms)
+            dt: Time step in ms
             encoding_mod: Theta modulation for encoding (scales input gain)
             retrieval_mod: Theta modulation for retrieval (scales output correction)
         """
         input_spikes = ensure_batch_dim(input_spikes)
 
         if self.neurons.membrane is None:
-            self.neurons.reset_state(input_spikes.shape[0])
+            self.neurons.reset_state()
 
-        dt = self.config.dt_ms
         cfg = self.cerebellum_config
 
         # ======================================================================

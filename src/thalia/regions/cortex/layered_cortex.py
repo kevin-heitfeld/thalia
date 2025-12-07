@@ -597,7 +597,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.state.input_spikes = input_spikes
 
         # Apply continuous plasticity (learning happens as part of forward dynamics)
-        self._apply_plasticity()
+        self._apply_plasticity(dt=dt)
 
         # Construct output
         if cfg.dual_output:
@@ -630,7 +630,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         return sparse_spikes
 
-    def _apply_plasticity(self) -> None:
+    def _apply_plasticity(self, dt: float = 1.0) -> None:
         """Apply continuous STDP learning with BCM modulation.
 
         This is called automatically at each forward() timestep.

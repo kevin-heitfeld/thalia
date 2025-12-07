@@ -285,7 +285,7 @@ class TestPrefrontal:
 
     def test_working_memory_gating(self, prefrontal):
         """Test that dopamine affects working memory updates."""
-        prefrontal.reset_state(1)
+        prefrontal.reset_state()
 
         # Create a pattern
         pattern = torch.zeros(1, prefrontal.config.n_input)
@@ -298,7 +298,7 @@ class TestPrefrontal:
         wm_high_da = prefrontal.get_working_memory().clone()
 
         # Reset and try with low DA
-        prefrontal.reset_state(1)
+        prefrontal.reset_state()
         for _ in range(5):
             prefrontal.forward(pattern, dopamine_signal=-0.5)
 
@@ -310,7 +310,7 @@ class TestPrefrontal:
 
     def test_working_memory_maintenance(self, prefrontal):
         """Test that WM can be maintained over time."""
-        prefrontal.reset_state(1)
+        prefrontal.reset_state()
 
         # Store pattern with high DA
         pattern = torch.zeros(1, prefrontal.config.n_input)
@@ -329,7 +329,7 @@ class TestPrefrontal:
 
     def test_distractor_rejection(self, prefrontal):
         """Test that low DA protects WM from distractors."""
-        prefrontal.reset_state(1)
+        prefrontal.reset_state()
 
         # Store pattern A with high DA
         pattern_a = torch.zeros(1, prefrontal.config.n_input)
@@ -361,7 +361,7 @@ class TestPrefrontal:
         In the new paradigm, learning happens automatically during forward()
         when dopamine is present. There is no separate learn() call.
         """
-        prefrontal.reset_state(1)
+        prefrontal.reset_state()
 
         initial_weights = prefrontal.weights.clone()
 

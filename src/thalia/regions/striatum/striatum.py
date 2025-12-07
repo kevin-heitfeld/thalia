@@ -417,7 +417,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
         return weights.clamp(self.config.w_min, self.config.w_max).to(self.device)
 
-    def _update_stdp_eligibility(self, input_spikes: torch.Tensor, output_spikes: torch.Tensor) -> None:
+    def _update_stdp_eligibility(self, input_spikes: torch.Tensor, output_spikes: torch.Tensor, dt: float = 1.0) -> None:
         """Update STDP eligibility traces from spike timing.
 
         This is called from forward() so eligibility accumulates during the
@@ -426,11 +426,11 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         Args:
             input_spikes: Input spike tensor
             output_spikes: Output spike tensor
+            dt: Time step in ms
         """
         input_spikes = ensure_batch_dim(input_spikes)
         output_spikes = ensure_batch_dim(output_spikes)
 
-        dt = self.config.dt_ms
         cfg = self.striatum_config
 
         # Decay and update spike traces
@@ -465,7 +465,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
     def _update_d1_d2_eligibility(
         self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor,
-        chosen_action: int | None = None
+        chosen_action: int | None = None, dt: float = 1.0
     ) -> None:
         """Update separate eligibility traces for D1 and D2 pathways.
 
@@ -493,7 +493,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         if input_spikes.shape[0] != 1:
             return
 
-        dt = self.config.dt_ms
         cfg = self.striatum_config
 
         # Get 1D versions for trace updates
@@ -562,7 +561,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.d2_eligibility = self.d2_eligibility * eligibility_decay + d2_stdp_dw
 
     def _update_d1_d2_eligibility_all(
-        self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor
+        self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor, dt: float = 1.0
     ) -> None:
         """Update eligibility traces for ALL active D1/D2 neurons.
 
@@ -579,10 +578,11 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             input_spikes: Input spike tensor
             d1_spikes: D1 neuron population spikes
             d2_spikes: D2 neuron population spikes
+            dt: Time step in ms
         """
         # Just call the existing method with chosen_action=None
         # which will update eligibility for all active neurons
-        self._update_d1_d2_eligibility(input_spikes, d1_spikes, d2_spikes, chosen_action=None)
+        self._update_d1_d2_eligibility(input_spikes, d1_spikes, d2_spikes, chosen_action=None, dt=dt)
 
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.THREE_FACTOR
@@ -701,9 +701,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
         # Reset D1 and D2 neuron states if needed
         if self.d1_neurons.membrane is None:
-            self.d1_neurons.reset_state(input_spikes.shape[0])
+            self.d1_neurons.reset_state()
         if self.d2_neurons.membrane is None:
-            self.d2_neurons.reset_state(input_spikes.shape[0])
+            self.d2_neurons.reset_state()
 
         # =====================================================================
         # D1/D2 SEPARATE POPULATIONS - COMPUTE ACTIVATIONS
@@ -828,15 +828,15 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Eligibility accumulates for ALL neurons that fire during the trial.
         # When reward arrives, deliver_reward() uses last_action (set by finalize_action)
         # to apply learning only to the chosen action's synapses.
-        self.eligibility.update(input_spikes, output_spikes, self.config.dt_ms)
+        self.eligibility.update(input_spikes, output_spikes, dt)
 
         # Update D1/D2 eligibility traces for ALL active neurons
         # The action-specific masking happens in deliver_reward(), not here
-        self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes)
+        self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes, dt=dt)
 
         # For REWARD_MODULATED_STDP, also update the spike-based eligibility trace
         if self.striatum_config.learning_rule == LearningRule.REWARD_MODULATED_STDP:
-            self._update_stdp_eligibility(input_spikes, output_spikes)
+            self._update_stdp_eligibility(input_spikes, output_spikes, dt=dt)
 
         # NOTE: Dopamine is now managed centrally by Brain (VTA).
         # Dopamine decay happens in Brain._update_tonic_dopamine(), not here.
@@ -1512,11 +1512,11 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self._trial_timesteps = 0
         # Reset all neuron populations
         if self.neurons is not None:
-            self.neurons.reset_state(1)
+            self.neurons.reset_state()
         if hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
-            self.d1_neurons.reset_state(1)
+            self.d1_neurons.reset_state()
         if hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
-            self.d2_neurons.reset_state(1)
+            self.d2_neurons.reset_state()
         # Reset RPE tracking
         self._last_rpe = 0.0
         self._last_expected = 0.0
