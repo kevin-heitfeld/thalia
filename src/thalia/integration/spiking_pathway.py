@@ -32,9 +32,10 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from ..core.stp import ShortTermPlasticity, STPConfig, STPType
-from ..core.utils import clamp_weights
-from ..learning.bcm import BCMRule, BCMConfig
+from thalia.core.pathway_protocol import BaseNeuralPathway
+from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
+from thalia.core.utils import clamp_weights
+from thalia.learning.bcm import BCMRule, BCMConfig
 
 
 class TemporalCoding(Enum):
@@ -155,20 +156,32 @@ class SpikingPathwayConfig:
     device: str = "cpu"
 
 
-class SpikingPathway(nn.Module):
+class SpikingPathway(BaseNeuralPathway):
     """
     Fully spiking inter-region pathway with temporal dynamics.
+    
+    Inherits from BaseNeuralPathway, implementing the NeuralPathway protocol
+    interface with a standardized API for inter-region connections.
 
-    Unlike the rate-based Pathway class, this implements actual
-    spiking neurons with:
+    Unlike rate-based pathways, this implements actual spiking neurons with:
     - Leaky integrate-and-fire dynamics
     - Synaptic currents with temporal filtering
     - Axonal conduction delays
-    - STDP learning with spike timing
+    - **STDP learning (automatic during every forward pass)**
     - Support for temporal coding schemes
 
     The pathway acts as a "mini-region" that transforms spikes
     from source to target while maintaining temporal structure.
+    
+    Protocol Compliance:
+    - forward(): Process spikes through pathway (**learning happens automatically**)
+    - reset_state(): Clear membrane potentials, traces, delays
+    - get_diagnostics(): Report activity and learning metrics
+    
+    Note on Learning:
+    Like brain regions (Prefrontal, Hippocampus, etc.), this pathway
+    ALWAYS learns during forward passes via STDP. There is no separate
+    learn() method - plasticity happens continuously and automatically.
 
     Example:
         pathway = SpikingPathway(SpikingPathwayConfig(
@@ -180,8 +193,9 @@ class SpikingPathway(nn.Module):
 
         for t in range(n_timesteps):
             target_spikes = pathway(source_spikes[t], dt=1.0, time_ms=t)
+            # STDP learning happens automatically during forward pass!
 
-        # Learning happens automatically via STDP
+        # Check learning metrics
         metrics = pathway.get_learning_metrics()
     """
 

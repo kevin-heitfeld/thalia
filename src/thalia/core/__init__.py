@@ -94,6 +94,12 @@ from thalia.core.protocols import (
     Configurable,
     BrainRegionProtocol,
 )
+from thalia.core.pathway_protocol import (
+    NeuralPathway,
+    SensoryPathwayProtocol,
+    BaseNeuralPathway,
+    Pathway,
+)
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.traces import (
     SpikeTrace,
@@ -188,7 +194,12 @@ __all__ = [
     "WeightContainer",
     "Configurable",
     "BrainRegionProtocol",
-    # Diagnostics Mixin
+    # Pathway protocols
+    "NeuralPathway",
+    "SensoryPathwayProtocol",
+    "BaseNeuralPathway",
+    "Pathway",
+    # Diagnostic mixin
     "DiagnosticsMixin",
     # Spike Coding
     "CodingStrategy",
