@@ -85,6 +85,29 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Output contains both L2/3 (cortico-cortical) and L5 (subcortical)
         l23_out = output[:, :cortex.l23_size]
         l5_out = output[:, cortex.l23_size:]
+    
+    Mixins Provide:
+    ---------------
+    From LearningStrategyMixin:
+        - add_strategy(strategy) → None
+        - apply_learning(pre, post, **kwargs) → Dict
+        - Pluggable learning rules (Hebbian, STDP, BCM)
+    
+    From DiagnosticsMixin:
+        - check_health() → HealthMetrics
+        - get_firing_rate(spikes) → float
+        - check_weight_health(weights, name) → WeightHealth
+        - detect_runaway_excitation(spikes) → bool
+    
+    From BrainRegion (abstract base):
+        - forward(input, **kwargs) → Tensor [must implement]
+        - reset_state() → None
+        - get_diagnostics() → Dict
+        - Neuromodulator control methods
+    
+    See Also:
+        docs/patterns/mixins.md for detailed mixin patterns
+        docs/patterns/state_management.md for LayeredCortexState
     """
 
     def __init__(self, config: LayeredCortexConfig):

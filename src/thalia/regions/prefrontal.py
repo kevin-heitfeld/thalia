@@ -208,14 +208,31 @@ class DopamineGatingSystem:
 
 
 class Prefrontal(LearningStrategyMixin, BrainRegion):
-    """
-    Prefrontal Cortex implementation with gated working memory.
+    """Prefrontal cortex with dopamine-gated working memory.
 
-    Key features:
-    - Working memory maintained through recurrent activity
-    - Dopamine gates what enters working memory
-    - Slow time constants for temporal integration
-    - Context-dependent rule learning
+    Implements:
+    - Working memory maintenance via recurrent connections
+    - Dopamine gating of updates (similar to LSTM gates)
+    - Rule learning and context-dependent behavior
+    - Slow integration for temporal abstraction
+
+    Mixins Provide:
+    ---------------
+    From LearningStrategyMixin:
+        - add_strategy(strategy) → None
+        - apply_learning(pre, post, **kwargs) → Dict
+        - Pluggable learning rules (STDP with dopamine modulation)
+
+    From BrainRegion (abstract base):
+        - forward(input, **kwargs) → Tensor [must implement]
+        - reset_state() → None
+        - get_diagnostics() → Dict
+        - set_dopamine(level) → None
+        - Neuromodulator control methods
+
+    See Also:
+        docs/patterns/mixins.md for detailed mixin patterns
+        docs/patterns/state_management.md for PrefrontalState
     """
 
     def __init__(self, config: PrefrontalConfig):

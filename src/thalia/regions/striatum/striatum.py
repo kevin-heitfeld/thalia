@@ -82,6 +82,30 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     - Instead of 1 neuron per action, use N neurons per action
     - Decision = which population has highest total spike count
     - Benefits: noise reduction, redundancy, graded confidence
+    
+    Mixins Provide:
+    ---------------
+    From DiagnosticsMixin:
+        - check_health() → HealthMetrics
+        - get_firing_rate(spikes) → float
+        - check_weight_health(weights, name) → WeightHealth
+        - detect_runaway_excitation(spikes) → bool
+        - detect_silence(spikes) → bool
+    
+    From ActionSelectionMixin:
+        - select_action_softmax(q_values, temperature) → int
+        - select_action_greedy(q_values, epsilon) → int
+        - compute_policy(q_values, temperature) → Tensor
+        - add_exploration_noise(q_values, noise_std) → Tensor
+    
+    From BrainRegion (abstract base):
+        - forward(input, **kwargs) → Tensor [must implement]
+        - reset_state() → None
+        - get_diagnostics() → Dict
+        - set_dopamine(level) → None
+    
+    See Also:
+        docs/patterns/mixins.md for detailed mixin patterns
     """
     def __init__(self, config: RegionConfig):
         if not isinstance(config, StriatumConfig):

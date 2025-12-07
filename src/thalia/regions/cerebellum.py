@@ -139,6 +139,24 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
     - Error signal = target - actual (from climbing fibers)
     - Weight change = learning_rate × input × error
     - This is essentially the delta rule / perceptron learning
+    
+    Mixins Provide:
+    ---------------
+    From DiagnosticsMixin:
+        - check_health() → HealthMetrics
+        - get_firing_rate(spikes) → float
+        - check_weight_health(weights, name) → WeightHealth
+        - detect_runaway_excitation(spikes) → bool
+        - detect_silence(spikes) → bool
+    
+    From BrainRegion (abstract base):
+        - forward(input, **kwargs) → Tensor [must implement]
+        - reset_state() → None
+        - get_diagnostics() → Dict
+        - deliver_error(target) → Dict [cerebellum-specific]
+    
+    See Also:
+        docs/patterns/mixins.md for detailed mixin patterns
     """
 
     def __init__(self, config: RegionConfig):

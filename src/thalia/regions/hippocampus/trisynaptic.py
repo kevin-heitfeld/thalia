@@ -84,6 +84,25 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     3. CONTINUOUS DYNAMICS: No artificial resets - everything flows naturally
 
     All computations are spike-based. No rate accumulation!
+    
+    Mixins Provide:
+    ---------------
+    From DiagnosticsMixin:
+        - check_health() → HealthMetrics
+        - get_firing_rate(spikes) → float
+        - check_weight_health(weights, name) → WeightHealth
+        - detect_runaway_excitation(spikes) → bool
+        - detect_silence(spikes) → bool
+    
+    From BrainRegion (abstract base):
+        - forward(input, **kwargs) → Tensor [must implement]
+        - reset_state() → None
+        - get_diagnostics() → Dict
+        - set_dopamine(level) → None
+        - Neuromodulator control methods
+    
+    See Also:
+        docs/patterns/mixins.md for detailed mixin patterns
     """
 
     def __init__(self, config: TrisynapticConfig):

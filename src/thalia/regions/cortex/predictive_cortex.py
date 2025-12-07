@@ -148,6 +148,26 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
     4. L5 weights update based on local error
 
     All learning is LOCAL to each layer!
+    
+    Mixins Provide:
+    ---------------
+    From DiagnosticsMixin:
+        - check_health() → HealthMetrics
+        - get_firing_rate(spikes) → float
+        - check_weight_health(weights, name) → WeightHealth
+        - detect_runaway_excitation(spikes) → bool
+    
+    From BrainRegion (abstract base):
+        - forward(input, **kwargs) → Tensor [delegates to cortex]
+        - reset_state() → None [delegates to cortex]
+        - get_diagnostics() → Dict
+    
+    Note: PredictiveCortex uses composition (has-a LayeredCortex)
+          rather than inheritance, so many methods delegate.
+    
+    See Also:
+        docs/patterns/mixins.md for detailed mixin patterns
+        docs/patterns/state_management.md for composition pattern
 
     Usage:
         config = PredictiveCortexConfig(

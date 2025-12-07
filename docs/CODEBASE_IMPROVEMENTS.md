@@ -278,7 +278,7 @@ class BrainRegion(ABC):
 2. ✅ Create docs/patterns/state_management.md
 3. ✅ Create docs/patterns/config_guide.md
 4. ✅ Create docs/patterns/mixins.md
-5. ⏳ Add mixin docstrings to major classes (optional enhancement)
+5. ✅ Add mixin docstrings to major classes
 
 **Total effort**: ~5 hours  
 **Impact**: High - immediately helps with understanding
