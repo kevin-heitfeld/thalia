@@ -1,7 +1,7 @@
 # Thalia Checkpoint Format Specification
 
 **Version**: 0.1.0  
-**Status**: Phase 1A Complete - In Progress (Phase 1B Next)  
+**Status**: Phase 1B Complete ✅  
 **Last Updated**: December 7, 2025
 
 > **Related Document**: See [`curriculum_strategy.md`](curriculum_strategy.md) for training stages and curriculum design.
@@ -1083,32 +1083,54 @@ brain = BrainCheckpoint.load("stage3.delta.thalia", resolve_deltas=True)
 
 ---
 
-## Implementation Priority Summary
+## Implementation Progress Summary
 
-**Phase 1 (NOW - Week 1)**: Core I/O
-- Custom binary format (header, metadata, region index)
-- Basic save/load for weights and config
-- Tensor serialization (dense and sparse CSR)
-- Checksum validation
+**Phase 1A (✅ COMPLETE)**: Core I/O Infrastructure
+- ✅ Custom binary format (256-byte header, metadata, region index)
+- ✅ Binary writer/reader with streaming SHA-256 checksum
+- ✅ Tensor serialization (dense and sparse COO formats)
+- ✅ Automatic sparsity detection (>90% zeros → sparse)
+- ✅ Checksum validation
+- ✅ High-level BrainCheckpoint API (save/load/info/validate)
+- ✅ 12 comprehensive tests (all passing)
 
-**Phase 2 (CRITICAL - Week 2)**: State Management
-- RegionState serialization (spikes, membrane, conductances)
-- Learning rule state (BCM thresholds, eligibility traces, STP)
-- Oscillator state (theta/gamma phases)
-- Neuromodulator levels
-- Growth mechanisms (add neurons without disruption)
+**Phase 1B (✅ COMPLETE - December 7, 2025)**: Full State Persistence
+- ✅ Complete state serialization (regions, pathways, oscillators)
+- ✅ Config preservation with dataclass reconstruction
+- ✅ RegionState serialization (spikes, membrane, traces, STP)
+- ✅ Neuromodulator state preservation
+- ✅ Theta/gamma oscillator state
+- ✅ Event scheduler state
+- ✅ Trial phase and counters
+- ✅ Sparse tensor conversion to dense on load (fixes copy_() errors)
+- ✅ Full brain checkpoint roundtrip tests passing
 
-**Phase 3 (Week 3)**: Consolidation
+**Key Implementation Details**:
+- File format: `[HEADER][METADATA_JSON][REGION_DATA (tensors+JSON)...][REGION_INDEX][CHECKSUM]`
+- Checksum: Hash entire file in sequential order (not streaming writes)
+- Dataclasses: Store type metadata (`_dataclass`, `_fields`) for reconstruction
+- Tensors: Inline encoding with JSON references (`_type: tensor`, `_offset`, `_bytes`)
+- File mode: `w+b` (read-write binary) to support checksum computation
+
+**Phase 2 (IN PROGRESS)**: Growth Support
+- ✅ RegionState management (Phase 1A - already done)
+- 🔄 Growth mechanisms (add neurons/synapses without disruption)
+- 🔄 Weight matrix expansion (preserve existing connections)
+- 🔄 Neuron parameter expansion (membrane constants, thresholds)
+- 🔄 Growth history tracking
+- 🔄 Tests for add neurons scenarios
+
+**Phase 3 (PLANNED - Week 3)**: Consolidation
 - Synaptic scaling (not structural pruning)
 - Long-window synapse importance tracking
 - Task transition detection
 
-**Phase 4 (Week 4)**: Curriculum Integration
+**Phase 4 (PLANNED - Week 4)**: Curriculum Integration
 - Stage-based checkpointing
 - Growth history tracking
 - Resume from any stage
 
-**Phase 5 (Future)**: Optimization
+**Phase 5 (FUTURE)**: Optimization
 - Compression (zstd/lz4)
 - Mixed precision (FP16)
 - Delta checkpoints (v2.0)
@@ -1116,6 +1138,6 @@ brain = BrainCheckpoint.load("stage3.delta.thalia", resolve_deltas=True)
 
 ---
 
-**Status**: Ready for implementation  
-**Next Steps**: Begin Phase 1 (Core I/O)  
-**Estimated Timeline**: 5 weeks to full implementation
+**Current Status**: Phase 1B Complete ✅, Starting Phase 2  
+**Next Steps**: Implement growth mechanisms (add neurons without disruption)  
+**Estimated Timeline**: 3 weeks remaining to full implementation
