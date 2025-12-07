@@ -50,6 +50,7 @@ import torch
 
 from thalia.core.utils import ensure_batch_dim
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
+from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import (
     BrainRegion,
     RegionConfig,
@@ -179,10 +180,14 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
 
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize weights with small uniform values plus noise."""
-        weights = torch.ones(self.config.n_output, self.config.n_input, device=self.device)
-        weights = weights * self.config.w_max * 0.1
-        weights = weights + torch.randn_like(weights) * 0.02
-        return weights.clamp(self.config.w_min, self.config.w_max)
+        # Small initial weights (10% of max) with slight variation
+        return WeightInitializer.gaussian(
+            n_output=self.config.n_output,
+            n_input=self.config.n_input,
+            mean=self.config.w_max * 0.1,
+            std=0.02,
+            device=self.device
+        ).clamp(self.config.w_min, self.config.w_max)
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create Purkinje-like neurons."""
