@@ -37,7 +37,7 @@ class TestLIFNeuronErrorHandling:
     def test_mismatched_batch_size_raises_error(self):
         """Test that mismatched batch sizes are handled."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Try to pass different batch size
         # Some implementations may handle this gracefully by resizing
@@ -52,7 +52,7 @@ class TestLIFNeuronErrorHandling:
     def test_wrong_number_of_neurons_raises_error(self):
         """Test that wrong neuron count in input is caught."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Try to pass wrong number of neurons
         with pytest.raises((ValueError, RuntimeError, AssertionError)):
@@ -65,7 +65,7 @@ class TestLIFNeuronErrorHandling:
         # This might fail with OOM, which is acceptable
         try:
             large_batch = 100000  # 100k batch size
-            neuron.reset_state(batch_size=large_batch)
+            neuron.reset_state()
             spikes, _ = neuron(torch.randn(large_batch, 100))
 
             # If it succeeds, verify output is valid
@@ -77,7 +77,7 @@ class TestLIFNeuronErrorHandling:
     def test_handles_extreme_input_values(self):
         """Test that extreme (but not inf/nan) input values don't crash."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Very large positive input
         large_input = torch.full((4, 10), 1e6)
@@ -86,7 +86,7 @@ class TestLIFNeuronErrorHandling:
         assert not torch.isinf(spikes).any()
 
         # Very large negative input
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
         large_neg_input = torch.full((4, 10), -1e6)
         spikes, _ = neuron(large_neg_input)
         assert not torch.isnan(spikes).any()
@@ -97,25 +97,25 @@ class TestLIFNeuronErrorHandling:
         neuron = LIFNeuron(n_neurons=10)
 
         # Multiple resets should work fine
-        for batch_size in [1, 4, 8, 16]:
-            neuron.reset_state(batch_size=batch_size)
-            spikes, _ = neuron(torch.randn(batch_size, 10))
-            assert spikes.shape == (batch_size, 10)
+        for _ in range(4):
+            neuron.reset_state()
+            spikes, _ = neuron(torch.randn(1, 10))
+            assert spikes.shape == (1, 10)
 
     def test_reset_with_different_batch_size_updates_state(self):
-        """Test that reset with new batch size properly updates internal state."""
+        """Test that reset properly updates internal state."""
         neuron = LIFNeuron(n_neurons=10)
 
         # First reset
-        neuron.reset_state(batch_size=4)
-        neuron(torch.randn(4, 10))
+        neuron.reset_state()
+        neuron(torch.randn(1, 10))
 
-        # Reset with different batch size
-        neuron.reset_state(batch_size=8)
-        spikes, _ = neuron(torch.randn(8, 10))
+        # Reset again
+        neuron.reset_state()
+        spikes, _ = neuron(torch.randn(1, 10))
 
-        assert spikes.shape == (8, 10)
-        assert neuron.membrane.shape == (8, 10)
+        assert spikes.shape == (1, 10)
+        assert neuron.membrane.shape == (1, 10)
 
 
 @pytest.mark.unit
@@ -125,7 +125,7 @@ class TestConductanceLIFErrorHandling:
     def test_mismatched_exc_inh_shapes_raises_error(self):
         """Test that mismatched excitatory and inhibitory input shapes are caught."""
         neuron = ConductanceLIF(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         exc = torch.randn(4, 10)
         inh = torch.randn(4, 5)  # Wrong size!
@@ -136,7 +136,7 @@ class TestConductanceLIFErrorHandling:
     def test_none_inhibitory_with_excitatory_works(self):
         """Test that None inhibitory input with excitatory input works."""
         neuron = ConductanceLIF(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         exc = torch.randn(4, 10)
         spikes, _ = neuron(exc, None)  # Should work
@@ -146,7 +146,7 @@ class TestConductanceLIFErrorHandling:
     def test_both_none_inputs_work(self):
         """Test that None for both inputs works (no external input)."""
         neuron = ConductanceLIF(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Should handle no input gracefully (or raise clear error)
         # Implementation currently doesn't support None for both
@@ -168,7 +168,7 @@ class TestDendriticNeuronErrorHandling:
         """Test that dendritic neurons handle basic forward pass."""
         config = DendriticNeuronConfig(n_branches=3, inputs_per_branch=10)
         neuron = DendriticNeuron(n_neurons=5, config=config)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Total inputs = n_branches * inputs_per_branch = 3 * 10 = 30
         branch_inputs = torch.randn(4, 30)
@@ -246,7 +246,7 @@ class TestThreadSafety:
         def run_neuron():
             try:
                 neuron = LIFNeuron(n_neurons=100)
-                neuron.reset_state(batch_size=4)
+                neuron.reset_state()
 
                 for _ in range(10):
                     spikes, _ = neuron(torch.randn(4, 100))
@@ -273,7 +273,7 @@ class TestGradientFlow:
     def test_no_gradient_explosion_in_lif(self):
         """Test that gradients don't explode during backprop."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Create input that requires gradients
         input_current = torch.randn(4, 10, requires_grad=True)
@@ -301,7 +301,7 @@ class TestGradientFlow:
     def test_gradient_flow_through_multiple_steps(self):
         """Test gradient flow through multiple timesteps."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         input_sequence = [torch.randn(4, 10, requires_grad=True) for _ in range(10)]
 

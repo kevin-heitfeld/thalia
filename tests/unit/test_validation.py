@@ -40,19 +40,19 @@ class TestLIFNeuronValidation:
     def test_accepts_single_neuron(self):
         """Test that single neuron works (edge case)."""
         neuron = LIFNeuron(n_neurons=1)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         assert neuron.membrane.shape == (1, 1)
 
     def test_accepts_large_neuron_count(self):
         """Test that large neuron counts work."""
         neuron = LIFNeuron(n_neurons=10000)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         assert neuron.membrane.shape == (1, 10000)
 
     def test_rejects_wrong_input_shape(self):
         """Test that wrong input shape is caught."""
         neuron = LIFNeuron(n_neurons=100)
-        neuron.reset_state(batch_size=8)
+        neuron.reset_state()
 
         # Wrong n_neurons dimension
         with pytest.raises((ValueError, RuntimeError, AssertionError)):
@@ -61,7 +61,7 @@ class TestLIFNeuronValidation:
     def test_handles_zero_input(self):
         """Test that zero input is handled correctly."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         spikes, _ = neuron(torch.zeros(4, 10))
 
@@ -71,7 +71,7 @@ class TestLIFNeuronValidation:
     def test_handles_nan_input_gracefully(self):
         """Test that NaN input doesn't crash (should either reject or handle)."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         nan_input = torch.full((4, 10), float('nan'))
 
@@ -87,7 +87,7 @@ class TestLIFNeuronValidation:
     def test_handles_inf_input_gracefully(self):
         """Test that infinite input is handled."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         inf_input = torch.full((4, 10), float('inf'))
 
@@ -115,7 +115,7 @@ class TestLIFNeuronValidation:
 
         # Should either work (empty tensor) or raise error
         try:
-            neuron.reset_state(batch_size=0)
+            neuron.reset_state()
             assert neuron.membrane.shape == (0, 10)
         except (ValueError, AssertionError):
             pass
@@ -139,7 +139,7 @@ class TestConductanceLIFValidation:
     def test_handles_mismatched_input_shapes(self):
         """Test behavior with mismatched excitatory/inhibitory inputs."""
         neuron = ConductanceLIF(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         exc = torch.randn(4, 10)
         inh = torch.randn(4, 5)  # Wrong size!
@@ -150,7 +150,7 @@ class TestConductanceLIFValidation:
     def test_handles_none_inhibitory_input(self):
         """Test that None inhibitory input is handled."""
         neuron = ConductanceLIF(n_neurons=10)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         exc = torch.randn(4, 10)
         spikes, _ = neuron(exc, None)
@@ -251,7 +251,7 @@ class TestLayeredCortexValidation:
 
         # THALIA only supports batch_size=1 (single-instance architecture)
         # Test that changing batch size is properly rejected
-        cortex.reset_state(batch_size=1)
+        cortex.reset_state()
         output1 = cortex.forward(torch.randn(1, 32))
         assert output1.shape[0] == 1
 
@@ -286,7 +286,7 @@ class TestDendriticNeuronValidation:
             inputs_per_branch=10,
         )
         neuron = DendriticNeuron(n_neurons=5, config=config)
-        neuron.reset_state(batch_size=2)
+        neuron.reset_state()
 
         input_spikes = torch.randn(2, 10)
         output = neuron(input_spikes)
@@ -308,7 +308,7 @@ class TestBoundaryValues:
         """Test behavior when membrane potential is at/above threshold."""
         config = LIFConfig(v_threshold=1.0, v_reset=0.0)
         neuron = LIFNeuron(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Set membrane well above threshold (LIF uses > not >=)
         # Need significant margin because neuron dynamics may decay before spike check
@@ -323,7 +323,7 @@ class TestBoundaryValues:
         """Test behavior with very small time constants."""
         config = LIFConfig(tau_mem=0.001)  # Very fast decay
         neuron = LIFNeuron(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Should still work, just decay very quickly
         neuron.membrane = torch.ones(1, 10)
@@ -336,7 +336,7 @@ class TestBoundaryValues:
         """Test behavior with very large time constants."""
         config = LIFConfig(tau_mem=1000.0)  # Very slow decay
         neuron = LIFNeuron(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Should still work, just decay very slowly
         neuron.membrane = torch.ones(1, 10)
@@ -382,7 +382,7 @@ class TestNumericalStability:
     def test_weight_clipping_works(self):
         """Test that weight clipping prevents explosion."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # If neuron has weights, verify they stay bounded
         if hasattr(neuron, 'weights'):

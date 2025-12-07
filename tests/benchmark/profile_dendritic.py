@@ -97,7 +97,7 @@ def profile_dendritic_forward(
     )
     
     neuron = DendriticNeuron(n_neurons=n_neurons, config=config).to(device)
-    neuron.reset_state(batch_size)
+    neuron.reset_state()
     
     inputs = torch.zeros(batch_size, n_input, device=device)
     inputs[:, ::5] = 0.1  # 20% sparsity
@@ -209,7 +209,7 @@ def profile_dendritic_forward(
     print("FULL FORWARD() COMPARISON")
     print("=" * 60)
     
-    neuron.reset_state(batch_size)
+    neuron.reset_state()
     
     start = time.perf_counter()
     for _ in range(n_iterations):

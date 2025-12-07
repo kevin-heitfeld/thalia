@@ -20,7 +20,7 @@ class TestLIFNeuron:
     def test_initialization(self):
         """Test neuron initializes with correct dimensions."""
         neuron = LIFNeuron(n_neurons=100)
-        neuron.reset_state(batch_size=32)
+        neuron.reset_state()
 
         assert neuron.membrane.shape == (32, 100)
         assert neuron.membrane.min().item() == neuron.config.v_rest
@@ -29,7 +29,7 @@ class TestLIFNeuron:
         """Test membrane reset after spike."""
         config = LIFConfig(v_threshold=1.0, v_reset=0.0)
         neuron = LIFNeuron(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Force membrane above threshold
         neuron.membrane = torch.full((1, 10), 1.5)
@@ -43,7 +43,7 @@ class TestLIFNeuron:
         """Test membrane potential decays toward rest."""
         config = LIFConfig(v_rest=0.0, tau_mem=20.0)
         neuron = LIFNeuron(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Set initial membrane above rest
         neuron.membrane = torch.full((1, 10), 0.5)
@@ -59,7 +59,7 @@ class TestLIFNeuron:
     def test_input_integration(self):
         """Test that input increases membrane potential."""
         neuron = LIFNeuron(n_neurons=10)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         initial = neuron.membrane.clone()
 
         # Apply positive input (below threshold to avoid spike)
@@ -72,7 +72,7 @@ class TestLIFNeuron:
         """Test that spikes are generated when threshold is crossed."""
         config = LIFConfig(v_threshold=1.0, v_reset=0.0)
         neuron = LIFNeuron(n_neurons=5, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Set membrane just below threshold for deterministic test
         neuron.membrane = torch.full((1, 5), 0.8)
@@ -91,7 +91,7 @@ class TestConductanceLIF:
     def test_initialization(self):
         """Test neuron initializes with correct dimensions."""
         neuron = ConductanceLIF(n_neurons=100)
-        neuron.reset_state(batch_size=32)
+        neuron.reset_state()
 
         assert neuron.membrane.shape == (32, 100)
         assert neuron.g_E.shape == (32, 100)
@@ -108,7 +108,7 @@ class TestConductanceLIF:
             v_threshold=10.0,  # High threshold to prevent spikes
         )
         neuron = ConductanceLIF(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Apply massive excitatory input
         for _ in range(1000):
@@ -119,7 +119,7 @@ class TestConductanceLIF:
         assert (neuron.membrane > config.E_L).all()  # Should be above rest
 
         # Reset and apply massive inhibitory input
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         for _ in range(1000):
             neuron(torch.zeros(1, 10), torch.ones(1, 10) * 100.0)
 
@@ -131,7 +131,7 @@ class TestConductanceLIF:
         """Test that spikes are generated when threshold is crossed."""
         config = ConductanceLIFConfig(v_threshold=1.0, E_E=3.0)
         neuron = ConductanceLIF(n_neurons=5, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Strong excitatory input should cause spikes
         spikes = None
@@ -147,7 +147,7 @@ class TestConductanceLIF:
         """Test membrane reset after spike."""
         config = ConductanceLIFConfig(v_threshold=1.0, v_reset=0.0)
         neuron = ConductanceLIF(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Force membrane above threshold
         neuron.membrane = torch.full((1, 10), 1.5)
@@ -161,7 +161,7 @@ class TestConductanceLIF:
         """Test that conductances decay over time."""
         config = ConductanceLIFConfig(tau_E=5.0, tau_I=10.0)
         neuron = ConductanceLIF(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Apply input once
         neuron(torch.ones(1, 10) * 0.5, torch.ones(1, 10) * 0.3)
@@ -185,13 +185,13 @@ class TestConductanceLIF:
         neuron = ConductanceLIF(n_neurons=10, config=config)
 
         # Case 1: Excitation alone
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         for _ in range(20):
             neuron(torch.ones(1, 10) * 0.5, None)
         v_exc_only = neuron.membrane.clone()
 
         # Case 2: Same excitation + inhibition
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         for _ in range(20):
             neuron(torch.ones(1, 10) * 0.5, torch.ones(1, 10) * 0.5)
         v_exc_plus_inh = neuron.membrane.clone()
@@ -205,14 +205,14 @@ class TestConductanceLIF:
     def test_forward_current_compatibility(self):
         """Test the convenience method for current-based input."""
         neuron = ConductanceLIF(n_neurons=10)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Positive current → excitation
         spikes, v = neuron.forward_current(torch.ones(1, 10) * 0.5)
         assert v.shape == (1, 10)
 
         # Negative current → inhibition
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         neuron.membrane = torch.ones(1, 10) * 0.5  # Start above rest
         _, v_after = neuron.forward_current(torch.ones(1, 10) * -0.5)
         # Inhibition should pull toward E_I
@@ -233,7 +233,7 @@ class TestConductanceLIF:
             tau_E=2.0,             # Fast synaptic integration
         )
         neuron = ConductanceLIF(n_neurons=1, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Strong constant input that would cause regular spiking without adaptation
         input_conductance = torch.ones(1, 1) * 0.5
@@ -261,7 +261,7 @@ class TestConductanceLIF:
         """Test absolute refractory period."""
         config = ConductanceLIFConfig(tau_ref=2.0, dt=0.1)  # 20 timesteps refractory
         neuron = ConductanceLIF(n_neurons=5, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Force a spike
         neuron.membrane = torch.full((1, 5), 1.5)
@@ -280,7 +280,7 @@ class TestDendriticBranch:
     def test_initialization(self):
         """Test branch initializes correctly."""
         branch = DendriticBranch(n_inputs=50)
-        branch.reset_state(batch_size=4)
+        branch.reset_state()
 
         assert branch.weights.shape == (50,)
         assert branch.plateau.shape == (4,)
@@ -293,7 +293,7 @@ class TestDendriticBranch:
             subthreshold_attenuation=1.0,  # No attenuation for this test
         )
         branch = DendriticBranch(n_inputs=10, config=config)
-        branch.reset_state(batch_size=1)
+        branch.reset_state()
 
         # Set uniform weights for predictable sum
         branch.weights.data = torch.ones(10) * 0.1
@@ -316,7 +316,7 @@ class TestDendriticBranch:
             subthreshold_attenuation=0.8,
         )
         branch = DendriticBranch(n_inputs=10, config=config)
-        branch.reset_state(batch_size=1)
+        branch.reset_state()
 
         branch.weights.data = torch.ones(10) * 0.2
 
@@ -340,7 +340,7 @@ class TestDendriticBranch:
             dt=1.0,
         )
         branch = DendriticBranch(n_inputs=10, config=config)
-        branch.reset_state(batch_size=1)
+        branch.reset_state()
 
         branch.weights.data = torch.ones(10) * 0.2
 
@@ -364,7 +364,7 @@ class TestDendriticBranch:
             nmda_gain=10.0,  # Very high gain
         )
         branch = DendriticBranch(n_inputs=10, config=config)
-        branch.reset_state(batch_size=1)
+        branch.reset_state()
 
         branch.weights.data = torch.ones(10) * 1.0  # Large weights
 
@@ -386,7 +386,7 @@ class TestDendriticNeuron:
             inputs_per_branch=25,
         )
         neuron = DendriticNeuron(n_neurons=10, config=config)
-        neuron.reset_state(batch_size=2)
+        neuron.reset_state()
 
         assert neuron.branch_weights.shape == (10, 4, 25)
         assert neuron.branch_plateaus.shape == (2, 10, 4)
@@ -437,12 +437,12 @@ class TestDendriticNeuron:
         # Each branch gets: 3 * 0.15 = 0.45 (below threshold 0.5)
 
         # Process clustered input
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         _, _, branch_out_c = neuron.forward_with_branch_info(clustered)
         max_branch_clustered = branch_out_c.max().item()
 
         # Process scattered input
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         _, _, branch_out_s = neuron.forward_with_branch_info(scattered)
         max_branch_scattered = branch_out_s.max().item()
 
@@ -458,7 +458,7 @@ class TestDendriticNeuron:
             input_routing="fixed",
         )
         neuron = DendriticNeuron(n_neurons=1, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Activate only branch 0
         inputs = torch.zeros(1, 100)
@@ -479,7 +479,7 @@ class TestDendriticNeuron:
             soma_config=ConductanceLIFConfig(v_threshold=1.0),
         )
         neuron = DendriticNeuron(n_neurons=5, config=config)
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
 
         # Strong input to all branches
         strong_input = torch.ones(1, 100) * 0.5
@@ -514,14 +514,14 @@ class TestDendriticNeuron:
         inhibition = torch.ones(1, 5) * 2.0  # Strong inhibition
 
         # Without inhibition
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         spikes_no_inh = 0
         for _ in range(200):
             spikes, _ = neuron(strong_input, g_inh=None)
             spikes_no_inh += spikes.sum().item()
 
         # With inhibition
-        neuron.reset_state(batch_size=1)
+        neuron.reset_state()
         spikes_with_inh = 0
         for _ in range(200):
             spikes, _ = neuron(strong_input, g_inh=inhibition)

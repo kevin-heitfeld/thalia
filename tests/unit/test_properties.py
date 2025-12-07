@@ -58,7 +58,7 @@ class TestLIFNeuronProperties:
     def test_shape_consistency(self, n_neurons, batch_size):
         """Test that LIF neuron maintains shape consistency for any valid inputs."""
         neuron = LIFNeuron(n_neurons=n_neurons)
-        neuron.reset_state(batch_size=batch_size)
+        neuron.reset_state()
 
         # Membrane shape should match
         assert neuron.membrane.shape == (batch_size, n_neurons)
@@ -79,7 +79,7 @@ class TestLIFNeuronProperties:
         """Test that membrane potential stays in reasonable range."""
         config = LIFConfig(tau_mem=tau_mem, v_threshold=1.0, v_rest=0.0)
         neuron = LIFNeuron(n_neurons=n_neurons, config=config)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Run for multiple timesteps with random input
         for _ in range(20):
@@ -101,7 +101,7 @@ class TestLIFNeuronProperties:
     def test_spikes_are_always_binary(self, n_neurons):
         """Test that spikes are always 0 or 1, never intermediate values."""
         neuron = LIFNeuron(n_neurons=n_neurons)
-        neuron.reset_state(batch_size=8)
+        neuron.reset_state()
 
         # Try various input magnitudes
         for magnitude in [0.1, 0.5, 1.0, 2.0, 5.0]:
@@ -114,21 +114,21 @@ class TestLIFNeuronProperties:
                 f"Found non-binary spike values: {unique_values.tolist()}"
 
     @given(
-        n_neurons=valid_neuron_counts(),
-        batch_size=valid_batch_sizes(),
+        n_neurons=st.integers(min_value=1, max_value=500),
     )
     @settings(max_examples=30, deadline=1000)
-    def test_reset_clears_state(self, n_neurons, batch_size):
+    def test_reset_clears_state(self, n_neurons):
         """Test that reset_state properly clears neuron state."""
+        batch_size = 1  # THALIA enforces single-instance architecture
         neuron = LIFNeuron(n_neurons=n_neurons)
 
         # Run with some input to build up state
-        neuron.reset_state(batch_size=batch_size)
+        neuron.reset_state()
         for _ in range(10):
             neuron(torch.randn(batch_size, n_neurons))
 
         # Reset and check membrane is at rest
-        neuron.reset_state(batch_size=batch_size)
+        neuron.reset_state()
         assert torch.allclose(
             neuron.membrane,
             torch.full_like(neuron.membrane, neuron.config.v_rest),
@@ -142,7 +142,7 @@ class TestLIFNeuronProperties:
     def test_zero_input_produces_valid_output(self, n_neurons):
         """Test that zero input always produces valid (non-NaN) output."""
         neuron = LIFNeuron(n_neurons=n_neurons)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Zero input should still produce valid spikes (just zeros)
         spikes, _ = neuron(torch.zeros(4, n_neurons))
@@ -159,23 +159,23 @@ class TestDendriticNeuronProperties:
         n_neurons=st.integers(min_value=1, max_value=100),
         n_branches=st.integers(min_value=1, max_value=10),
         inputs_per_branch=st.integers(min_value=1, max_value=50),
-        batch_size=st.integers(min_value=1, max_value=32),
     )
     @settings(max_examples=30, deadline=2000)
-    def test_dendritic_shape_consistency(self, n_neurons, n_branches, inputs_per_branch, batch_size):
+    def test_dendritic_shape_consistency(self, n_neurons, n_branches, inputs_per_branch):
         """Test dendritic neuron maintains correct shapes."""
+        batch_size = 1  # THALIA enforces single-instance architecture
         config = DendriticNeuronConfig(
             n_branches=n_branches,
             inputs_per_branch=inputs_per_branch,
         )
         neuron = DendriticNeuron(n_neurons=n_neurons, config=config)
-        neuron.reset_state(batch_size=batch_size)
+        neuron.reset_state()
 
         total_inputs = n_branches * inputs_per_branch
         input_spikes = torch.randn(batch_size, total_inputs)
 
         output = neuron(input_spikes)
-        
+
         # DendriticNeuron returns (spikes, membrane) tuple
         if isinstance(output, tuple):
             spikes, membrane = output
@@ -200,7 +200,7 @@ class TestNumericalStabilityProperties:
     def test_long_simulations_stay_stable(self, n_neurons, n_timesteps):
         """Test that long simulations don't produce NaN/Inf."""
         neuron = LIFNeuron(n_neurons=n_neurons)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Run for many timesteps
         for t in range(n_timesteps):
@@ -222,7 +222,7 @@ class TestNumericalStabilityProperties:
     def test_scales_gracefully_with_input_magnitude(self, n_neurons, input_scale):
         """Test that neurons handle different input magnitudes gracefully."""
         neuron = LIFNeuron(n_neurons=n_neurons)
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Test with scaled input
         input_current = torch.randn(4, n_neurons) * input_scale
@@ -245,7 +245,7 @@ class TestInvariantProperties:
     def test_spike_count_never_exceeds_neuron_count(self, n_neurons):
         """Test that number of spikes never exceeds number of neurons."""
         neuron = LIFNeuron(n_neurons=n_neurons)
-        neuron.reset_state(batch_size=16)
+        neuron.reset_state()
 
         # Even with very strong input
         strong_input = torch.ones(16, n_neurons) * 100.0
@@ -263,7 +263,7 @@ class TestInvariantProperties:
     def test_membrane_decays_toward_rest(self, n_neurons):
         """Test that membrane decays toward rest without input."""
         neuron = LIFNeuron(n_neurons=n_neurons, config=LIFConfig(v_rest=0.0))
-        neuron.reset_state(batch_size=4)
+        neuron.reset_state()
 
         # Set membrane above rest
         neuron.membrane = torch.full((4, n_neurons), 0.5)
@@ -288,8 +288,8 @@ class TestInvariantProperties:
         neuron2 = LIFNeuron(n_neurons=n_neurons, config=config)
 
         # Reset to same state
-        neuron1.reset_state(batch_size=4)
-        neuron2.reset_state(batch_size=4)
+        neuron1.reset_state()
+        neuron2.reset_state()
 
         # Apply same input
         torch.manual_seed(42)  # Ensure same random input

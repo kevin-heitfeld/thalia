@@ -54,7 +54,7 @@ class TestCerebellum:
 
     def test_forward_pass(self, cerebellum, cerebellum_config):
         """Test that forward pass produces valid outputs."""
-        batch_size = 4
+        batch_size = 1
         input_spikes = torch.randint(0, 2, (batch_size, cerebellum_config.n_input)).float()
 
         output = cerebellum.forward(input_spikes)
@@ -278,7 +278,7 @@ class TestPrefrontal:
         batch_size = 1  # THALIA only supports single-instance architecture
         input_spikes = torch.randint(0, 2, (batch_size, prefrontal_config.n_input)).float()
 
-        prefrontal.reset_state(batch_size)
+        prefrontal.reset_state()
         output = prefrontal.forward(input_spikes)
 
         assert output.shape == (batch_size, prefrontal_config.n_output)

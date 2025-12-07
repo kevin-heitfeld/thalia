@@ -68,7 +68,7 @@ class TestLIFPerformance:
     def test_lif_forward_small(self):
         """Benchmark small LIF forward pass (100 neurons)."""
         neuron = LIFNeuron(n_neurons=100)
-        neuron.reset_state(batch_size=32)
+        neuron.reset_state()
         input_current = torch.randn(32, 100)
 
         def forward():
@@ -87,7 +87,7 @@ class TestLIFPerformance:
     def test_lif_forward_large(self):
         """Benchmark large LIF forward pass (10k neurons)."""
         neuron = LIFNeuron(n_neurons=10000)
-        neuron.reset_state(batch_size=32)
+        neuron.reset_state()
         input_current = torch.randn(32, 10000)
 
         def forward():
@@ -103,29 +103,23 @@ class TestLIFPerformance:
         assert stats["mean"] < threshold, \
             f"Large LIF forward too slow: {stats['mean']:.4f}s > {threshold}s"
 
-    def test_lif_batch_scaling(self):
-        """Test that LIF scales reasonably with batch size."""
+    def test_lif_single_instance_performance(self):
+        """Test LIF performance with single-instance architecture."""
         neuron = LIFNeuron(n_neurons=1000)
+        neuron.reset_state()
+        input_current = torch.randn(1, 1000)
 
-        timings = {}
-        for batch_size in [1, 8, 32, 128]:
-            neuron.reset_state(batch_size=batch_size)
-            input_current = torch.randn(batch_size, 1000)
+        def forward():
+            neuron(input_current)
 
-            def forward():
-                neuron(input_current)
+        stats = benchmark_function(forward, n_runs=100)
+        
+        print(f"\nLIF Single Instance (1000 neurons):")
+        print(f"  Mean: {stats['mean']*1000:.3f} ms")
+        print(f"  Std:  {stats['std']*1000:.3f} ms")
 
-            stats = benchmark_function(forward, n_runs=50)
-            timings[batch_size] = stats["mean"]
-
-        print(f"\nLIF Batch Scaling (1000 neurons):")
-        for bs, t in timings.items():
-            print(f"  Batch {bs:3d}: {t*1000:.3f} ms")
-
-        # Should scale sublinearly (batching is efficient)
-        # Time for batch=128 should be < 10x time for batch=1
-        assert timings[128] < timings[1] * 10, \
-            "Batch processing not efficient enough"
+        # Should be fast for single instance
+        assert stats['mean'] < 0.01, "Single instance should be fast (< 10ms)"
 
 
 @pytest.mark.benchmark
@@ -234,7 +228,7 @@ class TestDendriticPerformance:
             inputs_per_branch=20,
         )
         neuron = DendriticNeuron(n_neurons=100, config=config)
-        neuron.reset_state(batch_size=32)
+        neuron.reset_state()
         input_spikes = torch.randn(32, 100)
 
         def forward():

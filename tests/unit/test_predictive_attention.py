@@ -61,7 +61,7 @@ class TestPredictiveCodingLayer:
 
     def test_reset_state(self, layer):
         """Test state reset."""
-        layer.reset_state(batch_size=8)
+        layer.reset_state()
 
         assert layer.state.prediction is not None
         assert layer.state.prediction.shape == (8, 64)
@@ -69,8 +69,8 @@ class TestPredictiveCodingLayer:
 
     def test_forward_produces_error(self, layer):
         """Test forward pass produces prediction error."""
-        batch_size = 4
-        layer.reset_state(batch_size)
+        batch_size = 1
+        layer.reset_state()
 
         # Random input and representation
         actual = torch.randn(batch_size, 64)
@@ -84,8 +84,8 @@ class TestPredictiveCodingLayer:
 
     def test_prediction_accuracy_improves(self, layer):
         """Test that prediction error decreases with learning."""
-        batch_size = 8
-        layer.reset_state(batch_size)
+        batch_size = 1
+        layer.reset_state()
 
         # Fixed pattern to learn
         pattern = torch.randn(batch_size, 64)
@@ -107,8 +107,8 @@ class TestPredictiveCodingLayer:
 
     def test_precision_adapts(self, layer):
         """Test precision adapts to error statistics."""
-        batch_size = 4
-        layer.reset_state(batch_size)
+        batch_size = 1
+        layer.reset_state()
 
         initial_precision = layer.precision.clone()
 
@@ -126,8 +126,8 @@ class TestPredictiveCodingLayer:
 
     def test_free_energy_computation(self, layer):
         """Test free energy is computed correctly."""
-        batch_size = 4
-        layer.reset_state(batch_size)
+        batch_size = 1
+        layer.reset_state()
 
         actual = torch.randn(batch_size, 64)
         representation = torch.randn(batch_size, 32)
@@ -140,8 +140,8 @@ class TestPredictiveCodingLayer:
 
     def test_diagnostics(self, layer):
         """Test diagnostic information."""
-        batch_size = 4
-        layer.reset_state(batch_size)
+        batch_size = 1
+        layer.reset_state()
 
         actual = torch.randn(batch_size, 64)
         representation = torch.randn(batch_size, 32)
@@ -174,7 +174,7 @@ class TestHierarchicalPredictiveCoding:
             layer_sizes=[64, 32, 16],
             config_overrides={"use_spiking": False},
         )
-        hierarchy.reset_state(batch_size=4)
+        hierarchy.reset_state()
 
         sensory = torch.randn(4, 64)
         errors, representations = hierarchy(sensory)
@@ -188,7 +188,7 @@ class TestHierarchicalPredictiveCoding:
             layer_sizes=[64, 32, 16],
             config_overrides={"use_spiking": False},
         )
-        hierarchy.reset_state(batch_size=4)
+        hierarchy.reset_state()
 
         sensory = torch.randn(4, 64)
 
@@ -231,21 +231,21 @@ class TestCoincidenceAttention:
     def test_coincidence_computation(self, config):
         """Test attention computation."""
         attn = CoincidenceAttention(config)
-        attn.reset_state(batch_size=4, n_queries=16, n_keys=32)
+        attn.reset_state(n_queries=16, n_keys=32)
 
-        query_spikes = torch.randn(4, 16, config.d_head) > 0.5
-        key_spikes = torch.randn(4, 32, config.d_head) > 0.5
-        value = torch.randn(4, 32, config.d_head)
+        query_spikes = torch.randn(1, 16, config.d_head) > 0.5
+        key_spikes = torch.randn(1, 32, config.d_head) > 0.5
+        value = torch.randn(1, 32, config.d_head)
 
         output, attention = attn(query_spikes.float(), key_spikes.float(), value)
 
-        assert output.shape == (4, 16, config.d_head)
-        assert attention.shape == (4, 16, 32)
+        assert output.shape == (1, 16, config.d_head)
+        assert attention.shape == (1, 16, 32)
 
     def test_coincidence_temporal_dynamics(self, config):
         """Test temporal dynamics of coincidence detection."""
         attn = CoincidenceAttention(config)
-        attn.reset_state(batch_size=1, n_queries=4, n_keys=8)
+        attn.reset_state(n_queries=4, n_keys=8)
 
         # Spikes at t=0
         q0 = torch.zeros(1, 4, config.d_head)
@@ -378,7 +378,7 @@ class TestScalableSpikingAttention:
     def test_multi_head_attention(self, config):
         """Test multi-head attention."""
         attn = ScalableSpikingAttention(config)
-        attn.reset_state(batch_size=4)
+        attn.reset_state()
 
         x = torch.randn(4, 32, 128)
 
@@ -390,7 +390,7 @@ class TestScalableSpikingAttention:
     def test_cross_attention(self, config):
         """Test cross-attention (different K, V from Q)."""
         attn = ScalableSpikingAttention(config)
-        attn.reset_state(batch_size=4)
+        attn.reset_state()
 
         x_query = torch.randn(4, 32, 128)
         x_key = torch.randn(4, 64, 128)
@@ -420,7 +420,7 @@ class TestScalableSpikingAttention:
             )
 
             attn = ScalableSpikingAttention(config)
-            attn.reset_state(batch_size=2)
+            attn.reset_state()
 
             x = torch.randn(2, 16, 64)
             output, attention = attn(x)
@@ -455,7 +455,7 @@ class TestMultiScaleAttention:
         )
 
         attn = MultiScaleSpikingAttention(config, timescales_ms=[25.0, 100.0, 250.0])
-        attn.reset_state(batch_size=4)
+        attn.reset_state()
 
         x = torch.randn(4, 32, 60)
         output, attentions = attn(x)
@@ -482,7 +482,7 @@ class TestPredictiveAttentionIntegration:
             use_spiking=False,
         )
         pred_layer = PredictiveCodingLayer(pred_config)
-        pred_layer.reset_state(batch_size=4)
+        pred_layer.reset_state()
 
         # Forward through prediction
         input_data = torch.randn(4, 64)
@@ -508,7 +508,7 @@ class TestLearningWithoutBackprop:
             use_spiking=False,
         )
         layer = PredictiveCodingLayer(config)
-        layer.reset_state(batch_size=4)
+        layer.reset_state()
 
         # Forward pass
         input_data = torch.randn(4, 64)
@@ -532,7 +532,7 @@ class TestLearningWithoutBackprop:
             use_spiking=False,
         )
         layer = PredictiveCodingLayer(config)
-        layer.reset_state(batch_size=4)
+        layer.reset_state()
 
         # Create a pattern with specific structure
         input_pattern = torch.zeros(4, 64)
