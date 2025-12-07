@@ -49,6 +49,8 @@ import math
 import torch
 import torch.nn as nn
 
+from thalia.core.oscillator import ThetaOscillator, GammaOscillatorBase
+
 
 @dataclass
 class ThetaGammaConfig:
@@ -89,6 +91,9 @@ class GammaOscillator(nn.Module):
 
     This creates "gamma bursts" that are phase-locked to theta.
     Each gamma cycle within a theta cycle represents a memory "slot".
+    
+    This class uses composition with base oscillators for phase tracking,
+    adding theta-gamma coupling logic on top.
     """
 
     def __init__(self, config: Optional[ThetaGammaConfig] = None):
@@ -97,23 +102,25 @@ class GammaOscillator(nn.Module):
 
         cfg = self.config
 
-        # Compute periods
+        # Use base oscillators for phase tracking
+        self.theta = ThetaOscillator(
+            frequency_hz=cfg.theta_freq_hz,
+            dt_ms=cfg.dt_ms,
+        )
+        self.gamma = GammaOscillatorBase(
+            frequency_hz=cfg.gamma_freq_hz,
+            dt_ms=cfg.dt_ms,
+        )
+
+        # Compute periods (cache for convenience)
         self.theta_period_ms = 1000.0 / cfg.theta_freq_hz  # ~125ms for 8Hz
         self.gamma_period_ms = 1000.0 / cfg.gamma_freq_hz  # ~25ms for 40Hz
 
         # Gamma cycles per theta cycle
         self.gamma_per_theta = self.theta_period_ms / self.gamma_period_ms  # ~5-8
 
-        # Phase state (in radians)
-        self._theta_phase = 0.0
-        self._gamma_phase = 0.0
-
         # Time tracking
         self.time_ms = 0.0
-
-        # Precompute phase increments per ms
-        self._theta_phase_per_ms = 2.0 * math.pi * cfg.theta_freq_hz / 1000.0
-        self._gamma_phase_per_ms = 2.0 * math.pi * cfg.gamma_freq_hz / 1000.0
 
     def advance(self, dt_ms: Optional[float] = None) -> None:
         """Advance the oscillator by one timestep.
@@ -123,13 +130,9 @@ class GammaOscillator(nn.Module):
         """
         dt = dt_ms or self.config.dt_ms
 
-        # Advance phases
-        self._theta_phase += self._theta_phase_per_ms * dt
-        self._gamma_phase += self._gamma_phase_per_ms * dt
-
-        # Wrap to [0, 2π)
-        self._theta_phase = self._theta_phase % (2.0 * math.pi)
-        self._gamma_phase = self._gamma_phase % (2.0 * math.pi)
+        # Advance both oscillators
+        self.theta.advance(dt)
+        self.gamma.advance(dt)
 
         self.time_ms += dt
 
@@ -141,9 +144,9 @@ class GammaOscillator(nn.Module):
         Args:
             theta_phase: External theta phase in radians
         """
-        self._theta_phase = theta_phase % (2.0 * math.pi)
+        self.theta.sync_to_phase(theta_phase)
         # Reset gamma phase to align with theta
-        self._gamma_phase = 0.0
+        self.gamma.sync_to_phase(0.0)
     
     def set_to_slot(self, slot: int) -> None:
         """Set theta phase so current_slot equals the given slot.
@@ -157,18 +160,19 @@ class GammaOscillator(nn.Module):
         target_slot = slot % cfg.n_slots
         # Theta progress for this slot (0 to 1)
         target_progress = (target_slot + 0.5) / cfg.n_slots  # Center of slot
-        self._theta_phase = target_progress * 2.0 * math.pi
-        self._gamma_phase = 0.0
+        target_phase = target_progress * 2.0 * math.pi
+        self.theta.sync_to_phase(target_phase)
+        self.gamma.sync_to_phase(0.0)
 
     @property
     def theta_phase(self) -> float:
         """Current theta phase in radians [0, 2π)."""
-        return self._theta_phase
+        return self.theta.phase
 
     @property
     def gamma_phase(self) -> float:
         """Current gamma phase in radians [0, 2π)."""
-        return self._gamma_phase
+        return self.gamma.phase
 
     @property
     def gamma_amplitude(self) -> float:
@@ -180,7 +184,7 @@ class GammaOscillator(nn.Module):
         cfg = self.config
 
         # Theta modulation: 1 at trough, 0 at peak
-        theta_mod = 0.5 * (1.0 + math.cos(self._theta_phase))  # [0, 1]
+        theta_mod = 0.5 * (1.0 + math.cos(self.theta_phase))  # [0, 1]
 
         # Apply coupling strength
         amplitude = (
@@ -196,7 +200,7 @@ class GammaOscillator(nn.Module):
 
         This is the raw oscillation signal that can drive neural activity.
         """
-        return math.sin(self._gamma_phase) * self.gamma_amplitude
+        return math.sin(self.gamma_phase) * self.gamma_amplitude
 
     @property
     def current_slot(self) -> int:
@@ -210,7 +214,7 @@ class GammaOscillator(nn.Module):
         cfg = self.config
 
         # Calculate how far through the theta cycle we are [0, 1)
-        theta_progress = self._theta_phase / (2.0 * math.pi)
+        theta_progress = self.theta_phase / (2.0 * math.pi)
 
         # Map to slot number
         slot = int(theta_progress * cfg.n_slots) % cfg.n_slots
@@ -224,7 +228,7 @@ class GammaOscillator(nn.Module):
         0 = start of slot, 1 = end of slot.
         """
         cfg = self.config
-        theta_progress = self._theta_phase / (2.0 * math.pi)
+        theta_progress = self.theta_phase / (2.0 * math.pi)
         slot_progress = (theta_progress * cfg.n_slots) % 1.0
         return slot_progress
 
@@ -327,21 +331,21 @@ class GammaOscillator(nn.Module):
     def get_state(self) -> dict:
         """Get oscillator state for serialization."""
         return {
-            "theta_phase": self._theta_phase,
-            "gamma_phase": self._gamma_phase,
+            "theta_phase": self.theta_phase,
+            "gamma_phase": self.gamma_phase,
             "time_ms": self.time_ms,
         }
 
     def set_state(self, state: dict) -> None:
         """Restore oscillator state from dict."""
-        self._theta_phase = state["theta_phase"]
-        self._gamma_phase = state["gamma_phase"]
+        self.theta.sync_to_phase(state["theta_phase"])
+        self.gamma.sync_to_phase(state["gamma_phase"])
         self.time_ms = state["time_ms"]
 
     def reset_state(self) -> None:
         """Reset oscillator to initial state."""
-        self._theta_phase = 0.0
-        self._gamma_phase = 0.0
+        self.theta.reset_state()
+        self.gamma.reset_state()
         self.time_ms = 0.0
 
 
