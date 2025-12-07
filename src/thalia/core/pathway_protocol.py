@@ -222,6 +222,55 @@ class BaseNeuralPathway(nn.Module, ABC):
         """Get pathway diagnostics. Must be implemented by subclasses."""
         pass
     
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to pathway without disrupting existing weights.
+        
+        This is a default implementation that should be overridden by
+        specific pathway implementations for proper weight matrix expansion.
+        
+        Pathways need growth support because they connect regions that may
+        themselves grow. When a region adds neurons, connected pathways must
+        expand their weight matrices to accommodate the new connections.
+        
+        Args:
+            n_new: Number of neurons to add
+            initialization: Weight initialization strategy
+            sparsity: Sparsity for new connections
+            
+        Raises:
+            NotImplementedError: If pathway doesn't support growth
+        """
+        raise NotImplementedError(
+            f"Pathway {self.__class__.__name__} does not implement add_neurons(). "
+            "Growth support requires pathway-specific implementation."
+        )
+    
+    def get_capacity_metrics(self) -> Dict[str, float]:
+        """Get capacity utilization metrics for growth decisions.
+        
+        Default implementation provides basic metrics. Pathways can override
+        for more sophisticated analysis.
+        
+        Returns:
+            Dict with metrics:
+            - firing_rate: Average firing rate (0-1)
+            - weight_saturation: Fraction of weights near max
+            - synapse_usage: Fraction of active synapses
+            - synapse_count: Total synapses
+            - growth_recommended: Whether growth is advised
+        """
+        from ..core.growth import GrowthManager
+        
+        # Use GrowthManager for standard metrics computation
+        manager = GrowthManager(region_name=self.__class__.__name__)
+        metrics = manager.get_capacity_metrics(self)
+        return metrics.to_dict()
+    
     # Note: forward() is already abstract in nn.Module, so no need to redeclare
 
 

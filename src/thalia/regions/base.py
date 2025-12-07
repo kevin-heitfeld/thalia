@@ -245,6 +245,59 @@ class BrainRegion(NeuromodulatorMixin, ABC):
     def n_output(self) -> int:
         return self.config.n_output
 
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to region without disrupting existing weights.
+        
+        This is a default implementation that should be overridden by
+        specific region implementations for proper weight matrix expansion.
+        
+        Strategy:
+        1. Expand weight matrix: [n_output, n_input] → [n_output+n_new, n_input]
+        2. Initialize new rows with sparse random connections
+        3. Preserve existing weights exactly (no reinitialization)
+        4. Update config.n_output
+        5. Expand neuron state arrays if needed
+        
+        Args:
+            n_new: Number of neurons to add
+            initialization: Weight initialization strategy
+            sparsity: Sparsity for new connections
+            
+        Raises:
+            NotImplementedError: If region doesn't support growth
+        """
+        raise NotImplementedError(
+            f"Region {self.__class__.__name__} does not implement add_neurons(). "
+            "Growth support requires region-specific implementation."
+        )
+    
+    def get_capacity_metrics(self) -> Dict[str, float]:
+        """Get capacity utilization metrics for growth decisions.
+        
+        Default implementation provides basic metrics. Regions can override
+        for more sophisticated analysis.
+        
+        Returns:
+            Dict with metrics:
+            - firing_rate: Average firing rate (0-1)
+            - weight_saturation: Fraction of weights near max
+            - synapse_usage: Fraction of active synapses
+            - neuron_count: Total neurons
+            - synapse_count: Total synapses
+            - growth_recommended: Whether growth is advised
+        """
+        from ..core.growth import GrowthManager
+        
+        # Use GrowthManager for standard metrics computation
+        manager = GrowthManager(region_name=self.__class__.__name__)
+        metrics = manager.get_capacity_metrics(self)
+        return metrics.to_dict()
+
     @abstractmethod
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.
