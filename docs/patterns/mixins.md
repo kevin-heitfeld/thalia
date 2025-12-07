@@ -798,6 +798,6 @@ A: Yes, but keep the hierarchy shallow. Deep mixin hierarchies are hard to reaso
 
 **Last Updated**: December 7, 2025  
 **See Also**:
-- `docs/patterns/state_management.md` - State patterns
-- `docs/patterns/config_guide.md` - Configuration guide
+- `docs/patterns/state-management.md` - State patterns
+- `docs/patterns/configuration.md` - Configuration guide
 - `src/thalia/core/` - Mixin implementations

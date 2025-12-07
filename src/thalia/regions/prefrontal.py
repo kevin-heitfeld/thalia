@@ -232,7 +232,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
 
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
-        docs/patterns/state_management.md for PrefrontalState
+        docs/patterns/state-management.md for PrefrontalState
     """
 
     def __init__(self, config: PrefrontalConfig):

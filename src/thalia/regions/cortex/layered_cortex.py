@@ -107,7 +107,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
     
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
-        docs/patterns/state_management.md for LayeredCortexState
+        docs/patterns/state-management.md for LayeredCortexState
     """
 
     def __init__(self, config: LayeredCortexConfig):

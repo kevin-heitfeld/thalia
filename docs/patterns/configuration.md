@@ -629,6 +629,6 @@ A: Yes, but be careful. They share the same object reference.
 
 **Last Updated**: December 7, 2025  
 **See Also**:
-- `docs/patterns/state_management.md` - State patterns
+- `docs/patterns/state-management.md` - State patterns
 - `src/thalia/config/` - Config implementations
-- `docs/architecture.md` - System architecture
+- `docs/design/architecture.md` - System architecture

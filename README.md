@@ -34,11 +34,11 @@ pip install -e ".[all]"
 
 ## Documentation
 
-- [Planning & Roadmap](docs/PLANNING.md)
-- [Architecture Decisions](docs/DECISIONS.md)
-- [Design Documents](docs/design/)
-- [API Reference](docs/api/)
-- [Tutorials](docs/tutorials/)
+- **[Documentation Hub](docs/README.md)** — Complete documentation overview
+- [Architecture](docs/architecture/) — System design and complexity layers
+- [Design Specs](docs/design/) — Checkpoint format, curriculum strategy, neuron models
+- [Implementation Patterns](docs/patterns/) — Configuration, state management, mixins
+- [Architecture Decisions](docs/decisions/) — ADRs for key technical choices
 
 ## License
 

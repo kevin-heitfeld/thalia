@@ -460,6 +460,6 @@ A: Currently Thalia enforces single-instance (no batching). State tensors are 1D
 
 **Last Updated**: December 7, 2025  
 **See Also**: 
-- `docs/patterns/config_guide.md` - Configuration patterns
-- `docs/architecture.md` - Overall architecture
+- `docs/patterns/configuration.md` - Configuration patterns
+- `docs/design/architecture.md` - Overall architecture
 - `thalia/regions/base.py` - BrainRegion base class

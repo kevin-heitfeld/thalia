@@ -119,7 +119,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 ### Priority 1: Documentation (Quick Wins) ⚡
 
 #### 1.1 State Management Guide ✅ COMPLETE
-**File**: `docs/patterns/state_management.md`
+**File**: `docs/patterns/state-management.md`
 
 **Content**:
 - When to use `RegionState` dataclass
@@ -133,7 +133,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 ---
 
 #### 1.2 Config Documentation ✅ COMPLETE
-**File**: `docs/patterns/config_guide.md`
+**File**: `docs/patterns/configuration.md`
 
 **Content**:
 - Config hierarchy visualization
@@ -275,8 +275,8 @@ class BrainRegion(ABC):
 
 ### Phase 1: Documentation (Week 1)
 1. ✅ Create CODEBASE_IMPROVEMENTS.md (this file)
-2. ✅ Create docs/patterns/state_management.md
-3. ✅ Create docs/patterns/config_guide.md
+2. ✅ Create docs/patterns/state-management.md
+3. ✅ Create docs/patterns/configuration.md
 4. ✅ Create docs/patterns/mixins.md
 5. ✅ Add mixin docstrings to major classes
 

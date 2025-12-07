@@ -167,7 +167,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
     
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
-        docs/patterns/state_management.md for composition pattern
+        docs/patterns/state-management.md for composition pattern
 
     Usage:
         config = PredictiveCortexConfig(
