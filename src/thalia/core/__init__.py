@@ -24,6 +24,15 @@ from thalia.core.mixins import (
     ConfigurableMixin,
     DiagnosticCollectorMixin,
 )
+from thalia.core.spike_coding import (
+    CodingStrategy,
+    SpikeCodingConfig,
+    SpikeEncoder,
+    SpikeDecoder,
+    RateEncoder,
+    RateDecoder,
+    compute_spike_similarity,
+)
 from thalia.core.diagnostics import (
     DiagnosticLevel,
     DiagnosticsConfig,
@@ -181,6 +190,14 @@ __all__ = [
     "BrainRegionProtocol",
     # Diagnostics Mixin
     "DiagnosticsMixin",
+    # Spike Coding
+    "CodingStrategy",
+    "SpikeCodingConfig",
+    "SpikeEncoder",
+    "SpikeDecoder",
+    "RateEncoder",
+    "RateDecoder",
+    "compute_spike_similarity",
     # Spike Traces
     "SpikeTrace",
     "PairedTraces",
