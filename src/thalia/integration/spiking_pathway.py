@@ -213,15 +213,15 @@ class SpikingPathway(BaseNeuralPathway):
         )
 
         # Axonal delays (in timesteps, will be converted from ms)
-        delays = torch.ones(config.target_size, config.source_size) * config.axonal_delay_ms
+        delays = torch.ones(config.target_size, config.source_size, device=config.device) * config.axonal_delay_ms
         delays += torch.randn_like(delays) * config.delay_variability * config.axonal_delay_ms
         delays = delays.clamp(min=0.1)
-        self.register_buffer("axonal_delays", delays.to(config.device))
+        self.register_buffer("axonal_delays", delays)
 
         # Connectivity mask
         if config.sparsity < 1.0:
-            mask = torch.rand(config.target_size, config.source_size) < config.sparsity
-            self.register_buffer("connectivity_mask", mask.float().to(config.device))
+            mask = torch.rand(config.target_size, config.source_size, device=config.device) < config.sparsity
+            self.register_buffer("connectivity_mask", mask.float())
         else:
             self.connectivity_mask = None
 
