@@ -70,12 +70,22 @@ Biological References:
 """
 
 from thalia.regions.base import BrainRegion, LearningRule, RegionConfig, RegionState
+from thalia.regions.factory import RegionFactory, RegionRegistry, register_region
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
+from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
 from thalia.regions.theta_dynamics import TrialPhase, ThetaState, ThetaConfig, FeedforwardInhibition
+
+# Register all regions with the factory
+register_region("cortex", aliases=["layered_cortex"])(LayeredCortex)
+register_region("predictive_cortex")(PredictiveCortex)
+register_region("cerebellum")(Cerebellum)
+register_region("striatum")(Striatum)
+register_region("prefrontal", aliases=["pfc"])(Prefrontal)
+register_region("hippocampus", aliases=["trisynaptic"])(TrisynapticHippocampus)
 
 __all__ = [
     # Base classes
@@ -83,9 +93,16 @@ __all__ = [
     "LearningRule",
     "RegionConfig",
     "RegionState",
+    # Factory and Registry
+    "RegionFactory",
+    "RegionRegistry",
+    "register_region",
     # Cortex (LayeredCortex with L4→L2/3→L5)
     "LayeredCortex",
     "LayeredCortexConfig",
+    # Predictive Cortex (with predictive coding)
+    "PredictiveCortex",
+    "PredictiveCortexConfig",
     # Cerebellum
     "Cerebellum",
     "CerebellumConfig",
