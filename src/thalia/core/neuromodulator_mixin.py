@@ -19,6 +19,21 @@ This consolidates:
 - get_effective_learning_rate() for dopamine-modulated plasticity
 - set_neuromodulator() for generic access
 
+Hybrid Decay Architecture:
+==========================
+**Dopamine - Centralized in Brain**:
+- Brain computes RPE and manages tonic/phasic dopamine
+- Brain decays phasic dopamine (τ=200ms) in _update_tonic_dopamine()
+- Brain broadcasts combined dopamine to all regions via set_dopamine()
+- Regions DON'T decay dopamine locally (Brain handles it)
+- Rationale: Dopamine is global signal from VTA/SNc
+
+**Acetylcholine & Norepinephrine - Local Decay**:
+- Regions call self.decay_neuromodulators(dt) in their forward() methods
+- ACh/NE decay locally with their own time constants
+- Dopamine is NOT decayed (already handled by Brain)
+- Rationale: ACh (nucleus basalis) and NE (locus coeruleus) have regional specificity
+
 Biological Basis:
 =================
 Neuromodulators gate synaptic plasticity and influence neural dynamics:
@@ -45,15 +60,15 @@ Usage Example:
 ==============
     class MyRegion(NeuromodulatorMixin, BrainRegion):
         # Override tau constants if region-specific
-        DEFAULT_DOPAMINE_TAU_MS = 150.0  # Faster DA decay in this region
+        DEFAULT_ACETYLCHOLINE_TAU_MS = 30.0  # Faster ACh in this region
         
-        def forward(self, input):
+        def forward(self, input, dt=1.0):
             output = self._compute_output(input)
             
-            # Decay neuromodulators each timestep
-            self.decay_neuromodulators(dt_ms=1.0)
+            # Decay ACh/NE locally (dopamine managed by Brain)
+            self.decay_neuromodulators(dt_ms=dt)
             
-            # Use modulated learning rate
+            # Use dopamine-modulated learning rate
             lr = self.get_effective_learning_rate(base_lr=0.01)
             self._apply_plasticity(lr=lr)
             
