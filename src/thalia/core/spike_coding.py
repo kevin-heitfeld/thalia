@@ -410,15 +410,15 @@ def compute_spike_similarity(
     Returns:
         similarity: [batch, seq_len]
     """
+    from thalia.core.utils import cosine_similarity_safe
+    
     # Flatten temporal dimension
     flat1 = spikes1.reshape(*spikes1.shape[:2], -1)
     flat2 = spikes2.reshape(*spikes2.shape[:2], -1)
 
     if method == "cosine":
-        # Cosine similarity
-        norm1 = flat1.norm(dim=-1, keepdim=True).clamp(min=1e-6)
-        norm2 = flat2.norm(dim=-1, keepdim=True).clamp(min=1e-6)
-        similarity = (flat1 * flat2).sum(dim=-1) / (norm1.squeeze(-1) * norm2.squeeze(-1))
+        # Cosine similarity - use canonical implementation
+        similarity = cosine_similarity_safe(flat1, flat2, eps=1e-6, dim=-1)
 
     elif method == "correlation":
         # Pearson correlation

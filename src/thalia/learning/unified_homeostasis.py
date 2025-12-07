@@ -347,9 +347,12 @@ class UnifiedHomeostasis(nn.Module):
         # Diversity metric: how different are the weight patterns?
         # High diversity = good specialization
         if weights.dim() == 2 and weights.shape[0] > 1:
+            from thalia.core.utils import cosine_similarity_safe
+            
             # Normalize each row
             normed = weights / weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
-            # Pairwise cosine similarity
+            # Pairwise cosine similarity using canonical implementation
+            # Compute for all pairs: similarity[i,j] = cosine(normed[i], normed[j])
             similarity = torch.mm(normed, normed.T)
             # Mean off-diagonal similarity (lower = more diverse)
             mask = 1.0 - torch.eye(weights.shape[0], device=weights.device)

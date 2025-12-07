@@ -222,15 +222,15 @@ class DiagnosticsMixin:
         Returns:
             Dict with similarity statistics
         """
+        from thalia.core.utils import cosine_similarity_safe
+        
         prefix = f"{prefix}_" if prefix else ""
         
         a = pattern_a.detach().float().flatten()
         b = pattern_b.detach().float().flatten()
         
-        # Cosine similarity
-        norm_a = a.norm() + eps
-        norm_b = b.norm() + eps
-        cosine = (a @ b) / (norm_a * norm_b)
+        # Cosine similarity - use canonical implementation
+        cosine = cosine_similarity_safe(a, b, eps=eps)
         
         # Overlap (for binary patterns)
         if a.max() <= 1 and b.max() <= 1:
