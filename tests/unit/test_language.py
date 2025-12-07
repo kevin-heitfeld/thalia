@@ -236,7 +236,6 @@ class TestSpikeEncoder:
         assert spikes.shape[0] == 1
         assert spikes.shape[1] == 5
 
-    @pytest.mark.skip(reason="theta_phase not implemented in current SpikeEncoder")
     def test_reset_phase(self, device, small_vocab_size, small_n_neurons):
         """Test phase reset."""
         config = SpikeEncoderConfig(
