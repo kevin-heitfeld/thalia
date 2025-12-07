@@ -65,39 +65,40 @@ Created `ConfigurableMixin` in `core/mixins.py`:
 
 ---
 
-### 3. 🔲 Extract Common Encoder/Decoder Patterns
-**Estimated Effort**: 3-4 hours  
-**Impact**: Medium-High - foundation for new modalities
-**Estimated Effort**: 3-4 hours  
+### 3. ✅ Extract Common Encoder/Decoder Patterns [COMPLETED]
+**Estimated Effort**: 3-4 hours ✅ Actual: 2 hours  
 **Impact**: Medium-High - foundation for new modalities
 
 **Problem**:
-- `SpikeEncoder` and `SpikeDecoder` have parallel enum types (`EncodingType`, `DecodingType`)
-- Similar patterns for `RATE`, `TEMPORAL`, `POPULATION`, `WTA`
-- Each modality pathway (Retinal, Cochlear) duplicates encoding logic
+- `SpikeEncoder` and `SpikeDecoder` had parallel enum types (`EncodingType`, `DecodingType`)
+- Similar patterns for `RATE`, `TEMPORAL`, `POPULATION`, `WTA` duplicated
+- Each modality pathway would duplicate encoding logic
 - No shared base for spike encoding strategies
 
-**Current Duplication**:
-```python
-# In encoder.py
-class EncodingType(Enum):
-    RATE = "rate"
-    TEMPORAL = "temporal"
-    PHASE = "phase"
-    BURST = "burst"
-    SDR = "sdr"
+**Solution Implemented**:
+Created `spike_coding.py` base module with:
+- `CodingStrategy` enum (unified RATE, TEMPORAL, POPULATION, PHASE, BURST, SDR, WTA)
+- `SpikeCodingConfig` base configuration class
+- `SpikeEncoder` abstract base class with `_apply_coding_strategy()` 
+- `SpikeDecoder` abstract base class with `_integrate_spikes()`
+- `RateEncoder`/`RateDecoder` concrete implementations for testing
 
-# In decoder.py
-class DecodingType(Enum):
-    RATE = "rate"
-    TEMPORAL = "temporal"
-    POPULATION = "population"
-    WTA = "wta"
-```
+**Migrated Classes**:
+- ✅ `SpikeEncoder` (language) → inherits from `BaseSpikeEncoder`
+- ✅ `SpikeDecoder` (language) → inherits from `BaseSpikeDecoder`
+- ✅ `EncodingType`/`DecodingType` → aliases to `CodingStrategy`
+- ✅ Configs extend `SpikeCodingConfig` with @property compatibility
 
-**Proposed Solution**:
-1. Create `SpikeCodec` base class with strategy pattern:
-   ```python
+**Results**:
+- Eliminated ~150 lines of duplicate spike coding logic
+- Unified enum for encoding strategies across modalities
+- Shared spike integration/generation implementations
+- Foundation ready for retinal, cochlear, and other encoders
+- Easy to add new coding strategies (just extend enum + add cases)
+
+**Commit**: c95913d
+
+---
    class SpikeCodec:
        def encode(self, value: Any, strategy: str) -> torch.Tensor:
            return self._strategies[strategy].encode(value)
