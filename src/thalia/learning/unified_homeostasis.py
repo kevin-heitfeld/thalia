@@ -60,10 +60,14 @@ from typing import Optional, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 
+from thalia.config.base import BaseConfig
+
 
 @dataclass
-class UnifiedHomeostasisConfig:
+class UnifiedHomeostasisConfig(BaseConfig):
     """Configuration for unified homeostatic regulation.
+    
+    Inherits device, dtype, seed from BaseConfig.
     
     This replaces the many parameters of BCM, synaptic scaling, etc.
     with a minimal set of target values that define the constraints.

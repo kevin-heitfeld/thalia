@@ -117,35 +117,49 @@ class Dashboard:
 
         self._current_timestep += 1
 
-    def show(self, block: bool = False):
-        """Display the dashboard.
-
+    def _setup_time_series_plot(
+        self,
+        ax: Axes,
+        data: List[float],
+        title: str,
+        ylabel: str,
+        color: str = 'blue',
+        thresholds: Optional[Dict[str, float]] = None,
+        target_value: Optional[float] = None,
+    ) -> None:
+        """Helper method to setup a time series plot with common formatting.
+        
         Args:
-            block: Whether to block execution (for interactive mode)
+            ax: Matplotlib axes object
+            data: Data to plot
+            title: Plot title
+            ylabel: Y-axis label
+            color: Line color
+            thresholds: Dict with 'min' and 'max' threshold values
+            target_value: Optional target line to draw
         """
-        if not self._timesteps:
-            print("No data to display yet")
-            return
-
-        # Create figure if needed
-        if self._fig is None:
-            self._fig, self._axes = plt.subplots(3, 2, figsize=self.figsize)
-            self._fig.suptitle("Thalia Network Health Dashboard", fontsize=16)
-            plt.ion()  # Interactive mode
-
-        # Clear all axes
-        for ax_row in self._axes:
-            for ax in ax_row:
-                ax.clear()
-
-        # Get latest report
-        latest_report = self._reports[-1]
-        cfg = self.monitor.config
-
-        # =====================================================================
-        # Plot 1: Overall Health Score
-        # =====================================================================
-        ax = self._axes[0][0]
+        ax.plot(self._timesteps, data, color=color, linewidth=2)
+        
+        if thresholds:
+            if 'min' in thresholds:
+                ax.axhline(y=thresholds['min'], color='r', linestyle='--', 
+                          alpha=0.5, label='Min threshold')
+            if 'max' in thresholds:
+                ax.axhline(y=thresholds['max'], color='r', linestyle='--', 
+                          alpha=0.5, label='Max threshold')
+        
+        if target_value is not None:
+            ax.axhline(y=target_value, color='g', linestyle=':', 
+                      alpha=0.5, label='Target')
+        
+        ax.set_xlabel("Timestep")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3)
+    
+    def _setup_health_score_plot(self, ax: Axes) -> None:
+        """Setup the overall health score plot."""
         ax.plot(self._timesteps, self._health_scores, 'b-', linewidth=2)
         ax.axhline(y=90, color='g', linestyle='--', alpha=0.5, label='Good')
         ax.axhline(y=70, color='orange', linestyle='--', alpha=0.5, label='Warning')
@@ -156,70 +170,14 @@ class Dashboard:
         ax.set_ylim([0, 105])
         ax.legend(loc='lower right')
         ax.grid(True, alpha=0.3)
-
-        # =====================================================================
-        # Plot 2: Spike Rate
-        # =====================================================================
-        ax = self._axes[0][1]
-        ax.plot(self._timesteps, self._spike_rates, 'purple', linewidth=2)
-        ax.axhline(y=cfg.spike_rate_min, color='r', linestyle='--', alpha=0.5, label='Min threshold')
-        ax.axhline(y=cfg.spike_rate_max, color='r', linestyle='--', alpha=0.5, label='Max threshold')
-        ax.set_xlabel("Timestep")
-        ax.set_ylabel("Spike Rate")
-        ax.set_title("Average Spike Rate")
-        ax.legend(loc='upper right')
-        ax.grid(True, alpha=0.3)
-
-        # =====================================================================
-        # Plot 3: E/I Ratio
-        # =====================================================================
-        ax = self._axes[1][0]
-        if any(r != 0.0 for r in self._ei_ratios):
-            ax.plot(self._timesteps, self._ei_ratios, 'green', linewidth=2)
-            ax.axhline(y=cfg.ei_ratio_min, color='r', linestyle='--', alpha=0.5)
-            ax.axhline(y=cfg.ei_ratio_max, color='r', linestyle='--', alpha=0.5)
-            ax.axhline(y=4.0, color='g', linestyle=':', alpha=0.5, label='Target')
-            ax.set_ylabel("E/I Ratio")
-            ax.legend(loc='upper right')
-        else:
-            ax.text(0.5, 0.5, "E/I Balance Not Enabled", ha='center', va='center', transform=ax.transAxes)
-        ax.set_xlabel("Timestep")
-        ax.set_title("Excitation/Inhibition Balance")
-        ax.grid(True, alpha=0.3)
-
-        # =====================================================================
-        # Plot 4: Criticality (Branching Ratio)
-        # =====================================================================
-        ax = self._axes[1][1]
-        if any(b != 0.0 for b in self._branching_ratios):
-            ax.plot(self._timesteps, self._branching_ratios, 'orange', linewidth=2)
-            ax.axhline(y=cfg.criticality_min, color='r', linestyle='--', alpha=0.5)
-            ax.axhline(y=cfg.criticality_max, color='r', linestyle='--', alpha=0.5)
-            ax.axhline(y=1.0, color='g', linestyle=':', alpha=0.5, label='Critical')
-            ax.set_ylabel("Branching Ratio")
-            ax.legend(loc='upper right')
-        else:
-            ax.text(0.5, 0.5, "Criticality Monitor Not Enabled", ha='center', va='center', transform=ax.transAxes)
-        ax.set_xlabel("Timestep")
-        ax.set_title("Criticality (Branching Ratio)")
-        ax.grid(True, alpha=0.3)
-
-        # =====================================================================
-        # Plot 5: Dopamine Level
-        # =====================================================================
-        ax = self._axes[2][0]
-        ax.plot(self._timesteps, self._dopamine_levels, 'red', linewidth=2)
-        ax.axhline(y=cfg.dopamine_max, color='orange', linestyle='--', alpha=0.5, label='Saturation')
-        ax.set_xlabel("Timestep")
-        ax.set_ylabel("Dopamine Level")
-        ax.set_title("Global Dopamine")
-        ax.legend(loc='upper right')
-        ax.grid(True, alpha=0.3)
-
-        # =====================================================================
-        # Plot 6: Current Issues (Text)
-        # =====================================================================
-        ax = self._axes[2][1]
+    
+    def _setup_issues_text_plot(self, ax: Axes, latest_report: HealthReport) -> None:
+        """Setup the issues text display plot.
+        
+        Args:
+            ax: Matplotlib axes object
+            latest_report: Latest health report
+        """
         ax.axis('off')
 
         # Status box
@@ -248,9 +206,110 @@ class Dashboard:
                        wrap=True)
                 y_pos -= 0.15
         else:
-            ax.text(0.5, 0.5, "No issues detected\nAll metrics within bounds",
-                   ha='center', va='center', fontsize=11,
+            ax.text(0.5, 0.5, "All Systems Nominal",
+                   ha='center', va='center', fontsize=12,
                    color='green', transform=ax.transAxes)
+
+    def show(self, block: bool = False):
+        """Display the dashboard.
+
+        Args:
+            block: Whether to block execution (for interactive mode)
+        """
+        if not self._timesteps:
+            print("No data to display yet")
+            return
+
+        # Create figure if needed
+        if self._fig is None:
+            self._fig, self._axes = plt.subplots(3, 2, figsize=self.figsize)
+            self._fig.suptitle("Thalia Network Health Dashboard", fontsize=16)
+            plt.ion()  # Interactive mode
+
+        # Clear all axes
+        for ax_row in self._axes:
+            for ax in ax_row:
+                ax.clear()
+
+        # Get latest report
+        latest_report = self._reports[-1]
+        cfg = self.monitor.config
+
+        # =====================================================================
+        # Plot 1: Overall Health Score
+        # =====================================================================
+        self._setup_health_score_plot(self._axes[0][0])
+
+        # =====================================================================
+        # Plot 2: Spike Rate
+        # =====================================================================
+        self._setup_time_series_plot(
+            self._axes[0][1],
+            data=self._spike_rates,
+            title="Average Spike Rate",
+            ylabel="Spike Rate",
+            color='purple',
+            thresholds={'min': cfg.spike_rate_min, 'max': cfg.spike_rate_max}
+        )
+
+        # =====================================================================
+        # Plot 3: E/I Ratio
+        # =====================================================================
+        if any(r != 0.0 for r in self._ei_ratios):
+            self._setup_time_series_plot(
+                self._axes[1][0],
+                data=self._ei_ratios,
+                title="Excitation/Inhibition Balance",
+                ylabel="E/I Ratio",
+                color='green',
+                thresholds={'min': cfg.ei_ratio_min, 'max': cfg.ei_ratio_max},
+                target_value=4.0
+            )
+        else:
+            ax = self._axes[1][0]
+            ax.text(0.5, 0.5, "E/I Balance Not Enabled", 
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_xlabel("Timestep")
+            ax.set_title("Excitation/Inhibition Balance")
+            ax.grid(True, alpha=0.3)
+
+        # =====================================================================
+        # Plot 4: Criticality (Branching Ratio)
+        # =====================================================================
+        if any(b != 0.0 for b in self._branching_ratios):
+            self._setup_time_series_plot(
+                self._axes[1][1],
+                data=self._branching_ratios,
+                title="Criticality (Branching Ratio)",
+                ylabel="Branching Ratio",
+                color='orange',
+                thresholds={'min': cfg.criticality_min, 'max': cfg.criticality_max},
+                target_value=1.0
+            )
+        else:
+            ax = self._axes[1][1]
+            ax.text(0.5, 0.5, "Criticality Monitor Not Enabled", 
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_xlabel("Timestep")
+            ax.set_title("Criticality (Branching Ratio)")
+            ax.grid(True, alpha=0.3)
+
+        # =====================================================================
+        # Plot 5: Dopamine Level
+        # =====================================================================
+        self._setup_time_series_plot(
+            self._axes[2][0],
+            data=self._dopamine_levels,
+            title="Global Dopamine",
+            ylabel="Dopamine Level",
+            color='red',
+            thresholds={'max': cfg.dopamine_max}
+        )
+
+        # =====================================================================
+        # Plot 6: Current Issues (Text)
+        # =====================================================================
+        self._setup_issues_text_plot(self._axes[2][1], latest_report)
 
         plt.tight_layout()
         plt.draw()

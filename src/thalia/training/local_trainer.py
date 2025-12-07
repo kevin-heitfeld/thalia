@@ -103,65 +103,6 @@ class TrainingMetrics:
         }
 
 
-@dataclass
-class LegacyTrainingConfig:
-    """Legacy configuration for local learning trainer.
-
-    .. deprecated:: 0.2.0
-        Use :class:`thalia.config.TrainingConfig` instead for unified configuration.
-        Create trainer with ``LocalTrainer.from_thalia_config(config)``.
-
-    This class exists only for backwards compatibility. New code should use
-    ``thalia.config.TrainingConfig`` directly.
-    """
-    n_epochs: int = 10
-    log_every: int = 100
-    save_every: int = 1000
-
-    # Learning rules
-    use_stdp: bool = True
-    use_bcm: bool = True
-    use_eligibility: bool = True
-    use_hebbian: bool = True
-
-    # Learning rates
-    stdp_lr: float = 0.01
-    bcm_lr: float = 0.001
-    hebbian_lr: float = 0.01
-
-    # Neuromodulation
-    reward_signal: float = 1.0
-
-    # Two-phase training (stimulus → reward/consolidation)
-    two_phase_enabled: bool = True
-    reward_delay_timesteps: int = 10
-    consolidation_timesteps: int = 50
-
-    # Decoder learning delay (brain pre-training)
-    # Don't train decoder until brain has stabilized for N steps
-    decoder_learning_start_step: int = 1000
-
-    # Checkpointing
-    checkpoint_dir: Optional[str] = None
-
-    device: str = "cpu"
-
-    def __post_init__(self):
-        """Emit deprecation warning."""
-        import warnings
-        warnings.warn(
-            "LegacyTrainingConfig is deprecated. Use thalia.config.TrainingConfig instead:\n"
-            "  from thalia.config import TrainingConfig\n"
-            "  config = TrainingConfig(...)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-
-# Alias for backwards compatibility (deprecated)
-TrainingConfig = LegacyTrainingConfig
-
-
 class LocalTrainer:
     """
     Trainer using local (non-backprop) learning rules.

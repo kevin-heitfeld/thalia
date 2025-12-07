@@ -58,6 +58,7 @@ from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig, EncodingTy
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.core.event_system import TrialPhase
 from thalia.core.utils import cosine_similarity_safe
+from thalia.core.mixins import DiagnosticCollectorMixin
 
 
 @dataclass
@@ -86,54 +87,7 @@ class SequenceContext:
         )
 
 
-@dataclass
-class LegacySequenceMemoryConfig:
-    """Legacy configuration for sequence memory.
-
-    .. deprecated:: 0.2.0
-        Use :class:`thalia.config.SequenceMemoryConfig` instead for unified configuration.
-        Create memory with ``SequenceMemory.from_thalia_config(config)``.
-
-    This class exists only for backwards compatibility. New code should use
-    ``thalia.config.SequenceMemoryConfig`` directly.
-    """
-    vocab_size: int = 50257
-    n_neurons: int = 512
-    context_length: int = 128
-
-    # Oscillation parameters
-    theta_frequency: float = 8.0   # Hz - encoding/retrieval rhythm
-    gamma_frequency: float = 40.0  # Hz - item binding within theta
-
-    # Memory parameters
-    association_strength: float = 0.3
-    retrieval_threshold: float = 0.2
-
-    # Storage limits
-    max_stored_contexts: int = 1000
-
-    # Learning
-    learning_rate: float = 0.1
-
-    device: str = "cpu"
-
-    def __post_init__(self):
-        """Emit deprecation warning."""
-        import warnings
-        warnings.warn(
-            "LegacySequenceMemoryConfig is deprecated. Use thalia.config.SequenceMemoryConfig:\n"
-            "  from thalia.config import SequenceMemoryConfig\n"
-            "  config = SequenceMemoryConfig(...)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-
-# Alias for backwards compatibility (deprecated)
-SequenceMemoryConfig = LegacySequenceMemoryConfig
-
-
-class SequenceMemory(nn.Module):
+class SequenceMemory(nn.Module, DiagnosticCollectorMixin):
     """
     Hippocampus-based sequence memory for language processing.
 
@@ -457,19 +411,14 @@ class SequenceMemory(nn.Module):
         return [ctx for _, ctx in similarities[:top_k]]
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information."""
-        return {
-            "stats": self.stats.copy(),
-            "n_stored_contexts": len(self.stored_contexts),
-            "association_weight_stats": {
-                "mean": self.association_weights.mean().item(),
-                "std": self.association_weights.std().item(),
-                "max": self.association_weights.max().item(),
-                "sparsity": (self.association_weights.abs() < 0.01).float().mean().item(),
+        """Get diagnostic information using auto-collection."""
+        # Use mixin auto_collect_diagnostics for standardized collection
+        return self.auto_collect_diagnostics(
+            weights={"association_weights": self.association_weights},
+            scalars={
+                "n_stored_contexts": len(self.stored_contexts),
+                "vocab_size": self.config.vocab_size,
+                "context_length": self.config.context_length,
+                **self.stats,  # Include all stats
             },
-            "hippocampus": {
-                "dg_size": self.hippocampus.dg_size,
-                "ca3_size": self.hippocampus.ca3_size,
-                "ca1_size": self.hippocampus.ca1_size,
-            },
-        }
+        )

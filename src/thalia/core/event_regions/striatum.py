@@ -52,21 +52,14 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         super().__init__(config)
         self._striatum = striatum
 
-        # Input sizes for buffering
-        self._cortex_input_size = cortex_input_size
-        self._hippocampus_input_size = hippocampus_input_size
-        self._pfc_input_size = pfc_input_size
-
-        # Input buffers - accumulate spikes from different sources
-        self._cortex_buffer: Optional[torch.Tensor] = None
-        self._hippocampus_buffer: Optional[torch.Tensor] = None
-        self._pfc_buffer: Optional[torch.Tensor] = None
-
-        # Time window for accumulating inputs (ms)
-        self._accumulation_window: float = 5.0
-        self._last_cortex_time: float = -1000.0
-        self._last_hippocampus_time: float = -1000.0
-        self._last_pfc_time: float = -1000.0
+        # Configure input buffering using base class
+        if cortex_input_size > 0:
+            input_config = {"cortex": cortex_input_size}
+            if hippocampus_input_size > 0:
+                input_config["hippocampus"] = hippocampus_input_size
+            if pfc_input_size > 0:
+                input_config["pfc"] = pfc_input_size
+            self.configure_input_sources(**input_config)
 
         # Track recent activity for learning
         self._recent_input: Optional[torch.Tensor] = None
@@ -96,15 +89,12 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         pfc_input_size: int,
     ) -> None:
         """Configure input sizes for buffering."""
-        self._cortex_input_size = cortex_input_size
-        self._hippocampus_input_size = hippocampus_input_size
-        self._pfc_input_size = pfc_input_size
-
-    def _clear_buffers(self) -> None:
-        """Clear input buffers."""
-        self._cortex_buffer = None
-        self._hippocampus_buffer = None
-        self._pfc_buffer = None
+        input_config = {"cortex": cortex_input_size}
+        if hippocampus_input_size > 0:
+            input_config["hippocampus"] = hippocampus_input_size
+        if pfc_input_size > 0:
+            input_config["pfc"] = pfc_input_size
+        self.configure_input_sources(**input_config)
 
     def _apply_decay(self, dt_ms: float) -> None:
         """Apply decay to striatal neurons."""
@@ -129,13 +119,8 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         - Positive DA (burst) → strengthen eligible synapses (D1 LTP, D2 LTD)
         - Negative DA (dip) → weaken eligible synapses (D1 LTD, D2 LTP)
 
-        With continuous plasticity, we set the dopamine level on the region
-        and let the next forward pass apply the plasticity. Alternatively,
-        deliver_reward() can be called for immediate learning.
+        Note: Base class already sets dopamine on impl.state for continuous plasticity.
         """
-        # Set dopamine level on the underlying region for continuous plasticity
-        self.impl.state.dopamine = payload.level
-
         # Also trigger immediate learning via deliver_reward if there's a clear reward signal
         if hasattr(self.impl, "deliver_reward") and abs(payload.level) > 0.1:
             self.impl.deliver_reward(reward=payload.level)
@@ -152,87 +137,38 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         if input_spikes.dim() == 1:
             input_spikes = input_spikes.unsqueeze(0)
 
-        # Buffer input based on source
-        if source == "cortex":
-            self._cortex_buffer = input_spikes
-            self._last_cortex_time = self._current_time
-        elif source == "hippocampus":
-            self._hippocampus_buffer = input_spikes
-            self._last_hippocampus_time = self._current_time
-        elif source == "pfc":
-            self._pfc_buffer = input_spikes
-            self._last_pfc_time = self._current_time
+        # Buffer input using base class method
+        if source in ["cortex", "hippocampus", "pfc"]:
+            self._buffer_input(source, input_spikes)
         else:
             # Unknown source - try to process directly if sizes match
             return self._forward_striatum(input_spikes)
 
         # Check if we should process now
         # If sizes not configured, pass through (legacy mode)
-        total_expected = (
-            self._cortex_input_size
-            + self._hippocampus_input_size
-            + self._pfc_input_size
-        )
-        if total_expected == 0:
-            # Sizes not configured - just pass through
+        if not self._input_sizes:
             return self._forward_striatum(input_spikes)
 
-        # Build combined input
-        combined = self._build_combined_input()
+        # Determine source order based on what's configured
+        source_order = ["cortex"]  # Cortex is always first
+        if "hippocampus" in self._input_sizes:
+            source_order.append("hippocampus")
+        if "pfc" in self._input_sizes:
+            source_order.append("pfc")
+
+        # Build combined input using base class method
+        combined = self._build_combined_input(
+            source_order=source_order,
+            require_sources=["cortex"],  # Cortex is required, others optional
+        )
+
         if combined is not None:
             result = self._forward_striatum(combined)
-            self._clear_buffers()
+            self._clear_input_buffers()
             return result
 
         # Don't have complete input yet
         return None
-
-    def _build_combined_input(self) -> Optional[torch.Tensor]:
-        """Build combined input from buffers if ready.
-
-        Combines in order: [cortex_l5 | hippocampus | pfc]
-        Uses zeros for missing components if they've timed out.
-        """
-        device = None
-        batch_size = 1
-
-        # Determine device and batch size from any available buffer
-        for buf in [self._cortex_buffer, self._hippocampus_buffer, self._pfc_buffer]:
-            if buf is not None:
-                device = buf.device
-                batch_size = buf.shape[0]
-                break
-
-        if device is None:
-            return None
-
-        # Check if we have at least cortex (the primary input)
-        if self._cortex_buffer is None:
-            return None
-
-        # Build components, using zeros for missing ones if timed out
-        parts = []
-
-        # Cortex L5
-        parts.append(self._cortex_buffer)
-
-        # Hippocampus
-        if self._hippocampus_buffer is not None:
-            parts.append(self._hippocampus_buffer)
-        elif self._hippocampus_input_size > 0:
-            # Use zeros if timed out or size is configured
-            parts.append(
-                torch.zeros(batch_size, self._hippocampus_input_size, device=device)
-            )
-
-        # PFC
-        if self._pfc_buffer is not None:
-            parts.append(self._pfc_buffer)
-        elif self._pfc_input_size > 0:
-            # Use zeros if timed out or size is configured
-            parts.append(torch.zeros(batch_size, self._pfc_input_size, device=device))
-
-        return torch.cat(parts, dim=-1)
 
     def _forward_striatum(self, combined_input: torch.Tensor) -> torch.Tensor:
         """Forward combined input through striatum."""

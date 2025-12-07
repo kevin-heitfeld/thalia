@@ -14,10 +14,14 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 import torch
 
+from .base import BaseConfig
+
 
 @dataclass
-class GlobalConfig:
+class GlobalConfig(BaseConfig):
     """Universal parameters shared across all THALIA modules.
+
+    Inherits device, dtype, and seed from BaseConfig.
 
     These are parameters that:
     1. Affect multiple modules (device, timing)
@@ -31,15 +35,6 @@ class GlobalConfig:
             theta_frequency_hz=6.0,  # Slower theta for longer sequences
         )
     """
-
-    # =========================================================================
-    # COMPUTATION
-    # =========================================================================
-    device: str = "cpu"
-    """Device for tensor computation ("cpu", "cuda", "cuda:0", etc.)"""
-
-    dtype: str = "float32"
-    """Data type for tensors ("float32", "float16", "bfloat16")"""
 
     # =========================================================================
     # TIMING

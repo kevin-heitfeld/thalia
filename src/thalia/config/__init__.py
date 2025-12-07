@@ -28,6 +28,12 @@ Author: Thalia Project
 Date: December 2025
 """
 
+from .base import (
+    BaseConfig,
+    NeuralComponentConfig,
+    LearningComponentConfig,
+    RegionConfigBase,
+)
 from .global_config import GlobalConfig
 from .brain_config import (
     BrainConfig,
@@ -60,6 +66,11 @@ __all__ = [
     # Main config
     "ThaliaConfig",
     "print_config",
+    # Base configs
+    "BaseConfig",
+    "NeuralComponentConfig",
+    "LearningComponentConfig",
+    "RegionConfigBase",
     # Global
     "GlobalConfig",
     # Brain

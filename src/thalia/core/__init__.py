@@ -18,6 +18,11 @@ from thalia.core.stp import (
     STPType,
     STPSynapse,
 )
+from thalia.core.mixins import (
+    DeviceMixin,
+    ResettableMixin,
+    DiagnosticCollectorMixin,
+)
 from thalia.core.diagnostics import (
     DiagnosticLevel,
     DiagnosticsConfig,
@@ -102,6 +107,10 @@ __all__ = [
     "LIFConfig",
     "ConductanceLIF",
     "ConductanceLIFConfig",
+    # Mixins
+    "DeviceMixin",
+    "ResettableMixin",
+    "DiagnosticCollectorMixin",
     # Dendritic computation
     "DendriticBranch",
     "DendriticBranchConfig",

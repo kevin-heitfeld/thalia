@@ -14,6 +14,8 @@ from typing import Optional, Dict, Any, List
 
 import torch
 
+from thalia.config.base import RegionConfigBase
+
 
 class LearningRule(Enum):
     """Types of learning rules used in different brain regions."""
@@ -41,16 +43,14 @@ class LearningRule(Enum):
 
 
 @dataclass
-class RegionConfig:
+class RegionConfig(RegionConfigBase):
     """Configuration for a brain region.
+
+    Inherits n_input, n_output, n_neurons, dt, device, dtype, seed from RegionConfigBase.
 
     This contains all the parameters needed to instantiate a region,
     with biologically-plausible defaults.
     """
-    # Dimensions
-    n_input: int
-    n_output: int
-
     # Neuron model
     neuron_type: str = "lif"  # "lif", "conductance", "dendritic"
 
@@ -62,12 +62,6 @@ class RegionConfig:
     # Homeostasis
     target_firing_rate_hz: float = 5.0
     homeostatic_tau_ms: float = 1000.0
-
-    # Timing
-    dt_ms: float = 1.0
-
-    # Device
-    device: str = "cpu"
 
     # Additional region-specific parameters
     extra: Dict[str, Any] = field(default_factory=dict)

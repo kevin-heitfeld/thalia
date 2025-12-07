@@ -56,15 +56,20 @@ from typing import Dict, Any, Optional, List, Tuple, Protocol
 import torch
 import torch.nn as nn
 
+from thalia.config.base import LearningComponentConfig
+
 
 # =============================================================================
 # Strategy Configuration Dataclasses
 # =============================================================================
 
 @dataclass
-class LearningConfig:
-    """Base configuration for all learning strategies."""
-    learning_rate: float = 0.01
+class LearningConfig(LearningComponentConfig):
+    """Base configuration for all learning strategies.
+    
+    Inherits learning_rate, enabled from LearningComponentConfig.
+    Inherits device, dtype, seed from BaseConfig.
+    """
     w_min: float = 0.0
     w_max: float = 1.0
     soft_bounds: bool = True  # Use soft bounds (multiplicative) vs hard clamp

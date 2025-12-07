@@ -26,6 +26,8 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
+from thalia.config.base import BaseConfig
+
 
 # =============================================================================
 # Functional API (for integrating with existing state dataclasses)
@@ -106,8 +108,10 @@ def compute_decay(tau: float, dt: float = 1.0, decay_type: str = "exponential") 
 # =============================================================================
 
 @dataclass
-class TraceConfig:
+class TraceConfig(BaseConfig):
     """Configuration for spike traces.
+    
+    Inherits device, dtype, seed from BaseConfig.
     
     Attributes:
         tau: Time constant for exponential decay (ms)

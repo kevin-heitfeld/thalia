@@ -353,52 +353,6 @@ class ThaliaConfig:
                 device=self.global_.device,
             )
 
-    def to_sequence_memory_config(self) -> Any:
-        """Create LegacySequenceMemoryConfig for legacy API."""
-        import warnings
-        from thalia.memory.sequence import LegacySequenceMemoryConfig
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            return LegacySequenceMemoryConfig(
-                vocab_size=self.global_.vocab_size,
-                n_neurons=self.brain.sizes.hippocampus_size * 2,  # Larger for sequence storage
-                context_length=self.language.sequence_memory.context_length,
-                theta_frequency=self.global_.theta_frequency_hz,
-                gamma_frequency=self.global_.gamma_frequency_hz,
-                association_strength=self.language.sequence_memory.association_strength,
-                retrieval_threshold=self.language.sequence_memory.retrieval_threshold,
-                max_stored_contexts=self.language.sequence_memory.max_stored_contexts,
-                learning_rate=self.language.sequence_memory.learning_rate,
-                device=self.global_.device,
-            )
-
-    def to_training_config(self) -> Any:
-        """Create LegacyTrainingConfig for legacy API."""
-        import warnings
-        from thalia.training.local_trainer import LegacyTrainingConfig
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            return LegacyTrainingConfig(
-                n_epochs=self.training.n_epochs,
-                log_every=self.training.logging.log_every,
-                save_every=self.training.checkpoint.save_every,
-                use_stdp=self.training.use_stdp,
-                use_bcm=self.training.use_bcm,
-                use_eligibility=self.training.use_eligibility,
-                use_hebbian=self.training.use_hebbian,
-                stdp_lr=self.training.learning_rates.stdp,
-                bcm_lr=self.training.learning_rates.bcm,
-                hebbian_lr=self.training.learning_rates.hebbian,
-                reward_signal=self.training.reward_scale,
-                two_phase_enabled=self.training.two_phase.enabled,
-                consolidation_timesteps=self.training.two_phase.consolidation_timesteps,
-                decoder_learning_start_step=self.training.decoder_learning_start_step,
-                checkpoint_dir=self.training.checkpoint.checkpoint_dir,
-                device=self.global_.device,
-            )
-
     # =========================================================================
     # SERIALIZATION
     # =========================================================================

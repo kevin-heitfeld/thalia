@@ -43,6 +43,7 @@ class EventRegionConfig:
     name: str  # Unique region name
     output_targets: List[str]  # Where to send output spikes
     membrane_tau_ms: float = 20.0  # Membrane time constant for decay
+    accumulation_window_ms: float = 5.0  # Time window for buffering multi-source inputs
     device: str = "cpu"
 
 
@@ -76,6 +77,12 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
 
         # Dopamine state
         self._dopamine_level: float = 0.0
+
+        # Input buffering for multi-source regions
+        self._accumulation_window: float = config.accumulation_window_ms
+        self._input_buffers: Dict[str, Optional[torch.Tensor]] = {}
+        self._input_sizes: Dict[str, int] = {}
+        self._last_input_times: Dict[str, float] = {}
 
         # Build connections
         self._connections = [
@@ -140,7 +147,13 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         """Update dopamine state from dopamine event."""
         if isinstance(event.payload, DopaminePayload):
             self._dopamine_level = event.payload.level
-            # Trigger learning updates if needed
+            
+            # Set dopamine on underlying region state if available
+            if hasattr(self, 'impl') and hasattr(self.impl, 'state'):
+                if self.impl.state is not None:
+                    self.impl.state.dopamine = event.payload.level
+            
+            # Trigger region-specific learning updates
             self._on_dopamine(event.payload)
         return []  # Dopamine updates typically don't produce output events
 
@@ -202,6 +215,108 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
     def _on_dopamine(self, payload: DopaminePayload) -> None:
         """Handle dopamine signal - override for learning."""
         pass
+
+    # ===== Input Buffering Methods =====
+    # Common functionality for regions that receive multi-source input
+    
+    def configure_input_sources(self, **source_sizes: int) -> None:
+        """Configure expected input sources and their sizes.
+        
+        Example:
+            region.configure_input_sources(cortex=512, hippocampus=256, pfc=128)
+        
+        Args:
+            **source_sizes: Named arguments mapping source names to input sizes
+        """
+        self._input_sizes = source_sizes
+        for source in source_sizes:
+            self._input_buffers[source] = None
+            self._last_input_times[source] = -1000.0
+    
+    def _buffer_input(self, source: str, spikes: torch.Tensor) -> None:
+        """Store input spikes in buffer for given source.
+        
+        Args:
+            source: Name of the source region
+            spikes: Spike tensor to buffer
+        """
+        self._input_buffers[source] = spikes
+        self._last_input_times[source] = self._current_time
+    
+    def _clear_input_buffers(self) -> None:
+        """Clear all input buffers after processing."""
+        for source in self._input_buffers:
+            self._input_buffers[source] = None
+    
+    def _is_source_timed_out(self, source: str) -> bool:
+        """Check if a source has timed out waiting for input.
+        
+        Args:
+            source: Name of the source to check
+            
+        Returns:
+            True if the source hasn't sent input within accumulation window
+        """
+        if source not in self._last_input_times:
+            return True
+        time_since_input = self._current_time - self._last_input_times[source]
+        return time_since_input > self._accumulation_window
+    
+    def _build_combined_input(
+        self,
+        source_order: List[str],
+        require_sources: Optional[List[str]] = None,
+    ) -> Optional[torch.Tensor]:
+        """Build combined input from buffers in specified order.
+        
+        Args:
+            source_order: List of source names in the order to concatenate
+            require_sources: List of sources that must be present (not timed out).
+                           If None, only the first source is required.
+        
+        Returns:
+            Combined tensor of shape [batch, sum(input_sizes)], or None if not ready
+        """
+        if require_sources is None:
+            require_sources = [source_order[0]] if source_order else []
+        
+        # Check if required sources are available
+        for source in require_sources:
+            if source not in self._input_buffers or self._input_buffers[source] is None:
+                # Required source not available
+                return None
+        
+        # Determine device and batch size from available buffers
+        device = None
+        batch_size = 1
+        for source in source_order:
+            buf = self._input_buffers.get(source)
+            if buf is not None:
+                device = buf.device
+                batch_size = buf.shape[0]
+                break
+        
+        if device is None:
+            return None
+        
+        # Build parts, using zeros for missing/timed-out sources
+        parts = []
+        for source in source_order:
+            buf = self._input_buffers.get(source)
+            if buf is not None:
+                parts.append(buf)
+            elif source in self._input_sizes and self._input_sizes[source] > 0:
+                # Use zeros for timed-out or missing optional sources
+                parts.append(
+                    torch.zeros(batch_size, self._input_sizes[source], device=device)
+                )
+        
+        if not parts:
+            return None
+        
+        return torch.cat(parts, dim=-1)
+
+    # ===== End Input Buffering Methods =====
 
     def get_state(self) -> Dict[str, Any]:
         """Return current state for monitoring."""

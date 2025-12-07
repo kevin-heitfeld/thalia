@@ -44,6 +44,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 
+from thalia.diagnostics import auto_diagnostics
+
 
 @dataclass
 class EIBalanceConfig:
@@ -269,19 +271,21 @@ class EIBalanceRegulator(nn.Module):
         else:
             return "balanced"
     
+    @auto_diagnostics(
+        scalars=['_exc_avg', '_inh_avg', '_inh_scale'],
+    )
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information.
+        
+        Note: Auto-collects _exc_avg, _inh_avg, _inh_scale. Custom metrics added manually.
         
         Returns:
             Dictionary with E/I metrics
         """
         return {
-            "exc_avg": self._exc_avg,
-            "inh_avg": self._inh_avg,
             "current_ratio": self.get_current_ratio(),
             "target_ratio": self.config.target_ratio,
             "ratio_error": self.get_ratio_error(),
-            "inh_scale": self._inh_scale,
             "status": self.get_health_status(),
             "history_length": len(self._ratio_history),
         }

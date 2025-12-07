@@ -52,18 +52,12 @@ class EventDrivenPFC(EventDrivenRegionBase):
         super().__init__(config)
         self._pfc = pfc
 
-        # Input sizes for buffering (set via configure_inputs)
-        self._cortex_input_size = cortex_input_size
-        self._hippocampus_input_size = hippocampus_input_size
-
-        # Input buffers - accumulate spikes from different sources
-        self._cortex_buffer: Optional[torch.Tensor] = None
-        self._hippocampus_buffer: Optional[torch.Tensor] = None
-
-        # Time window for accumulating inputs (ms)
-        self._accumulation_window: float = 5.0
-        self._last_cortex_time: float = -1000.0
-        self._last_hippocampus_time: float = -1000.0
+        # Configure input buffering using base class
+        if cortex_input_size > 0 and hippocampus_input_size > 0:
+            self.configure_input_sources(
+                cortex=cortex_input_size,
+                hippocampus=hippocampus_input_size,
+            )
 
         # Accumulate dopamine signal for next forward pass
         self._pending_dopamine_signal: float = 0.0
@@ -93,13 +87,10 @@ class EventDrivenPFC(EventDrivenRegionBase):
 
         Call this after construction if sizes weren't provided.
         """
-        self._cortex_input_size = cortex_input_size
-        self._hippocampus_input_size = hippocampus_input_size
-
-    def _clear_buffers(self) -> None:
-        """Clear input buffers."""
-        self._cortex_buffer = None
-        self._hippocampus_buffer = None
+        self.configure_input_sources(
+            cortex=cortex_input_size,
+            hippocampus=hippocampus_input_size,
+        )
 
     def _apply_decay(self, dt_ms: float) -> None:
         """Apply decay to PFC neurons."""
@@ -122,12 +113,8 @@ class EventDrivenPFC(EventDrivenRegionBase):
         - Gate what enters working memory (high DA = update WM)
         - Modulate learning (via dopamine-gated STDP)
 
-        With continuous plasticity, dopamine modulates the learning rate
-        in forward(). We store it both on the PFC state and for gating.
+        Note: Base class already sets dopamine on impl.state for continuous plasticity.
         """
-        # Set dopamine on region state for continuous plasticity modulation
-        self.impl.state.dopamine = payload.level
-
         # Store dopamine signal for next forward pass (WM gating)
         self._pending_dopamine_signal = payload.level
 
@@ -146,66 +133,30 @@ class EventDrivenPFC(EventDrivenRegionBase):
         if input_spikes.dim() == 1:
             input_spikes = input_spikes.unsqueeze(0)
 
-        # Buffer input based on source
-        if source == "cortex":
-            self._cortex_buffer = input_spikes
-            self._last_cortex_time = self._current_time
-        elif source == "hippocampus":
-            self._hippocampus_buffer = input_spikes
-            self._last_hippocampus_time = self._current_time
+        # Buffer input using base class method
+        if source in ["cortex", "hippocampus"]:
+            self._buffer_input(source, input_spikes)
         else:
             # Unknown source - try to process directly if sizes match
             return self._forward_pfc(input_spikes)
 
         # Check if we should process now
-        # Process if we have both inputs, or if input sizes weren't configured
-        if self._cortex_input_size == 0 and self._hippocampus_input_size == 0:
-            # Sizes not configured - just pass through (legacy mode)
+        # If sizes not configured, pass through (legacy mode)
+        if not self._input_sizes:
             return self._forward_pfc(input_spikes)
 
-        # Build combined input
-        combined = self._build_combined_input()
+        # Build combined input using base class method
+        combined = self._build_combined_input(
+            source_order=["cortex", "hippocampus"],
+            require_sources=["cortex"],  # Cortex is required, hippocampus optional
+        )
+        
         if combined is not None:
             result = self._forward_pfc(combined)
-            self._clear_buffers()
+            self._clear_input_buffers()
             return result
 
         # Don't have complete input yet - return None (no output)
-        return None
-
-    def _build_combined_input(self) -> Optional[torch.Tensor]:
-        """Build combined input from buffers if ready."""
-        # If we have both buffers, combine them
-        if self._cortex_buffer is not None and self._hippocampus_buffer is not None:
-            return torch.cat([self._cortex_buffer, self._hippocampus_buffer], dim=-1)
-
-        # If only cortex arrived and hippocampus timed out, use zeros
-        if self._cortex_buffer is not None:
-            time_since_hippocampus = self._current_time - self._last_hippocampus_time
-            if time_since_hippocampus > self._accumulation_window:
-                # Hippocampus timed out - use zeros
-                batch_size = self._cortex_buffer.shape[0]
-                zeros = torch.zeros(
-                    batch_size,
-                    self._hippocampus_input_size,
-                    device=self._cortex_buffer.device,
-                )
-                return torch.cat([self._cortex_buffer, zeros], dim=-1)
-
-        # If only hippocampus arrived and cortex timed out, use zeros
-        if self._hippocampus_buffer is not None:
-            time_since_cortex = self._current_time - self._last_cortex_time
-            if time_since_cortex > self._accumulation_window:
-                # Cortex timed out - use zeros
-                batch_size = self._hippocampus_buffer.shape[0]
-                zeros = torch.zeros(
-                    batch_size,
-                    self._cortex_input_size,
-                    device=self._hippocampus_buffer.device,
-                )
-                return torch.cat([zeros, self._hippocampus_buffer], dim=-1)
-
-        # Not ready yet
         return None
 
     def _forward_pfc(self, combined_input: torch.Tensor) -> torch.Tensor:

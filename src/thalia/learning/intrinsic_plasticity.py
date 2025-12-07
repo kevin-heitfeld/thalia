@@ -70,6 +70,8 @@ from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 
+from thalia.diagnostics import auto_diagnostics
+
 
 @dataclass
 class IntrinsicPlasticityConfig:
@@ -250,8 +252,14 @@ class IntrinsicPlasticity(nn.Module):
         """
         return self.rate_avg - self.config.target_rate
     
+    @auto_diagnostics(
+        scalars=['_update_count'],
+    )
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information."""
+        """Get diagnostic information.
+        
+        Note: Auto-collects _update_count. Custom metrics added manually.
+        """
         return {
             "rate_avg_mean": self.rate_avg.mean().item(),
             "rate_avg_std": self.rate_avg.std().item(),
@@ -264,7 +272,6 @@ class IntrinsicPlasticity(nn.Module):
             "avg_adaptation": (
                 self._total_adaptation / max(1, self._update_count)
             ),
-            "update_count": self._update_count,
         }
     
     def forward(
@@ -359,11 +366,15 @@ class PopulationIntrinsicPlasticity(nn.Module):
         """
         return input_current * self._excitability
     
+    @auto_diagnostics(
+        scalars=['_rate_avg', '_excitability'],
+    )
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information."""
+        """Get diagnostic information.
+        
+        Note: Auto-collects _rate_avg and _excitability. Custom metrics added manually.
+        """
         return {
-            "rate_avg": self._rate_avg,
             "target_rate": self.config.target_rate,
             "rate_error": self.get_rate_error(),
-            "excitability": self._excitability,
         }

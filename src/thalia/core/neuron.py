@@ -22,6 +22,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from thalia.config.base import NeuralComponentConfig
+
 
 # =============================================================================
 # CURRENT-BASED LIF NEURON
@@ -29,8 +31,10 @@ import torch.nn as nn
 
 
 @dataclass
-class LIFConfig:
+class LIFConfig(NeuralComponentConfig):
     """Configuration for LIF neuron parameters.
+
+    Inherits n_neurons, dt, device, dtype, seed from NeuralComponentConfig.
 
     Attributes:
         tau_mem: Membrane time constant in ms (default: 20.0)
@@ -41,7 +45,6 @@ class LIFConfig:
         v_threshold: Spike threshold (default: 1.0)
         tau_ref: Refractory period in ms (default: 2.0)
             Absolute refractory period during which neuron cannot fire.
-        dt: Simulation timestep in ms (default: 1.0)
 
         # Adaptation parameters (spike-frequency adaptation)
         tau_adapt: Adaptation time constant in ms (default: 100.0)
@@ -67,7 +70,6 @@ class LIFConfig:
     v_reset: float = 0.0
     v_threshold: float = 1.0
     tau_ref: float = 2.0
-    dt: float = 1.0
     v_min: Optional[float] = None  # Minimum membrane potential (reversal limit)
 
     # Adaptation (spike-frequency adaptation)
