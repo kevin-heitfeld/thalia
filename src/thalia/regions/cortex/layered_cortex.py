@@ -50,11 +50,11 @@ from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
-from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig, CompositeStrategy
+from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
 from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights, assert_single_instance
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
-from thalia.learning.ei_balance import EIBalanceRegulator, LayerEIBalance
+from thalia.learning.ei_balance import LayerEIBalance
 from thalia.core.normalization import DivisiveNormalization
 from thalia.learning.intrinsic_plasticity import PopulationIntrinsicPlasticity
 
@@ -107,7 +107,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         parent_config = RegionConfig(
             n_input=config.n_input,
             n_output=actual_output,
-            dt_ms=config.dt_ms,
+            dt=config.dt,
             device=config.device,
         )
 
@@ -158,7 +158,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self._cumulative_l4_spikes = 0
         self._cumulative_l23_spikes = 0
         self._cumulative_l5_spikes = 0
-        
+
         # Intrinsic plasticity tracking (initialized in _init_layers)
         self._l23_threshold_offset: Optional[torch.Tensor] = None
         self._l23_activity_history: Optional[torch.Tensor] = None
@@ -210,7 +210,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.stp_l23_recurrent = ShortTermPlasticity(
                 n_pre=self.l23_size,
                 n_post=self.l23_size,
-                config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt_ms),
+                config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt),
                 per_synapse=True,
             )
             self.stp_l23_recurrent.to(device)
@@ -219,7 +219,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
     def _init_robustness_mechanisms(self) -> None:
         """Initialize robustness mechanisms from RobustnessConfig.
-        
+
         These mechanisms provide hyperparameter robustness similar to
         biological homeostatic regulation:
         - E/I Balance: Tracks excitation vs inhibition, scales inhibitory gain
@@ -229,15 +229,15 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         cfg = self.layer_config
         rob = cfg.robustness
         device = torch.device(cfg.device)
-        
+
         # Default: no robustness mechanisms
         self.ei_balance: Optional[LayerEIBalance] = None
         self.divisive_norm_l4: Optional[DivisiveNormalization] = None
         self.pop_intrinsic_plasticity: Optional[PopulationIntrinsicPlasticity] = None
-        
+
         if rob is None:
             return
-        
+
         # E/I Balance Regulator for L2/3 layer
         # Tracks excitatory (L2/3 pyramidal) vs inhibitory (lateral inhibition) activity
         if rob.enable_ei_balance:
@@ -247,7 +247,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 config=rob.ei_balance,
                 device=device,
             )
-        
+
         # Divisive Normalization for L4 input processing
         # Provides automatic gain control regardless of input intensity
         if rob.enable_divisive_norm:
@@ -256,7 +256,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 n_features=self.l4_size,
                 device=device,
             )
-        
+
         # Population Intrinsic Plasticity for L2/3
         # Global excitability modulation based on population activity
         if rob.enable_intrinsic_plasticity:
@@ -335,7 +335,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 a_minus=0.012,
                 tau_plus=20.0,
                 tau_minus=20.0,
-                dt=cfg.dt_ms,
+                dt=cfg.dt,
                 w_min=cfg.w_min,
                 w_max=cfg.w_max,
                 soft_bounds=cfg.soft_bounds,
@@ -344,7 +344,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
     def reset_state(self) -> None:
         """Reset all layer states.
-        
+
         THALIA enforces batch_size=1 for single-instance architecture.
         For parallel evaluation, create multiple LayeredCortex instances.
         """
@@ -397,7 +397,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         input_spikes = ensure_batch_dim(input_spikes)
 
         batch_size = input_spikes.shape[0]
-        
+
         # Enforce single-instance architecture
         assert_single_instance(batch_size, "LayeredCortex.forward")
 
@@ -419,7 +419,6 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             )
 
         if self.state.l4_spikes is None:
-            from thalia.core.utils import assert_single_instance
             assert_single_instance(batch_size, "LayeredCortex")
             self.reset_state()
 
@@ -431,11 +430,11 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             * cfg.input_to_l4_strength
         )
         l4_input = l4_input * (0.5 + 0.5 * encoding_mod)
-        
+
         # Apply Divisive Normalization to L4 input (automatic gain control)
         if self.divisive_norm_l4 is not None:
             l4_input = self.divisive_norm_l4(l4_input)
-        
+
         l4_spikes, _ = self.l4_neurons(l4_input)
         l4_spikes = self._apply_sparsity(l4_spikes, cfg.l4_sparsity)
         self.state.l4_spikes = l4_spikes
@@ -479,10 +478,10 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 stp_efficacy = self.stp_l23_recurrent(
                     self.state.l23_recurrent_activity.float()
                 )  # (batch, l23_size, l23_size)
-                
+
                 # For batch_size=1, squeeze and apply directly
                 assert_single_instance(stp_efficacy.shape[0], "STP efficacy in LayeredCortex")
-                
+
                 stp_efficacy = stp_efficacy.squeeze(0)  # (l23_size, l23_size)
                 effective_w_rec = self.w_l23_recurrent * stp_efficacy
                 l23_rec = (
@@ -518,7 +517,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 self.state.l23_spikes.float(),
                 self.w_l23_inhib.t(),
             )
-            
+
             # E/I Balance: Scale inhibition to maintain healthy E/I ratio
             if self.ei_balance is not None:
                 # Track E/I balance using L2/3 excitation vs inhibition
@@ -528,9 +527,9 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 )
                 # Scale inhibition to maintain target E/I ratio
                 l23_inhib = self.ei_balance.scale_inhibition(l23_inhib)
-            
+
             l23_input = l23_input - l23_inhib
-        
+
         # Population Intrinsic Plasticity: Modulate input based on population rate
         if self.pop_intrinsic_plasticity is not None and self.state.l23_spikes is not None:
             self.pop_intrinsic_plasticity.update(self.state.l23_spikes)
@@ -539,7 +538,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
         # Neurons that fire too much have higher thresholds (less excitable)
         cfg = self.layer_config
-        if (cfg.intrinsic_plasticity_enabled and 
+        if (cfg.intrinsic_plasticity_enabled and
             self._l23_threshold_offset is not None):
             l23_input = l23_input - self._l23_threshold_offset.unsqueeze(0)
 
@@ -762,18 +761,18 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             # This operates on LONGER timescales than SFA.
             if cfg.intrinsic_plasticity_enabled:
                 l23_spikes_1d = l23_activity
-                
+
                 # Initialize if needed
                 if self._l23_activity_history is None:
                     self._l23_activity_history = torch.zeros(self.l23_size, device=l23_spikes_1d.device)
                 if self._l23_threshold_offset is None:
                     self._l23_threshold_offset = torch.zeros(self.l23_size, device=l23_spikes_1d.device)
-                
+
                 # Update activity history (exponential moving average)
                 self._l23_activity_history = (
                     0.99 * self._l23_activity_history + 0.01 * l23_spikes_1d
                 )
-                
+
                 # Adjust threshold: high activity → higher threshold (less excitable)
                 rate_error = self._l23_activity_history - cfg.intrinsic_target_rate
                 self._l23_threshold_offset = (
@@ -858,10 +857,10 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             diag["robustness_ei_ratio"] = ei_diag.get("current_ratio", 0.0)
             diag["robustness_ei_scale"] = ei_diag.get("inh_scale", 1.0)
             diag["robustness_ei_status"] = ei_diag.get("status", "unknown")
-        
+
         if self.divisive_norm_l4 is not None:
             diag["robustness_divisive_norm_enabled"] = True
-        
+
         if self.pop_intrinsic_plasticity is not None:
             ip_diag = self.pop_intrinsic_plasticity.get_diagnostics()
             diag["robustness_ip_rate_avg"] = ip_diag.get("rate_avg", 0.0)

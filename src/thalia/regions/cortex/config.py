@@ -74,6 +74,7 @@ class LayeredCortexConfig(RegionConfig):
     # Weight bounds for feedforward connections (positive-only, Dale's law)
     w_max: float = 1.0
     w_min: float = 0.0
+    soft_bounds: bool = True  # Use soft weight bounds (vs hard clipping)
 
     # Weight bounds for L2/3 recurrent connections (signed, compact E/I approximation)
     # Unlike feedforward connections, recurrent lateral connections use signed weights

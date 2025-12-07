@@ -4,9 +4,235 @@ This module provides reusable utilities for testing THALIA components,
 including validation helpers, assertion functions, and test data generators.
 """
 
-from typing import Tuple
+from typing import Tuple, Dict, Any
 import torch
 import numpy as np
+
+
+# =============================================================================
+# TEST FIXTURES CLASS
+# =============================================================================
+
+class TestFixtures:
+    """Utility class for common test setups.
+    
+    Provides methods for quickly creating test scenarios without pytest fixtures.
+    Useful for parameterized tests and programmatic test generation.
+    
+    Examples:
+        >>> fixtures = TestFixtures()
+        >>> neuron = fixtures.create_lif_neuron(n_neurons=100)
+        >>> cortex = fixtures.create_cortex(n_input=64, n_output=32)
+        >>> spikes = fixtures.create_poisson_spikes(rate=0.1, n_neurons=100)
+    """
+    
+    def __init__(self, device: str = "cpu"):
+        """Initialize test fixtures.
+        
+        Args:
+            device: Device for tensor creation
+        """
+        self.device = device
+    
+    # =========================================================================
+    # NEURONS
+    # =========================================================================
+    
+    def create_lif_neuron(self, n_neurons: int = 100, **config_kwargs):
+        """Create LIF neuron with standard config."""
+        from thalia.core.neuron import LIFNeuron, LIFConfig
+        
+        config = LIFConfig(
+            n_neurons=n_neurons,
+            v_threshold=config_kwargs.get('v_threshold', 1.0),
+            v_rest=config_kwargs.get('v_rest', 0.0),
+            tau_mem=config_kwargs.get('tau_mem', 20.0),
+        )
+        return LIFNeuron(n_neurons=n_neurons, config=config)
+    
+    def create_conductance_lif(self, n_neurons: int = 100, **config_kwargs):
+        """Create conductance-based LIF neuron."""
+        from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+        
+        config = ConductanceLIFConfig(
+            v_threshold=config_kwargs.get('v_threshold', 1.0),
+            v_rest=config_kwargs.get('v_rest', -70.0),
+            v_exc=config_kwargs.get('v_exc', 0.0),
+            v_inh=config_kwargs.get('v_inh', -80.0),
+            tau_mem=config_kwargs.get('tau_mem', 20.0),
+            tau_exc=config_kwargs.get('tau_exc', 5.0),
+            tau_inh=config_kwargs.get('tau_inh', 10.0),
+        )
+        return ConductanceLIF(n_neurons=n_neurons, config=config)
+    
+    def create_dendritic_neuron(self, n_neurons: int = 20, n_branches: int = 5):
+        """Create dendritic neuron with standard config."""
+        from thalia.core.dendritic import DendriticNeuron, DendriticNeuronConfig
+        
+        config = DendriticNeuronConfig(
+            n_neurons=n_neurons,
+            n_branches=n_branches,
+            branch_inputs_per_neuron=3,
+            tau_mem=20.0,
+            tau_syn=10.0,
+        )
+        return DendriticNeuron(config)
+    
+    # =========================================================================
+    # REGIONS
+    # =========================================================================
+    
+    def create_cortex(self, n_input: int = 64, n_output: int = 32, **config_kwargs):
+        """Create LayeredCortex with standard config."""
+        from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
+        
+        config = LayeredCortexConfig(
+            n_input=n_input,
+            n_output=n_output,
+            l4_ratio=config_kwargs.get('l4_ratio', 1.0),
+            l23_ratio=config_kwargs.get('l23_ratio', 1.5),
+            l5_ratio=config_kwargs.get('l5_ratio', 1.0),
+            dual_output=config_kwargs.get('dual_output', True),
+        )
+        return LayeredCortex(config)
+    
+    def create_cerebellum(self, n_input: int = 64, n_output: int = 32):
+        """Create Cerebellum with standard config."""
+        from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+        
+        config = CerebellumConfig(
+            n_input=n_input,
+            n_output=n_output,
+            n_granule=n_input * 4,
+            n_purkinje=n_output,
+        )
+        return Cerebellum(config)
+    
+    def create_striatum(self, n_input: int = 64, n_actions: int = 4):
+        """Create Striatum with standard config."""
+        from thalia.regions.striatum import Striatum, StriatumConfig
+        
+        config = StriatumConfig(
+            n_input=n_input,
+            n_output=n_actions * 10,  # Population coding
+            population_coding=True,
+            neurons_per_action=10,
+        )
+        return Striatum(config)
+    
+    def create_prefrontal(self, n_input: int = 64, wm_capacity: int = 5):
+        """Create Prefrontal with standard config."""
+        from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
+        
+        config = PrefrontalConfig(
+            n_input=n_input,
+            n_output=n_input,
+            wm_capacity=wm_capacity,
+        )
+        return Prefrontal(config)
+    
+    def create_hippocampus(self, n_input: int = 64, n_output: int = 32):
+        """Create TrisynapticHippocampus with standard config."""
+        from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticHippocampusConfig
+        
+        config = TrisynapticHippocampusConfig(
+            n_input=n_input,
+            n_output=n_output,
+            n_dg=n_input * 4,
+            n_ca3=n_input * 2,
+            n_ca1=n_output * 2,
+        )
+        return TrisynapticHippocampus(config)
+    
+    # =========================================================================
+    # SPIKE PATTERNS
+    # =========================================================================
+    
+    def create_poisson_spikes(self, rate: float = 0.1, n_neurons: int = 100, 
+                             n_timesteps: int = 100, batch_size: int = 1):
+        """Create Poisson spike train."""
+        return generate_poisson_spikes(
+            rate=rate,
+            n_neurons=n_neurons,
+            n_timesteps=n_timesteps,
+            batch_size=batch_size,
+            device=self.device
+        )
+    
+    def create_clustered_spikes(self, cluster_size: int = 10, n_clusters: int = 5,
+                               n_timesteps: int = 100, batch_size: int = 1):
+        """Create clustered spike patterns."""
+        return generate_clustered_spikes(
+            cluster_size=cluster_size,
+            n_clusters=n_clusters,
+            n_timesteps=n_timesteps,
+            batch_size=batch_size,
+            device=self.device
+        )
+    
+    def create_pattern_sequence(self, n_patterns: int = 5, pattern_size: int = 100,
+                               n_repeats: int = 5):
+        """Create repeating pattern sequence."""
+        return generate_pattern_sequence(
+            n_patterns=n_patterns,
+            pattern_size=pattern_size,
+            n_repeats=n_repeats,
+            device=self.device
+        )
+    
+    # =========================================================================
+    # INPUTS
+    # =========================================================================
+    
+    def create_random_input(self, batch_size: int = 1, n_neurons: int = 100):
+        """Create random input tensor."""
+        return torch.randn(batch_size, n_neurons, device=self.device)
+    
+    def create_binary_pattern(self, n_neurons: int = 100):
+        """Create random binary pattern."""
+        return torch.randint(0, 2, (n_neurons,), device=self.device).float()
+    
+    def create_test_weights(self, n_neurons: int = 100):
+        """Create test weight matrix."""
+        return torch.randn(n_neurons, n_neurons, device=self.device).abs()
+    
+    # =========================================================================
+    # COMPLETE TEST SCENARIOS
+    # =========================================================================
+    
+    def create_learning_scenario(self, n_neurons: int = 100) -> Dict[str, Any]:
+        """Create complete learning test scenario.
+        
+        Returns dict with:
+        - neuron: LIF neuron model
+        - input_pattern: Consistent input
+        - target_pattern: Target spikes
+        - reward: Reward signal
+        """
+        return {
+            'neuron': self.create_lif_neuron(n_neurons=n_neurons),
+            'input_pattern': self.create_random_input(batch_size=1, n_neurons=n_neurons),
+            'target_pattern': self.create_binary_pattern(n_neurons=n_neurons),
+            'reward': torch.tensor(1.0, device=self.device),
+        }
+    
+    def create_region_test_scenario(self, n_input: int = 64, n_output: int = 32) -> Dict[str, Any]:
+        """Create complete region test scenario.
+        
+        Returns dict with region, input spikes, and expected output shape.
+        """
+        region = self.create_cortex(n_input=n_input, n_output=n_output)
+        input_spikes = self.create_poisson_spikes(
+            rate=0.1, 
+            n_neurons=n_input, 
+            n_timesteps=50
+        )
+        
+        return {
+            'region': region,
+            'input_spikes': input_spikes,
+            'expected_output_shape': (1, n_output),
+        }
 
 
 # =============================================================================

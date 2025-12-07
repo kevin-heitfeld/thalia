@@ -4,6 +4,9 @@ import pytest
 import torch
 import numpy as np
 
+# Import all standard fixtures
+from tests.fixtures import *  # noqa: F401, F403
+
 
 @pytest.fixture(autouse=True)
 def set_random_seed():
@@ -30,7 +33,7 @@ def device():
 @pytest.fixture
 def batch_size():
     """Standard batch size for tests."""
-    return 32
+    return 1  # Single instance per THALIA architecture
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 # Additional Refactoring Opportunities
 
-**Date**: December 7, 2025  
+**Date**: December 7, 2025
 **Status**: Analysis Phase - Identifying Next Wave of Improvements
 
 ## Overview
@@ -12,10 +12,10 @@ After completing the initial 8-item refactoring plan, this document identifies a
 ## High-Priority Opportunities
 
 ### 1. ✅ Standardize `reset()` Methods Across Modules - **COMPLETED**
-**Effort**: 4 hours  
+**Effort**: 4 hours
 **Impact**: High - improves testability and state management
 
-**Problem**: 
+**Problem**:
 - 30+ classes implemented `reset()` with varying signatures
 - Some used `reset()`, others `reset_state()`, some had `reset(batch_size: int)`
 - Inconsistent behavior: some reset weights, others only state
@@ -36,10 +36,10 @@ After completing the initial 8-item refactoring plan, this document identifies a
 ---
 
 ### 2. ✅ Consolidate `from_config()` Factory Methods [COMPLETED]
-**Estimated Effort**: 2-3 hours ✅ Actual: 1.5 hours  
+**Estimated Effort**: 2-3 hours ✅ Actual: 1.5 hours
 **Impact**: Medium - eliminates boilerplate, establishes clear pattern
 
-**Problem**: 
+**Problem**:
 - ~20 classes had nearly identical `from_thalia_config()` factory methods
 - Each method: extract config subset → pass to constructor (20-30 lines each)
 - Pattern repeated but not abstracted
@@ -66,7 +66,7 @@ Created `ConfigurableMixin` in `core/mixins.py`:
 ---
 
 ### 3. ✅ Extract Common Encoder/Decoder Patterns [COMPLETED]
-**Estimated Effort**: 3-4 hours ✅ Actual: 2 hours  
+**Estimated Effort**: 3-4 hours ✅ Actual: 2 hours
 **Impact**: Medium-High - foundation for new modalities
 
 **Problem**:
@@ -79,7 +79,7 @@ Created `ConfigurableMixin` in `core/mixins.py`:
 Created `spike_coding.py` base module with:
 - `CodingStrategy` enum (unified RATE, TEMPORAL, POPULATION, PHASE, BURST, SDR, WTA)
 - `SpikeCodingConfig` base configuration class
-- `SpikeEncoder` abstract base class with `_apply_coding_strategy()` 
+- `SpikeEncoder` abstract base class with `_apply_coding_strategy()`
 - `SpikeDecoder` abstract base class with `_integrate_spikes()`
 - `RateEncoder`/`RateDecoder` concrete implementations for testing
 
@@ -99,10 +99,11 @@ Created `spike_coding.py` base module with:
 **Commit**: c95913d
 
 ---
+   ```
    class SpikeCodec:
        def encode(self, value: Any, strategy: str) -> torch.Tensor:
            return self._strategies[strategy].encode(value)
-       
+
        def decode(self, spikes: torch.Tensor, strategy: str) -> Any:
            return self._strategies[strategy].decode(spikes)
    ```
@@ -115,7 +116,7 @@ Created `spike_coding.py` base module with:
 ---
 
 ### 4. ✅ Unify Learning Strategy Application Pattern [COMPLETED]
-**Estimated Effort**: 4-5 hours ✅ Actual: 2 hours  
+**Estimated Effort**: 4-5 hours ✅ Actual: 2 hours
 **Impact**: Medium - improves consistency, reduces region-specific learning code
 
 **Problem**:
@@ -152,7 +153,7 @@ Created `LearningStrategyMixin` in `learning/strategy_mixin.py`:
 ---
 
 ### 5. ✅ Create Region Factory and Registry [COMPLETED]
-**Estimated Effort**: 2-3 hours ✅ Actual: 1 hour  
+**Estimated Effort**: 2-3 hours ✅ Actual: 1 hour
 **Impact**: Low-Medium - simplifies brain construction
 
 **Problem**:
@@ -194,7 +195,7 @@ self.hippocampus = TrisynapticHippocampus(config.hippocampus)
 # New way (factory)
 for region_name in config.active_regions:
     self.regions[region_name] = RegionFactory.create(
-        region_name, 
+        region_name,
         getattr(config, region_name)
     )
 ```
@@ -204,8 +205,8 @@ for region_name in config.active_regions:
 ## Medium-Priority Opportunities
 
 ### 6. ✅ COMPLETED: Consolidate Similarity Computation Methods
-**Estimated Effort**: 1-2 hours → **Actual: 1 hour**  
-**Impact**: Low-Medium  
+**Estimated Effort**: 1-2 hours → **Actual: 1 hour**
+**Impact**: Low-Medium
 **Status**: ✅ COMPLETED (commit 20f83e4)
 
 **Problem**:
@@ -232,7 +233,7 @@ norm_a = a.norm() + eps
 norm_b = b.norm() + eps
 cosine = (a @ b) / (norm_a * norm_b)
 
-# spike_coding.py - duplicate cosine logic  
+# spike_coding.py - duplicate cosine logic
 norm1 = flat1.norm(dim=-1, keepdim=True).clamp(min=1e-6)
 norm2 = flat2.norm(dim=-1, keepdim=True).clamp(min=1e-6)
 similarity = (flat1 * flat2).sum(dim=-1) / (norm1.squeeze(-1) * norm2.squeeze(-1))
@@ -249,7 +250,7 @@ similarity = cosine_similarity_safe(flat1, flat2, eps=1e-6, dim=-1)
 ---
 
 ### 7. 🔲 Extract Common Test Utilities Pattern
-**Estimated Effort**: 2-3 hours  
+**Estimated Effort**: 2-3 hours
 **Impact**: Low - improves test maintainability
 
 **Problem**:
@@ -265,7 +266,7 @@ similarity = cosine_similarity_safe(flat1, flat2, eps=1e-6, dim=-1)
 ---
 
 ### 8. 🔲 Standardize State Access Pattern
-**Estimated Effort**: 2-3 hours  
+**Estimated Effort**: 2-3 hours
 **Impact**: Low-Medium
 
 **Problem**:
@@ -281,7 +282,7 @@ similarity = cosine_similarity_safe(flat1, flat2, eps=1e-6, dim=-1)
 ---
 
 ### 9. 🔲 Create Neuromodulator Mixin
-**Estimated Effort**: 2 hours  
+**Estimated Effort**: 2 hours
 **Impact**: Low-Medium
 
 **Problem**:
@@ -296,11 +297,11 @@ class NeuromodulatorMixin:
         self.dopamine = 0.0
         self.acetylcholine = 0.0
         self.norepinephrine = 0.0
-    
+
     def decay_neuromodulators(self, dt: float):
         # Standard exponential decay
         ...
-    
+
     def set_neuromodulator(self, name: str, level: float):
         setattr(self, name, level)
 ```
@@ -308,7 +309,7 @@ class NeuromodulatorMixin:
 ---
 
 ### 10. 🔲 Consolidate Replay Implementations
-**Estimated Effort**: 3-4 hours  
+**Estimated Effort**: 3-4 hours
 **Impact**: Medium
 
 **Problem**:
