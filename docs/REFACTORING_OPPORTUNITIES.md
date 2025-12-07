@@ -601,10 +601,19 @@ Created `BrainOscillator` base class in `core/oscillator.py` (~473 lines):
 - Mechanisms (phase-locking, coupling, synchronization)
 - References to key papers (Buzsáki, Lisman, Fries, Colgin)
 
+**Additional Refactoring (commit fae01bf)**:
+- Refactored `SequenceTimer` to use BrainOscillator composition
+- Eliminated ~40 lines of duplicate phase tracking code
+- Uses ThetaOscillator + GammaOscillatorBase for phase advancement
+- All 44 language module tests passing
+- Design decision: OscillatoryPositionEncoder NOT refactored (correct choice)
+  - It's a static position→encoding mapper, not a temporal oscillator
+  - Uses position-dependent phases, not time-evolved dynamics
+  - Refactoring would add complexity without benefit
+
 **Future Opportunities**:
-- OscillatoryPositionEncoder could use base (low priority)
-- SequenceEncoder already benefits from refactored GammaOscillator
-- Easy to add: DeltaOscillator, HighGammaOscillator, etc.
+- Easy to add: DeltaOscillator (0.5-4 Hz), HighGammaOscillator (100-200 Hz), etc.
+- Nested oscillation patterns (e.g., beta-gamma coupling)
 
 ---
 
@@ -636,10 +645,10 @@ Created `BrainOscillator` base class in `core/oscillator.py` (~473 lines):
 | 8. State access | 0 (doc only) | 1 | 2-3 (✅ 0.5) | ✅ Done | Medium |
 | 9. Neuromodulator mixin | 0 (exists) | 6 | 2 (✅ 1.5) | ✅ Done | Medium |
 | 10. Replay consolidation | 100-150 | 4 | 3-4 (✅ 3) | ✅ Done | Medium |
-| 11. Oscillator base class | 50-100 | 3 | 2-3 (✅ 1) | ✅ Done | Low-Med |
-| **Total** | **1060-1700** | **78-108** | **29-38** | **11/11** | - |
+| 11. Oscillator base class | 90-140 | 4 | 2-3 (✅ 1.5) | ✅ Done | Low-Med |
+| **Total** | **1100-1790** | **82-112** | **29-38** | **11/11** | - |
 
-**Progress**: 4 high-priority + 6 medium-priority + 1 low-medium priority items completed (20 hours actual vs 24-31 estimated) - **~29% ahead of schedule!**
+**Progress**: 4 high-priority + 6 medium-priority + 1 low-medium priority items completed (20.5 hours actual vs 24-31 estimated) - **~30% ahead of schedule!**
 
 ---
 
