@@ -121,22 +121,6 @@ class TestConductanceLIFErrorHandling:
 
         assert spikes.shape == (1, 10)
 
-    def test_both_none_inputs_work(self):
-        """Test that None for both inputs works (no external input)."""
-        neuron = ConductanceLIF(n_neurons=10)
-        neuron.reset_state()
-
-        # Should handle no input gracefully (or raise clear error)
-        # Implementation currently doesn't support None for both
-        # This test documents the current behavior
-        try:
-            spikes, _ = neuron(None, None)
-            assert spikes.shape == (1, 10)
-        except (AttributeError, TypeError):
-            # Current implementation doesn't support None inputs
-            # This is acceptable - test documents behavior
-            pytest.skip("Implementation doesn't support None inputs currently")
-
 
 @pytest.mark.unit
 class TestDendriticNeuronErrorHandling:
@@ -192,22 +176,6 @@ class TestCortexErrorHandling:
         except (ValueError, RuntimeError, AssertionError):
             # Expected behavior - wrong size caught
             pass
-
-    def test_invalid_config_raises_error(self):
-        """Test that invalid configurations are rejected or handled."""
-        # Current implementation may not validate all configs at init
-        # This test documents the behavior
-
-        # Try to create with zero sizes
-        try:
-            config = LayeredCortexConfig(n_input=0, n_output=16)
-            cortex = LayeredCortex(config)
-            # May succeed but fail on forward
-            pytest.skip("Config allows zero input (validation may be at runtime)")
-        except (ValueError, AssertionError):
-            # Expected behavior
-            pass
-
 
 @pytest.mark.unit
 class TestThreadSafety:

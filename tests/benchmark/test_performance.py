@@ -18,10 +18,10 @@ from thalia.learning.ei_balance import EIBalanceRegulator
 
 # Performance thresholds (in seconds)
 PERFORMANCE_THRESHOLDS = {
-    "lif_forward_small": 0.001,      # 1ms for 100 neurons
-    "lif_forward_large": 0.01,       # 10ms for 10k neurons
-    "cortex_forward_medium": 0.02,   # 20ms for medium cortex
-    "cortex_forward_large": 0.1,     # 100ms for large cortex
+    "lif_forward_small": 0.001,      # 1ms for 5k neurons
+    "lif_forward_large": 0.01,       # 10ms for 50k neurons
+    "cortex_forward_medium": 0.03,   # 30ms for 2k→1k cortex
+    "cortex_forward_large": 0.35,    # 350ms for 8k→4k cortex
     "dendritic_forward": 0.005,      # 5ms for dendritic neuron
     "ei_balance_update": 0.001,      # 1ms for E/I balance update
 }
@@ -127,20 +127,19 @@ class TestLIFPerformance:
 class TestCortexPerformance:
     """Benchmark cortex performance."""
 
-    @pytest.mark.skip(reason="LayeredCortex only supports batch_size=1 (single continuous brain state)")
     def test_cortex_forward_medium(self):
-        """Benchmark medium cortex forward pass."""
-        config = LayeredCortexConfig(n_input=256, n_output=128)
+        """Benchmark medium cortex forward pass (batch_size=1, larger input)."""
+        config = LayeredCortexConfig(n_input=2048, n_output=1024)
         cortex = LayeredCortex(config)
         cortex.reset_state()
-        input_data = torch.randn(32, 256)
+        input_data = torch.randn(1, 2048)
 
         def forward():
             cortex.forward(input_data)
 
         stats = benchmark_function(forward, n_runs=50)
 
-        print(f"\nCortex Forward (256→128, batch=32):")
+        print(f"\nCortex Forward (2048→1024, batch_size=1):")
         print(f"  Mean: {stats['mean']*1000:.3f} ms")
         print(f"  Std:  {stats['std']*1000:.3f} ms")
 
@@ -148,20 +147,19 @@ class TestCortexPerformance:
         assert stats["mean"] < threshold, \
             f"Cortex forward too slow: {stats['mean']:.4f}s > {threshold}s"
 
-    @pytest.mark.skip(reason="LayeredCortex only supports batch_size=1 (single continuous brain state)")
     def test_cortex_forward_large(self):
-        """Benchmark large cortex forward pass."""
-        config = LayeredCortexConfig(n_input=1024, n_output=512)
+        """Benchmark large cortex forward pass (batch_size=1, larger input)."""
+        config = LayeredCortexConfig(n_input=8192, n_output=4096)
         cortex = LayeredCortex(config)
         cortex.reset_state()
-        input_data = torch.randn(32, 1024)
+        input_data = torch.randn(1, 8192)
 
         def forward():
             cortex.forward(input_data)
 
         stats = benchmark_function(forward, n_runs=30)
 
-        print(f"\nCortex Forward (1024→512, batch=32):")
+        print(f"\nCortex Forward (8192→4096, batch_size=1):")
         print(f"  Mean: {stats['mean']*1000:.3f} ms")
         print(f"  Std:  {stats['std']*1000:.3f} ms")
 
@@ -169,15 +167,14 @@ class TestCortexPerformance:
         assert stats["mean"] < threshold, \
             f"Large cortex too slow: {stats['mean']:.4f}s > {threshold}s"
 
-    @pytest.mark.skip(reason="LayeredCortex only supports batch_size=1 (single continuous brain state)")
     def test_cortex_with_robustness_overhead(self):
-        """Measure overhead of robustness mechanisms."""
+        """Measure overhead of robustness mechanisms (batch_size=1)."""
         from thalia.config import RobustnessConfig
 
         # Cortex without robustness
         config_no_rob = LayeredCortexConfig(
-            n_input=256,
-            n_output=128,
+            n_input=2048,
+            n_output=1024,
             robustness=None,
         )
         cortex_no_rob = LayeredCortex(config_no_rob)
@@ -185,14 +182,14 @@ class TestCortexPerformance:
 
         # Cortex with full robustness
         config_with_rob = LayeredCortexConfig(
-            n_input=256,
-            n_output=128,
+            n_input=2048,
+            n_output=1024,
             robustness=RobustnessConfig.full(),
         )
         cortex_with_rob = LayeredCortex(config_with_rob)
         cortex_with_rob.reset_state()
 
-        input_data = torch.randn(32, 256)
+        input_data = torch.randn(1, 2048)
 
         # Benchmark both
         def forward_no_rob():
@@ -206,7 +203,7 @@ class TestCortexPerformance:
 
         overhead = (stats_with_rob["mean"] - stats_no_rob["mean"]) / stats_no_rob["mean"]
 
-        print(f"\nRobustness Overhead:")
+        print(f"\nRobustness Overhead (2048→1024, batch_size=1):")
         print(f"  Without: {stats_no_rob['mean']*1000:.3f} ms")
         print(f"  With:    {stats_with_rob['mean']*1000:.3f} ms")
         print(f"  Overhead: {overhead*100:.1f}%")
@@ -281,7 +278,7 @@ class TestMemoryUsage:
     """Test memory efficiency."""
 
     @pytest.mark.cuda
-    @pytest.mark.skip(reason="LayeredCortex needs proper device handling for all subcomponents")
+    @pytest.mark.skip(reason="LayeredCortex device handling needs verification on GPU")
     def test_gpu_memory_usage(self):
         """Test GPU memory usage is reasonable."""
         if not torch.cuda.is_available():

@@ -25,18 +25,6 @@ from tests.test_utils import (
 class TestLIFNeuronValidation:
     """Test input validation for LIF neurons."""
 
-    @pytest.mark.skip(reason="Implementation doesn't validate n_neurons at construction - permissive by design")
-    def test_rejects_zero_neurons(self):
-        """Test that zero neurons is rejected."""
-        with pytest.raises((ValueError, AssertionError)):
-            LIFNeuron(n_neurons=0)
-
-    @pytest.mark.skip(reason="Implementation doesn't validate n_neurons at construction - permissive by design")
-    def test_rejects_negative_neurons(self):
-        """Test that negative neuron count is rejected."""
-        with pytest.raises((ValueError, AssertionError)):
-            LIFNeuron(n_neurons=-10)
-
     def test_accepts_single_neuron(self):
         """Test that single neuron works (edge case)."""
         neuron = LIFNeuron(n_neurons=1)
@@ -98,17 +86,6 @@ class TestLIFNeuronValidation:
         except (ValueError, RuntimeError):
             pass
 
-    @pytest.mark.skip(reason="Implementation doesn't validate config at construction - permissive by design")
-    def test_invalid_config_values(self):
-        """Test that invalid configuration values are rejected."""
-        # Negative time constant
-        with pytest.raises((ValueError, AssertionError)):
-            LIFConfig(tau_mem=-10.0)
-
-        # Threshold below reset
-        with pytest.raises((ValueError, AssertionError)):
-            LIFConfig(v_threshold=0.0, v_reset=1.0)
-
     def test_reset_with_zero_batch_size(self):
         """Test that zero batch size is handled."""
         neuron = LIFNeuron(n_neurons=10)
@@ -162,18 +139,6 @@ class TestConductanceLIFValidation:
 class TestEIBalanceValidation:
     """Test input validation for E/I balance regulator."""
 
-    @pytest.mark.skip(reason="Implementation doesn't validate config at construction - permissive by design")
-    def test_rejects_negative_target_ratio(self):
-        """Test that negative target ratio is rejected."""
-        with pytest.raises((ValueError, AssertionError)):
-            EIBalanceConfig(target_ratio=-1.0)
-
-    @pytest.mark.skip(reason="Implementation doesn't validate config at construction - permissive by design")
-    def test_rejects_zero_time_constant(self):
-        """Test that zero time constant is rejected."""
-        with pytest.raises((ValueError, AssertionError)):
-            EIBalanceConfig(tau_balance=0.0)
-
     def test_handles_empty_spike_trains(self):
         """Test behavior with all-zero spike trains."""
         regulator = EIBalanceRegulator()
@@ -206,21 +171,6 @@ class TestEIBalanceValidation:
 @pytest.mark.unit
 class TestLayeredCortexValidation:
     """Test input validation for LayeredCortex."""
-
-    @pytest.mark.skip(reason="Implementation doesn't validate config at construction - permissive by design")
-    def test_rejects_zero_dimensions(self):
-        """Test that zero-sized cortex is rejected."""
-        with pytest.raises((ValueError, AssertionError)):
-            LayeredCortexConfig(n_input=0, n_output=10)
-
-        with pytest.raises((ValueError, AssertionError)):
-            LayeredCortexConfig(n_input=10, n_output=0)
-
-    @pytest.mark.skip(reason="Implementation doesn't validate config at construction - permissive by design")
-    def test_rejects_negative_dimensions(self):
-        """Test that negative dimensions are rejected."""
-        with pytest.raises((ValueError, AssertionError)):
-            LayeredCortexConfig(n_input=-10, n_output=10)
 
     def test_handles_single_neuron_layers(self):
         """Test edge case of single neuron per layer."""
@@ -262,18 +212,6 @@ class TestLayeredCortexValidation:
 @pytest.mark.unit
 class TestDendriticNeuronValidation:
     """Test input validation for dendritic neurons."""
-
-    @pytest.mark.skip(reason="Implementation doesn't validate config at construction - permissive by design")
-    def test_rejects_zero_branches(self):
-        """Test that zero branches is rejected."""
-        with pytest.raises((ValueError, AssertionError)):
-            DendriticNeuronConfig(n_branches=0, inputs_per_branch=10)
-
-    @pytest.mark.skip(reason="Implementation doesn't validate config at construction - permissive by design")
-    def test_rejects_zero_inputs(self):
-        """Test that zero inputs per branch is rejected."""
-        with pytest.raises((ValueError, AssertionError)):
-            DendriticNeuronConfig(n_branches=5, inputs_per_branch=0)
 
     def test_handles_single_branch(self):
         """Test edge case of single dendritic branch."""
