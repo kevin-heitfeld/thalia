@@ -48,6 +48,8 @@ import math
 import torch
 import torch.nn as nn
 
+from thalia.core.oscillator import ThetaOscillator, GammaOscillatorBase
+
 
 class PositionEncodingType(Enum):
     """Types of position encoding."""
@@ -540,6 +542,9 @@ class SequenceTimer(nn.Module):
     - Rhythm phase
     
     Useful for generating predictions about timing.
+    
+    Uses composition with ThetaOscillator and GammaOscillatorBase
+    for phase tracking and advancement.
     """
     
     def __init__(
@@ -552,16 +557,13 @@ class SequenceTimer(nn.Module):
     ):
         super().__init__()
         self.n_neurons = n_neurons
-        self.dt_ms = dt_ms
         self.device_str = device
         
-        # Oscillation periods
-        self.theta_period = 1000.0 / theta_freq_hz
-        self.gamma_period = 1000.0 / gamma_freq_hz
+        # Create base oscillators for phase tracking
+        self.theta = ThetaOscillator(frequency_hz=theta_freq_hz, dt_ms=dt_ms)
+        self.gamma = GammaOscillatorBase(frequency_hz=gamma_freq_hz, dt_ms=dt_ms)
         
-        # Phase state
-        self.register_buffer("theta_phase", torch.tensor(0.0))
-        self.register_buffer("gamma_phase", torch.tensor(0.0))
+        # Position tracking
         self.register_buffer("position", torch.tensor(0))
         
         # Phase to neuron mapping
@@ -570,8 +572,8 @@ class SequenceTimer(nn.Module):
     
     def reset_state(self) -> None:
         """Reset timer state."""
-        self.theta_phase.zero_()
-        self.gamma_phase.zero_()
+        self.theta.reset_state()
+        self.gamma.reset_state()
         self.position.zero_()
     
     def step(self, n_steps: int = 1) -> torch.Tensor:
@@ -584,32 +586,29 @@ class SequenceTimer(nn.Module):
         Returns:
             spikes: Current oscillatory state as spikes [n_neurons]
         """
-        # Update phases
-        delta_t = n_steps * self.dt_ms
-        self.theta_phase.add_(2 * math.pi * delta_t / self.theta_period)
-        self.gamma_phase.add_(2 * math.pi * delta_t / self.gamma_period)
-        
-        # Wrap phases
-        self.theta_phase.remainder_(2 * math.pi)
-        self.gamma_phase.remainder_(2 * math.pi)
+        # Advance oscillators
+        dt = n_steps * self.theta.config.dt_ms
+        self.theta.advance(dt)
+        self.gamma.advance(dt)
         
         # Generate spikes based on phase proximity
         n_theta = self.n_neurons // 2
         
         # Theta neurons
-        theta_diff = (self.theta_phase - self.neuron_phases[:n_theta]) % (2 * math.pi)
+        theta_diff = (self.theta.phase - self.neuron_phases[:n_theta]) % (2 * math.pi)
         theta_diff = torch.min(theta_diff, 2 * math.pi - theta_diff)
         theta_prob = torch.exp(-4 * theta_diff ** 2) * 0.3
         
         # Gamma neurons
-        gamma_diff = (self.gamma_phase - self.neuron_phases[:self.n_neurons - n_theta]) % (2 * math.pi)
+        gamma_diff = (self.gamma.phase - self.neuron_phases[:self.n_neurons - n_theta]) % (2 * math.pi)
         gamma_diff = torch.min(gamma_diff, 2 * math.pi - gamma_diff)
         gamma_prob = torch.exp(-4 * gamma_diff ** 2) * 0.3
         
         # Generate spikes
-        spikes = torch.zeros(self.n_neurons, device=self.theta_phase.device)
-        spikes[:n_theta] = (torch.rand(n_theta, device=spikes.device) < theta_prob).float()
-        spikes[n_theta:] = (torch.rand(self.n_neurons - n_theta, device=spikes.device) < gamma_prob).float()
+        device = self.neuron_phases.device
+        spikes = torch.zeros(self.n_neurons, device=device)
+        spikes[:n_theta] = (torch.rand(n_theta, device=device) < theta_prob).float()
+        spikes[n_theta:] = (torch.rand(self.n_neurons - n_theta, device=device) < gamma_prob).float()
         
         return spikes
     
@@ -620,7 +619,7 @@ class SequenceTimer(nn.Module):
     def get_state(self) -> Dict[str, float]:
         """Get current timer state."""
         return {
-            "theta_phase": self.theta_phase.item(),
-            "gamma_phase": self.gamma_phase.item(),
+            "theta_phase": self.theta.phase,
+            "gamma_phase": self.gamma.phase,
             "position": self.position.item(),
         }

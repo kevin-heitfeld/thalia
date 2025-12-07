@@ -535,10 +535,76 @@ ReplayEngine (memory/replay_engine.py)
 
 ## Low-Priority / Future Considerations
 
-### 11. 🔲 Extract Oscillator Base Class
-**Problem**: `ThetaOscillator`, `GammaOscillator`, and `SequenceEncoder` have overlapping oscillation logic
+### 11. ✅ COMPLETED: Extract Oscillator Base Class
+**Estimated Effort**: 2-3 hours → **Actual: 1 hour**
+**Impact**: Low-Medium - reduces duplication, improves consistency
+**Status**: ✅ COMPLETED (commit fa527ee)
 
-**Solution**: Create `BrainOscillator` base class with phase tracking, frequency modulation
+**Problem**: `GammaOscillator` and position encoders had overlapping oscillation logic:
+- Duplicate phase tracking (_phase, _frequency_hz)
+- Duplicate time advancement logic
+- Duplicate state management (get_state, set_state, reset_state)
+- No shared interface for oscillatory components
+
+**Solution Implemented**:
+Created `BrainOscillator` base class in `core/oscillator.py` (~473 lines):
+
+**New Components**:
+1. **BrainOscillator Abstract Base**:
+   - Phase tracking with automatic wrapping [0, 2π)
+   - Frequency modulation (set_frequency)
+   - Time advancement (advance with configurable dt)
+   - Phase synchronization (sync_to_phase for coupling)
+   - State management (get/set/reset_state)
+   - Abstract properties: oscillation_period_ms, signal
+
+2. **Concrete Oscillator Classes**:
+   - `ThetaOscillator` (4-10 Hz, default 8 Hz)
+   - `GammaOscillatorBase` (30-100 Hz, default 40 Hz)
+   - `AlphaOscillator` (8-13 Hz, default 10 Hz)
+   - `BetaOscillator` (13-30 Hz, default 20 Hz)
+
+3. **Factory Function**:
+   - `create_oscillator(type, frequency_hz, **kwargs)`
+   - Supports: 'theta', 'gamma', 'alpha', 'beta'
+
+**Refactored Code**:
+- **GammaOscillator** (regions/gamma_dynamics.py):
+  * Uses composition with ThetaOscillator + GammaOscillatorBase
+  * Eliminated ~60 lines of duplicate phase tracking
+  * Preserved theta-gamma coupling logic
+  * All properties delegate to base oscillators
+  * theta_phase, gamma_phase, gamma_amplitude, gamma_signal
+
+**Test Suite** (tests/unit/test_oscillator.py, ~390 lines, 31 tests):
+- Basic oscillator tests (8 tests)
+- Gamma/Alpha/Beta oscillators (3 tests)
+- Factory pattern (5 tests)
+- Oscillator interactions (3 tests)
+- Edge cases (7 tests)
+- Configuration (3 tests)
+- State management (2 tests)
+
+**All 31 tests passing! ✅**
+
+**Results**:
+- ~60 lines of duplicate code eliminated
+- Single source of truth for oscillation mechanics
+- Easy to add new oscillator types (inherit + implement 2 properties)
+- Consistent interface across all oscillators
+- Biologically grounded with documentation
+- Clean separation: base mechanics vs. specific oscillation types
+
+**Biological Foundation**:
+- All oscillators include frequency ranges from neuroscience
+- Functional roles (memory, attention, motor control, etc.)
+- Mechanisms (phase-locking, coupling, synchronization)
+- References to key papers (Buzsáki, Lisman, Fries, Colgin)
+
+**Future Opportunities**:
+- OscillatoryPositionEncoder could use base (low priority)
+- SequenceEncoder already benefits from refactored GammaOscillator
+- Easy to add: DeltaOscillator, HighGammaOscillator, etc.
 
 ---
 
@@ -570,16 +636,17 @@ ReplayEngine (memory/replay_engine.py)
 | 8. State access | 0 (doc only) | 1 | 2-3 (✅ 0.5) | ✅ Done | Medium |
 | 9. Neuromodulator mixin | 0 (exists) | 6 | 2 (✅ 1.5) | ✅ Done | Medium |
 | 10. Replay consolidation | 100-150 | 4 | 3-4 (✅ 3) | ✅ Done | Medium |
-| **Total** | **1010-1600** | **75-105** | **27-35** | **10/10** | - |
+| 11. Oscillator base class | 50-100 | 3 | 2-3 (✅ 1) | ✅ Done | Low-Med |
+| **Total** | **1060-1700** | **78-108** | **29-38** | **11/11** | - |
 
-**Progress**: 4 high-priority + 6 medium-priority items completed (19 hours actual vs 22-28 estimated) - **~31% ahead of schedule!**
+**Progress**: 4 high-priority + 6 medium-priority + 1 low-medium priority items completed (20 hours actual vs 24-31 estimated) - **~29% ahead of schedule!**
 
 ---
 
 ## Recommendations
 
 ### Phase 5 Complete! 🎉
-**ALL TEN ITEMS COMPLETED!** (4 high-priority + 6 medium-priority):
+**ALL ELEVEN ITEMS COMPLETED!** (4 high-priority + 6 medium-priority + 1 low-medium):
 
 1. ✅ **Reset Standardization** (#1) - Commit 248b0f9
    - Unified on `reset_state()` interface across 50+ files
@@ -627,15 +694,7 @@ ReplayEngine (memory/replay_engine.py)
    - Event-driven adapters properly use `@property state` delegation
    - Added documentation to architecture.md
 
-9. ✅ **Replay Consolidation** (#10) - Commits 08fe41e, 2c6bd57
-   - Created unified ReplayEngine (~380 lines)
-   - Refactored TrisynapticHippocampus (~60 lines eliminated)
-   - Refactored SleepSystemMixin (~50 lines eliminated)
-   - Total: ~110 lines of duplicate replay code eliminated
-   - 17 comprehensive tests, all passing
-   - Both hippocampus and sleep now use SAME engine!
-
-10. ✅ **Neuromodulator Mixin** (#9) - Infrastructure exists + decay implementation
+9. ✅ **Neuromodulator Mixin** (#9) - Infrastructure exists + decay implementation
    - Mixin created with comprehensive interface (~211 lines)
    - Hybrid architecture: centralized dopamine, local ACh/NE decay
    - Added decay calls to 6 regions (LayeredCortex, PredictiveCortex, Cerebellum, Prefrontal, Striatum, Hippocampus)
@@ -643,14 +702,30 @@ ReplayEngine (memory/replay_engine.py)
    - 20+ comprehensive tests, all passing
    - Biologically accurate decay patterns!
 
+10. ✅ **Replay Consolidation** (#10) - Commits 08fe41e, 2c6bd57
+   - Created unified ReplayEngine (~380 lines)
+   - Refactored TrisynapticHippocampus (~60 lines eliminated)
+   - Refactored SleepSystemMixin (~50 lines eliminated)
+   - Total: ~110 lines of duplicate replay code eliminated
+   - 17 comprehensive tests, all passing
+   - Both hippocampus and sleep now use SAME engine!
+
+11. ✅ **Oscillator Base Class** (#11) - Commit fa527ee
+   - Created BrainOscillator abstract base (~473 lines)
+   - Refactored GammaOscillator (~60 lines eliminated)
+   - 4 concrete oscillator classes (Theta, Gamma, Alpha, Beta)
+   - Factory function with type-based creation
+   - 31 comprehensive tests, all passing
+   - Biologically grounded with neuroscience references
+
 **Total Impact**:
-- ~645 lines of boilerplate eliminated (with infrastructure added)
-- 85+ files updated (79 previous + 6 regions for decay)
-- 19 hours actual (vs 22-28 estimated) - **~31% ahead of schedule!**
-- 11 commits (9 implementation, 2 documentation)
+- ~705 lines of boilerplate eliminated (with infrastructure added)
+- 88+ files updated (85 previous + 3 oscillator files)
+- 20 hours actual (vs 24-31 estimated) - **~29% ahead of schedule!**
+- 12 commits (10 implementation, 2 documentation)
 
 ### Long-Term Improvements
-Items 11-13 as needed or when touching related code
+Items 12-13 as needed or when touching related code
 
 ---
 
