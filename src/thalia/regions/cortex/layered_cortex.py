@@ -386,6 +386,9 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         input_spikes = ensure_batch_dim(input_spikes)
 
         batch_size = input_spikes.shape[0]
+        
+        # Enforce single-instance architecture
+        assert_single_instance(batch_size, "LayeredCortex.forward")
 
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages

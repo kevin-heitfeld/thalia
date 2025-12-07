@@ -484,7 +484,7 @@ class TestLayeredCortex:
 
     def test_forward_pass(self, layered_cortex, layered_config):
         """Test forward pass produces correct output shape."""
-        batch_size = 2
+        batch_size = 1  # THALIA only supports single-instance architecture
         input_spikes = torch.randint(0, 2, (batch_size, 64)).float()
 
         layered_cortex.reset()
