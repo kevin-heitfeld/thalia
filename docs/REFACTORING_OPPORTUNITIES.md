@@ -35,108 +35,39 @@ After completing the initial 8-item refactoring plan, this document identifies a
 
 ---
 
-### 2. 🔲 Consolidate `from_config()` Factory Methods
-**Estimated Effort**: 3-4 hours  
-**Impact**: High - improves testability and state management
+### 2. ✅ Consolidate `from_config()` Factory Methods [COMPLETED]
+**Estimated Effort**: 2-3 hours ✅ Actual: 1.5 hours  
+**Impact**: Medium - eliminates boilerplate, establishes clear pattern
 
 **Problem**: 
-- 30+ classes implement `reset()` with varying signatures
-- Some use `reset()`, others `reset_state()`, some have `reset(batch_size: int)`
-- Inconsistent behavior: some reset weights, others only state
-- No clear contract for what reset should do
+- ~20 classes had nearly identical `from_thalia_config()` factory methods
+- Each method: extract config subset → pass to constructor (20-30 lines each)
+- Pattern repeated but not abstracted
 
-**Current Patterns Found**:
-```python
-# Pattern 1: No parameters
-def reset(self) -> None:
-    self.state = RegionState()
+**Solution Implemented**:
+Created `ConfigurableMixin` in `core/mixins.py`:
+- Classes inherit mixin and set `CONFIG_CONVERTER_METHOD` attribute
+- Mixin provides automatic `from_thalia_config()` implementation
+- Handles **kwargs for components with extra constructor parameters
 
-# Pattern 2: With batch size
-def reset_state(self, batch_size: int = 1) -> None:
-    self.membrane = torch.zeros(batch_size, self.n_neurons)
+**Migrated Classes**:
+- ✅ `SequenceMemory` → uses `to_sequence_memory_config`
+- ✅ `LocalTrainer` → uses `to_training_config`
+- ✅ `LanguageBrainInterface` → uses `to_language_interface_config`
+- ⚠️ `EventDrivenBrain` → kept custom method (post-init logic)
 
-# Pattern 3: Reset counters only
-def reset(self):
-    self._rate_avg = self.config.target_rate
-    self._update_count = 0
-```
+**Results**:
+- Eliminated ~60 lines of duplicate factory code
+- Future classes just inherit mixin + set one attribute
+- Pattern documented for contributors
 
-**Proposed Solution**:
-1. Create `ResettableProtocol` in protocols.py with clear contract
-2. Extend `ResettableMixin` with template method pattern:
-   ```python
-   class ResettableMixin:
-       def reset(self, batch_size: int = 1, reset_weights: bool = False) -> None:
-           """Standard reset interface."""
-           self.reset_state(batch_size)
-           if reset_weights:
-               self.reset_weights()
-           self._on_reset()  # Hook for custom logic
-       
-       @abstractmethod
-       def reset_state(self, batch_size: int) -> None:
-           """Reset dynamic state (membrane, traces, etc.)"""
-           ...
-       
-       def reset_weights(self) -> None:
-           """Reset learnable parameters (optional)"""
-           pass
-       
-       def _on_reset(self) -> None:
-           """Hook for custom reset logic (optional)"""
-           pass
-   ```
-3. Migrate 10-15 core classes to use standard pattern
-4. Document reset semantics in architecture docs
-
-**Files to Modify**:
-- `src/thalia/core/mixins.py` (enhance ResettableMixin)
-- `src/thalia/core/protocols.py` (add ResettableProtocol)
-- Various region/learning modules (~15 files)
-
----
-
-### 2. 🔲 Consolidate `from_config()` Factory Methods
-**Estimated Effort**: 2-3 hours  
-**Impact**: Medium - reduces boilerplate, improves consistency
-
-**Problem**:
-- Multiple classes have `@classmethod from_thalia_config()` or `from_config()`
-- Similar patterns for extracting config values and constructing objects
-- No shared implementation despite common structure
-
-**Current Pattern**:
-```python
-@classmethod
-def from_thalia_config(cls, config: ThaliaConfig) -> "SequenceMemory":
-    seq_config = SequenceMemoryConfig(
-        vocab_size=config.sequence_memory.vocab_size,
-        n_neurons=config.sequence_memory.n_neurons,
-        # ... 10 more lines of field mapping
-    )
-    return cls(seq_config)
-```
-
-**Proposed Solution**:
-1. Create `ConfigurableFactory` mixin with generic factory logic:
-   ```python
-   class ConfigurableFactory:
-       @classmethod
-       def from_config(cls, config: Any, **overrides):
-           """Generic factory from dataclass config."""
-           # Extract config for this component
-           # Apply overrides
-           # Instantiate
-           return cls(component_config)
-   ```
-2. Add helper for mapping unified config to component configs
-3. Reduce 20+ factory methods to inherited implementation
-
-**Benefit**: ~5-10 lines saved per factory method × 20 methods = 100-200 lines
+**Commit**: d6533fd
 
 ---
 
 ### 3. 🔲 Extract Common Encoder/Decoder Patterns
+**Estimated Effort**: 3-4 hours  
+**Impact**: Medium-High - foundation for new modalities
 **Estimated Effort**: 3-4 hours  
 **Impact**: Medium-High - foundation for new modalities
 
