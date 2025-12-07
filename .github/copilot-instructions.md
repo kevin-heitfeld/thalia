@@ -17,9 +17,29 @@ Implements multiple brain regions with specialized learning rules to achieve:
 - **Is**: Neuroscience-inspired spiking networks with local learning rules and neuromodulation
 - **Goal**: Match or exceed LLM capabilities using biologically-plausible mechanisms
 
+## ⭐ CRITICAL: Component Parity Principle
+
+**Pathways are just as important as regions!**
+
+When implementing features:
+1. Add to `BrainComponent` protocol first (`src/thalia/core/component_protocol.py`)
+2. Implement for `BrainRegion` base class
+3. Implement for `BaseNeuralPathway` base class
+4. Write tests for BOTH regions AND pathways
+5. Update documentation mentioning both
+
+**Why this matters:**
+- Pathways are active learning components, not just "glue code"
+- They learn via STDP/BCM during forward passes
+- They need growth when connected regions grow
+- They can become pathological (silent, saturated)
+- Forgetting pathways breaks curriculum learning
+
+**See**: `docs/patterns/component-parity.md` for detailed guidance.
+
 ## Architecture Principles
 
-### 1. Brain Regions are Specialized
+### 1. Brain Regions AND Pathways are Specialized
 Each region has its own learning rule:
 - **Striatum**: Three-factor rule (eligibility × dopamine) for RL
 - **Hippocampus**: One-shot Hebbian for episodic memory
@@ -98,9 +118,22 @@ from thalia.learning.bcm import BCMRule
 7. Register with `@register_region("name")`
 
 ### Adding Learning Functionality
+- **Component Parity**: See `docs/patterns/component-parity.md` - implement for BOTH regions and pathways
 - **Diagnostics**: Use `DiagnosticsMixin`
 - **Action Selection**: Use `ActionSelectionMixin`
 - **Learning Strategies**: Use `LearningStrategyMixin`
+- **Growth**: Use `GrowthManager` for both regions and pathways
+
+### Adding Features (FOLLOW THIS CHECKLIST)
+1. ✅ Add method to `BrainComponent` protocol in `src/thalia/core/component_protocol.py`
+2. ✅ Implement for `BrainRegion` in `src/thalia/regions/base.py`
+3. ✅ Implement for `BaseNeuralPathway` in `src/thalia/core/pathway_protocol.py`
+4. ✅ Write tests for regions (e.g., `tests/unit/test_striatum_growth.py`)
+5. ✅ Write tests for pathways (e.g., `tests/unit/test_pathway_growth.py`)
+6. ✅ Update documentation mentioning both regions AND pathways
+7. ✅ Type checker passes (protocol enforces implementations)
+
+**If you forget pathways, the system breaks!**
 
 ### Testing
 ```bash
@@ -117,6 +150,7 @@ pytest tests/integration/
 ## Key Files
 
 ### Documentation
+- `docs/patterns/component-parity.md` - ⭐ **START HERE** - Regions and pathways parity
 - `docs/patterns/state-management.md` - When to use RegionState vs attributes
 - `docs/patterns/configuration.md` - Config hierarchy and parameters
 - `docs/patterns/mixins.md` - Available mixins and their methods
@@ -126,10 +160,13 @@ pytest tests/integration/
 - `docs/CODEBASE_IMPROVEMENTS.md` - Completed improvements roadmap
 
 ### Core Components
+- `src/thalia/core/component_protocol.py` - ⭐ Unified protocol for regions AND pathways
 - `src/thalia/core/neuron.py` - LIF and ConductanceLIF neurons
 - `src/thalia/core/weight_init.py` - Weight initialization registry
-- `src/thalia/regions/base.py` - BrainRegion abstract base
+- `src/thalia/regions/base.py` - BrainRegion abstract base (implements BrainComponent)
+- `src/thalia/core/pathway_protocol.py` - BaseNeuralPathway base (implements BrainComponent)
 - `src/thalia/core/brain.py` - Full brain system
+- `src/thalia/core/growth.py` - Growth manager for both regions and pathways
 
 ### Regions
 - `src/thalia/regions/striatum/` - Reinforcement learning (3-factor rule)
@@ -137,6 +174,12 @@ pytest tests/integration/
 - `src/thalia/regions/cortex/` - Feature learning (layered cortex)
 - `src/thalia/regions/prefrontal.py` - Working memory (gated STDP)
 - `src/thalia/regions/cerebellum.py` - Supervised learning (error-corrective)
+
+### Pathways (Just as important as regions!)
+- `src/thalia/sensory/pathways.py` - Sensory encoding (VisualPathway, AuditoryPathway, LanguagePathway)
+- `src/thalia/integration/spiking_pathway.py` - Base inter-region pathway with STDP learning
+- `src/thalia/integration/pathways/spiking_attention.py` - PFC→Cortex top-down modulation
+- `src/thalia/integration/pathways/spiking_replay.py` - Hippocampus→Cortex consolidation during sleep
 
 ## Biological Accuracy Constraints
 
@@ -193,9 +236,11 @@ When uncertain about implementation:
 3. **Are spikes binary?** (No analog firing rates in processing)
 4. **Is device handling correct?** (Pattern 1 for new tensors)
 5. **Does it match existing patterns?** (Check similar regions)
+6. **⭐ Did I implement for BOTH regions AND pathways?** (Check component-parity.md)
 
 ## References
 
+- **⭐ Component Parity**: `docs/patterns/component-parity.md` (READ THIS FIRST)
 - **State Management**: `docs/patterns/state-management.md`
 - **Config System**: `docs/patterns/configuration.md`
 - **Mixins**: `docs/patterns/mixins.md`

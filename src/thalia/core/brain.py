@@ -14,39 +14,63 @@ Key Differences from BrainSystem:
 Architecture:
 =============
 
+All inter-region connections are EXPLICIT PATHWAYS (not just event routing):
+
     Sensory Input
          │
-         ▼ (5ms delay)
+         ▼ SpikingPathway (5ms delay)
     ┌─────────┐
-    │  CORTEX │──────────────────────────────────────┐
-    │  (L4→   │                                      │
-    │   L2/3→ │                                      │
-    │   L5)   │                                      │
-    └────┬────┘                                      │
-         │                                           │
-    ┌────┴────┬─────────────┐                       │
-    │         │             │                       │
-    ▼(3ms)    ▼(6ms)        ▼(5ms)                 ▼(5ms)
-┌───────────┐ ┌─────┐    ┌──────────┐         ┌──────────┐
-│HIPPOCAMPUS│ │ PFC │    │ STRIATUM │         │ STRIATUM │
-│ (DG→CA3→  │ │     │◄───│  (D1/D2) │◄────────│  (L5→)   │
-│   CA1)    │ │     │    │          │         │          │
-└─────┬─────┘ └──┬──┘    └────┬─────┘         └──────────┘
-      │          │            │
-      ▼(5ms)     │            │
-    ┌─────┐      │            │
-    │ PFC │◄─────┘            │
-    │     │                   │
-    └──┬──┘                   │
-       │                      │
-       ▼(4ms)                 │
-    ┌──────────┐              │
-    │ STRIATUM │◄─────────────┘
+    │  CORTEX │
+    │  (L4→   │
+    │   L2/3→ │
+    │   L5)   │
+    └────┬────┘
+         │
+    ┌────┴───────┬──────────────┐
+    │            │              │
+    │(pathway 1) │(pathway 2)   │(pathway 3)
+    ▼(3ms)       ▼(6ms)         ▼(5ms)
+┌───────────┐ ┌─────┐        ┌──────────┐
+│HIPPOCAMPUS│ │ PFC │        │ STRIATUM │
+│ (DG→CA3→  │ │     │        │  (D1/D2) │
+│   CA1)    │ │     │        │          │
+└─────┬─────┘ └──┬──┘        └────┬─────┘
+      │          │                │
+ (pw 4)│     (pw 5)          (pw 6)│
+      ▼(5ms)     │                │
+    ┌─────┐      │                │
+    │ PFC │◄─────┘                │
+    │     │                       │
+    └──┬──┘                       │
+       │(pw 6)                    │
+       ▼(4ms)                     │
+    ┌──────────┐                  │
+    │ STRIATUM │◄─────────────────┘
     │  (PFC→)  │
+    └────┬─────┘
+         │(pathway 7)
+         ▼
+    ┌──────────┐
+    │CEREBELLUM│
     └────┬─────┘
          │
          ▼
     Motor Output
+
+Specialized Pathways:
+(pw 8) PFC → Cortex L2/3: Top-down attention (SpikingAttentionPathway)
+(pw 9) Hippocampus → Cortex: Memory replay during sleep (SpikingReplayPathway)
+
+All 9 pathways:
+1. Cortex L2/3 → Hippocampus (encoding)
+2. Cortex L5 → Striatum (action selection)
+3. Cortex L2/3 → PFC (working memory input)
+4. Hippocampus → PFC (episodic → working memory)
+5. Hippocampus → Striatum (context for action)
+6. PFC → Striatum (goal-directed control)
+7. Striatum → Cerebellum (action refinement)
+8. PFC → Cortex (attention modulation) [SPECIALIZED]
+9. Hippocampus → Cortex (replay/consolidation) [SPECIALIZED]
 
 Author: Thalia Project
 Date: December 2025
@@ -99,6 +123,9 @@ from ..integration.pathways.spiking_attention import (
 )
 from ..integration.pathways.spiking_replay import (
     SpikingReplayPathway, SpikingReplayPathwayConfig
+)
+from ..integration.spiking_pathway import (
+    SpikingPathway, SpikingPathwayConfig, TemporalCoding, SpikingLearningRule
 )
 
 
@@ -414,22 +441,128 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # =====================================================================
         # LEARNABLE PATHWAYS
         # =====================================================================
+        # All inter-region connections are explicit pathways with:
+        # - Independent STDP learning during forward passes
+        # - Growth support (expand when connected regions grow)
+        # - Checkpoint compatibility
+        # - Health monitoring and diagnostics
+        #
+        # This enables curriculum learning and coordinated adaptation.
 
-        # Attention pathway: PFC → Cortex top-down modulation
+        # 1. Cortex L2/3 → Hippocampus (encoding pathway)
+        self.cortex_to_hippo_pathway = SpikingPathway(
+            SpikingPathwayConfig(
+                source_size=self._cortex_l23_size,
+                target_size=cortex_to_hippo_size,
+                learning_rule=SpikingLearningRule.STDP,
+                temporal_coding=TemporalCoding.PHASE,  # Theta phase coding
+                stdp_lr=0.001,
+                device=config.device,
+            )
+        )
+
+        # 2. Cortex L5 → Striatum (action selection pathway)
+        self.cortex_to_striatum_pathway = SpikingPathway(
+            SpikingPathwayConfig(
+                source_size=self._cortex_l5_size,
+                target_size=self._cortex_l5_size,  # Match striatum input expectation
+                learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
+                temporal_coding=TemporalCoding.RATE,
+                stdp_lr=0.002,
+                device=config.device,
+            )
+        )
+
+        # 3. Cortex L2/3 → PFC (working memory input)
+        self.cortex_to_pfc_pathway = SpikingPathway(
+            SpikingPathwayConfig(
+                source_size=self._cortex_l23_size,
+                target_size=self._cortex_l23_size,  # PFC receives cortex + hippo
+                learning_rule=SpikingLearningRule.STDP,
+                temporal_coding=TemporalCoding.SYNCHRONY,  # Binding via synchrony
+                stdp_lr=0.0015,
+                device=config.device,
+            )
+        )
+
+        # 4. Hippocampus → PFC (episodic to working memory)
+        self.hippo_to_pfc_pathway = SpikingPathway(
+            SpikingPathwayConfig(
+                source_size=config.hippocampus_size,
+                target_size=config.hippocampus_size,
+                learning_rule=SpikingLearningRule.STDP,
+                temporal_coding=TemporalCoding.PHASE,  # Theta-coupled
+                stdp_lr=0.001,
+                device=config.device,
+            )
+        )
+
+        # 5. Hippocampus → Striatum (context for action selection)
+        self.hippo_to_striatum_pathway = SpikingPathway(
+            SpikingPathwayConfig(
+                source_size=config.hippocampus_size,
+                target_size=config.hippocampus_size,
+                learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
+                temporal_coding=TemporalCoding.PHASE,
+                stdp_lr=0.0015,
+                device=config.device,
+            )
+        )
+
+        # 6. PFC → Striatum (goal-directed control)
+        self.pfc_to_striatum_pathway = SpikingPathway(
+            SpikingPathwayConfig(
+                source_size=config.pfc_size,
+                target_size=config.pfc_size,
+                learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
+                temporal_coding=TemporalCoding.RATE,
+                stdp_lr=0.002,
+                device=config.device,
+            )
+        )
+
+        # 7. Striatum → Cerebellum (action refinement)
+        self.striatum_to_cerebellum_pathway = SpikingPathway(
+            SpikingPathwayConfig(
+                source_size=config.n_actions * config.neurons_per_action,
+                target_size=config.n_actions * config.neurons_per_action,
+                learning_rule=SpikingLearningRule.STDP,
+                temporal_coding=TemporalCoding.LATENCY,  # Precise timing for motor control
+                stdp_lr=0.001,
+                device=config.device,
+            )
+        )
+
+        # 8. PFC → Cortex (top-down attention modulation) [SPECIALIZED]
         self.attention_pathway = SpikingAttentionPathway(
             SpikingAttentionPathwayConfig(
                 source_size=config.pfc_size,
                 target_size=config.input_size,
+                device=config.device,
             )
         )
 
-        # Replay pathway: Hippocampus → Cortex consolidation (during sleep)
+        # 9. Hippocampus → Cortex (replay/consolidation during sleep) [SPECIALIZED]
         self.replay_pathway = SpikingReplayPathway(
             SpikingReplayPathwayConfig(
                 source_size=config.hippocampus_size,
                 target_size=config.cortex_size,
+                device=config.device,
             )
         )
+
+        # Pathway registry for iteration (growth, checkpointing, diagnostics)
+        self.pathways = {
+            "cortex_to_hippo": self.cortex_to_hippo_pathway,
+            "cortex_to_striatum": self.cortex_to_striatum_pathway,
+            "cortex_to_pfc": self.cortex_to_pfc_pathway,
+            "hippo_to_pfc": self.hippo_to_pfc_pathway,
+            "hippo_to_striatum": self.hippo_to_striatum_pathway,
+            "pfc_to_striatum": self.pfc_to_striatum_pathway,
+            "striatum_to_cerebellum": self.striatum_to_cerebellum_pathway,
+            "attention": self.attention_pathway,
+            "replay": self.replay_pathway,
+        }
 
         # =====================================================================
         # EVENT SCHEDULER (for sequential mode)
@@ -1133,7 +1266,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         Returns state dictionary with keys:
         - regions: State from each brain region (cortex, hippocampus, pfc, striatum, cerebellum)
-        - pathways: State from attention and replay pathways (if present)
+        - pathways: State from all inter-region pathways (9 pathways total)
         - theta: Theta oscillator state
         - scheduler: Event scheduler state (current time, pending events)
         - trial_state: Current trial phase and counters
@@ -1238,10 +1371,9 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         # Restore pathway states if they exist
         pathways = state_dict.get("pathways", {})
-        if "attention" in pathways and hasattr(self, 'attention_pathway'):
-            self.attention_pathway.load_state(pathways["attention"])
-        if "replay" in pathways and hasattr(self, 'replay_pathway'):
-            self.replay_pathway.load_state(pathways["replay"])
+        for pathway_name, pathway_state in pathways.items():
+            if pathway_name in self.pathways and self.pathways[pathway_name] is not None:
+                self.pathways[pathway_name].load_state(pathway_state)
 
         # Note: Event queue is NOT restored - assumes checkpoint at clean state
         # For mid-trial checkpointing, would need to serialize pending events
@@ -1369,12 +1501,14 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         if hasattr(self.striatum.impl, 'reset_eligibility'):
             self.striatum.impl.reset_eligibility()
 
-        # Update attention pathway
-        attention_result = self.attention_pathway.learn(
-            source_activity=torch.zeros(self.config.pfc_size),
-            target_activity=torch.zeros(self.config.cortex_size),
-            dopamine=modulated_reward,
-        )
+        # Update specialized pathways (most pathways already learned during forward)
+        attention_result = {}
+        if hasattr(self.attention_pathway, 'learn'):
+            attention_result = self.attention_pathway.learn(
+                source_activity=torch.zeros(self.config.pfc_size),
+                target_activity=torch.zeros(self.config.cortex_size),
+                dopamine=modulated_reward,
+            )
 
         return {
             "real": real_result,
@@ -1673,7 +1807,8 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information about brain state.
 
-        Returns both structured component diagnostics and raw metrics.
+        Returns both structured component diagnostics and raw metrics,
+        including pathway diagnostics for all 9 inter-region connections.
         """
         # Collect structured component diagnostics
         striatum_diag = self._collect_striatum_diagnostics()
@@ -1683,7 +1818,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self.diagnostics.record("striatum", striatum_diag.to_dict())
         self.diagnostics.record("hippocampus", hippo_diag.to_dict())
 
-        return {
+        diag = {
             # Brain state
             "current_time": self._current_time,
             "trial_phase": self._trial_phase.value,
@@ -1729,6 +1864,14 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             # Robustness/Criticality diagnostics
             "criticality": self._get_criticality_diagnostics(),
         }
+
+        # Add pathway diagnostics for all 9 inter-region pathways
+        diag["pathways"] = {}
+        for pathway_name, pathway in self.pathways.items():
+            if hasattr(pathway, 'get_diagnostics'):
+                diag["pathways"][pathway_name] = pathway.get_diagnostics()
+
+        return diag
 
     def _get_criticality_diagnostics(self) -> Dict[str, Any]:
         """Get criticality diagnostics if monitor is enabled."""

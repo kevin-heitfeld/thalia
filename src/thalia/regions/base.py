@@ -109,6 +109,18 @@ class BrainRegion(NeuromodulatorMixin, ABC):
     The key insight is that different brain regions use fundamentally
     different learning algorithms, optimized for different tasks.
 
+    COMPONENT PROTOCOL
+    ==================
+    BrainRegion implements the BrainComponent protocol, which defines
+    the unified interface shared with BaseNeuralPathway. This ensures
+    feature parity between regions and pathways.
+    
+    **CRITICAL**: When adding features to regions, also add to pathways!
+    Both are equally important active learning components.
+    
+    See: src/thalia/core/component_protocol.py
+         docs/patterns/component-parity.md
+
     CONTINUOUS PLASTICITY
     =====================
     Unlike traditional ML models, brain regions learn CONTINUOUSLY during

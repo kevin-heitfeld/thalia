@@ -204,6 +204,25 @@ class BaseNeuralPathway(nn.Module, ABC):
     (which uses duck typing), inheriting from this base class makes the
     relationship explicit and provides better IDE support.
     
+    COMPONENT PROTOCOL
+    ==================
+    BaseNeuralPathway implements the BrainComponent protocol, which defines
+    the unified interface shared with BrainRegion. This ensures feature parity
+    between pathways and regions.
+    
+    **CRITICAL**: Pathways are just as important as regions!
+    Both are active learning components that need:
+    - Growth support (add_neurons, get_capacity_metrics)
+    - Diagnostics (get_diagnostics, check_health)
+    - Checkpointing (get_full_state, load_full_state)
+    - Continuous learning during forward passes
+    
+    When features are added to BrainRegion, they MUST be added to
+    BaseNeuralPathway as well. The protocol enforces this.
+    
+    See: src/thalia/core/component_protocol.py
+         docs/patterns/component-parity.md
+    
     All subclasses must implement:
     - forward() or encode(): Primary transformation
     - reset_state(): Clear temporal state
