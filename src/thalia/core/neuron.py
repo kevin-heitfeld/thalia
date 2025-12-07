@@ -114,7 +114,7 @@ class LIFNeuron(nn.Module):
     Example:
         >>> # Basic usage
         >>> lif = LIFNeuron(n_neurons=100)
-        >>> lif.reset_state(batch_size=32)
+        >>> lif.reset_state()
         >>> for t in range(100):
         ...     spikes, voltage = lif(input_current[t])
 
@@ -174,13 +174,13 @@ class LIFNeuron(nn.Module):
 
     def reset_state(self) -> None:
         """Reset neuron state to resting potential.
-        
+
         Initializes all state tensors to batch_size=1 per THALIA's
         single-instance architecture.
         """
         device = self.decay.device
         batch_size = 1
-        
+
         self.membrane = torch.full(
             (batch_size, self.n_neurons),
             self.config.v_rest,
@@ -447,7 +447,7 @@ class ConductanceLIF(nn.Module):
         ...     tau_I=10.0, # Slower inhibition
         ... )
         >>> neuron = ConductanceLIF(n_neurons=100, config=config)
-        >>> neuron.reset_state(batch_size=1)
+        >>> neuron.reset_state()
         >>>
         >>> # Input conductances, not currents!
         >>> g_exc = torch.rand(1, 100) * 0.1  # Excitatory input
@@ -490,7 +490,7 @@ class ConductanceLIF(nn.Module):
 
     def reset_state(self) -> None:
         """Reset neuron state to resting potential.
-        
+
         Initializes all state tensors to batch_size=1 per THALIA's
         single-instance architecture.
         """
@@ -567,11 +567,11 @@ class ConductanceLIF(nn.Module):
         """
         # Initialize state if needed
         if self.membrane is None:
-            self.reset_state(batch_size=g_exc_input.shape[0])
+            self.reset_state()
 
         # Ensure state matches batch size
         if self.membrane.shape[0] != g_exc_input.shape[0]:
-            self.reset_state(batch_size=g_exc_input.shape[0])
+            assert_single_instance(g_exc_input.shape[0], "ConductanceLIF")
 
         # Decrement refractory counter (in-place)
         self.refractory = (self.refractory - 1).clamp_(min=0)

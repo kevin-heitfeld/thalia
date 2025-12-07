@@ -215,6 +215,29 @@ class SpikeEncoder(nn.Module, ABC):
                         for s in range(seq_len):
                             spikes[b, s, t, top_indices[b, s]] = 1.0
 
+        elif strategy == CodingStrategy.PHASE:
+            # Phase coding: spike timing encodes information
+            # Higher activation = earlier spikes within theta cycle
+            spikes = torch.zeros(
+                batch, seq_len, self.config.n_timesteps, n_neurons,
+                device=self.device,
+            )
+            
+            for b in range(batch):
+                for s in range(seq_len):
+                    # Normalize activations to [0, 1]
+                    act = features[b, s]
+                    act_norm = (act - act.min()) / (act.max() - act.min() + 1e-8)
+                    
+                    # Convert to spike times: higher value = earlier spike
+                    spike_times = ((1.0 - act_norm) * (self.config.n_timesteps - 1)).long()
+                    
+                    # Create spikes at calculated times
+                    for n in range(n_neurons):
+                        t = int(spike_times[n].item())
+                        if 0 <= t < self.config.n_timesteps:
+                            spikes[b, s, t, n] = 1.0
+
         else:
             raise NotImplementedError(f"Coding strategy {strategy} not implemented")
 

@@ -56,10 +56,6 @@ from thalia.core.spike_coding import (
 )
 
 
-# Re-export CodingStrategy as EncodingType for backward compatibility
-EncodingType = CodingStrategy
-
-
 @dataclass
 class SpikeEncoderConfig(SpikeCodingConfig):
     """Configuration for spike encoder.
@@ -253,11 +249,18 @@ class SpikeEncoder(BaseSpikeEncoder):
 
         # SDR generator (token-specific)
         self.sdr = SparseDistributedRepresentation(config)
+        
+        # Phase tracking for temporal coding (theta oscillation)
+        self.register_buffer('theta_phase', torch.tensor(0.0))
+        # Phase increment per timestep (radians)
+        theta_freq_hz = 8.0  # 8 Hz theta oscillation
+        dt_ms = 1.0  # 1ms timestep default
+        self.phase_increment = 2 * math.pi * theta_freq_hz * (dt_ms / 1000.0)
 
     def reset_phase(self) -> None:
         """Reset theta phase for new sequence."""
-        if hasattr(self, 'phase'):
-            self.phase.zero_()
+        if hasattr(self, 'theta_phase'):
+            self.theta_phase.zero_()
 
     def encode(
         self,
@@ -324,7 +327,7 @@ class SpikeEncoder(BaseSpikeEncoder):
         batch, seq_len, n_neurons = sdr.shape
         n_timesteps = self.config.n_timesteps
 
-        if self.config.encoding_type == EncodingType.SDR:
+        if self.config.encoding_type == CodingStrategy.SDR:
             # Simple SDR: Same pattern repeated, sparsely spiking
             # Active neurons spike once at a random time
             spikes = torch.zeros(
@@ -355,13 +358,13 @@ class SpikeEncoder(BaseSpikeEncoder):
                             if no_spike[b, s, n]:
                                 spikes[b, s, random_times[b, s, n], n] = 1.0
 
-        elif self.config.encoding_type == EncodingType.RATE:
+        elif self.config.encoding_type == CodingStrategy.RATE:
             # Rate coding: Spike probability proportional to activation
             spike_prob = torch.sigmoid(sdr * self.rate_scale)  # [batch, seq, neurons]
             spike_prob = spike_prob.unsqueeze(2).expand(-1, -1, n_timesteps, -1)
             spikes = (torch.rand_like(spike_prob) < spike_prob).float()
 
-        elif self.config.encoding_type == EncodingType.TEMPORAL:
+        elif self.config.encoding_type == CodingStrategy.TEMPORAL:
             # Temporal coding: Higher activation → earlier spike
             # Compute spike times based on activation rank
             spikes = torch.zeros(
@@ -385,7 +388,7 @@ class SpikeEncoder(BaseSpikeEncoder):
                             t = spike_times[b, s, n].item()
                             spikes[b, s, t, n] = 1.0
 
-        elif self.config.encoding_type == EncodingType.PHASE:
+        elif self.config.encoding_type == CodingStrategy.PHASE:
             # Phase coding: Spike at specific phase relative to theta
             spikes = torch.zeros(
                 batch, seq_len, n_timesteps, n_neurons,
@@ -406,7 +409,7 @@ class SpikeEncoder(BaseSpikeEncoder):
                 spike_mask = (phase_diff < phase_window) & (sdr > 0.5)
                 spikes[:, :, t, :] = spike_mask.float()
 
-        elif self.config.encoding_type == EncodingType.BURST:
+        elif self.config.encoding_type == CodingStrategy.BURST:
             # Burst coding: Number of spikes in burst encodes strength
             spikes = torch.zeros(
                 batch, seq_len, n_timesteps, n_neurons,

@@ -236,7 +236,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             base_cortex_config,
             n_input=config.input_size,
             n_output=config.cortex_size,
-            dt_ms=config.dt_ms,
+            dt=config.dt_ms,  # RegionConfigBase uses 'dt' not 'dt_ms'
             device=config.device,
         )
 
@@ -292,7 +292,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         _hippocampus_impl = TrisynapticHippocampus(TrisynapticConfig(
             n_input=cortex_to_hippo_size,
             n_output=config.hippocampus_size,
-            dt_ms=config.dt_ms,
+            dt=config.dt_ms,
             ec_l3_input_size=config.input_size,
             device=config.device,
         ))
@@ -302,7 +302,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         _pfc_impl = Prefrontal(PrefrontalConfig(
             n_input=pfc_input_size,
             n_output=config.pfc_size,
-            dt_ms=config.dt_ms,
+            dt=config.dt_ms,
             device=config.device,
         ))
         _pfc_impl.reset_state()
@@ -1696,3 +1696,4 @@ def test_event_driven_brain():
 
 if __name__ == "__main__":
     test_event_driven_brain()
+

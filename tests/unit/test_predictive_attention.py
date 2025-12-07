@@ -64,8 +64,8 @@ class TestPredictiveCodingLayer:
         layer.reset_state()
 
         assert layer.state.prediction is not None
-        assert layer.state.prediction.shape == (8, 64)
-        assert layer.state.representation.shape == (8, 32)
+        assert layer.state.prediction.shape == (1, 64)
+        assert layer.state.representation.shape == (1, 32)
 
     def test_forward_produces_error(self, layer):
         """Test forward pass produces prediction error."""
@@ -176,7 +176,7 @@ class TestHierarchicalPredictiveCoding:
         )
         hierarchy.reset_state()
 
-        sensory = torch.randn(4, 64)
+        sensory = torch.randn(1, 64)
         errors, representations = hierarchy(sensory)
 
         assert len(errors) == 2
@@ -190,7 +190,7 @@ class TestHierarchicalPredictiveCoding:
         )
         hierarchy.reset_state()
 
-        sensory = torch.randn(4, 64)
+        sensory = torch.randn(1, 64)
 
         # Forward pass
         for _ in range(10):
@@ -284,14 +284,15 @@ class TestWinnerTakeAllAttention:
         """Test WTA produces sparse attention."""
         attn = WinnerTakeAllAttention(config)
 
-        query = torch.randn(4, 16, config.d_head)
-        key = torch.randn(4, 64, config.d_head)
-        value = torch.randn(4, 64, config.d_head)
+        query = torch.randn(1, 16, config.d_head)
+        key = torch.randn(1, 64, config.d_head)
+        value = torch.randn(1, 64, config.d_head)
 
         _, attention = attn(query, key, value)
 
         # Check sparsity: at most top_k entries per query should be non-zero
-        for b in range(4):
+        batch_size = attention.shape[0]
+        for b in range(batch_size):
             for q in range(16):
                 nonzero = (attention[b, q] > 0.01).sum().item()
                 assert nonzero <= config.top_k + 1, f"Too many non-zero entries: {nonzero}"
@@ -332,14 +333,14 @@ class TestGammaPhaseAttention:
         """Test phase-based attention."""
         attn = GammaPhaseAttention(config)
 
-        query = torch.randn(4, 16, config.d_head)
-        key = torch.randn(4, 32, config.d_head)
-        value = torch.randn(4, 32, config.d_head)
+        query = torch.randn(1, 16, config.d_head)
+        key = torch.randn(1, 32, config.d_head)
+        value = torch.randn(1, 32, config.d_head)
 
         output, attention = attn(query, key, value)
 
-        assert output.shape == (4, 16, config.d_head)
-        assert attention.shape == (4, 16, 32)
+        assert output.shape == (1, 16, config.d_head)
+        assert attention.shape == (1, 16, 32)
 
     def test_phase_cycling(self, config):
         """Test that phase advances correctly."""
@@ -348,9 +349,9 @@ class TestGammaPhaseAttention:
 
         initial_phase = attn.current_phase
 
-        query = torch.randn(4, 16, config.d_head)
-        key = torch.randn(4, 32, config.d_head)
-        value = torch.randn(4, 32, config.d_head)
+        query = torch.randn(1, 16, config.d_head)
+        key = torch.randn(1, 32, config.d_head)
+        value = torch.randn(1, 32, config.d_head)
 
         # Run multiple steps
         for _ in range(10):
@@ -380,25 +381,25 @@ class TestScalableSpikingAttention:
         attn = ScalableSpikingAttention(config)
         attn.reset_state()
 
-        x = torch.randn(4, 32, 128)
+        x = torch.randn(1, 32, 128)
 
         output, attention = attn(x)
 
-        assert output.shape == (4, 32, 128)
-        assert attention.shape == (4, 4, 32, 32)  # [batch, heads, queries, keys]
+        assert output.shape == (1, 32, 128)
+        assert attention.shape == (1, 4, 32, 32)  # [batch, heads, queries, keys]
 
     def test_cross_attention(self, config):
         """Test cross-attention (different K, V from Q)."""
         attn = ScalableSpikingAttention(config)
         attn.reset_state()
 
-        x_query = torch.randn(4, 32, 128)
-        x_key = torch.randn(4, 64, 128)
-        x_value = torch.randn(4, 64, 128)
+        x_query = torch.randn(1, 32, 128)
+        x_key = torch.randn(1, 64, 128)
+        x_value = torch.randn(1, 64, 128)
 
         output, attention = attn(x_query, x_key, x_value)
 
-        assert output.shape == (4, 32, 128)
+        assert output.shape == (1, 32, 128)
 
     def test_all_attention_types(self):
         """Test all attention types work."""
@@ -422,10 +423,10 @@ class TestScalableSpikingAttention:
             attn = ScalableSpikingAttention(config)
             attn.reset_state()
 
-            x = torch.randn(2, 16, 64)
+            x = torch.randn(1, 16, 64)
             output, attention = attn(x)
 
-            assert output.shape == (2, 16, 64), f"Failed for {attn_type}"
+            assert output.shape == (1, 16, 64), f"Failed for {attn_type}"
 
 
 class TestMultiScaleAttention:
@@ -457,10 +458,10 @@ class TestMultiScaleAttention:
         attn = MultiScaleSpikingAttention(config, timescales_ms=[25.0, 100.0, 250.0])
         attn.reset_state()
 
-        x = torch.randn(4, 32, 60)
+        x = torch.randn(1, 32, 60)
         output, attentions = attn(x)
 
-        assert output.shape == (4, 32, 60)
+        assert output.shape == (1, 32, 60)
         assert len(attentions) == 3
 
 
@@ -485,18 +486,18 @@ class TestPredictiveAttentionIntegration:
         pred_layer.reset_state()
 
         # Forward through prediction
-        input_data = torch.randn(4, 64)
-        representation = torch.randn(4, 32)
+        input_data = torch.randn(1, 64)
+        representation = torch.randn(1, 32)
         error, _, _ = pred_layer(input_data, representation)
 
         # Use precision to modulate attention
         precision = pred_layer.precision
 
-        # Verify precision exists and has correct shape
-        assert precision.shape == (64,), "Precision should have shape matching n_input"
+        # Verify precision exists and has correct shape (one per input dimension)
+        assert precision.shape == (64,), f"Precision should have shape (n_input,) but got {precision.shape}"
 
         # Verify error output
-        assert error.shape == (4, 64), "Error should have correct shape"
+        assert error.shape == (1, 64), "Error should have correct shape"
 class TestLearningWithoutBackprop:
     """Test that learning works without backpropagation."""
 
@@ -511,8 +512,8 @@ class TestLearningWithoutBackprop:
         layer.reset_state()
 
         # Forward pass
-        input_data = torch.randn(4, 64)
-        representation = torch.randn(4, 32)
+        input_data = torch.randn(1, 64)
+        representation = torch.randn(1, 32)
 
         for _ in range(10):
             layer(input_data, representation)
@@ -535,10 +536,10 @@ class TestLearningWithoutBackprop:
         layer.reset_state()
 
         # Create a pattern with specific structure
-        input_pattern = torch.zeros(4, 64)
+        input_pattern = torch.zeros(1, 64)
         input_pattern[:, :16] = 1.0  # Active in first 16 dimensions
 
-        representation = torch.zeros(4, 32)
+        representation = torch.zeros(1, 32)
         representation[:, :8] = 1.0  # Active in first 8 dimensions
 
         initial_weights = layer.W_pred.clone()
@@ -564,3 +565,5 @@ class TestLearningWithoutBackprop:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

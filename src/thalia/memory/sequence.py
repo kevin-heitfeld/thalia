@@ -54,7 +54,8 @@ import torch
 import torch.nn as nn
 
 from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
-from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig, EncodingType
+from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
+from thalia.core.spike_coding import CodingStrategy
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.core.event_system import TrialPhase
 from thalia.core.utils import cosine_similarity_safe
@@ -124,7 +125,7 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
             vocab_size=config.vocab_size,
             n_neurons=config.n_neurons,
             n_timesteps=10,  # Timesteps per token
-            encoding_type=EncodingType.SDR,
+            coding_strategy=CodingStrategy.SDR,
             sparsity=0.05,
             device=config.device,
         )

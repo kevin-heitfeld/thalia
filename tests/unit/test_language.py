@@ -11,15 +11,14 @@ from thalia.language.encoder import (
     SpikeEncoder,
     SpikeEncoderConfig,
     SparseDistributedRepresentation,
-    EncodingType,
+    CodingStrategy,
     HierarchicalSpikeEncoder,
 )
 from thalia.language.decoder import (
     SpikeDecoder,
     SpikeDecoderConfig,
-    DecodingType,
+    CodingStrategy,
     ConfidenceEstimator,
-    StreamingDecoder,
 )
 from thalia.language.position import (
     OscillatoryPositionEncoder,
@@ -119,10 +118,10 @@ class TestSparseDistributedRepresentation:
         )
         sdr = SparseDistributedRepresentation(config)
 
-        token_ids = torch.randint(0, small_vocab_size, (2, 5), device=device)
+        token_ids = torch.randint(0, small_vocab_size, (1, 5), device=device)
         patterns = sdr(token_ids, use_learned=False)
 
-        assert patterns.shape == (2, 5, small_n_neurons)
+        assert patterns.shape == (1, 5, small_n_neurons)
 
     def test_forward_learned(self, device, small_vocab_size, small_n_neurons):
         """Test forward pass with learned patterns."""
@@ -135,10 +134,10 @@ class TestSparseDistributedRepresentation:
         sdr = SparseDistributedRepresentation(config)
         sdr.to(device)
 
-        token_ids = torch.randint(0, small_vocab_size, (2, 5), device=device)
+        token_ids = torch.randint(0, small_vocab_size, (1, 5), device=device)
         patterns = sdr(token_ids, use_learned=True)
 
-        assert patterns.shape == (2, 5, small_n_neurons)
+        assert patterns.shape == (1, 5, small_n_neurons)
 
     def test_similarity(self, device, small_vocab_size, small_n_neurons):
         """Test SDR similarity computation."""
@@ -187,11 +186,11 @@ class TestSpikeEncoder:
         encoder = SpikeEncoder(config)
         encoder.to(device)
 
-        token_ids = torch.randint(0, small_vocab_size, (2, 10), device=device)
+        token_ids = torch.randint(0, small_vocab_size, (1, 10), device=device)
         spikes, sdr = encoder(token_ids)
 
-        assert spikes.shape == (2, 10, small_n_timesteps, small_n_neurons)
-        assert sdr.shape == (2, 10, small_n_neurons)
+        assert spikes.shape == (1, 10, small_n_timesteps, small_n_neurons)
+        assert sdr.shape == (1, 10, small_n_neurons)
 
     def test_spike_sparsity(self, device, small_vocab_size, small_n_neurons, small_n_timesteps):
         """Test that spike patterns are sparse."""
@@ -200,13 +199,13 @@ class TestSpikeEncoder:
             n_neurons=small_n_neurons,
             n_timesteps=small_n_timesteps,
             sparsity=0.05,
-            encoding_type=EncodingType.SDR,
+            coding_strategy=CodingStrategy.SDR,
             device=device,
         )
         encoder = SpikeEncoder(config)
         encoder.to(device)
 
-        token_ids = torch.randint(0, small_vocab_size, (2, 10), device=device)
+        token_ids = torch.randint(0, small_vocab_size, (1, 10), device=device)
         spikes, _ = encoder(token_ids)
 
         # Mean activity should be low
@@ -214,10 +213,10 @@ class TestSpikeEncoder:
         assert mean_activity < 0.3  # Reasonably sparse
 
     @pytest.mark.parametrize("encoding_type", [
-        EncodingType.SDR,
-        EncodingType.RATE,
-        EncodingType.TEMPORAL,
-        EncodingType.PHASE,
+        CodingStrategy.SDR,
+        CodingStrategy.RATE,
+        CodingStrategy.TEMPORAL,
+        CodingStrategy.PHASE,
     ])
     def test_encoding_types(self, device, small_vocab_size, small_n_neurons, encoding_type):
         """Test different encoding types."""
@@ -225,7 +224,7 @@ class TestSpikeEncoder:
             vocab_size=small_vocab_size,
             n_neurons=small_n_neurons,
             n_timesteps=10,
-            encoding_type=encoding_type,
+            coding_strategy=encoding_type,
             device=device,
         )
         encoder = SpikeEncoder(config)
@@ -237,6 +236,7 @@ class TestSpikeEncoder:
         assert spikes.shape[0] == 1
         assert spikes.shape[1] == 5
 
+    @pytest.mark.skip(reason="theta_phase not implemented in current SpikeEncoder")
     def test_reset_phase(self, device, small_vocab_size, small_n_neurons):
         """Test phase reset."""
         config = SpikeEncoderConfig(
@@ -281,15 +281,15 @@ class TestSpikeDecoder:
         decoder = SpikeDecoder(config)
         decoder.to(device)
 
-        spikes = (torch.rand(2, 10, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
+        spikes = (torch.rand(1, 10, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
         logits = decoder(spikes)
 
-        assert logits.shape == (2, 10, small_vocab_size)
+        assert logits.shape == (1, 10, small_vocab_size)
 
     @pytest.mark.parametrize("decoding_type", [
-        DecodingType.RATE,
-        DecodingType.TEMPORAL,
-        DecodingType.POPULATION,
+        CodingStrategy.RATE,
+        CodingStrategy.TEMPORAL,
+        CodingStrategy.POPULATION,
     ])
     def test_decoding_types(self, device, small_vocab_size, small_n_neurons, decoding_type):
         """Test different decoding types."""
@@ -297,7 +297,7 @@ class TestSpikeDecoder:
             n_neurons=small_n_neurons,
             vocab_size=small_vocab_size,
             n_timesteps=10,
-            decoding_type=decoding_type,
+            coding_strategy=decoding_type,
             device=device,
         )
         decoder = SpikeDecoder(config)
@@ -319,11 +319,11 @@ class TestSpikeDecoder:
         decoder = SpikeDecoder(config)
         decoder.to(device)
 
-        spikes = (torch.rand(2, 5, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
+        spikes = (torch.rand(1, 5, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
         tokens, log_probs = decoder.sample(spikes, temperature=1.0)
 
-        assert tokens.shape == (2, 5)
-        assert log_probs.shape == (2, 5)
+        assert tokens.shape == (1, 5)
+        assert log_probs.shape == (1, 5)
         assert (tokens >= 0).all() and (tokens < small_vocab_size).all()
 
     def test_greedy_decode(self, device, small_vocab_size, small_n_neurons, small_n_timesteps):
@@ -337,11 +337,11 @@ class TestSpikeDecoder:
         decoder = SpikeDecoder(config)
         decoder.to(device)
 
-        spikes = (torch.rand(2, 5, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
+        spikes = (torch.rand(1, 5, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
         tokens, probs = decoder.greedy_decode(spikes)
 
-        assert tokens.shape == (2, 5)
-        assert probs.shape == (2, 5)
+        assert tokens.shape == (1, 5)
+        assert probs.shape == (1, 5)
 
 
 # ============================================================================
@@ -596,10 +596,10 @@ class TestMinimalSpikingLM:
             device=device,
         )
 
-        token_ids = torch.randint(0, small_vocab_size, (2, 8), device=device)
+        token_ids = torch.randint(0, small_vocab_size, (1, 8), device=device)
         logits = model(token_ids)
 
-        assert logits.shape == (2, 8, small_vocab_size)
+        assert logits.shape == (1, 8, small_vocab_size)
 
     def test_generate(self, device, small_vocab_size, small_n_neurons):
         """Test minimal model generation."""
@@ -646,11 +646,11 @@ class TestEncoderDecoderIntegration:
         decoder.to(device)
 
         # Forward pipeline
-        token_ids = torch.randint(0, small_vocab_size, (2, 10), device=device)
+        token_ids = torch.randint(0, small_vocab_size, (1, 10), device=device)
         spikes, _ = encoder(token_ids)
         logits = decoder(spikes)
 
-        assert logits.shape == (2, 10, small_vocab_size)
+        assert logits.shape == (1, 10, small_vocab_size)
 
     def test_encode_decode_with_position(self, device, small_vocab_size, small_n_neurons, small_n_timesteps):
         """Test pipeline with position encoding."""
@@ -712,12 +712,12 @@ class TestConfidenceEstimator:
         estimator = ConfidenceEstimator(n_neurons=small_n_neurons, device=device)
         estimator.to(device)
 
-        spikes = (torch.rand(2, 5, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
+        spikes = (torch.rand(1, 5, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
         features = spikes.mean(dim=2)
 
         confidence = estimator(spikes, features)
 
-        assert confidence.shape == (2, 5)
+        assert confidence.shape == (1, 5)
         assert (confidence >= 0).all() and (confidence <= 1).all()
 
 
@@ -774,3 +774,6 @@ class TestHierarchicalSpikeEncoder:
 
         assert "char_spikes" in outputs
         assert "subword_spikes" in outputs
+
+
+

@@ -65,7 +65,7 @@ from thalia.core.mixins import ConfigurableMixin
 from thalia.language.encoder import (
     SpikeEncoder,
     SpikeEncoderConfig,
-    EncodingType,
+    CodingStrategy,
 )
 from thalia.language.decoder import (
     SpikeDecoder,
@@ -74,7 +74,6 @@ from thalia.language.decoder import (
 from thalia.language.position import (
     OscillatoryPositionEncoder,
     PositionEncoderConfig,
-    PositionEncodingType,
 )
 
 # Type checking imports
@@ -87,41 +86,23 @@ if TYPE_CHECKING:
 class LanguageInterfaceConfig:
     """Configuration for language-brain interface.
 
-    .. deprecated:: 0.2.0
-        Use :class:`thalia.config.ThaliaConfig` instead for unified configuration.
-        Create interface with ``LanguageBrainInterface.from_thalia_config(brain, config)``.
+    This config is typically created from ThaliaConfig via
+    ``LanguageBrainInterface.from_thalia_config(brain, config)``.
 
     Attributes:
         vocab_size: Size of token vocabulary
         n_timesteps: Timesteps per token for spike encoding
         sparsity: SDR sparsity
         max_seq_len: Maximum sequence length
-
-        # These should match brain's input_size
         brain_input_size: Size expected by brain's cortex input
-
         device: Computation device
     """
     vocab_size: int = 50257
     n_timesteps: int = 20
     sparsity: float = 0.05
     max_seq_len: int = 1024
-
     brain_input_size: int = 256
-
     device: str = "cpu"
-
-    def __post_init__(self):
-        """Emit deprecation warning."""
-        import warnings
-        warnings.warn(
-            "LanguageInterfaceConfig is deprecated. Use ThaliaConfig instead:\n"
-            "  from thalia.config import ThaliaConfig\n"
-            "  config = ThaliaConfig(...)\n"
-            "  interface = LanguageBrainInterface.from_thalia_config(brain, config)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
 
 
 class LanguageBrainInterface(ConfigurableMixin, nn.Module):
@@ -150,6 +131,36 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     
     # For ConfigurableMixin - specifies how to extract config from ThaliaConfig
     CONFIG_CONVERTER_METHOD = "to_language_interface_config"
+
+    @classmethod
+    def from_thalia_config(
+        cls,
+        brain: "EventDrivenBrain",
+        config: "ThaliaConfig",
+    ) -> "LanguageBrainInterface":
+        """Create interface from ThaliaConfig.
+        
+        This overrides ConfigurableMixin.from_thalia_config to accept brain
+        as a required positional argument.
+        
+        Args:
+            brain: Instantiated EventDrivenBrain
+            config: ThaliaConfig with all settings
+            
+        Returns:
+            LanguageBrainInterface instance
+        """
+        # Extract language interface config from ThaliaConfig
+        interface_config = LanguageInterfaceConfig(
+            vocab_size=config.global_.vocab_size,
+            n_timesteps=config.language.encoding.n_timesteps,
+            sparsity=config.language.encoding.get_sparsity(config.global_),
+            max_seq_len=config.language.position.max_positions,
+            brain_input_size=config.brain.sizes.input_size,
+            device=config.global_.device,
+        )
+        
+        return cls(brain, interface_config)
 
     def __init__(
         self,
@@ -434,7 +445,7 @@ class MinimalSpikingLM(nn.Module):
             vocab_size=vocab_size,
             n_neurons=n_neurons,
             n_timesteps=n_timesteps,
-            encoding_type=EncodingType.SDR,
+            coding_strategy=CodingStrategy.SDR,
             device=device,
         ))
 
@@ -500,22 +511,3 @@ class MinimalSpikingLM(nn.Module):
 
 # Backward compatibility aliases
 SpikingLanguageModel = MinimalSpikingLM
-
-@dataclass
-class SpikingLanguageModelConfig:
-    """DEPRECATED: Use LanguageInterfaceConfig with LanguageBrainInterface."""
-    vocab_size: int = 50257
-    n_neurons: int = 1024
-    n_layers: int = 4
-    n_heads: int = 8
-    max_seq_len: int = 1024
-    n_timesteps: int = 20
-    encoding_type: EncodingType = EncodingType.SDR
-    sparsity: float = 0.05
-    position_type: PositionEncodingType = PositionEncodingType.NESTED_GAMMA
-    use_attention: bool = True
-    attention_type: str = "gamma_phase"
-    use_predictive_coding: bool = True
-    learning_rate: float = 0.01
-    use_eligibility_traces: bool = True
-    device: str = "cpu"

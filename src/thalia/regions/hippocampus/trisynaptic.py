@@ -211,7 +211,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 coupling_strength=config.gamma_coupling_strength,
             )
             self.gamma_oscillator = GammaOscillator(gamma_config)
-            
+
             # Replay engine for sequence replay (lazy import to avoid circular dependency)
             from thalia.memory.replay_engine import ReplayEngine, ReplayConfig, ReplayMode
             replay_config = ReplayConfig(
@@ -222,7 +222,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 pattern_completion=True,
             )
             self.replay_engine = ReplayEngine(replay_config)
-            
+
             # Assign CA3 neurons to gamma slots for phase coding
             # Neurons in different slots fire at different gamma phases
             self._ca3_slot_assignment = torch.arange(self.ca3_size) % config.gamma_n_slots
@@ -230,10 +230,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             self.gamma_oscillator = None
             self.replay_engine = None
             self._ca3_slot_assignment = None
-        
+
         # Track current sequence position for encoding (auto-advances)
         self._sequence_position: int = 0
-        
+
         # Theta-driven reset: when True, reset happens at next theta trough
         # This replaces hard resets with biologically-realistic theta-aligned resets
         self._pending_theta_reset: bool = False
@@ -428,7 +428,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         Full reset is mainly needed between completely unrelated episodes.
         """
         super().reset_state()
-        self._init_state(batch_size=1)
+        self._init_state()
 
     def new_trial(self) -> None:
         """Prepare for a new sequence/episode.
@@ -436,7 +436,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         With continuous learning, most state transitions happen via natural
         dynamics (decay, FFI). This method schedules a reset to occur at the
         next theta trough (encoding phase), which is biologically realistic.
-        
+
         The actual reset is applied in forward() when transitioning to ENCODE
         phase, mimicking how theta rhythm naturally segments sequences.
 
@@ -447,37 +447,37 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Schedule reset for next theta trough (ENCODE phase)
         # This replaces hard resets with theta-aligned resets
         self._pending_theta_reset = True
-        
+
         # Reset gamma position for new sequence
         self._sequence_position = 0
         if self.gamma_oscillator is not None:
             self.gamma_oscillator.set_to_slot(0)
 
-    def _init_state(self, batch_size: int = 1) -> None:
+    def _init_state(self) -> None:
         """Initialize all layer states (internal method)."""
-        assert_single_instance(batch_size, "TrisynapticHippocampus")
         device = self.device
 
-        self.dg_neurons.reset_state(batch_size)
-        self.ca3_neurons.reset_state(batch_size)
-        self.ca1_neurons.reset_state(batch_size)
+        self.dg_neurons.reset_state()
+        self.ca3_neurons.reset_state()
+        self.ca1_neurons.reset_state()
 
         # Reset STP state for all pathways
         if self.stp_mossy is not None:
-            self.stp_mossy.reset_state(batch_size)
+            self.stp_mossy.reset_state()
         if self.stp_schaffer is not None:
-            self.stp_schaffer.reset_state(batch_size)
+            self.stp_schaffer.reset_state()
         if self.stp_ec_ca1 is not None:
-            self.stp_ec_ca1.reset_state(batch_size)
+            self.stp_ec_ca1.reset_state()
         if self.stp_ca3_recurrent is not None:
-            self.stp_ca3_recurrent.reset_state(batch_size)
+            self.stp_ca3_recurrent.reset_state()
 
         # Reset feedback inhibition trace
         self._ca3_activity_trace = torch.zeros(1, device=device)
-        
+
         # Reset phase tracking
         self._last_phase = None
 
+        batch_size = 1
         self.state = TrisynapticState(
             dg_spikes=torch.zeros(batch_size, self.dg_size, device=device),
             ca3_spikes=torch.zeros(batch_size, self.ca3_size, device=device),
@@ -557,7 +557,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # Ensure state is initialized
         if self.state.dg_spikes is None:
-            self._init_state(batch_size)
+            self._init_state()
 
         # =====================================================================
         # THETA-PHASE RESET (prevents frozen attractors + new_trial reset)
@@ -569,7 +569,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # This is biologically realistic: theta rhythm naturally segments
         # sequences, and new_trial() just schedules reset for next theta trough.
         at_theta_trough = (phase == TrialPhase.ENCODE and self._last_phase != TrialPhase.ENCODE)
-        
+
         if at_theta_trough:
             # Check if new_trial() requested a full reset
             if self._pending_theta_reset:
@@ -585,7 +585,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 # Normal theta trough: partial decay of persistent activity
                 reset_fraction = self.tri_config.theta_reset_fraction
                 self.state.ca3_persistent = self.state.ca3_persistent * (1.0 - reset_fraction)
-        
+
         self._last_phase = phase
 
         # =====================================================================
@@ -718,12 +718,12 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # This prevents runaway activity and frozen attractors.
         if self._ca3_activity_trace is None:
             self._ca3_activity_trace = torch.zeros(1, device=input_spikes.device)
-        
+
         # Update activity trace (exponential moving average of total CA3 activity)
         if self.state.ca3_spikes is not None:
             current_activity = self.state.ca3_spikes.sum()
             self._ca3_activity_trace = 0.9 * self._ca3_activity_trace + 0.1 * current_activity
-        
+
         # Compute feedback inhibition (scales with activity trace)
         feedback_inhibition = self._ca3_activity_trace * self.tri_config.ca3_feedback_inhibition
 
@@ -740,11 +740,11 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Persistent activity provides additional input current
         # This is the key mechanism for bistability: once a neuron starts firing,
         # its persistent activity helps keep it firing
-        
+
         # Ensure ca3_persistent is initialized
         if self.state.ca3_persistent is None:
             self.state.ca3_persistent = torch.zeros(1, self.ca3_size, device=input_spikes.device)
-        
+
         ca3_persistent_input: torch.Tensor = (
             self.state.ca3_persistent * self.tri_config.ca3_persistent_gain
         )
@@ -754,7 +754,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
         # Neurons that fire too much have higher thresholds (less excitable)
-        if (self.tri_config.intrinsic_plasticity_enabled and 
+        if (self.tri_config.intrinsic_plasticity_enabled and
             self._ca3_threshold_offset is not None):
             ca3_input = ca3_input - self._ca3_threshold_offset.unsqueeze(0)
 
@@ -771,10 +771,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # - "time": Slot from oscillator phase (timing-based, used in replay)
         if self.gamma_oscillator is not None and self._ca3_slot_assignment is not None:
             cfg = self.tri_config
-            
+
             # Advance gamma oscillator
             self.gamma_oscillator.advance(float(dt))
-            
+
             # Get current slot based on mode
             if cfg.gamma_slot_mode == "time":
                 # Time-based: slot from oscillator phase (used during replay)
@@ -782,12 +782,12 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             else:  # "item" mode (default)
                 # Item-based: slot from sequence position
                 current_slot = self._sequence_position % cfg.gamma_n_slots
-            
+
             # Create gating mask based on slot assignment
             # Neurons in current slot get full input, others are suppressed
             slot_match = (self._ca3_slot_assignment == current_slot).float()
             slot_match = slot_match.to(ca3_input.device).unsqueeze(0)
-            
+
             # ================================================================
             # THETA-MODULATED GAMMA AMPLITUDE
             # ================================================================
@@ -799,15 +799,15 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # This implements phase-amplitude coupling (PAC) where gamma
             # power is highest at the encoding phase of theta.
             gamma_amplitude = self.gamma_oscillator.gamma_amplitude  # [0, 1]
-            
+
             # Scale gating strength by gamma amplitude
             # High amplitude → full gating strength
             # Low amplitude → reduced gating, more cross-slot activity
             effective_gating = cfg.gamma_gating_strength * gamma_amplitude
-            
+
             # Blend: slot neurons get full input, others get reduced
             gamma_gate = (
-                slot_match + 
+                slot_match +
                 (1.0 - slot_match) * (1.0 - effective_gating)
             )
             ca3_input = ca3_input * gamma_gate
@@ -838,7 +838,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             ca3_membrane_v if isinstance(ca3_membrane_v, torch.Tensor) else None,
         )
         self.state.ca3_spikes = ca3_spikes
-        
+
         # DEBUG: Track CA3 spike patterns for learning investigation
         if hasattr(self, '_debug_hippo') and self._debug_hippo:
             # Cast needed because PyTorch's tolist() returns Any
@@ -900,22 +900,22 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             ca3_activity = ca3_spikes.float().squeeze()
             if ca3_activity.sum() > 0:
                 # Hebbian outer product: neurons that fire together wire together
-                # 
+                #
                 # Gamma amplitude modulation: Learning is stronger when gamma
                 # is strong (theta trough, encoding phase). This implements
                 # the biological finding that synaptic plasticity is enhanced
                 # during periods of strong gamma oscillations.
                 base_lr = self.tri_config.learning_rate * encoding_mod
-                
+
                 # Apply gamma amplitude modulation if available
                 if self.gamma_oscillator is not None:
                     gamma_mod = self.gamma_oscillator.gamma_amplitude
                     effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)  # Range: 50-100% based on gamma
                 else:
                     effective_lr = base_lr
-                    
+
                 dW = effective_lr * torch.outer(ca3_activity, ca3_activity)
-                
+
                 # =========================================================
                 # HETEROSYNAPTIC PLASTICITY: Weaken inactive synapses
                 # =========================================================
@@ -932,7 +932,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                     hetero_ltd = self.tri_config.heterosynaptic_ratio * effective_lr
                     hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
                     dW = dW + hetero_dW
-                
+
                 with torch.no_grad():
                     self.w_ca3_ca3.data += dW
                     self.w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
@@ -1080,14 +1080,14 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             if ec_activity.sum() > 0 and ca1_activity.sum() > 0:
                 # Hebbian outer product: w_ij += lr * post_j * pre_i
                 base_lr = cfg.ec_ca1_learning_rate * encoding_mod
-                
+
                 # Apply gamma amplitude modulation if available
                 if self.gamma_oscillator is not None:
                     gamma_mod = self.gamma_oscillator.gamma_amplitude
                     effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)
                 else:
                     effective_lr = base_lr
-                    
+
                 dW = effective_lr * torch.outer(ca1_activity, ec_activity)
                 with torch.no_grad():
                     # Update the appropriate weight matrix
@@ -1164,7 +1164,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Store spikes in base state for compatibility
         # CA1 spikes ARE the output - downstream learns from these patterns!
         self.state.spikes = ca1_spikes
-        
+
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity(input_spikes, ca1_spikes, dt)
 
@@ -1237,19 +1237,19 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     ) -> None:
         """
         Apply continuous STDP learning to circuit weights.
-        
+
         Called automatically at each forward() timestep.
         CA3 recurrent connections learn via STDP to create attractors.
         Learning rate is modulated by dopamine (via get_effective_learning_rate).
-        
+
         Note: _input_spikes, _output_spikes, and _dt are required by the base class
         signature but not used here since we access spikes from self.state.
         """
         if not self.plasticity_enabled:
             return
-            
+
         cfg = self.tri_config
-        
+
         # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
         self.decay_neuromodulators(dt_ms=_dt)
 
@@ -1268,7 +1268,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             ltd = torch.outer(ca3_trace, ca3_post) * 0.5  # Weaker LTD
 
             dW = effective_lr * (ltp - ltd)
-            
+
             # DEBUG: Check weight update
             dW_abs_mean = dW.abs().mean().item()
             w_before = self.w_ca3_ca3.data.abs().mean().item()
@@ -1289,7 +1289,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                     self.w_ca3_ca3.data *= scaling
                     self.w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
                     clamp_weights(self.w_ca3_ca3.data, cfg.w_min, cfg.w_max)
-            
+
             w_after = self.w_ca3_ca3.data.abs().mean().item()
             if dW_abs_mean > 1e-6:
                 print(f"      [CA3 STDP] dW_mean={dW_abs_mean:.6f}, w_before={w_before:.6f}, w_after={w_after:.6f}, eff_lr={effective_lr:.4f}")
@@ -1301,18 +1301,18 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # This operates on LONGER timescales than SFA.
         if cfg.intrinsic_plasticity_enabled and self.state.ca3_spikes is not None:
             ca3_spikes_1d = self.state.ca3_spikes.float().mean(dim=0)  # Average across batch
-            
+
             # Initialize if needed
             if self._ca3_activity_history is None:
                 self._ca3_activity_history = torch.zeros(self.ca3_size, device=ca3_spikes_1d.device)
             if self._ca3_threshold_offset is None:
                 self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=ca3_spikes_1d.device)
-            
+
             # Update activity history (exponential moving average)
             self._ca3_activity_history = (
                 0.99 * self._ca3_activity_history + 0.01 * ca3_spikes_1d
             )
-            
+
             # Adjust threshold: high activity → higher threshold (less excitable)
             rate_error = self._ca3_activity_history - cfg.intrinsic_target_rate
             self._ca3_threshold_offset = (
@@ -1337,7 +1337,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         """Store an episode in episodic memory for later replay.
 
         Priority is computed based on reward magnitude and correctness.
-        
+
         Args:
             state: Final activity pattern at decision time
             action: Selected action
@@ -1356,7 +1356,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         if correct:
             base_priority += 0.5  # Boost for correct trials
         base_priority += priority_boost
-        
+
         # Clone sequence tensors if provided
         sequence_cloned = None
         if sequence is not None:
@@ -1399,7 +1399,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     # =========================================================================
     # GAMMA-DRIVEN SEQUENCE REPLAY
     # =========================================================================
-    
+
     def replay_sequence(
         self,
         episode: Episode,
@@ -1407,20 +1407,20 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         dt: float = 1.0,
     ) -> Dict[str, Any]:
         """Replay a sequence using gamma oscillator for time-compressed reactivation.
-        
+
         Now uses unified ReplayEngine for consistent replay across codebase.
-        
+
         During sleep, sequences that took seconds to encode are replayed in ~100ms.
         The gamma oscillator drives slot-by-slot reactivation at compressed timing.
-        
+
         This implements the biological phenomenon where hippocampal sequences
         are replayed during sharp-wave ripples at 5-20x compression.
-        
+
         Args:
             episode: Episode to replay (must have sequence field populated)
             compression_factor: Time compression (5.0 = 5x faster than encoding)
             dt: Base time step in ms
-            
+
         Returns:
             Dict with replay metrics:
                 - slots_replayed: Number of sequence slots replayed
@@ -1432,37 +1432,37 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         if self.replay_engine is None:
             raise RuntimeError("Replay engine not available. "
                                "Set theta_gamma_enabled=True in config.")
-        
+
         # Update compression factor if different from config
         if compression_factor != self.replay_engine.config.compression_factor:
             self.replay_engine.config.compression_factor = compression_factor
-        
+
         # Update dt if different
         if dt != self.replay_engine.config.dt_ms:
             self.replay_engine.config.dt_ms = dt
-        
+
         # Switch to time-based mode for replay
         original_mode = self.tri_config.gamma_slot_mode
         self.tri_config.gamma_slot_mode = "time"
-        
+
         # Pattern processor: forward through CA3 for pattern completion
         def process_pattern(pattern: torch.Tensor) -> torch.Tensor:
             return self.forward(pattern, phase=TrialPhase.DELAY)
-        
+
         # Gating function: apply gamma gating to patterns
         def get_gating(slot: int) -> float:
             return self._get_gamma_gating(slot)
-        
+
         # Run replay through unified engine
         result = self.replay_engine.replay(
             episode=episode,
             pattern_processor=process_pattern,
             gating_fn=get_gating,
         )
-        
+
         # Restore original mode
         self.tri_config.gamma_slot_mode = original_mode
-        
+
         # Convert ReplayResult to dict format
         return {
             "slots_replayed": result.slots_replayed,
@@ -1471,25 +1471,25 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             "compression_factor": result.compression_factor,
             "replayed_patterns": result.replayed_patterns,
         }
-    
+
     def _get_gamma_gating(self, slot: int) -> float:
         """Get gamma gating strength for a specific slot."""
         if self.gamma_oscillator is None:
             return 1.0
-        
+
         cfg = self.tri_config
         n_slots = cfg.gamma_n_slots
-        
+
         # Compute phase difference from target slot
         target_phase = (slot / n_slots) * (2 * math.pi)
         current_gamma_phase = self.gamma_oscillator.gamma_phase
-        
+
         # Gaussian gating around target phase
         phase_diff = abs(current_gamma_phase - target_phase)
         phase_diff = min(phase_diff, 2 * math.pi - phase_diff)  # Wrap around
-        
+
         gating = math.exp(-phase_diff ** 2 / (2 * 0.5 ** 2))  # σ = 0.5 radians
-        
+
         # Scale by gating strength
         return 1.0 - cfg.gamma_gating_strength * (1.0 - gating)
 
@@ -1513,11 +1513,11 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         dg_activity: Dict[str, Any] = {"target_sparsity": cfg.dg_sparsity}
         if state.dg_spikes is not None:
             dg_activity.update(self.spike_diagnostics(state.dg_spikes, ""))
-        
+
         ca3_activity: Dict[str, Any] = {"target_sparsity": cfg.ca3_sparsity}
         if state.ca3_spikes is not None:
             ca3_activity.update(self.spike_diagnostics(state.ca3_spikes, ""))
-        
+
         ca1_activity: Dict[str, Any] = {"target_sparsity": cfg.ca1_sparsity}
         if state.ca1_spikes is not None:
             ca1_activity.update(self.spike_diagnostics(state.ca1_spikes, ""))
@@ -1534,7 +1534,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             nmda_diagnostics.update(self.trace_diagnostics(state.nmda_trace, ""))
             nmda_diagnostics["trace_std"] = state.nmda_trace.std().item()
             nmda_diagnostics["above_threshold_count"] = (state.nmda_trace > cfg.nmda_threshold).sum().item()
-            
+
             # Compute Mg block removal (sigmoid of (trace - threshold) * steepness)
             mg_removal = torch.sigmoid(
                 (state.nmda_trace - cfg.nmda_threshold) * cfg.nmda_steepness
@@ -1604,7 +1604,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         Returns:
             Cosine similarity (0.0 to 1.0), or None if no stored pattern
         """
-        if (self.state.stored_dg_pattern is None or 
+        if (self.state.stored_dg_pattern is None or
             self.state.dg_spikes is None):
             return None
 
@@ -1617,83 +1617,83 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     # =========================================================================
     # THETA-GAMMA COUPLING METHODS
     # =========================================================================
-    
+
     def set_sequence_position(self, position: int) -> None:
         """Manually override the current sequence position.
-        
+
         NOTE: Position normally auto-advances on each forward() call.
         Use this only for special cases like:
         - Jumping to a specific position during replay
         - Testing specific gamma slots
         - Synchronizing with external position tracking
-        
+
         For normal operation, position is implicit from arrival order.
-        
+
         Args:
             position: Sequence position (0, 1, 2, ...)
         """
         self._sequence_position = position
-        
+
         if self.gamma_oscillator is not None:
             cfg = self.tri_config
             # Set gamma to the slot for this position
             target_slot = position % cfg.gamma_n_slots
             self.gamma_oscillator.set_to_slot(target_slot)
-    
+
     def sync_gamma_to_theta(self, theta_phase: float) -> None:
         """Synchronize gamma oscillator to external theta phase.
-        
+
         Use this when you have a separate ThetaGenerator/ThetaState
         and want the gamma oscillator to stay in sync.
-        
+
         Args:
             theta_phase: External theta phase in radians
         """
         if self.gamma_oscillator is not None:
             self.gamma_oscillator.sync_to_theta_phase(theta_phase)
-    
+
     def get_current_gamma_slot(self) -> Optional[int]:
         """Get the current gamma slot (working memory position).
-        
+
         Slot is determined by sequence position (item-based), not by
         time-based gamma phase. This ensures each item gets its own slot.
-        
+
         Returns:
             Current slot index [0, n_slots-1], or None if gamma disabled
         """
         if self.gamma_oscillator is not None:
             return self._sequence_position % self.tri_config.gamma_n_slots
         return None
-    
+
     def get_gamma_diagnostics(self) -> Dict[str, Any]:
         """Get gamma oscillator diagnostics.
-        
+
         Returns:
             Dictionary with gamma state info including theta-modulated values
         """
         if self.gamma_oscillator is None:
             return {"enabled": False}
-        
+
         cfg = self.tri_config
         item_slot = self._sequence_position % cfg.gamma_n_slots
         time_slot = self.gamma_oscillator.current_slot
-        
+
         # Current slot depends on mode
         if cfg.gamma_slot_mode == "time":
             current_slot = time_slot
         else:
             current_slot = item_slot
-        
+
         # Gamma amplitude is modulated by theta phase
         gamma_amplitude = self.gamma_oscillator.gamma_amplitude
-        
+
         # Effective gating strength (theta-modulated)
         effective_gating = cfg.gamma_gating_strength * gamma_amplitude
-        
+
         # Effective learning rate multiplier (theta+gamma modulated)
         # This is the factor applied to base learning rate: 0.5 + 0.5 * gamma_amplitude
         lr_multiplier = 0.5 + 0.5 * gamma_amplitude
-        
+
         return {
             "enabled": True,
             "slot_mode": cfg.gamma_slot_mode,

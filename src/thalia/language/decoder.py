@@ -58,10 +58,6 @@ from thalia.core.spike_coding import (
 )
 
 
-# Re-export CodingStrategy members for backward compatibility
-DecodingType = CodingStrategy
-
-
 @dataclass
 class SpikeDecoderConfig(SpikeCodingConfig):
     """Configuration for spike decoder.
@@ -227,13 +223,13 @@ class SpikeDecoder(BaseSpikeDecoder):
         batch, seq_len, n_timesteps, n_neurons = spikes.shape
         decay = self.config.decay_factor
 
-        if self.config.decoding_type == DecodingType.RATE:
+        if self.config.decoding_type == CodingStrategy.RATE:
             # Rate decoding: Simply count spikes
             features = spikes.sum(dim=2)  # [batch, seq_len, n_neurons]
             # Normalize by number of timesteps
             features = features / n_timesteps
 
-        elif self.config.decoding_type == DecodingType.TEMPORAL:
+        elif self.config.decoding_type == CodingStrategy.TEMPORAL:
             # Temporal decoding: First spikes matter most
             features = torch.zeros(
                 batch, seq_len, n_neurons,
@@ -245,7 +241,7 @@ class SpikeDecoder(BaseSpikeDecoder):
                 weight = (n_timesteps - t) / n_timesteps
                 features += spikes[:, :, t, :] * weight
 
-        elif self.config.decoding_type == DecodingType.POPULATION:
+        elif self.config.decoding_type == CodingStrategy.POPULATION:
             # Population decoding: Leaky integration
             features = torch.zeros(
                 batch, seq_len, n_neurons,
@@ -260,7 +256,7 @@ class SpikeDecoder(BaseSpikeDecoder):
                     state = state * decay + spikes[:, s, t, :]
                 features[:, s, :] = state
 
-        elif self.config.decoding_type == DecodingType.WTA:
+        elif self.config.decoding_type == CodingStrategy.WTA:
             # WTA: Competition during integration
             features = torch.zeros(
                 batch, seq_len, n_neurons,
@@ -297,7 +293,7 @@ class SpikeDecoder(BaseSpikeDecoder):
         logits = F.linear(features, self.readout_weights, self.readout_bias)
 
         # For WTA, apply competition in token space
-        if self.config.decoding_type == DecodingType.WTA:
+        if self.config.decoding_type == CodingStrategy.WTA:
             logits = self._apply_wta(logits)
 
         return logits

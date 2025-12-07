@@ -22,7 +22,7 @@ class TestLIFNeuron:
         neuron = LIFNeuron(n_neurons=100)
         neuron.reset_state()
 
-        assert neuron.membrane.shape == (32, 100)
+        assert neuron.membrane.shape == (1, 100)
         assert neuron.membrane.min().item() == neuron.config.v_rest
 
     def test_reset(self):
@@ -93,9 +93,9 @@ class TestConductanceLIF:
         neuron = ConductanceLIF(n_neurons=100)
         neuron.reset_state()
 
-        assert neuron.membrane.shape == (32, 100)
-        assert neuron.g_E.shape == (32, 100)
-        assert neuron.g_I.shape == (32, 100)
+        assert neuron.membrane.shape == (1, 100)
+        assert neuron.g_E.shape == (1, 100)
+        assert neuron.g_I.shape == (1, 100)
         # Membrane should start at leak reversal (resting potential)
         assert torch.allclose(neuron.membrane, torch.full_like(neuron.membrane, neuron.config.E_L))
 
@@ -283,7 +283,7 @@ class TestDendriticBranch:
         branch.reset_state()
 
         assert branch.weights.shape == (50,)
-        assert branch.plateau.shape == (4,)
+        assert branch.plateau.shape == (1,)
         assert (branch.plateau == 0).all()
 
     def test_subthreshold_linear(self):
@@ -389,8 +389,8 @@ class TestDendriticNeuron:
         neuron.reset_state()
 
         assert neuron.branch_weights.shape == (10, 4, 25)
-        assert neuron.branch_plateaus.shape == (2, 10, 4)
-        assert neuron.soma.membrane.shape == (2, 10)
+        assert neuron.branch_plateaus.shape == (1, 10, 4)
+        assert neuron.soma.membrane.shape == (1, 10)
 
     def test_clustered_vs_scattered(self):
         """Test that clustered inputs produce stronger responses than scattered.

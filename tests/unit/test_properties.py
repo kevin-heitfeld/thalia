@@ -52,11 +52,11 @@ class TestLIFNeuronProperties:
 
     @given(
         n_neurons=valid_neuron_counts(),
-        batch_size=valid_batch_sizes(),
     )
     @settings(max_examples=50, deadline=1000)  # Run 50 random examples
-    def test_shape_consistency(self, n_neurons, batch_size):
+    def test_shape_consistency(self, n_neurons):
         """Test that LIF neuron maintains shape consistency for any valid inputs."""
+        batch_size = 1  # THALIA enforces single-instance architecture
         neuron = LIFNeuron(n_neurons=n_neurons)
         neuron.reset_state()
 
@@ -83,7 +83,7 @@ class TestLIFNeuronProperties:
 
         # Run for multiple timesteps with random input
         for _ in range(20):
-            input_current = torch.randn(4, n_neurons) * 0.5
+            input_current = torch.randn(1, n_neurons) * 0.5
             spikes, _ = neuron(input_current)
 
         # Membrane should stay bounded (not explode to infinity)
@@ -105,7 +105,7 @@ class TestLIFNeuronProperties:
 
         # Try various input magnitudes
         for magnitude in [0.1, 0.5, 1.0, 2.0, 5.0]:
-            input_current = torch.randn(8, n_neurons) * magnitude
+            input_current = torch.randn(1, n_neurons) * magnitude
             spikes, _ = neuron(input_current)
 
             # Every spike value must be exactly 0 or 1
@@ -145,7 +145,7 @@ class TestLIFNeuronProperties:
         neuron.reset_state()
 
         # Zero input should still produce valid spikes (just zeros)
-        spikes, _ = neuron(torch.zeros(4, n_neurons))
+        spikes, _ = neuron(torch.zeros(1, n_neurons))
 
         assert_spike_train_valid(spikes)
         assert not torch.isnan(neuron.membrane).any()
@@ -204,7 +204,7 @@ class TestNumericalStabilityProperties:
 
         # Run for many timesteps
         for t in range(n_timesteps):
-            input_current = torch.randn(4, n_neurons) * 0.5
+            input_current = torch.randn(1, n_neurons) * 0.5
             spikes, _ = neuron(input_current)
 
             # Check that state remains valid
@@ -225,7 +225,7 @@ class TestNumericalStabilityProperties:
         neuron.reset_state()
 
         # Test with scaled input
-        input_current = torch.randn(4, n_neurons) * input_scale
+        input_current = torch.randn(1, n_neurons) * input_scale
         spikes, _ = neuron(input_current)
 
         # Should produce valid output regardless of scale
@@ -248,7 +248,7 @@ class TestInvariantProperties:
         neuron.reset_state()
 
         # Even with very strong input
-        strong_input = torch.ones(16, n_neurons) * 100.0
+        strong_input = torch.ones(1, n_neurons) * 100.0
         spikes, _ = neuron(strong_input)
 
         # Each batch item can have at most n_neurons spikes
@@ -270,7 +270,7 @@ class TestInvariantProperties:
 
         # Step with zero input multiple times
         for _ in range(10):
-            neuron(torch.zeros(4, n_neurons))
+            neuron(torch.zeros(1, n_neurons))
 
         # Should have decayed toward rest (0.0)
         assert (neuron.membrane < 0.5).any(), "Membrane should decay toward rest"
@@ -293,7 +293,7 @@ class TestInvariantProperties:
 
         # Apply same input
         torch.manual_seed(42)  # Ensure same random input
-        input_current = torch.randn(4, n_neurons)
+        input_current = torch.randn(1, n_neurons)
 
         spikes1, _ = neuron1(input_current.clone())
         spikes2, _ = neuron2(input_current.clone())
@@ -307,3 +307,4 @@ class TestInvariantProperties:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

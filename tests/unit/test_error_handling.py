@@ -35,19 +35,13 @@ class TestLIFNeuronErrorHandling:
                 f"Error message should be helpful, got: {str(e)}"
 
     def test_mismatched_batch_size_raises_error(self):
-        """Test that mismatched batch sizes are handled."""
+        """Test that batch_size != 1 raises error."""
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        # Try to pass different batch size
-        # Some implementations may handle this gracefully by resizing
-        try:
-            spikes, _ = neuron(torch.randn(8, 10))  # Different batch size
-            # If it succeeds, verify output is valid
-            assert spikes.shape[0] == 8, "Should handle batch size change"
-        except (ValueError, RuntimeError, AssertionError):
-            # Or it may raise an error, which is also acceptable
-            pass
+        # Should raise error for batch_size > 1
+        with pytest.raises(ValueError, match="only supports batch_size=1"):
+            neuron(torch.randn(8, 10))
 
     def test_wrong_number_of_neurons_raises_error(self):
         """Test that wrong neuron count in input is caught."""
@@ -56,23 +50,7 @@ class TestLIFNeuronErrorHandling:
 
         # Try to pass wrong number of neurons
         with pytest.raises((ValueError, RuntimeError, AssertionError)):
-            neuron(torch.randn(4, 20))  # Should be 10 neurons
-
-    def test_handles_very_large_batch_size(self):
-        """Test behavior with very large batch size (memory stress test)."""
-        neuron = LIFNeuron(n_neurons=100)
-
-        # This might fail with OOM, which is acceptable
-        try:
-            large_batch = 100000  # 100k batch size
-            neuron.reset_state()
-            spikes, _ = neuron(torch.randn(large_batch, 100))
-
-            # If it succeeds, verify output is valid
-            assert spikes.shape == (large_batch, 100)
-        except (RuntimeError, MemoryError):
-            # OOM is acceptable for very large batches
-            pytest.skip("Out of memory for large batch (expected)")
+            neuron(torch.randn(1, 20))  # Should be 10 neurons
 
     def test_handles_extreme_input_values(self):
         """Test that extreme (but not inf/nan) input values don't crash."""
@@ -80,14 +58,14 @@ class TestLIFNeuronErrorHandling:
         neuron.reset_state()
 
         # Very large positive input
-        large_input = torch.full((4, 10), 1e6)
+        large_input = torch.full((1, 10), 1e6)
         spikes, _ = neuron(large_input)
         assert not torch.isnan(spikes).any()
         assert not torch.isinf(spikes).any()
 
         # Very large negative input
         neuron.reset_state()
-        large_neg_input = torch.full((4, 10), -1e6)
+        large_neg_input = torch.full((1, 10), -1e6)
         spikes, _ = neuron(large_neg_input)
         assert not torch.isnan(spikes).any()
         assert not torch.isinf(spikes).any()
@@ -127,8 +105,8 @@ class TestConductanceLIFErrorHandling:
         neuron = ConductanceLIF(n_neurons=10)
         neuron.reset_state()
 
-        exc = torch.randn(4, 10)
-        inh = torch.randn(4, 5)  # Wrong size!
+        exc = torch.randn(1, 10)
+        inh = torch.randn(1, 5)  # Wrong size!
 
         with pytest.raises((ValueError, RuntimeError, AssertionError)):
             neuron(exc, inh)
@@ -138,10 +116,10 @@ class TestConductanceLIFErrorHandling:
         neuron = ConductanceLIF(n_neurons=10)
         neuron.reset_state()
 
-        exc = torch.randn(4, 10)
+        exc = torch.randn(1, 10)
         spikes, _ = neuron(exc, None)  # Should work
 
-        assert spikes.shape == (4, 10)
+        assert spikes.shape == (1, 10)
 
     def test_both_none_inputs_work(self):
         """Test that None for both inputs works (no external input)."""
@@ -153,7 +131,7 @@ class TestConductanceLIFErrorHandling:
         # This test documents the current behavior
         try:
             spikes, _ = neuron(None, None)
-            assert spikes.shape == (4, 10)
+            assert spikes.shape == (1, 10)
         except (AttributeError, TypeError):
             # Current implementation doesn't support None inputs
             # This is acceptable - test documents behavior
@@ -171,10 +149,10 @@ class TestDendriticNeuronErrorHandling:
         neuron.reset_state()
 
         # Total inputs = n_branches * inputs_per_branch = 3 * 10 = 30
-        branch_inputs = torch.randn(4, 30)
+        branch_inputs = torch.randn(1, 30)
         spikes, _ = neuron(branch_inputs)
 
-        assert spikes.shape == (4, 5), f"Expected (4, 5), got {spikes.shape}"
+        assert spikes.shape == (1, 5), f"Expected (1, 5), got {spikes.shape}"
 
 
 @pytest.mark.unit
@@ -208,7 +186,7 @@ class TestCortexErrorHandling:
 
         # Wrong input size - should be caught
         try:
-            cortex.forward(torch.randn(4, 64))  # Should be 32
+            cortex.forward(torch.randn(1, 64))  # Should be 32
             # If it doesn't raise, at least document that it didn't crash
             pass
         except (ValueError, RuntimeError, AssertionError):
@@ -249,7 +227,7 @@ class TestThreadSafety:
                 neuron.reset_state()
 
                 for _ in range(10):
-                    spikes, _ = neuron(torch.randn(4, 100))
+                    spikes, _ = neuron(torch.randn(1, 100))
                     results.append(spikes.sum().item())
             except Exception as e:
                 errors.append(e)
@@ -276,7 +254,7 @@ class TestGradientFlow:
         neuron.reset_state()
 
         # Create input that requires gradients
-        input_current = torch.randn(4, 10, requires_grad=True)
+        input_current = torch.randn(1, 10, requires_grad=True)
 
         # Forward pass
         spikes, _ = neuron(input_current)
@@ -303,7 +281,7 @@ class TestGradientFlow:
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        input_sequence = [torch.randn(4, 10, requires_grad=True) for _ in range(10)]
+        input_sequence = [torch.randn(1, 10, requires_grad=True) for _ in range(10)]
 
         # Track membrane values instead of spikes
         membrane_sum = torch.tensor(0.0, requires_grad=True)

@@ -233,20 +233,35 @@ class SpikingQueryKeyValue(nn.Module):
         V = torch.einsum('bsd,hkd->bshk', x, self.W_v)
         
         if return_spikes:
-            # Flatten for LIF processing
-            Q_flat = Q.reshape(batch * seq_len, -1)
-            K_flat = K.reshape(batch * seq_len, -1)
-            V_flat = V.reshape(batch * seq_len, -1)
+            # THALIA enforces batch_size=1 (single-instance architecture)
+            # Process each sequence position separately to maintain batch_size=1
+            q_spikes_list = []
+            k_spikes_list = []
+            v_spikes_list = []
             
-            # Get spikes
-            q_spikes, _ = self.q_neurons(Q_flat)
-            k_spikes, _ = self.k_neurons(K_flat)
-            v_spikes, _ = self.v_neurons(V_flat)
+            for b in range(batch):
+                for s in range(seq_len):
+                    # Process single position: [1, n_heads * d_head]
+                    q_single = Q[b:b+1, s:s+1, :, :].reshape(1, -1)
+                    k_single = K[b:b+1, s:s+1, :, :].reshape(1, -1)
+                    v_single = V[b:b+1, s:s+1, :, :].reshape(1, -1)
+                    
+                    q_spike, _ = self.q_neurons(q_single)
+                    k_spike, _ = self.k_neurons(k_single)
+                    v_spike, _ = self.v_neurons(v_single)
+                    
+                    q_spikes_list.append(q_spike)
+                    k_spikes_list.append(k_spike)
+                    v_spikes_list.append(v_spike)
             
-            # Reshape back
-            Q = q_spikes.reshape(batch, seq_len, self.n_heads, self.d_head)
-            K = k_spikes.reshape(batch, seq_len, self.n_heads, self.d_head)
-            V = v_spikes.reshape(batch, seq_len, self.n_heads, self.d_head)
+            # Reconstruct: stack all positions, then reshape to [batch, seq, heads, d_head]
+            q_spikes = torch.stack(q_spikes_list, dim=0).reshape(batch, seq_len, self.n_heads, self.d_head)
+            k_spikes = torch.stack(k_spikes_list, dim=0).reshape(batch, seq_len, self.n_heads, self.d_head)
+            v_spikes = torch.stack(v_spikes_list, dim=0).reshape(batch, seq_len, self.n_heads, self.d_head)
+            
+            Q = q_spikes
+            K = k_spikes
+            V = v_spikes
         
         return Q, K, V
 

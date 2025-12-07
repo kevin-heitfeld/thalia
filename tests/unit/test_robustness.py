@@ -149,11 +149,11 @@ class TestEIBalanceRegulator:
         
         diag = regulator.get_diagnostics()
         
-        assert "exc_avg" in diag
-        assert "inh_avg" in diag
+        assert "_exc_avg" in diag
+        assert "_inh_avg" in diag
         assert "current_ratio" in diag
         assert "target_ratio" in diag
-        assert "inh_scale" in diag
+        assert "_inh_scale" in diag
         assert "status" in diag
 
 

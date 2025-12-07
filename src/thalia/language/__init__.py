@@ -31,7 +31,6 @@ from thalia.language.model import (
     MinimalSpikingLM,
     # Backward compatibility aliases
     SpikingLanguageModel,
-    SpikingLanguageModelConfig,
 )
 
 __all__ = [
@@ -52,5 +51,4 @@ __all__ = [
     "MinimalSpikingLM",
     # Backward compatibility
     "SpikingLanguageModel",
-    "SpikingLanguageModelConfig",
 ]
