@@ -204,7 +204,7 @@ class TrisynapticConfig(RegionConfig):
     gamma_n_slots: int = 7                # Working memory slots per theta cycle
     gamma_coupling_strength: float = 0.8  # How much theta modulates gamma
     gamma_gating_strength: float = 0.5    # How much gamma gates CA3 activity
-    
+
     # Slot mode determines how items are assigned to gamma slots:
     # - "item": Each forward() call advances to next slot (position-based)
     #           Best for discrete token sequences where timing is variable

@@ -212,11 +212,23 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             )
             self.gamma_oscillator = GammaOscillator(gamma_config)
             
+            # Replay engine for sequence replay (lazy import to avoid circular dependency)
+            from thalia.memory.replay_engine import ReplayEngine, ReplayConfig, ReplayMode
+            replay_config = ReplayConfig(
+                compression_factor=5.0,
+                theta_gamma_config=gamma_config,
+                mode=ReplayMode.SEQUENCE,
+                apply_gating=True,
+                pattern_completion=True,
+            )
+            self.replay_engine = ReplayEngine(replay_config)
+            
             # Assign CA3 neurons to gamma slots for phase coding
             # Neurons in different slots fire at different gamma phases
             self._ca3_slot_assignment = torch.arange(self.ca3_size) % config.gamma_n_slots
         else:
             self.gamma_oscillator = None
+            self.replay_engine = None
             self._ca3_slot_assignment = None
         
         # Track current sequence position for encoding (auto-advances)
@@ -1393,6 +1405,8 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     ) -> Dict[str, Any]:
         """Replay a sequence using gamma oscillator for time-compressed reactivation.
         
+        Now uses unified ReplayEngine for consistent replay across codebase.
+        
         During sleep, sequences that took seconds to encode are replayed in ~100ms.
         The gamma oscillator drives slot-by-slot reactivation at compressed timing.
         
@@ -1409,104 +1423,50 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 - slots_replayed: Number of sequence slots replayed
                 - total_activity: Sum of all reactivated patterns
                 - gamma_cycles: Number of gamma cycles during replay
+                - compression_factor: Actual compression used
+                - replayed_patterns: List of replayed pattern tensors
         """
-        # Fall back to single-state replay if no sequence stored
-        if episode.sequence is None or len(episode.sequence) == 0:
-            # Just replay the single state pattern
-            return self._replay_single_state(episode.state)
-        
-        if self.gamma_oscillator is None:
-            raise RuntimeError("Gamma oscillator required for sequence replay. "
+        if self.replay_engine is None:
+            raise RuntimeError("Replay engine not available. "
                                "Set theta_gamma_enabled=True in config.")
+        
+        # Update compression factor if different from config
+        if compression_factor != self.replay_engine.config.compression_factor:
+            self.replay_engine.config.compression_factor = compression_factor
+        
+        # Update dt if different
+        if dt != self.replay_engine.config.dt_ms:
+            self.replay_engine.config.dt_ms = dt
         
         # Switch to time-based mode for replay
         original_mode = self.tri_config.gamma_slot_mode
         self.tri_config.gamma_slot_mode = "time"
         
-        # Reset gamma oscillator for fresh replay
-        self.gamma_oscillator.reset_state()
+        # Pattern processor: forward through CA3 for pattern completion
+        def process_pattern(pattern: torch.Tensor) -> torch.Tensor:
+            return self.forward(pattern, phase=TrialPhase.DELAY)
         
-        sequence = episode.sequence
-        n_slots = len(sequence)
+        # Gating function: apply gamma gating to patterns
+        def get_gating(slot: int) -> float:
+            return self._get_gamma_gating(slot)
         
-        # Compute compressed timing
-        # Normal gamma cycle: ~25ms at 40Hz
-        # Compressed: 25ms / compression_factor = 5ms per slot
-        compressed_dt = dt * compression_factor
-        
-        slots_replayed = 0
-        total_activity = 0.0
-        gamma_cycles = 0
-        replayed_patterns: List[torch.Tensor] = []
-        
-        # Track previous slot to detect transitions
-        prev_slot = -1
-        
-        # Replay until all slots processed
-        # We advance gamma faster (compressed time) and replay each slot's pattern
-        max_steps = int(n_slots * 30 / compression_factor)  # Safety limit
-        
-        for step in range(max_steps):
-            # Advance gamma oscillator with compressed time
-            self.gamma_oscillator.advance(compressed_dt)
-            current_slot = self.gamma_oscillator.current_slot
-            
-            # Check for slot transition
-            if current_slot != prev_slot and current_slot < n_slots:
-                # Reactivate the pattern from this slot
-                pattern = sequence[current_slot]
-                
-                # Drive CA3 with the stored pattern (pattern completion)
-                if pattern.dim() == 1:
-                    pattern = pattern.unsqueeze(0)
-                
-                # Apply gamma gating to the reactivation
-                gating = self._get_gamma_gating(current_slot)
-                reactivated = pattern * gating
-                
-                # Process through CA3 recurrent connections for consolidation
-                # Use DELAY phase for pattern completion (retrieving memory)
-                output = self.forward(reactivated.squeeze(0), phase=TrialPhase.DELAY)
-                
-                replayed_patterns.append(output)
-                total_activity += output.sum().item()
-                slots_replayed += 1
-                
-                prev_slot = current_slot
-                
-            # Check if we've completed a full gamma cycle
-            if self.gamma_oscillator.gamma_phase < 0.1 and step > 0:
-                gamma_cycles += 1
-            
-            # Stop when we've replayed all slots
-            if slots_replayed >= n_slots:
-                break
+        # Run replay through unified engine
+        result = self.replay_engine.replay(
+            episode=episode,
+            pattern_processor=process_pattern,
+            gating_fn=get_gating,
+        )
         
         # Restore original mode
         self.tri_config.gamma_slot_mode = original_mode
         
+        # Convert ReplayResult to dict format
         return {
-            "slots_replayed": slots_replayed,
-            "total_activity": total_activity,
-            "gamma_cycles": gamma_cycles,
-            "compression_factor": compression_factor,
-            "replayed_patterns": replayed_patterns,
-        }
-    
-    def _replay_single_state(self, state: torch.Tensor) -> Dict[str, Any]:
-        """Replay a single state pattern (fallback when no sequence stored)."""
-        if state.dim() == 1:
-            state = state.unsqueeze(0)
-        
-        # Process through CA3 for pattern completion
-        output = self.forward(state.squeeze(0), phase=TrialPhase.DELAY)
-        
-        return {
-            "slots_replayed": 1,
-            "total_activity": output.sum().item(),
-            "gamma_cycles": 0,
-            "compression_factor": 1.0,
-            "replayed_patterns": [output],
+            "slots_replayed": result.slots_replayed,
+            "total_activity": result.total_activity,
+            "gamma_cycles": result.gamma_cycles,
+            "compression_factor": result.compression_factor,
+            "replayed_patterns": result.replayed_patterns,
         }
     
     def _get_gamma_gating(self, slot: int) -> float:
