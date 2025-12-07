@@ -172,10 +172,10 @@ class DendriticBranch(nn.Module):
         # State: NMDA plateau potential (persists across timesteps)
         self.plateau: Optional[torch.Tensor] = None
 
-    def reset_state(self, batch_size: int = 1) -> None:
-        """Reset branch state."""
+    def reset_state(self) -> None:
+        """Reset branch state to batch_size=1."""
         device = self.weights.device
-        self.plateau = torch.zeros(batch_size, device=device)
+        self.plateau = torch.zeros(1, device=device)
 
     def forward(
         self,
@@ -196,8 +196,7 @@ class DendriticBranch(nn.Module):
         """
         # Initialize state if needed
         if self.plateau is None:
-            batch_size = inputs.shape[0] if inputs.dim() > 0 else 1
-            self.reset_state(batch_size)
+            self.reset_state()
 
         # Compute weighted sum if needed
         if inputs.dim() == 2 and inputs.shape[1] == self.n_inputs:
@@ -386,9 +385,10 @@ class DendriticNeuron(nn.Module):
             self._cached_weights = self.branch_weights.clamp(min=0)
         return self._cached_weights
 
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset all state (branches and soma)."""
         device = self.branch_weights.device
+        batch_size = 1
 
         # Reset branch plateaus
         self.branch_plateaus = torch.zeros(
@@ -403,7 +403,7 @@ class DendriticNeuron(nn.Module):
         )
 
         # Reset soma
-        self.soma.reset_state(batch_size)
+        self.soma.reset_state()
 
     @property
     def membrane(self) -> Optional[torch.Tensor]:
@@ -486,8 +486,9 @@ class DendriticNeuron(nn.Module):
         """
         # Initialize state if needed
         if self.branch_plateaus is None or self.branch_g_syn is None:
-            batch_size = inputs.shape[0]
-            self.reset_state(batch_size)
+            from .utils import assert_single_instance
+            assert_single_instance(inputs.shape[0], "DendriticNeuron")
+            self.reset_state()
 
         # Route inputs to branches if needed
         if inputs.dim() == 2:

@@ -318,8 +318,9 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             torch.tensor(torch.exp(torch.tensor(-config.dt_ms / config.error_tau_ms)).item())
         )
         
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset layer state for new sequence."""
+        batch_size = 1
         self.state = PredictiveCodingState(
             prediction=torch.zeros(batch_size, self.config.n_input, device=self.device),
             representation=torch.zeros(batch_size, self.config.n_representation, device=self.device),
@@ -766,10 +767,10 @@ class HierarchicalPredictiveCoding(nn.Module):
             
             self.layers.append(PredictiveCodingLayer(config))
     
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset all layers."""
         for layer in self.layers:
-            layer.reset_state(batch_size)
+            layer.reset_state()
     
     def forward(
         self,

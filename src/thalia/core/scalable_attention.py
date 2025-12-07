@@ -201,11 +201,11 @@ class SpikingQueryKeyValue(nn.Module):
         self.k_neurons = LIFNeuron(n_heads * d_head, lif_config)
         self.v_neurons = LIFNeuron(n_heads * d_head, lif_config)
     
-    def reset_state(self, batch_size: int) -> None:
+    def reset_state(self) -> None:
         """Reset neuron states."""
-        self.q_neurons.reset_state(batch_size)
-        self.k_neurons.reset_state(batch_size)
-        self.v_neurons.reset_state(batch_size)
+        self.q_neurons.reset_state()
+        self.k_neurons.reset_state()
+        self.v_neurons.reset_state()
     
     def forward(
         self,
@@ -280,8 +280,14 @@ class CoincidenceAttention(nn.Module):
         self.query_trace: Optional[torch.Tensor] = None
         self.key_trace: Optional[torch.Tensor] = None
     
-    def reset_state(self, batch_size: int, n_queries: int, n_keys: int) -> None:
-        """Reset trace states."""
+    def reset_state(self, n_queries: int, n_keys: int) -> None:
+        """Reset trace states to batch_size=1.
+        
+        Args:
+            n_queries: Number of query positions
+            n_keys: Number of key positions
+        """
+        batch_size = 1
         self.query_trace = torch.zeros(
             batch_size, n_queries, self.config.d_head,
             device=self.device
@@ -382,9 +388,9 @@ class WinnerTakeAllAttention(nn.Module):
         with torch.no_grad():
             self.W_lateral.fill_diagonal_(0.0)
     
-    def reset_state(self, batch_size: int) -> None:
+    def reset_state(self) -> None:
         """Reset inhibitory pool."""
-        self.inhibitory_pool.reset_state(batch_size)
+        self.inhibitory_pool.reset_state()
     
     def forward(
         self,
@@ -598,14 +604,14 @@ class ScalableSpikingAttention(nn.Module):
         # Learning rate for STDP-like attention learning
         self.attention_lr = 0.01
     
-    def reset_state(self, batch_size: int) -> None:
+    def reset_state(self) -> None:
         """Reset all states."""
-        self.qkv.reset_state(batch_size)
+        self.qkv.reset_state()
         for head in self.attention_heads:
             if isinstance(head, CoincidenceAttention):
-                head.reset_state(batch_size, self.config.n_queries, self.config.n_keys)
+                head.reset_state(self.config.n_queries, self.config.n_keys)
             elif isinstance(head, WinnerTakeAllAttention):
-                head.reset_state(batch_size)
+                head.reset_state()
             elif isinstance(head, GammaPhaseAttention):
                 head.reset_state()
     
@@ -798,10 +804,10 @@ class MultiScaleSpikingAttention(nn.Module):
         # Combine timescales
         self.W_combine = nn.Linear(config.d_model, config.d_model)
     
-    def reset_state(self, batch_size: int) -> None:
+    def reset_state(self) -> None:
         """Reset all timescales."""
         for layer in self.attention_layers:
-            layer.reset_state(batch_size)
+            layer.reset_state()
     
     def forward(
         self,

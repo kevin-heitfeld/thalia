@@ -172,13 +172,15 @@ class LIFNeuron(nn.Module):
         self.refractory: Optional[torch.Tensor] = None
         self.adaptation: Optional[torch.Tensor] = None  # Adaptation current
 
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset neuron state to resting potential.
-
-        Args:
-            batch_size: Batch dimension for parallel processing
+        
+        Initializes all state tensors to batch_size=1 per THALIA's
+        single-instance architecture.
         """
         device = self.decay.device
+        batch_size = 1
+        
         self.membrane = torch.full(
             (batch_size, self.n_neurons),
             self.config.v_rest,
@@ -211,11 +213,13 @@ class LIFNeuron(nn.Module):
         """
         # Initialize state if needed
         if self.membrane is None:
-            self.reset_state(batch_size=input_current.shape[0])
+            self.reset_state()
 
-        # Ensure state matches batch size
+        # Ensure state matches batch size (should always be 1)
         if self.membrane.shape[0] != input_current.shape[0]:
-            self.reset_state(batch_size=input_current.shape[0])
+            from .utils import assert_single_instance
+            assert_single_instance(input_current.shape[0], "LIFNeuron")
+            self.reset_state()
 
         # Decrement refractory counter
         self.refractory = torch.clamp(self.refractory - 1, min=0)
@@ -484,9 +488,14 @@ class ConductanceLIF(nn.Module):
         self.g_adapt: Optional[torch.Tensor] = None  # Adaptation conductance
         self.refractory: Optional[torch.Tensor] = None
 
-    def reset_state(self, batch_size: int = 1) -> None:
-        """Reset neuron state to resting potential."""
+    def reset_state(self) -> None:
+        """Reset neuron state to resting potential.
+        
+        Initializes all state tensors to batch_size=1 per THALIA's
+        single-instance architecture.
+        """
         device = self.C_m.device
+        batch_size = 1
 
         # Membrane starts at leak reversal (resting potential)
         self.membrane = torch.full(

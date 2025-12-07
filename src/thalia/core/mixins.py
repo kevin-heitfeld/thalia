@@ -114,16 +114,17 @@ class ResettableMixin:
                 super().__init__()
                 self.state = None
                 
-            def reset_state(self, batch_size: int = 1) -> None:
+            def reset_state(self) -> None:
                 '''Reset internal state for new sequence.'''
-                self.state = torch.zeros(batch_size, self.n_neurons)
+                self.state = torch.zeros(1, self.n_neurons, device=self.device)
     """
     
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset internal state for new sequence/episode.
         
-        Args:
-            batch_size: Batch size for state tensors
+        Resets dynamic state (membrane potentials, traces, working memory)
+        while preserving learned parameters. Always initializes to batch_size=1
+        per THALIA's single-instance architecture.
             
         Note:
             Subclasses should override this method to reset their
@@ -134,11 +135,11 @@ class ResettableMixin:
         )
     
     def reset(self) -> None:
-        """Convenience method that calls reset_state(1).
+        """Alias for reset_state() for backward compatibility.
         
-        For backward compatibility with existing code that uses reset().
+        Both reset() and reset_state() are equivalent and call the same method.
         """
-        self.reset_state(batch_size=1)
+        self.reset_state()
 
 
 class DiagnosticCollectorMixin:

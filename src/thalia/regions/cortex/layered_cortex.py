@@ -327,26 +327,24 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
     def reset(self) -> None:
         """Reset state for new episode."""
         super().reset()
-        self.reset_state(1)
+        self.reset_state()
 
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset all layer states.
         
-        Note: THALIA only supports batch_size=1. The architecture models a single
-        continuous brain state processing a temporal stream. For parallel evaluation
-        (e.g., RL training), instantiate multiple LayeredCortex instances.
+        THALIA enforces batch_size=1 for single-instance architecture.
+        For parallel evaluation, create multiple LayeredCortex instances.
         """
-        assert_single_instance(batch_size, "LayeredCortex")
-        
         dev = self.device
+        batch_size = 1
 
-        self.l4_neurons.reset_state(batch_size)
-        self.l23_neurons.reset_state(batch_size)
-        self.l5_neurons.reset_state(batch_size)
+        self.l4_neurons.reset_state()
+        self.l23_neurons.reset_state()
+        self.l5_neurons.reset_state()
 
         # Reset STP state for L2/3 recurrent
         if self.stp_l23_recurrent is not None:
-            self.stp_l23_recurrent.reset_state(batch_size)
+            self.stp_l23_recurrent.reset_state()
 
         self.state = LayeredCortexState(
             l4_spikes=torch.zeros(batch_size, self.l4_size, device=dev),
@@ -408,7 +406,9 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
             )
 
         if self.state.l4_spikes is None:
-            self.reset_state(batch_size)
+            from thalia.core.utils import assert_single_instance
+            assert_single_instance(batch_size, "LayeredCortex")
+            self.reset_state()
 
         cfg = self.layer_config
 

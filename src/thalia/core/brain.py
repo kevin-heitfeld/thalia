@@ -1105,8 +1105,8 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         self.scheduler = EventScheduler()
 
         # Reset regions (full state reset)
-        self.cortex.impl.reset_state(batch_size=1)
-        self.pfc.impl.reset_state(batch_size=1)
+        self.cortex.impl.reset_state()
+        self.pfc.impl.reset_state()
         self.striatum.impl.reset()
         self.hippocampus.impl.new_trial()
 

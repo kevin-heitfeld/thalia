@@ -206,13 +206,15 @@ class ShortTermPlasticity(nn.Module):
         self.u: Optional[torch.Tensor] = None  # Release probability (facilitation)
         self.x: Optional[torch.Tensor] = None  # Available resources (depression)
 
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset STP state to baseline.
 
         - u starts at U (baseline release probability)
         - x starts at 1 (full vesicle pool)
+        - Always uses batch_size=1 per THALIA architecture
         """
         device = self.U.device
+        batch_size = 1
 
         if self.per_synapse:
             shape = (batch_size, self.n_pre, self.n_post)
@@ -236,11 +238,13 @@ class ShortTermPlasticity(nn.Module):
             Multiply this with synaptic weights to get effective transmission.
         """
         if self.u is None:
-            self.reset_state(batch_size=pre_spikes.shape[0])
+            self.reset_state()
 
-        # Ensure batch size matches
+        # Ensure batch size matches (should always be 1)
         if self.u.shape[0] != pre_spikes.shape[0]:
-            self.reset_state(batch_size=pre_spikes.shape[0])
+            from .utils import assert_single_instance
+            assert_single_instance(pre_spikes.shape[0], "STP")
+            self.reset_state()
 
         # Expand pre_spikes if per_synapse
         if self.per_synapse:
@@ -378,9 +382,9 @@ class STPSynapse(nn.Module):
         )
         self.per_synapse_stp = per_synapse_stp
 
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset STP state."""
-        self.stp.reset_state(batch_size)
+        self.stp.reset_state()
 
     def forward(self, pre_spikes: torch.Tensor) -> torch.Tensor:
         """Transmit spikes through synapse with STP modulation.

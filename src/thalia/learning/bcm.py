@@ -154,14 +154,10 @@ class BCMRule(nn.Module):
         # Activity accumulator for smoother threshold updates
         self.activity_trace: Optional[torch.Tensor] = None
 
-    def reset_state(self, batch_size: int = 1) -> None:
-        """Reset BCM state.
-
-        Args:
-            batch_size: Batch dimension (thresholds are per-neuron, not per-batch,
-                       but we track batch for activity averaging)
-        """
+    def reset_state(self) -> None:
+        """Reset BCM state to batch_size=1."""
         device = self.decay_theta.device
+        batch_size = 1
 
         # Threshold is per-neuron (not batched)
         self.theta = torch.full(

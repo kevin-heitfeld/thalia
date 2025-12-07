@@ -278,18 +278,15 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         """Neurons are managed by internal LayeredCortex."""
         return self.cortex.neurons
 
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset all states for new sequence."""
-        from thalia.core.utils import assert_single_instance
-        assert_single_instance(batch_size, "PredictiveCortex")
-        
-        self.cortex.reset_state(batch_size)
+        self.cortex.reset_state()
 
         if self.prediction_layer is not None:
-            self.prediction_layer.reset_state(batch_size)
+            self.prediction_layer.reset_state()
 
         if self.attention is not None:
-            self.attention.reset_state(batch_size)
+            self.attention.reset_state()
 
         # Sync state from inner cortex (don't leave as None!)
         # The inner LayeredCortex initializes proper zero tensors
@@ -351,7 +348,9 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
         # Initialize if needed
         if self.state.l4_spikes is None:
-            self.reset_state(batch_size)
+            from thalia.core.utils import assert_single_instance
+            assert_single_instance(batch_size, "PredictiveCortex")
+            self.reset_state()
 
         # =====================================================================
         # STEP 1: Standard feedforward through cortex
@@ -586,10 +585,10 @@ class PredictiveHierarchy(nn.Module):
 
         self.n_areas = n_areas
 
-    def reset_state(self, batch_size: int = 1) -> None:
+    def reset_state(self) -> None:
         """Reset all areas."""
         for area in self.areas:
-            area.reset_state(batch_size)
+            area.reset_state()
 
     def forward(
         self,

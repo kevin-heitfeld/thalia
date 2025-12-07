@@ -70,26 +70,27 @@ class Resettable(Protocol):
 
 @runtime_checkable
 class BatchResettable(Protocol):
-    """Protocol for components that reset with batch size control.
+    """Protocol for components that reset dynamic state.
     
-    Use this for neural components that maintain batched state tensors:
-    - LIF neurons (membrane potentials per batch)
-    - Brain regions (spike traces per batch)
-    - Synapses with STP (facilitation/depression per batch)
+    Use this for neural components that maintain state tensors:
+    - LIF neurons (membrane potentials, refractory periods)
+    - Brain regions (spike traces, working memory)
+    - Synapses with STP (facilitation/depression)
     
-    The batch_size parameter allows resetting to a specific batch dimension,
-    which is essential for parallel simulation of multiple trials.
+    THALIA enforces single-instance architecture (batch_size=1) to maintain
+    continuous temporal dynamics. For parallel simulations, create multiple
+    component instances rather than batching.
     
     Convention:
-    - reset_state(1) is equivalent to a simple reset
     - Preserve learned weights, only reset transient state
+    - Initialize to batch_size=1 (enforced via assert_single_instance)
     """
     
-    def reset_state(self, batch_size: int = 1) -> None:
-        """Reset component state with specific batch dimension.
+    def reset_state(self) -> None:
+        """Reset component state to initial conditions.
         
-        Args:
-            batch_size: Number of parallel batches to initialize state for.
+        Resets dynamic state (membrane potentials, traces, working memory)
+        while preserving learned parameters (weights, thresholds).
         """
         ...
 

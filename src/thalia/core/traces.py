@@ -232,20 +232,12 @@ class SpikeTrace(nn.Module):
         
         return self.trace
     
-    def reset(self, batch_size: Optional[int] = None) -> None:
+    def reset(self) -> None:
         """Reset trace to zeros.
         
-        Args:
-            batch_size: If provided, reshape trace to [batch_size, size]
+        Always resets to batch_size=1 per THALIA's single-instance architecture.
         """
-        if batch_size is not None:
-            self.trace = torch.zeros(
-                batch_size, self.size,
-                dtype=self.trace.dtype,
-                device=self.trace.device
-            )
-        else:
-            self.trace.zero_()
+        self.trace.zero_()
     
     def get_trace(self) -> torch.Tensor:
         """Get current trace values."""

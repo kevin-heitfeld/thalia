@@ -337,12 +337,11 @@ class Prefrontal(BrainRegion):
             dopamine=self.pfc_config.dopamine_baseline,
         )
 
-    def reset_state(self, batch_size: int = 1) -> None:
-        """Reset state with specific batch size."""
-        from thalia.core.utils import assert_single_instance
-        assert_single_instance(batch_size, "PrefrontalCortex")
+    def reset_state(self) -> None:
+        """Reset state to batch_size=1."""
+        batch_size = 1
         
-        self.neurons.reset_state(batch_size)
+        self.neurons.reset_state()
         self.dopamine_system.reset()
 
         # Reset STDP traces
@@ -393,11 +392,15 @@ class Prefrontal(BrainRegion):
 
         # Ensure state is initialized
         if self.state.working_memory is None:
-            self.reset_state(batch_size)
+            from thalia.core.utils import assert_single_instance
+            assert_single_instance(batch_size, "PrefrontalCortex")
+            self.reset_state()
 
         # Ensure batch size matches
         if self.state.working_memory.shape[0] != batch_size:
-            self.reset_state(batch_size)
+            from thalia.core.utils import assert_single_instance
+            assert_single_instance(batch_size, "PrefrontalCortex")
+            self.reset_state()
 
         # Update dopamine and get gate value
         da_level = self.dopamine_system.update(dopamine_signal, dt)
