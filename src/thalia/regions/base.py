@@ -15,6 +15,7 @@ from typing import Optional, Dict, Any, List
 import torch
 
 from thalia.config.base import RegionConfigBase
+from thalia.core.neuromodulator_mixin import NeuromodulatorMixin
 
 
 class LearningRule(Enum):
@@ -97,7 +98,7 @@ class RegionState:
     t: int = 0
 
 
-class BrainRegion(ABC):
+class BrainRegion(NeuromodulatorMixin, ABC):
     """Abstract base class for brain regions.
 
     Each brain region implements:
@@ -120,6 +121,15 @@ class BrainRegion(ABC):
     The `forward()` method applies plasticity at each timestep, modulated by
     neuromodulators. There is no separate `learn()` method - this is intentional!
     In biological brains, learning IS dynamics, not a separate phase.
+    
+    NEUROMODULATION
+    ===============
+    Inherits from NeuromodulatorMixin which provides:
+    - set_dopamine(), set_acetylcholine(), set_norepinephrine()
+    - decay_neuromodulators() with configurable tau constants
+    - get_effective_learning_rate() for dopamine-modulated plasticity
+    
+    See NeuromodulatorMixin for full interface and usage examples.
     """
 
     def __init__(self, config: RegionConfig):
@@ -148,67 +158,6 @@ class BrainRegion(ABC):
         # =================================================================
         self.plasticity_enabled: bool = True       # Can be disabled for eval
         self.base_learning_rate: float = config.learning_rate
-
-    def set_dopamine(self, level: float) -> None:
-        """Set dopamine level (modulates plasticity rate).
-
-        Args:
-            level: Dopamine level, typically in [-1, 1].
-                   Positive = reward, consolidate current patterns
-                   Negative = punishment, reduce current patterns
-                   Zero = baseline learning rate
-        """
-        self.state.dopamine = level
-
-    def decay_neuromodulators(
-        self,
-        dt_ms: float = 1.0,
-        dopamine_tau_ms: float = 200.0,
-        acetylcholine_tau_ms: float = 50.0,
-        norepinephrine_tau_ms: float = 100.0,
-    ) -> None:
-        """Decay neuromodulator levels toward baseline.
-
-        Call this at each timestep for realistic dynamics.
-        Uses exponential decay toward zero (baseline).
-
-        Args:
-            dt_ms: Time step in milliseconds
-            dopamine_tau_ms: Dopamine decay time constant (default 200ms)
-            acetylcholine_tau_ms: ACh decay time constant (default 50ms)
-            norepinephrine_tau_ms: NE decay time constant (default 100ms)
-
-        Note:
-            Subclasses can override defaults or use region-specific configs.
-            E.g., Striatum uses striatum_config.dopamine_tau_ms.
-        """
-        import math
-        self.state.dopamine *= math.exp(-dt_ms / dopamine_tau_ms)
-        self.state.acetylcholine *= math.exp(-dt_ms / acetylcholine_tau_ms)
-        self.state.norepinephrine *= math.exp(-dt_ms / norepinephrine_tau_ms)
-
-    def get_effective_learning_rate(self, base_lr: Optional[float] = None) -> float:
-        """Compute learning rate modulated by dopamine.
-
-        The effective learning rate is:
-            base_lr * (1 + dopamine)
-
-        This means:
-            - dopamine = 0: baseline learning
-            - dopamine = 1: 2x learning rate (strong consolidation)
-            - dopamine = -0.5: 0.5x learning rate (reduced learning)
-            - dopamine = -1: no learning (fully suppressed)
-
-        Args:
-            base_lr: Base learning rate to modulate. If None, uses self.base_learning_rate
-
-        Returns:
-            Effective learning rate for this timestep
-        """
-        # Clamp to prevent negative learning rates
-        modulation = max(0.0, 1.0 + self.state.dopamine)
-        lr = base_lr if base_lr is not None else self.base_learning_rate
-        return lr * modulation
 
     @abstractmethod
     def _get_learning_rule(self) -> LearningRule:
