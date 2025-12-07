@@ -1,0 +1,413 @@
+# Additional Refactoring Opportunities
+
+**Date**: December 7, 2025  
+**Status**: Analysis Phase - Identifying Next Wave of Improvements
+
+## Overview
+
+After completing the initial 8-item refactoring plan, this document identifies additional opportunities for code consolidation, pattern standardization, and architectural improvements discovered through semantic search and grep analysis.
+
+---
+
+## High-Priority Opportunities
+
+### 1. 🔲 Standardize `reset()` Methods Across Modules
+**Estimated Effort**: 3-4 hours  
+**Impact**: High - improves testability and state management
+
+**Problem**: 
+- 30+ classes implement `reset()` with varying signatures
+- Some use `reset()`, others `reset_state()`, some have `reset(batch_size: int)`
+- Inconsistent behavior: some reset weights, others only state
+- No clear contract for what reset should do
+
+**Current Patterns Found**:
+```python
+# Pattern 1: No parameters
+def reset(self) -> None:
+    self.state = RegionState()
+
+# Pattern 2: With batch size
+def reset_state(self, batch_size: int = 1) -> None:
+    self.membrane = torch.zeros(batch_size, self.n_neurons)
+
+# Pattern 3: Reset counters only
+def reset(self):
+    self._rate_avg = self.config.target_rate
+    self._update_count = 0
+```
+
+**Proposed Solution**:
+1. Create `ResettableProtocol` in protocols.py with clear contract
+2. Extend `ResettableMixin` with template method pattern:
+   ```python
+   class ResettableMixin:
+       def reset(self, batch_size: int = 1, reset_weights: bool = False) -> None:
+           """Standard reset interface."""
+           self.reset_state(batch_size)
+           if reset_weights:
+               self.reset_weights()
+           self._on_reset()  # Hook for custom logic
+       
+       @abstractmethod
+       def reset_state(self, batch_size: int) -> None:
+           """Reset dynamic state (membrane, traces, etc.)"""
+           ...
+       
+       def reset_weights(self) -> None:
+           """Reset learnable parameters (optional)"""
+           pass
+       
+       def _on_reset(self) -> None:
+           """Hook for custom reset logic (optional)"""
+           pass
+   ```
+3. Migrate 10-15 core classes to use standard pattern
+4. Document reset semantics in architecture docs
+
+**Files to Modify**:
+- `src/thalia/core/mixins.py` (enhance ResettableMixin)
+- `src/thalia/core/protocols.py` (add ResettableProtocol)
+- Various region/learning modules (~15 files)
+
+---
+
+### 2. 🔲 Consolidate `from_config()` Factory Methods
+**Estimated Effort**: 2-3 hours  
+**Impact**: Medium - reduces boilerplate, improves consistency
+
+**Problem**:
+- Multiple classes have `@classmethod from_thalia_config()` or `from_config()`
+- Similar patterns for extracting config values and constructing objects
+- No shared implementation despite common structure
+
+**Current Pattern**:
+```python
+@classmethod
+def from_thalia_config(cls, config: ThaliaConfig) -> "SequenceMemory":
+    seq_config = SequenceMemoryConfig(
+        vocab_size=config.sequence_memory.vocab_size,
+        n_neurons=config.sequence_memory.n_neurons,
+        # ... 10 more lines of field mapping
+    )
+    return cls(seq_config)
+```
+
+**Proposed Solution**:
+1. Create `ConfigurableFactory` mixin with generic factory logic:
+   ```python
+   class ConfigurableFactory:
+       @classmethod
+       def from_config(cls, config: Any, **overrides):
+           """Generic factory from dataclass config."""
+           # Extract config for this component
+           # Apply overrides
+           # Instantiate
+           return cls(component_config)
+   ```
+2. Add helper for mapping unified config to component configs
+3. Reduce 20+ factory methods to inherited implementation
+
+**Benefit**: ~5-10 lines saved per factory method × 20 methods = 100-200 lines
+
+---
+
+### 3. 🔲 Extract Common Encoder/Decoder Patterns
+**Estimated Effort**: 3-4 hours  
+**Impact**: Medium-High - foundation for new modalities
+
+**Problem**:
+- `SpikeEncoder` and `SpikeDecoder` have parallel enum types (`EncodingType`, `DecodingType`)
+- Similar patterns for `RATE`, `TEMPORAL`, `POPULATION`, `WTA`
+- Each modality pathway (Retinal, Cochlear) duplicates encoding logic
+- No shared base for spike encoding strategies
+
+**Current Duplication**:
+```python
+# In encoder.py
+class EncodingType(Enum):
+    RATE = "rate"
+    TEMPORAL = "temporal"
+    PHASE = "phase"
+    BURST = "burst"
+    SDR = "sdr"
+
+# In decoder.py
+class DecodingType(Enum):
+    RATE = "rate"
+    TEMPORAL = "temporal"
+    POPULATION = "population"
+    WTA = "wta"
+```
+
+**Proposed Solution**:
+1. Create `SpikeCodec` base class with strategy pattern:
+   ```python
+   class SpikeCodec:
+       def encode(self, value: Any, strategy: str) -> torch.Tensor:
+           return self._strategies[strategy].encode(value)
+       
+       def decode(self, spikes: torch.Tensor, strategy: str) -> Any:
+           return self._strategies[strategy].decode(spikes)
+   ```
+2. Extract rate/temporal/population strategies as separate classes
+3. Make `SpikeEncoder` and `SpikeDecoder` thin wrappers around `SpikeCodec`
+4. Sensory pathways use shared codec instead of custom encoding
+
+**Benefit**: Single implementation of encoding strategies, easier to add new modalities
+
+---
+
+### 4. 🔲 Unify Learning Strategy Application Pattern
+**Estimated Effort**: 4-5 hours  
+**Impact**: Medium - improves consistency, reduces region-specific learning code
+
+**Problem**:
+- Multiple regions implement their own `learn()` or `_apply_plasticity()` methods
+- Similar patterns for computing eligibility, applying modulation, clamping weights
+- `learning.strategies` module exists but not widely adopted yet
+
+**Current Duplication Pattern**:
+```python
+# In multiple region files:
+def _apply_plasticity(self, pre_spikes, post_spikes):
+    # Compute eligibility
+    eligibility = self.pre_trace * post_spikes
+    # Apply modulation
+    modulated = eligibility * (1 + self.state.dopamine)
+    # Update weights
+    self.weights += self.lr * modulated
+    # Clamp
+    self.weights = torch.clamp(self.weights, self.w_min, self.w_max)
+```
+
+**Proposed Solution**:
+1. Audit all regions for learning code
+2. Identify which can use existing `learning.strategies`
+3. Create migration guide for converting custom learning to strategies
+4. Add region-specific strategies if needed (e.g., `HippocampalOneShot`)
+5. Refactor 5-7 regions to use strategy pattern
+
+**Benefit**: Centralized learning logic, easier to experiment with new rules
+
+---
+
+### 5. 🔲 Create Region Factory and Registry
+**Estimated Effort**: 2-3 hours  
+**Impact**: Low-Medium - simplifies brain construction
+
+**Problem**:
+- Brain construction code manually instantiates each region
+- No central registry of available regions
+- Hard to dynamically configure which regions to include
+
+**Current Pattern**:
+```python
+# In brain.py __init__:
+self.cortex = LayeredCortex(config.cortex)
+self.hippocampus = TrisynapticHippocampus(config.hippocampus)
+self.striatum = Striatum(config.striatum)
+# ... many more regions
+```
+
+**Proposed Solution**:
+1. Create `RegionFactory` with registration decorator:
+   ```python
+   @register_region("cortex")
+   class LayeredCortex(BrainRegion):
+       ...
+   
+   # Usage:
+   cortex = RegionFactory.create("cortex", config.cortex)
+   ```
+2. Make brain construction loop-driven:
+   ```python
+   for region_name in config.active_regions:
+       self.regions[region_name] = RegionFactory.create(
+           region_name, 
+           getattr(config, region_name)
+       )
+   ```
+3. Enables dynamic brain architectures
+
+**Benefit**: Flexible brain construction, easier to add/remove regions
+
+---
+
+## Medium-Priority Opportunities
+
+### 6. 🔲 Consolidate Similarity Computation Methods
+**Estimated Effort**: 1-2 hours  
+**Impact**: Low-Medium
+
+**Problem**:
+- `cosine_similarity_safe()` appears in multiple places
+- Similar jaccard/overlap computations duplicated
+- `DiagnosticsMixin.similarity_diagnostics()` exists but not used everywhere
+
+**Solution**: Standardize on mixin method, remove duplicates
+
+---
+
+### 7. 🔲 Extract Common Test Utilities Pattern
+**Estimated Effort**: 2-3 hours  
+**Impact**: Low - improves test maintainability
+
+**Problem**:
+- `tests/test_utils.py` has many factory functions
+- Similar patterns for spike generation across test files
+- Some tests duplicate fixture creation
+
+**Solution**:
+1. Create `TestFixtures` class with common setups
+2. Add pytest fixtures for standard configs
+3. Consolidate spike pattern generators
+
+---
+
+### 8. 🔲 Standardize State Access Pattern
+**Estimated Effort**: 2-3 hours  
+**Impact**: Low-Medium
+
+**Problem**:
+- Some regions use `self.state.attr`, others use direct `self.attr`
+- Inconsistent state encapsulation
+- Event-driven adapters have `@property state` that delegates to impl
+
+**Solution**:
+1. Define standard state access pattern
+2. Use `@property state` consistently
+3. Document in architecture guide
+
+---
+
+### 9. 🔲 Create Neuromodulator Mixin
+**Estimated Effort**: 2 hours  
+**Impact**: Low-Medium
+
+**Problem**:
+- Multiple regions duplicate neuromodulator handling code
+- `set_dopamine()`, `decay_neuromodulators()` appear in multiple classes
+- Similar tau constants and decay logic
+
+**Solution**:
+```python
+class NeuromodulatorMixin:
+    def init_neuromodulators(self):
+        self.dopamine = 0.0
+        self.acetylcholine = 0.0
+        self.norepinephrine = 0.0
+    
+    def decay_neuromodulators(self, dt: float):
+        # Standard exponential decay
+        ...
+    
+    def set_neuromodulator(self, name: str, level: float):
+        setattr(self, name, level)
+```
+
+---
+
+### 10. 🔲 Consolidate Replay Implementations
+**Estimated Effort**: 3-4 hours  
+**Impact**: Medium
+
+**Problem**:
+- `SleepSystemMixin` has replay logic
+- `TrisynapticHippocampus.replay_sequence()` has different replay logic
+- Both deal with time compression, gamma oscillations, sequence reactivation
+- Potential for shared abstraction
+
+**Solution**:
+1. Extract `ReplayEngine` class
+2. Implement time compression logic once
+3. Make sleep and hippocampal replay use same engine with different configs
+
+---
+
+## Low-Priority / Future Considerations
+
+### 11. 🔲 Extract Oscillator Base Class
+**Problem**: `ThetaOscillator`, `GammaOscillator`, and `SequenceEncoder` have overlapping oscillation logic
+
+**Solution**: Create `BrainOscillator` base class with phase tracking, frequency modulation
+
+---
+
+### 12. 🔲 Unify Pathway Interfaces
+**Problem**: Multiple pathway types (`SensoryPathway`, `SpikingAttentionPathway`, `SpikingReplayPathway`) with similar patterns
+
+**Solution**: Define `NeuralPathway` protocol with consistent encode/decode/learn interface
+
+---
+
+### 13. 🔲 Create Weight Initialization Registry
+**Problem**: Each region has custom weight init logic scattered in constructors
+
+**Solution**: Extract to `weight_init.py` with named strategies (kaiming, xavier, sparse, etc.)
+
+---
+
+## Quantitative Summary
+
+| Opportunity | Lines Saved | Files Modified | Effort (hrs) | Priority |
+|-------------|-------------|----------------|--------------|----------|
+| 1. Standardize reset() | 150-200 | 15-20 | 3-4 | High |
+| 2. Factory methods | 100-200 | 10-15 | 2-3 | High |
+| 3. Encoder/Decoder patterns | 200-300 | 5-8 | 3-4 | High |
+| 4. Learning strategies | 150-250 | 7-10 | 4-5 | High |
+| 5. Region factory | 50-100 | 2-3 | 2-3 | Medium |
+| 6. Similarity methods | 30-50 | 5-8 | 1-2 | Medium |
+| 7. Test utilities | 100-150 | 10-15 | 2-3 | Medium |
+| 8. State access | 50-80 | 10-12 | 2-3 | Medium |
+| 9. Neuromodulator mixin | 80-120 | 8-10 | 2 | Medium |
+| 10. Replay consolidation | 100-150 | 3-4 | 3-4 | Medium |
+| **Total** | **1010-1600** | **75-105** | **27-35** | - |
+
+---
+
+## Recommendations
+
+### Immediate Next Steps (Phase 3)
+Focus on high-priority items that provide maximum benefit:
+
+1. **Reset Standardization** (#1) - Improves entire codebase consistency
+2. **Factory Method Consolidation** (#2) - Quick wins, immediate benefit
+3. **Encoder/Decoder Unification** (#3) - Foundation for future modalities
+
+These three items:
+- Save ~450-700 lines of duplication
+- Touch ~30-45 files
+- Take ~8-11 hours
+- Provide foundation for remaining improvements
+
+### Medium-Term (Phase 4)
+4. Learning Strategy Adoption (#4)
+5. Region Factory (#5)
+6. Neuromodulator Mixin (#9)
+
+### Long-Term Improvements
+Items 7-13 as needed or when touching related code
+
+---
+
+## Success Metrics
+
+After completing high-priority refactorings:
+- **90%+ reset method compliance** with standard interface
+- **Zero custom factory boilerplate** for ThaliaConfig integration
+- **Single encoder/decoder implementation** per strategy
+- **Reduced test duplication** by 50%+
+- **Clearer architectural patterns** for new contributors
+
+---
+
+## Notes
+
+- All refactorings should maintain backward compatibility
+- Add deprecation warnings before removing old patterns
+- Update documentation alongside code changes
+- Run full test suite after each refactoring
+- Consider performance implications of abstractions
+
+**Last Updated**: December 7, 2025
