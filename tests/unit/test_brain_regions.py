@@ -275,7 +275,7 @@ class TestPrefrontal:
 
     def test_forward_pass(self, prefrontal, prefrontal_config):
         """Test that forward pass produces valid outputs."""
-        batch_size = 4
+        batch_size = 1  # THALIA only supports single-instance architecture
         input_spikes = torch.randint(0, 2, (batch_size, prefrontal_config.n_input)).float()
 
         prefrontal.reset_state(batch_size)
