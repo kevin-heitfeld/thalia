@@ -568,7 +568,7 @@ class SequenceTimer(nn.Module):
         phases = torch.linspace(0, 2 * math.pi, n_neurons)
         self.register_buffer("neuron_phases", phases)
     
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset timer state."""
         self.theta_phase.zero_()
         self.gamma_phase.zero_()

@@ -325,7 +325,7 @@ class STDPStrategy(BaseStrategy):
         self.pre_trace: Optional[torch.Tensor] = None
         self.post_trace: Optional[torch.Tensor] = None
     
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset traces."""
         self.pre_trace = None
         self.post_trace = None
@@ -426,7 +426,7 @@ class BCMStrategy(BaseStrategy):
         # Sliding threshold (per-neuron)
         self.theta: Optional[torch.Tensor] = None
     
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset threshold."""
         self.theta = None
     
@@ -542,7 +542,7 @@ class ThreeFactorStrategy(BaseStrategy):
         # Eligibility trace (Hebbian correlation)
         self.eligibility: Optional[torch.Tensor] = None
     
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset eligibility trace."""
         self.eligibility = None
     

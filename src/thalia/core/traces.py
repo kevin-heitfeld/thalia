@@ -232,7 +232,7 @@ class SpikeTrace(nn.Module):
         
         return self.trace
     
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset trace to zeros.
         
         Always resets to batch_size=1 per THALIA's single-instance architecture.
@@ -315,10 +315,10 @@ class PairedTraces(nn.Module):
         post_t = self.post_trace.update(post_spikes, dt)
         return pre_t, post_t
     
-    def reset(self, batch_size: Optional[int] = None) -> None:
+    def reset_state(self, batch_size: Optional[int] = None) -> None:
         """Reset both traces."""
-        self.pre_trace.reset(batch_size)
-        self.post_trace.reset(batch_size)
+        self.pre_trace.reset_state(batch_size)
+        self.post_trace.reset_state(batch_size)
     
     def get_traces(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Get current trace values."""

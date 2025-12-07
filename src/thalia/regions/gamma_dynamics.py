@@ -338,7 +338,7 @@ class GammaOscillator(nn.Module):
         self._gamma_phase = state["gamma_phase"]
         self.time_ms = state["time_ms"]
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset oscillator to initial state."""
         self._theta_phase = 0.0
         self._gamma_phase = 0.0

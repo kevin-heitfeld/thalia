@@ -192,9 +192,9 @@ class SequenceMemory(nn.Module, DiagnosticCollectorMixin):
         legacy_config = config.to_sequence_memory_config()
         return cls(legacy_config)
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset memory state for new sequence."""
-        self.hippocampus.reset()
+        self.hippocampus.reset_state()
         # Position encoder doesn't need reset (stateless)
 
     def encode_sequence(
@@ -220,7 +220,7 @@ class SequenceMemory(nn.Module, DiagnosticCollectorMixin):
         """
         batch_size, seq_len = token_ids.shape
 
-        self.reset()
+        self.reset_state()
 
         patterns: List[torch.Tensor] = []
         prev_pattern: Optional[torch.Tensor] = None

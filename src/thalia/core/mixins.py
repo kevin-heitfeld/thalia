@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import Optional, Union
 import torch
-import torch.nn as nn
 
 
 class DeviceMixin:
@@ -133,13 +132,6 @@ class ResettableMixin:
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement reset_state()"
         )
-
-    def reset(self) -> None:
-        """Alias for reset_state() for backward compatibility.
-
-        Both reset() and reset_state() are equivalent and call the same method.
-        """
-        self.reset_state()
 
 
 class DiagnosticCollectorMixin:

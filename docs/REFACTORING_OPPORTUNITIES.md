@@ -11,7 +11,31 @@ After completing the initial 8-item refactoring plan, this document identifies a
 
 ## High-Priority Opportunities
 
-### 1. 🔲 Standardize `reset()` Methods Across Modules
+### 1. ✅ Standardize `reset()` Methods Across Modules - **COMPLETED**
+**Effort**: 4 hours  
+**Impact**: High - improves testability and state management
+
+**Problem**: 
+- 30+ classes implemented `reset()` with varying signatures
+- Some used `reset()`, others `reset_state()`, some had `reset(batch_size: int)`
+- Inconsistent behavior: some reset weights, others only state
+- No clear contract for what reset should do
+
+**Solution Implemented**:
+1. ✅ Removed `reset()` method entirely - no backward compatibility
+2. ✅ Unified on `reset_state()` as the single reset interface
+3. ✅ Updated `Resettable` protocol to require only `reset_state()`
+4. ✅ Removed `BatchResettable` protocol completely
+5. ✅ Updated 50+ files (base classes, regions, components, tests, call sites)
+6. ✅ Removed batch_size parameter - enforces single-instance architecture
+
+**Files Modified**: 50+ files including protocols, mixins, all brain regions, learning components, tests
+
+**Completed**: December 7, 2025
+
+---
+
+### 2. 🔲 Consolidate `from_config()` Factory Methods
 **Estimated Effort**: 3-4 hours  
 **Impact**: High - improves testability and state management
 
@@ -404,8 +428,8 @@ After completing high-priority refactorings:
 
 ## Notes
 
-- All refactorings should maintain backward compatibility
-- Add deprecation warnings before removing old patterns
+- **No backward compatibility required** - remove old patterns immediately
+- **No deprecation warnings** - clean breaks preferred over gradual migration
 - Update documentation alongside code changes
 - Run full test suite after each refactoring
 - Consider performance implications of abstractions

@@ -639,7 +639,7 @@ class StreamingDecoder(nn.Module):
             torch.zeros(1, config.vocab_size),
         )
     
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset streaming state."""
         self.accumulated_spikes = torch.zeros(
             1, 1, 0, self.config.n_neurons,
@@ -685,7 +685,7 @@ class StreamingDecoder(nn.Module):
         # Check if confident enough to emit token
         if conf >= self.confidence_threshold:
             token = probs.argmax().item()
-            self.reset()  # Reset for next token
+            self.reset_state()  # Reset for next token
             return token, conf, probs
         
         return None, conf, probs

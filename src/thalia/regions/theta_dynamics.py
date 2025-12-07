@@ -256,6 +256,6 @@ class TemporalIntegrationLayer:
         """Get current integration trace (for debugging)."""
         return self._trace.clone() if self._trace is not None else None
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset integration state (for hard episode boundaries only)."""
         self._trace = None

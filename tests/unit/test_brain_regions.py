@@ -82,7 +82,7 @@ class TestCerebellum:
         # Train for several iterations
         initial_error = None
         for i in range(20):
-            cerebellum.reset()
+            cerebellum.reset_state()
             # Forward pass builds eligibility traces
             output = cerebellum.forward(input_pattern)
 
@@ -104,7 +104,7 @@ class TestCerebellum:
         batch_size = 1
         input_pattern = torch.ones(batch_size, cerebellum.config.n_input)
 
-        cerebellum.reset()
+        cerebellum.reset_state()
         output = cerebellum.forward(input_pattern)
 
         # Target all zeros (opposite of likely output)
@@ -160,7 +160,7 @@ class TestStriatum:
         """
         batch_size = 1
 
-        striatum.reset()
+        striatum.reset_state()
 
         # Run several timesteps with activity
         input_spikes = torch.zeros(batch_size, striatum.config.n_input)
@@ -180,7 +180,7 @@ class TestStriatum:
         via set_dopamine() before learning can occur.
         """
         batch_size = 1
-        striatum.reset()
+        striatum.reset_state()
 
         input_spikes = torch.zeros(batch_size, striatum.config.n_input)
         input_spikes[0, :5] = 1.0
@@ -230,7 +230,7 @@ class TestStriatum:
 
     def test_dopamine_dynamics(self, striatum):
         """Test that dopamine state responds to set_dopamine (from Brain/VTA)."""
-        striatum.reset()
+        striatum.reset_state()
 
         # Baseline dopamine should be 0
         assert striatum.state.dopamine == 0.0
@@ -431,8 +431,8 @@ class TestIntegration:
         target[0, 0] = 1.0  # Class 0
 
         # Forward through pipeline
-        cortex.reset()
-        cerebellum.reset()
+        cortex.reset_state()
+        cerebellum.reset_state()
 
         cortex_output = cortex.forward(raw_input)
         # Use L2/3 output for cortical targets
@@ -487,7 +487,7 @@ class TestLayeredCortex:
         batch_size = 1  # THALIA only supports single-instance architecture
         input_spikes = torch.randint(0, 2, (batch_size, 64)).float()
 
-        layered_cortex.reset()
+        layered_cortex.reset_state()
         output = layered_cortex.forward(input_spikes)
 
         # With dual_output=True, output is L2/3 + L5 concatenated
@@ -498,7 +498,7 @@ class TestLayeredCortex:
         """Test that L2/3 and L5 outputs can be accessed separately."""
         input_spikes = torch.randint(0, 2, (1, 64)).float()
 
-        layered_cortex.reset()
+        layered_cortex.reset_state()
         layered_cortex.forward(input_spikes)
 
         l23_out = layered_cortex.get_cortical_output()
@@ -513,7 +513,7 @@ class TestLayeredCortex:
         """Test that L2/3 has recurrent dynamics over multiple timesteps."""
         input_spikes = torch.ones(1, 64)  # Strong input
 
-        layered_cortex.reset()
+        layered_cortex.reset_state()
 
         # Process multiple timesteps
         outputs = []
@@ -534,7 +534,7 @@ class TestLayeredCortex:
         """
         input_spikes = torch.ones(1, 64)
 
-        layered_cortex.reset()
+        layered_cortex.reset_state()
 
         # Record initial weights
         w_input_l4_before = layered_cortex.w_input_l4.data.clone()
@@ -555,7 +555,7 @@ class TestLayeredCortex:
         """Test that diagnostics returns layer-specific information."""
         input_spikes = torch.randint(0, 2, (1, 64)).float()
 
-        layered_cortex.reset()
+        layered_cortex.reset_state()
         layered_cortex.forward(input_spikes)
 
         diag = layered_cortex.get_diagnostics()

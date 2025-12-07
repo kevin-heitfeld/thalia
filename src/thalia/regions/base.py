@@ -259,7 +259,7 @@ class BrainRegion(ABC):
         """
         pass
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset the region's dynamic state to initial conditions.
 
         This is primarily for:
@@ -277,8 +277,8 @@ class BrainRegion(ABC):
         spike history) while preserving learned weights.
         """
         self.state = RegionState()
-        if hasattr(self.neurons, 'reset'):
-            self.neurons.reset()
+        if hasattr(self.neurons, 'reset_state'):
+            self.neurons.reset_state()
 
     def get_weights(self) -> torch.Tensor:
         """Return the current weight matrix."""
@@ -330,6 +330,6 @@ class NeuromodulatorSystem(ABC):
         decay_factor = 1.0 - dt_ms / self.tau_ms
         self.level = self.baseline + (self.level - self.baseline) * decay_factor
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset to baseline level."""
         self.level = self.baseline

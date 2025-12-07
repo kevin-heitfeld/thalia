@@ -139,7 +139,7 @@ class CriticalityMonitor(nn.Module):
         # History for diagnostics
         self._branching_history: List[float] = []
         
-    def reset(self):
+    def reset_state(self):
         """Reset all state."""
         self._spike_counts.clear()
         self._branching_ratio = 1.0
@@ -331,7 +331,7 @@ class AvalancheAnalyzer:
         self._in_avalanche: bool = False
         self._current_size: int = 0
     
-    def reset(self):
+    def reset_state(self):
         """Reset avalanche history."""
         self._avalanche_sizes.clear()
         self._in_avalanche = False

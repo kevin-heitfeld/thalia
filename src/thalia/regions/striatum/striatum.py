@@ -1488,9 +1488,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.input_trace.zero_()
         self.output_trace.zero_()
 
-    def reset(self) -> None:
-        super().reset()
-        self.eligibility.reset()
+    def reset_state(self) -> None:
+        super().reset_state()
+        self.eligibility.reset_state()
         # NOTE: Dopamine is now managed by Brain, no local dopamine system to reset
         self.recent_spikes.zero_()
         self.last_action = None

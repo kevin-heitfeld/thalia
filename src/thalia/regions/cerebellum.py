@@ -127,7 +127,7 @@ class ClimbingFiberSystem:
         self.error = target - actual
         return self.error
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         self.error = torch.zeros(self.n_output, device=self.device)
 
 
@@ -425,11 +425,11 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
 
         return {"correct": winner == target, "ltp": ltp, "ltd": ltd}
 
-    def reset(self) -> None:
-        super().reset()
+    def reset_state(self) -> None:
+        super().reset_state()
         self.input_trace.zero_()
         self.output_trace.zero_()
         self.stdp_eligibility.zero_()
-        self.climbing_fiber.reset()
+        self.climbing_fiber.reset_state()
         if self.neurons is not None:
-            self.neurons.reset_state(1)
+            self.neurons.reset_state()

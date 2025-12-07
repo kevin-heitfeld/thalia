@@ -379,7 +379,7 @@ class ThetaGenerator:
         self._phase = (self._phase + increment) % (2.0 * math.pi)
         self.time += dt_ms if dt_ms is not None else self.config.dt_ms
     
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset theta phase to zero (align to optimal encoding).
         
         Called at the start of a new trial to synchronize theta
@@ -566,7 +566,7 @@ class RegionInterface(ABC):
         """Return current state for monitoring/debugging."""
         pass
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset region to initial state."""
         pass
 
@@ -734,7 +734,7 @@ class EventDrivenSimulation:
         """Get current state of all regions."""
         return {name: region.get_state() for name, region in self.regions.items()}
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset simulation to initial state."""
         self.scheduler.clear()
         self.theta = ThetaGenerator(
@@ -742,6 +742,6 @@ class EventDrivenSimulation:
             connected_regions=list(self.regions.keys()),
         )
         for region in self.regions.values():
-            region.reset()
+            region.reset_state()
         self._spike_counts = {name: 0 for name in self.regions}
         self._event_history.clear()

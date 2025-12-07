@@ -133,7 +133,7 @@ class EIBalanceRegulator(nn.Module):
         """Get the device (inferred from first tensor if not set)."""
         return self._device or torch.device("cpu")
     
-    def reset(self):
+    def reset_state(self):
         """Reset running averages and scaling."""
         self._exc_avg = 0.1
         self._inh_avg = 0.025

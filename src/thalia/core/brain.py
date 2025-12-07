@@ -281,7 +281,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         else:
             # Default LayeredCortex (L4→L2/3→L5)
             _cortex_impl = LayeredCortex(cortex_config)
-        _cortex_impl.reset_state(batch_size=1)
+        _cortex_impl.reset_state()
 
         # Get cortex layer sizes
         self._cortex_l23_size = _cortex_impl.l23_size
@@ -305,7 +305,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             dt_ms=config.dt_ms,
             device=config.device,
         ))
-        _pfc_impl.reset_state(batch_size=1)
+        _pfc_impl.reset_state()
 
         # 4. STRIATUM: Action selection
         # Receives: cortex L5 + hippocampus + PFC
@@ -318,7 +318,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             neurons_per_action=config.neurons_per_action,
             device=config.device,
         ))
-        _striatum_impl.reset()
+        _striatum_impl.reset_state()
 
         # 5. CEREBELLUM: Motor refinement
         # Receives: striatum output (action signals)
@@ -1093,7 +1093,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             priority_boost=priority_boost,
         )
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset brain state for new episode.
 
         This is a HARD reset - use for completely new, unrelated episodes.
@@ -1101,13 +1101,13 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         """
         self._current_time = 0.0
         self._trial_phase = TrialPhase.ENCODE
-        self.theta.reset()
+        self.theta.reset_state()
         self.scheduler = EventScheduler()
 
         # Reset regions (full state reset)
         self.cortex.impl.reset_state()
         self.pfc.impl.reset_state()
-        self.striatum.impl.reset()
+        self.striatum.impl.reset_state()
         self.hippocampus.impl.new_trial()
 
         # Reset monitoring

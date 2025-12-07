@@ -65,5 +65,5 @@ class EligibilityTraces:
     def get(self) -> torch.Tensor:
         return self.traces
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         self.traces.zero_()

@@ -408,14 +408,14 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         return weights
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset state for new episode.
 
         Note: Consider using new_trial() instead, which aligns theta and
         clears input history without fully resetting membrane potentials.
         Full reset is mainly needed between completely unrelated episodes.
         """
-        super().reset()
+        super().reset_state()
         self._init_state(batch_size=1)
 
     def new_trial(self) -> None:
@@ -1424,7 +1424,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self.tri_config.gamma_slot_mode = "time"
         
         # Reset gamma oscillator for fresh replay
-        self.gamma_oscillator.reset()
+        self.gamma_oscillator.reset_state()
         
         sequence = episode.sequence
         n_slots = len(sequence)

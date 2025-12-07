@@ -574,7 +574,7 @@ class SpikingPathway(nn.Module):
         self.weights.data *= scale_factor.unsqueeze(1)
         clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset all state (call between trials)."""
         cfg = self.config
 
@@ -588,8 +588,8 @@ class SpikingPathway(nn.Module):
         self.oscillation_phase = 0.0
 
     def reset_traces(self) -> None:
-        """Reset eligibility traces (alias for reset for compatibility)."""
-        self.reset()
+        """Reset eligibility traces (alias for reset_state for compatibility)."""
+        self.reset_state()
 
     def learn(
         self,

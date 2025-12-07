@@ -324,11 +324,6 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
 
         self.weights = self.w_input_l4
 
-    def reset(self) -> None:
-        """Reset state for new episode."""
-        super().reset()
-        self.reset_state()
-
     def reset_state(self) -> None:
         """Reset all layer states.
         

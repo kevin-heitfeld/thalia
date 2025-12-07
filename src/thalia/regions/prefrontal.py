@@ -164,7 +164,7 @@ class DopamineGatingSystem:
 
         self.level = baseline  # Current DA level
 
-    def reset(self):
+    def reset_state(self):
         """Reset to baseline."""
         self.level = self.baseline
 
@@ -314,15 +314,15 @@ class Prefrontal(BrainRegion):
 
         return neurons
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset state for new episode."""
-        super().reset()
-        self.neurons.reset_state(1)
-        self.dopamine_system.reset()
+        super().reset_state()
+        self.neurons.reset_state()
+        self.dopamine_system.reset_state()
 
         # Reset STP state
         if hasattr(self, 'stp_recurrent') and self.stp_recurrent is not None:
-            self.stp_recurrent.reset_state(1)
+            self.stp_recurrent.reset_state()
 
         # Reset STDP traces
         self.input_trace.zero_()
@@ -333,27 +333,7 @@ class Prefrontal(BrainRegion):
             membrane=torch.zeros(1, self.config.n_output, device=self.device),
             spikes=torch.zeros(1, self.config.n_output, device=self.device),
             working_memory=torch.zeros(1, self.config.n_output, device=self.device),
-            update_gate=torch.zeros(1, self.config.n_output, device=self.device),
-            dopamine=self.pfc_config.dopamine_baseline,
-        )
-
-    def reset_state(self) -> None:
-        """Reset state to batch_size=1."""
-        batch_size = 1
-        
-        self.neurons.reset_state()
-        self.dopamine_system.reset()
-
-        # Reset STDP traces
-        self.input_trace.zero_()
-        self.output_trace.zero_()
-        self.stdp_eligibility.zero_()
-
-        self.state = PrefrontalState(
-            membrane=torch.zeros(batch_size, self.config.n_output, device=self.device),
-            spikes=torch.zeros(batch_size, self.config.n_output, device=self.device),
-            working_memory=torch.zeros(batch_size, self.config.n_output, device=self.device),
-            update_gate=torch.ones(batch_size, self.config.n_output, device=self.device),
+            update_gate=torch.ones(1, self.config.n_output, device=self.device),
             dopamine=self.pfc_config.dopamine_baseline,
         )
 

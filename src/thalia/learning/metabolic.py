@@ -135,7 +135,7 @@ class MetabolicConstraint(nn.Module):
         # History for diagnostics
         self._energy_history: List[float] = []
     
-    def reset(self):
+    def reset_state(self):
         """Reset all state."""
         self._energy_avg = 0.0
         self._gain = 1.0
@@ -366,7 +366,7 @@ class RegionalMetabolicBudget:
         self.region_costs: Dict[str, float] = {r: 0.0 for r in region_budgets}
         self.region_penalties: Dict[str, float] = {r: 0.0 for r in region_budgets}
     
-    def reset(self):
+    def reset_state(self):
         """Reset all tracking."""
         self.region_costs = {r: 0.0 for r in self.region_budgets}
         self.region_penalties = {r: 0.0 for r in self.region_budgets}

@@ -167,7 +167,7 @@ class IntrinsicPlasticity(nn.Module):
         """Get device."""
         return self.rate_avg.device
     
-    def reset(self, initial_threshold: float = 1.0):
+    def reset_state(self, initial_threshold: float = 1.0):
         """Reset all state to initial values."""
         self.rate_avg.fill_(self.config.target_rate)
         self.thresholds.fill_(initial_threshold)
@@ -306,7 +306,7 @@ class PopulationIntrinsicPlasticity(nn.Module):
         # Global excitability modulation (multiplied with input)
         self._excitability: float = 1.0
         
-    def reset(self):
+    def reset_state(self):
         """Reset to initial state."""
         self._rate_avg = self.config.target_rate
         self._excitability = 1.0

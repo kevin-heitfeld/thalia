@@ -462,7 +462,7 @@ class TestSequenceTimer:
         timer.to(device)
 
         timer.step(n_steps=10)
-        timer.reset()
+        timer.reset_state()
 
         state = timer.get_state()
         assert state["theta_phase"] == 0.0

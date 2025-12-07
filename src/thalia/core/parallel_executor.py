@@ -548,7 +548,7 @@ def _create_real_cortex():
         n_output=64,
         device="cpu",
     ))
-    cortex.reset_state(batch_size=1)
+    cortex.reset_state()
 
     return EventDrivenCortex(
         EventRegionConfig(name="cortex", output_targets=["hippocampus"]),
@@ -585,7 +585,7 @@ def _create_real_pfc():
         n_output=20,
         device="cpu",
     ))
-    pfc.reset_state(batch_size=1)
+    pfc.reset_state()
 
     return EventDrivenPFC(
         EventRegionConfig(name="pfc", output_targets=["striatum"]),
@@ -604,7 +604,7 @@ def _create_real_striatum():
         n_output=4,  # n_actions
         device="cpu",
     ))
-    striatum.reset()
+    striatum.reset_state()
 
     return EventDrivenStriatum(
         EventRegionConfig(name="striatum", output_targets=[]),

@@ -22,7 +22,7 @@ that describe what components CAN DO, not what they ARE.
 Protocols Defined:
 ==================
 - `Learnable`: Has learn() method for synaptic plasticity
-- `Resettable`: Has reset() method to clear state
+- `Resettable`: Has reset()/reset_state() methods to clear state
 - `Diagnosable`: Has get_diagnostics() method for monitoring
 - `Forwardable`: Has forward() method for processing
 - `WeightContainer`: Has weights that can be get/set
@@ -52,38 +52,20 @@ import torch
 class Resettable(Protocol):
     """Protocol for components that can reset their state.
     
-    Implementing classes should clear all transient state (membrane potentials,
-    traces, spike history) while preserving learned parameters (weights).
-    
-    Use this for components that don't need batch dimension control:
-    - Neuromodulators (reset to baseline)
-    - Event schedulers (clear queue)
-    - Simple state containers
-    
-    For components that need batch-aware reset, see BatchResettable.
-    """
-    
-    def reset(self) -> None:
-        """Reset component to initial state, preserving learned parameters."""
-        ...
-
-
-@runtime_checkable
-class BatchResettable(Protocol):
-    """Protocol for components that reset dynamic state.
-    
-    Use this for neural components that maintain state tensors:
-    - LIF neurons (membrane potentials, refractory periods)
-    - Brain regions (spike traces, working memory)
-    - Synapses with STP (facilitation/depression)
+    Implementing classes should clear all transient state while preserving
+    learned parameters (weights, thresholds).
     
     THALIA enforces single-instance architecture (batch_size=1) to maintain
     continuous temporal dynamics. For parallel simulations, create multiple
     component instances rather than batching.
     
-    Convention:
-    - Preserve learned weights, only reset transient state
-    - Initialize to batch_size=1 (enforced via assert_single_instance)
+    Use for:
+    - LIF neurons (membrane potentials, refractory periods)
+    - Brain regions (spike traces, working memory)
+    - Synapses with STP (facilitation/depression)
+    - Neuromodulators (reset to baseline)
+    - Event schedulers (clear queue)
+    - All stateful components
     """
     
     def reset_state(self) -> None:
@@ -91,6 +73,9 @@ class BatchResettable(Protocol):
         
         Resets dynamic state (membrane potentials, traces, working memory)
         while preserving learned parameters (weights, thresholds).
+        
+        Always initializes to batch_size=1 per THALIA's single-instance
+        architecture.
         """
         ...
 
@@ -216,17 +201,14 @@ class Configurable(Protocol):
 # =============================================================================
 
 @runtime_checkable
-class BrainRegionProtocol(Forwardable, Learnable, BatchResettable, Diagnosable, Protocol):
+class BrainRegionProtocol(Forwardable, Learnable, Resettable, Diagnosable, Protocol):
     """Full protocol for brain regions.
     
     Brain regions should be able to:
     - Process inputs (forward)
     - Learn from experience (learn)
-    - Reset state with batch control (reset_state)
+    - Reset state (reset/reset_state)
     - Provide diagnostics (get_diagnostics)
-    
-    Note: Uses BatchResettable instead of Resettable because brain regions
-    maintain batched state tensors and need batch dimension control.
     """
     pass
 
@@ -241,6 +223,5 @@ LearnableComponent = Learnable
 # Any component that can be monitored  
 MonitorableComponent = Diagnosable
 
-# Any component that can be reset (simple or batch)
+# Any component that can be reset
 ResettableComponent = Resettable
-BatchResettableComponent = BatchResettable

@@ -329,7 +329,7 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
             "dopamine": self._dopamine_level,
         }
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset to initial state."""
         self._last_update_time = 0.0
         self._current_time = 0.0
@@ -414,7 +414,7 @@ class SimpleLIFRegion(EventDrivenRegionBase):
         )
         return state
 
-    def reset(self) -> None:
+    def reset_state(self) -> None:
         """Reset neuron state."""
-        super().reset()
+        super().reset_state()
         self.membrane.zero_()
