@@ -40,7 +40,7 @@ from thalia.learning import STDPStrategy     # learning?
 
 ---
 
-### 3. 🟡 Device Management Inconsistency
+### 3. ✅ Device Management Inconsistency - COMPLETE
 **Problem**: Two patterns used inconsistently:
 ```python
 # Pattern 1: Pass device at creation (preferred)
@@ -49,6 +49,8 @@ torch.randn(..., device=device)
 # Pattern 2: Create then move (inefficient)
 torch.randn(...).to(device)
 ```
+
+**Solution Applied**: Enforced Pattern 1 for all new tensor creation. Pattern 2 retained only where required (nn.Module instances, external data).
 
 **Impact**: Low - functional but inefficient and inconsistent  
 **Effort**: Low - 1 hour search & replace
@@ -188,28 +190,26 @@ grep -r "\.to(.*device" src/thalia/
 
 ---
 
-#### 2.2 Import Convenience (Optional)
+#### 2.2 Import Convenience ✅ COMPLETE
 **File**: `src/thalia/__init__.py`
 
-**Content**: Re-export commonly used classes for convenience
+**Implementation**: Hybrid approach
+- **Top-level API** (`thalia/__init__.py`): Common imports for external users
+- **Topic-level** (`core`, `regions`, `learning`): Already well-organized
+- **Internal code**: Continues using explicit imports for clarity
 
+**External Users Can Now Write**:
 ```python
-# Public API - commonly used classes
-from thalia.core import (
-    LIFNeuron, LIFConfig,
-    ConductanceLIF, ConductanceLIFConfig,
-    WeightInitializer, InitStrategy,
-    BrainRegionProtocol, NeuralPathway,
-)
-
-from thalia.regions import (
-    BrainRegion, RegionConfig,
-    Striatum, Hippocampus, Prefrontal,
-    LayeredCortex, PredictiveCortex,
-)
+from thalia import Brain, Striatum, LayeredCortex
+from thalia import ConductanceLIF, WeightInitializer
+from thalia import ThaliaConfig
 ```
 
-**Note**: Internal code continues using full paths for clarity.
+**Internal Code Keeps Explicit Imports**:
+```python
+from thalia.core.neuron import ConductanceLIF
+from thalia.regions.striatum import Striatum
+```
 
 **Effort**: 1 hour  
 **Impact**: Low - convenience for external users
@@ -286,8 +286,8 @@ class BrainRegion(ABC):
 ---
 
 ### Phase 2: Quick Wins (Week 2)
-1. ⏳ Device pattern enforcement (search & replace)
-2. Optional: Add thalia/__init__.py convenience imports
+1. ✅ Device pattern enforcement (search & replace)
+2. ✅ Add thalia/__init__.py convenience imports (hybrid approach)
 
 **Total effort**: ~2 hours  
 **Impact**: Medium - consistency improvements
@@ -312,8 +312,10 @@ After Phase 1 completion:
 - ✅ New contributors can understand architecture patterns
 
 After Phase 2 completion:
-- ✅ 100% device pattern consistency
-- ✅ (Optional) Convenient imports available
+- ✅ 100% device pattern consistency (Pattern 1 for new tensors)
+- ✅ Convenient imports available for external users
+- ✅ Internal code maintains explicit imports for clarity
+- ✅ Hybrid import system balances convenience and maintainability
 
 ---
 
