@@ -374,8 +374,15 @@ class SpikingPathway(BaseNeuralPathway):
         """
         cfg = self.config
 
+        # =====================================================================
+        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
+        # =====================================================================
         # Ensure 1D
         source_spikes = source_spikes.squeeze()
+        assert source_spikes.shape[-1] == cfg.source_size, (
+            f"SpikingPathway.forward: source_spikes has shape {source_spikes.shape} "
+            f"but source_size={cfg.source_size}. Check pathway input dimensions."
+        )
 
         # =====================================================================
         # 1. UPDATE OSCILLATION PHASE (for phase coding)
@@ -722,3 +729,108 @@ class SpikingPathway(BaseNeuralPathway):
             "total_ltp": self.total_ltp,
             "total_ltd": self.total_ltd,
         }
+
+    def get_state(self) -> Dict[str, Any]:
+        """Get pathway state for checkpointing.
+
+        Returns state dictionary with:
+        - weights: Learnable synaptic weights
+        - neuron_state: Membrane potentials, synaptic currents, refractory timers
+        - stdp_traces: Pre/post-synaptic eligibility traces
+        - delays: Axonal delay buffer
+        - homeostasis: Firing rate estimates
+        - stp_state: Short-term plasticity (if enabled)
+        - bcm_state: BCM sliding thresholds (if enabled)
+        - learning_state: Dopamine level, LTP/LTD accumulators
+        """
+        state = {
+            "weights": self.weights.data.clone(),
+            "neuron_state": {
+                "membrane": self.membrane.clone(),
+                "synaptic_current": self.synaptic_current.clone(),
+                "refractory": self.refractory.clone(),
+            },
+            "stdp_traces": {
+                "pre_trace": self.pre_trace.clone(),
+                "post_trace": self.post_trace.clone(),
+            },
+            "delays": {
+                "buffer": self.delay_buffer.clone(),
+                "buffer_idx": self.delay_buffer_idx,
+            },
+            "homeostasis": {
+                "firing_rate_estimate": self.firing_rate_estimate.clone(),
+            },
+            "learning_state": {
+                "dopamine_level": self.dopamine_level,
+                "replay_active": self.replay_active,
+                "total_ltp": self.total_ltp,
+                "total_ltd": self.total_ltd,
+                "oscillation_phase": self.oscillation_phase,
+            },
+        }
+
+        # Add STP state if enabled
+        if self.stp is not None:
+            state["stp_state"] = self.stp.get_state()
+
+        # Add BCM state if enabled
+        if self.bcm is not None:
+            state["bcm_state"] = {
+                "theta": self.bcm.theta.clone() if self.bcm.theta is not None else None,
+            }
+
+        return state
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Load pathway state from checkpoint.
+
+        Args:
+            state: State dictionary from get_state()
+
+        Note:
+            Restores weights, neuron state, traces, and learning components.
+            Device is inferred from current weights.
+        """
+        device = self.weights.device
+
+        # Restore weights
+        self.weights.data.copy_(state["weights"].to(device))
+
+        # Restore neuron state
+        neuron_state = state["neuron_state"]
+        self.membrane.copy_(neuron_state["membrane"].to(device))
+        self.synaptic_current.copy_(neuron_state["synaptic_current"].to(device))
+        self.refractory.copy_(neuron_state["refractory"].to(device))
+
+        # Restore STDP traces
+        stdp_traces = state["stdp_traces"]
+        self.pre_trace.copy_(stdp_traces["pre_trace"].to(device))
+        self.post_trace.copy_(stdp_traces["post_trace"].to(device))
+
+        # Restore delay buffer
+        delays = state["delays"]
+        self.delay_buffer.copy_(delays["buffer"].to(device))
+        self.delay_buffer_idx = delays["buffer_idx"]
+
+        # Restore homeostasis
+        homeostasis = state["homeostasis"]
+        self.firing_rate_estimate.copy_(homeostasis["firing_rate_estimate"].to(device))
+
+        # Restore learning state
+        learning_state = state["learning_state"]
+        self.dopamine_level = learning_state["dopamine_level"]
+        self.replay_active = learning_state["replay_active"]
+        self.total_ltp = learning_state["total_ltp"]
+        self.total_ltd = learning_state["total_ltd"]
+        self.oscillation_phase = learning_state["oscillation_phase"]
+
+        # Restore STP state if present
+        if "stp_state" in state and self.stp is not None:
+            self.stp.load_state(state["stp_state"])
+
+        # Restore BCM state if present
+        if "bcm_state" in state and self.bcm is not None:
+            bcm_state = state["bcm_state"]
+            if bcm_state["theta"] is not None:
+                self.bcm.theta = bcm_state["theta"].to(device)

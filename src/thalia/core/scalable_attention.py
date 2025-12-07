@@ -630,6 +630,21 @@ class ScalableSpikingAttention(nn.Module):
             elif isinstance(head, GammaPhaseAttention):
                 head.reset_state()
     
+    def get_state(self) -> Dict[str, Any]:
+        """Get state for checkpointing."""
+        state_dict = {
+            "W_out": self.W_out.data.clone() if hasattr(self, 'W_out') else None,
+        }
+        # Note: QKV and attention heads have their own states
+        # For simplicity, we only save the output projection here
+        # Full state restoration would require implementing get_state for all heads
+        return state_dict
+
+    def load_state(self, state_dict: Dict[str, Any]) -> None:
+        """Load state from checkpoint."""
+        if state_dict.get("W_out") is not None and hasattr(self, 'W_out'):
+            self.W_out.data.copy_(state_dict["W_out"].to(self.device))
+    
     def forward(
         self,
         x_query: torch.Tensor,

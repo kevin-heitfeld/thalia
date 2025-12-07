@@ -157,6 +157,14 @@ class SpikingReplayPathway(SpikingPathway):
             hippocampal_pattern: Pattern to store [batch, source_size]
             priority: Optional priority score (higher = more likely to replay)
         """
+        # =====================================================================
+        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
+        # =====================================================================
+        assert hippocampal_pattern.shape[-1] == self.config.source_size, (
+            f"SpikingReplayPathway.store_pattern: hippocampal_pattern has shape {hippocampal_pattern.shape} "
+            f"but source_size={self.config.source_size}. Check hippocampus output size."
+        )
+        
         # Compute priority if not provided
         if priority is None:
             with torch.no_grad():
@@ -237,6 +245,14 @@ class SpikingReplayPathway(SpikingPathway):
         entry = self.replay_buffer[self.current_replay_idx]
         pattern = entry["pattern"]
         
+        # =====================================================================
+        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
+        # =====================================================================
+        assert pattern.shape[-1] == self.config.source_size, (
+            f"SpikingReplayPathway.replay_step: pattern has shape {pattern.shape} "
+            f"but source_size={self.config.source_size}. Replay buffer corrupted?"
+        )
+        
         # Time-compress the replay (faster dynamics)
         compressed_dt = dt * self.compression_factor
         
@@ -254,8 +270,9 @@ class SpikingReplayPathway(SpikingPathway):
         
         replay_signal = modulated_spikes * gain
         
-        # Project to cortex space
-        cortical_reactivation = self.replay_projection(replay_signal)
+        # Output spikes are already in cortical space (target_size) from forward()
+        # No need for additional projection - SpikingPathway weights already do this
+        cortical_reactivation = replay_signal
         
         # Age the replayed pattern (reduce priority slightly)
         entry["age"] += 1
@@ -327,3 +344,106 @@ class SpikingReplayPathway(SpikingPathway):
             diag["max_priority"] = max(priorities)
         
         return diag
+
+    def get_state(self) -> Dict[str, Any]:
+        """Get replay pathway state for checkpointing.
+
+        Extends base SpikingPathway state with replay-specific components:
+        - replay_projection: Weights and biases
+        - priority_network: Weights and biases for pattern prioritization
+        - replay_buffer: Stored hippocampal patterns with priorities
+        - ripple_gen: Sharp-wave ripple generator state
+        - replay_state: Current replay index, sleep stage, statistics
+        """
+        # Get base pathway state
+        state = super().get_state()
+
+        # Add replay-specific state
+        state["replay_state"] = {
+            "replay_projection": {
+                "0.weight": self.replay_projection[0].weight.data.clone(),
+                "0.bias": self.replay_projection[0].bias.data.clone(),
+                "1.weight": self.replay_projection[1].weight.data.clone(),
+                "1.bias": self.replay_projection[1].bias.data.clone(),
+            },
+            "priority_network": {
+                "0.weight": self.priority_network[0].weight.data.clone(),
+                "0.bias": self.priority_network[0].bias.data.clone(),
+                "2.weight": self.priority_network[2].weight.data.clone(),
+                "2.bias": self.priority_network[2].bias.data.clone(),
+            },
+            "replay_buffer": [
+                {
+                    "pattern": entry["pattern"].clone(),
+                    "priority": entry["priority"],
+                    "age": entry["age"],
+                }
+                for entry in self.replay_buffer
+            ],
+            "ripple_gen": {
+                "phase": self.ripple_gen.phase.clone(),
+                "time_in_ripple": self.ripple_gen.time_in_ripple.clone(),
+                "active": self.ripple_gen.active,
+            },
+            "replay_active": self.replay_active,
+            "current_replay_idx": self.current_replay_idx,
+            "sleep_stage": self.sleep_stage,
+            "replay_count": self.replay_count,
+            "last_ripple_time": self.last_ripple_time,
+        }
+
+        return state
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Load replay pathway state from checkpoint.
+
+        Args:
+            state: State dictionary from get_state()
+
+        Note:
+            Restores base pathway state plus replay-specific components.
+        """
+        # Load base pathway state
+        super().load_state(state)
+
+        # Load replay-specific state
+        if "replay_state" in state:
+            device = self.weights.device
+            replay_state = state["replay_state"]
+
+            # Restore replay projection
+            replay_proj = replay_state["replay_projection"]
+            self.replay_projection[0].weight.data.copy_(replay_proj["0.weight"].to(device))
+            self.replay_projection[0].bias.data.copy_(replay_proj["0.bias"].to(device))
+            self.replay_projection[1].weight.data.copy_(replay_proj["1.weight"].to(device))
+            self.replay_projection[1].bias.data.copy_(replay_proj["1.bias"].to(device))
+
+            # Restore priority network
+            priority_net = replay_state["priority_network"]
+            self.priority_network[0].weight.data.copy_(priority_net["0.weight"].to(device))
+            self.priority_network[0].bias.data.copy_(priority_net["0.bias"].to(device))
+            self.priority_network[2].weight.data.copy_(priority_net["2.weight"].to(device))
+            self.priority_network[2].bias.data.copy_(priority_net["2.bias"].to(device))
+
+            # Restore replay buffer
+            self.replay_buffer = [
+                {
+                    "pattern": entry["pattern"].to(device),
+                    "priority": entry["priority"],
+                    "age": entry["age"],
+                }
+                for entry in replay_state["replay_buffer"]
+            ]
+
+            # Restore ripple generator
+            ripple_gen = replay_state["ripple_gen"]
+            self.ripple_gen.phase.copy_(ripple_gen["phase"].to(device))
+            self.ripple_gen.time_in_ripple.copy_(ripple_gen["time_in_ripple"].to(device))
+            self.ripple_gen.active = ripple_gen["active"]
+
+            # Restore replay state
+            self.replay_active = replay_state["replay_active"]
+            self.current_replay_idx = replay_state["current_replay_idx"]
+            self.sleep_stage = replay_state["sleep_stage"]
+            self.replay_count = replay_state["replay_count"]
+            self.last_ripple_time = replay_state["last_ripple_time"]

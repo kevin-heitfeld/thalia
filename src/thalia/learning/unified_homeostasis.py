@@ -558,3 +558,37 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         self.config.normalization_rate = original_rate
         
         return weights
+
+    def get_state(self) -> Dict[str, Any]:
+        """Get current homeostasis state for checkpointing.
+        
+        Returns:
+            Dictionary with current state
+        """
+        state = {
+            "weight_ema": self._weight_ema.detach().clone() if self._weight_ema is not None else None,
+            "activity_ema": self._activity_ema,
+        }
+        
+        # Add striatum-specific state if present
+        if hasattr(self, 'action_budgets'):
+            state["action_budgets"] = self.action_budgets.detach().clone()
+        
+        return state
+    
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Restore homeostasis state from checkpoint.
+        
+        Args:
+            state: Dictionary from get_state()
+        """
+        if state["weight_ema"] is not None:
+            self._weight_ema = state["weight_ema"].to(self.config.device)
+        else:
+            self._weight_ema = None
+        
+        self._activity_ema = state["activity_ema"]
+        
+        # Restore striatum-specific state if present
+        if "action_budgets" in state and hasattr(self, 'action_budgets'):
+            self.action_budgets = state["action_budgets"].to(self.config.device)

@@ -340,6 +340,30 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             self.error_neurons.reset_state(batch_size)
             self.prediction_neurons.reset_state(batch_size)
     
+    def get_state(self) -> Dict[str, Any]:
+        """Get state for checkpointing."""
+        state_dict = {
+            "W_pred": self.W_pred.data if hasattr(self, 'W_pred') else None,
+            "W_encode": self.W_encode.data if hasattr(self, 'W_encode') else None,
+            "log_precision": self.log_precision.data if hasattr(self, 'log_precision') else None,
+            "prediction": self.state.prediction.clone() if hasattr(self.state, 'prediction') else None,
+            "error": self.state.error.clone() if hasattr(self.state, 'error') else None,
+        }
+        return state_dict
+
+    def load_state(self, state_dict: Dict[str, Any]) -> None:
+        """Load state from checkpoint."""
+        if state_dict.get("W_pred") is not None and hasattr(self, 'W_pred'):
+            self.W_pred.data.copy_(state_dict["W_pred"].to(self.device))
+        if state_dict.get("W_encode") is not None and hasattr(self, 'W_encode'):
+            self.W_encode.data.copy_(state_dict["W_encode"].to(self.device))
+        if state_dict.get("log_precision") is not None and hasattr(self, 'log_precision'):
+            self.log_precision.data.copy_(state_dict["log_precision"].to(self.device))
+        if state_dict.get("prediction") is not None and hasattr(self.state, 'prediction'):
+            self.state.prediction = state_dict["prediction"].to(self.device)
+        if state_dict.get("error") is not None and hasattr(self.state, 'error'):
+            self.state.error = state_dict["error"].to(self.device)
+    
     @property
     def precision(self) -> torch.Tensor:
         """Get precision (clamped to valid range)."""

@@ -131,6 +131,16 @@ class ClimbingFiberSystem:
     def reset_state(self) -> None:
         self.error = torch.zeros(self.n_output, device=self.device)
 
+    def get_state(self) -> Dict[str, Any]:
+        """Get state for checkpointing."""
+        return {
+            "error": self.error.clone(),
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Load state from checkpoint."""
+        self.error = state["error"].to(self.device)
+
 
 class Cerebellum(DiagnosticsMixin, BrainRegion):
     """Cerebellar region with supervised error-corrective learning.
@@ -458,3 +468,67 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         self.climbing_fiber.reset_state()
         if self.neurons is not None:
             self.neurons.reset_state()
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete state for checkpointing.
+
+        Returns state dictionary with keys:
+        - weights: Parallel fiber to Purkinje cell weights
+        - region_state: Neuron state, traces
+        - learning_state: Eligibility traces, climbing fiber state
+        - config: Configuration for validation
+        """
+        state_dict = {
+            "weights": {
+                "parallel_fiber_purkinje": self.weights.data.clone(),
+            },
+            "region_state": {
+                "neurons": self.neurons.get_state() if self.neurons is not None else None,
+                "input_trace": self.input_trace.clone(),
+                "output_trace": self.output_trace.clone(),
+            },
+            "learning_state": {
+                "stdp_eligibility": self.stdp_eligibility.clone(),
+                "climbing_fiber": self.climbing_fiber.get_state(),
+            },
+            "config": {
+                "n_input": self.config.n_input,
+                "n_output": self.config.n_output,
+            },
+        }
+
+        return state_dict
+
+    def load_full_state(self, state_dict: Dict[str, Any]) -> None:
+        """Load complete state from checkpoint.
+
+        Args:
+            state_dict: State dictionary from get_full_state()
+
+        Raises:
+            ValueError: If config dimensions don't match
+        """
+        # Validate config compatibility
+        config = state_dict.get("config", {})
+        if config.get("n_input") != self.config.n_input:
+            raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
+        if config.get("n_output") != self.config.n_output:
+            raise ValueError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
+
+        # Restore weights
+        weights = state_dict["weights"]
+        self.weights.data.copy_(weights["parallel_fiber_purkinje"].to(self.device))
+
+        # Restore neuron state
+        region_state = state_dict["region_state"]
+        if self.neurons is not None and region_state["neurons"] is not None:
+            self.neurons.load_state(region_state["neurons"])
+
+        # Restore traces
+        self.input_trace.copy_(region_state["input_trace"].to(self.device))
+        self.output_trace.copy_(region_state["output_trace"].to(self.device))
+
+        # Restore learning state
+        learning_state = state_dict["learning_state"]
+        self.stdp_eligibility.copy_(learning_state["stdp_eligibility"].to(self.device))
+        self.climbing_fiber.load_state(learning_state["climbing_fiber"])

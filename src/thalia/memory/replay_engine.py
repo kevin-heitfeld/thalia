@@ -358,3 +358,26 @@ class ReplayEngine(nn.Module):
             }
         
         return diag
+
+    def get_state(self) -> Dict[str, Any]:
+        """Get replay engine state for checkpointing."""
+        state = {
+            "ripple_phase": self._ripple_phase if self.config.ripple_enabled else 0.0,
+            "ripple_active": self._ripple_active if self.config.ripple_enabled else False,
+            "ripple_time": self._ripple_time if self.config.ripple_enabled else 0.0,
+        }
+        
+        if self.gamma_oscillator is not None:
+            state["gamma_oscillator"] = self.gamma_oscillator.get_state()
+        
+        return state
+    
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Restore replay engine state from checkpoint."""
+        if self.config.ripple_enabled:
+            self._ripple_phase = state["ripple_phase"]
+            self._ripple_active = state["ripple_active"]
+            self._ripple_time = state["ripple_time"]
+        
+        if "gamma_oscillator" in state and self.gamma_oscillator is not None:
+            self.gamma_oscillator.load_state(state["gamma_oscillator"])

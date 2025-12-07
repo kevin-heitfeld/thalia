@@ -287,6 +287,24 @@ class LIFNeuron(nn.Module):
             "adaptation": self.adaptation.clone() if self.adaptation is not None else None,
         }
 
+    def load_state(self, state: dict[str, torch.Tensor]) -> None:
+        """Restore neuron state from checkpoint.
+        
+        Args:
+            state: Dictionary from get_state()
+        """
+        # Infer device from existing tensors or incoming state
+        device = (self.membrane.device if self.membrane is not None 
+                 else state["membrane"].device if state["membrane"] is not None
+                 else torch.device("cpu"))
+        
+        if state["membrane"] is not None:
+            self.membrane = state["membrane"].to(device)
+        if state["refractory"] is not None:
+            self.refractory = state["refractory"].to(device)
+        if state["adaptation"] is not None:
+            self.adaptation = state["adaptation"].to(device)
+
     def __repr__(self) -> str:
         adapt_str = f", adapt={self.config.adapt_increment}" if self.config.adapt_increment > 0 else ""
         noise_str = f", noise={self.config.noise_std}" if self.config.noise_std > 0 else ""
@@ -669,6 +687,28 @@ class ConductanceLIF(nn.Module):
             "g_adapt": self.g_adapt.clone() if self.g_adapt is not None else None,
             "refractory": self.refractory.clone() if self.refractory is not None else None,
         }
+
+    def load_state(self, state: dict[str, Optional[torch.Tensor]]) -> None:
+        """Restore neuron state from checkpoint.
+        
+        Args:
+            state: Dictionary from get_state()
+        """
+        # Infer device from existing tensors or incoming state
+        device = (self.membrane.device if self.membrane is not None 
+                 else state["membrane"].device if state["membrane"] is not None
+                 else torch.device("cpu"))
+        
+        if state["membrane"] is not None:
+            self.membrane = state["membrane"].to(device)
+        if state["g_E"] is not None:
+            self.g_E = state["g_E"].to(device)
+        if state["g_I"] is not None:
+            self.g_I = state["g_I"].to(device)
+        if state["g_adapt"] is not None:
+            self.g_adapt = state["g_adapt"].to(device)
+        if state["refractory"] is not None:
+            self.refractory = state["refractory"].to(device)
 
     def __repr__(self) -> str:
         return (

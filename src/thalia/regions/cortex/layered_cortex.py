@@ -928,3 +928,133 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             diag["robustness_ip_excitability"] = ip_diag.get("excitability", 1.0)
 
         return diag
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete state for checkpointing.
+
+        Returns state dictionary with keys:
+        - weights: All inter-layer weight matrices
+        - region_state: Current spikes, membrane potentials, traces
+        - learning_state: BCM thresholds, STP state
+        - neuromodulator_state: Current dopamine, norepinephrine, etc.
+        - config: Configuration for validation
+        """
+        state_dict = {
+            "weights": {
+                "w_input_l4": self.w_input_l4.data.clone(),
+                "w_l4_l23": self.w_l4_l23.data.clone(),
+                "w_l23_recurrent": self.w_l23_recurrent.data.clone(),
+                "w_l23_l5": self.w_l23_l5.data.clone(),
+                "w_l23_inhib": self.w_l23_inhib.data.clone(),
+            },
+            "region_state": {
+                "l4_neurons": self.l4_neurons.get_state(),
+                "l23_neurons": self.l23_neurons.get_state(),
+                "l5_neurons": self.l5_neurons.get_state(),
+                "l4_spikes": self.state.l4_spikes.clone() if self.state.l4_spikes is not None else None,
+                "l23_spikes": self.state.l23_spikes.clone() if self.state.l23_spikes is not None else None,
+                "l5_spikes": self.state.l5_spikes.clone() if self.state.l5_spikes is not None else None,
+                "l4_trace": self.state.l4_trace.clone() if self.state.l4_trace is not None else None,
+                "l23_trace": self.state.l23_trace.clone() if self.state.l23_trace is not None else None,
+                "l5_trace": self.state.l5_trace.clone() if self.state.l5_trace is not None else None,
+                "l23_recurrent_activity": self.state.l23_recurrent_activity.clone() if self.state.l23_recurrent_activity is not None else None,
+            },
+            "learning_state": {},
+            "neuromodulator_state": {
+                "dopamine": self.state.dopamine,
+                "norepinephrine": self.state.norepinephrine,
+                "acetylcholine": self.state.acetylcholine,
+            },
+            "config": {
+                "n_input": self.config.n_input,
+                "n_output": self.config.n_output,
+                "l4_size": self.l4_size,
+                "l23_size": self.l23_size,
+                "l5_size": self.l5_size,
+            },
+        }
+
+        # BCM state (thresholds)
+        if self.bcm_l4 is not None and hasattr(self.bcm_l4, 'theta') and self.bcm_l4.theta is not None:
+            state_dict["learning_state"]["bcm_l4_theta"] = self.bcm_l4.theta.clone()
+        if self.bcm_l23 is not None and hasattr(self.bcm_l23, 'theta') and self.bcm_l23.theta is not None:
+            state_dict["learning_state"]["bcm_l23_theta"] = self.bcm_l23.theta.clone()
+        if self.bcm_l5 is not None and hasattr(self.bcm_l5, 'theta') and self.bcm_l5.theta is not None:
+            state_dict["learning_state"]["bcm_l5_theta"] = self.bcm_l5.theta.clone()
+
+        # STP state
+        if self.stp_l23_recurrent is not None:
+            state_dict["learning_state"]["stp_l23_recurrent"] = self.stp_l23_recurrent.get_state()
+
+        return state_dict
+
+    def load_full_state(self, state_dict: Dict[str, Any]) -> None:
+        """Load complete state from checkpoint.
+
+        Args:
+            state_dict: State dictionary from get_full_state()
+
+        Raises:
+            ValueError: If config dimensions don't match
+        """
+        # Validate config compatibility
+        config = state_dict.get("config", {})
+        if config.get("n_input") != self.config.n_input:
+            raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
+        if config.get("n_output") != self.config.n_output:
+            raise ValueError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
+        if config.get("l4_size") != self.l4_size:
+            raise ValueError(f"Config mismatch: l4_size {config.get('l4_size')} != {self.l4_size}")
+        if config.get("l23_size") != self.l23_size:
+            raise ValueError(f"Config mismatch: l23_size {config.get('l23_size')} != {self.l23_size}")
+        if config.get("l5_size") != self.l5_size:
+            raise ValueError(f"Config mismatch: l5_size {config.get('l5_size')} != {self.l5_size}")
+
+        # Restore weights
+        weights = state_dict["weights"]
+        self.w_input_l4.data.copy_(weights["w_input_l4"].to(self.device))
+        self.w_l4_l23.data.copy_(weights["w_l4_l23"].to(self.device))
+        self.w_l23_recurrent.data.copy_(weights["w_l23_recurrent"].to(self.device))
+        self.w_l23_l5.data.copy_(weights["w_l23_l5"].to(self.device))
+        self.w_l23_inhib.data.copy_(weights["w_l23_inhib"].to(self.device))
+
+        # Restore neuron states
+        region_state = state_dict["region_state"]
+        self.l4_neurons.load_state(region_state["l4_neurons"])
+        self.l23_neurons.load_state(region_state["l23_neurons"])
+        self.l5_neurons.load_state(region_state["l5_neurons"])
+
+        # Restore region state
+        if region_state["l4_spikes"] is not None:
+            self.state.l4_spikes = region_state["l4_spikes"].to(self.device)
+        if region_state["l23_spikes"] is not None:
+            self.state.l23_spikes = region_state["l23_spikes"].to(self.device)
+        if region_state["l5_spikes"] is not None:
+            self.state.l5_spikes = region_state["l5_spikes"].to(self.device)
+        if region_state["l4_trace"] is not None:
+            self.state.l4_trace = region_state["l4_trace"].to(self.device)
+        if region_state["l23_trace"] is not None:
+            self.state.l23_trace = region_state["l23_trace"].to(self.device)
+        if region_state["l5_trace"] is not None:
+            self.state.l5_trace = region_state["l5_trace"].to(self.device)
+        if region_state["l23_recurrent_activity"] is not None:
+            self.state.l23_recurrent_activity = region_state["l23_recurrent_activity"].to(self.device)
+
+        # Restore BCM thresholds
+        learning_state = state_dict["learning_state"]
+        if "bcm_l4_theta" in learning_state and self.bcm_l4 is not None:
+            self.bcm_l4.theta.copy_(learning_state["bcm_l4_theta"].to(self.device))
+        if "bcm_l23_theta" in learning_state and self.bcm_l23 is not None:
+            self.bcm_l23.theta.copy_(learning_state["bcm_l23_theta"].to(self.device))
+        if "bcm_l5_theta" in learning_state and self.bcm_l5 is not None:
+            self.bcm_l5.theta.copy_(learning_state["bcm_l5_theta"].to(self.device))
+
+        # Restore STP state
+        if "stp_l23_recurrent" in learning_state and self.stp_l23_recurrent is not None:
+            self.stp_l23_recurrent.load_state(learning_state["stp_l23_recurrent"])
+
+        # Restore neuromodulators
+        neuromod = state_dict["neuromodulator_state"]
+        self.state.dopamine = neuromod["dopamine"]
+        self.state.norepinephrine = neuromod["norepinephrine"]
+        self.state.acetylcholine = neuromod["acetylcholine"]

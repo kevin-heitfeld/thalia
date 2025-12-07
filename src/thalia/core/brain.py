@@ -79,7 +79,7 @@ from .diagnostics import (
 )
 
 # Robustness mechanisms
-from ..diagnostics.criticality import CriticalityMonitor, CriticalityState
+from ..diagnostics.criticality import CriticalityMonitor
 
 # Import actual region implementations
 from ..regions.cortex import LayeredCortex, LayeredCortexConfig
@@ -530,11 +530,11 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
 
         legacy_config = config.to_event_driven_brain_config()
         brain = cls(legacy_config)
-        
+
         # Initialize CriticalityMonitor if robustness config enables it
         if config.robustness.enable_criticality:
             brain.criticality_monitor = CriticalityMonitor(config.robustness.criticality)
-        
+
         return brain
 
     def _init_parallel_executor(self) -> None:
@@ -1128,6 +1128,124 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         """
         self.hippocampus.impl.new_trial()
 
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete brain state for checkpointing.
+
+        Returns state dictionary with keys:
+        - regions: State from each brain region (cortex, hippocampus, pfc, striatum, cerebellum)
+        - pathways: State from attention and replay pathways (if present)
+        - theta: Theta oscillator state
+        - scheduler: Event scheduler state (current time, pending events)
+        - trial_state: Current trial phase and counters
+        - config: Configuration for validation
+
+        This captures the COMPLETE state needed to resume from checkpoint.
+        """
+        state_dict = {
+            "regions": {
+                "cortex": self.cortex.impl.get_full_state(),
+                "hippocampus": self.hippocampus.impl.get_full_state(),
+                "pfc": self.pfc.impl.get_full_state(),
+                "striatum": self.striatum.impl.get_full_state(),
+                "cerebellum": self.cerebellum.impl.get_full_state(),
+            },
+            "pathways": {},
+            "theta": {
+                "frequency_hz": self.theta.frequency,
+                "phase": self.theta.phase,
+            },
+            "scheduler": {
+                "current_time": self._current_time,
+                "events_processed": self._events_processed,
+            },
+            "trial_state": {
+                "phase": self._trial_phase.name,
+                "spike_counts": self._spike_counts.copy(),
+                "last_action": self._last_action,
+            },
+            "config": {
+                "input_size": self.config.input_size,
+                "cortex_size": self.config.cortex_size,
+                "hippocampus_size": self.config.hippocampus_size,
+                "pfc_size": self.config.pfc_size,
+                "n_actions": self.config.n_actions,
+                "cortex_type": self.config.cortex_type.name,
+            },
+        }
+
+        # Add pathway states if they exist
+        if hasattr(self, 'attention_pathway') and self.attention_pathway is not None:
+            state_dict["pathways"]["attention"] = self.attention_pathway.get_state()
+
+        if hasattr(self, 'replay_pathway') and self.replay_pathway is not None:
+            state_dict["pathways"]["replay"] = self.replay_pathway.get_state()
+
+        return state_dict
+
+    def load_full_state(self, state_dict: Dict[str, Any]) -> None:
+        """Load complete brain state from checkpoint.
+
+        Args:
+            state_dict: State dictionary from get_full_state()
+
+        Raises:
+            ValueError: If config dimensions don't match
+
+        Note:
+            This restores the complete brain state including:
+            - All region weights and states
+            - Pathway configurations
+            - Theta oscillator phase
+            - Event scheduler time
+            - Trial phase and counters
+        """
+        # Validate config compatibility
+        config = state_dict.get("config", {})
+        if config.get("input_size") != self.config.input_size:
+            raise ValueError(f"Config mismatch: input_size {config.get('input_size')} != {self.config.input_size}")
+        if config.get("cortex_size") != self.config.cortex_size:
+            raise ValueError(f"Config mismatch: cortex_size {config.get('cortex_size')} != {self.config.cortex_size}")
+        if config.get("hippocampus_size") != self.config.hippocampus_size:
+            raise ValueError(f"Config mismatch: hippocampus_size {config.get('hippocampus_size')} != {self.config.hippocampus_size}")
+        if config.get("pfc_size") != self.config.pfc_size:
+            raise ValueError(f"Config mismatch: pfc_size {config.get('pfc_size')} != {self.config.pfc_size}")
+        if config.get("n_actions") != self.config.n_actions:
+            raise ValueError(f"Config mismatch: n_actions {config.get('n_actions')} != {self.config.n_actions}")
+
+        # Restore region states
+        regions = state_dict["regions"]
+        self.cortex.impl.load_full_state(regions["cortex"])
+        self.hippocampus.impl.load_full_state(regions["hippocampus"])
+        self.pfc.impl.load_full_state(regions["pfc"])
+        self.striatum.impl.load_full_state(regions["striatum"])
+        self.cerebellum.impl.load_full_state(regions["cerebellum"])
+
+        # Restore theta state
+        theta_state = state_dict["theta"]
+        self.theta.phase = theta_state["phase"]
+        # Note: frequency_hz is fixed at construction, not restored
+
+        # Restore scheduler state
+        scheduler_state = state_dict["scheduler"]
+        self._current_time = scheduler_state["current_time"]
+        self._events_processed = scheduler_state["events_processed"]
+
+        # Restore trial state
+        trial_state = state_dict["trial_state"]
+        self._trial_phase = TrialPhase[trial_state["phase"]]
+        self._spike_counts = trial_state["spike_counts"].copy()
+        self._last_action = trial_state["last_action"]
+
+        # Restore pathway states if they exist
+        pathways = state_dict.get("pathways", {})
+        if "attention" in pathways and hasattr(self, 'attention_pathway'):
+            self.attention_pathway.load_state(pathways["attention"])
+        if "replay" in pathways and hasattr(self, 'replay_pathway'):
+            self.replay_pathway.load_state(pathways["replay"])
+
+        # Note: Event queue is NOT restored - assumes checkpoint at clean state
+        # For mid-trial checkpointing, would need to serialize pending events
+
     # =========================================================================
     # COMPARISON SIGNAL (MATCH/MISMATCH DETECTION)
     # =========================================================================
@@ -1457,7 +1575,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                         if isinstance(payload, SpikePayload):
                             spike_count = int(payload.spikes.sum().item())
                             self._spike_counts[event.target] += spike_count
-                            
+
                             # Update criticality monitor if enabled
                             if self.criticality_monitor is not None:
                                 self.criticality_monitor.update(payload.spikes)
@@ -1607,7 +1725,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
                 "dopamine_tonic": self._tonic_dopamine,
                 "dopamine_phasic": self._phasic_dopamine,
             },
-            
+
             # Robustness/Criticality diagnostics
             "criticality": self._get_criticality_diagnostics(),
         }
@@ -1616,7 +1734,7 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         """Get criticality diagnostics if monitor is enabled."""
         if self.criticality_monitor is None:
             return {"enabled": False}
-        
+
         diag = self.criticality_monitor.get_diagnostics()
         diag["enabled"] = True
         return diag
@@ -1696,4 +1814,3 @@ def test_event_driven_brain():
 
 if __name__ == "__main__":
     test_event_driven_brain()
-

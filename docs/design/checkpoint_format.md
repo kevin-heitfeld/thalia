@@ -1,7 +1,7 @@
 # Thalia Checkpoint Format Specification
 
 **Version**: 0.1.0  
-**Status**: Design Phase  
+**Status**: Phase 1A Complete - In Progress (Phase 1B Next)  
 **Last Updated**: December 7, 2025
 
 > **Related Document**: See [`curriculum_strategy.md`](curriculum_strategy.md) for training stages and curriculum design.
@@ -321,16 +321,65 @@ SHA-256 hash of all data from offset 0 to checksum_offset.
 
 ---
 
-## Implementation Plan
+## Implementation Status
 
-### Phase 1: Core I/O (Week 1)
+### ✅ Phase 1A: State Collection API (COMPLETE - December 7, 2025)
+
+**Objective**: Implement state collection methods without file I/O to prepare for binary serialization.
+
+**Completed Work**:
+
+1. **Abstract Base Class API** (`src/thalia/regions/base.py`):
+   - Added `get_full_state()` abstract method to BrainRegion
+   - Added `load_full_state()` abstract method to BrainRegion
+   - Comprehensive docstrings specifying 6-component state structure
+
+2. **Region Implementations**:
+   - ✅ **Striatum**: 8 state categories, smart population coding validation
+   - ✅ **TrisynapticHippocampus**: 6 pathway weights, 3 neuron layers, STP, gamma oscillator, replay engine
+   - ✅ **LayeredCortex**: 5 weight matrices, 3 neuron layers, BCM thresholds, STP
+   - ✅ **PredictiveCortex**: Extends cortex + prediction layer + attention mechanism
+   - ✅ **Prefrontal**: 3 weight types, working memory, dopamine gating, STDP, STP
+   - ✅ **Cerebellum**: Parallel fiber weights, traces, eligibility, climbing fiber
+
+3. **Pathway State Management** (NEW - Critical Addition):
+   - ✅ **SpikingPathway**: Base pathway state with weights, neurons, STDP traces, delays, STP, BCM
+   - ✅ **SpikingAttentionPathway**: Extends base + input/attention/gain projections + beta phase
+   - ✅ **SpikingReplayPathway**: Extends base + replay buffer + priority network + ripple generator
+
+4. **Brain-Level Orchestration** (`src/thalia/core/brain.py`):
+   - ✅ EventDrivenBrain.get_full_state(): Coordinates all 5 regions + pathways + theta + scheduler
+   - ✅ EventDrivenBrain.load_full_state(): Validates config, restores all components
+
+5. **Comprehensive Testing** (`tests/unit/test_checkpoint_state.py`):
+   - **18/18 tests passing** (100% success rate)
+   - Coverage: 4 Striatum + 3 Hippocampus + 2 Cortex + 2 Prefrontal + 2 Cerebellum + 3 Brain + 2 Pathway tests
+
+**Key Achievements**:
+- Complete state roundtrip capability for all regions + pathways
+- Smart validation handles population coding expansion
+- Device-agnostic checkpointing (save on GPU, load on CPU)
+- Shape assertions catch dimension mismatches early
+- Comprehensive test coverage validates correctness
+
+---
+
+### 🚧 Phase 1B: Binary Format (NEXT)
+
+**Objective**: Implement binary checkpoint file format with headers, metadata, and region indexing.
 
 **Files to Create**:
 - `src/thalia/io/__init__.py`
 - `src/thalia/io/checkpoint.py` - Main checkpoint API
 - `src/thalia/io/binary_format.py` - Low-level binary encoding/decoding
 - `src/thalia/io/tensor_encoding.py` - Tensor serialization
-- `tests/unit/test_checkpoint.py` - Unit tests
+- `tests/unit/test_checkpoint_io.py` - Binary I/O tests
+
+---
+
+## Implementation Plan
+
+### Phase 1B: Binary Format
 
 **API Design**:
 ```python

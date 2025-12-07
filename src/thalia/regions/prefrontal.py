@@ -206,6 +206,16 @@ class DopamineGatingSystem:
             -10 * (self.level - self.threshold)
         )).item())
 
+    def get_state(self) -> Dict[str, Any]:
+        """Get state for checkpointing."""
+        return {
+            "level": self.level,
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Load state from checkpoint."""
+        self.level = state["level"]
+
 
 class Prefrontal(LearningStrategyMixin, BrainRegion):
     """Prefrontal cortex with dopamine-gated working memory.
@@ -618,3 +628,101 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
     def get_state(self) -> PrefrontalState:
         """Get current state."""
         return self.state
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete state for checkpointing.
+
+        Returns state dictionary with keys:
+        - weights: Feedforward, recurrent, and inhibition weights
+        - region_state: Neuron state, working memory, spikes
+        - learning_state: STDP eligibility traces, STP state
+        - neuromodulator_state: Dopamine gating state
+        - config: Configuration for validation
+        """
+        state_dict = {
+            "weights": {
+                "feedforward": self.weights.data.clone(),
+                "recurrent": self.rec_weights.data.clone(),
+                "inhibition": self.inhib_weights.data.clone(),
+            },
+            "region_state": {
+                "neurons": self.neurons.get_state(),
+                "working_memory": self.state.working_memory.clone() if self.state.working_memory is not None else None,
+                "update_gate": self.state.update_gate.clone() if self.state.update_gate is not None else None,
+                "spikes": self.state.spikes.clone() if self.state.spikes is not None else None,
+                "membrane": self.state.membrane.clone() if self.state.membrane is not None else None,
+                "active_rule": self.state.active_rule.clone() if self.state.active_rule is not None else None,
+            },
+            "learning_state": {},
+            "neuromodulator_state": {
+                "dopamine": self.state.dopamine,
+                "dopamine_system": self.dopamine_system.get_state(),
+            },
+            "config": {
+                "n_input": self.config.n_input,
+                "n_output": self.config.n_output,
+            },
+        }
+
+        # STDP eligibility traces (if learning strategy has state)
+        if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
+            if hasattr(self.learning_strategy, 'get_state'):
+                state_dict["learning_state"]["stdp_strategy"] = self.learning_strategy.get_state()
+
+        # STP state
+        if self.stp_recurrent is not None:
+            state_dict["learning_state"]["stp_recurrent"] = self.stp_recurrent.get_state()
+
+        return state_dict
+
+    def load_full_state(self, state_dict: Dict[str, Any]) -> None:
+        """Load complete state from checkpoint.
+
+        Args:
+            state_dict: State dictionary from get_full_state()
+
+        Raises:
+            ValueError: If config dimensions don't match
+        """
+        # Validate config compatibility
+        config = state_dict.get("config", {})
+        if config.get("n_input") != self.config.n_input:
+            raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
+        if config.get("n_output") != self.config.n_output:
+            raise ValueError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
+
+        # Restore weights
+        weights = state_dict["weights"]
+        self.weights.data.copy_(weights["feedforward"].to(self.device))
+        self.rec_weights.data.copy_(weights["recurrent"].to(self.device))
+        self.inhib_weights.data.copy_(weights["inhibition"].to(self.device))
+
+        # Restore neuron state
+        region_state = state_dict["region_state"]
+        self.neurons.load_state(region_state["neurons"])
+
+        # Restore working memory and gating
+        if region_state["working_memory"] is not None:
+            self.state.working_memory = region_state["working_memory"].to(self.device)
+        if region_state["update_gate"] is not None:
+            self.state.update_gate = region_state["update_gate"].to(self.device)
+        if region_state["spikes"] is not None:
+            self.state.spikes = region_state["spikes"].to(self.device)
+        if region_state["membrane"] is not None:
+            self.state.membrane = region_state["membrane"].to(self.device)
+        if region_state["active_rule"] is not None:
+            self.state.active_rule = region_state["active_rule"].to(self.device)
+
+        # Restore learning state
+        learning_state = state_dict["learning_state"]
+        if "stdp_strategy" in learning_state and hasattr(self, 'learning_strategy'):
+            if hasattr(self.learning_strategy, 'load_state'):
+                self.learning_strategy.load_state(learning_state["stdp_strategy"])
+
+        if "stp_recurrent" in learning_state and self.stp_recurrent is not None:
+            self.stp_recurrent.load_state(learning_state["stp_recurrent"])
+
+        # Restore dopamine gating system
+        neuromod = state_dict["neuromodulator_state"]
+        self.state.dopamine = neuromod["dopamine"]
+        self.dopamine_system.load_state(neuromod["dopamine_system"])

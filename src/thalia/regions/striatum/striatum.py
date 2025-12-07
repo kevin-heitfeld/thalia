@@ -330,6 +330,12 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Plasticity freeze flag (for debugging/evaluation escape hatch)
         self._plasticity_frozen = False
 
+        # Initialize tracking variables (also reset in reset_state)
+        self._last_rpe = 0.0
+        self._last_expected = 0.0
+        self._last_d1_spikes = None
+        self._last_d2_spikes = None
+
     # =========================================================================
     # PLASTICITY CONTROL (for debugging only)
     # =========================================================================
@@ -1656,3 +1662,223 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             # Eligibility (from mixin)
             "eligibility": eligibility_state,
         }
+
+    # =========================================================================
+    # CHECKPOINT STATE MANAGEMENT
+    # =========================================================================
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete state for checkpointing.
+        
+        Returns all state needed to resume training from this exact point,
+        including weights, eligibility traces, neuron state, homeostasis, etc.
+        
+        Returns:
+            Dictionary with complete region state
+        """
+        # 1. LEARNABLE PARAMETERS (weights)
+        weights = {
+            "weights": self.weights.detach().clone(),
+            "d1_weights": self.d1_weights.detach().clone(),
+            "d2_weights": self.d2_weights.detach().clone(),
+        }
+
+        # 2. REGION STATE (dynamic state)
+        # Get neuron state from all populations
+        neuron_state = {}
+        if self.neurons is not None:
+            neuron_state["main"] = self.neurons.get_state()
+        if hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
+            neuron_state["d1"] = self.d1_neurons.get_state()
+        if hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
+            neuron_state["d2"] = self.d2_neurons.get_state()
+
+        region_state = {
+            "recent_spikes": self.recent_spikes.detach().clone(),
+            "last_action": self.last_action,
+            "neuron_state": neuron_state,
+            "base_region_state": {
+                "membrane": self.state.membrane.detach().clone() if self.state.membrane is not None else None,
+                "spikes": self.state.spikes.detach().clone() if self.state.spikes is not None else None,
+                "t": self.state.t,
+            }
+        }
+
+        # 3. LEARNING STATE (eligibility traces, STDP traces, etc.)
+        learning_state = {
+            # Eligibility traces
+            "eligibility_traces": self.eligibility.get().detach().clone(),
+            "d1_eligibility": self.d1_eligibility.detach().clone(),
+            "d2_eligibility": self.d2_eligibility.detach().clone(),
+            
+            # STDP traces (for REWARD_MODULATED_STDP)
+            "input_trace": self.input_trace.detach().clone(),
+            "output_trace": self.output_trace.detach().clone(),
+            "stdp_eligibility": self.stdp_eligibility.detach().clone(),
+            "d1_input_trace": self.d1_input_trace.detach().clone(),
+            "d2_input_trace": self.d2_input_trace.detach().clone(),
+            "d1_output_trace": self.d1_output_trace.detach().clone(),
+            "d2_output_trace": self.d2_output_trace.detach().clone(),
+            
+            # Trial accumulators
+            "d1_votes_accumulated": self._d1_votes_accumulated.detach().clone(),
+            "d2_votes_accumulated": self._d2_votes_accumulated.detach().clone(),
+            
+            # Homeostatic state
+            "activity_ema": self._activity_ema,
+            "trial_spike_count": self._trial_spike_count,
+            "trial_timesteps": self._trial_timesteps,
+            "homeostatic_scaling_applied": self._homeostatic_scaling_applied,
+            
+            # Unified homeostasis state (if enabled)
+            "unified_homeostasis_state": self.unified_homeostasis.get_state() if self.unified_homeostasis is not None else None,
+        }
+
+        # 4. EXPLORATION STATE
+        exploration_state = {
+            "exploring": self.exploring,
+            "last_uncertainty": self._last_uncertainty,
+            "last_exploration_prob": self._last_exploration_prob,
+            "action_counts": self._action_counts.detach().clone(),
+            "total_trials": self._total_trials,
+            "recent_rewards": list(self._recent_rewards),
+            "recent_accuracy": self._recent_accuracy,
+        }
+
+        # 5. VALUE ESTIMATION STATE (if RPE enabled)
+        rpe_state = {}
+        if self.value_estimates is not None:
+            rpe_state = {
+                "value_estimates": self.value_estimates.detach().clone(),
+                "last_rpe": self._last_rpe,
+                "last_expected": self._last_expected,
+            }
+
+        # 6. NEUROMODULATOR STATE (from NeuromodulatorMixin)
+        neuromodulator_state = self.get_neuromodulator_state()
+        
+        # Add tonic dopamine (striatum-specific)
+        neuromodulator_state["tonic_dopamine"] = self.tonic_dopamine
+
+        # 7. OSCILLATOR STATE (striatum doesn't have oscillators, but include for consistency)
+        oscillator_state = {}
+
+        return {
+            "weights": weights,
+            "region_state": region_state,
+            "learning_state": learning_state,
+            "exploration_state": exploration_state,
+            "rpe_state": rpe_state,
+            "neuromodulator_state": neuromodulator_state,
+            "oscillator_state": oscillator_state,
+            "config": self.striatum_config,
+        }
+
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore complete state from checkpoint.
+        
+        Args:
+            state: Dictionary returned by get_full_state()
+            
+        Raises:
+            ValueError: If state is incompatible with current configuration
+        """
+        # Validate configuration compatibility
+        saved_config = state["config"]
+        if saved_config.n_input != self.config.n_input:
+            raise ValueError(
+                f"Input dimension mismatch: saved={saved_config.n_input}, "
+                f"current={self.config.n_input}"
+            )
+        if saved_config.n_output != self.config.n_output:
+            raise ValueError(
+                f"Output dimension mismatch: saved={saved_config.n_output}, "
+                f"current={self.config.n_output}"
+            )
+
+        # 1. RESTORE WEIGHTS
+        weights = state["weights"]
+        self.weights = weights["weights"].to(self.device)
+        self.d1_weights = weights["d1_weights"].to(self.device)
+        self.d2_weights = weights["d2_weights"].to(self.device)
+
+        # 2. RESTORE REGION STATE
+        region_state = state["region_state"]
+        self.recent_spikes = region_state["recent_spikes"].to(self.device)
+        self.last_action = region_state["last_action"]
+        
+        # Restore neuron state for all populations
+        neuron_state = region_state["neuron_state"]
+        if "main" in neuron_state and self.neurons is not None:
+            self.neurons.load_state(neuron_state["main"])
+        if "d1" in neuron_state and hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
+            self.d1_neurons.load_state(neuron_state["d1"])
+        if "d2" in neuron_state and hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
+            self.d2_neurons.load_state(neuron_state["d2"])
+        
+        # Restore base RegionState
+        base_state = region_state["base_region_state"]
+        if base_state["membrane"] is not None:
+            self.state.membrane = base_state["membrane"].to(self.device)
+        if base_state["spikes"] is not None:
+            self.state.spikes = base_state["spikes"].to(self.device)
+        self.state.t = base_state["t"]
+
+        # 3. RESTORE LEARNING STATE
+        learning_state = state["learning_state"]
+        
+        # Eligibility traces
+        self.eligibility.traces = learning_state["eligibility_traces"].to(self.device)
+        self.d1_eligibility = learning_state["d1_eligibility"].to(self.device)
+        self.d2_eligibility = learning_state["d2_eligibility"].to(self.device)
+        
+        # STDP traces
+        self.input_trace = learning_state["input_trace"].to(self.device)
+        self.output_trace = learning_state["output_trace"].to(self.device)
+        self.stdp_eligibility = learning_state["stdp_eligibility"].to(self.device)
+        self.d1_input_trace = learning_state["d1_input_trace"].to(self.device)
+        self.d2_input_trace = learning_state["d2_input_trace"].to(self.device)
+        self.d1_output_trace = learning_state["d1_output_trace"].to(self.device)
+        self.d2_output_trace = learning_state["d2_output_trace"].to(self.device)
+        
+        # Trial accumulators
+        self._d1_votes_accumulated = learning_state["d1_votes_accumulated"].to(self.device)
+        self._d2_votes_accumulated = learning_state["d2_votes_accumulated"].to(self.device)
+        
+        # Homeostatic state
+        self._activity_ema = learning_state["activity_ema"]
+        self._trial_spike_count = learning_state["trial_spike_count"]
+        self._trial_timesteps = learning_state["trial_timesteps"]
+        self._homeostatic_scaling_applied = learning_state["homeostatic_scaling_applied"]
+        
+        # Unified homeostasis
+        if learning_state["unified_homeostasis_state"] is not None and self.unified_homeostasis is not None:
+            self.unified_homeostasis.load_state(learning_state["unified_homeostasis_state"])
+
+        # 4. RESTORE EXPLORATION STATE
+        exploration_state = state["exploration_state"]
+        self.exploring = exploration_state["exploring"]
+        self._last_uncertainty = exploration_state["last_uncertainty"]
+        self._last_exploration_prob = exploration_state["last_exploration_prob"]
+        self._action_counts = exploration_state["action_counts"].to(self.device)
+        self._total_trials = exploration_state["total_trials"]
+        self._recent_rewards = list(exploration_state["recent_rewards"])
+        self._recent_accuracy = exploration_state["recent_accuracy"]
+
+        # 5. RESTORE RPE STATE
+        rpe_state = state["rpe_state"]
+        if rpe_state and self.value_estimates is not None:
+            self.value_estimates = rpe_state["value_estimates"].to(self.device)
+            self._last_rpe = rpe_state["last_rpe"]
+            self._last_expected = rpe_state["last_expected"]
+
+        # 6. RESTORE NEUROMODULATOR STATE
+        neuromodulator_state = state["neuromodulator_state"]
+        self.state.dopamine = neuromodulator_state["dopamine"]
+        self.state.acetylcholine = neuromodulator_state["acetylcholine"]
+        self.state.norepinephrine = neuromodulator_state["norepinephrine"]
+        self.tonic_dopamine = neuromodulator_state["tonic_dopamine"]
+
+        # 7. OSCILLATOR STATE (none for striatum, but included for consistency)
+        # oscillator_state = state["oscillator_state"]  # Empty for striatum
+

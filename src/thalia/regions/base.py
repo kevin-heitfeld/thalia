@@ -245,6 +245,101 @@ class BrainRegion(NeuromodulatorMixin, ABC):
     def n_output(self) -> int:
         return self.config.n_output
 
+    @abstractmethod
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete state for checkpointing.
+
+        This method returns ALL state needed to resume training or inference
+        from this exact point, including:
+
+        1. **Learnable Parameters** (weights):
+           - Weight matrices
+           - Any additional learnable parameters specific to the region
+
+        2. **Region State** (dynamic state from RegionState):
+           - Current spikes
+           - Membrane potentials
+           - Conductances (if using conductance-based neurons)
+           - Refractory state
+           - Any region-specific dynamic state
+
+        3. **Learning Rule State** (internal state of learning mechanisms):
+           - BCM thresholds (for cortex)
+           - Eligibility traces (for striatum)
+           - STP efficacy values (u, x)
+           - STDP traces
+           - Homeostatic scaling factors
+
+        4. **Oscillator State** (if applicable):
+           - Theta phase and frequency
+           - Gamma phase and frequency
+           - Current slot/sequence position
+           - Time tracking
+
+        5. **Neuromodulator State**:
+           - Current dopamine level
+           - Current acetylcholine level
+           - Current norepinephrine level
+           - Baseline levels
+
+        Returns:
+            Dictionary with keys:
+            - 'weights': Dict[str, torch.Tensor] - All learnable parameters
+            - 'region_state': Dict[str, Any] - Current RegionState data
+            - 'learning_state': Dict[str, Any] - Learning rule internal state
+            - 'oscillator_state': Dict[str, Any] - Oscillator phases/state (if applicable)
+            - 'neuromodulator_state': Dict[str, float] - Neuromodulator levels
+            - 'config': RegionConfig - Configuration (for validation on load)
+
+        Note:
+            All tensor values should be detached and cloned to prevent
+            unintended modifications. This method should never modify
+            the region's actual state.
+
+        Example:
+            >>> state = region.get_full_state()
+            >>> # Save state to checkpoint
+            >>> BrainCheckpoint.save(brain, "checkpoint.thalia")
+            >>> # Later...
+            >>> new_region = RegionClass(config)
+            >>> new_region.load_full_state(state)
+            >>> # new_region now has identical state to original
+        """
+        pass
+
+    @abstractmethod
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore complete state from checkpoint.
+
+        This method is the inverse of get_full_state(). It restores ALL
+        state components to resume training or inference from the exact
+        point where the state was captured.
+
+        Args:
+            state: Dictionary returned by get_full_state() containing:
+                - 'weights': Learnable parameters
+                - 'region_state': Dynamic state (spikes, membrane, etc.)
+                - 'learning_state': Learning rule internal state
+                - 'oscillator_state': Oscillator phases (if applicable)
+                - 'neuromodulator_state': Neuromodulator levels
+                - 'config': Configuration (for validation)
+
+        Raises:
+            ValueError: If state is incompatible with current configuration
+            KeyError: If required state components are missing
+
+        Note:
+            This method should validate that the loaded state is compatible
+            with the current region configuration (e.g., matching dimensions).
+            If config mismatch is detected, raise ValueError with details.
+
+        Example:
+            >>> state = torch.load("region_state.pt")
+            >>> region.load_full_state(state)
+            >>> # Region continues from exact state where checkpoint was saved
+        """
+        pass
+
 
 class NeuromodulatorSystem(ABC):
     """Base class for neuromodulatory systems.

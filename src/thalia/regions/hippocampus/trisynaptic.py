@@ -384,13 +384,12 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self._ec_l3_input_size = self.tri_config.ec_l3_input_size
         if self._ec_l3_input_size > 0:
             self.w_ec_l3_ca1 = nn.Parameter(
-                self._create_sparse_random_weights(
-                    self.ca1_size,
-                    self._ec_l3_input_size,
+                WeightInitializer.sparse_random(
+                    n_output=self.ca1_size,
+                    n_input=self._ec_l3_input_size,
                     sparsity=0.20,
-                    device=device,
                     weight_scale=0.3,
-                    normalize_rows=False,
+                    device=device,
                 )
             )
         else:
@@ -1694,3 +1693,217 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             "n_slots": cfg.gamma_n_slots,
             "sequence_position": self._sequence_position,
         }
+
+    # =========================================================================
+    # CHECKPOINT STATE MANAGEMENT
+    # =========================================================================
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete state for checkpointing.
+        
+        Returns all state needed to resume training from this exact point.
+        
+        Returns:
+            Dictionary with complete region state
+        """
+        # 1. LEARNABLE PARAMETERS (weights for all pathways)
+        weights = {
+            "w_ec_dg": self.w_ec_dg.detach().clone(),
+            "w_dg_ca3": self.w_dg_ca3.detach().clone(),
+            "w_ca3_ca1": self.w_ca3_ca1.detach().clone(),
+            "w_ca3_ca3": self.w_ca3_ca3.detach().clone(),
+            "w_ec_ca1": self.w_ec_ca1.detach().clone(),
+            "w_ec_l3_ca1": self.w_ec_l3_ca1.detach().clone() if self.w_ec_l3_ca1 is not None else None,
+            "w_ca1_inhib": self.w_ca1_inhib.detach().clone(),
+        }
+
+        # 2. REGION STATE (all three layers)
+        neuron_state = {
+            "dg": self.dg_neurons.get_state(),
+            "ca3": self.ca3_neurons.get_state(),
+            "ca1": self.ca1_neurons.get_state(),
+        }
+
+        region_state = {
+            "neuron_state": neuron_state,
+            "ca3_activity_trace": self._ca3_activity_trace.detach().clone() if self._ca3_activity_trace is not None else None,
+            "last_phase": self._last_phase.value if self._last_phase is not None else None,
+            "pending_theta_reset": self._pending_theta_reset,
+            "sequence_position": self._sequence_position,
+            "ca3_threshold_offset": self._ca3_threshold_offset.detach().clone() if self._ca3_threshold_offset is not None else None,
+            "ca3_activity_history": self._ca3_activity_history.detach().clone() if self._ca3_activity_history is not None else None,
+            "ca3_slot_assignment": self._ca3_slot_assignment.detach().clone() if self._ca3_slot_assignment is not None else None,
+            "trisynaptic_state": {
+                "dg_spikes": self.state.dg_spikes.detach().clone() if self.state.dg_spikes is not None else None,
+                "ca3_spikes": self.state.ca3_spikes.detach().clone() if self.state.ca3_spikes is not None else None,
+                "ca1_spikes": self.state.ca1_spikes.detach().clone() if self.state.ca1_spikes is not None else None,
+                "ca3_membrane": self.state.ca3_membrane.detach().clone() if self.state.ca3_membrane is not None else None,
+                "ca3_persistent": self.state.ca3_persistent.detach().clone() if self.state.ca3_persistent is not None else None,
+                "sample_trace": self.state.sample_trace.detach().clone() if self.state.sample_trace is not None else None,
+                "dg_trace": self.state.dg_trace.detach().clone() if self.state.dg_trace is not None else None,
+                "ca3_trace": self.state.ca3_trace.detach().clone() if self.state.ca3_trace is not None else None,
+                "nmda_trace": self.state.nmda_trace.detach().clone() if self.state.nmda_trace is not None else None,
+                "stored_dg_pattern": self.state.stored_dg_pattern.detach().clone() if self.state.stored_dg_pattern is not None else None,
+                "ffi_strength": self.state.ffi_strength,
+            }
+        }
+
+        # 3. LEARNING STATE (STP for all pathways)
+        learning_state = {}
+        if self.stp_mossy is not None:
+            learning_state["stp_mossy"] = self.stp_mossy.get_state()
+        if self.stp_schaffer is not None:
+            learning_state["stp_schaffer"] = self.stp_schaffer.get_state()
+        if self.stp_ec_ca1 is not None:
+            learning_state["stp_ec_ca1"] = self.stp_ec_ca1.get_state()
+        if self.stp_ca3_recurrent is not None:
+            learning_state["stp_ca3_recurrent"] = self.stp_ca3_recurrent.get_state()
+
+        # 4. OSCILLATOR STATE (gamma oscillator and replay engine)
+        oscillator_state = {}
+        if self.gamma_oscillator is not None:
+            oscillator_state["gamma"] = self.gamma_oscillator.get_state()
+        if self.replay_engine is not None:
+            oscillator_state["replay_engine"] = self.replay_engine.get_state()
+
+        # 5. NEUROMODULATOR STATE
+        neuromodulator_state = self.get_neuromodulator_state()
+
+        # 6. EPISODIC MEMORY (episode buffer)
+        # Note: Episodes contain tensors, so we need to serialize carefully
+        episode_buffer_state = []
+        for ep in self.episode_buffer:
+            ep_state = {
+                "state": ep.state.detach().clone(),
+                "context": ep.context.detach().clone() if ep.context is not None else None,
+                "action": ep.action,
+                "reward": ep.reward,
+                "correct": ep.correct,
+                "metadata": ep.metadata,
+                "priority": ep.priority,
+                "timestamp": ep.timestamp,
+                "sequence": [s.detach().clone() for s in ep.sequence] if ep.sequence is not None else None,
+            }
+            episode_buffer_state.append(ep_state)
+
+        return {
+            "weights": weights,
+            "region_state": region_state,
+            "learning_state": learning_state,
+            "oscillator_state": oscillator_state,
+            "neuromodulator_state": neuromodulator_state,
+            "episode_buffer": episode_buffer_state,
+            "config": self.tri_config,
+        }
+
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore complete state from checkpoint.
+        
+        Args:
+            state: Dictionary returned by get_full_state()
+            
+        Raises:
+            ValueError: If state is incompatible with current configuration
+        """
+        # Validate configuration compatibility
+        saved_config = state["config"]
+        if saved_config.n_input != self.tri_config.n_input:
+            raise ValueError(
+                f"Input dimension mismatch: saved={saved_config.n_input}, "
+                f"current={self.tri_config.n_input}"
+            )
+        if saved_config.n_output != self.tri_config.n_output:
+            raise ValueError(
+                f"Output dimension mismatch: saved={saved_config.n_output}, "
+                f"current={self.tri_config.n_output}"
+            )
+
+        # 1. RESTORE WEIGHTS
+        weights = state["weights"]
+        self.w_ec_dg.data = weights["w_ec_dg"].to(self.device)
+        self.w_dg_ca3.data = weights["w_dg_ca3"].to(self.device)
+        self.w_ca3_ca1.data = weights["w_ca3_ca1"].to(self.device)
+        self.w_ca3_ca3.data = weights["w_ca3_ca3"].to(self.device)
+        self.w_ec_ca1.data = weights["w_ec_ca1"].to(self.device)
+        if weights["w_ec_l3_ca1"] is not None and self.w_ec_l3_ca1 is not None:
+            self.w_ec_l3_ca1.data = weights["w_ec_l3_ca1"].to(self.device)
+        self.w_ca1_inhib.data = weights["w_ca1_inhib"].to(self.device)
+        self.weights = self.w_ca3_ca1  # Update reference
+
+        # 2. RESTORE REGION STATE
+        region_state = state["region_state"]
+        
+        # Restore neuron state for all layers
+        neuron_state = region_state["neuron_state"]
+        self.dg_neurons.load_state(neuron_state["dg"])
+        self.ca3_neurons.load_state(neuron_state["ca3"])
+        self.ca1_neurons.load_state(neuron_state["ca1"])
+        
+        # Restore other region state
+        if region_state["ca3_activity_trace"] is not None:
+            self._ca3_activity_trace = region_state["ca3_activity_trace"].to(self.device)
+        if region_state["last_phase"] is not None:
+            self._last_phase = TrialPhase(region_state["last_phase"])
+        self._pending_theta_reset = region_state["pending_theta_reset"]
+        self._sequence_position = region_state["sequence_position"]
+        if region_state["ca3_threshold_offset"] is not None:
+            self._ca3_threshold_offset = region_state["ca3_threshold_offset"].to(self.device)
+        if region_state["ca3_activity_history"] is not None:
+            self._ca3_activity_history = region_state["ca3_activity_history"].to(self.device)
+        if region_state["ca3_slot_assignment"] is not None:
+            self._ca3_slot_assignment = region_state["ca3_slot_assignment"].to(self.device)
+        
+        # Restore TrisynapticState
+        tri_state = region_state["trisynaptic_state"]
+        self.state.dg_spikes = tri_state["dg_spikes"].to(self.device) if tri_state["dg_spikes"] is not None else None
+        self.state.ca3_spikes = tri_state["ca3_spikes"].to(self.device) if tri_state["ca3_spikes"] is not None else None
+        self.state.ca1_spikes = tri_state["ca1_spikes"].to(self.device) if tri_state["ca1_spikes"] is not None else None
+        self.state.ca3_membrane = tri_state["ca3_membrane"].to(self.device) if tri_state["ca3_membrane"] is not None else None
+        self.state.ca3_persistent = tri_state["ca3_persistent"].to(self.device) if tri_state["ca3_persistent"] is not None else None
+        self.state.sample_trace = tri_state["sample_trace"].to(self.device) if tri_state["sample_trace"] is not None else None
+        self.state.dg_trace = tri_state["dg_trace"].to(self.device) if tri_state["dg_trace"] is not None else None
+        self.state.ca3_trace = tri_state["ca3_trace"].to(self.device) if tri_state["ca3_trace"] is not None else None
+        self.state.nmda_trace = tri_state["nmda_trace"].to(self.device) if tri_state["nmda_trace"] is not None else None
+        self.state.stored_dg_pattern = tri_state["stored_dg_pattern"].to(self.device) if tri_state["stored_dg_pattern"] is not None else None
+        self.state.ffi_strength = tri_state["ffi_strength"]
+
+        # 3. RESTORE LEARNING STATE (STP)
+        learning_state = state["learning_state"]
+        if "stp_mossy" in learning_state and self.stp_mossy is not None:
+            self.stp_mossy.load_state(learning_state["stp_mossy"])
+        if "stp_schaffer" in learning_state and self.stp_schaffer is not None:
+            self.stp_schaffer.load_state(learning_state["stp_schaffer"])
+        if "stp_ec_ca1" in learning_state and self.stp_ec_ca1 is not None:
+            self.stp_ec_ca1.load_state(learning_state["stp_ec_ca1"])
+        if "stp_ca3_recurrent" in learning_state and self.stp_ca3_recurrent is not None:
+            self.stp_ca3_recurrent.load_state(learning_state["stp_ca3_recurrent"])
+
+        # 4. RESTORE OSCILLATOR STATE
+        oscillator_state = state["oscillator_state"]
+        if "gamma" in oscillator_state and self.gamma_oscillator is not None:
+            self.gamma_oscillator.load_state(oscillator_state["gamma"])
+        if "replay_engine" in oscillator_state and self.replay_engine is not None:
+            self.replay_engine.load_state(oscillator_state["replay_engine"])
+
+        # 5. RESTORE NEUROMODULATOR STATE
+        neuromodulator_state = state["neuromodulator_state"]
+        self.state.dopamine = neuromodulator_state["dopamine"]
+        self.state.acetylcholine = neuromodulator_state["acetylcholine"]
+        self.state.norepinephrine = neuromodulator_state["norepinephrine"]
+
+        # 6. RESTORE EPISODIC MEMORY
+        from thalia.regions.hippocampus.config import Episode  # Import here to avoid circular dependency
+        self.episode_buffer = []
+        for ep_state in state["episode_buffer"]:
+            episode = Episode(
+                state=ep_state["state"].to(self.device),
+                context=ep_state["context"].to(self.device) if ep_state["context"] is not None else None,
+                action=ep_state["action"],
+                reward=ep_state["reward"],
+                correct=ep_state["correct"],
+                metadata=ep_state["metadata"],
+                priority=ep_state["priority"],
+                timestamp=ep_state["timestamp"],
+                sequence=[s.to(self.device) for s in ep_state["sequence"]] if ep_state["sequence"] is not None else None,
+            )
+            self.episode_buffer.append(episode)

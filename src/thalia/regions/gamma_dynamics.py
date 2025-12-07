@@ -342,6 +342,10 @@ class GammaOscillator(nn.Module):
         self.gamma.sync_to_phase(state["gamma_phase"])
         self.time_ms = state["time_ms"]
 
+    def load_state(self, state: dict) -> None:
+        """Alias for set_state for checkpoint compatibility."""
+        self.set_state(state)
+
     def reset_state(self) -> None:
         """Reset oscillator to initial state."""
         self.theta.reset_state()

@@ -644,3 +644,88 @@ class PredictiveHierarchy(nn.Module):
             if hasattr(area, 'prediction_layer') and area.prediction_layer is not None:
                 total += area.prediction_layer.get_free_energy().item()
         return total
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete state for checkpointing.
+
+        Extends LayeredCortex state with prediction layer and attention state.
+
+        Returns state dictionary with keys:
+        - weights: All weights (inherited from LayeredCortex)
+        - region_state: Neuron states, spikes, traces (inherited)
+        - learning_state: BCM, STP (inherited)
+        - prediction_state: Prediction layer weights and state
+        - attention_state: Attention mechanism state
+        - neuromodulator_state: Current neuromodulators
+        - config: Configuration for validation
+        """
+        # Get base LayeredCortex state
+        state_dict = super().get_full_state()
+
+        # Add prediction layer state
+        if self.prediction_layer is not None:
+            pred_state = self.prediction_layer.get_state()
+            state_dict["prediction_state"] = {
+                "W_pred": pred_state.get("W_pred").clone() if "W_pred" in pred_state else None,
+                "W_encode": pred_state.get("W_encode").clone() if "W_encode" in pred_state else None,
+                "log_precision": pred_state.get("log_precision").clone() if "log_precision" in pred_state else None,
+                "prediction": pred_state.get("prediction").clone() if "prediction" in pred_state else None,
+                "error": pred_state.get("error").clone() if "error" in pred_state else None,
+            }
+        else:
+            state_dict["prediction_state"] = None
+
+        # Add attention state
+        if self.attention is not None:
+            attn_state = self.attention.get_state()
+            state_dict["attention_state"] = {
+                "W_q": attn_state.get("W_q").clone() if "W_q" in attn_state else None,
+                "W_k": attn_state.get("W_k").clone() if "W_k" in attn_state else None,
+                "W_v": attn_state.get("W_v").clone() if "W_v" in attn_state else None,
+                "W_o": attn_state.get("W_o").clone() if "W_o" in attn_state else None,
+                "attention_weights": attn_state.get("attention_weights").clone() if "attention_weights" in attn_state else None,
+            }
+        else:
+            state_dict["attention_state"] = None
+
+        # Update config with PredictiveCortex-specific parameters
+        state_dict["config"]["prediction_enabled"] = self.pred_config.prediction_enabled
+        state_dict["config"]["use_attention"] = self.pred_config.use_attention
+
+        return state_dict
+
+    def load_full_state(self, state_dict: Dict[str, Any]) -> None:
+        """Load complete state from checkpoint.
+
+        Args:
+            state_dict: State dictionary from get_full_state()
+
+        Raises:
+            ValueError: If config dimensions don't match
+        """
+        # Load base LayeredCortex state
+        super().load_full_state(state_dict)
+
+        # Load prediction layer state
+        if "prediction_state" in state_dict and state_dict["prediction_state"] is not None:
+            if self.prediction_layer is not None:
+                pred_state = state_dict["prediction_state"]
+                self.prediction_layer.load_state({
+                    "W_pred": pred_state["W_pred"].to(self.device) if pred_state["W_pred"] is not None else None,
+                    "W_encode": pred_state["W_encode"].to(self.device) if pred_state["W_encode"] is not None else None,
+                    "log_precision": pred_state["log_precision"].to(self.device) if pred_state["log_precision"] is not None else None,
+                    "prediction": pred_state["prediction"].to(self.device) if pred_state["prediction"] is not None else None,
+                    "error": pred_state["error"].to(self.device) if pred_state["error"] is not None else None,
+                })
+
+        # Load attention state
+        if "attention_state" in state_dict and state_dict["attention_state"] is not None:
+            if self.attention is not None:
+                attn_state = state_dict["attention_state"]
+                self.attention.load_state({
+                    "W_q": attn_state["W_q"].to(self.device) if attn_state["W_q"] is not None else None,
+                    "W_k": attn_state["W_k"].to(self.device) if attn_state["W_k"] is not None else None,
+                    "W_v": attn_state["W_v"].to(self.device) if attn_state["W_v"] is not None else None,
+                    "W_o": attn_state["W_o"].to(self.device) if attn_state["W_o"] is not None else None,
+                    "attention_weights": attn_state["attention_weights"].to(self.device) if attn_state["attention_weights"] is not None else None,
+                })

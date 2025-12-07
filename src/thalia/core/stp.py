@@ -311,6 +311,17 @@ class ShortTermPlasticity(nn.Module):
             "efficacy": (self.u * self.x).clone() if self.u is not None else None,
         }
 
+    def load_state(self, state: dict[str, Optional[torch.Tensor]]) -> None:
+        """Restore STP state from checkpoint.
+        
+        Args:
+            state: Dictionary from get_state()
+        """
+        if state["u"] is not None:
+            self.u = state["u"].to(self.U.device)
+        if state["x"] is not None:
+            self.x = state["x"].to(self.U.device)
+
     def __repr__(self) -> str:
         synapse_str = f"{self.n_pre}→{self.n_post}" if self.n_post else f"{self.n_pre}"
         return (
