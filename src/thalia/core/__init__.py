@@ -116,6 +116,10 @@ from thalia.core.sleep import (
     STAGE_CONFIGS,
     SleepSystemMixin,
 )
+from thalia.core.weight_init import (
+    InitStrategy,
+    WeightInitializer,
+)
 
 __all__ = [
     "LIFNeuron",
@@ -222,4 +226,7 @@ __all__ = [
     "StageConfig",
     "STAGE_CONFIGS",
     "SleepSystemMixin",
+    # Weight Initialization
+    "InitStrategy",
+    "WeightInitializer",
 ]
