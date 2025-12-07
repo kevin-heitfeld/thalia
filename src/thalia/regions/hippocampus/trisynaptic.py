@@ -38,9 +38,10 @@ import torch.nn.functional as F
 
 from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig
-from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe, assert_single_instance
+from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
+from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import BrainRegion, LearningRule
 from thalia.regions.theta_dynamics import TrialPhase, FeedforwardInhibition
 from thalia.regions.gamma_dynamics import GammaOscillator, ThetaGammaConfig
@@ -260,26 +261,26 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # This creates orthogonal codes for pattern separation
         # Uses row normalization for reliable activity propagation
         self.w_ec_dg = nn.Parameter(
-            self._create_sparse_random_weights(
-                self.dg_size,
-                self.tri_config.n_input,
+            WeightInitializer.sparse_random(
+                n_output=self.dg_size,
+                n_input=self.tri_config.n_input,
                 sparsity=0.3,  # 30% connectivity
-                device=device,
                 weight_scale=0.5,  # Strong weights for propagation
                 normalize_rows=True,  # Normalize for reliable propagation
+                device=device
             )
         )
 
         # DG → CA3: Random but less sparse
         # Uses row normalization for reliable activity propagation
         self.w_dg_ca3 = nn.Parameter(
-            self._create_sparse_random_weights(
-                self.ca3_size,
-                self.dg_size,
+            WeightInitializer.sparse_random(
+                n_output=self.ca3_size,
+                n_input=self.dg_size,
                 sparsity=0.5,
-                device=device,
                 weight_scale=0.5,  # Strong weights for propagation
                 normalize_rows=True,  # Normalize for reliable propagation
+                device=device
             )
         )
 
@@ -291,7 +292,13 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         #   32 * 0.15 * 0.4 = 1.92 > 1.0 ✓
         # We use slightly larger initial weights to bootstrap the network
         self.w_ca3_ca3 = nn.Parameter(
-            torch.randn(self.ca3_size, self.ca3_size, device=device) * 0.15 + 0.05
+            WeightInitializer.gaussian(
+                n_output=self.ca3_size,
+                n_input=self.ca3_size,
+                mean=0.05,
+                std=0.15,
+                device=device
+            )
         )
         # No self-connections
         with torch.no_grad():
@@ -312,13 +319,13 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         #   Only CA1 neurons connected to the active CA3 subset get high input
         #   This creates PATTERN-SPECIFIC CA1 activation → NMDA gating works!
         self.w_ca3_ca1 = nn.Parameter(
-            self._create_sparse_random_weights(
-                self.ca1_size,
-                self.ca3_size,
+            WeightInitializer.sparse_random(
+                n_output=self.ca1_size,
+                n_input=self.ca3_size,
                 sparsity=0.15,  # Each CA1 sees only 15% of CA3
-                device=device,
                 weight_scale=0.3,  # Strong individual weights
                 normalize_rows=False,  # NO normalization - pattern-specific!
+                device=device
             )
         )
 
@@ -341,13 +348,13 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         #   - MATCH: Same EC input → same EC→CA1 activation → coincidence with CA3
         #   - MISMATCH: Different EC input → different EC→CA1 activation → no coincidence
         self.w_ec_ca1 = nn.Parameter(
-            self._create_sparse_random_weights(
-                self.ca1_size,
-                self.tri_config.n_input,
+            WeightInitializer.sparse_random(
+                n_output=self.ca1_size,
+                n_input=self.tri_config.n_input,
                 sparsity=0.20,  # Each CA1 sees only 20% of EC
-                device=device,
                 weight_scale=0.3,  # Strong individual weights
                 normalize_rows=False,  # NO normalization - pattern-specific!
+                device=device
             )
         )
 
@@ -379,46 +386,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # Store main weights reference for compatibility
         self.weights = self.w_ca3_ca1
-
-    def _create_sparse_random_weights(
-        self,
-        n_post: int,
-        n_pre: int,
-        sparsity: float,
-        device: torch.device,
-        weight_scale: float = 0.1,
-        normalize_rows: bool = True,
-    ) -> torch.Tensor:
-        """Create sparse random weight matrix.
-
-        Each postsynaptic neuron receives input from a random subset of
-        presynaptic neurons. This creates orthogonal projections for
-        pattern separation.
-
-        Args:
-            n_post: Number of postsynaptic neurons
-            n_pre: Number of presynaptic neurons
-            sparsity: Fraction of connections (0-1)
-            device: Torch device
-            weight_scale: Scale for individual weights
-            normalize_rows: If True, normalize row sums for reliable propagation.
-                           If False, keep raw weights for pattern-specific activation.
-        """
-        # Create connectivity mask
-        mask = torch.rand(n_post, n_pre, device=device) < sparsity
-
-        # Random weights where connected
-        weights = torch.rand(n_post, n_pre, device=device) * weight_scale
-        weights = weights * mask.float()
-
-        if normalize_rows:
-            # Normalize rows so each neuron has similar total input
-            # This ensures reliable activity propagation
-            row_sums = weights.sum(dim=1, keepdim=True) + 1e-6
-            target_sum = n_pre * sparsity * weight_scale * 0.5  # Scale factor
-            weights = weights / row_sums * target_sum
-
-        return weights
 
     def reset_state(self) -> None:
         """Reset state for new episode.

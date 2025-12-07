@@ -35,6 +35,7 @@ import numpy as np
 from thalia.core.pathway_protocol import BaseNeuralPathway
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.utils import clamp_weights
+from thalia.core.weight_init import WeightInitializer
 from thalia.learning.bcm import BCMRule, BCMConfig
 
 
@@ -324,32 +325,27 @@ class SpikingPathway(BaseNeuralPathway):
         """Initialize weights with optional topographic structure."""
         cfg = self.config
 
-        weights = torch.randn(
-            cfg.target_size, cfg.source_size, device=cfg.device
-        ) * cfg.init_std + cfg.init_mean
-
-        weights = weights.clamp(cfg.w_min, cfg.w_max)
-
         if cfg.topographic:
-            weights = self._apply_topographic_init(weights)
+            # Use topographic initialization from registry
+            weights = WeightInitializer.topographic(
+                n_output=cfg.target_size,
+                n_input=cfg.source_size,
+                base_weight=cfg.init_mean,
+                sigma_factor=4.0,
+                boost_strength=0.3,
+                device=cfg.device
+            )
+        else:
+            # Use Gaussian initialization from registry
+            weights = WeightInitializer.gaussian(
+                n_output=cfg.target_size,
+                n_input=cfg.source_size,
+                mean=cfg.init_mean,
+                std=cfg.init_std,
+                device=cfg.device
+            )
 
-        return weights
-
-    def _apply_topographic_init(self, weights: torch.Tensor) -> torch.Tensor:
-        """Apply topographic connectivity pattern."""
-        n_target, n_source = weights.shape
-
-        for src_idx in range(n_source):
-            center = int((src_idx / n_source) * n_target)
-
-            for tgt_idx in range(n_target):
-                dist = abs(tgt_idx - center)
-                dist = min(dist, n_target - dist)
-                sigma = n_target / 4
-                boost = 0.3 * np.exp(-dist**2 / (2 * sigma**2))
-                weights[tgt_idx, src_idx] += boost
-
-        return weights.clamp(self.config.w_min, self.config.w_max)
+        return weights.clamp(cfg.w_min, cfg.w_max)
 
     def forward(
         self,

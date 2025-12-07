@@ -74,7 +74,6 @@ from thalia.core.scalable_attention import (
     ScalableAttentionConfig,
     AttentionType,
 )
-from thalia.core.neuron import LIFNeuron, LIFConfig
 
 
 @dataclass
@@ -104,7 +103,7 @@ class PredictiveCortexConfig(LayeredCortexConfig):
 @dataclass
 class PredictiveCortexState(RegionState):
     """State for predictive cortex.
-    
+
     Extends RegionState with cortex-specific fields for layer spikes,
     predictive coding, and attention.
     """
@@ -170,7 +169,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
     def __init__(self, config: PredictiveCortexConfig):
         """Initialize predictive cortex."""
         self.predictive_config = config
-        
+
         # =====================================================================
         # BASE LAYERED CORTEX (creates the L4→L2/3→L5 microcircuit)
         # =====================================================================
@@ -180,7 +179,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
-        
+
         # Compute output size (L2/3 + L5)
         self._output_size = self.l23_size + self.l5_size
 
@@ -191,7 +190,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             dt_ms=config.dt_ms,
             device=config.device,
         )
-        
+
         # Call parent init
         super().__init__(parent_config)
 
@@ -256,24 +255,24 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self._total_free_energy = 0.0
         self._timesteps = 0
         self._last_plasticity_delta = 0.0
-        
+
         # Cumulative spike counters (for diagnostics across timesteps)
         self._cumulative_l4_spikes = 0
         self._cumulative_l23_spikes = 0
         self._cumulative_l5_spikes = 0
-    
+
     # =========================================================================
     # ABSTRACT METHOD IMPLEMENTATIONS (from BrainRegion)
     # =========================================================================
-    
+
     def _get_learning_rule(self) -> LearningRule:
         """Predictive cortex uses predictive STDP (local errors + spike timing)."""
         return LearningRule.PREDICTIVE_STDP
-    
+
     def _initialize_weights(self) -> torch.Tensor:
         """Weights are managed by internal LayeredCortex."""
         return self.cortex.weights
-    
+
     def _create_neurons(self) -> Any:
         """Neurons are managed by internal LayeredCortex."""
         return self.cortex.neurons
@@ -298,7 +297,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self._total_free_energy = 0.0
         self._timesteps = 0
         self._last_plasticity_delta = 0.0
-        
+
         # Reset cumulative spike counters (for diagnostics across timesteps)
         self._cumulative_l4_spikes = 0
         self._cumulative_l23_spikes = 0
@@ -374,7 +373,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self.state.l4_spikes = l4_output
         self.state.l23_spikes = l23_output
         self.state.l5_spikes = l5_output
-        
+
         # Update cumulative spike counters (for diagnostics)
         if l4_output is not None:
             self._cumulative_l4_spikes += int(l4_output.sum().item())
@@ -456,7 +455,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             output = l5_output
         else:
             output = cortex_output
-            
+
         # =====================================================================
         # CONTINUOUS LEARNING (plasticity happens as part of forward dynamics)
         # =====================================================================
@@ -482,9 +481,9 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get layer-specific diagnostics using DiagnosticsMixin helpers.
-        
+
         Uses the same format as LayeredCortex for consistency.
-        
+
         Note: Reports both instantaneous (l4_active_count) and cumulative
         (l4_cumulative_spikes) counts. During consolidation phases with
         zero input, instantaneous L4 will be 0 but cumulative shows
@@ -500,7 +499,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
             "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
         }
-        
+
         # Spike diagnostics for each layer (same format as LayeredCortex)
         # These are INSTANTANEOUS counts from the last forward pass
         if self.state.l4_spikes is not None:
@@ -509,7 +508,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             diag.update(self.spike_diagnostics(self.state.l23_spikes, "l23"))
         if self.state.l5_spikes is not None:
             diag.update(self.spike_diagnostics(self.state.l5_spikes, "l5"))
-        
+
         # Weight diagnostics from prediction layer (if available)
         if self.prediction_layer is not None:
             pred_diag = self.prediction_layer.get_diagnostics()

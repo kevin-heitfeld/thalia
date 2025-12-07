@@ -45,7 +45,6 @@ When to Use:
 
 from __future__ import annotations
 
-import math
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import Optional, Dict, Any, List, Generator
@@ -54,6 +53,7 @@ import torch
 
 from thalia.core.utils import ensure_batch_dim
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
+from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import (
     BrainRegion,
     RegionConfig,
@@ -254,7 +254,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             with torch.no_grad():
                 d1_d2_sum = self.d1_weights.sum() + self.d2_weights.sum()
                 dynamic_budget = (d1_d2_sum / self.n_actions).item()
-            
+
             unified_config = UnifiedHomeostasisConfig(
                 weight_budget=dynamic_budget,
                 soft_normalization=self.striatum_config.homeostatic_soft,
@@ -389,33 +389,31 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     def _initialize_pathway_weights(self) -> torch.Tensor:
         """Initialize weights for D1 or D2 pathway with balanced, principled scaling.
 
-        Uses fan-in scaling to ensure consistent input magnitude regardless of
+        Uses Xavier initialization to ensure consistent input magnitude regardless of
         input size. Both D1 and D2 start with identical distributions - the
         competition between GO and NOGO pathways emerges purely from learning.
 
         Principles:
-        1. Fan-in scaling: Normalizes for different input sizes (like Xavier init)
+        1. Xavier scaling: Normalizes for different input sizes
         2. Equal D1/D2: No baked-in pathway preference
-        3. Minimal variance: Near-symmetric start prevents early bias lock-in
+        3. Minimal variance: Near-symmetric start prevents early bias lock-in (gain=0.2)
         4. Moderate values: Keeps neurons in operational firing regime
 
         This avoids encoding task-specific knowledge into initialization.
         """
-        # Fan-in scaling for consistent input magnitude
-        fan_in_scale = 1.0 / math.sqrt(self.config.n_input)
+        # Use Xavier initialization with reduced gain for minimal variance
+        # Gain of 0.2 provides similar variance to old system (0.01)
+        weights = WeightInitializer.xavier(
+            n_output=self.config.n_output,
+            n_input=self.config.n_input,
+            gain=0.2,  # Reduced gain for near-symmetric start
+            device=self.device
+        )
 
-        # Base weight with MINIMAL random variance for near-symmetric start
-        # Reduced variance from 0.05 to 0.01 to prevent early bias lock-in
-        # With few training trials, high variance can cause one action to
-        # get lucky/unlucky and create permanent bias
-        base = 0.15
-        variance = 0.01  # Reduced from 0.05 for more symmetric initialization
-        weights = base + variance * torch.randn(self.config.n_output, self.config.n_input)
+        # Scale by w_max and clamp to bounds
+        weights = weights * self.config.w_max
 
-        # Scale by fan-in and w_max
-        weights = weights * fan_in_scale * self.config.w_max
-
-        return weights.clamp(self.config.w_min, self.config.w_max).to(self.device)
+        return weights.clamp(self.config.w_min, self.config.w_max)
 
     def _update_stdp_eligibility(self, input_spikes: torch.Tensor, output_spikes: torch.Tensor, dt: float = 1.0) -> None:
         """Update STDP eligibility traces from spike timing.
@@ -589,9 +587,14 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize with small positive weights."""
-        weights = torch.rand(self.config.n_output, self.config.n_input)
-        weights = weights * self.config.w_max * 0.2
-        return weights.clamp(self.config.w_min, self.config.w_max).to(self.device)
+        weights = WeightInitializer.uniform(
+            n_output=self.config.n_output,
+            n_input=self.config.n_input,
+            low=0.0,
+            high=self.config.w_max * 0.2,
+            device=self.device
+        )
+        return weights.clamp(self.config.w_min, self.config.w_max)
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create MSN-like neurons (legacy - kept for parent class compatibility).

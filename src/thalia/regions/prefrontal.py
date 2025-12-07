@@ -52,10 +52,11 @@ from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 
-from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig, CompositeStrategy
+from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
 
-from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights, cosine_similarity_safe
+from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
+from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import (
     BrainRegion,
     RegionConfig,
@@ -230,7 +231,13 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
 
         # Recurrent weights for WM maintenance
         self.rec_weights = nn.Parameter(
-            torch.randn(config.n_output, config.n_output, device=self.device) * 0.1
+            WeightInitializer.gaussian(
+                n_output=config.n_output,
+                n_input=config.n_output,
+                mean=0.0,
+                std=0.1,
+                device=self.device
+            )
         )
         # Initialize with some self-excitation
         with torch.no_grad():
@@ -283,14 +290,13 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
 
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize feedforward weights."""
-        # Xavier initialization
-        std = (2.0 / (self.pfc_config.n_input + self.pfc_config.n_output)) ** 0.5
         return nn.Parameter(
-            torch.randn(
-                self.pfc_config.n_output,
-                self.pfc_config.n_input,
-                device=torch.device(self.pfc_config.device),
-            ) * std
+            WeightInitializer.xavier(
+                n_output=self.pfc_config.n_output,
+                n_input=self.pfc_config.n_input,
+                gain=1.0,
+                device=torch.device(self.pfc_config.device)
+            )
         )
 
     def _create_neurons(self) -> ConductanceLIF:

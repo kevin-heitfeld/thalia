@@ -48,6 +48,7 @@ import torch.nn.functional as F
 from thalia.regions.base import BrainRegion, RegionConfig, LearningRule
 from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
+from thalia.core.weight_init import WeightInitializer
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
 from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
@@ -289,13 +290,29 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Input → L4: positive excitatory weights
         w_scale_input = 1.0 / max(1, int(cfg.n_input * 0.15))  # Assume 15% input sparsity
         self.w_input_l4 = nn.Parameter(
-            torch.abs(torch.randn(self.l4_size, cfg.n_input, device=device)) * w_scale_input
+            torch.abs(
+                WeightInitializer.gaussian(
+                    n_output=self.l4_size,
+                    n_input=cfg.n_input,
+                    mean=0.0,
+                    std=w_scale_input,
+                    device=device
+                )
+            )
         )
 
         # L4 → L2/3: positive excitatory weights
         w_scale_l4_l23 = 1.0 / expected_active_l4
         self.w_l4_l23 = nn.Parameter(
-            torch.abs(torch.randn(self.l23_size, self.l4_size, device=device)) * w_scale_l4_l23
+            torch.abs(
+                WeightInitializer.gaussian(
+                    n_output=self.l23_size,
+                    n_input=self.l4_size,
+                    mean=0.0,
+                    std=w_scale_l4_l23,
+                    device=device
+                )
+            )
         )
 
         # L2/3 recurrent: SIGNED weights (compact E/I approximation)
@@ -305,7 +322,13 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Positive weights = local excitation, negative weights = lateral inhibition.
         # Uses dedicated bounds [l23_recurrent_w_min, l23_recurrent_w_max] during learning.
         self.w_l23_recurrent = nn.Parameter(
-            torch.randn(self.l23_size, self.l23_size, device=device) * 0.2
+            WeightInitializer.gaussian(
+                n_output=self.l23_size,
+                n_input=self.l23_size,
+                mean=0.0,
+                std=0.2,
+                device=device
+            )
         )
         with torch.no_grad():
             self.w_l23_recurrent.data.fill_diagonal_(0.0)
@@ -313,12 +336,24 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # L2/3 → L5: positive excitatory weights
         w_scale_l23_l5 = 1.0 / expected_active_l23
         self.w_l23_l5 = nn.Parameter(
-            torch.abs(torch.randn(self.l5_size, self.l23_size, device=device)) * w_scale_l23_l5
+            torch.abs(
+                WeightInitializer.gaussian(
+                    n_output=self.l5_size,
+                    n_input=self.l23_size,
+                    mean=0.0,
+                    std=w_scale_l23_l5,
+                    device=device
+                )
+            )
         )
 
         # L2/3 inhibition: positive (inhibitory connections suppress)
         self.w_l23_inhib = nn.Parameter(
-            torch.ones(self.l23_size, self.l23_size, device=device) * 0.3
+            WeightInitializer.ones(
+                n_output=self.l23_size,
+                n_input=self.l23_size,
+                device=device
+            ) * 0.3
         )
         with torch.no_grad():
             self.w_l23_inhib.data.fill_diagonal_(0.0)
