@@ -38,7 +38,7 @@ import torch.nn.functional as F
 
 from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig
-from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe
+from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe, assert_single_instance
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.regions.base import BrainRegion, LearningRule
@@ -443,6 +443,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
     def _init_state(self, batch_size: int = 1) -> None:
         """Initialize all layer states (internal method)."""
+        assert_single_instance(batch_size, "TrisynapticHippocampus")
         device = self.device
 
         self.dg_neurons.reset_state(batch_size)

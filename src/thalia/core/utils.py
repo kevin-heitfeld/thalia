@@ -250,13 +250,47 @@ def ones_like_config(
     return torch.ones(*dims, device=torch.device(device), dtype=dtype)
 
 
+def assert_single_instance(batch_size: int, context: str = "This component") -> None:
+    """Assert that batch_size is 1, enforcing THALIA's single-instance architecture.
+    
+    THALIA models a single continuous brain state processing a temporal stream.
+    Unlike ML training frameworks that batch independent samples for efficiency,
+    THALIA maintains continuous temporal dynamics (membrane potentials, synaptic
+    traces, adaptation state, working memory) that cannot be meaningfully batched.
+    
+    For parallel evaluation (e.g., in RL training), instantiate multiple instances
+    rather than using batch_size > 1.
+    
+    Args:
+        batch_size: The batch size to validate
+        context: Description of where this check occurs (for error message)
+        
+    Raises:
+        ValueError: If batch_size != 1
+        
+    Example:
+        >>> def reset_state(self, batch_size: int = 1) -> None:
+        ...     assert_single_instance(batch_size, "LayeredCortex")
+        ...     # Continue with state initialization
+    """
+    if batch_size != 1:
+        raise ValueError(
+            f"{context} only supports batch_size=1, got {batch_size}. "
+            "THALIA models a single continuous brain with temporal dynamics "
+            "(membrane potentials, synaptic traces, adaptation state, working memory). "
+            "For parallel simulations, create multiple instances."
+        )
+
+
 __all__ = [
     "ensure_batch_dim",
     "ensure_batch_dims", 
     "remove_batch_dim",
+    "ensure_1d",
     "clamp_weights",
     "apply_soft_bounds",
     "cosine_similarity_safe",
     "zeros_like_config",
     "ones_like_config",
+    "assert_single_instance",
 ]

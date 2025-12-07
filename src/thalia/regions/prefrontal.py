@@ -339,6 +339,9 @@ class Prefrontal(BrainRegion):
 
     def reset_state(self, batch_size: int = 1) -> None:
         """Reset state with specific batch size."""
+        from thalia.core.utils import assert_single_instance
+        assert_single_instance(batch_size, "PrefrontalCortex")
+        
         self.neurons.reset_state(batch_size)
         self.dopamine_system.reset()
 

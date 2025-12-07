@@ -280,6 +280,9 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
     def reset_state(self, batch_size: int = 1) -> None:
         """Reset all states for new sequence."""
+        from thalia.core.utils import assert_single_instance
+        assert_single_instance(batch_size, "PredictiveCortex")
+        
         self.cortex.reset_state(batch_size)
 
         if self.prediction_layer is not None:

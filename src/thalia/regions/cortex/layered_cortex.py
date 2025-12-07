@@ -50,7 +50,7 @@ from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
-from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights
+from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights, assert_single_instance
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.ei_balance import EIBalanceRegulator, LayerEIBalance
@@ -330,7 +330,14 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
         self.reset_state(1)
 
     def reset_state(self, batch_size: int = 1) -> None:
-        """Reset all layer states."""
+        """Reset all layer states.
+        
+        Note: THALIA only supports batch_size=1. The architecture models a single
+        continuous brain state processing a temporal stream. For parallel evaluation
+        (e.g., RL training), instantiate multiple LayeredCortex instances.
+        """
+        assert_single_instance(batch_size, "LayeredCortex")
+        
         dev = self.device
 
         self.l4_neurons.reset_state(batch_size)
@@ -451,26 +458,22 @@ class LayeredCortex(DiagnosticsMixin, BrainRegion):
 
             if self.stp_l23_recurrent is not None:
                 # Apply STP to recurrent connections
-                # STP returns (batch, n_pre, n_post) efficacy
+                # NOTE: STP with batch_size > 1 is not supported in THALIA's architecture
+                # THALIA models a single continuous brain state, not parallel simulations
                 stp_efficacy = self.stp_l23_recurrent(
                     self.state.l23_recurrent_activity.float()
                 )  # (batch, l23_size, l23_size)
                 
-                # Apply efficacy: for each batch, modulate weights by efficacy
-                # effective_w = w * efficacy for each sample in batch
-                # l23_recurrent_activity @ (w * efficacy).T
-                batch_size = stp_efficacy.shape[0]
-                l23_rec = torch.zeros(batch_size, self.l23_size, device=stp_efficacy.device)
+                # For batch_size=1, squeeze and apply directly
+                assert_single_instance(stp_efficacy.shape[0], "STP efficacy in LayeredCortex")
                 
-                for b in range(batch_size):
-                    effective_w_rec = self.w_l23_recurrent * stp_efficacy[b]
-                    l23_rec[b] = torch.matmul(
-                        self.state.l23_recurrent_activity[b],
+                stp_efficacy = stp_efficacy.squeeze(0)  # (l23_size, l23_size)
+                effective_w_rec = self.w_l23_recurrent * stp_efficacy
+                l23_rec = (
+                    torch.matmul(
+                        self.state.l23_recurrent_activity,
                         effective_w_rec.t(),
                     )
-                
-                l23_rec = (
-                    l23_rec
                     * cfg.l23_recurrent_strength
                     * recurrent_scale
                     * ffi_suppression
