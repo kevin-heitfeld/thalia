@@ -24,6 +24,7 @@ import torch
 
 if TYPE_CHECKING:
     from ..regions.hippocampus import Episode
+    from ..memory.replay_engine import ReplayEngine
 
 
 class SleepStage(Enum):
@@ -105,6 +106,42 @@ class SleepSystemMixin:
     theta: Any
     config: Any
     _cortex_l5_size: int
+    
+    def __init__(self, *args, **kwargs):
+        """Initialize replay engine for sleep consolidation."""
+        super().__init__(*args, **kwargs)
+        
+        # Create replay engine for sleep consolidation
+        # Will be initialized properly in subclass after hippocampus exists
+        self._replay_engine: Optional[ReplayEngine] = None
+    
+    def _init_replay_engine(self) -> None:
+        """Initialize replay engine after hippocampus is created."""
+        if self._replay_engine is not None:
+            return
+        
+        # Lazy import to avoid circular dependency
+        from ..memory.replay_engine import ReplayEngine, ReplayConfig, ReplayMode
+            
+        # Get theta-gamma config from hippocampus if available
+        theta_gamma_config = None
+        if hasattr(self.hippocampus, 'config') and hasattr(self.hippocampus.config, 'theta_gamma_enabled'):
+            if self.hippocampus.config.theta_gamma_enabled:
+                theta_gamma_config = self.hippocampus.theta_gamma_config
+        
+        # Configure for sleep replay (ripple-enabled, 5x compression)
+        replay_config = ReplayConfig(
+            compression_factor=5.0,  # 5x time compression during sleep
+            dt_ms=1.0,
+            theta_gamma_config=theta_gamma_config,
+            ripple_enabled=True,
+            ripple_frequency=150.0,  # Hz
+            ripple_duration=80.0,    # ms
+            ripple_gain=3.0,
+            mode=ReplayMode.SEQUENCE,  # Prefer sequence replay
+        )
+        
+        self._replay_engine = ReplayEngine(replay_config)
 
     def sleep_epoch(
         self,
@@ -409,56 +446,59 @@ class SleepSystemMixin:
         }
 
     def _run_consolidation(self, episode: "Episode") -> None:
-        """Run hippocampus → cortex consolidation for an episode (SWS-specific).
+        """Run hippocampus → cortex consolidation using ReplayEngine.
 
-        This method uses gamma-driven replay when sequences are available.
-        During sleep, sequences that took seconds to encode are replayed
-        time-compressed (~5-20x faster), with the gamma oscillator driving
-        slot-by-slot reactivation.
+        Uses ReplayEngine for unified replay implementation with:
+        - Time-compressed sequence replay (5x faster)
+        - Ripple modulation during consolidation
+        - Gamma-driven slot-by-slot reactivation
+        - Fallback to single-state replay if no sequence
 
-        For episodes without sequences, falls back to single-state replay.
+        This is the same replay engine used by hippocampus, ensuring
+        consistent replay mechanics during both online and offline consolidation.
         """
-        # Try gamma-driven sequence replay first
-        if hasattr(self.hippocampus, 'replay_sequence') and episode.sequence is not None:
-            # Use gamma oscillator for time-compressed sequence replay
-            replay_result = self.hippocampus.replay_sequence(
-                episode,
-                compression_factor=5.0,  # 5x faster than encoding
-                dt=1.0,
-            )
-
-            # Consolidate each replayed pattern to cortex
-            for pattern in replay_result.get("replayed_patterns", []):
-                if pattern is not None:
-                    cortex_input = torch.zeros(1, self.config.input_size)
-                    if pattern.dim() == 1:
-                        pattern = pattern.unsqueeze(0)
-                    min_size = min(pattern.shape[1], self.config.input_size)
-                    cortex_input[:, :min_size] = pattern[:, :min_size]
-                    cortex_activity = self.cortex.forward(cortex_input)
-
-                    # Learning during replay
-                    self.replay_pathway.learn(
-                        pre_spikes=pattern,
-                        post_spikes=cortex_activity,
-                        reward=0.5,
-                        dt=1.0,
-                    )
-        else:
-            # Fall back to original single-state replay
-            hippo_activity = episode.state[:self.config.hippocampus_size].unsqueeze(0)
-            self.replay_pathway.trigger_ripple()
-            replay_signal = self.replay_pathway.replay_step(dt=1.0)
-
-            if replay_signal is not None:
+        # Initialize replay engine if needed
+        if self._replay_engine is None:
+            self._init_replay_engine()
+        
+        # Pattern processor: forward through hippocampus for pattern completion
+        def pattern_processor(pattern: torch.Tensor) -> torch.Tensor:
+            """Process pattern through hippocampus CA3 for completion."""
+            if hasattr(self.hippocampus, 'forward'):
+                # Use hippocampus forward pass for pattern completion
+                from ..regions.theta_dynamics import TrialPhase
+                return self.hippocampus.forward(pattern, phase=TrialPhase.DELAY)
+            else:
+                # No processing available, return as-is
+                return pattern
+        
+        # Trigger ripple event
+        self._replay_engine.trigger_ripple()
+        
+        # Run replay through engine
+        replay_result = self._replay_engine.replay(
+            episode=episode,
+            pattern_processor=pattern_processor,
+            gating_fn=None,  # No gating during sleep consolidation
+        )
+        
+        # Consolidate each replayed pattern to cortex
+        for pattern in replay_result.replayed_patterns:
+            if pattern is not None:
+                # Prepare cortex input
                 cortex_input = torch.zeros(1, self.config.input_size)
-                min_size = min(replay_signal.shape[1], self.config.input_size)
-                cortex_input[:, :min_size] = replay_signal[:, :min_size]
+                if pattern.dim() == 1:
+                    pattern = pattern.unsqueeze(0)
+                min_size = min(pattern.shape[1], self.config.input_size)
+                cortex_input[:, :min_size] = pattern[:, :min_size]
+                
+                # Forward through cortex
                 cortex_activity = self.cortex.forward(cortex_input)
-
+                
+                # Strengthen hippocampus → cortex connection via replay pathway
                 self.replay_pathway.learn(
-                    pre_spikes=hippo_activity,
+                    pre_spikes=pattern,
                     post_spikes=cortex_activity,
-                    reward=0.5,
+                    reward=0.5,  # Moderate reward during consolidation
                     dt=1.0,
                 )
