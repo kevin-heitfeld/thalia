@@ -392,20 +392,88 @@ class NeuromodulatorMixin:
 
 ---
 
-### 10. 🔲 Consolidate Replay Implementations
-**Estimated Effort**: 3-4 hours
+### 10. ✅ COMPLETED: Consolidate Replay Implementations
+**Estimated Effort**: 3-4 hours → **Actual: 3 hours**
 **Impact**: Medium
+**Status**: ✅ COMPLETED (commits 08fe41e, 2c6bd57)
 
 **Problem**:
-- `SleepSystemMixin` has replay logic
-- `TrisynapticHippocampus.replay_sequence()` has different replay logic
+- `SleepSystemMixin` had replay logic calling `hippocampus.replay_sequence()`
+- `TrisynapticHippocampus.replay_sequence()` had different replay logic
 - Both deal with time compression, gamma oscillations, sequence reactivation
-- Potential for shared abstraction
+- ~120 lines of duplicated replay code
+- Ripple modulation logic scattered across codebase
 
-**Solution**:
-1. Extract `ReplayEngine` class
-2. Implement time compression logic once
-3. Make sleep and hippocampal replay use same engine with different configs
+**Solution Implemented**:
+Created unified `ReplayEngine` class used by BOTH hippocampus and sleep system:
+
+**New Components** (src/thalia/memory/replay_engine.py, ~380 lines):
+1. **ReplayEngine** - Main engine with three replay modes:
+   - SEQUENCE: Gamma-driven sequence replay with time compression
+   - SINGLE: Single-state fallback when no sequence available
+   - RIPPLE: Sharp-wave ripple modulated replay
+   
+2. **ReplayConfig** dataclass:
+   - compression_factor (5-20x typical), dt_ms, theta_gamma_config
+   - ripple_enabled, ripple_frequency, ripple_duration, ripple_gain
+   - mode selection, apply_gating, pattern_completion flags
+   
+3. **ReplayResult** dataclass:
+   - slots_replayed, total_activity, gamma_cycles
+   - replayed_patterns list, diagnostics
+
+**Refactored Code**:
+
+1. **TrisynapticHippocampus.replay_sequence()** (~60 lines eliminated)
+   - Old: ~120 lines of manual gamma oscillator control
+   - New: ~60 lines delegating to ReplayEngine
+   - Pattern processor: `lambda p: self.forward(p, phase=DELAY)`
+   - Gating function: `lambda slot: self._get_gamma_gating(slot)`
+   - Lazy import to avoid circular dependency
+
+2. **SleepSystemMixin._run_consolidation()** (~50 lines eliminated)
+   - Old: Two code paths (sequence via hippocampus or single-state fallback)
+   - New: Single path using ReplayEngine.replay()
+   - Pattern processor: `hippocampus.forward()` for CA3 completion
+   - Ripple modulation: `trigger_ripple()` before replay
+   - Lazy initialization of replay engine
+
+**Test Suite** (tests/unit/test_replay_engine.py, ~280 lines, 17 tests):
+- Basic: initialization, configuration
+- Sequence replay: gamma-driven with compression
+- Single-state fallback: when no sequence available
+- Callbacks: pattern_processor, gating_fn validation
+- Time compression: verify compressed dt usage
+- Ripple modulation: trigger, phase, modulation tracking
+- State management: reset_state, diagnostics
+- Edge cases: empty sequence, no oscillator, variable compression
+- Activity tracking, gamma cycle counting
+- Integration test with hippocampus
+
+**All 17 tests pass! ✅**
+
+**Results**:
+- Single source of truth for ALL replay logic
+- ~110 lines of duplicate code eliminated (~60 from hippocampus, ~50 from sleep)
+- Consistent time compression across online/offline consolidation
+- Same gamma oscillator behavior during wake and sleep replay
+- Easy to add new replay modes (just extend enum)
+- Clear biological documentation
+- Flexible callback system for customization
+
+**Architecture**:
+```
+ReplayEngine (memory/replay_engine.py)
+    ├─► TrisynapticHippocampus.replay_sequence()
+    │   (online recall/prediction)
+    │
+    └─► SleepSystemMixin._run_consolidation()
+        (offline sleep consolidation)
+```
+
+**Commits**: 
+- 08fe41e: Initial ReplayEngine + hippocampus refactoring
+- 2c6bd57: Sleep system migration to ReplayEngine
 
 ---
 
@@ -445,17 +513,17 @@ class NeuromodulatorMixin:
 | 7. Test utilities | 100-150 | 10-15 | 2-3 (✅ 2.5) | ✅ Done | Medium |
 | 8. State access | 0 (doc only) | 1 | 2-3 (✅ 0.5) | ✅ Done | Medium |
 | 9. Neuromodulator mixin | 80-120 | 8-10 | 2 | 🔲 Todo | Medium |
-| 10. Replay consolidation | 100-150 | 3-4 | 3-4 | 🔲 Todo | Medium |
-| **Total** | **1010-1600** | **75-105** | **27-35** | **8/10** | - |
+| 10. Replay consolidation | 100-150 | 4 | 3-4 (✅ 3) | ✅ Done | Medium |
+| **Total** | **1010-1600** | **75-105** | **27-35** | **9/10** | - |
 
-**Progress**: 6 high-priority + 2 medium-priority items completed (14.5 hours actual vs 19-25 estimated)
+**Progress**: 4 high-priority + 5 medium-priority items completed (17.5 hours actual vs 22-28 estimated)
 
 ---
 
 ## Recommendations
 
 ### Phase 5 Complete! ✅
-Eight of ten items completed (4 high-priority + 4 medium-priority):
+**Nine of ten items completed** (4 high-priority + 5 medium-priority):
 
 1. ✅ **Reset Standardization** (#1) - Commit 248b0f9
    - Unified on `reset_state()` interface across 50+ files
@@ -503,22 +571,27 @@ Eight of ten items completed (4 high-priority + 4 medium-priority):
    - Event-driven adapters properly use `@property state` delegation
    - Added documentation to architecture.md
 
+9. ✅ **Replay Consolidation** (#10) - Commits 08fe41e, 2c6bd57
+   - Created unified ReplayEngine (~380 lines)
+   - Refactored TrisynapticHippocampus (~60 lines eliminated)
+   - Refactored SleepSystemMixin (~50 lines eliminated)
+   - Total: ~110 lines of duplicate replay code eliminated
+   - 17 comprehensive tests, all passing
+   - Both hippocampus and sleep now use SAME engine!
+
 **Total Impact**:
-- ~535 lines of boilerplate eliminated (with infrastructure added)
-- 75+ files updated
-- 14.5 hours actual (vs 19-25 estimated) - **25% ahead of schedule!**
-- 9 commits (7 implementation, 2 documentation)
+- ~645 lines of boilerplate eliminated (with infrastructure added)
+- 79+ files updated
+- 17.5 hours actual (vs 22-28 estimated) - **~23% ahead of schedule!**
+- 10 commits (8 implementation, 2 documentation)
 
 ### Remaining Items
-Remaining medium-priority improvements:
+Only one medium-priority item remains:
 
-5. Region Factory (#5) - Dynamic brain construction
-6. Similarity Methods (#6) - Consolidate diagnostic utils
-7. Neuromodulator Mixin (#9) - Standardize DA/ACh/NE handling
-10. Replay Consolidation (#10) - Unify sleep/hippocampal replay
+9. Neuromodulator Mixin (#9) - Standardize DA/ACh/NE handling across regions
 
 ### Long-Term Improvements
-Items 7-13 as needed or when touching related code
+Items 11-13 as needed or when touching related code
 
 ---
 
