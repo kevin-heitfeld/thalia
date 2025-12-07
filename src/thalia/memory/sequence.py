@@ -58,6 +58,7 @@ from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig, EncodingTy
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.core.event_system import TrialPhase
 from thalia.core.utils import cosine_similarity_safe
+from thalia.core.mixins import ConfigurableMixin, DiagnosticCollectorMixin
 from thalia.core.mixins import DiagnosticCollectorMixin
 
 
@@ -87,7 +88,7 @@ class SequenceContext:
         )
 
 
-class SequenceMemory(nn.Module, DiagnosticCollectorMixin):
+class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
     """
     Hippocampus-based sequence memory for language processing.
 
@@ -109,6 +110,9 @@ class SequenceMemory(nn.Module, DiagnosticCollectorMixin):
         >>> query = torch.tensor([[1, 5, 3]])
         >>> predicted = memory.predict_next(query)  # Should activate pattern for 7
     """
+    
+    # For ConfigurableMixin - specifies how to extract config from ThaliaConfig
+    CONFIG_CONVERTER_METHOD = "to_sequence_memory_config"
 
     def __init__(self, config: SequenceMemoryConfig):
         super().__init__()
@@ -168,29 +172,6 @@ class SequenceMemory(nn.Module, DiagnosticCollectorMixin):
         }
 
         self.to(self.device)
-
-    @classmethod
-    def from_thalia_config(cls, config: "ThaliaConfig") -> "SequenceMemory":
-        """Create SequenceMemory from unified ThaliaConfig.
-
-        This is the recommended way to create a sequence memory.
-
-        Args:
-            config: ThaliaConfig with all settings
-
-        Returns:
-            SequenceMemory instance
-
-        Example:
-            from thalia.config import ThaliaConfig
-
-            config = ThaliaConfig(...)
-            memory = SequenceMemory.from_thalia_config(config)
-        """
-        from thalia.config import ThaliaConfig
-
-        legacy_config = config.to_sequence_memory_config()
-        return cls(legacy_config)
 
     def reset_state(self) -> None:
         """Reset memory state for new sequence."""

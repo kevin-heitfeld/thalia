@@ -58,6 +58,8 @@ import time
 
 import torch
 
+from thalia.core.mixins import ConfigurableMixin
+
 if TYPE_CHECKING:
     from thalia.language.model import LanguageBrainInterface
     from thalia.memory.sequence import SequenceMemory
@@ -103,7 +105,7 @@ class TrainingMetrics:
         }
 
 
-class LocalTrainer:
+class LocalTrainer(ConfigurableMixin):
     """
     Trainer using local (non-backprop) learning rules.
 
@@ -124,6 +126,9 @@ class LocalTrainer:
         ...     memory=sequence_memory,
         ... )
     """
+    
+    # For ConfigurableMixin - specifies how to extract config from ThaliaConfig
+    CONFIG_CONVERTER_METHOD = "to_training_config"
 
     def __init__(self, config: TrainingConfig):
         self.config = config
@@ -138,29 +143,6 @@ class LocalTrainer:
 
         # Step counter
         self.global_step = 0
-
-    @classmethod
-    def from_thalia_config(cls, config: "ThaliaConfig") -> "LocalTrainer":
-        """Create LocalTrainer from unified ThaliaConfig.
-
-        This is the recommended way to create a trainer.
-
-        Args:
-            config: ThaliaConfig with all settings
-
-        Returns:
-            LocalTrainer instance
-
-        Example:
-            from thalia.config import ThaliaConfig
-
-            config = ThaliaConfig(...)
-            trainer = LocalTrainer.from_thalia_config(config)
-        """
-        from thalia.config import ThaliaConfig
-
-        legacy_config = config.to_training_config()
-        return cls(legacy_config)
 
     def train(
         self,

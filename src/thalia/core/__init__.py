@@ -21,6 +21,7 @@ from thalia.core.stp import (
 from thalia.core.mixins import (
     DeviceMixin,
     ResettableMixin,
+    ConfigurableMixin,
     DiagnosticCollectorMixin,
 )
 from thalia.core.diagnostics import (
@@ -77,7 +78,6 @@ from thalia.core.utils import (
 )
 from thalia.core.protocols import (
     Resettable,
-    BatchResettable,
     Learnable,
     Forwardable,
     Diagnosable,
@@ -110,6 +110,7 @@ __all__ = [
     # Mixins
     "DeviceMixin",
     "ResettableMixin",
+    "ConfigurableMixin",
     "DiagnosticCollectorMixin",
     # Dendritic computation
     "DendriticBranch",
@@ -172,7 +173,6 @@ __all__ = [
     "ones_like_config",
     # Protocols
     "Resettable",
-    "BatchResettable",
     "Learnable",
     "Forwardable",
     "Diagnosable",

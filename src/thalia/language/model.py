@@ -59,6 +59,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from thalia.core.mixins import ConfigurableMixin
+
 # Import encoding/decoding components
 from thalia.language.encoder import (
     SpikeEncoder,
@@ -122,7 +124,7 @@ class LanguageInterfaceConfig:
         )
 
 
-class LanguageBrainInterface(nn.Module):
+class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     """
     Interface between language and the EventDrivenBrain.
 
@@ -145,6 +147,9 @@ class LanguageBrainInterface(nn.Module):
         # Generate continuation
         generated = lang_interface.generate(token_ids, max_new_tokens=50)
     """
+    
+    # For ConfigurableMixin - specifies how to extract config from ThaliaConfig
+    CONFIG_CONVERTER_METHOD = "to_language_interface_config"
 
     def __init__(
         self,
@@ -203,35 +208,6 @@ class LanguageBrainInterface(nn.Module):
         self.output_buffer: List[torch.Tensor] = []
 
         self.to(self.device)
-
-    @classmethod
-    def from_thalia_config(
-        cls,
-        brain: "EventDrivenBrain",
-        config: "ThaliaConfig",
-    ) -> "LanguageBrainInterface":
-        """Create LanguageBrainInterface from unified ThaliaConfig.
-
-        This is the recommended way to create a language interface.
-
-        Args:
-            brain: EventDrivenBrain instance (created from same ThaliaConfig)
-            config: ThaliaConfig with all settings
-
-        Returns:
-            LanguageBrainInterface instance
-
-        Example:
-            from thalia.config import ThaliaConfig
-            from thalia.core.brain import EventDrivenBrain
-
-            config = ThaliaConfig(...)
-            brain = EventDrivenBrain.from_thalia_config(config)
-            interface = LanguageBrainInterface.from_thalia_config(brain, config)
-        """
-        # Import here to avoid circular imports
-        legacy_config = config.to_language_interface_config()
-        return cls(brain, legacy_config)
 
     def forward(
         self,
