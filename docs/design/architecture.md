@@ -256,6 +256,52 @@ Functional brain regions with specialized computations, tested without inter-reg
 - **Approach**: Dummy inputs, verify internal dynamics
 - **Example**: LayeredCortex L4 responds to input, L2/3 integrates, L5 outputs
 
+### Common Patterns
+
+#### State Access Pattern
+**All regions use consistent state encapsulation:**
+
+```python
+from thalia.regions.base import BrainRegion, RegionState
+
+class MyRegion(BrainRegion):
+    def __init__(self, config):
+        super().__init__(config)
+        # Initialize state with RegionState dataclass
+        self.state = RegionState(
+            spikes=None,
+            membrane=None,
+            dopamine=0.0,
+        )
+    
+    def forward(self, input):
+        # ✅ Access state via self.state.attribute
+        prev_spikes = self.state.spikes
+        dopamine_level = self.state.dopamine
+        
+        # ✅ Update state
+        self.state.spikes = new_spikes
+        self.state.dopamine = new_dopamine
+        return output
+```
+
+**Event-driven adapters delegate via `@property`:**
+
+```python
+class EventDrivenCortex(EventDrivenRegionBase):
+    @property
+    def state(self):
+        return getattr(self._cortex, "state", None)
+```
+
+**Guidelines:**
+- ✅ Use `self.state.attr` for all dynamic state
+- ✅ Inherit from `RegionState` for custom state classes
+- ✅ Use `@property state` in event-driven adapters
+- ❌ Don't use direct `self.attr` for mutable state
+
+**Benefits:** Clear config/state separation, easy debugging, transparent adapters
+
 ---
 
 ## Level 4: INTEGRATION
