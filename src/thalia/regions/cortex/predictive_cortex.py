@@ -460,6 +460,9 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         # =====================================================================
         # CONTINUOUS LEARNING (plasticity happens as part of forward dynamics)
         # =====================================================================
+        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
+        self.decay_neuromodulators(dt_ms=dt)
+
         # The underlying LayeredCortex already does continuous STDP in its forward()
         # Here we also update the prediction weights based on accumulated error
         if self.prediction_layer is not None:

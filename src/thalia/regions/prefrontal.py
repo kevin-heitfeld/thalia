@@ -397,6 +397,9 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         gate = self.dopamine_system.get_gate()
         self.state.dopamine = da_level
 
+        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain/DopamineGatingSystem)
+        self.decay_neuromodulators(dt_ms=dt)
+
         # =====================================================================
         # THETA MODULATION
         # =====================================================================

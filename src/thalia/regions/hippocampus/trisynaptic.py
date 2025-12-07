@@ -1250,6 +1250,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             
         cfg = self.tri_config
         
+        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
+        self.decay_neuromodulators(dt_ms=_dt)
+
         # Get dopamine-modulated learning rate
         effective_lr = self.get_effective_learning_rate(cfg.ca3_learning_rate)
         if effective_lr < 1e-8:

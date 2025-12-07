@@ -241,6 +241,9 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         output_1d = output_spikes.squeeze(0) if output_spikes.dim() == 2 and output_spikes.shape[0] == 1 else output_spikes
         self.output_trace = self.output_trace + output_1d
 
+        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
+        self.decay_neuromodulators(dt_ms=dt)
+
         # ======================================================================
         # Update STDP eligibility (spike-timing based)
         # ======================================================================

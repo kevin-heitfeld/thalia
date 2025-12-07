@@ -839,8 +839,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             self._update_stdp_eligibility(input_spikes, output_spikes)
 
         # NOTE: Dopamine is now managed centrally by Brain (VTA).
-        # No local dopamine decay needed - the Brain sets dopamine via set_dopamine()
-        # and it persists until the next reward delivery.
+        # Dopamine decay happens in Brain._update_tonic_dopamine(), not here.
+        # But ACh/NE (if used) decay locally.
+        self.decay_neuromodulators(dt_ms=dt)
 
         # Update recent spikes (based on D1 output)
         self.recent_spikes = self.recent_spikes * 0.9 + d1_spikes.squeeze()

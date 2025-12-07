@@ -654,6 +654,9 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.state.last_plasticity_delta = 0.0
             return
 
+        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
+        self.decay_neuromodulators(dt_ms=dt)
+
         # Get 1D versions of spike tensors for torch.outer
         l4_spikes = ensure_1d(self.state.l4_spikes)
         l23_spikes = ensure_1d(self.state.l23_spikes) if self.state.l23_spikes is not None else None

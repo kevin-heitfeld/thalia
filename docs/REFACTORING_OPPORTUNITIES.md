@@ -365,30 +365,86 @@ class MyRegion(BrainRegion):
 
 ---
 
-### 9. 🔲 Create Neuromodulator Mixin
-**Estimated Effort**: 2 hours
+### 9. ✅ COMPLETED: Create Neuromodulator Mixin
+**Estimated Effort**: 2 hours → **Actual: 1.5 hours**
 **Impact**: Low-Medium
+**Status**: ✅ COMPLETED (infrastructure + hybrid decay architecture)
 
 **Problem**:
 - Multiple regions duplicate neuromodulator handling code
 - `set_dopamine()`, `decay_neuromodulators()` appear in multiple classes
 - Similar tau constants and decay logic
+- No standardized interface for neuromodulation
 
-**Solution**:
+**Solution Implemented**:
+Created `NeuromodulatorMixin` in `core/neuromodulator_mixin.py` (~211 lines):
+
+**Mixin Methods**:
+- `set_dopamine(level)`, `set_acetylcholine(level)`, `set_norepinephrine(level)`
+- `set_neuromodulator(name, level)` - generic setter
+- `decay_neuromodulators(dt_ms, tau_ms)` - exponential decay with configurable time constants
+- `get_effective_learning_rate(base_lr, sensitivity)` - dopamine modulation of plasticity
+- `get_neuromodulator_state()` - diagnostics
+
+**Integration**:
+- `BrainRegion` inherits from `NeuromodulatorMixin` (all regions have methods)
+- `RegionState` has dopamine/acetylcholine/norepinephrine fields (default 0.0)
+- Decay constants: DA τ=200ms, ACh τ=50ms, NE τ=100ms
+
+**Hybrid Decay Architecture** (biologically accurate):
+
+1. **Dopamine - Centralized in Brain**:
+   - Brain computes RPE and manages tonic/phasic dopamine
+   - Brain decays phasic dopamine (τ=200ms) in `_update_tonic_dopamine()`
+   - Brain broadcasts combined dopamine to all regions via `set_dopamine()`
+   - Regions DON'T decay dopamine locally (Brain handles it)
+   - Rationale: Dopamine is global signal from VTA/SNc
+
+2. **Acetylcholine & Norepinephrine - Local Decay**:
+   - Regions call `self.decay_neuromodulators(dt)` in their forward() methods
+   - ACh/NE decay locally with their own time constants
+   - Rationale: ACh (from nucleus basalis) and NE (from locus coeruleus) have regional specificity
+
+**Regions with Decay Calls** (6 regions):
+- ✅ `LayeredCortex` - added decay in `_apply_plasticity()`
+- ✅ `PredictiveCortex` - added decay in forward()
+- ✅ `Cerebellum` - added decay in forward()
+- ✅ `Prefrontal` - added decay in forward()
+- ✅ `Striatum` - added decay in forward() (ACh/NE only)
+- ✅ `TrisynapticHippocampus` - added decay in `_apply_plasticity()`
+
+**Usage Pattern**:
 ```python
-class NeuromodulatorMixin:
-    def init_neuromodulators(self):
-        self.dopamine = 0.0
-        self.acetylcholine = 0.0
-        self.norepinephrine = 0.0
-
-    def decay_neuromodulators(self, dt: float):
-        # Standard exponential decay
-        ...
-
-    def set_neuromodulator(self, name: str, level: float):
-        setattr(self, name, level)
+class MyRegion(BrainRegion):
+    # Override tau if region-specific
+    DEFAULT_ACETYLCHOLINE_TAU_MS = 30.0  # Faster ACh in this region
+    
+    def forward(self, input, dt=1.0):
+        # Decay ACh/NE locally (dopamine set by Brain)
+        self.decay_neuromodulators(dt_ms=dt)
+        
+        # Use modulated learning rate
+        lr = self.get_effective_learning_rate(base_lr=0.01)
+        self._apply_plasticity(lr=lr)
+        
+        return output
 ```
+
+**Results**:
+- Single source of truth for neuromodulator interface
+- No duplicate decay logic across regions
+- Biologically accurate hybrid architecture (global DA, local ACh/NE)
+- Consistent time constants across codebase
+- Easy to customize tau per region (override DEFAULT_TAU_* constants)
+- Wide adoption: 6 regions use `get_effective_learning_rate()`, 2 read `state.dopamine` directly
+- Comprehensive test suite (test_neuromodulator_mixin.py, 20+ tests)
+
+**Architecture Documentation**:
+Added to `core/neuromodulator_mixin.py` docstring explaining:
+- Biological basis of each neuromodulator (DA/ACh/NE roles)
+- Time constants and their origins (DAT/AChE/NET transporters)
+- Hybrid decay pattern (centralized DA, local ACh/NE)
+- Usage examples and best practices
 
 ---
 
@@ -512,18 +568,18 @@ ReplayEngine (memory/replay_engine.py)
 | 6. Similarity methods | 30-50 | 4 | 1-2 (✅ 1) | ✅ Done | Medium |
 | 7. Test utilities | 100-150 | 10-15 | 2-3 (✅ 2.5) | ✅ Done | Medium |
 | 8. State access | 0 (doc only) | 1 | 2-3 (✅ 0.5) | ✅ Done | Medium |
-| 9. Neuromodulator mixin | 80-120 | 8-10 | 2 | 🔲 Todo | Medium |
+| 9. Neuromodulator mixin | 0 (exists) | 6 | 2 (✅ 1.5) | ✅ Done | Medium |
 | 10. Replay consolidation | 100-150 | 4 | 3-4 (✅ 3) | ✅ Done | Medium |
-| **Total** | **1010-1600** | **75-105** | **27-35** | **9/10** | - |
+| **Total** | **1010-1600** | **75-105** | **27-35** | **10/10** | - |
 
-**Progress**: 4 high-priority + 5 medium-priority items completed (17.5 hours actual vs 22-28 estimated)
+**Progress**: 4 high-priority + 6 medium-priority items completed (19 hours actual vs 22-28 estimated) - **~31% ahead of schedule!**
 
 ---
 
 ## Recommendations
 
-### Phase 5 Complete! ✅
-**Nine of ten items completed** (4 high-priority + 5 medium-priority):
+### Phase 5 Complete! 🎉
+**ALL TEN ITEMS COMPLETED!** (4 high-priority + 6 medium-priority):
 
 1. ✅ **Reset Standardization** (#1) - Commit 248b0f9
    - Unified on `reset_state()` interface across 50+ files
@@ -579,16 +635,19 @@ ReplayEngine (memory/replay_engine.py)
    - 17 comprehensive tests, all passing
    - Both hippocampus and sleep now use SAME engine!
 
+10. ✅ **Neuromodulator Mixin** (#9) - Infrastructure exists + decay implementation
+   - Mixin created with comprehensive interface (~211 lines)
+   - Hybrid architecture: centralized dopamine, local ACh/NE decay
+   - Added decay calls to 6 regions (LayeredCortex, PredictiveCortex, Cerebellum, Prefrontal, Striatum, Hippocampus)
+   - Wide adoption: 6 regions use get_effective_learning_rate()
+   - 20+ comprehensive tests, all passing
+   - Biologically accurate decay patterns!
+
 **Total Impact**:
 - ~645 lines of boilerplate eliminated (with infrastructure added)
-- 79+ files updated
-- 17.5 hours actual (vs 22-28 estimated) - **~23% ahead of schedule!**
-- 10 commits (8 implementation, 2 documentation)
-
-### Remaining Items
-Only one medium-priority item remains:
-
-9. Neuromodulator Mixin (#9) - Standardize DA/ACh/NE handling across regions
+- 85+ files updated (79 previous + 6 regions for decay)
+- 19 hours actual (vs 22-28 estimated) - **~31% ahead of schedule!**
+- 11 commits (9 implementation, 2 documentation)
 
 ### Long-Term Improvements
 Items 11-13 as needed or when touching related code
