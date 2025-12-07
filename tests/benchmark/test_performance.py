@@ -66,17 +66,17 @@ class TestLIFPerformance:
     """Benchmark LIF neuron performance."""
 
     def test_lif_forward_small(self):
-        """Benchmark small LIF forward pass (100 neurons)."""
-        neuron = LIFNeuron(n_neurons=100)
+        """Benchmark small LIF forward pass (5000 neurons, batch_size=1)."""
+        neuron = LIFNeuron(n_neurons=5000)
         neuron.reset_state()
-        input_current = torch.randn(32, 100)
+        input_current = torch.randn(1, 5000)
 
         def forward():
             neuron(input_current)
 
         stats = benchmark_function(forward, n_runs=100)
 
-        print(f"\nLIF Forward (100 neurons, batch=32):")
+        print(f"\nLIF Forward (5000 neurons, batch_size=1):")
         print(f"  Mean: {stats['mean']*1000:.3f} ms")
         print(f"  Std:  {stats['std']*1000:.3f} ms")
 
@@ -85,17 +85,17 @@ class TestLIFPerformance:
             f"LIF forward pass too slow: {stats['mean']:.4f}s > {threshold}s threshold"
 
     def test_lif_forward_large(self):
-        """Benchmark large LIF forward pass (10k neurons)."""
-        neuron = LIFNeuron(n_neurons=10000)
+        """Benchmark large LIF forward pass (50k neurons, batch_size=1)."""
+        neuron = LIFNeuron(n_neurons=50000)
         neuron.reset_state()
-        input_current = torch.randn(32, 10000)
+        input_current = torch.randn(1, 50000)
 
         def forward():
             neuron(input_current)
 
         stats = benchmark_function(forward, n_runs=50)
 
-        print(f"\nLIF Forward (10k neurons, batch=32):")
+        print(f"\nLIF Forward (50k neurons, batch_size=1):")
         print(f"  Mean: {stats['mean']*1000:.3f} ms")
         print(f"  Std:  {stats['std']*1000:.3f} ms")
 
@@ -222,21 +222,28 @@ class TestDendriticPerformance:
     """Benchmark dendritic neuron performance."""
 
     def test_dendritic_forward(self):
-        """Benchmark dendritic neuron forward pass."""
+        """Benchmark dendritic neuron forward pass (batch_size=1, more neurons)."""
+        n_neurons = 1000
+        n_branches = 5
+        inputs_per_branch = 20
+        
         config = DendriticNeuronConfig(
-            n_branches=5,
-            inputs_per_branch=20,
+            n_branches=n_branches,
+            inputs_per_branch=inputs_per_branch,
         )
-        neuron = DendriticNeuron(n_neurons=100, config=config)
+        neuron = DendriticNeuron(n_neurons=n_neurons, config=config)
         neuron.reset_state()
-        input_spikes = torch.randn(32, 100)
+        
+        # Input size must be n_branches * inputs_per_branch = 100
+        input_size = n_branches * inputs_per_branch
+        input_spikes = torch.randn(1, input_size)
 
         def forward():
             neuron(input_spikes)
 
         stats = benchmark_function(forward, n_runs=50)
 
-        print(f"\nDendritic Forward (100 neurons, 5 branches):")
+        print(f"\nDendritic Forward ({n_neurons} neurons, {n_branches} branches, batch_size=1):")
         print(f"  Mean: {stats['mean']*1000:.3f} ms")
         print(f"  Std:  {stats['std']*1000:.3f} ms")
 
@@ -250,17 +257,17 @@ class TestLearningPerformance:
     """Benchmark learning mechanism performance."""
 
     def test_ei_balance_update(self):
-        """Benchmark E/I balance regulator update."""
+        """Benchmark E/I balance regulator update (batch_size=1, more neurons)."""
         regulator = EIBalanceRegulator()
-        exc_spikes = torch.randn(32, 100)
-        inh_spikes = torch.randn(32, 20)
+        exc_spikes = torch.randn(1, 2000)
+        inh_spikes = torch.randn(1, 500)
 
         def update():
             regulator.update(exc_spikes, inh_spikes)
 
         stats = benchmark_function(update, n_runs=100)
 
-        print(f"\nE/I Balance Update:")
+        print(f"\nE/I Balance Update (2000 exc, 500 inh, batch_size=1):")
         print(f"  Mean: {stats['mean']*1000:.3f} ms")
         print(f"  Std:  {stats['std']*1000:.3f} ms")
 
