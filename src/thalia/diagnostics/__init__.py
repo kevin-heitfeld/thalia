@@ -8,6 +8,7 @@ This package provides monitoring and analysis tools for network health:
 - Performance profiling
 - Interactive dashboard for real-time monitoring
 - Automatic diagnostic collection utilities
+- Metacognitive monitoring (confidence estimation, abstention)
 """
 
 from .criticality import (
@@ -25,6 +26,13 @@ from .health_monitor import (
 )
 from .dashboard import Dashboard
 from .auto_collect import auto_diagnostics
+from .metacognition import (
+    MetacognitiveMonitor,
+    MetacognitiveMonitorConfig,
+    MetacognitiveStage,
+    ConfidenceEstimator,
+    CalibrationNetwork,
+)
 
 __all__ = [
     # Criticality monitoring
@@ -42,4 +50,10 @@ __all__ = [
     "Dashboard",
     # Auto-collection utilities
     "auto_diagnostics",
+    # Metacognitive monitoring
+    "MetacognitiveMonitor",
+    "MetacognitiveMonitorConfig",
+    "MetacognitiveStage",
+    "ConfidenceEstimator",
+    "CalibrationNetwork",
 ]
