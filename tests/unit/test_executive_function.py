@@ -13,6 +13,9 @@ from thalia.tasks.executive_function import (
     GoNoGoConfig,
     DelayedGratificationConfig,
     DCCSConfig,
+    TaskSwitchingConfig,
+    TowerOfHanoiConfig,
+    RavensMatricesConfig,
 )
 
 
@@ -585,3 +588,687 @@ class TestEdgeCases:
         task_info = tasks.delayed_gratification(config_impatient)
         # 10.0 * 0.1^10 = 0.00001 << 1.0
         assert task_info["optimal_choice"] == "immediate"
+
+
+# ============================================================================
+# Stage 2: Task Switching Tests
+# ============================================================================
+
+class TestTaskSwitching:
+    """Tests for task switching paradigm."""
+    
+    def test_initialization(self):
+        """Test task switching initialization."""
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig()
+        
+        stimuli, task_cues, responses, is_switch = tasks.task_switching(config)
+        
+        assert len(stimuli) == config.n_trials
+        assert len(task_cues) == config.n_trials
+        assert len(responses) == config.n_trials
+        assert len(is_switch) == config.n_trials
+    
+    def test_stimulus_dimensions(self):
+        """Test stimulus dimensions are correct."""
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig(stimulus_dim=32)
+        
+        stimuli, _, _, _ = tasks.task_switching(config)
+        
+        assert all(s.shape == (32,) for s in stimuli)
+    
+    def test_task_cues(self):
+        """Test task cues are binary."""
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig(n_tasks=2)
+        
+        _, task_cues, _, _ = tasks.task_switching(config)
+        
+        # All cues should be 0 or 1
+        assert all(cue in [0, 1] for cue in task_cues)
+    
+    def test_switch_probability(self):
+        """Test switch probability is approximately respected."""
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig(
+            n_trials=1000,
+            switch_probability=0.3,
+        )
+        
+        _, _, _, is_switch = tasks.task_switching(config)
+        
+        switch_rate = sum(is_switch) / len(is_switch)
+        
+        # Should be close to 0.3 (within tolerance)
+        assert 0.25 < switch_rate < 0.35
+    
+    def test_first_trial_not_switch(self):
+        """Test first trial is never marked as switch."""
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig()
+        
+        _, _, _, is_switch = tasks.task_switching(config)
+        
+        assert is_switch[0] == False
+    
+    def test_correct_responses(self):
+        """Test responses are valid."""
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig(n_responses=2)
+        
+        _, _, responses, _ = tasks.task_switching(config)
+        
+        # All responses should be 0 or 1
+        assert all(r in [0, 1] for r in responses)
+    
+    def test_evaluate_task_switching(self):
+        """Test evaluation metrics."""
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig(n_trials=40)
+        
+        _, _, correct_responses, is_switch = tasks.task_switching(config)
+        
+        # Perfect performance
+        metrics = tasks.evaluate_task_switching(
+            responses=correct_responses,
+            correct_responses=correct_responses,
+            is_switch=is_switch,
+        )
+        
+        assert metrics["overall_accuracy"] == 1.0
+        assert metrics["switch_accuracy"] == 1.0
+        assert metrics["repeat_accuracy"] == 1.0
+        assert metrics["switch_cost"] == 0.0
+    
+    def test_evaluate_switch_cost(self):
+        """Test switch cost calculation."""
+        tasks = ExecutiveFunctionTasks()
+        
+        # Create scenario with switch cost
+        correct = [1, 1, 0, 0, 1]
+        is_switch = [False, False, True, False, True]
+        
+        # Worse on switch trials: correct on repeat, wrong on switch
+        responses = [1, 1, 1, 0, 0]  # Wrong on both switches (indices 2 and 4)
+        
+        metrics = tasks.evaluate_task_switching(
+            responses=responses,
+            correct_responses=correct,
+            is_switch=is_switch,
+        )
+        
+        # Overall: 3/5 correct
+        assert metrics["overall_accuracy"] == pytest.approx(3/5)
+        # Repeat trials (indices 0,1,3): all correct = 3/3
+        assert metrics["repeat_accuracy"] == pytest.approx(1.0)
+        # Switch trials (indices 2,4): all wrong = 0/2
+        assert metrics["switch_accuracy"] == pytest.approx(0.0)
+        # Switch cost should be positive (1.0 - 0.0)
+        assert metrics["switch_cost"] == pytest.approx(1.0)
+    
+    def test_statistics_update(self):
+        """Test statistics are updated correctly."""
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig(n_trials=30)
+        
+        _, _, correct_responses, is_switch = tasks.task_switching(config)
+        
+        # Evaluate with perfect performance
+        tasks.evaluate_task_switching(
+            responses=correct_responses,
+            correct_responses=correct_responses,
+            is_switch=is_switch,
+        )
+        
+        assert tasks.statistics["n_trials"] == 30
+        assert tasks.statistics["n_correct"] == 30
+        assert "task_switching" in tasks.statistics["by_task"]
+        assert tasks.statistics["by_task"]["task_switching"]["total"] == 30
+    
+    def test_switch_and_repeat_counts(self):
+        """Test switch and repeat trial counts."""
+        tasks = ExecutiveFunctionTasks()
+        
+        correct = [1, 0, 1, 0, 1]
+        is_switch = [False, True, False, True, False]
+        
+        metrics = tasks.evaluate_task_switching(
+            responses=correct,
+            correct_responses=correct,
+            is_switch=is_switch,
+        )
+        
+        assert metrics["n_switch_trials"] == 2
+        assert metrics["n_repeat_trials"] == 3
+    
+    def test_with_device(self):
+        """Test task switching respects device parameter."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        tasks = ExecutiveFunctionTasks()
+        config = TaskSwitchingConfig(device="cuda")
+        
+        stimuli, _, _, _ = tasks.task_switching(config)
+        
+        assert all(s.device.type == "cuda" for s in stimuli)
+    
+    def test_generate_batch_task_switching(self):
+        """Test batch generation for task switching."""
+        tasks = ExecutiveFunctionTasks()
+        
+        batch_stimuli, batch_labels = tasks.generate_batch(
+            task_type=TaskType.TASK_SWITCHING,
+            batch_size=20,
+        )
+        
+        assert batch_stimuli.shape[0] == 20
+        assert batch_labels.shape[0] == 20
+        # Stimulus includes task cue (extra dimension)
+        assert batch_stimuli.shape[1] == 64 + 1  # Default stimulus_dim + cue
+    
+    def test_reproducibility(self):
+        """Test reproducibility with same seed."""
+        tasks1 = ExecutiveFunctionTasks()
+        tasks2 = ExecutiveFunctionTasks()
+        
+        np.random.seed(42)
+        torch.manual_seed(42)
+        _, cues1, _, switches1 = tasks1.task_switching(
+            TaskSwitchingConfig(n_trials=20)
+        )
+        
+        np.random.seed(42)
+        torch.manual_seed(42)
+        _, cues2, _, switches2 = tasks2.task_switching(
+            TaskSwitchingConfig(n_trials=20)
+        )
+        
+        assert cues1 == cues2
+        assert switches1 == switches2
+    
+    def test_no_switches_edge_case(self):
+        """Test evaluation with no switches."""
+        tasks = ExecutiveFunctionTasks()
+        
+        correct = [1, 0, 1, 0]
+        is_switch = [False, False, False, False]
+        
+        metrics = tasks.evaluate_task_switching(
+            responses=correct,
+            correct_responses=correct,
+            is_switch=is_switch,
+        )
+        
+        assert metrics["repeat_accuracy"] == 1.0
+        assert np.isnan(metrics["switch_accuracy"])
+        assert np.isnan(metrics["switch_cost"])
+    
+    def test_all_switches_edge_case(self):
+        """Test evaluation with all switches."""
+        tasks = ExecutiveFunctionTasks()
+        
+        correct = [1, 0, 1, 0]
+        is_switch = [True, True, True, True]
+        
+        metrics = tasks.evaluate_task_switching(
+            responses=correct,
+            correct_responses=correct,
+            is_switch=is_switch,
+        )
+        
+        assert metrics["switch_accuracy"] == 1.0
+        assert np.isnan(metrics["repeat_accuracy"])
+        assert np.isnan(metrics["switch_cost"])
+
+
+# ============================================================================
+# Integration Tests
+# ============================================================================
+
+class TestExecutiveFunctionIntegration:
+    """Integration tests across multiple executive function tasks."""
+    
+    def test_stage2_tasks_integration(self):
+        """Test Stage 2 tasks (DCCS + task switching) together."""
+        tasks = ExecutiveFunctionTasks()
+        
+        # DCCS
+        dccs_cards, dccs_rules, dccs_correct = tasks.dccs()
+        dccs_responses = dccs_correct  # Perfect performance
+        dccs_metrics = tasks.evaluate_dccs(
+            responses=dccs_responses,
+            correct_bins=dccs_correct,
+            rules=dccs_rules,
+        )
+        
+        # Task Switching
+        ts_stimuli, ts_cues, ts_correct, ts_switch = tasks.task_switching()
+        ts_metrics = tasks.evaluate_task_switching(
+            responses=ts_correct,
+            correct_responses=ts_correct,
+            is_switch=ts_switch,
+        )
+        
+        # Both should have perfect accuracy
+        assert dccs_metrics["overall_accuracy"] == 1.0
+        assert ts_metrics["overall_accuracy"] == 1.0
+        
+        # Statistics should include both tasks
+        stats = tasks.get_statistics()
+        assert "dccs" in stats["by_task"]
+        assert "task_switching" in stats["by_task"]
+
+
+class TestTowerOfHanoi:
+    """Tests for Tower of Hanoi planning task (Stage 3-4)."""
+    
+    def test_initialization(self):
+        """Test Tower of Hanoi task generation."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=3)
+        
+        states, disk_moved, moves, optimal = tasks.tower_of_hanoi(config)
+        
+        # Check return structure
+        assert len(states) > 0
+        assert len(disk_moved) == len(moves)
+        assert optimal == 7  # 2^3 - 1 = 7 moves
+        assert all(isinstance(s, torch.Tensor) for s in states)
+        assert all(isinstance(d, int) for d in disk_moved)
+        assert all(isinstance(m, tuple) and len(m) == 2 for m in moves)
+    
+    def test_optimal_solution_3_disks(self):
+        """Test that 3-disk solution is optimal."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=3)
+        
+        states, disk_moved, moves, optimal = tasks.tower_of_hanoi(config)
+        
+        # Should take exactly 7 moves (optimal)
+        assert len(moves) == 7
+        assert optimal == 7
+    
+    def test_optimal_solution_4_disks(self):
+        """Test that 4-disk solution is optimal."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=4, optimal_moves=15)
+        
+        states, disk_moved, moves, optimal = tasks.tower_of_hanoi(config)
+        
+        # Should take exactly 15 moves (optimal for 4 disks)
+        assert len(moves) == 15
+        assert optimal == 15
+    
+    def test_state_encoding(self):
+        """Test state encoding dimensions."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=3, encode_dim=64)
+        
+        states, _, _, _ = tasks.tower_of_hanoi(config)
+        
+        # States should have correct dimension (3 pegs × encode_dim)
+        expected_dim = 3 * config.encode_dim
+        assert all(s.shape == (expected_dim,) for s in states)
+    
+    def test_valid_moves(self):
+        """Test that all moves are valid."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=3)
+        
+        _, _, moves, _ = tasks.tower_of_hanoi(config)
+        
+        # All moves should be between valid pegs (0, 1, 2)
+        for from_peg, to_peg in moves:
+            assert 0 <= from_peg <= 2
+            assert 0 <= to_peg <= 2
+            assert from_peg != to_peg
+    
+    def test_evaluate_perfect_solution(self):
+        """Test evaluation of optimal solution."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=3)
+        
+        states, _, moves, optimal = tasks.tower_of_hanoi(config)
+        
+        # Create target state (all disks on peg 2)
+        target_state = tasks._encode_hanoi_state(
+            [[], [], [0, 1, 2]],  # All disks on target peg
+            config.encode_dim,
+            config.n_disks,
+            config.device,
+        )
+        
+        metrics = tasks.evaluate_tower_of_hanoi(
+            moves,
+            optimal,
+            states[-1],
+            target_state,
+        )
+        
+        assert metrics["success"] == 1.0
+        assert metrics["efficiency"] == 1.0  # Optimal
+        assert metrics["planning_quality"] == 1.0
+        assert metrics["extra_moves"] == 0
+    
+    def test_evaluate_suboptimal_solution(self):
+        """Test evaluation with extra moves."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=3)
+        
+        states, _, _, optimal = tasks.tower_of_hanoi(config)
+        
+        # Add fake extra moves
+        extra_moves = [(0, 1), (1, 2), (0, 1)]  # 3 extra moves
+        moves = [(0, 1)] * 10  # 10 moves instead of 7
+        
+        # Create target state
+        target_state = tasks._encode_hanoi_state(
+            [[], [], [0, 1, 2]],
+            config.encode_dim,
+            config.n_disks,
+            config.device,
+        )
+        
+        metrics = tasks.evaluate_tower_of_hanoi(
+            moves,
+            optimal,
+            states[-1],  # Assume still solved
+            target_state,
+        )
+        
+        # Efficiency should be less than 1.0 due to extra moves
+        assert metrics["efficiency"] < 1.0
+        assert metrics["n_moves"] == 10
+        assert metrics["optimal_moves"] == 7
+        assert metrics["extra_moves"] == 3
+    
+    def test_statistics_update(self):
+        """Test that Tower of Hanoi statistics are updated."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=3)
+        
+        states, _, moves, optimal = tasks.tower_of_hanoi(config)
+        
+        target_state = tasks._encode_hanoi_state(
+            [[], [], [0, 1, 2]],
+            config.encode_dim,
+            config.n_disks,
+            config.device,
+        )
+        
+        tasks.evaluate_tower_of_hanoi(moves, optimal, states[-1], target_state)
+        
+        stats = tasks.get_statistics()
+        assert "tower_of_hanoi" in stats["by_task"]
+        assert stats["by_task"]["tower_of_hanoi"] == 1.0  # Perfect performance
+    
+    def test_device_handling(self):
+        """Test device handling for Tower of Hanoi."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=2, device="cpu")
+        
+        states, _, _, _ = tasks.tower_of_hanoi(config)
+        
+        # All states should be on correct device
+        assert all(s.device.type == "cpu" for s in states)
+    
+    def test_max_moves_limit(self):
+        """Test that max_moves limit is respected."""
+        tasks = ExecutiveFunctionTasks()
+        config = TowerOfHanoiConfig(n_disks=5, max_moves=10)
+        
+        _, _, moves, _ = tasks.tower_of_hanoi(config)
+        
+        # Should not exceed max_moves
+        assert len(moves) <= 10
+
+
+class TestRavensMatrices:
+    """Tests for Raven's Progressive Matrices (Stage 3-4)."""
+    
+    def test_initialization(self):
+        """Test Raven's matrices generation."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig()
+        
+        matrix, answer_choices, correct_idx, rule_type = tasks.ravens_matrices(config)
+        
+        # Check structure
+        assert matrix.shape == (9, config.stimulus_dim)  # 3x3 grid
+        assert answer_choices.shape == (config.n_answer_choices, config.stimulus_dim)
+        assert 0 <= correct_idx < config.n_answer_choices
+        assert rule_type in config.rule_types
+    
+    def test_missing_cell(self):
+        """Test that last cell is missing (zeros)."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig()
+        
+        matrix, _, _, _ = tasks.ravens_matrices(config)
+        
+        # Last cell should be all zeros
+        assert torch.allclose(matrix[-1], torch.zeros_like(matrix[-1]))
+    
+    def test_answer_choices_count(self):
+        """Test correct number of answer choices."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig(n_answer_choices=6)
+        
+        _, answer_choices, _, _ = tasks.ravens_matrices(config)
+        
+        assert answer_choices.shape[0] == 6
+    
+    def test_progression_rule(self):
+        """Test progression rule generation."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig(rule_types=["progression"])
+        
+        _, _, _, rule_type = tasks.ravens_matrices(config)
+        
+        assert rule_type == "progression"
+    
+    def test_constant_rule(self):
+        """Test constant rule generation."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig(rule_types=["constant"])
+        
+        _, _, _, rule_type = tasks.ravens_matrices(config)
+        
+        assert rule_type == "constant"
+    
+    def test_distribution_rule(self):
+        """Test distribution rule generation."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig(rule_types=["distribution"])
+        
+        _, _, _, rule_type = tasks.ravens_matrices(config)
+        
+        assert rule_type == "distribution"
+    
+    def test_complexity_levels(self):
+        """Test different complexity levels."""
+        tasks = ExecutiveFunctionTasks()
+        
+        for complexity in ["simple", "medium", "hard"]:
+            config = RavensMatricesConfig(pattern_complexity=complexity)
+            matrix, _, _, _ = tasks.ravens_matrices(config)
+            
+            # Matrix should be generated without error
+            assert matrix.shape == (9, config.stimulus_dim)
+    
+    def test_correct_answer_in_choices(self):
+        """Test that correct answer is actually in the choices."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig()
+        
+        _, answer_choices, correct_idx, _ = tasks.ravens_matrices(config)
+        
+        # Correct answer should be at correct_idx
+        assert 0 <= correct_idx < len(answer_choices)
+    
+    def test_evaluate_correct_answer(self):
+        """Test evaluation with correct answer."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig()
+        
+        _, _, correct_idx, rule_type = tasks.ravens_matrices(config)
+        
+        metrics = tasks.evaluate_ravens_matrices(
+            selected_answer=correct_idx,
+            correct_answer=correct_idx,
+            rule_type=rule_type,
+        )
+        
+        assert metrics["correct"] is True
+        assert metrics["selected_answer"] == correct_idx
+        assert metrics["correct_answer"] == correct_idx
+        assert metrics["rule_type"] == rule_type
+    
+    def test_evaluate_incorrect_answer(self):
+        """Test evaluation with incorrect answer."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig()
+        
+        _, _, correct_idx, rule_type = tasks.ravens_matrices(config)
+        
+        # Select wrong answer
+        wrong_idx = (correct_idx + 1) % config.n_answer_choices
+        
+        metrics = tasks.evaluate_ravens_matrices(
+            selected_answer=wrong_idx,
+            correct_answer=correct_idx,
+            rule_type=rule_type,
+        )
+        
+        assert metrics["correct"] is False
+        assert metrics["selected_answer"] == wrong_idx
+        assert metrics["correct_answer"] == correct_idx
+    
+    def test_statistics_by_rule_type(self):
+        """Test statistics tracking by rule type."""
+        tasks = ExecutiveFunctionTasks()
+        
+        # Test progression
+        config1 = RavensMatricesConfig(rule_types=["progression"])
+        _, _, correct_idx1, rule_type1 = tasks.ravens_matrices(config1)
+        tasks.evaluate_ravens_matrices(correct_idx1, correct_idx1, rule_type1)
+        
+        # Test constant
+        config2 = RavensMatricesConfig(rule_types=["constant"])
+        _, _, correct_idx2, rule_type2 = tasks.ravens_matrices(config2)
+        tasks.evaluate_ravens_matrices(correct_idx2, correct_idx2, rule_type2)
+        
+        stats = tasks.get_statistics()
+        assert "ravens_matrices" in stats["by_task"]
+        assert stats["by_task"]["ravens_matrices"] == 1.0  # Both correct
+    
+    def test_response_time_tracking(self):
+        """Test optional response time tracking."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig()
+        
+        _, _, correct_idx, rule_type = tasks.ravens_matrices(config)
+        
+        metrics = tasks.evaluate_ravens_matrices(
+            selected_answer=correct_idx,
+            correct_answer=correct_idx,
+            rule_type=rule_type,
+            response_time=2.5,
+        )
+        
+        assert "response_time" in metrics
+        assert metrics["response_time"] == 2.5
+    
+    def test_device_handling(self):
+        """Test device handling for Raven's matrices."""
+        tasks = ExecutiveFunctionTasks()
+        config = RavensMatricesConfig(device="cpu")
+        
+        matrix, answer_choices, _, _ = tasks.ravens_matrices(config)
+        
+        assert matrix.device.type == "cpu"
+        assert answer_choices.device.type == "cpu"
+    
+    def test_reproducibility(self):
+        """Test reproducibility with fixed seed."""
+        tasks1 = ExecutiveFunctionTasks()
+        tasks2 = ExecutiveFunctionTasks()
+        
+        np.random.seed(42)
+        torch.manual_seed(42)
+        config1 = RavensMatricesConfig()
+        matrix1, _, correct_idx1, rule_type1 = tasks1.ravens_matrices(config1)
+        
+        np.random.seed(42)
+        torch.manual_seed(42)
+        config2 = RavensMatricesConfig()
+        matrix2, _, correct_idx2, rule_type2 = tasks2.ravens_matrices(config2)
+        
+        # Should generate same matrix (except last cell which is zeros)
+        assert torch.allclose(matrix1[:-1], matrix2[:-1])
+        assert correct_idx1 == correct_idx2
+        assert rule_type1 == rule_type2
+
+
+class TestStage34Integration:
+    """Integration tests for Stage 3-4 tasks."""
+    
+    def test_all_stage34_tasks(self):
+        """Test that all Stage 3-4 tasks can be generated."""
+        tasks = ExecutiveFunctionTasks()
+        
+        # Tower of Hanoi
+        hanoi_config = TowerOfHanoiConfig(n_disks=3)
+        states, disk_moved, moves, optimal = tasks.tower_of_hanoi(hanoi_config)
+        assert len(states) > 0
+        
+        # Raven's Matrices
+        ravens_config = RavensMatricesConfig()
+        matrix, answer_choices, correct_idx, rule_type = tasks.ravens_matrices(ravens_config)
+        assert matrix.shape[0] == 9
+        
+        # Both should work without errors
+        print(f"Tower of Hanoi: {len(moves)} moves (optimal: {optimal})")
+        print(f"Raven's: {rule_type} rule")
+    
+    def test_combined_statistics(self):
+        """Test combined statistics across all stages."""
+        tasks = ExecutiveFunctionTasks()
+        
+        # Stage 1: Go/No-Go
+        gng_config = GoNoGoConfig(n_stimuli=10)
+        stimuli, stimulus_types, correct_responses = tasks.go_no_go(gng_config)
+        tasks.evaluate_go_no_go(
+            responses=[True] * 10,
+            correct_responses=correct_responses,
+            stimulus_types=stimulus_types,
+        )
+        
+        # Stage 3: Tower of Hanoi
+        hanoi_config = TowerOfHanoiConfig(n_disks=3)
+        states, _, moves, optimal = tasks.tower_of_hanoi(hanoi_config)
+        target_state = tasks._encode_hanoi_state(
+            [[], [], [0, 1, 2]],
+            hanoi_config.encode_dim,
+            hanoi_config.n_disks,
+            hanoi_config.device,
+        )
+        tasks.evaluate_tower_of_hanoi(moves, optimal, states[-1], target_state)
+        
+        # Stage 4: Raven's
+        ravens_config = RavensMatricesConfig()
+        _, _, correct_idx, rule_type = tasks.ravens_matrices(ravens_config)
+        tasks.evaluate_ravens_matrices(correct_idx, correct_idx, rule_type)
+        
+        # Should track all tasks
+        stats = tasks.get_statistics()
+        assert "go_no_go" in stats["by_task"]
+        assert "tower_of_hanoi" in stats["by_task"]
+        assert "ravens_matrices" in stats["by_task"]
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+

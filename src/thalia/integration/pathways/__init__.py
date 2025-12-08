@@ -8,6 +8,7 @@ Available pathways:
 - SpikingAttentionPathway: Fully spiking attention with temporal coding
 - SpikingReplayPathway: Fully spiking replay with phase coding
 - AttentionMechanisms: Enhanced attention with bottom-up/top-down integration
+- CrossModalGammaBinding: Multimodal binding via gamma synchrony
 """
 
 from .spiking_attention import SpikingAttentionPathway, SpikingAttentionPathwayConfig
@@ -17,6 +18,7 @@ from .attention import (
     AttentionMechanismsConfig,
     AttentionStage,
 )
+from .crossmodal_binding import CrossModalGammaBinding, CrossModalBindingConfig
 
 __all__ = [
     "SpikingAttentionPathway",
@@ -26,4 +28,6 @@ __all__ = [
     "AttentionMechanisms",
     "AttentionMechanismsConfig",
     "AttentionStage",
+    "CrossModalGammaBinding",
+    "CrossModalBindingConfig",
 ]
