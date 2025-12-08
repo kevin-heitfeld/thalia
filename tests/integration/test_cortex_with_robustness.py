@@ -30,7 +30,7 @@ class TestCortexWithRobustness:
         cortex = LayeredCortex(config)
 
         # Pre-generate consistent test sequence for reproducibility
-        test_inputs = torch.randn(100, 1, 32) * 0.5  # Moderate input, not too weak
+        test_inputs = [torch.randn(32) * 0.5 for _ in range(100)]  # Moderate input, 1D tensors
 
         # Reset once, then let it run - no adaptation mechanisms to track
         cortex.reset_state()
@@ -44,7 +44,7 @@ class TestCortexWithRobustness:
         # Without robustness, may show instability
         # (This documents the problem that robustness solves)
         avg_spikes = sum(spike_counts) / len(spike_counts)
-        variance = torch.tensor(spike_counts).var().item()
+        variance = torch.tensor(spike_counts, dtype=torch.float32).var().item()
 
         print(f"Without robustness: avg {avg_spikes:.1f} ± {variance**0.5:.1f} spikes/step")
         
@@ -62,7 +62,8 @@ class TestCortexWithRobustness:
         cortex = LayeredCortex(config)
 
         # Pre-generate consistent test sequence with stronger input
-        test_inputs = torch.randn(100, 1, 32) * 1.5  # Increased from 0.5 to 1.5
+        # Pre-generate test sequence
+        test_inputs = [torch.randn(32) * 1.5 for _ in range(100)]  # Increased strength, 1D tensors
 
         # CRITICAL: Reset once, then let robustness mechanisms adapt over time
         cortex.reset_state()
@@ -78,7 +79,7 @@ class TestCortexWithRobustness:
 
         # With robustness, should maintain reasonable activity
         avg_spikes = sum(spike_counts) / len(spike_counts)
-        variance = torch.tensor(spike_counts).var().item()
+        variance = torch.tensor(spike_counts, dtype=torch.float32).var().item()
         
         print(f"With robustness: avg {avg_spikes:.1f} ± {variance**0.5:.1f} spikes/step")
         print(f"Health: {report.summary}")
@@ -110,7 +111,7 @@ class TestCortexWithRobustness:
         cortex = LayeredCortex(config)
 
         # Pre-generate strong input sequence
-        test_inputs = torch.randn(200, 1, 32) * 2.0
+        test_inputs = [torch.randn(32) * 2.0 for _ in range(200)]  # 1D tensors
 
         # CRITICAL: Reset once, let E/I balance adapt over time
         cortex.reset_state()
@@ -202,7 +203,8 @@ class TestCortexWithRobustness:
         cortex = LayeredCortex(config)
 
         # Pre-generate consistent input sequence
-        test_inputs = torch.randn(150, 1, 32) * 0.8
+        # Use slightly weaker stimuli to test IP adaptation
+        test_inputs = [torch.randn(32) * 0.8 for _ in range(150)]  # 1D tensors
 
         # CRITICAL: Reset once, let IP adapt over time
         cortex.reset_state()
@@ -215,7 +217,7 @@ class TestCortexWithRobustness:
             # Compute L2/3 firing rate (where IP is applied)
             l23_spikes = cortex.state.l23_spikes
             if l23_spikes is not None:
-                firing_rates.append(l23_spikes.mean().item())
+                firing_rates.append(l23_spikes.float().mean().item())
             else:
                 firing_rates.append(0.0)
                 
