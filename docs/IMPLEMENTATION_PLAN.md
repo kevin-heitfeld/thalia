@@ -198,34 +198,49 @@ class SleepSystemMixin:
 
 ### 2.1 Stage -0.5: Sensorimotor Environment (Week 0-4)
 
-#### 2.1.1 Sensorimotor Environment ⚠️ NEW OR LIBRARY
+#### 2.1.1 Sensorimotor Environment ✅ COMPLETE
 **Curriculum**: Stage -0.5, 100% of training
-**Status**: Likely missing
-**Complexity**: Large (1-2 weeks) OR use library
-**Impact**: Foundation for all grounded learning
+**Status**: ✅ Implemented with Gymnasium + MuJoCo
+**Time**: ~4 hours (library wrapper approach)
+**Tests**: 35 tests passing (1.19s)
+**Commit**: [to be added]
 
-**Options**:
-1. **Use Existing Library** (RECOMMENDED):
-   - Gym, PyBullet, or MuJoCo
-   - Wrap with Thalia interface
-   - **Time**: 2-3 days for wrapper
+**Library Choice**: Gymnasium + MuJoCo
+- Modern RL environment framework (v1.0+)
+- MuJoCo physics for robotics simulation
+- Target: Reacher-v4 (2-joint arm reaching)
 
-2. **Build Custom**:
-   - 2D/3D grid world with physics
-   - Motor control, proprioception
-   - **Time**: 1-2 weeks
+**Implementation**:
+- **File**: `src/thalia/environments/sensorimotor_wrapper.py` (600+ lines)
+- **Config**: `SensorimotorConfig` dataclass
+- **Features**:
+  - 3 spike encoding methods (rate, population, temporal)
+  - Population vector decoding (Georgopoulos algorithm)
+  - Sensory noise (σ=0.02) for biological realism
+  - Motor smoothing (exponential α=0.3)
+  - 50 neurons per DOF (configurable)
 
-**Implementation** (if library):
-- **File**: `src/thalia/environments/sensorimotor_wrapper.py`
-- **Wrapper**: Convert gym env to Thalia format
+**Components**:
+1. `SensorimotorWrapper`: Main wrapper class
+   - `reset()`: Initialize environment → spike observation
+   - `step(motor_spikes)`: Execute action → next observation
+   - `_encode_observation()`: Continuous → spikes (rate/population/temporal)
+   - `_decode_motor_command()`: Spikes → continuous action
+2. `motor_babbling()`: Random exploration task
+3. `reaching_task()`: Goal-directed evaluation
 
-**Tasks Required**:
-- Motor babbling
-- Reaching toward targets
-- Object manipulation
-- Forward/inverse model training (cerebellum)
+**Observation Space**: [cos(θ), sin(θ), velocities, target] → 550 sensory neurons
+**Action Space**: 2 torques → 100 motor neurons
 
-**Tests**: `tests/integration/test_sensorimotor_env.py`
+**Tests**: `tests/unit/test_sensorimotor_wrapper.py`
+- Initialization (4 tests)
+- Observation encoding (7 tests) - rate, population, noise
+- Motor decoding (5 tests) - population vector, smoothing
+- Step mechanics (5 tests) - episode tracking, termination
+- Motor babbling (3 tests) - statistics, resets
+- Integration (4 tests) - full episodes, multiple encoding methods
+- Edge cases (4 tests) - invalid params, extreme inputs
+- Performance (3 tests) - encoding/decoding/step speed
 
 ---
 

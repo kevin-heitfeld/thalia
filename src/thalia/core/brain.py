@@ -93,7 +93,6 @@ from .event_regions import (
     EventDrivenCerebellum, EventRegionConfig,
 )
 from .parallel_executor import _ParallelExecutor
-from .sleep import SleepSystemMixin
 from .diagnostics import (
     DiagnosticsManager,
     DiagnosticLevel,
@@ -189,7 +188,7 @@ class EventDrivenBrainConfig:
         )
 
 
-class EventDrivenBrain(SleepSystemMixin, nn.Module):
+class EventDrivenBrain(nn.Module):
     """
     Event-driven brain system with biologically realistic timing.
 
