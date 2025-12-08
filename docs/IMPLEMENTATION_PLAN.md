@@ -203,7 +203,7 @@ class SleepSystemMixin:
 **Status**: ✅ Implemented with Gymnasium + MuJoCo
 **Time**: ~4 hours (library wrapper approach)
 **Tests**: 35 tests passing (1.19s)
-**Commit**: [to be added]
+**Commit**: 16b6c7a
 
 **Library Choice**: Gymnasium + MuJoCo
 - Modern RL environment framework (v1.0+)
