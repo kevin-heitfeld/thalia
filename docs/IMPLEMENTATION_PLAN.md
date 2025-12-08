@@ -251,7 +251,7 @@ class SleepSystemMixin:
 **Status**: ✅ Implemented with acoustic feature encoding
 **Time**: ~3 hours
 **Tests**: 31 tests passing (1.30s)
-**Commit**: [to be added]
+**Commit**: 03dca65
 
 **Implementation**:
 - **File**: `src/thalia/datasets/phonology.py` (473 lines)
