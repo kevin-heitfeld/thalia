@@ -46,10 +46,14 @@ class BaseNeuralPathway(BrainComponent, ...):
 
 All brain components MUST implement:
 
-#### 1. Processing
+#### 1. Processing (Standard PyTorch Convention)
 ```python
 def forward(self, *args, **kwargs) -> Any:
-    """Transform input to output with continuous learning."""
+    """Transform input to output with continuous learning.
+    
+    Standard PyTorch method - enables callable syntax: component(input)
+    All regions, pathways, and sensory encoders use this.
+    """
 ```
 
 #### 2. State Management
@@ -218,11 +222,51 @@ def analyze_learning(component: BrainComponent) -> Dict:
     return {"metrics": metrics, "health": health}
 ```
 
+## Recent Example: Temporal Coding (ADR-006) and PyTorch Consistency (ADR-007)
+
+During the 1D bool tensor migration, we updated sensory pathways to use **temporal/latency coding** and standardized on PyTorch's `forward()` method:
+
+### Before (Rate Coding + Non-standard API ❌)
+```python
+class VisualPathway:
+    def encode(self, image: torch.Tensor):  # Non-standard method name
+        """Output: [output_size] - single timestep rate coding"""
+        activity = self.process(image)
+        return activity.unsqueeze(0)  # Add fake time dimension
+```
+
+### After (Temporal Coding + Standard PyTorch ✅)
+```python
+class VisualPathway:
+    def forward(self, image: torch.Tensor):  # Standard PyTorch convention
+        """Output: [n_timesteps, output_size] - temporal spike train
+        
+        Information encoded in WHEN neurons spike:
+        - High activity → early spike (t=0)
+        - Low activity → late spike (t=19)
+        """
+        activity = self.retina.process(image)  # [output_size]
+        spikes = self._generate_temporal_spikes(activity)  # [n_timesteps, output_size]
+        return spikes
+```
+
+### Brain Processing
+```python
+# Brain consumes sequentially (no batch dimension)
+# Now uses standard callable syntax:
+spikes, metadata = visual_pathway(image)  # Calls forward() automatically
+for t in range(n_timesteps):
+    brain.forward(spikes[t])  # spikes[t] is 1D [output_size]
+```
+
+**Key Point**: Sensory pathways are active components that encode information, just like regions process it. Both deserve equal attention and implementation rigor.
+
 ## Related Patterns
 
 - **State Management**: Both regions and pathways use RegionState / PathwayState dataclasses
 - **Configuration**: Both use config dataclasses inheriting from RegionConfigBase
 - **Mixins**: Both can use NeuromodulatorMixin, DiagnosticsMixin, etc.
+- **Temporal Coding**: See [ADR-006](../decisions/adr-006-temporal-coding.md) for sensory pathway encoding
 
 ## References
 
@@ -230,6 +274,8 @@ def analyze_learning(component: BrainComponent) -> Dict:
 - `src/thalia/regions/base.py` - BrainRegion implements protocol
 - `src/thalia/core/pathway_protocol.py` - BaseNeuralPathway implements protocol
 - `src/thalia/core/growth.py` - GrowthManager works with both
+- `docs/decisions/adr-006-temporal-coding.md` - Temporal/latency coding for sensory pathways
+- `docs/decisions/adr-007-pytorch-consistency.md` - Standard forward() convention
 
 ---
 

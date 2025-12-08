@@ -154,13 +154,17 @@ class SpikingReplayPathway(SpikingPathway):
         Store a hippocampal pattern for potential replay.
         
         Args:
-            hippocampal_pattern: Pattern to store [batch, source_size]
+            hippocampal_pattern: Pattern to store [source_size] (1D)
             priority: Optional priority score (higher = more likely to replay)
         """
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        assert hippocampal_pattern.shape[-1] == self.config.source_size, (
+        # Ensure 1D input
+        if hippocampal_pattern.dim() != 1:
+            hippocampal_pattern = hippocampal_pattern.squeeze()
+        
+        assert hippocampal_pattern.shape[0] == self.config.source_size, (
             f"SpikingReplayPathway.store_pattern: hippocampal_pattern has shape {hippocampal_pattern.shape} "
             f"but source_size={self.config.source_size}. Check hippocampus output size."
         )
@@ -168,6 +172,7 @@ class SpikingReplayPathway(SpikingPathway):
         # Compute priority if not provided
         if priority is None:
             with torch.no_grad():
+                # ADR-005: priority_network accepts 1D [n_neurons] directly
                 priority = self.priority_network(hippocampal_pattern).mean().item()
         
         # Store pattern with priority
@@ -290,14 +295,13 @@ class SpikingReplayPathway(SpikingPathway):
         Full consolidation step: store, replay, and update.
         
         Args:
-            hippocampal_activity: Current hippocampal state [batch, source_size]
-            cortical_activity: Current cortical state [batch, target_size]
+            hippocampal_activity: Current hippocampal state [source_size] (1D)
+            cortical_activity: Current cortical state [target_size] (1D)
             dt: Time step in ms
             
         Returns:
             replay_signal: Cortical reactivation (zeros if no replay)
         """
-        batch_size = hippocampal_activity.shape[0]
         device = hippocampal_activity.device
         
         # Store current pattern if awake
@@ -324,7 +328,7 @@ class SpikingReplayPathway(SpikingPathway):
                 return replay_signal
         
         # No replay
-        return torch.zeros(batch_size, self.config.target_size, device=device)
+        return torch.zeros(self.config.target_size, device=device)
     
     def get_diagnostics(self) -> dict:
         """Get replay-specific diagnostics."""

@@ -107,37 +107,34 @@ class SpikingAttentionPathway(SpikingPathway):
         Compute attention signal from PFC activity.
 
         Args:
-            pfc_activity: PFC spike rates or potentials [batch, cortex_size]
+            pfc_activity: PFC spike rates or potentials [cortex_size] (1D, no batch)
             dt: Time step in ms
 
         Returns:
-            attention: Attention weights [batch, target_size]
+            attention: Attention weights [target_size] (1D)
         """
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        # Note: pfc_activity can be smaller than source_size, we'll pad it below
-        assert pfc_activity.dim() == 2, (
-            f"SpikingAttentionPathway.compute_attention: pfc_activity must be 2D [batch, size], "
-            f"got shape {pfc_activity.shape}"
+        assert pfc_activity.dim() == 1, (
+            f"SpikingAttentionPathway.compute_attention: pfc_activity must be 1D [size], "
+            f"got shape {pfc_activity.shape}. No batch dimension in 1D architecture."
         )
-        
-        batch_size = pfc_activity.shape[0]
         
         # Update beta phase
         beta_phase = self._compute_beta_phase(dt)
         
         # Process through spiking pathway
-        # First project to source size if needed
-        if pfc_activity.shape[-1] != self.config.source_size:
-            # PFC activity might be smaller, expand
-            source_input = torch.zeros(batch_size, self.config.source_size, device=pfc_activity.device)
-            source_input[:, :pfc_activity.shape[-1]] = pfc_activity
+        # First pad to source size if needed
+        if pfc_activity.shape[0] != self.config.source_size:
+            # PFC activity might be smaller, pad with zeros
+            source_input = torch.zeros(self.config.source_size, device=pfc_activity.device, dtype=pfc_activity.dtype)
+            source_input[:pfc_activity.shape[0]] = pfc_activity
         else:
             source_input = pfc_activity
 
-        # Get spiking dynamics - forward returns just output spikes
-        output_spikes = self.forward(source_input.squeeze(), dt=dt)
+        # Get spiking dynamics - forward expects 1D [source_size] → returns 1D [target_size]
+        output_spikes = self.forward(source_input, dt=dt)
 
         # Encode attention from output spikes
         attention_raw = self.attention_encoder(output_spikes)
@@ -161,12 +158,12 @@ class SpikingAttentionPathway(SpikingPathway):
         Apply attention-based gain modulation to input signal.
 
         Args:
-            input_signal: Input to modulate [batch, input_size]
-            pfc_activity: PFC activity for attention [batch, cortex_size]
+            input_signal: Input to modulate [input_size] (1D, no batch)
+            pfc_activity: PFC activity for attention [cortex_size] (1D, no batch)
             dt: Time step in ms
 
         Returns:
-            modulated: Gain-modulated signal [batch, input_size]
+            modulated: Gain-modulated signal [input_size] (1D)
         """
         # Compute attention signal
         attention = self.compute_attention(pfc_activity, dt)

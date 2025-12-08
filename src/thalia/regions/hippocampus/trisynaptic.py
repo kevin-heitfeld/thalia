@@ -38,7 +38,7 @@ import torch.nn.functional as F
 
 from thalia.core.neuron import LIFNeuron, LIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig
-from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe
+from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
@@ -84,7 +84,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     3. CONTINUOUS DYNAMICS: No artificial resets - everything flows naturally
 
     All computations are spike-based. No rate accumulation!
-    
+
     Mixins Provide:
     ---------------
     From DiagnosticsMixin:
@@ -93,14 +93,14 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         - check_weight_health(weights, name) → WeightHealth
         - detect_runaway_excitation(spikes) → bool
         - detect_silence(spikes) → bool
-    
+
     From BrainRegion (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
         - set_dopamine(level) → None
         - Neuromodulator control methods
-    
+
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
     """
@@ -462,17 +462,17 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Reset phase tracking
         self._last_phase = None
 
-        batch_size = 1
+        # 1D architecture - no batch dimension
         self.state = TrisynapticState(
-            dg_spikes=torch.zeros(batch_size, self.dg_size, device=device),
-            ca3_spikes=torch.zeros(batch_size, self.ca3_size, device=device),
-            ca1_spikes=torch.zeros(batch_size, self.ca1_size, device=device),
-            ca3_membrane=torch.zeros(batch_size, self.ca3_size, device=device),
-            ca3_persistent=torch.zeros(batch_size, self.ca3_size, device=device),
+            dg_spikes=torch.zeros(self.dg_size, device=device),
+            ca3_spikes=torch.zeros(self.ca3_size, device=device),
+            ca1_spikes=torch.zeros(self.ca1_size, device=device),
+            ca3_membrane=torch.zeros(self.ca3_size, device=device),
+            ca3_persistent=torch.zeros(self.ca3_size, device=device),
             sample_trace=None,  # Set during sample encoding
-            dg_trace=torch.zeros(batch_size, self.dg_size, device=device),
-            ca3_trace=torch.zeros(batch_size, self.ca3_size, device=device),
-            nmda_trace=torch.zeros(batch_size, self.ca1_size, device=device),
+            dg_trace=torch.zeros(self.dg_size, device=device),
+            ca3_trace=torch.zeros(self.ca3_size, device=device),
+            nmda_trace=torch.zeros(self.ca1_size, device=device),
             stored_dg_pattern=None,  # Set during sample phase
             ffi_strength=0.0,
         )
@@ -493,18 +493,18 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         because hippocampus requires explicit trial phase for theta modulation.
 
         Args:
-            input_spikes: Input spike pattern [batch, n_input] for trisynaptic path
+            input_spikes: Input spike pattern [n_input] (1D, no batch)
             phase: Trial phase (ENCODE, DELAY, or RETRIEVE)
             encoding_mod: Theta modulation for encoding (from BrainSystem)
             retrieval_mod: Theta modulation for retrieval (from BrainSystem)
             dt: Time step in ms
-            ec_direct_input: Optional separate input for EC→CA1 direct pathway.
+            ec_direct_input: Optional separate input for EC→CA1 direct pathway [n_input] (1D)
                             If None, uses input_spikes (original behavior).
                             When provided, this models EC layer III input which
                             carries raw sensory information to CA1 for comparison.
 
         Returns:
-            CA1 output spikes [batch, n_output]
+            CA1 output spikes [n_output] (1D)
 
         Phase Logic:
             - ENCODE: DG→CA3 encoding, CA3 Hebbian learning, EC→CA1 learning
@@ -517,27 +517,34 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             - EC layer III: Optional separate input for direct EC→CA1 (biologically
               accurate - EC L3 carries raw sensory info, EC L2 goes through DG)
         """
-        input_spikes = ensure_batch_dim(input_spikes)
+        # Ensure 1D input (single sample, no batch)
+        input_spikes = input_spikes.squeeze()
+        assert input_spikes.dim() == 1, (
+            f"TrisynapticHippocampus.forward: input must be 1D [n_input], "
+            f"got shape {input_spikes.shape}"
+        )
 
-        batch_size = input_spikes.shape[0]
+        # Convert bool→float if needed (neurons return bool, we need float for matmul)
+        input_spikes_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
 
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        assert input_spikes.shape[-1] == self.tri_config.n_input, (
+        assert input_spikes.shape[0] == self.tri_config.n_input, (
             f"TrisynapticHippocampus.forward: input_spikes has shape {input_spikes.shape} "
             f"but n_input={self.tri_config.n_input}. Check that cortex output matches hippocampus input."
         )
         if ec_direct_input is not None:
+            ec_direct_input = ec_direct_input.squeeze()
+            assert ec_direct_input.dim() == 1, (
+                f"TrisynapticHippocampus.forward: ec_direct_input must be 1D, "
+                f"got shape {ec_direct_input.shape}"
+            )
             expected_ec_size = self._ec_l3_input_size if self._ec_l3_input_size > 0 else self.tri_config.n_input
-            assert ec_direct_input.shape[-1] == expected_ec_size, (
+            assert ec_direct_input.shape[0] == expected_ec_size, (
                 f"TrisynapticHippocampus.forward: ec_direct_input has shape {ec_direct_input.shape} "
                 f"but expected size={expected_ec_size} (ec_l3_input_size={self._ec_l3_input_size}). "
                 f"Check that sensory input matches EC L3 pathway configuration."
-            )
-            assert ec_direct_input.shape[0] == batch_size, (
-                f"TrisynapticHippocampus.forward: ec_direct_input batch size {ec_direct_input.shape[0]} "
-                f"doesn't match input_spikes batch size {batch_size}."
             )
 
         # Ensure state is initialized
@@ -586,7 +593,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # 1. DENTATE GYRUS: Pattern Separation
         # =====================================================================
         # Random projections create orthogonal sparse codes
-        dg_code = torch.matmul(input_spikes.float(), self.w_ec_dg.t())
+        dg_code = torch.matmul(self.w_ec_dg, input_spikes_float)  # [dg_size]
 
         # Apply FFI: reduce DG drive when input changes significantly
         # ffi_strength is now normalized to [0, 1]
@@ -607,9 +614,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self.state.dg_spikes = dg_spikes
 
         # Inter-stage shape check: DG output → CA3 input
-        assert dg_spikes.shape == (batch_size, self.dg_size), (
+        assert dg_spikes.shape == (self.dg_size,), (
             f"TrisynapticHippocampus: DG spikes have shape {dg_spikes.shape} "
-            f"but expected ({batch_size}, {self.dg_size}). "
+            f"but expected ({self.dg_size},). "
             f"Check DG sparsity or EC→DG weights shape."
         )
 
@@ -664,12 +671,12 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # Get STP efficacy for mossy fiber synapses
             # Mossy fibers are FACILITATING - repeated DG spikes progressively
             # enhance transmission to CA3
-            stp_efficacy = self.stp_mossy(dg_spikes.float()).squeeze(0)
+            stp_efficacy = self.stp_mossy(dg_spikes.float())
             # Apply STP to weights: (n_post, n_pre) * (n_pre, n_post).T
             effective_w_dg_ca3 = self.w_dg_ca3 * stp_efficacy.T
-            ca3_ff = torch.matmul(dg_spikes.float(), effective_w_dg_ca3.t()) * ff_gate
+            ca3_ff = torch.matmul(effective_w_dg_ca3, dg_spikes.float()) * ff_gate  # [ca3_size]
         else:
-            ca3_ff = torch.matmul(dg_spikes.float(), self.w_dg_ca3.t()) * ff_gate
+            ca3_ff = torch.matmul(self.w_dg_ca3, dg_spikes.float()) * ff_gate  # [ca3_size]
 
         # =====================================================================
         # RECURRENT CA3 WITH STP (CRITICAL FOR PREVENTING FROZEN ATTRACTORS)
@@ -680,21 +687,20 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         if self.stp_ca3_recurrent is not None and self.state.ca3_spikes is not None:
             # Get STP efficacy for CA3 recurrent synapses
             # CA3 recurrent is DEPRESSING - prevents frozen attractors
-            stp_rec_efficacy = self.stp_ca3_recurrent(
-                self.state.ca3_spikes.float()
-            ).squeeze(0)
+            # ADR-005: STP now accepts 1D [n_pre] directly
+            stp_rec_efficacy = self.stp_ca3_recurrent(self.state.ca3_spikes.float())
             # Apply STP to recurrent weights
             effective_w_ca3_ca3 = self.w_ca3_ca3 * stp_rec_efficacy.T
             ca3_rec = torch.matmul(
-                self.state.ca3_spikes.float(),
-                effective_w_ca3_ca3.t()
-            ) * self.tri_config.ca3_recurrent_strength * rec_gate
+                effective_w_ca3_ca3,
+                self.state.ca3_spikes.float()
+            ) * self.tri_config.ca3_recurrent_strength * rec_gate  # [ca3_size]
         else:
             # Recurrent from previous CA3 activity (theta-gated)
             ca3_rec = torch.matmul(
-                self.state.ca3_spikes.float() if self.state.ca3_spikes is not None else torch.zeros(1, self.ca3_size, device=input_spikes.device),
-                self.w_ca3_ca3.t()
-            ) * self.tri_config.ca3_recurrent_strength * rec_gate
+                self.w_ca3_ca3,
+                self.state.ca3_spikes.float() if self.state.ca3_spikes is not None else torch.zeros(self.ca3_size, device=input_spikes.device)
+            ) * self.tri_config.ca3_recurrent_strength * rec_gate  # [ca3_size]
 
         # =====================================================================
         # ACTIVITY-DEPENDENT FEEDBACK INHIBITION
@@ -728,7 +734,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # Ensure ca3_persistent is initialized
         if self.state.ca3_persistent is None:
-            self.state.ca3_persistent = torch.zeros(1, self.ca3_size, device=input_spikes.device)
+            self.state.ca3_persistent = torch.zeros(self.ca3_size, device=input_spikes.device)
 
         ca3_persistent_input: torch.Tensor = (
             self.state.ca3_persistent * self.tri_config.ca3_persistent_gain
@@ -741,7 +747,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Neurons that fire too much have higher thresholds (less excitable)
         if (self.tri_config.intrinsic_plasticity_enabled and
             self._ca3_threshold_offset is not None):
-            ca3_input = ca3_input - self._ca3_threshold_offset.unsqueeze(0)
+            ca3_input = ca3_input - self._ca3_threshold_offset
 
         # =====================================================================
         # THETA-GAMMA COUPLING: Slot-based gating
@@ -771,7 +777,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # Create gating mask based on slot assignment
             # Neurons in current slot get full input, others are suppressed
             slot_match = (self._ca3_slot_assignment == current_slot).float()
-            slot_match = slot_match.to(ca3_input.device).unsqueeze(0)
+            slot_match = slot_match.to(ca3_input.device)
 
             # ================================================================
             # THETA-MODULATED GAMMA AMPLITUDE
@@ -839,9 +845,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 print(f"        CA3 indices (first 10): {ca3_active_indices[:10]}...")
 
         # Inter-stage shape check: CA3 output → CA1 input
-        assert ca3_spikes.shape == (batch_size, self.ca3_size), (
+        assert ca3_spikes.shape == (self.ca3_size,), (
             f"TrisynapticHippocampus: CA3 spikes have shape {ca3_spikes.shape} "
-            f"but expected ({batch_size}, {self.ca3_size}). "
+            f"but expected ({self.ca3_size},). "
             f"Check CA3 sparsity or DG→CA3 weights shape."
         )
 
@@ -882,7 +888,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
             # One-shot Hebbian: strengthen connections between co-active neurons
             # Learning rate modulated by theta phase AND gamma amplitude
-            ca3_activity = ca3_spikes.float().squeeze()
+            ca3_activity = ca3_spikes.float()  # Already 1D, no squeeze needed
             if ca3_activity.sum() > 0:
                 # Hebbian outer product: neurons that fire together wire together
                 #
@@ -946,11 +952,11 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Schaffer collaterals are DEPRESSING - high-frequency CA3 activity
         # causes progressively weaker transmission to CA1
         if self.stp_schaffer is not None:
-            stp_efficacy = self.stp_schaffer(ca3_spikes.float()).squeeze(0)
+            stp_efficacy = self.stp_schaffer(ca3_spikes.float())
             effective_w_ca3_ca1 = self.w_ca3_ca1 * stp_efficacy.T
-            ca1_from_ca3 = torch.matmul(ca3_spikes.float(), effective_w_ca3_ca1.t())
+            ca1_from_ca3 = torch.matmul(effective_w_ca3_ca1, ca3_spikes.float())  # [ca1_size]
         else:
-            ca1_from_ca3 = torch.matmul(ca3_spikes.float(), self.w_ca3_ca1.t())
+            ca1_from_ca3 = torch.matmul(self.w_ca3_ca1, ca3_spikes.float())  # [ca1_size]
 
         # Direct from EC (current input) - use ec_direct_input if provided
         # ec_direct_input models EC layer III which carries raw sensory info
@@ -963,27 +969,27 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         if ec_direct_input is not None and self.w_ec_l3_ca1 is not None:
             # Use separate EC L3 weights for raw sensory input
             if self.stp_ec_ca1 is not None:
-                stp_efficacy = self.stp_ec_ca1(ec_direct_input.float()).squeeze(0)
+                stp_efficacy = self.stp_ec_ca1(ec_direct_input.float())
                 # Note: EC L3 may have different size, need to handle
                 effective_w = self.w_ec_l3_ca1 * stp_efficacy.T
-                ca1_from_ec = torch.matmul(ec_direct_input.float(), effective_w.t())
+                ca1_from_ec = torch.matmul(effective_w, ec_direct_input.float())  # [ca1_size]
             else:
-                ca1_from_ec = torch.matmul(ec_direct_input.float(), self.w_ec_l3_ca1.t())
+                ca1_from_ec = torch.matmul(self.w_ec_l3_ca1, ec_direct_input.float())  # [ca1_size]
             ec_input_for_ca1 = ec_direct_input
         elif ec_direct_input is not None:
             # ec_direct_input provided but same size as EC L2
             if self.stp_ec_ca1 is not None:
-                stp_efficacy = self.stp_ec_ca1(ec_direct_input.float()).squeeze(0)
+                stp_efficacy = self.stp_ec_ca1(ec_direct_input.float())
                 effective_w = self.w_ec_ca1 * stp_efficacy.T
-                ca1_from_ec = torch.matmul(ec_direct_input.float(), effective_w.t())
+                ca1_from_ec = torch.matmul(effective_w, ec_direct_input.float())  # [ca1_size]
             else:
-                ca1_from_ec = torch.matmul(ec_direct_input.float(), self.w_ec_ca1.t())
+                ca1_from_ec = torch.matmul(self.w_ec_ca1, ec_direct_input.float())  # [ca1_size]
             ec_input_for_ca1 = ec_direct_input
         else:
             # Fall back to input_spikes (original behavior)
             # Note: STP for EC→CA1 is sized for ec_l3_input_size, not n_input,
             # so we don't apply STP when falling back to input_spikes
-            ca1_from_ec = torch.matmul(input_spikes.float(), self.w_ec_ca1.t())
+            ca1_from_ec = torch.matmul(self.w_ec_ca1, input_spikes.float())  # [ca1_size]
             ec_input_for_ca1 = input_spikes
 
         # Apply feedforward inhibition: strong input change reduces CA1 drive
@@ -1009,8 +1015,8 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # Lateral inhibition (keeps activity sparse)
             if self.state.ca1_spikes is not None:
                 ca1_inhib = torch.matmul(
-                    self.state.ca1_spikes.float(),
-                    self.w_ca1_inhib.t()
+                    self.w_ca1_inhib,
+                    self.state.ca1_spikes.float()
                 )
                 ca1_input = ca1_input - ca1_inhib
 
@@ -1059,8 +1065,8 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # Strengthen connections: active EC neurons → active CA1 neurons
             # This aligns the direct pathway with the indirect pathway
             # Learning modulated by both theta phase and gamma amplitude
-            ec_activity = ec_input_for_ca1.float().squeeze()
-            ca1_activity = ca1_spikes.float().squeeze()
+            ec_activity = ec_input_for_ca1.float()  # Already 1D, no squeeze needed
+            ca1_activity = ca1_spikes.float()  # Already 1D, no squeeze needed
 
             if ec_activity.sum() > 0 and ca1_activity.sum() > 0:
                 # Hebbian outer product: w_ij += lr * post_j * pre_i
@@ -1166,6 +1172,8 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # gamma_oscillator.advance(dt), so we just track position here.
             # The position is used for diagnostics and can be reset by new_trial().
 
+        # Ensure bool output (CA1 neurons already return bool from Phase 1)
+        # WTA sparsity also returns bool
         return ca1_spikes
 
     def _apply_wta_sparsity(
@@ -1177,26 +1185,37 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         """Apply winner-take-all sparsity to enforce sparse coding.
 
         Only the top-k neurons (by membrane potential) are allowed to spike.
+        Returns bool tensor for consistency with neuron models.
+
+        Args:
+            spikes: Spike tensor [n_neurons] (1D)
+            target_sparsity: Fraction of neurons to keep active
+            membrane: Optional membrane potentials [n_neurons] for selection
+
+        Returns:
+            Sparse spike tensor [n_neurons] (1D bool)
         """
-        batch_size, n_neurons = spikes.shape
+        n_neurons = spikes.shape[0]
         k = max(1, int(n_neurons * target_sparsity))
 
-        sparse_spikes = torch.zeros_like(spikes)
+        # Create bool tensor (memory efficient)
+        sparse_spikes = torch.zeros_like(spikes, dtype=torch.bool)
 
-        for b in range(batch_size):
-            active = spikes[b].nonzero(as_tuple=True)[0]
+        # Single sample processing (no batch)
+        active = spikes.nonzero(as_tuple=True)[0]
 
-            if len(active) <= k:
-                sparse_spikes[b] = spikes[b]
-            elif membrane is not None:
-                # Keep top-k by membrane potential
-                active_v = membrane[b, active]
-                _, top_k_idx = torch.topk(active_v, k)
-                sparse_spikes[b, active[top_k_idx]] = 1.0
-            else:
-                # Random selection if no membrane
-                perm = torch.randperm(len(active))[:k]
-                sparse_spikes[b, active[perm]] = 1.0
+        if len(active) <= k:
+            # All spikes pass through
+            sparse_spikes = spikes if spikes.dtype == torch.bool else spikes.bool()
+        elif membrane is not None:
+            # Keep top-k by membrane potential
+            active_v = membrane[active]
+            _, top_k_idx = torch.topk(active_v, k)
+            sparse_spikes[active[top_k_idx]] = True
+        else:
+            # Random selection if no membrane
+            perm = torch.randperm(len(active))[:k]
+            sparse_spikes[active[perm]] = True
 
         return sparse_spikes
 
@@ -1700,9 +1719,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.
-        
+
         Returns all state needed to resume training from this exact point.
-        
+
         Returns:
             Dictionary with complete region state
         """
@@ -1798,10 +1817,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Restore complete state from checkpoint.
-        
+
         Args:
             state: Dictionary returned by get_full_state()
-            
+
         Raises:
             ValueError: If state is incompatible with current configuration
         """
@@ -1832,13 +1851,13 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # 2. RESTORE REGION STATE
         region_state = state["region_state"]
-        
+
         # Restore neuron state for all layers
         neuron_state = region_state["neuron_state"]
         self.dg_neurons.load_state(neuron_state["dg"])
         self.ca3_neurons.load_state(neuron_state["ca3"])
         self.ca1_neurons.load_state(neuron_state["ca1"])
-        
+
         # Restore other region state
         if region_state["ca3_activity_trace"] is not None:
             self._ca3_activity_trace = region_state["ca3_activity_trace"].to(self.device)
@@ -1852,7 +1871,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             self._ca3_activity_history = region_state["ca3_activity_history"].to(self.device)
         if region_state["ca3_slot_assignment"] is not None:
             self._ca3_slot_assignment = region_state["ca3_slot_assignment"].to(self.device)
-        
+
         # Restore TrisynapticState
         tri_state = region_state["trisynaptic_state"]
         self.state.dg_spikes = tri_state["dg_spikes"].to(self.device) if tri_state["dg_spikes"] is not None else None

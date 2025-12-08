@@ -173,27 +173,25 @@ class LIFNeuron(nn.Module):
         self.adaptation: Optional[torch.Tensor] = None  # Adaptation current
 
     def reset_state(self) -> None:
-        """Reset neuron state to resting potential.
+        """Reset neuron state to resting potential (ADR-005: 1D tensors).
 
-        Initializes all state tensors to batch_size=1 per THALIA's
-        single-instance architecture.
+        Creates 1D state tensors for single-brain architecture.
         """
         device = self.decay.device
-        batch_size = 1
 
         self.membrane = torch.full(
-            (batch_size, self.n_neurons),
+            (self.n_neurons,),
             self.config.v_rest,
             device=device,
             dtype=torch.float32
         )
         self.refractory = torch.zeros(
-            (batch_size, self.n_neurons),
+            (self.n_neurons,),
             device=device,
             dtype=torch.int32
         )
         self.adaptation = torch.zeros(
-            (batch_size, self.n_neurons),
+            (self.n_neurons,),
             device=device,
             dtype=torch.float32
         )
@@ -202,24 +200,26 @@ class LIFNeuron(nn.Module):
         self,
         input_current: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Process one timestep of input.
+        """Process one timestep of input (ADR-005: 1D tensors).
 
         Args:
-            input_current: Input current to neurons, shape (batch, n_neurons)
+            input_current: Input current to neurons [n_neurons] (1D)
 
         Returns:
-            spikes: Binary spike tensor, shape (batch, n_neurons)
-            membrane: Membrane potentials after update, shape (batch, n_neurons)
+            spikes: Binary bool spike tensor [n_neurons] (1D)
+            membrane: Membrane potentials after update [n_neurons] (1D)
         """
         # Initialize state if needed
         if self.membrane is None:
             self.reset_state()
 
-        # Ensure state matches batch size (should always be 1)
-        if self.membrane.shape[0] != input_current.shape[0]:
-            from .utils import assert_single_instance
-            assert_single_instance(input_current.shape[0], "LIFNeuron")
-            self.reset_state()
+        # ADR-005: Expect 1D tensors
+        assert input_current.dim() == 1, (
+            f"LIFNeuron.forward: Expected 1D input (ADR-005), got shape {input_current.shape}"
+        )
+        assert input_current.shape[0] == self.n_neurons, (
+            f"LIFNeuron.forward: input has {input_current.shape[0]} neurons, expected {self.n_neurons}"
+        )
 
         # Decrement refractory counter
         self.refractory = torch.clamp(self.refractory - 1, min=0)
@@ -252,26 +252,26 @@ class LIFNeuron(nn.Module):
         if self.v_min is not None:
             self.membrane = torch.clamp(self.membrane, min=self.v_min.item())
 
-        # Spike generation
-        spikes = (self.membrane >= self.v_threshold).float()
+        # Spike generation (bool for biological accuracy and memory efficiency)
+        spikes = self.membrane >= self.v_threshold
 
         # Reset spiking neurons
         self.membrane = torch.where(
-            spikes.bool(),
+            spikes,
             self.v_reset.expand_as(self.membrane),
             self.membrane
         )
 
         # Set refractory period for spiking neurons
         self.refractory = torch.where(
-            spikes.bool(),
+            spikes,
             torch.full_like(self.refractory, self.config.ref_steps),
             self.refractory
         )
 
-        # Increment adaptation for spiking neurons
+        # Increment adaptation for spiking neurons (need float for arithmetic)
         if self.config.adapt_increment > 0:
-            self.adaptation = self.adaptation + spikes * self.config.adapt_increment
+            self.adaptation = self.adaptation + spikes.float() * self.config.adapt_increment
 
         return spikes, self.membrane.clone()
 
@@ -509,15 +509,13 @@ class ConductanceLIF(nn.Module):
     def reset_state(self) -> None:
         """Reset neuron state to resting potential.
 
-        Initializes all state tensors to batch_size=1 per THALIA's
-        single-instance architecture.
+        Initializes all state tensors as 1D [n_neurons] per ADR-005.
         """
         device = self.C_m.device
-        batch_size = 1
 
         # Membrane starts at leak reversal (resting potential)
         self.membrane = torch.full(
-            (batch_size, self.n_neurons),
+            (self.n_neurons,),
             self.config.E_L,
             device=device,
             dtype=torch.float32
@@ -525,23 +523,23 @@ class ConductanceLIF(nn.Module):
 
         # All conductances start at zero
         self.g_E = torch.zeros(
-            (batch_size, self.n_neurons),
+            self.n_neurons,
             device=device,
             dtype=torch.float32
         )
         self.g_I = torch.zeros(
-            (batch_size, self.n_neurons),
+            self.n_neurons,
             device=device,
             dtype=torch.float32
         )
         self.g_adapt = torch.zeros(
-            (batch_size, self.n_neurons),
+            self.n_neurons,
             device=device,
             dtype=torch.float32
         )
 
         self.refractory = torch.zeros(
-            (batch_size, self.n_neurons),
+            self.n_neurons,
             device=device,
             dtype=torch.int32
         )
@@ -574,22 +572,28 @@ class ConductanceLIF(nn.Module):
         """Process one timestep of conductance input.
 
         Args:
-            g_exc_input: Excitatory conductance input, shape (batch, n_neurons)
+            g_exc_input: Excitatory conductance input, shape [n_neurons] (1D, ADR-005)
                 This is ADDED to the excitatory conductance state.
-            g_inh_input: Inhibitory conductance input, shape (batch, n_neurons)
+            g_inh_input: Inhibitory conductance input, shape [n_neurons] (1D, ADR-005)
                 Optional. If None, no inhibitory input is applied.
 
         Returns:
-            spikes: Binary spike tensor, shape (batch, n_neurons)
-            membrane: Membrane potentials after update
+            spikes: Binary spike tensor, shape [n_neurons] (1D bool, ADR-004/005)
+            membrane: Membrane potentials after update, shape [n_neurons] (1D)
         """
         # Initialize state if needed
         if self.membrane is None:
             self.reset_state()
 
-        # Ensure state matches batch size
-        if self.membrane.shape[0] != g_exc_input.shape[0]:
-            assert_single_instance(g_exc_input.shape[0], "ConductanceLIF")
+        # Assert 1D input (ADR-005: No Batch Dimension)
+        assert g_exc_input.dim() == 1, (
+            f"ConductanceLIF.forward: g_exc_input must be 1D [n_neurons], "
+            f"got shape {g_exc_input.shape}. See ADR-005: No Batch Dimension."
+        )
+        assert g_exc_input.shape[0] == self.n_neurons, (
+            f"ConductanceLIF.forward: g_exc_input has {g_exc_input.shape[0]} neurons "
+            f"but expected {self.n_neurons}."
+        )
 
         # Decrement refractory counter (in-place)
         self.refractory = (self.refractory - 1).clamp_(min=0)
@@ -635,7 +639,7 @@ class ConductanceLIF(nn.Module):
         # Apply only to non-refractory neurons
         self.membrane = torch.where(not_refractory, new_membrane, self.membrane)
 
-        # Spike generation
+        # Spike generation (bool for biological accuracy and memory efficiency)
         spikes = self.membrane >= self.v_threshold
 
         # Combined spike handling: reset membrane AND set refractory in one pass
@@ -647,11 +651,11 @@ class ConductanceLIF(nn.Module):
                 self.config.ref_steps,  # scalar broadcasts
                 self.refractory
             )
-            # Increment adaptation for spiking neurons
+            # Increment adaptation for spiking neurons (need float for arithmetic)
             if self.config.adapt_increment > 0:
                 self.g_adapt = self.g_adapt + spikes.float() * self.config.adapt_increment
 
-        return spikes.float(), self.membrane
+        return spikes, self.membrane
 
     def forward_current(
         self,

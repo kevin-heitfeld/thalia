@@ -7,7 +7,7 @@ pathways implement, ensuring feature parity and preventing oversight.
 Design Philosophy
 =================
 Brain regions and pathways are EQUALLY IMPORTANT:
-- Both process information (forward/encode)
+- Both process information (forward() - standard PyTorch convention, ADR-007)
 - Both learn continuously during forward passes
 - Both maintain temporal state
 - Both need growth for curriculum learning
@@ -52,8 +52,9 @@ class BrainComponent(Protocol):
     =================
     All brain components must support:
 
-    1. **Information Processing**:
-       - forward() or encode(): Transform inputs to outputs
+    1. **Information Processing** (ADR-007):
+       - forward(): Transform inputs to outputs (standard PyTorch convention)
+       - Enables callable syntax: component(input)
        - Continuous learning during forward passes (no separate learn())
 
     2. **State Management**:
@@ -114,11 +115,16 @@ class BrainComponent(Protocol):
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """
-        Process input and update state.
-
-        For regions: forward(spikes: Tensor) -> Tensor
-        For pathways: forward(spikes: Tensor) -> Tensor
-        For sensory pathways: May also implement encode(raw_input) -> (Tensor, Dict)
+        Process input and update state (standard PyTorch convention).
+        
+        **Standard PyTorch Method** (ADR-007):
+        All components use forward() to enable callable syntax:
+        >>> output = component(input)  # Calls forward() automatically
+        
+        Signatures:
+        - **Regions**: forward(spikes: Tensor) -> Tensor
+        - **Pathways**: forward(spikes: Tensor) -> Tensor
+        - **Sensory pathways**: forward(raw_input) -> (Tensor, Dict[str, Any])
 
         **Learning happens automatically during forward passes** - there is no
         separate learn() method. Plasticity is always active, modulated by

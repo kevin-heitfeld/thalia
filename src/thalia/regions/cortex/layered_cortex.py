@@ -52,7 +52,7 @@ from thalia.core.weight_init import WeightInitializer
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
 from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
-from thalia.core.utils import ensure_batch_dim, ensure_1d, clamp_weights, assert_single_instance
+from thalia.core.utils import ensure_1d, clamp_weights
 from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.ei_balance import LayerEIBalance
@@ -403,11 +403,9 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
     def reset_state(self) -> None:
         """Reset all layer states.
 
-        THALIA enforces batch_size=1 for single-instance architecture.
-        For parallel evaluation, create multiple LayeredCortex instances.
+        ADR-005: Uses 1D tensors (no batch dimension) for single-brain architecture.
         """
         dev = self.device
-        batch_size = 1
 
         self.l4_neurons.reset_state()
         self.l23_neurons.reset_state()
@@ -418,13 +416,13 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.stp_l23_recurrent.reset_state()
 
         self.state = LayeredCortexState(
-            l4_spikes=torch.zeros(batch_size, self.l4_size, device=dev),
-            l23_spikes=torch.zeros(batch_size, self.l23_size, device=dev),
-            l5_spikes=torch.zeros(batch_size, self.l5_size, device=dev),
-            l23_recurrent_activity=torch.zeros(batch_size, self.l23_size, device=dev),
-            l4_trace=torch.zeros(batch_size, self.l4_size, device=dev),
-            l23_trace=torch.zeros(batch_size, self.l23_size, device=dev),
-            l5_trace=torch.zeros(batch_size, self.l5_size, device=dev),
+            l4_spikes=torch.zeros(self.l4_size, device=dev),
+            l23_spikes=torch.zeros(self.l23_size, device=dev),
+            l5_spikes=torch.zeros(self.l5_size, device=dev),
+            l23_recurrent_activity=torch.zeros(self.l23_size, device=dev),
+            l4_trace=torch.zeros(self.l4_size, device=dev),
+            l23_trace=torch.zeros(self.l23_size, device=dev),
+            l5_trace=torch.zeros(self.l5_size, device=dev),
             top_down_modulation=None,
             ffi_strength=0.0,
         )
@@ -451,40 +449,44 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         happens continuously at each timestep, modulated by neuromodulators (dopamine).
         This is how biological cortex works - plasticity is part of the dynamics,
         not a separate training phase.
+        
+        Args:
+            input_spikes: Input spike tensor [n_input] (1D per ADR-005)
+            dt: Timestep in ms
+            encoding_mod: Theta modulation for encoding
+            retrieval_mod: Theta modulation for retrieval
+            top_down: Optional top-down modulation [l23_size] (1D)
+        
+        Returns:
+            Output spikes [l23_size + l5_size] if dual_output else [n_output] (1D)
         """
-        input_spikes = ensure_batch_dim(input_spikes)
-
-        batch_size = input_spikes.shape[0]
-
-        # Enforce single-instance architecture
-        assert_single_instance(batch_size, "LayeredCortex.forward")
-
-        # =====================================================================
-        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
-        # =====================================================================
-        assert input_spikes.shape[-1] == self.layer_config.n_input, (
+        # ADR-005: Expect 1D tensors (no batch dimension)
+        assert input_spikes.dim() == 1, (
+            f"LayeredCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}. "
+            f"Thalia uses single-brain architecture with no batch dimension."
+        )
+        assert input_spikes.shape[0] == self.layer_config.n_input, (
             f"LayeredCortex.forward: input_spikes has shape {input_spikes.shape} "
             f"but n_input={self.layer_config.n_input}. Check that input matches cortex config."
         )
+        
         if top_down is not None:
-            assert top_down.shape[-1] == self.l23_size, (
+            assert top_down.dim() == 1, (
+                f"LayeredCortex.forward: Expected 1D top_down (ADR-005), got shape {top_down.shape}"
+            )
+            assert top_down.shape[0] == self.l23_size, (
                 f"LayeredCortex.forward: top_down has shape {top_down.shape} "
                 f"but L2/3 size={self.l23_size}. Top-down must match L2/3 for modulation."
             )
-            assert top_down.shape[0] == batch_size, (
-                f"LayeredCortex.forward: top_down batch size {top_down.shape[0]} "
-                f"doesn't match input_spikes batch size {batch_size}."
-            )
 
         if self.state.l4_spikes is None:
-            assert_single_instance(batch_size, "LayeredCortex")
             self.reset_state()
 
         cfg = self.layer_config
 
-        # L4: Input processing
+        # L4: Input processing (1D tensors)
         l4_input = (
-            torch.matmul(input_spikes.float(), self.w_input_l4.t())
+            torch.matmul(self.w_input_l4, input_spikes.float())
             * cfg.input_to_l4_strength
         )
         l4_input = l4_input * (0.5 + 0.5 * encoding_mod)
@@ -494,13 +496,13 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             l4_input = self.divisive_norm_l4(l4_input)
 
         l4_spikes, _ = self.l4_neurons(l4_input)
-        l4_spikes = self._apply_sparsity(l4_spikes, cfg.l4_sparsity)
+        l4_spikes = self._apply_sparsity_1d(l4_spikes, cfg.l4_sparsity)
         self.state.l4_spikes = l4_spikes
 
-        # Inter-layer shape check: L4 → L2/3
-        assert l4_spikes.shape == (batch_size, self.l4_size), (
+        # Inter-layer shape check: L4 output
+        assert l4_spikes.shape == (self.l4_size,), (
             f"LayeredCortex: L4 spikes have shape {l4_spikes.shape} "
-            f"but expected ({batch_size}, {self.l4_size}). "
+            f"but expected ({self.l4_size},). "
             f"Check L4 sparsity or input→L4 weights shape."
         )
 
@@ -530,33 +532,19 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             recurrent_scale = 0.5 + 0.5 * retrieval_mod
 
             if self.stp_l23_recurrent is not None:
-                # Apply STP to recurrent connections
-                # NOTE: STP with batch_size > 1 is not supported in THALIA's architecture
-                # THALIA models a single continuous brain state, not parallel simulations
-                stp_efficacy = self.stp_l23_recurrent(
-                    self.state.l23_recurrent_activity.float()
-                )  # (batch, l23_size, l23_size)
-
-                # For batch_size=1, squeeze and apply directly
-                assert_single_instance(stp_efficacy.shape[0], "STP efficacy in LayeredCortex")
-
-                stp_efficacy = stp_efficacy.squeeze(0)  # (l23_size, l23_size)
+                # Apply STP to recurrent connections (1D)
+                stp_efficacy = self.stp_l23_recurrent(self.state.l23_recurrent_activity.float())  # [l23_size, l23_size]
+                
                 effective_w_rec = self.w_l23_recurrent * stp_efficacy
                 l23_rec = (
-                    torch.matmul(
-                        self.state.l23_recurrent_activity,
-                        effective_w_rec.t(),
-                    )
+                    torch.matmul(effective_w_rec, self.state.l23_recurrent_activity.float())
                     * cfg.l23_recurrent_strength
                     * recurrent_scale
                     * ffi_suppression
                 )
             else:
                 l23_rec = (
-                    torch.matmul(
-                        self.state.l23_recurrent_activity,
-                        self.w_l23_recurrent.t(),
-                    )
+                    torch.matmul(self.w_l23_recurrent, self.state.l23_recurrent_activity.float())
                     * cfg.l23_recurrent_strength
                     * recurrent_scale
                     * ffi_suppression
@@ -571,10 +559,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         # Lateral inhibition
         if self.state.l23_spikes is not None:
-            l23_inhib = torch.matmul(
-                self.state.l23_spikes.float(),
-                self.w_l23_inhib.t(),
-            )
+            l23_inhib = torch.matmul(self.w_l23_inhib, self.state.l23_spikes.float())
 
             # E/I Balance: Scale inhibition to maintain healthy E/I ratio
             if self.ei_balance is not None:
@@ -598,16 +583,16 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         cfg = self.layer_config
         if (cfg.intrinsic_plasticity_enabled and
             self._l23_threshold_offset is not None):
-            l23_input = l23_input - self._l23_threshold_offset.unsqueeze(0)
+            l23_input = l23_input - self._l23_threshold_offset
 
         l23_spikes, _ = self.l23_neurons(F.relu(l23_input))
-        l23_spikes = self._apply_sparsity(l23_spikes, cfg.l23_sparsity)
+        l23_spikes = self._apply_sparsity_1d(l23_spikes, cfg.l23_sparsity)
         self.state.l23_spikes = l23_spikes
 
         # Inter-layer shape check: L2/3 → L5
-        assert l23_spikes.shape == (batch_size, self.l23_size), (
+        assert l23_spikes.shape == (self.l23_size,), (
             f"LayeredCortex: L2/3 spikes have shape {l23_spikes.shape} "
-            f"but expected ({batch_size}, {self.l23_size}). "
+            f"but expected ({self.l23_size},). "
             f"Check L2/3 sparsity or L4→L2/3 weights shape."
         )
 
@@ -622,17 +607,17 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         # L5: Subcortical output
         l5_input = (
-            torch.matmul(l23_spikes.float(), self.w_l23_l5.t())
+            torch.matmul(self.w_l23_l5, l23_spikes.float())
             * cfg.l23_to_l5_strength
         )
         l5_spikes, _ = self.l5_neurons(l5_input)
-        l5_spikes = self._apply_sparsity(l5_spikes, cfg.l5_sparsity)
+        l5_spikes = self._apply_sparsity_1d(l5_spikes, cfg.l5_sparsity)
         self.state.l5_spikes = l5_spikes
 
         # Inter-layer shape check: L5 output
-        assert l5_spikes.shape == (batch_size, self.l5_size), (
+        assert l5_spikes.shape == (self.l5_size,), (
             f"LayeredCortex: L5 spikes have shape {l5_spikes.shape} "
-            f"but expected ({batch_size}, {self.l5_size}). "
+            f"but expected ({self.l5_size},). "
             f"Check L5 sparsity or L2/3→L5 weights shape."
         )
 
@@ -665,26 +650,28 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         else:
             output = l23_spikes
 
+        # ADR-005: Return 1D tensor
         return output
 
-    def _apply_sparsity(
+    def _apply_sparsity_1d(
         self,
         spikes: torch.Tensor,
         target_sparsity: float,
     ) -> torch.Tensor:
-        """Apply winner-take-all sparsity."""
-        batch_size, n_neurons = spikes.shape
+        """Apply winner-take-all sparsity to 1D spike tensor (ADR-005)."""
+        assert spikes.dim() == 1, f"Expected 1D spikes, got shape {spikes.shape}"
+        
+        n_neurons = spikes.shape[0]
         k = max(1, int(n_neurons * target_sparsity))
 
         sparse_spikes = torch.zeros_like(spikes)
-
-        for b in range(batch_size):
-            active = spikes[b].nonzero(as_tuple=True)[0]
-            if len(active) > k:
-                keep_indices = active[torch.randperm(len(active))[:k]]
-                sparse_spikes[b, keep_indices] = spikes[b, keep_indices]
-            else:
-                sparse_spikes[b] = spikes[b]
+        active = spikes.nonzero(as_tuple=True)[0]
+        
+        if len(active) > k:
+            keep_indices = active[torch.randperm(len(active))[:k]]
+            sparse_spikes[keep_indices] = spikes[keep_indices]
+        else:
+            sparse_spikes = spikes
 
         return sparse_spikes
 

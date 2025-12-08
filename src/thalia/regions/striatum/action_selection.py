@@ -69,9 +69,14 @@ class ActionSelectionMixin:
     def _decode_action_from_spikes(self, spikes: torch.Tensor) -> int:
         """Decode action from spike pattern using population voting.
 
+        Args:
+            spikes: Spike tensor [n_output] (1D)
+            
         Returns the action whose population has the most spikes.
         """
-        spikes = spikes.squeeze()
+        # Ensure 1D
+        if spikes.dim() != 1:
+            spikes = spikes.squeeze()
 
         if not self.striatum_config.population_coding:
             # Simple argmax for single-neuron coding
@@ -93,12 +98,15 @@ class ActionSelectionMixin:
         Used for D1-D2 subtraction to compute NET signal per action.
 
         Args:
-            spikes: Spike tensor of shape (batch, n_output)
+            spikes: Spike tensor [n_output] (1D)
 
         Returns:
-            Tensor of shape (n_actions,) with vote counts per action.
+            Tensor of shape [n_actions] with vote counts per action.
         """
-        spikes = spikes.squeeze()
+        # Ensure 1D
+        if spikes.dim() != 1:
+            spikes = spikes.squeeze()
+            
         votes = torch.zeros(self.n_actions, device=self.device)
 
         for action in range(self.n_actions):

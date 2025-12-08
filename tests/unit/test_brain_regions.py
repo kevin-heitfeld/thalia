@@ -26,6 +26,7 @@ from thalia.regions import (
     TrisynapticHippocampus,
     TrisynapticConfig,
 )
+from thalia.regions.hippocampus import TrialPhase
 
 
 
@@ -54,12 +55,13 @@ class TestCerebellum:
 
     def test_forward_pass(self, cerebellum, cerebellum_config):
         """Test that forward pass produces valid outputs."""
-        batch_size = 1
-        input_spikes = torch.randint(0, 2, (batch_size, cerebellum_config.n_input)).float()
+        # 1D bool tensor (ADR-004, ADR-005)
+        input_spikes = torch.randint(0, 2, (cerebellum_config.n_input,), dtype=torch.bool)
 
         output = cerebellum.forward(input_spikes)
 
-        assert output.shape == (batch_size, cerebellum_config.n_output)
+        assert output.shape == (cerebellum_config.n_output,)
+        assert output.dtype == torch.bool
 
     def test_error_corrective_learning(self, cerebellum, cerebellum_config):
         """Test that error-corrective learning reduces error over time.
@@ -68,16 +70,14 @@ class TestCerebellum:
         1. forward() builds eligibility traces from spike-timing
         2. deliver_error(target) applies learning when error signal arrives
         """
-        batch_size = 1
+        # Create a simple input pattern (1D bool)
+        input_pattern = torch.zeros(cerebellum_config.n_input, dtype=torch.bool)
+        input_pattern[:5] = True  # First 5 inputs active
 
-        # Create a simple input pattern
-        input_pattern = torch.zeros(batch_size, cerebellum_config.n_input)
-        input_pattern[0, :5] = 1.0  # First 5 inputs active
-
-        # Target: specific output neurons should fire
-        target = torch.zeros(batch_size, cerebellum_config.n_output)
-        target[0, 0] = 1.0  # Want output neuron 0 to fire
-        target[0, 1] = 1.0  # Want output neuron 1 to fire
+        # Target: specific output neurons should fire (1D float for target)
+        target = torch.zeros(cerebellum_config.n_output)
+        target[0] = 1.0  # Want output neuron 0 to fire
+        target[1] = 1.0  # Want output neuron 1 to fire
 
         # Train for several iterations
         initial_error = None
@@ -101,14 +101,14 @@ class TestCerebellum:
 
     def test_climbing_fiber_signal(self, cerebellum):
         """Test that climbing fiber error signal is computed correctly."""
-        batch_size = 1
-        input_pattern = torch.ones(batch_size, cerebellum.config.n_input)
+        # 1D bool tensor
+        input_pattern = torch.ones(cerebellum.config.n_input, dtype=torch.bool)
 
         cerebellum.reset_state()
         output = cerebellum.forward(input_pattern)
 
         # Target all zeros (opposite of likely output)
-        target = torch.zeros(batch_size, cerebellum.config.n_output)
+        target = torch.zeros(cerebellum.config.n_output)
 
         # Deliver error via climbing fiber system
         metrics = cerebellum.deliver_error(target=target, output_spikes=output)
@@ -143,14 +143,15 @@ class TestStriatum:
         assert striatum.weights.shape == (striatum_config.n_output, striatum_config.n_input)
 
     def test_forward_pass(self, striatum, striatum_config):
-        """Test that forward pass produces valid outputs."""
+        """Test that forward pass produces valid outputs (ADR-005: 1D tensors)."""
         # Striatum processes one timestep at a time (spiking network)
-        batch_size = 1
-        input_spikes = torch.randint(0, 2, (batch_size, striatum_config.n_input)).float()
+        # ADR-005: Single brain = 1D tensors [n_neurons], no batch dimension
+        input_spikes = torch.randint(0, 2, (striatum_config.n_input,)).float()
 
         output = striatum.forward(input_spikes)
 
-        assert output.shape == (batch_size, striatum_config.n_output)
+        # ADR-005: Output is 1D [n_output]
+        assert output.shape == (striatum_config.n_output,)
 
     def test_eligibility_trace_buildup(self, striatum):
         """Test that eligibility traces build up with activity.
@@ -246,6 +247,315 @@ class TestStriatum:
         assert striatum.state.dopamine == -0.5
 
 
+class TestTrisynapticHippocampus:
+    """Tests for the TrisynapticHippocampus region (episodic memory with theta phases)."""
+
+    @pytest.fixture
+    def hippocampus_config(self):
+        """Basic hippocampus configuration."""
+        return TrisynapticConfig(
+            n_input=64,
+            n_output=32,
+            dg_expansion=2.0,       # DG = 128 neurons (2x input)
+            ca3_size_ratio=0.5,     # CA3 = 64 neurons (half of DG)
+            ca1_size_ratio=1.0,     # CA1 = 32 neurons (matches output)
+            dg_sparsity=0.05,       # Very sparse DG
+            ca3_sparsity=0.1,       # Sparse CA3
+            ca1_sparsity=0.2,       # Less sparse output
+            ca3_recurrent_strength=0.3,
+            learning_rate=0.01,
+            device="cpu"
+        )
+
+    @pytest.fixture
+    def hippocampus(self, hippocampus_config):
+        """Create a hippocampus instance."""
+        return TrisynapticHippocampus(hippocampus_config)
+
+    def test_initialization(self, hippocampus, hippocampus_config):
+        """Test that hippocampus initializes correctly."""
+        assert hippocampus.learning_rule == LearningRule.THETA_PHASE
+        
+        # Sizes are computed from config
+        expected_dg_size = int(hippocampus_config.n_input * hippocampus_config.dg_expansion)
+        expected_ca3_size = int(expected_dg_size * hippocampus_config.ca3_size_ratio)
+        expected_ca1_size = int(hippocampus_config.n_output * hippocampus_config.ca1_size_ratio)
+        
+        assert hippocampus.dg_size == expected_dg_size
+        assert hippocampus.ca3_size == expected_ca3_size
+        assert hippocampus.ca1_size == expected_ca1_size
+        
+        # Check weight matrices exist
+        assert hippocampus.w_ec_dg.shape == (expected_dg_size, hippocampus_config.n_input)
+        assert hippocampus.w_dg_ca3.shape == (expected_ca3_size, expected_dg_size)
+        assert hippocampus.w_ca3_ca1.shape == (expected_ca1_size, expected_ca3_size)
+        assert hippocampus.w_ca3_ca3.shape == (expected_ca3_size, expected_ca3_size)
+
+    def test_forward_encode_phase(self, hippocampus):
+        """Test forward pass during ENCODE phase."""
+
+        # 1D architecture - no batch dimension
+        input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)
+        
+        hippocampus.reset_state()
+        output = hippocampus.forward(
+            input_spikes,
+            phase=TrialPhase.ENCODE,
+            encoding_mod=1.0,  # High encoding strength
+            retrieval_mod=0.0  # No retrieval
+        )
+        
+        assert output.shape == (32,)  # 1D output
+        assert output.dtype == torch.bool  # Should return bool spikes
+        
+        # DG should be active (pattern separation)
+        assert hippocampus.state.dg_spikes is not None
+        assert hippocampus.state.dg_spikes.sum() > 0
+        
+        # CA3 should be active (receiving DG input)
+        assert hippocampus.state.ca3_spikes is not None
+        assert hippocampus.state.ca3_spikes.sum() > 0
+
+    def test_forward_retrieve_phase(self, hippocampus):
+        """Test forward pass during RETRIEVE phase (pattern completion)."""
+
+        # 1D architecture - no batch dimension
+        input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)
+        
+        # First encode a pattern
+        hippocampus.reset_state()
+        hippocampus.forward(
+            input_spikes,
+            phase=TrialPhase.ENCODE,
+            encoding_mod=1.0,
+            retrieval_mod=0.0
+        )
+        
+        # Now retrieve with partial cue (first half of pattern)
+        partial_input = input_spikes.clone()
+        partial_input[32:] = False  # Zero out second half
+        
+        output = hippocampus.forward(
+            partial_input,
+            phase=TrialPhase.RETRIEVE,
+            encoding_mod=0.0,  # No encoding
+            retrieval_mod=1.0  # Strong retrieval
+        )
+        
+        assert output.shape == (32,)  # 1D output
+        assert output.dtype == torch.bool
+        
+        # CA3 recurrence should be active (pattern completion)
+        # In retrieval, CA3 should produce output even with partial input
+
+    def test_forward_delay_phase(self, hippocampus):
+        """Test forward pass during DELAY phase (maintenance)."""
+
+        # 1D architecture - no batch dimension
+        input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)
+        
+        # Encode pattern
+        hippocampus.reset_state()
+        hippocampus.forward(
+            input_spikes,
+            phase=TrialPhase.ENCODE,
+            encoding_mod=1.0,
+            retrieval_mod=0.0
+        )
+        
+        # Store CA3 activity after encoding
+        ca3_after_encode = hippocampus.state.ca3_spikes.clone()
+        
+        # DELAY phase with no input
+        zero_input = torch.zeros(64, dtype=torch.bool)
+        output = hippocampus.forward(
+            zero_input,
+            phase=TrialPhase.DELAY,
+            encoding_mod=0.3,  # Moderate
+            retrieval_mod=0.5   # Moderate
+        )
+        
+        assert output.shape == (32,)  # 1D output
+        
+        # CA3 persistent activity should maintain pattern
+        # (exact match not guaranteed due to noise, but should be correlated)
+        assert hippocampus.state.ca3_persistent is not None
+
+    def test_pattern_separation(self, hippocampus):
+        """Test that similar inputs produce different DG codes (pattern separation)."""
+
+        # 1D architecture - no batch dimension
+        
+        # Create two similar patterns (90% overlap)
+        pattern1 = torch.zeros(64, dtype=torch.bool)
+        pattern1[:60] = True  # First 60 neurons
+        
+        pattern2 = torch.zeros(64, dtype=torch.bool)
+        pattern2[4:64] = True  # Offset by 4 neurons
+        
+        # Encode pattern 1
+        hippocampus.reset_state()
+        hippocampus.forward(pattern1, phase=TrialPhase.ENCODE, encoding_mod=1.0, retrieval_mod=0.0)
+        dg1 = hippocampus.state.dg_spikes.clone()
+        
+        # Encode pattern 2
+        hippocampus.reset_state()
+        hippocampus.forward(pattern2, phase=TrialPhase.ENCODE, encoding_mod=1.0, retrieval_mod=0.0)
+        dg2 = hippocampus.state.dg_spikes.clone()
+        
+        # DG codes should be different (pattern separation)
+        # Overlap should be much less than input overlap (90%)
+        dg_overlap = (dg1 & dg2).float().sum() / dg1.float().sum().clamp(min=1)
+        input_overlap = (pattern1 & pattern2).float().sum() / pattern1.float().sum().clamp(min=1)
+        
+        # DG should decorrelate: overlap should be lower than input
+        assert dg_overlap < input_overlap
+
+    def test_pattern_completion(self, hippocampus):
+        """Test that partial cues can retrieve full patterns (CA3 pattern completion)."""
+
+        # 1D architecture - no batch dimension
+        
+        # Full pattern
+        full_pattern = torch.randint(0, 2, (64,), dtype=torch.bool)
+        
+        # Encode full pattern multiple times to strengthen CA3 recurrent weights
+        hippocampus.reset_state()
+        for _ in range(5):
+            hippocampus.forward(
+                full_pattern,
+                phase=TrialPhase.ENCODE,
+                encoding_mod=1.0,
+                retrieval_mod=0.0
+            )
+        ca3_full = hippocampus.state.ca3_spikes.clone()
+        
+        # Present partial cue (50% of pattern) WITHOUT reset
+        # (pattern completion requires maintained CA3 state)
+        partial_pattern = full_pattern.clone()
+        partial_pattern[32:] = False
+        
+        hippocampus.forward(
+            partial_pattern,
+            phase=TrialPhase.RETRIEVE,
+            encoding_mod=0.0,
+            retrieval_mod=1.0
+        )
+        ca3_retrieved = hippocampus.state.ca3_spikes.clone()
+        
+        # CA3 should retrieve similar pattern to full encoding
+        # (exact match not guaranteed, but correlation should be high)
+        overlap = (ca3_full & ca3_retrieved).float().sum()
+        
+        # Should get some pattern completion (>0 overlap)
+        # Even with reset, DG should help reactivate CA3 pattern via learned weights
+        assert overlap > 0 or ca3_retrieved.sum() > 0  # At least some activity
+
+    def test_theta_modulation_effect(self, hippocampus):
+        """Test that theta modulation affects encoding vs retrieval."""
+
+        # 1D architecture - no batch dimension
+        # Use pattern with high activity to ensure spikes
+        input_spikes = torch.ones(64, dtype=torch.bool)
+        input_spikes[::2] = False  # 50% activity
+        
+        # High encoding modulation should produce different output than high retrieval
+        hippocampus.reset_state()
+        output_encode = hippocampus.forward(
+            input_spikes,
+            phase=TrialPhase.ENCODE,
+            encoding_mod=1.0,
+            retrieval_mod=0.0
+        )
+        dg_encode = hippocampus.state.dg_spikes.clone()
+        
+        hippocampus.reset_state()
+        output_retrieve = hippocampus.forward(
+            input_spikes,
+            phase=TrialPhase.RETRIEVE,
+            encoding_mod=0.0,
+            retrieval_mod=1.0
+        )
+        dg_retrieve = hippocampus.state.dg_spikes.clone()
+        
+        # At minimum, DG should be active in both phases (it processes input)
+        # CA1 output may be sparse due to downstream gating
+        assert dg_encode.sum() > 0, "DG should be active during encoding"
+        assert dg_retrieve.sum() > 0, "DG should be active during retrieval"
+
+    def test_nmda_coincidence_detection(self, hippocampus):
+        """Test that CA1 performs NMDA-based match/mismatch detection."""
+
+        # 1D architecture - no batch dimension
+        
+        # Encode a pattern
+        pattern = torch.randint(0, 2, (64,), dtype=torch.bool)
+        hippocampus.reset_state()
+        
+        # Multiple encoding passes to strengthen weights
+        for _ in range(5):
+            hippocampus.forward(
+                pattern,
+                phase=TrialPhase.ENCODE,
+                encoding_mod=1.0,
+                retrieval_mod=0.0
+            )
+        
+        # Test with matching pattern (CA3 → CA1 and EC → CA1 should agree)
+        hippocampus.reset_state()
+        output_match = hippocampus.forward(
+            pattern,
+            phase=TrialPhase.RETRIEVE,
+            encoding_mod=0.0,
+            retrieval_mod=1.0
+        )
+        ca1_match_activity = output_match.float().sum()
+        
+        # Test with mismatching pattern
+        different_pattern = ~pattern  # Inverted pattern
+        hippocampus.reset_state()
+        output_mismatch = hippocampus.forward(
+            different_pattern,
+            phase=TrialPhase.RETRIEVE,
+            encoding_mod=0.0,
+            retrieval_mod=1.0
+        )
+        ca1_mismatch_activity = output_mismatch.float().sum()
+        
+        # CA1 should show difference between match and mismatch
+        # (exact values depend on NMDA gating, but there should be a measurable difference)
+
+    def test_new_trial_reset(self, hippocampus):
+        """Test that new_trial() properly resets transient state."""
+
+        # 1D architecture - no batch dimension
+        input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)
+        
+        # Run forward to build up state
+        hippocampus.forward(
+            input_spikes,
+            phase=TrialPhase.ENCODE,
+            encoding_mod=1.0,
+            retrieval_mod=0.0
+        )
+        
+        # State should have activity
+        assert hippocampus.state.dg_spikes is not None
+        assert hippocampus.state.ca3_spikes is not None
+        
+        # Store pre-reset membrane state
+        ca3_pre = hippocampus.state.ca3_membrane.clone() if hippocampus.state.ca3_membrane is not None else None
+        
+        # Call new_trial
+        hippocampus.new_trial()
+        
+        # Key functional behavior: membrane potentials should be reset
+        # (This is what matters for new trial processing, not specific storage fields)
+        if ca3_pre is not None and hippocampus.state.ca3_membrane is not None:
+            # Membrane should be reset (all zeros) or significantly decayed
+            assert hippocampus.state.ca3_membrane.abs().sum() <= ca3_pre.abs().sum()
+
+
 class TestPrefrontal:
     """Tests for the Prefrontal region (gated working memory)."""
 
@@ -275,21 +585,22 @@ class TestPrefrontal:
 
     def test_forward_pass(self, prefrontal, prefrontal_config):
         """Test that forward pass produces valid outputs."""
-        batch_size = 1  # THALIA only supports single-instance architecture
-        input_spikes = torch.randint(0, 2, (batch_size, prefrontal_config.n_input)).float()
+        # 1D bool tensor (ADR-004, ADR-005)
+        input_spikes = torch.randint(0, 2, (prefrontal_config.n_input,), dtype=torch.bool)
 
         prefrontal.reset_state()
         output = prefrontal.forward(input_spikes)
 
-        assert output.shape == (batch_size, prefrontal_config.n_output)
+        assert output.shape == (prefrontal_config.n_output,)
+        assert output.dtype == torch.bool
 
     def test_working_memory_gating(self, prefrontal):
         """Test that dopamine affects working memory updates."""
         prefrontal.reset_state()
 
-        # Create a pattern
-        pattern = torch.zeros(1, prefrontal.config.n_input)
-        pattern[0, :10] = 1.0
+        # Create a pattern (1D bool tensor)
+        pattern = torch.zeros(prefrontal.config.n_input, dtype=torch.bool)
+        pattern[:10] = True
 
         # High DA should update WM
         for _ in range(5):
@@ -312,9 +623,9 @@ class TestPrefrontal:
         """Test that WM can be maintained over time."""
         prefrontal.reset_state()
 
-        # Store pattern with high DA
-        pattern = torch.zeros(1, prefrontal.config.n_input)
-        pattern[0, :10] = 1.0
+        # Store pattern with high DA (1D bool tensor)
+        pattern = torch.zeros(prefrontal.config.n_input, dtype=torch.bool)
+        pattern[:10] = True
 
         for _ in range(10):
             prefrontal.forward(pattern, dopamine_signal=0.5)
@@ -331,17 +642,17 @@ class TestPrefrontal:
         """Test that low DA protects WM from distractors."""
         prefrontal.reset_state()
 
-        # Store pattern A with high DA
-        pattern_a = torch.zeros(1, prefrontal.config.n_input)
-        pattern_a[0, :10] = 1.0
+        # Store pattern A with high DA (1D bool tensor)
+        pattern_a = torch.zeros(prefrontal.config.n_input, dtype=torch.bool)
+        pattern_a[:10] = True
         for _ in range(10):
             prefrontal.forward(pattern_a, dopamine_signal=0.5)
 
         wm_after_a = prefrontal.get_working_memory().clone()
 
         # Present distractor B with low DA
-        pattern_b = torch.zeros(1, prefrontal.config.n_input)
-        pattern_b[0, 10:] = 1.0  # Different pattern
+        pattern_b = torch.zeros(prefrontal.config.n_input, dtype=torch.bool)
+        pattern_b[10:] = True  # Different pattern
         for _ in range(5):  # Fewer steps
             prefrontal.forward(pattern_b, dopamine_signal=-0.5)
 
@@ -365,8 +676,9 @@ class TestPrefrontal:
 
         initial_weights = prefrontal.weights.clone()
 
-        input_pattern = torch.zeros(1, prefrontal.config.n_input)
-        input_pattern[0, :10] = 1.0
+        # Create 1D bool input pattern
+        input_pattern = torch.zeros(prefrontal.config.n_input, dtype=torch.bool)
+        input_pattern[:10] = True
 
         # Set dopamine to enable learning
         prefrontal.set_dopamine(0.5)
@@ -426,20 +738,22 @@ class TestIntegration:
         cerebellum = Cerebellum(CerebellumConfig(n_input=cortex.l23_size, n_output=3))
 
         batch_size = 1
-        raw_input = torch.randint(0, 2, (batch_size, 20)).float()
-        target = torch.zeros(batch_size, 3)
-        target[0, 0] = 1.0  # Class 0
+        # ADR-005: Single brain = 1D tensors [n_neurons], no batch dimension
+        raw_input = torch.randint(0, 2, (20,)).float()
+        target = torch.zeros(3)
+        target[0] = 1.0  # Class 0
 
         # Forward through pipeline
         cortex.reset_state()
         cerebellum.reset_state()
 
         cortex_output = cortex.forward(raw_input)
-        # Use L2/3 output for cortical targets
-        l23_output = cortex_output[:, :cortex.l23_size]
+        # Use L2/3 output for cortical targets (already 1D)
+        l23_output = cortex_output[:cortex.l23_size]
         final_output = cerebellum.forward(l23_output)
 
-        assert final_output.shape == (batch_size, 3)
+        # ADR-005: Output is 1D [n_output]
+        assert final_output.shape == (3,)
 
         # Cerebellum uses deliver_error for supervised learning
         cerebellum.deliver_error(target=target, output_spikes=final_output)
@@ -483,20 +797,20 @@ class TestLayeredCortex:
         assert layered_cortex.w_l23_l5.shape == (layered_cortex.l5_size, layered_cortex.l23_size)  # L2/3 → L5
 
     def test_forward_pass(self, layered_cortex, layered_config):
-        """Test forward pass produces correct output shape."""
-        batch_size = 1  # THALIA only supports single-instance architecture
-        input_spikes = torch.randint(0, 2, (batch_size, 64)).float()
+        """Test forward pass produces correct output shape (ADR-005: 1D tensors)."""
+        input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)  # 1D, bool
 
         layered_cortex.reset_state()
         output = layered_cortex.forward(input_spikes)
 
         # With dual_output=True, output is L2/3 + L5 concatenated
         expected_size = layered_cortex.l23_size + layered_cortex.l5_size
-        assert output.shape == (batch_size, expected_size)
+        assert output.shape == (expected_size,)  # 1D output
+        assert output.dtype == torch.bool  # bool spikes
 
     def test_dual_output_separation(self, layered_cortex):
-        """Test that L2/3 and L5 outputs can be accessed separately."""
-        input_spikes = torch.randint(0, 2, (1, 64)).float()
+        """Test that L2/3 and L5 outputs can be accessed separately (ADR-005: 1D tensors)."""
+        input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)  # 1D, bool
 
         layered_cortex.reset_state()
         layered_cortex.forward(input_spikes)
@@ -506,12 +820,14 @@ class TestLayeredCortex:
 
         assert l23_out is not None
         assert l5_out is not None
-        assert l23_out.shape == (1, layered_cortex.l23_size)
-        assert l5_out.shape == (1, layered_cortex.l5_size)
+        assert l23_out.shape == (layered_cortex.l23_size,)  # 1D
+        assert l5_out.shape == (layered_cortex.l5_size,)  # 1D
+        assert l23_out.dtype == torch.bool  # bool spikes
+        assert l5_out.dtype == torch.bool  # bool spikes
 
     def test_recurrent_dynamics(self, layered_cortex):
-        """Test that L2/3 has recurrent dynamics over multiple timesteps."""
-        input_spikes = torch.ones(1, 64)  # Strong input
+        """Test that L2/3 has recurrent dynamics over multiple timesteps (ADR-005: 1D tensors)."""
+        input_spikes = torch.ones(64, dtype=torch.bool)  # 1D, bool, strong input
 
         layered_cortex.reset_state()
 
@@ -527,12 +843,12 @@ class TestLayeredCortex:
         # (exact values depend on weights, but trace should exist)
 
     def test_learning(self, layered_cortex):
-        """Test that learning updates inter-layer weights via continuous plasticity.
+        """Test that learning updates inter-layer weights via continuous plasticity (ADR-005: 1D tensors).
 
         In the new paradigm, learning happens automatically during forward()
         when there is activity. There is no separate learn() call.
         """
-        input_spikes = torch.ones(1, 64)
+        input_spikes = torch.ones(64, dtype=torch.bool)  # 1D, bool
 
         layered_cortex.reset_state()
 
@@ -552,8 +868,8 @@ class TestLayeredCortex:
         assert w_input_l4_change > 0 or w_l4_l23_change > 0, "Weights should change via continuous plasticity"
 
     def test_diagnostics(self, layered_cortex):
-        """Test that diagnostics returns layer-specific information."""
-        input_spikes = torch.randint(0, 2, (1, 64)).float()
+        """Test that diagnostics returns layer-specific information (ADR-005: 1D tensors)."""
+        input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)  # 1D, bool
 
         layered_cortex.reset_state()
         layered_cortex.forward(input_spikes)

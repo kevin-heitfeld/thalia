@@ -417,8 +417,8 @@ class SpikingPathway(BaseNeuralPathway):
         # Apply Short-Term Plasticity if enabled
         if self.stp is not None:
             # Get STP efficacy based on presynaptic activity
-            # efficacy shape: (n_pre, n_post) for per-synapse STP
-            stp_efficacy = self.stp(delayed_spikes.unsqueeze(0)).squeeze(0)
+            # efficacy shape: [n_pre] for per-neuron or [n_pre, n_post] for per-synapse STP
+            stp_efficacy = self.stp(delayed_spikes)
             # Modulate weights by STP efficacy
             effective_weights = effective_weights * stp_efficacy.T  # Transpose for (n_post, n_pre)
 

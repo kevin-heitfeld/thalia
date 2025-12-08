@@ -111,13 +111,17 @@ class FeedforwardInhibition:
         """
         if self._prev_input is None:
             # First input - no inhibition
-            self._prev_input = current_input.detach().clone()
+            self._prev_input = current_input.detach().clone().float()
             if return_tensor:
-                return torch.zeros_like(current_input)
+                return torch.zeros_like(current_input, dtype=torch.float32)
             return torch.tensor(0.0)
         
+        # Convert bool spikes to float for arithmetic (ADR-004)
+        current_float = current_input.float()
+        prev_float = self._prev_input.float()
+        
         # Compute input change magnitude (normalized by input size)
-        input_diff = (current_input - self._prev_input).abs()
+        input_diff = (current_float - prev_float).abs()
         change_magnitude = input_diff.sum() / (current_input.numel() + 1e-6)
         
         # Sigmoid activation based on change magnitude
@@ -129,7 +133,7 @@ class FeedforwardInhibition:
         # Update previous input (with decay for smooth tracking)
         self._prev_input = (
             self.decay_rate * self._prev_input + 
-            (1 - self.decay_rate) * current_input.detach().clone()
+            (1 - self.decay_rate) * current_float.detach().clone()
         )
         
         self._current_inhibition = inhibition.item()
@@ -222,20 +226,21 @@ class TemporalIntegrationLayer:
         the variable pattern from raw cortex output.
         
         Args:
-            spikes: Input spike pattern [batch, n_neurons]
+            spikes: Input spike pattern [n_neurons] (1D)
             dt: Timestep in ms
         
         Returns:
-            Integrated spike pattern [batch, n_neurons]
+            Integrated spike pattern [n_neurons] (1D)
         """
-        if spikes.dim() == 1:
-            spikes = spikes.unsqueeze(0)
+        # Ensure 1D input
+        if spikes.dim() != 1:
+            spikes = spikes.squeeze()
         
-        batch_size = spikes.shape[0]
+        assert spikes.dim() == 1, f"ThetaModulation expects 1D input, got shape {spikes.shape}"
         
         # Initialize trace if needed
-        if self._trace is None or self._trace.shape[0] != batch_size:
-            self._trace = torch.zeros(batch_size, self.n_neurons, device=self.device)
+        if self._trace is None:
+            self._trace = torch.zeros(self.n_neurons, device=self.device)
         
         # Leaky integration: trace = trace * decay + new_spikes
         decay = math.exp(-dt / self.tau)

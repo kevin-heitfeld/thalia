@@ -44,23 +44,26 @@ class EligibilityTraces:
         post_activity: torch.Tensor,
         dt_ms: float,
     ) -> None:
-        """Update eligibility based on pre-post coincidence."""
+        """Update eligibility based on pre-post coincidence.
+        
+        Args:
+            pre_activity: Presynaptic activity [n_pre] (1D)
+            post_activity: Postsynaptic activity [n_post] (1D)
+            dt_ms: Timestep in ms
+        """
+        # Ensure 1D
+        if pre_activity.dim() != 1:
+            pre_activity = pre_activity.squeeze()
+        if post_activity.dim() != 1:
+            post_activity = post_activity.squeeze()
+        
         # Decay existing traces (always happens)
         decay = 1.0 - dt_ms / self.tau_ms
         self.traces = self.traces * decay
 
-        # Handle batched input: skip eligibility update for batch_size > 1
-        if pre_activity.dim() > 1 and pre_activity.shape[0] > 1:
-            return
-        if post_activity.dim() > 1 and post_activity.shape[0] > 1:
-            return
-
-        pre = pre_activity.squeeze()
-        post = post_activity.squeeze()
-
         # Add new eligibility for co-active synapses
-        if post.sum() > 0 and pre.sum() > 0:
-            self.traces = self.traces + torch.outer(post, pre)
+        if post_activity.sum() > 0 and pre_activity.sum() > 0:
+            self.traces = self.traces + torch.outer(post_activity, pre_activity)
 
     def get(self) -> torch.Tensor:
         return self.traces

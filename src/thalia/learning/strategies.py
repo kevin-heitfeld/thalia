@@ -265,18 +265,24 @@ class HebbianStrategy(BaseStrategy):
         """Apply Hebbian learning.
         
         Δw[j,i] = lr × pre[i] × post[j]
+        
+        Args:
+            weights: Current weights [n_post, n_pre]
+            pre: Presynaptic activity [n_pre] (1D)
+            post: Postsynaptic activity [n_post] (1D)
         """
         cfg = self.hebbian_config
         
-        # Ensure 2D
-        if pre.dim() == 1:
-            pre = pre.unsqueeze(0)
-        if post.dim() == 1:
-            post = post.unsqueeze(0)
+        # Ensure 1D inputs
+        if pre.dim() != 1:
+            pre = pre.squeeze()
+        if post.dim() != 1:
+            post = post.squeeze()
         
-        # Hebbian outer product, averaged over batch
-        # dw[j,i] = mean(post[b,j] × pre[b,i])
-        dw = torch.einsum('bj,bi->ji', post.float(), pre.float()) / pre.shape[0]
+        assert pre.dim() == 1 and post.dim() == 1, "HebbianStrategy expects 1D inputs"
+        
+        # Hebbian outer product: dw[j,i] = post[j] × pre[i]
+        dw = torch.outer(post.float(), pre.float())
         
         # Scale by learning rate
         dw = cfg.learning_rate * dw
@@ -335,17 +341,21 @@ class STDPStrategy(BaseStrategy):
         pre: torch.Tensor,
         post: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Update and return eligibility traces."""
-        batch_size = pre.shape[0]
-        n_pre = pre.shape[-1]
-        n_post = post.shape[-1]
+        """Update and return eligibility traces.
+        
+        Args:
+            pre: Presynaptic spikes [n_pre] (1D)
+            post: Postsynaptic spikes [n_post] (1D)
+        """
+        n_pre = pre.shape[0]
+        n_post = post.shape[0]
         device = pre.device
         
         # Initialize traces if needed
-        if self.pre_trace is None or self.pre_trace.shape[-1] != n_pre:
-            self.pre_trace = torch.zeros(batch_size, n_pre, device=device)
-        if self.post_trace is None or self.post_trace.shape[-1] != n_post:
-            self.post_trace = torch.zeros(batch_size, n_post, device=device)
+        if self.pre_trace is None or self.pre_trace.shape[0] != n_pre:
+            self.pre_trace = torch.zeros(n_pre, device=device)
+        if self.post_trace is None or self.post_trace.shape[0] != n_post:
+            self.post_trace = torch.zeros(n_post, device=device)
         
         # Decay traces
         self.pre_trace = self.decay_pre * self.pre_trace
@@ -368,25 +378,32 @@ class STDPStrategy(BaseStrategy):
         
         LTP: A+ × pre_trace × post_spike
         LTD: A- × post_trace × pre_spike
+        
+        Args:
+            weights: Current weights [n_post, n_pre]
+            pre: Presynaptic spikes [n_pre] (1D)
+            post: Postsynaptic spikes [n_post] (1D)
         """
         cfg = self.stdp_config
         
-        # Ensure 2D
-        if pre.dim() == 1:
-            pre = pre.unsqueeze(0)
-        if post.dim() == 1:
-            post = post.unsqueeze(0)
+        # Ensure 1D inputs
+        if pre.dim() != 1:
+            pre = pre.squeeze()
+        if post.dim() != 1:
+            post = post.squeeze()
+        
+        assert pre.dim() == 1 and post.dim() == 1, "STDPStrategy expects 1D inputs"
         
         # Update traces
         pre_trace, post_trace = self._update_traces(pre, post)
         
         # LTP: pre was active before post fired now
         # dw_ltp[j,i] = A+ × pre_trace[i] × post[j]
-        ltp = cfg.a_plus * torch.einsum('bj,bi->ji', post.float(), pre_trace) / pre.shape[0]
+        ltp = cfg.a_plus * torch.outer(post.float(), pre_trace)
         
         # LTD: post was active before pre fired now
         # dw_ltd[j,i] = -A- × post_trace[j] × pre[i]
-        ltd = cfg.a_minus * torch.einsum('bj,bi->ji', post_trace, pre.float()) / pre.shape[0]
+        ltd = cfg.a_minus * torch.outer(post_trace, pre.float())
         
         dw = ltp - ltd
         
@@ -440,32 +457,32 @@ class BCMStrategy(BaseStrategy):
             )
     
     def compute_phi(self, post: torch.Tensor) -> torch.Tensor:
-        """Compute BCM modulation factor.
+        """Compute BCM modulation function.
         
-        φ(c, θ) = c(c - θ) / θ (normalized for stability)
+        φ(c, θ) = c × (c - θ) / θ
         
-        Returns per-neuron modulation factor.
+        Args:
+            post: Postsynaptic activity [n_post] (1D)
+        
+        Returns:
+            BCM modulation [n_post] (1D)
         """
         if self.theta is None:
             return torch.ones_like(post)
         
-        # Average over batch if needed
         c = post.float()
-        if c.dim() > 1:
-            c = c.mean(dim=0)
-        
         phi = c * (c - self.theta) / (self.theta + 1e-8)
         return phi
     
     def _update_theta(self, post: torch.Tensor) -> None:
-        """Update sliding threshold."""
+        """Update sliding threshold.
+        
+        Args:
+            post: Postsynaptic activity [n_post] (1D)
+        """
         cfg = self.bcm_config
         
-        # Compute post^p averaged over batch
         c = post.float()
-        if c.dim() > 1:
-            c = c.mean(dim=0)
-        
         c_p = c.pow(cfg.power)
         
         # EMA update
@@ -484,24 +501,30 @@ class BCMStrategy(BaseStrategy):
         """Apply BCM learning.
         
         Δw[j,i] = lr × pre[i] × φ(post[j], θ[j])
+        
+        Args:
+            weights: Current weights [n_post, n_pre]
+            pre: Presynaptic activity [n_pre] (1D)
+            post: Postsynaptic activity [n_post] (1D)
         """
         cfg = self.bcm_config
         
-        # Ensure 2D
-        if pre.dim() == 1:
-            pre = pre.unsqueeze(0)
-        if post.dim() == 1:
-            post = post.unsqueeze(0)
+        # Ensure 1D inputs
+        if pre.dim() != 1:
+            pre = pre.squeeze()
+        if post.dim() != 1:
+            post = post.squeeze()
         
-        n_post = post.shape[-1]
+        assert pre.dim() == 1 and post.dim() == 1, "BCMStrategy expects 1D inputs"
+        
+        n_post = post.shape[0]
         self._init_theta(n_post, post.device)
         
         # Compute BCM modulation
-        phi = self.compute_phi(post)  # (n_post,)
+        phi = self.compute_phi(post)  # [n_post]
         
         # Weight update: dw[j,i] = lr × pre[i] × φ[j]
-        # Expand phi for broadcasting: (n_post,) -> (n_post, 1)
-        dw = cfg.learning_rate * torch.outer(phi, pre.float().mean(dim=0))
+        dw = cfg.learning_rate * torch.outer(phi, pre.float())
         
         # Update threshold
         self._update_theta(post)
@@ -554,15 +577,19 @@ class ThreeFactorStrategy(BaseStrategy):
         """Update eligibility trace with current activity.
         
         Eligibility accumulates Hebbian correlations until modulator arrives.
-        """
-        # Ensure 2D
-        if pre.dim() == 1:
-            pre = pre.unsqueeze(0)
-        if post.dim() == 1:
-            post = post.unsqueeze(0)
         
-        n_post = post.shape[-1]
-        n_pre = pre.shape[-1]
+        Args:
+            pre: Presynaptic spikes [n_pre] (1D)
+            post: Postsynaptic spikes [n_post] (1D)
+        """
+        # Ensure 1D inputs
+        if pre.dim() != 1:
+            pre = pre.squeeze()
+        if post.dim() != 1:
+            post = post.squeeze()
+        
+        n_post = post.shape[0]
+        n_pre = pre.shape[0]
         device = pre.device
         
         # Initialize if needed
@@ -572,8 +599,8 @@ class ThreeFactorStrategy(BaseStrategy):
         # Decay existing eligibility
         self.eligibility = self.decay_elig * self.eligibility
         
-        # Add new Hebbian correlation
-        hebbian = torch.einsum('bj,bi->ji', post.float(), pre.float()) / pre.shape[0]
+        # Add new Hebbian correlation: outer product [n_post, n_pre]
+        hebbian = torch.outer(post.float(), pre.float())
         self.eligibility = self.eligibility + hebbian
         
         return self.eligibility
@@ -649,10 +676,10 @@ class ErrorCorrectiveStrategy(BaseStrategy):
         """Apply error-corrective learning.
         
         Args:
-            weights: Current weights
-            pre: Presynaptic activity (input)
-            post: Postsynaptic activity (actual output)
-            target: Target output
+            weights: Current weights [n_post, n_pre]
+            pre: Presynaptic activity (input) [n_pre] (1D)
+            post: Postsynaptic activity (actual output) [n_post] (1D)
+            target: Target output [n_post] (1D)
         
         Returns:
             Updated weights and metrics
@@ -662,13 +689,17 @@ class ErrorCorrectiveStrategy(BaseStrategy):
         if target is None:
             return weights, {"error": 0.0, "ltp": 0.0, "ltd": 0.0, "net_change": 0.0}
         
-        # Ensure 2D
-        if pre.dim() == 1:
-            pre = pre.unsqueeze(0)
-        if post.dim() == 1:
-            post = post.unsqueeze(0)
-        if target.dim() == 1:
-            target = target.unsqueeze(0)
+        # Ensure 1D inputs
+        if pre.dim() != 1:
+            pre = pre.squeeze()
+        if post.dim() != 1:
+            post = post.squeeze()
+        if target.dim() != 1:
+            target = target.squeeze()
+        
+        assert pre.dim() == 1 and post.dim() == 1 and target.dim() == 1, (
+            "ErrorCorrectiveStrategy expects 1D inputs"
+        )
         
         # Compute error
         error = target.float() - post.float()
@@ -678,7 +709,7 @@ class ErrorCorrectiveStrategy(BaseStrategy):
             return weights, {"error": 0.0, "ltp": 0.0, "ltd": 0.0, "net_change": 0.0}
         
         # Delta rule: dw[j,i] = lr × error[j] × pre[i]
-        dw = cfg.learning_rate * torch.einsum('bj,bi->ji', error, pre.float()) / pre.shape[0]
+        dw = cfg.learning_rate * torch.outer(error, pre.float())
         
         # Apply bounds
         old_weights = weights.clone()

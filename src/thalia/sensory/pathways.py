@@ -113,12 +113,11 @@ class SensoryPathway(BaseNeuralPathway):
     """
     Abstract base class for sensory pathways.
 
-    Inherits from BaseNeuralPathway, implementing the SensoryPathwayProtocol
-    interface to provide a standardized way to encode raw sensory input
-    into spike patterns.
+    Inherits from BaseNeuralPathway, implementing the NeuralPathway protocol
+    to provide a standardized way to encode raw sensory input into spike patterns.
 
     All modalities must implement:
-    1. encode(): Convert raw input to spike patterns
+    1. forward(): Convert raw input to spike patterns (standard PyTorch, ADR-007)
     2. get_modality(): Return modality type
     3. reset_state(): Clear temporal state (inherited from Protocol)
     4. get_diagnostics(): Report pathway metrics (inherited from Protocol)
@@ -133,20 +132,26 @@ class SensoryPathway(BaseNeuralPathway):
         self.device = torch.device(config.device)
 
     @abstractmethod
-    def encode(
+    def forward(
         self,
         raw_input: Any,
         **kwargs,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
-        Encode raw input to spike patterns.
+        Encode raw input to spike patterns using temporal/latency coding.
+
+        Temporal coding: Information encoded in WHEN neurons spike, not just IF.
+        - Strong stimuli → early spikes (t=0, t=1)
+        - Weak stimuli → late spikes (t=15, t=19)
+        - Very weak → no spike in temporal window
 
         Args:
-            raw_input: Modality-specific raw input
+            raw_input: Modality-specific raw input (single input, not batch)
             **kwargs: Additional encoding parameters
 
         Returns:
-            spikes: Spike patterns [batch, n_timesteps, output_size]
+            spikes: Spike train [n_timesteps, output_size] (2D bool, temporal coding)
+                    Brain processes sequentially: spikes[t] is 1D [output_size]
             metadata: Dictionary with encoding metadata
         """
         pass
@@ -187,13 +192,16 @@ class SensoryPathway(BaseNeuralPathway):
         """
         Ensure spikes are in the format expected by Brain.
 
-        Brain expects: [batch, output_size] per timestep
-        This method handles any necessary reshaping.
+        Brain expects: [n_timesteps, output_size] temporal spike train
+        Brain consumes sequentially: for t: brain.forward(spikes[t])  # 1D
         """
-        # Standard format: [batch, n_timesteps, output_size]
-        if spikes.dim() == 2:
-            # [batch, output_size] -> [batch, 1, output_size]
-            spikes = spikes.unsqueeze(1)
+        assert spikes.dim() == 2, (
+            f"Sensory pathway output must be 2D [n_timesteps, output_size], "
+            f"got shape {spikes.shape}. Use temporal/latency coding."
+        )
+        assert spikes.dtype == torch.bool, (
+            f"Sensory pathway output must be bool (ADR-004), got {spikes.dtype}"
+        )
         return spikes
 
 
@@ -281,6 +289,8 @@ class RetinalEncoder(nn.Module):
 
         # DoG = Center - Surround
         dog = center - surround
+        # PyTorch conv2d requires [out_channels, in_channels, H, W]
+        # This is a legitimate exception to ADR-005 (PyTorch API requirement)
         dog = dog.unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
 
         self.register_buffer("dog_filter", dog)
@@ -291,33 +301,46 @@ class RetinalEncoder(nn.Module):
         reset_adaptation: bool = False,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
-        Encode image to retinal spike output.
+        Encode image to retinal spike train using temporal/latency coding.
+
+        Strong visual features spike early, weak features spike late.
+        This mimics how retinal ganglion cells respond with lower latency
+        to stronger stimuli.
 
         Args:
-            image: Input image [batch, channels, height, width] or [batch, height, width]
+            image: Input image [channels, height, width] or [height, width] (single image)
             reset_adaptation: Reset temporal adaptation state
 
         Returns:
-            spikes: Retinal output [batch, n_timesteps, output_size]
+            spikes: Spike train [n_timesteps, output_size] (2D bool, temporal coding)
             metadata: Encoding statistics
         """
-        # Ensure 4D input
-        if image.dim() == 3:
-            image = image.unsqueeze(1)  # Add channel dim
+        # Ensure 3D input [channels, height, width]
+        if image.dim() == 2:
+            # Single channel image: [H, W] → [1, H, W]
+            image = image.unsqueeze(0)  # Add channel dim
 
-        batch = image.shape[0]
+        assert image.dim() == 3, (
+            f"RetinalEncoder expects [C, H, W] or [H, W], got shape {image.shape}"
+        )
+
+        # PyTorch conv2d requires [batch, channels, height, width]
+        # This is a legitimate exception to ADR-005 (PyTorch API requirement)
+        image = image.unsqueeze(0)  # [C, H, W] → [1, C, H, W]
 
         if reset_adaptation:
-            self.adaptation_state = torch.zeros_like(self.adaptation_state)
-            self.adaptation_state = self.adaptation_state.expand(batch, -1, -1, -1)
+            self.adaptation_state = torch.zeros(
+                1, image.shape[1], image.shape[2], image.shape[3],
+                device=image.device
+            )
 
         # 1. Photoreceptor response (log transform for light adaptation)
         photo_response = torch.log1p(image.clamp(min=0))
 
         # 2. Temporal contrast (respond to changes)
         if self.config.use_temporal_contrast:
-            temporal_diff = photo_response - self.adaptation_state[:batch]
-            self.adaptation_state = self.adaptation_state[:batch] * 0.9 + photo_response * 0.1
+            temporal_diff = photo_response - self.adaptation_state
+            self.adaptation_state = self.adaptation_state * 0.9 + photo_response * 0.1
         else:
             temporal_diff = photo_response
 
@@ -337,21 +360,30 @@ class RetinalEncoder(nn.Module):
         off_response = F.relu(-cs_response)  # Responds to brightness decrease
 
         # 5. Flatten and combine ON/OFF
-        on_flat = on_response.view(batch, -1)
-        off_flat = off_response.view(batch, -1)
-        combined = torch.cat([on_flat, off_flat], dim=-1)
+        # Remove batch dimension (was added for conv2d) and flatten spatial dims
+        on_flat = on_response.squeeze(0).flatten()  # [1, C, H, W] → [features]
+        off_flat = off_response.squeeze(0).flatten()  # [1, C, H, W] → [features]
+        combined = torch.cat([on_flat, off_flat], dim=-1)  # [2*features]
 
-        # 6. Project to output size
-        ganglion_activity = self.spatial_pool(combined)
+        # 6. Project to output size: [2*features] → [output_size]
+        # nn.Linear requires [batch, features], so temporarily add batch dim
+        combined = combined.unsqueeze(0)  # [2*features] → [1, 2*features]
+        ganglion_activity = self.spatial_pool(combined).squeeze(0)  # [1, output_size] → [output_size]
+        
+        # ADR-005: ganglion_activity is now 1D [output_size]
+        assert ganglion_activity.dim() == 1, f"Expected 1D, got {ganglion_activity.shape}"
 
-        # 7. Generate spikes over time
-        spikes = self._generate_temporal_spikes(ganglion_activity)
+        # 7. Generate temporal spike train using latency coding
+        # Higher activity → earlier spike (lower latency)
+        # Weak activity → later spike (higher latency)
+        spikes = self._generate_temporal_spikes(ganglion_activity)  # [n_timesteps, output_size]
 
         metadata = {
             "modality": "vision",
             "on_activity": on_flat.mean().item(),
             "off_activity": off_flat.mean().item(),
-            "sparsity": (spikes > 0).float().mean().item(),
+            "sparsity": spikes.float().mean().item(),
+            "mean_latency": self._compute_mean_latency(spikes),
         }
 
         return spikes, metadata
@@ -361,34 +393,51 @@ class RetinalEncoder(nn.Module):
         activity: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Convert ganglion activity to temporal spike train.
+        Convert ganglion activity to temporal spike train using latency coding.
 
-        Uses rate coding: higher activity = higher spike probability.
-        Also includes latency coding: higher activity = earlier spikes.
+        Latency coding: Information encoded in spike timing
+        - High activity (1.0) → spike at t=0 (immediate)
+        - Medium activity (0.5) → spike at t=10 (middle)
+        - Low activity (0.1) → spike at t=18 (late)
+        - Very low activity → no spike in temporal window
+
+        Each neuron spikes at most once; timing encodes strength.
         """
-        batch, n_neurons = activity.shape
+        n_neurons = activity.shape[0]  # [output_size]
         n_timesteps = self.config.n_timesteps
 
         spikes = torch.zeros(
-            batch, n_timesteps, n_neurons,
+            n_timesteps, n_neurons,
+            dtype=torch.bool,
             device=activity.device,
         )
 
         # Normalize activity to [0, 1]
-        activity_norm = torch.sigmoid(activity)
+        activity_norm = (activity - activity.min()) / (activity.max() - activity.min() + 1e-6)
 
+        # Latency coding: map activity to spike time
+        # High activity (1.0) → t=0 (early spike)
+        # Low activity (0.0) → t=n_timesteps-1 (late spike)
+        latencies = ((1.0 - activity_norm) * (n_timesteps - 1)).long()  # [n_neurons]
+
+        # Generate spikes at computed latencies
+        # Only neurons above threshold spike
+        threshold = self.config.sparsity
+        for n in range(n_neurons):
+            if activity_norm[n] > threshold:
+                t = int(latencies[n].item())
+                spikes[t, n] = True
+
+        return spikes  # [n_timesteps, output_size]
+
+    def _compute_mean_latency(self, spikes: torch.Tensor) -> float:
+        """Compute mean spike latency (for diagnostics)."""
+        n_timesteps = spikes.shape[0]
+        spike_times: List[int] = []
         for t in range(n_timesteps):
-            # Spike probability based on activity
-            spike_prob = activity_norm * self.config.sparsity * 2
-
-            # Earlier timesteps have higher threshold (latency coding)
-            latency_factor = 1.0 - (t / n_timesteps) * 0.5
-            adjusted_prob = spike_prob * latency_factor
-
-            # Generate spikes
-            spikes[:, t, :] = (torch.rand_like(adjusted_prob) < adjusted_prob).float()
-
-        return spikes
+            if spikes[t].any():
+                spike_times.extend([t] * int(spikes[t].sum().item()))
+        return float(sum(spike_times)) / len(spike_times) if spike_times else n_timesteps / 2.0
 
 
 class VisualPathway(SensoryPathway):
@@ -408,40 +457,32 @@ class VisualPathway(SensoryPathway):
             nn.ReLU(),
         )
 
-    def encode(
+    def forward(
         self,
         raw_input: torch.Tensor,
         **kwargs,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        """Encode image to spikes."""
-        # Retinal processing
+        """Encode image to temporal spike train (standard PyTorch, ADR-007).
+        
+        Args:
+            raw_input: Image tensor [C, H, W] or [H, W]
+            
+        Returns:
+            spikes: Temporal spike train [n_timesteps, output_size] (2D bool)
+            metadata: Encoding metadata
+        """
+        # Retinal processing already produces temporal spikes [n_timesteps, output_size]
         retinal_spikes, metadata = self.retina(raw_input, **kwargs)
 
-        # V1 processing (on integrated spikes)
-        integrated = retinal_spikes.mean(dim=1)  # [batch, output_size]
-        v1_activity = self.v1_process(integrated)
+        # Optional: V1 processing could go here (e.g., edge detection, orientation)
+        # For now, just pass through retinal spikes
+        # Future: Add simple V1-like processing that preserves temporal structure
 
-        # Generate V1 output spikes
-        v1_spikes = self._activity_to_spikes(v1_activity)
-
-        metadata["v1_activity"] = v1_activity.mean().item()
-
-        return v1_spikes, metadata
-
-    def _activity_to_spikes(self, activity: torch.Tensor) -> torch.Tensor:
-        """Convert V1 activity to spike trains."""
-        batch, n_neurons = activity.shape
-        n_timesteps = self.config.n_timesteps
-
-        spikes = torch.zeros(batch, n_timesteps, n_neurons, device=activity.device)
-        spike_prob = torch.sigmoid(activity) * self.config.sparsity * 2
-
-        for t in range(n_timesteps):
-            spikes[:, t, :] = (torch.rand_like(spike_prob) < spike_prob).float()
-
-        return spikes
+        metadata["pathway"] = "visual"
+        return retinal_spikes, metadata
 
     def get_modality(self) -> Modality:
+        """Return visual modality."""
         return Modality.VISION
 
 
@@ -495,7 +536,7 @@ class CochlearEncoder(nn.Module):
         # Adaptation state for each frequency channel
         self.register_buffer(
             "adaptation_state",
-            torch.zeros(1, config.n_filters),
+            torch.zeros(config.n_filters),
         )
 
         # Project to output size
@@ -549,23 +590,24 @@ class CochlearEncoder(nn.Module):
         reset_adaptation: bool = False,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
-        Encode audio waveform to auditory nerve spikes.
+        Encode audio waveform to auditory nerve spikes using temporal/latency coding.
 
         Args:
-            audio: Audio waveform [batch, samples] or [batch, 1, samples]
+            audio: Audio waveform [samples] or [1, samples] (single audio clip)
             reset_adaptation: Reset adaptation state
 
         Returns:
-            spikes: Auditory nerve output [batch, n_timesteps, output_size]
+            spikes: Spike train [n_timesteps, output_size] (2D bool, temporal coding)
             metadata: Encoding statistics
         """
-        if audio.dim() == 3:
-            audio = audio.squeeze(1)
-
-        batch = audio.shape[0]
+        # Enforce 1D audio input (ADR-005)
+        assert audio.dim() == 1, (
+            f"AuditoryPathway.forward: Expected 1D audio [samples] (ADR-005), "
+            f"got shape {audio.shape}"
+        )
 
         if reset_adaptation:
-            self.adaptation_state = torch.zeros(batch, self.config.n_filters, device=audio.device)
+            self.adaptation_state = torch.zeros(self.config.n_filters, device=audio.device)
 
         # 1. Compute spectrogram (like basilar membrane frequency decomposition)
         # Using simple FFT; could use STFT for time-frequency
@@ -573,10 +615,10 @@ class CochlearEncoder(nn.Module):
         magnitude = torch.abs(spec)
 
         # Take first n_fft//2+1 bins
-        magnitude = magnitude[:, :self.config.n_fft // 2 + 1]
+        magnitude = magnitude[:self.config.n_fft // 2 + 1]  # [n_fft//2+1]
 
         # 2. Apply filterbank (cochlear frequency channels)
-        cochlear_response = torch.matmul(magnitude, self.filterbank.T)
+        cochlear_response = torch.matmul(self.filterbank, magnitude)  # [n_filters]
 
         # 3. Hair cell processing
         # Half-wave rectification (already positive from magnitude)
@@ -584,9 +626,9 @@ class CochlearEncoder(nn.Module):
         hair_cell_response = torch.pow(cochlear_response + 1e-6, 0.3)
 
         # 4. Adaptation (auditory nerve adapts to sustained sounds)
-        adapted = hair_cell_response - self.adaptation_state[:batch] * 0.5
+        adapted = hair_cell_response - self.adaptation_state * 0.5
         adapted = F.relu(adapted)
-        self.adaptation_state = self.adaptation_state[:batch] * 0.95 + hair_cell_response * 0.05
+        self.adaptation_state = self.adaptation_state * 0.95 + hair_cell_response * 0.05
 
         # 5. Project to output size
         output_activity = self.output_projection(adapted)
@@ -606,18 +648,36 @@ class CochlearEncoder(nn.Module):
         self,
         activity: torch.Tensor,
     ) -> torch.Tensor:
-        """Convert auditory activity to spike trains."""
-        batch, n_neurons = activity.shape
+        """
+        Convert auditory activity to temporal spike train using latency coding.
+        
+        Latency coding: Information encoded in spike timing
+        - High activity → early spike (t=0)
+        - Low activity → late spike (t=n_timesteps-1)
+        """
+        n_neurons = activity.shape[0] if activity.dim() == 1 else activity.shape[-1]
         n_timesteps = self.config.n_timesteps
-
-        spikes = torch.zeros(batch, n_timesteps, n_neurons, device=activity.device)
-        activity_norm = torch.sigmoid(activity)
-
-        for t in range(n_timesteps):
-            spike_prob = activity_norm * self.config.sparsity * 2
-            spikes[:, t, :] = (torch.rand_like(spike_prob) < spike_prob).float()
-
-        return spikes
+        
+        # Flatten if needed
+        if activity.dim() > 1:
+            activity = activity.flatten()
+        
+        spikes = torch.zeros(n_timesteps, n_neurons, dtype=torch.bool, device=activity.device)
+        
+        # Normalize activity to [0, 1]
+        activity_norm = (activity - activity.min()) / (activity.max() - activity.min() + 1e-6)
+        
+        # Latency coding: map activity to spike time
+        latencies = ((1.0 - activity_norm) * (n_timesteps - 1)).long()
+        
+        # Generate spikes at computed latencies
+        threshold = self.config.sparsity
+        for n in range(n_neurons):
+            if activity_norm[n].item() > threshold:
+                t = int(latencies[n].item())
+                spikes[t, n] = True
+        
+        return spikes  # [n_timesteps, output_size]
 
 
 class AuditoryPathway(SensoryPathway):
@@ -636,41 +696,34 @@ class AuditoryPathway(SensoryPathway):
             nn.ReLU(),
         )
 
-    def encode(
+    def forward(
         self,
         raw_input: torch.Tensor,
         **kwargs,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        """Encode audio to spikes."""
-        # Cochlear processing
+        """Encode audio to temporal spike train.
+        
+        Args:
+            raw_input: Audio waveform [samples] or [1, samples]
+            
+        Returns:
+            spikes: Temporal spike train [n_timesteps, output_size] (2D bool)
+            metadata: Encoding metadata
+        """
+        # Cochlear processing already produces temporal spikes [n_timesteps, output_size]
         cochlear_spikes, metadata = self.cochlea(raw_input, **kwargs)
 
-        # A1 processing
-        integrated = cochlear_spikes.mean(dim=1)
-        a1_activity = self.a1_process(integrated)
+        # Optional: A1 processing could go here (e.g., spectrotemporal patterns)
+        # For now, just pass through cochlear spikes
+        # Future: Add simple A1-like processing that preserves temporal structure
 
-        # Generate A1 output spikes
-        a1_spikes = self._activity_to_spikes(a1_activity)
-
-        metadata["a1_activity"] = a1_activity.mean().item()
-
-        return a1_spikes, metadata
-
-    def _activity_to_spikes(self, activity: torch.Tensor) -> torch.Tensor:
-        """Convert A1 activity to spike trains."""
-        batch, n_neurons = activity.shape
-        n_timesteps = self.config.n_timesteps
-
-        spikes = torch.zeros(batch, n_timesteps, n_neurons, device=activity.device)
-        spike_prob = torch.sigmoid(activity) * self.config.sparsity * 2
-
-        for t in range(n_timesteps):
-            spikes[:, t, :] = (torch.rand_like(spike_prob) < spike_prob).float()
-
-        return spikes
+        metadata["pathway"] = "auditory"
+        return cochlear_spikes, metadata
 
     def get_modality(self) -> Modality:
+        """Return auditory modality."""
         return Modality.AUDITION
+
 
 
 # =============================================================================
@@ -688,142 +741,135 @@ class LanguageConfig(SensoryConfig):
 
 class LanguagePathway(SensoryPathway):
     """
-    Language pathway for text/token input.
+    Language pathway for text/token input using temporal/latency coding.
 
-    Unlike vision/audition which process continuous signals,
-    language processes discrete tokens. We use:
-    1. Sparse Distributed Representations (SDR) for tokens
-    2. Oscillatory position encoding
-    3. Sequential spike generation
+    Processes discrete tokens (unlike continuous vision/audio signals):
+    1. Token embeddings encode semantic information
+    2. Temporal spikes encode embedding dimensions via latency
+    3. Optional position encoding can be added
+    
+    Input: Single token ID (scalar or [1])
+    Output: Temporal spike train [n_timesteps, output_size]
     """
 
     def __init__(self, config: LanguageConfig):
         super().__init__(config)
         self.language_config = config
 
-        # Import from our existing encoder
-        from thalia.language.encoder import (
-            SpikeEncoder,
-            SpikeEncoderConfig,
-            EncodingType,
+        # Simple token embedding
+        self.embedding = nn.Embedding(
+            config.vocab_size,
+            config.output_size,
         )
-        from thalia.language.position import (
-            OscillatoryPositionEncoder,
-            PositionEncoderConfig,
-            PositionEncodingType,
-        )
-
-        # Token encoder
-        encoder_config = SpikeEncoderConfig(
-            vocab_size=config.vocab_size,
-            n_neurons=config.output_size,
-            n_timesteps=config.n_timesteps,
-            sparsity=config.sparsity,
-            device=config.device,
-        )
-        self.encoder = SpikeEncoder(encoder_config)
-
-        # Position encoder (optional)
+        
+        # Optional position encoding
         if config.use_position_encoding:
-            pos_config = PositionEncoderConfig(
-                n_neurons=config.output_size // 4,
-                max_positions=config.max_seq_len,
-                n_timesteps=config.n_timesteps,
-                device=config.device,
-            )
-            self.position_encoder = OscillatoryPositionEncoder(pos_config)
-
-            # Mixer for content + position
-            self.mixer = nn.Linear(
-                config.output_size + config.output_size // 4,
+            # Store position embeddings
+            self.position_embedding = nn.Embedding(
+                config.max_seq_len,
                 config.output_size,
-                bias=False,
             )
         else:
-            self.position_encoder = None
-            self.mixer = None
+            self.position_embedding = None
 
-    def encode(
+    def forward(
         self,
         raw_input: torch.Tensor,
         position_ids: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
-        Encode token IDs to spikes.
+        Encode token ID to temporal spike train using latency coding.
 
         Args:
-            raw_input: Token IDs [batch, seq_len]
-            position_ids: Optional position indices
+            raw_input: Token ID (scalar or [1])
+            position_ids: Optional position index (scalar or [1])
 
         Returns:
-            spikes: Spike patterns [batch, seq_len, n_timesteps, output_size]
+            spikes: Temporal spike train [n_timesteps, output_size] (2D bool)
             metadata: Encoding statistics
         """
-        batch, seq_len = raw_input.shape
-
-        # Generate position IDs if needed
-        if position_ids is None:
-            position_ids = torch.arange(seq_len, device=raw_input.device)
-            position_ids = position_ids.unsqueeze(0).expand(batch, -1)
-
-        # Encode tokens
-        content_spikes, sdr = self.encoder(raw_input, position_ids)
-        # content_spikes: [batch, seq_len, n_timesteps, output_size]
-
-        # Add position encoding if enabled
-        if self.position_encoder is not None:
-            pos_spikes = self.position_encoder(position_ids, as_spikes=True)
-            # pos_spikes: [batch, seq_len, n_timesteps, pos_size]
-
-            # Combine content and position
-            combined = torch.cat([content_spikes, pos_spikes], dim=-1)
-
-            # Mix to output size
-            shape = combined.shape
-            combined_flat = combined.view(-1, shape[-1])
-            mixed = self.mixer(combined_flat)
-            spikes = mixed.view(shape[0], shape[1], shape[2], -1)
-
-            # Re-binarize
-            spikes = (spikes > 0).float()
+        # Convert scalar token ID to 1D for nn.Embedding (PyTorch API requirement)
+        # ADR-005: We operate on single tokens, but nn.Embedding requires [1] not []
+        if raw_input.dim() == 0:
+            token_id = raw_input.unsqueeze(0)  # scalar → [1]
+        elif raw_input.dim() == 1:
+            token_id = raw_input[:1]  # Take first token if multiple provided
         else:
-            spikes = content_spikes
-
-        # Reshape for brain: [batch, seq_len, n_timesteps, output_size]
-        # Brain processes one token at a time, so we'll flatten seq into batch dimension
-        # when feeding to brain
-
+            token_id = raw_input.flatten()[:1]  # Flatten and take first
+        
+        # Get token embedding [1, output_size] (nn.Embedding output)
+        token_emb = self.embedding(token_id)  # [1, output_size]
+        
+        # Add position encoding if enabled
+        if self.position_embedding is not None:
+            if position_ids is None:
+                position_ids = torch.tensor([0], device=token_id.device)
+            elif position_ids.dim() == 0:
+                position_ids = position_ids.unsqueeze(0)  # scalar → [1]
+            elif position_ids.dim() == 1:
+                position_ids = position_ids[:1]  # Take first position
+            else:
+                position_ids = position_ids.flatten()[:1]
+            
+            pos_emb = self.position_embedding(position_ids)  # [1, output_size]
+            combined = token_emb + pos_emb
+        else:
+            combined = token_emb
+        
+        # Extract activity [output_size] (ADR-005: 1D output)
+        activity = combined.squeeze(0)  # [1, output_size] → [output_size]
+        assert activity.dim() == 1, f"Expected 1D activity, got {activity.shape}"
+        
+        # Generate temporal spikes via latency coding
+        spikes = self._generate_temporal_spikes(activity)
+        
         metadata = {
             "modality": "language",
-            "seq_len": seq_len,
-            "sdr_sparsity": sdr.mean().item(),
-            "spike_sparsity": spikes.mean().item(),
+            "token_id": token_id.item(),
+            "sparsity": (spikes.sum().item() / spikes.numel()),
         }
 
         return spikes, metadata
 
-    def encode_for_brain(
+    def _generate_temporal_spikes(
         self,
-        raw_input: torch.Tensor,
-        **kwargs,
-    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        activity: torch.Tensor,
+    ) -> torch.Tensor:
         """
-        Encode tokens in format suitable for brain's process_sample.
-
-        Returns spikes for one token at a time (for sequential processing),
-        or all tokens flattened (for parallel processing).
+        Convert token embedding to temporal spike train using latency coding.
+        
+        Latency coding: Information encoded in spike timing
+        - High embedding value → early spike (t=0)
+        - Low embedding value → late spike (t=n_timesteps-1)
         """
-        spikes, metadata = self.encode(raw_input, **kwargs)
-
-        # For brain: [batch * seq_len, n_timesteps, output_size]
-        batch, seq_len, n_timesteps, output_size = spikes.shape
-        brain_format = spikes.view(batch * seq_len, n_timesteps, output_size)
-
-        return brain_format, metadata
+        n_neurons = activity.shape[0] if activity.dim() == 1 else activity.shape[-1]
+        n_timesteps = self.config.n_timesteps
+        
+        # Flatten if needed
+        if activity.dim() > 1:
+            activity = activity.flatten()
+        
+        spikes = torch.zeros(n_timesteps, n_neurons, dtype=torch.bool, device=activity.device)
+        
+        # Normalize activity to [0, 1]
+        activity_norm = (activity - activity.min()) / (activity.max() - activity.min() + 1e-6)
+        
+        # Latency coding: map activity to spike time
+        latencies = ((1.0 - activity_norm) * (n_timesteps - 1)).long()
+        
+        # Generate spikes at computed latencies
+        threshold = self.config.sparsity
+        for n in range(n_neurons):
+            if activity_norm[n].item() > threshold:
+                t = int(latencies[n].item())
+                spikes[t, n] = True
+        
+        return spikes  # [n_timesteps, output_size]
 
     def get_modality(self) -> Modality:
         return Modality.LANGUAGE
+
 
 
 # =============================================================================
@@ -881,10 +927,10 @@ class MultimodalPathway(nn.Module):
         all_spikes = []
         all_metadata = {}
 
-        # Encode each modality
+        # Encode each modality (all pathways use forward() per ADR-007)
         for name, pathway in self.pathways.items():
             if name in inputs:
-                spikes, metadata = pathway.encode(inputs[name])
+                spikes, metadata = pathway(inputs[name])  # Callable syntax
 
                 # Ensure consistent shape: [batch, n_timesteps, neurons]
                 if spikes.dim() == 4:  # [batch, seq, time, neurons]

@@ -400,16 +400,17 @@ class SequenceEncoder(nn.Module):
         The item is gated by the gamma phase corresponding to its position.
 
         Args:
-            item_pattern: Input pattern [batch, n_features] or [n_features]
+            item_pattern: Input pattern [n_features] (1D)
             position: Sequence position (0, 1, 2, ...)
 
         Returns:
-            Encoded pattern gated by position's gamma slot
+            Encoded pattern gated by position's gamma slot [n_features] (1D)
         """
         cfg = self.gamma.config
 
-        if item_pattern.dim() == 1:
-            item_pattern = item_pattern.unsqueeze(0)
+        # Ensure 1D input
+        if item_pattern.dim() != 1:
+            item_pattern = item_pattern.squeeze()
 
         # Get the slot for this position
         slot = position % cfg.n_slots
@@ -422,10 +423,10 @@ class SequenceEncoder(nn.Module):
         # Others are suppressed
         slot_mask = (self.slot_assignment == slot).float().to(item_pattern.device)
 
-        # Apply both gamma gating and slot assignment
-        encoded = item_pattern * gate * slot_mask.unsqueeze(0)
+        # Apply both gamma gating and slot assignment (all 1D)
+        encoded = item_pattern * gate * slot_mask
 
-        return encoded.squeeze(0) if encoded.shape[0] == 1 else encoded
+        return encoded
 
     def decode_position(
         self,

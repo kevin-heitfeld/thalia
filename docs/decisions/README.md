@@ -7,6 +7,10 @@ This directory contains Architecture Decision Records documenting important tech
 - **[ADR-001: Simulation Backend](./adr-001-simulation-backend.md)** - Use PyTorch with GPU acceleration
 - **[ADR-002: Numeric Precision](./adr-002-numeric-precision.md)** - Mixed precision with float32 for critical state
 - **[ADR-003: Clock-Driven Simulation](./adr-003-clock-driven.md)** - Fixed timestep simulation loop
+- **[ADR-004: Bool Spikes](./adr-004-bool-spikes.md)** - Use bool tensors for spike representation (8× memory savings)
+- **[ADR-005: No Batch Dimension](./adr-005-no-batch-dimension.md)** - Remove batch dimension (single-brain architecture)
+- **[ADR-006: Temporal Coding](./adr-006-temporal-coding.md)** - Sensory pathways use temporal/latency coding
+- **[ADR-007: PyTorch Consistency](./adr-007-pytorch-consistency.md)** - Use forward() instead of encode()/decode()
 
 ## ADR Format
 

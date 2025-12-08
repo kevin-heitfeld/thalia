@@ -333,33 +333,33 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         **kwargs,
     ) -> torch.Tensor:
         """
-        Process input through predictive cortex.
+        Process input through predictive cortex (ADR-005: 1D tensors).
 
         Args:
-            input_spikes: Input spike pattern [batch, n_input]
+            input_spikes: Input spike pattern [n_input] (1D)
             dt: Time step in ms (for compatibility)
             encoding_mod: Encoding strength modulation (for compatibility)
             retrieval_mod: Retrieval strength modulation (for compatibility)
-            top_down: Optional top-down modulation from higher areas [batch, l23_size]
+            top_down: Optional top-down modulation from higher areas [l23_size] (1D)
                       NOTE: This is for L2/3 modulation, NOT L4 prediction!
             **kwargs: Additional arguments for compatibility
 
         Returns:
-            output: Output spikes (L2/3 + L5) [batch, l23_size + l5_size]
+            output: Output spikes (L2/3 + L5) [l23_size + l5_size] (1D)
         """
-        batch_size = input_spikes.shape[0] if input_spikes.dim() > 1 else 1
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
-
-        # =====================================================================
-        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
-        # =====================================================================
-        assert input_spikes.shape[-1] == self.predictive_config.n_input, (
+        # ADR-005: Expect 1D tensors
+        assert input_spikes.dim() == 1, (
+            f"PredictiveCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
+        )
+        assert input_spikes.shape[0] == self.predictive_config.n_input, (
             f"PredictiveCortex.forward: input_spikes has shape {input_spikes.shape} "
             f"but n_input={self.predictive_config.n_input}."
         )
         if top_down is not None:
-            assert top_down.shape[-1] == self.l23_size, (
+            assert top_down.dim() == 1, (
+                f"PredictiveCortex.forward: Expected 1D top_down (ADR-005), got shape {top_down.shape}"
+            )
+            assert top_down.shape[0] == self.l23_size, (
                 f"PredictiveCortex.forward: top_down has shape {top_down.shape} "
                 f"but must match l23_size={self.l23_size}. "
                 f"top_down is for L2/3 modulation, not L4 prediction."
@@ -367,8 +367,6 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
         # Initialize if needed
         if self.state.l4_spikes is None:
-            from thalia.core.utils import assert_single_instance
-            assert_single_instance(batch_size, "PredictiveCortex")
             self.reset_state()
 
         # =====================================================================
@@ -428,14 +426,9 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         # STEP 3: Attention over L2/3 (self-attention for context integration)
         # =====================================================================
         if self.attention is not None and l23_output is not None:
-            # Add sequence dimension for attention
-            l23_seq = l23_output.unsqueeze(1)  # [batch, 1, l23_size]
-
-            # Self-attention
-            attended, attn_weights = self.attention(l23_seq)
-
-            # Remove sequence dimension
-            attended = attended.squeeze(1)
+            # ScalableSpikingAttention now handles 1D tensors natively (ADR-005)
+            # Just pass 1D tensor directly: [n_neurons]
+            attended, attn_weights = self.attention(l23_output)
 
             self.state.attention_weights = attn_weights
 
@@ -447,22 +440,18 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         # =====================================================================
         if self.precision_modulator is not None and self.state.attention_weights is not None:
             # Use attention to modulate which inputs to trust
-            attn_avg = self.state.attention_weights.mean(dim=1)  # Average over heads
-            attn_flat = attn_avg.reshape(batch_size, -1)
+            attn_avg = self.state.attention_weights.mean(dim=1)  # Average over heads [1, 1, 1]
+            attn_flat = attn_avg.flatten()  # [1]
 
-            # Project to precision modulation
-            if attn_flat.shape[-1] == self.l23_size:
-                precision_mod = self.precision_modulator(attn_flat)
-                precision_mod = torch.sigmoid(precision_mod)  # 0-1 range
-
-                # Apply to prediction layer precision (if exists)
-                if self.prediction_layer is not None:
-                    # Modulate precision based on attention
-                    with torch.no_grad():
-                        self.prediction_layer.log_precision.data = (
-                            self.prediction_layer.log_precision.data +
-                            0.01 * torch.log(precision_mod.mean(dim=0) + 1e-6)
-                        )
+            # For 1D processing, use scalar precision modulation
+            if self.prediction_layer is not None:
+                # Simple scalar precision adjustment based on attention
+                precision_scale = float(attn_flat.item())
+                with torch.no_grad():
+                    self.prediction_layer.log_precision.data = (
+                        self.prediction_layer.log_precision.data + 
+                        0.01 * torch.log(torch.tensor(precision_scale + 1e-6, device=self.prediction_layer.log_precision.device))
+                    )
 
         # =====================================================================
         # COMBINE OUTPUT

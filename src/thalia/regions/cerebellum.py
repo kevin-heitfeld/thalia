@@ -48,7 +48,6 @@ from typing import Optional, Dict, Any
 
 import torch
 
-from thalia.core.utils import ensure_batch_dim
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import (
@@ -119,11 +118,20 @@ class ClimbingFiberSystem:
         actual: torch.Tensor,
         target: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute error signal (climbing fiber activity)."""
-        if actual.dim() == 1:
-            actual = actual.unsqueeze(0)
-        if target.dim() == 1:
-            target = target.unsqueeze(0)
+        """Compute error signal (climbing fiber activity).
+        
+        Args:
+            actual: Actual output [n_output] (1D)
+            target: Target output [n_output] (1D)
+            
+        Returns:
+            Error signal [n_output] (1D)
+        """
+        # Ensure 1D
+        if actual.dim() != 1:
+            actual = actual.squeeze()
+        if target.dim() != 1:
+            target = target.squeeze()
 
         self.error = target - actual
         return self.error
@@ -238,12 +246,23 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         """Process input through cerebellar circuit.
 
         Args:
-            input_spikes: Input spike pattern [batch, n_input]
+            input_spikes: Input spike pattern [n_input] (1D bool tensor, ADR-005)
             dt: Time step in ms
             encoding_mod: Theta modulation for encoding (scales input gain)
             retrieval_mod: Theta modulation for retrieval (scales output correction)
+
+        Returns:
+            Output spikes [n_output] (1D bool tensor, ADR-004/005)
         """
-        input_spikes = ensure_batch_dim(input_spikes)
+        # Assert 1D input
+        assert input_spikes.dim() == 1, (
+            f"Cerebellum.forward: input_spikes must be 1D [n_input], "
+            f"got shape {input_spikes.shape}. See ADR-005: No Batch Dimension."
+        )
+        assert input_spikes.shape[0] == self.config.n_input, (
+            f"Cerebellum.forward: input_spikes has {input_spikes.shape[0]} neurons "
+            f"but expected {self.config.n_input}."
+        )
 
         if self.neurons.membrane is None:
             self.neurons.reset_state()
@@ -257,21 +276,20 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         # Retrieval phase: stronger output for motor correction
         input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
 
-        # Update STDP traces (1D - designed for single timestep processing)
+        # Update STDP traces (already 1D)
         trace_decay = 1.0 - dt / cfg.stdp_tau_ms
-        input_1d = input_spikes.squeeze(0) if input_spikes.dim() == 2 and input_spikes.shape[0] == 1 else input_spikes
-        self.input_trace = self.input_trace * trace_decay + input_1d
+        self.input_trace = self.input_trace * trace_decay + input_spikes.float()
         self.output_trace = self.output_trace * trace_decay
 
         # Compute synaptic input - modulated by encoding phase
-        g_exc = torch.matmul(input_spikes, self.weights.T) * input_gain
+        # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
+        g_exc = (self.weights @ input_spikes.float()) * input_gain
 
-        # Forward through neurons
+        # Forward through neurons (returns 1D bool spikes)
         output_spikes, _ = self.neurons(g_exc, None)
 
         # Update output trace after spiking
-        output_1d = output_spikes.squeeze(0) if output_spikes.dim() == 2 and output_spikes.shape[0] == 1 else output_spikes
-        self.output_trace = self.output_trace + output_1d
+        self.output_trace = self.output_trace + output_spikes.float()
 
         # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
         self.decay_neuromodulators(dt_ms=dt)
@@ -281,17 +299,16 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         # ======================================================================
         # LTP: post spike with pre trace → strengthen (for target neurons)
         # LTD: pre spike with post trace → weaken (for wrong neurons)
-        # Note: STDP traces are 1D, designed for batch_size=1 temporal processing
-        if output_1d.dim() == 1 and input_1d.dim() == 1:
-            ltp = torch.outer(output_1d, self.input_trace)
-            ltd = torch.outer(self.output_trace, input_1d)
+        # Traces are 1D, outer product creates [n_output, n_input] eligibility
+        ltp = torch.outer(output_spikes.float(), self.input_trace)
+        ltd = torch.outer(self.output_trace, input_spikes.float())
 
-            # Compute STDP weight change direction
-            stdp_dw = cfg.stdp_lr * (ltp - cfg.heterosynaptic_ratio * ltd)
+        # Compute STDP weight change direction
+        stdp_dw = cfg.stdp_lr * (ltp - cfg.heterosynaptic_ratio * ltd)
 
-            # Accumulate into eligibility trace
-            eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
-            self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
+        # Accumulate into eligibility trace
+        eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
+        self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
 
         self.state.spikes = output_spikes
         self.state.t += 1
@@ -315,21 +332,29 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         Dopamine modulates the overall learning rate (arousal/attention effect).
 
         Args:
-            output_spikes: Output spike pattern [batch, n_output]
-            target: Target output [batch, n_output]
+            output_spikes: Output spike pattern [n_output] (1D bool, ADR-005)
+            target: Target output [n_output] (1D, ADR-005)
 
         Returns:
             Dictionary with learning metrics
         """
-        output_spikes = ensure_batch_dim(output_spikes)
-        target = ensure_batch_dim(target)
+        # Assert 1D inputs
+        assert output_spikes.dim() == 1, (
+            f"Cerebellum._apply_error_learning: output_spikes must be 1D, "
+            f"got shape {output_spikes.shape}"
+        )
+        assert target.dim() == 1, (
+            f"Cerebellum._apply_error_learning: target must be 1D, "
+            f"got shape {target.shape}"
+        )
 
         cfg = self.cerebellum_config
 
         # ======================================================================
         # Compute error via climbing fiber system
         # ======================================================================
-        error = self.climbing_fiber.compute_error(output_spikes, target)
+        error = self.climbing_fiber.compute_error(output_spikes.float(), target.float())
+        # error is already 1D from compute_error()
 
         if error.abs().max() < cfg.error_threshold:
             return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
@@ -341,19 +366,16 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         # - Neurons with positive error (should have fired more) → LTP
         # - Neurons with negative error (fired too much) → LTD
 
-        error_squeezed = error.squeeze()
-        if error_squeezed.dim() == 0:
-            error_squeezed = error_squeezed.unsqueeze(0)
-
         # Scale eligibility by per-neuron error direction
         # Positive error → apply eligibility (strengthen timing correlations)
         # Negative error → apply anti-eligibility (weaken timing correlations)
-        error_sign = torch.sign(error_squeezed).unsqueeze(1)  # [n_output, 1]
+        # error is already 1D [n_output]
+        error_sign = torch.sign(error).unsqueeze(1)  # [n_output, 1]
 
         # Modulate eligibility by error magnitude and sign
         # Dopamine provides arousal/attention modulation (from VTA via Brain)
         effective_lr = self.get_effective_learning_rate()
-        dw = self.stdp_eligibility * error_sign * error_squeezed.abs().unsqueeze(1) * effective_lr
+        dw = self.stdp_eligibility * error_sign * error.abs().unsqueeze(1) * effective_lr
 
         # Apply soft bounds
         if cfg.soft_bounds:

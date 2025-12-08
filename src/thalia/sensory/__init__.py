@@ -48,10 +48,11 @@ Usage:
     audio = create_auditory_pathway(output_size=256)
     language = create_language_pathway(output_size=256)
     
-    # Encode inputs to spikes
-    image_spikes, _ = vision.encode(image_tensor)
-    audio_spikes, _ = audio.encode(audio_tensor)
-    text_spikes, _ = language.encode(token_ids)
+    # Encode inputs to spikes using forward() (ADR-007)
+    # Callable syntax (preferred):
+    image_spikes, _ = vision(image_tensor)
+    audio_spikes, _ = audio(audio_tensor)
+    text_spikes, _ = language(token_ids)
     
     # Feed to brain
     brain.process_sample(image_spikes[:, 0, :])  # One timestep at a time

@@ -96,7 +96,6 @@ from thalia.core.protocols import (
 )
 from thalia.core.pathway_protocol import (
     NeuralPathway,
-    SensoryPathwayProtocol,
     BaseNeuralPathway,
     Pathway,
 )
@@ -200,7 +199,6 @@ __all__ = [
     "BrainRegionProtocol",
     # Pathway protocols
     "NeuralPathway",
-    "SensoryPathwayProtocol",
     "BaseNeuralPathway",
     "Pathway",
     # Diagnostic mixin

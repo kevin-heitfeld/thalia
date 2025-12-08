@@ -15,13 +15,16 @@ import torch
 
 
 def ensure_batch_dim(tensor: torch.Tensor) -> torch.Tensor:
-    """Ensure tensor has a batch dimension.
+    """DEPRECATED: Ensure tensor has a batch dimension (ADR-005).
+    
+    **This function is deprecated per ADR-005 (No Batch Dimension).**
+    Thalia uses single-brain architecture with 1D tensors [n_neurons].
+    
+    This function is kept only for backward compatibility with external code.
+    New code should use 1D tensors directly and NOT call this function.
     
     If the tensor is 1D (shape [N]), adds a batch dimension to make it 2D
     (shape [1, N]). If already 2D or higher, returns unchanged.
-    
-    This is a common pattern throughout the codebase where functions need
-    to handle both batched and unbatched inputs consistently.
     
     Args:
         tensor: Input tensor of any shape
@@ -29,20 +32,28 @@ def ensure_batch_dim(tensor: torch.Tensor) -> torch.Tensor:
     Returns:
         Tensor with at least 2 dimensions
         
-    Example:
-        >>> x = torch.randn(100)  # Shape: [100]
-        >>> x = ensure_batch_dim(x)  # Shape: [1, 100]
-        
-        >>> y = torch.randn(32, 100)  # Shape: [32, 100]
-        >>> y = ensure_batch_dim(y)  # Shape: [32, 100] (unchanged)
+    Deprecated:
+        Since ADR-005, all core regions and pathways use 1D tensors.
+        Do not use this function in new code.
     """
+    import warnings
+    warnings.warn(
+        "ensure_batch_dim() is deprecated per ADR-005. "
+        "Thalia uses 1D tensors [n_neurons] for single-brain architecture. "
+        "Remove this call and use 1D tensors directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     if tensor.dim() == 1:
         return tensor.unsqueeze(0)
     return tensor
 
 
 def ensure_batch_dims(*tensors: torch.Tensor) -> Tuple[torch.Tensor, ...]:
-    """Ensure multiple tensors have batch dimensions.
+    """DEPRECATED: Ensure multiple tensors have batch dimensions (ADR-005).
+    
+    **This function is deprecated per ADR-005 (No Batch Dimension).**
+    Thalia uses single-brain architecture with 1D tensors [n_neurons].
     
     Convenience function to process multiple tensors at once.
     
@@ -52,9 +63,15 @@ def ensure_batch_dims(*tensors: torch.Tensor) -> Tuple[torch.Tensor, ...]:
     Returns:
         Tuple of tensors with batch dimensions ensured
         
-    Example:
-        >>> input_spikes, output_spikes = ensure_batch_dims(input_spikes, output_spikes)
+    Deprecated:
+        Since ADR-005, use 1D tensors directly. Do not use this function.
     """
+    import warnings
+    warnings.warn(
+        "ensure_batch_dims() is deprecated per ADR-005. Use 1D tensors directly.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return tuple(ensure_batch_dim(t) for t in tensors)
 
 

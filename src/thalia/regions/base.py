@@ -118,8 +118,11 @@ class BrainRegion(NeuromodulatorMixin, ABC):
     **CRITICAL**: When adding features to regions, also add to pathways!
     Both are equally important active learning components.
     
+    All components use forward() for processing (standard PyTorch, ADR-007).
+    
     See: src/thalia/core/component_protocol.py
          docs/patterns/component-parity.md
+         docs/decisions/adr-007-pytorch-consistency.md
 
     CONTINUOUS PLASTICITY
     =====================

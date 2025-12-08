@@ -129,14 +129,17 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
         source: str,
     ) -> Optional[torch.Tensor]:
         """Process input through hippocampal circuit."""
-        # Ensure batch dimension
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        # Ensure 1D (no batch dimension in 1D architecture)
+        input_spikes = input_spikes.squeeze()
+        assert input_spikes.dim() == 1, (
+            f"EventDrivenHippocampus._process_spikes: input must be 1D [size], "
+            f"got shape {input_spikes.shape}"
+        )
 
         # Determine phase from theta
         phase = self._get_trial_phase()
 
-        # Forward through hippocampus
+        # Forward through hippocampus (already expects 1D after ADR-005 update)
         output = self.impl.forward(
             input_spikes,
             phase=phase,
@@ -146,7 +149,7 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
             ec_direct_input=self._ec_direct_input,
         )
 
-        return output.squeeze()
+        return output
 
     def new_trial(self) -> None:
         """Signal new trial to hippocampus."""

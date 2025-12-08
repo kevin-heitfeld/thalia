@@ -22,7 +22,7 @@ class TestLIFNeuron:
         neuron = LIFNeuron(n_neurons=100)
         neuron.reset_state()
 
-        assert neuron.membrane.shape == (1, 100)
+        assert neuron.membrane.shape == (100,)
         assert neuron.membrane.min().item() == neuron.config.v_rest
 
     def test_reset(self):
@@ -32,8 +32,8 @@ class TestLIFNeuron:
         neuron.reset_state()
 
         # Force membrane above threshold
-        neuron.membrane = torch.full((1, 10), 1.5)
-        spikes, _ = neuron(torch.zeros(1, 10))
+        neuron.membrane = torch.full((10,), 1.5)
+        spikes, _ = neuron(torch.zeros(10))
 
         assert spikes.sum() > 0
         # Membrane should reset where spikes occurred
@@ -46,11 +46,11 @@ class TestLIFNeuron:
         neuron.reset_state()
 
         # Set initial membrane above rest
-        neuron.membrane = torch.full((1, 10), 0.5)
+        neuron.membrane = torch.full((10,), 0.5)
         initial = neuron.membrane.clone()
 
         # Step with no input
-        neuron(torch.zeros(1, 10))
+        neuron(torch.zeros(10))
 
         # Should decay toward rest (0.0)
         assert (neuron.membrane < initial).all()
@@ -63,7 +63,7 @@ class TestLIFNeuron:
         initial = neuron.membrane.clone()
 
         # Apply positive input (below threshold to avoid spike)
-        neuron(torch.ones(1, 10) * 0.3)
+        neuron(torch.ones(10) * 0.3)
 
         # Membrane should increase
         assert (neuron.membrane > initial).all()
@@ -75,10 +75,10 @@ class TestLIFNeuron:
         neuron.reset_state()
 
         # Set membrane just below threshold for deterministic test
-        neuron.membrane = torch.full((1, 5), 0.8)
+        neuron.membrane = torch.full((5,), 0.8)
 
         # Strong enough input to push above threshold
-        spikes, _ = neuron(torch.ones(1, 5) * 0.3)
+        spikes, _ = neuron(torch.ones(5) * 0.3)
 
         assert spikes.sum() > 0, "No spikes generated despite input above threshold"
         assert ((spikes == 0) | (spikes == 1)).all(), "Spikes must be binary"
@@ -93,9 +93,9 @@ class TestConductanceLIF:
         neuron = ConductanceLIF(n_neurons=100)
         neuron.reset_state()
 
-        assert neuron.membrane.shape == (1, 100)
-        assert neuron.g_E.shape == (1, 100)
-        assert neuron.g_I.shape == (1, 100)
+        assert neuron.membrane.shape == (100,)
+        assert neuron.g_E.shape == (100,)
+        assert neuron.g_I.shape == (100,)
         # Membrane should start at leak reversal (resting potential)
         assert torch.allclose(neuron.membrane, torch.full_like(neuron.membrane, neuron.config.E_L))
 
@@ -112,7 +112,7 @@ class TestConductanceLIF:
 
         # Apply massive excitatory input
         for _ in range(1000):
-            neuron(torch.ones(1, 10) * 100.0, None)
+            neuron(torch.ones(10) * 100.0, None)
 
         # Membrane should approach but not exceed E_E
         assert (neuron.membrane < config.E_E).all()
@@ -121,7 +121,7 @@ class TestConductanceLIF:
         # Reset and apply massive inhibitory input
         neuron.reset_state()
         for _ in range(1000):
-            neuron(torch.zeros(1, 10), torch.ones(1, 10) * 100.0)
+            neuron(torch.zeros(10), torch.ones(10) * 100.0)
 
         # Membrane should approach but not exceed E_I (below rest)
         assert (neuron.membrane > config.E_I).all()
@@ -136,7 +136,7 @@ class TestConductanceLIF:
         # Strong excitatory input should cause spikes
         spikes = None
         for _ in range(50):
-            spikes, _ = neuron(torch.ones(1, 5) * 0.5)
+            spikes, _ = neuron(torch.ones(5) * 0.5)
             if spikes.sum() > 0:
                 break
 
@@ -150,8 +150,8 @@ class TestConductanceLIF:
         neuron.reset_state()
 
         # Force membrane above threshold
-        neuron.membrane = torch.full((1, 10), 1.5)
-        spikes, _ = neuron(torch.zeros(1, 10))
+        neuron.membrane = torch.full((10,), 1.5)
+        spikes, _ = neuron(torch.zeros(10))
 
         assert spikes.sum() > 0
         # Membrane should reset where spikes occurred
@@ -164,13 +164,13 @@ class TestConductanceLIF:
         neuron.reset_state()
 
         # Apply input once
-        neuron(torch.ones(1, 10) * 0.5, torch.ones(1, 10) * 0.3)
+        neuron(torch.ones(10) * 0.5, torch.ones(10) * 0.3)
         g_E_after_input = neuron.g_E.clone()
         g_I_after_input = neuron.g_I.clone()
 
         # Step without input
         for _ in range(10):
-            neuron(torch.zeros(1, 10), torch.zeros(1, 10))
+            neuron(torch.zeros(10), torch.zeros(10))
 
         # Conductances should have decayed
         assert (neuron.g_E < g_E_after_input).all()
@@ -187,13 +187,13 @@ class TestConductanceLIF:
         # Case 1: Excitation alone
         neuron.reset_state()
         for _ in range(20):
-            neuron(torch.ones(1, 10) * 0.5, None)
+            neuron(torch.ones(10) * 0.5, None)
         v_exc_only = neuron.membrane.clone()
 
         # Case 2: Same excitation + inhibition
         neuron.reset_state()
         for _ in range(20):
-            neuron(torch.ones(1, 10) * 0.5, torch.ones(1, 10) * 0.5)
+            neuron(torch.ones(10) * 0.5, torch.ones(10) * 0.5)
         v_exc_plus_inh = neuron.membrane.clone()
 
         # With shunting: inhibition reduces the EFFECT of excitation
@@ -208,13 +208,13 @@ class TestConductanceLIF:
         neuron.reset_state()
 
         # Positive current → excitation
-        spikes, v = neuron.forward_current(torch.ones(1, 10) * 0.5)
-        assert v.shape == (1, 10)
+        spikes, v = neuron.forward_current(torch.ones(10) * 0.5)
+        assert v.shape == (10,)
 
         # Negative current → inhibition
         neuron.reset_state()
-        neuron.membrane = torch.ones(1, 10) * 0.5  # Start above rest
-        _, v_after = neuron.forward_current(torch.ones(1, 10) * -0.5)
+        neuron.membrane = torch.ones(10) * 0.5  # Start above rest
+        _, v_after = neuron.forward_current(torch.ones(10) * -0.5)
         # Inhibition should pull toward E_I
         assert (v_after < 0.5).all()
 
@@ -236,7 +236,7 @@ class TestConductanceLIF:
         neuron.reset_state()
 
         # Strong constant input that would cause regular spiking without adaptation
-        input_conductance = torch.ones(1, 1) * 0.5
+        input_conductance = torch.ones(1) * 0.5
 
         # Collect spike times
         spike_times: list[int] = []
@@ -264,13 +264,13 @@ class TestConductanceLIF:
         neuron.reset_state()
 
         # Force a spike
-        neuron.membrane = torch.full((1, 5), 1.5)
-        spikes1, _ = neuron(torch.zeros(1, 5))
+        neuron.membrane = torch.full((5,), 1.5)
+        spikes1, _ = neuron(torch.zeros(5))
         assert spikes1.sum() == 5
 
         # Immediately try again with strong input - should be refractory
         for _ in range(5):  # Still in refractory (need 20 steps)
-            spikes, _ = neuron(torch.ones(1, 5) * 0.5)
+            spikes, _ = neuron(torch.ones(5) * 0.5)
             assert spikes.sum() == 0  # Can't spike during refractory
 
 
@@ -299,7 +299,7 @@ class TestDendriticBranch:
         branch.weights.data = torch.ones(10) * 0.1
 
         # Weak input - should be below threshold
-        weak_input = torch.ones(1, 10) * 0.1
+        weak_input = torch.ones(10) * 0.1
         output = branch(weak_input)
 
         # Expected: 10 * 0.1 * 0.1 = 0.1 (below threshold of 0.5)
@@ -321,7 +321,7 @@ class TestDendriticBranch:
         branch.weights.data = torch.ones(10) * 0.2
 
         # Strong input - should be above threshold
-        strong_input = torch.ones(1, 10) * 0.5
+        strong_input = torch.ones(10) * 0.5
         output = branch(strong_input)
 
         # Linear sum would be 10 * 0.2 * 0.5 = 1.0
@@ -345,11 +345,11 @@ class TestDendriticBranch:
         branch.weights.data = torch.ones(10) * 0.2
 
         # Strong input to trigger plateau
-        strong_input = torch.ones(1, 10) * 0.5
+        strong_input = torch.ones(10) * 0.5
         output1 = branch(strong_input)
 
         # Now give zero input - plateau should sustain output
-        zero_input = torch.zeros(1, 10)
+        zero_input = torch.zeros(10)
         output2 = branch(zero_input)
 
         # Output should still be significant due to plateau
@@ -369,7 +369,7 @@ class TestDendriticBranch:
         branch.weights.data = torch.ones(10) * 1.0  # Large weights
 
         # Massive input
-        huge_input = torch.ones(1, 10) * 10.0
+        huge_input = torch.ones(10) * 10.0
         output = branch(huge_input)
 
         # Should be capped near saturation level
@@ -390,7 +390,7 @@ class TestDendriticNeuron:
 
         assert neuron.branch_weights.shape == (10, 4, 25)
         assert neuron.branch_plateaus.shape == (1, 10, 4)
-        assert neuron.soma.membrane.shape == (1, 10)
+        assert neuron.soma.membrane.shape == (10,)
 
     def test_clustered_vs_scattered(self):
         """Test that clustered inputs produce stronger responses than scattered.
@@ -430,7 +430,7 @@ class TestDendriticNeuron:
         # Create scattered input: 5 active inputs on each of 4 branches
         # Each branch gets: 5 * 0.15 * 1.0 = 0.75 (slightly above threshold)
         # But we'll use fewer to stay below threshold
-        scattered = torch.zeros(1, 100)
+        scattered = torch.zeros(100)
         for b in range(4):
             start = b * 25
             scattered[0, start:start + 3] = 1.0  # Only 3 per branch
@@ -461,7 +461,7 @@ class TestDendriticNeuron:
         neuron.reset_state()
 
         # Activate only branch 0
-        inputs = torch.zeros(1, 100)
+        inputs = torch.zeros(100)
         inputs[0, 0:10] = 1.0  # Only first 10 inputs (branch 0)
 
         _, _, branch_outputs = neuron.forward_with_branch_info(inputs)
@@ -482,7 +482,7 @@ class TestDendriticNeuron:
         neuron.reset_state()
 
         # Strong input to all branches
-        strong_input = torch.ones(1, 100) * 0.5
+        strong_input = torch.ones(100) * 0.5
 
         total_spikes = 0
         for _ in range(100):
@@ -510,8 +510,8 @@ class TestDendriticNeuron:
         # Set weights for predictable behavior
         neuron.branch_weights.data = torch.ones_like(neuron.branch_weights) * 0.05
 
-        strong_input = torch.ones(1, 100) * 0.5
-        inhibition = torch.ones(1, 5) * 2.0  # Strong inhibition
+        strong_input = torch.ones(100) * 0.5
+        inhibition = torch.ones(5) * 2.0  # Strong inhibition
 
         # Without inhibition
         neuron.reset_state()

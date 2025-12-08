@@ -156,13 +156,13 @@ class ShortTermPlasticity(nn.Module):
         per_synapse: If True, track u,x per synapse; if False, per pre-neuron
 
     Example:
-        >>> # Per-synapse STP (most accurate)
-        >>> stp = ShortTermPlasticity(n_pre=100, n_post=50)
-        >>> stp.reset_state(batch_size=1)
+        >>> # Per-synapse STP (most accurate) - ADR-005: 1D tensors
+        >>> stp = ShortTermPlasticity(n_pre=100, n_post=50, per_synapse=True)
+        >>> stp.reset_state()
         >>>
         >>> for t in range(100):
-        ...     pre_spikes = ...  # (batch, n_pre)
-        ...     efficacy = stp(pre_spikes)  # (batch, n_pre, n_post) or (batch, n_pre)
+        ...     pre_spikes = ...  # [n_pre] (1D)
+        ...     efficacy = stp(pre_spikes)  # [n_pre, n_post] or [n_pre]
         ...     # Modulate weights: effective_w = w * efficacy
 
         >>> # Depressing synapse for pyramidal→interneuron
@@ -207,48 +207,48 @@ class ShortTermPlasticity(nn.Module):
         self.x: Optional[torch.Tensor] = None  # Available resources (depression)
 
     def reset_state(self) -> None:
-        """Reset STP state to baseline.
+        """Reset STP state to baseline (ADR-005: 1D tensors).
 
         - u starts at U (baseline release probability)
         - x starts at 1 (full vesicle pool)
-        - Always uses batch_size=1 per THALIA architecture
+        - Uses 1D tensors per single-brain architecture
         """
         device = self.U.device
-        batch_size = 1
 
         if self.per_synapse:
-            shape = (batch_size, self.n_pre, self.n_post)
+            shape = (self.n_pre, self.n_post)
         else:
-            shape = (batch_size, self.n_pre)
+            shape = (self.n_pre,)
 
         self.u = torch.full(shape, self.config.U, device=device, dtype=torch.float32)
         self.x = torch.ones(shape, device=device, dtype=torch.float32)
 
     def forward(self, pre_spikes: torch.Tensor) -> torch.Tensor:
-        """Compute STP efficacy for current timestep.
+        """Compute STP efficacy for current timestep (ADR-005: 1D tensors).
 
         Args:
-            pre_spikes: Presynaptic spikes, shape (batch, n_pre)
+            pre_spikes: Presynaptic spikes [n_pre] (1D)
 
         Returns:
-            Efficacy factor, shape depends on per_synapse:
-            - per_synapse=True: (batch, n_pre, n_post)
-            - per_synapse=False: (batch, n_pre)
+            Efficacy factor:
+            - per_synapse=True: [n_pre, n_post] (2D matrix)
+            - per_synapse=False: [n_pre] (1D vector)
 
             Multiply this with synaptic weights to get effective transmission.
         """
+        assert pre_spikes.dim() == 1, (
+            f"STP.forward: Expected 1D pre_spikes (ADR-005), got shape {pre_spikes.shape}"
+        )
+        assert pre_spikes.shape[0] == self.n_pre, (
+            f"STP.forward: pre_spikes has {pre_spikes.shape[0]} neurons, expected {self.n_pre}"
+        )
+        
         if self.u is None:
-            self.reset_state()
-
-        # Ensure batch size matches (should always be 1)
-        if self.u.shape[0] != pre_spikes.shape[0]:
-            from .utils import assert_single_instance
-            assert_single_instance(pre_spikes.shape[0], "STP")
             self.reset_state()
 
         # Expand pre_spikes if per_synapse
         if self.per_synapse:
-            # (batch, n_pre) → (batch, n_pre, 1) for broadcasting
+            # [n_pre] → [n_pre, 1] for broadcasting to [n_pre, n_post]
             spikes = pre_spikes.unsqueeze(-1)
         else:
             spikes = pre_spikes

@@ -54,7 +54,7 @@ import torch.nn as nn
 
 from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
 
-from thalia.core.utils import ensure_batch_dim, clamp_weights, cosine_similarity_safe
+from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import (
@@ -304,10 +304,10 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             )
         )
 
-        # Initialize working memory state
+        # Initialize working memory state (1D tensors, ADR-005)
         self.state = PrefrontalState(
-            working_memory=torch.zeros(1, config.n_output, device=self.device),
-            update_gate=torch.zeros(1, config.n_output, device=self.device),
+            working_memory=torch.zeros(config.n_output, device=self.device),
+            update_gate=torch.zeros(config.n_output, device=self.device),
             dopamine=config.dopamine_baseline,
         )
 
@@ -372,11 +372,12 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
             self.learning_strategy.reset_state()
 
+        # All state tensors are 1D [n_output] (ADR-005: No Batch Dimension)
         self.state = PrefrontalState(
-            membrane=torch.zeros(1, self.config.n_output, device=self.device),
-            spikes=torch.zeros(1, self.config.n_output, device=self.device),
-            working_memory=torch.zeros(1, self.config.n_output, device=self.device),
-            update_gate=torch.ones(1, self.config.n_output, device=self.device),
+            membrane=torch.zeros(self.config.n_output, device=self.device),
+            spikes=torch.zeros(self.config.n_output, dtype=torch.bool, device=self.device),
+            working_memory=torch.zeros(self.config.n_output, device=self.device),
+            update_gate=torch.ones(self.config.n_output, device=self.device),
             dopamine=self.pfc_config.dopamine_baseline,
         )
 
@@ -393,7 +394,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         Process input through prefrontal cortex.
 
         Args:
-            input_spikes: Input spike pattern [batch, n_input]
+            input_spikes: Input spike pattern [n_input] (1D bool tensor, ADR-005)
             dt: Time step in ms
             encoding_mod: Theta modulation for encoding (opens gate for new info)
             retrieval_mod: Theta modulation for retrieval (maintains WM)
@@ -401,28 +402,22 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             **kwargs: Additional inputs
 
         Returns:
-            Output spikes [batch, n_output]
+            Output spikes [n_output] (1D bool tensor, ADR-005)
         """
-        batch_size = input_spikes.shape[0]
-
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        assert input_spikes.shape[-1] == self.pfc_config.n_input, (
+        assert input_spikes.dim() == 1, (
+            f"PrefrontalCortex.forward: input_spikes must be 1D [n_input], "
+            f"got shape {input_spikes.shape}. See ADR-005: No Batch Dimension."
+        )
+        assert input_spikes.shape[0] == self.pfc_config.n_input, (
             f"PrefrontalCortex.forward: input_spikes has shape {input_spikes.shape} "
             f"but n_input={self.pfc_config.n_input}. Check that input matches PFC config."
         )
 
         # Ensure state is initialized
         if self.state.working_memory is None:
-            from thalia.core.utils import assert_single_instance
-            assert_single_instance(batch_size, "PrefrontalCortex")
-            self.reset_state()
-
-        # Ensure batch size matches
-        if self.state.working_memory.shape[0] != batch_size:
-            from thalia.core.utils import assert_single_instance
-            assert_single_instance(batch_size, "PrefrontalCortex")
             self.reset_state()
 
         # Update dopamine and get gate value
@@ -442,7 +437,8 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         rec_gain = 0.5 + 0.5 * retrieval_mod  # 0.5-1.0: boost recurrence during retrieval
 
         # Feedforward input - modulated by encoding phase
-        ff_input = torch.matmul(input_spikes.float(), self.weights.t()) * ff_gain
+        # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
+        ff_input = (self.weights @ input_spikes.float()) * ff_gain
 
         # =====================================================================
         # RECURRENT INPUT WITH STP (prevents frozen WM attractors)
@@ -452,36 +448,31 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         # allowing WM to be updated with new information.
         if (hasattr(self, 'stp_recurrent') and self.stp_recurrent is not None
             and self.state.working_memory is not None):
-            # Apply STP to recurrent connections
-            # stp_efficacy has shape (batch, n_output, n_output) - per-synapse modulation
+            # Apply STP to recurrent connections (1D → 2D per-synapse efficacy)
+            # stp_efficacy has shape [n_output, n_output] - per-synapse modulation
             stp_efficacy = self.stp_recurrent(
                 self.state.working_memory.float()
             )
-            # Effective weights: broadcast rec_weights with per-batch STP efficacy
-            # rec_weights is (n_output, n_output), stp_efficacy is (batch, n_output, n_output)
-            # For recurrent: WM @ (weights * efficacy).T = WM @ weights.T * efficacy (with proper dims)
-            # Use einsum for clean batched matmul with per-synapse modulation
-            # wm[b, i] * rec_weights[j, i] * stp_efficacy[b, i, j] → output[b, j]
-            effective_rec_weights = self.rec_weights.unsqueeze(0) * stp_efficacy.transpose(-2, -1)
-            rec_input = torch.einsum('bi,bji->bj', self.state.working_memory.float(), effective_rec_weights) * rec_gain
+            # Effective weights: element-wise multiply rec_weights with STP efficacy
+            # rec_weights is [n_output, n_output], stp_efficacy is [n_output, n_output]
+            effective_rec_weights = self.rec_weights * stp_efficacy.t()
+            # Recurrent: weights[n_output, n_output] @ wm[n_output] → [n_output]
+            rec_input = (effective_rec_weights @ self.state.working_memory.float()) * rec_gain
         else:
             # Recurrent input from working memory - modulated by retrieval phase
-            rec_input = torch.matmul(
-                self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(1, self.pfc_config.n_output, device=input_spikes.device),
-                self.rec_weights.t()
-            ) * rec_gain
+            # rec_weights[n_output, n_output] @ wm[n_output] → [n_output]
+            wm = self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(self.pfc_config.n_output, device=input_spikes.device)
+            rec_input = (self.rec_weights @ wm) * rec_gain
 
-        # Lateral inhibition
-        inhib = torch.matmul(
-            self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(1, self.pfc_config.n_output, device=input_spikes.device),
-            self.inhib_weights.t()
-        )
+        # Lateral inhibition: inhib_weights[n_output, n_output] @ wm[n_output] → [n_output]
+        wm = self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(self.pfc_config.n_output, device=input_spikes.device)
+        inhib = self.inhib_weights @ wm
 
         # Total excitation and inhibition
         g_exc = (ff_input + rec_input).clamp(min=0)
         g_inh = inhib.clamp(min=0)
 
-        # Run through neurons
+        # Run through neurons (returns 1D bool spikes)
         output_spikes, _ = self.neurons(g_exc, g_inh)
 
         # Update working memory with gating
@@ -507,10 +498,14 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         self.state.spikes = output_spikes
 
         # Output shape check
-        assert output_spikes.shape == (batch_size, self.pfc_config.n_output), (
+        assert output_spikes.shape == (self.pfc_config.n_output,), (
             f"PrefrontalCortex.forward: output_spikes has shape {output_spikes.shape} "
-            f"but expected ({batch_size}, {self.pfc_config.n_output}). "
+            f"but expected ({self.pfc_config.n_output},). "
             f"Check PFC neuron or weight configuration."
+        )
+        assert output_spikes.dtype == torch.bool, (
+            f"PrefrontalCortex.forward: output_spikes must be bool (ADR-004), "
+            f"got {output_spikes.dtype}"
         )
 
         # Apply continuous plasticity (learning happens as part of forward dynamics)
@@ -533,8 +528,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             return
 
         cfg = self.pfc_config
-        input_spikes = ensure_batch_dim(input_spikes)
-        output_spikes = ensure_batch_dim(output_spikes)
+        # Input/output are already 1D bool tensors (ADR-005)
 
         # Apply STDP learning via strategy
         # Dopamine modulation is handled automatically by apply_strategy_learning
@@ -558,8 +552,9 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         # Rule learning now happens via dopamine-modulated STDP in _apply_plasticity
         # This simple Hebbian update for recurrent connections maintains WM patterns
         if self.state.working_memory is not None:
-            wm_mean = self.state.working_memory.mean(dim=0)
-            dW_rec = cfg.rule_lr * torch.outer(wm_mean, wm_mean)
+            # working_memory is already 1D [n_output] (ADR-005)
+            wm = self.state.working_memory  # [n_output]
+            dW_rec = cfg.rule_lr * torch.outer(wm, wm)  # [n_output, n_output]
             with torch.no_grad():
                 self.rec_weights.data += dW_rec
                 self.rec_weights.data.fill_diagonal_(
@@ -574,17 +569,22 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         This allows explicit control of PFC state for rule-based tasks.
 
         Args:
-            context: Context pattern [batch, n_output] or [n_output]
+            context: Context pattern [n_output] (1D tensor, ADR-005)
         """
-        context = ensure_batch_dim(context)
+        assert context.dim() == 1, (
+            f"set_context: context must be 1D [n_output], got shape {context.shape}"
+        )
+        assert context.shape[0] == self.config.n_output, (
+            f"set_context: context has {context.shape[0]} elements but expected {self.config.n_output}"
+        )
 
         self.state.working_memory = context.to(self.device).float()
         self.state.active_rule = context.to(self.device).float()
 
     def get_working_memory(self) -> torch.Tensor:
-        """Get current working memory contents."""
+        """Get current working memory contents (1D tensor, ADR-005)."""
         if self.state.working_memory is None:
-            return torch.zeros(1, self.config.n_output, device=self.device)
+            return torch.zeros(self.config.n_output, device=self.device)
         return self.state.working_memory
 
     def maintain(self, n_steps: int = 10, dt: float = 1.0) -> Dict[str, Any]:
@@ -604,11 +604,10 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             return {"error": "No working memory to maintain"}
 
         initial_wm = self.state.working_memory.clone()
-        batch_size = self.state.working_memory.shape[0]
 
         for _ in range(n_steps):
             # No external input, low DA (maintenance mode)
-            null_input = torch.zeros(batch_size, self.config.n_input, device=self.device)
+            null_input = torch.zeros(self.config.n_input, device=self.device)
             self.forward(null_input, dopamine_signal=-0.3, dt=dt)
 
         final_wm = self.state.working_memory

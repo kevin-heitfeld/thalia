@@ -19,7 +19,7 @@ Types of Pathways:
 1. **Sensory Pathways** (SensoryPathway):
    - Transform raw sensory input → spike patterns
    - Examples: Visual (retina→V1), Auditory (cochlea→A1), Language (tokens→spikes)
-   - Primary method: encode()
+   - Primary method: forward() (standard PyTorch convention, ADR-007)
 
 2. **Inter-Region Pathways** (SpikingPathway):
    - Transform spikes between brain regions
@@ -36,7 +36,7 @@ Protocol Design:
 ================
 
 The protocol allows for flexibility while ensuring consistency:
-- All pathways must implement forward() OR encode()
+- All pathways must implement forward() (standard PyTorch convention, ADR-007)
 - Learning is optional (some pathways learn, others don't)
 - State management and diagnostics are required
 - Type hints enable static checking
@@ -44,11 +44,11 @@ The protocol allows for flexibility while ensuring consistency:
 Usage Example:
 ==============
     def process_pathway(pathway: NeuralPathway, input_data: Any) -> torch.Tensor:
-        # Works with any pathway type
-        if hasattr(pathway, 'encode'):
-            output, metadata = pathway.encode(input_data)
-        else:
-            output = pathway.forward(input_data)
+        # Works with any pathway type - all use forward()
+        # Callable syntax (ADR-007):
+        output = pathway(input_data)
+        # Or explicit:
+        output = pathway.forward(input_data)
         
         return output
     
@@ -80,16 +80,16 @@ class NeuralPathway(Protocol):
     
     Core Methods:
     -------------
-    - forward() or encode(): Transform input to output (learning happens automatically)
+    - forward(): Transform input to output (standard PyTorch, ADR-007)
     - reset_state(): Reset temporal state
     - get_diagnostics(): Report pathway metrics
     
     Design Rationale:
     -----------------
-    1. **Sensory pathways** use encode() (raw input → spikes)
-    2. **Inter-region pathways** use forward() (spikes → spikes)
-    3. Both can coexist since they serve different purposes
-    4. **Pathways always learn** during forward/encode (like regions)
+    1. **All pathways** use forward() (standard PyTorch convention, ADR-007)
+    2. **Sensory pathways**: forward(raw_input) → (spikes, metadata)
+    3. **Inter-region pathways**: forward(spikes) → spikes
+    4. **Pathways always learn** during forward passes (like regions)
     5. Learning is via STDP, BCM, or other plasticity rules applied automatically
     """
     
@@ -99,18 +99,21 @@ class NeuralPathway(Protocol):
         **kwargs: Any,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, Any]]]:
         """
-        Transform input to output (primary method for inter-region pathways).
+        Transform input to output (standard PyTorch convention, ADR-007).
+        
+        All pathways use forward() to enable callable syntax:
+        >>> output = pathway(input_data)  # Calls forward() automatically
         
         Args:
-            input_data: Input tensor (typically spikes)
+            input_data: Input tensor
+                - Inter-region pathways: spikes [n_neurons]
+                - Sensory pathways: raw input (image, audio, tokens)
             **kwargs: Additional arguments (dt, time_ms, etc.)
             
         Returns:
             output: Output tensor, or (output, metadata) tuple
-            
-        Note:
-            Sensory pathways may implement encode() instead of forward().
-            Inter-region pathways always implement forward().
+                - Inter-region: spikes [n_neurons]
+                - Sensory: (spikes [n_timesteps, n_neurons], metadata)
         """
         ...
     
@@ -143,49 +146,12 @@ class NeuralPathway(Protocol):
         ...
 
 
-@runtime_checkable
-class SensoryPathwayProtocol(NeuralPathway, Protocol):
-    """
-    Extended protocol for sensory pathways.
-    
-    Sensory pathways transform raw sensory input (images, audio, tokens)
-    into spike patterns. They use encode() as their primary method,
-    but may also implement forward() for convenience.
-    """
-    
-    def encode(
-        self,
-        raw_input: Any,
-        **kwargs: Any,
-    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        """
-        Encode raw sensory input to spike patterns.
-        
-        Args:
-            raw_input: Modality-specific input
-                - Visual: [batch, channels, height, width]
-                - Auditory: [batch, time_samples]
-                - Language: [batch, seq_len] (token IDs)
-            **kwargs: Modality-specific parameters
-            
-        Returns:
-            spikes: Spike patterns [batch, n_timesteps, output_size]
-                   (or [batch, seq_len, n_timesteps, output_size] for sequences)
-            metadata: Dictionary with encoding statistics
-        """
-        ...
-    
-    def get_modality(self) -> Any:  # Returns Modality enum
-        """
-        Return the sensory modality type.
-        
-        Returns:
-            Modality enum (VISUAL, AUDITORY, LANGUAGE, etc.)
-        """
-        ...
+# Note: SensoryPathwayProtocol removed (ADR-007)
+# All pathways (sensory and inter-region) use forward() for consistency.
+# Sensory pathways return (spikes, metadata) tuple from forward().
+# Inter-region pathways return spikes tensor from forward().
 
-
-# Note: LearnablePathway protocol removed - pathways ALWAYS learn during forward/encode.
+# Note: LearnablePathway protocol removed - pathways ALWAYS learn during forward passes.
 # Learning happens automatically via STDP, BCM, or other plasticity rules,
 # just like regions (Prefrontal, Hippocampus, etc.) always learn.
 # No separate learn() method needed.
@@ -220,15 +186,18 @@ class BaseNeuralPathway(nn.Module, ABC):
     When features are added to BrainRegion, they MUST be added to
     BaseNeuralPathway as well. The protocol enforces this.
     
+    All components use forward() for processing (standard PyTorch, ADR-007).
+    
     See: src/thalia/core/component_protocol.py
          docs/patterns/component-parity.md
+         docs/decisions/adr-007-pytorch-consistency.md
     
     All subclasses must implement:
-    - forward() or encode(): Primary transformation
+    - forward(): Primary transformation (standard PyTorch convention)
     - reset_state(): Clear temporal state
     - get_diagnostics(): Report metrics
     
-    Learning happens automatically during forward/encode passes.
+    Learning happens automatically during forward passes.
     """
     
     @abstractmethod
@@ -293,13 +262,12 @@ class BaseNeuralPathway(nn.Module, ABC):
     # Note: forward() is already abstract in nn.Module, so no need to redeclare
 
 
-# Type aliases for convenience
-Pathway = Union[NeuralPathway, SensoryPathwayProtocol]
+# Type alias for convenience (ADR-007: all pathways use NeuralPathway protocol)
+Pathway = NeuralPathway
 
 
 __all__ = [
     "NeuralPathway",
-    "SensoryPathwayProtocol",
     "BaseNeuralPathway",
     "Pathway",
 ]

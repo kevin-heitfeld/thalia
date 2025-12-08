@@ -163,15 +163,21 @@ class SpikeDecoder(BaseSpikeDecoder):
             inhibition = inhibition * config.inhibition_strength
             self.register_buffer("inhibition", inhibition)
 
-    def decode(self, spikes: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        spikes: torch.Tensor,
+        return_features: bool = False,
+    ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
         """
-        Decode spikes to token logits.
+        Decode spikes to token logits/probabilities.
 
         Args:
             spikes: Spike patterns [batch, seq_len, n_timesteps, n_neurons]
+            return_features: Whether to return intermediate features
 
         Returns:
             logits: Token logits [batch, seq_len, vocab_size]
+            features: (optional) Intermediate features [batch, seq_len, n_neurons]
         """
         # Step 1: Integrate spikes over time using base class
         features = self._integrate_spikes(spikes)  # [batch, seq_len, n_neurons]
@@ -182,28 +188,7 @@ class SpikeDecoder(BaseSpikeDecoder):
         # Step 3: Apply temperature
         logits = logits / self.config.temperature
 
-        return logits
-
-    def forward(
-        self,
-        spikes: torch.Tensor,
-        return_features: bool = False,
-    ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Decode spikes to token probabilities.
-
-        Args:
-            spikes: Spike patterns [batch, seq_len, n_timesteps, n_neurons]
-            return_features: Whether to return intermediate features
-
-        Returns:
-            logits: Token logits [batch, seq_len, vocab_size]
-            features: (optional) Intermediate features [batch, seq_len, n_neurons]
-        """
-        logits = self.decode(spikes)
-
         if return_features:
-            features = self._integrate_spikes(spikes)
             return logits, features
         return logits
 

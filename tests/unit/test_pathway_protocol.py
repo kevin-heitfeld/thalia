@@ -10,7 +10,6 @@ import torch
 
 from thalia.core.pathway_protocol import (
     NeuralPathway,
-    SensoryPathwayProtocol,
 )
 from thalia.sensory import (
     VisualPathway,
@@ -44,32 +43,33 @@ class TestProtocolCompliance:
     """Test that all pathways implement NeuralPathway protocol."""
 
     def test_visual_pathway_implements_protocol(self, device):
-        """Visual pathway should implement SensoryPathwayProtocol."""
+        """Visual pathway should implement NeuralPathway protocol (ADR-007)."""
         config = VisualConfig(device=device)
         pathway = VisualPathway(config)
 
         # Check isinstance with protocol
-        assert isinstance(pathway, SensoryPathwayProtocol)
+        assert isinstance(pathway, NeuralPathway)
 
-        # Verify required methods exist
-        assert hasattr(pathway, 'encode')
+        # Verify required methods exist (ADR-007: all use forward())
+        assert hasattr(pathway, 'forward')
         assert hasattr(pathway, 'get_modality')
         assert hasattr(pathway, 'reset_state')
         assert hasattr(pathway, 'get_diagnostics')
 
     def test_auditory_pathway_implements_protocol(self, device):
-        """Auditory pathway should implement SensoryPathwayProtocol."""
+        """Auditory pathway should implement NeuralPathway protocol (ADR-007)."""
         config = AuditoryConfig(device=device)
         pathway = AuditoryPathway(config)
 
-        assert isinstance(pathway, SensoryPathwayProtocol)
-        assert hasattr(pathway, 'encode')
+        assert isinstance(pathway, NeuralPathway)
+        # ADR-007: All pathways use forward(), not encode()
+        assert hasattr(pathway, 'forward')
         assert hasattr(pathway, 'get_modality')
         assert hasattr(pathway, 'reset_state')
         assert hasattr(pathway, 'get_diagnostics')
 
     def test_language_pathway_implements_protocol(self, device):
-        """Language pathway should implement SensoryPathwayProtocol."""
+        """Language pathway should implement NeuralPathway protocol (ADR-007)."""
         # Skip if import fails (language pathway uses deprecated imports)
         pytest.skip("LanguagePathway uses deprecated EncodingType - needs refactoring")
 
@@ -127,13 +127,14 @@ class TestSensoryPathwayInterface:
     """Test sensory pathway encode() interface."""
 
     def test_visual_encode(self, device):
-        """Visual pathway encode should return spikes and metadata."""
+        """Visual pathway forward() should return spikes and metadata (ADR-007)."""
         config = VisualConfig(output_size=128, device=device)
         pathway = VisualPathway(config)
 
+        # ADR-005: Single brain = single sample input [C, H, W]
         # Use default image size (28x28 in config)
-        image = torch.randn(2, 1, 28, 28)  # [batch, channels, H, W]
-        spikes, metadata = pathway.encode(image)
+        image = torch.randn(1, 28, 28)  # [channels, H, W]
+        spikes, metadata = pathway(image)  # Callable syntax (ADR-007)
 
         # Check output format
         assert isinstance(spikes, torch.Tensor)
@@ -144,12 +145,13 @@ class TestSensoryPathwayInterface:
         assert pathway.get_modality() == Modality.VISION
 
     def test_auditory_encode(self, device):
-        """Auditory pathway encode should return spikes and metadata."""
+        """Auditory pathway forward() should return spikes and metadata (ADR-007)."""
         config = AuditoryConfig(output_size=128, device=device)
         pathway = AuditoryPathway(config)
 
-        audio = torch.randn(2, 16000)  # [batch, samples]
-        spikes, metadata = pathway.encode(audio)
+        # ADR-005: Single brain = single audio sample [samples]
+        audio = torch.randn(16000)  # [samples]
+        spikes, metadata = pathway(audio)  # Callable syntax (ADR-007)
 
         assert isinstance(spikes, torch.Tensor)
         assert isinstance(metadata, dict)
@@ -377,12 +379,13 @@ class TestPathwayIntegration:
         spiking_pathway = SpikingPathway(spiking_config)
 
         # Process image → spikes → transformed spikes
-        # Use default 28x28 grayscale images
-        image = torch.randn(1, 1, 28, 28)
-        spikes, _ = visual_pathway.encode(image)  # [1, n_timesteps, 128]
+        # ADR-005: Single brain = single sample [C, H, W]
+        image = torch.randn(1, 28, 28)  # [channels, H, W]
+        spikes, _ = visual_pathway(image)  # Callable syntax (ADR-007) [n_timesteps, 128]
 
         # Process first timestep
-        first_spike = spikes[0, 0, :]  # [128]
+        # ADR-006: Temporal coding produces [n_timesteps, n_neurons]
+        first_spike = spikes[0, :]  # [128]
         output = spiking_pathway(first_spike, dt=1.0)
 
         assert output.shape == (64,)
