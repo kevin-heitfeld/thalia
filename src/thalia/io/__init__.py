@@ -6,6 +6,8 @@ This module provides efficient binary serialization for brain checkpoints:
 - Tensor encoding (dense and sparse CSR)
 - Region indexing for efficient loading
 - SHA-256 checksums for validation
+- Compression support (zstd/lz4)
+- Delta checkpoints for curriculum learning
 
 Example:
     from thalia.io import BrainCheckpoint
@@ -17,13 +19,37 @@ Example:
         metadata={"experiment": "language_learning"}
     )
     
-    # Load brain state
-    brain = BrainCheckpoint.load("checkpoint.thalia", device="cuda")
+    # Save with compression
+    BrainCheckpoint.save(
+        brain,
+        "checkpoint.thalia.zst",  # Auto-detects zstd compression
+        compression='zstd',
+        compression_level=3
+    )
+    
+    # Save delta checkpoint (only changes)
+    BrainCheckpoint.save_delta(
+        brain,
+        "stage2.delta.thalia",
+        base_checkpoint="stage1.thalia"
+    )
+    
+    # Load brain state (handles compression/delta automatically)
+    brain = BrainCheckpoint.load("checkpoint.thalia.zst", device="cuda")
     
     # Inspect without loading
     info = BrainCheckpoint.info("checkpoint.thalia")
 """
 
 from .checkpoint import BrainCheckpoint
+from .compression import compress_file, decompress_file, CompressionError
+from .delta import save_delta_checkpoint, load_delta_checkpoint
 
-__all__ = ["BrainCheckpoint"]
+__all__ = [
+    "BrainCheckpoint",
+    "compress_file",
+    "decompress_file",
+    "CompressionError",
+    "save_delta_checkpoint",
+    "load_delta_checkpoint",
+]

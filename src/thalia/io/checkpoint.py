@@ -77,7 +77,8 @@ class BrainCheckpoint:
         brain: Any,
         path: Union[str, Path],
         metadata: Optional[Dict[str, Any]] = None,
-        compress: bool = False,
+        compression: Optional[str] = None,
+        compression_level: int = 3,
     ) -> Dict[str, Any]:
         """Save brain state to binary checkpoint file.
 
@@ -85,14 +86,33 @@ class BrainCheckpoint:
             brain: Brain instance (EventDrivenBrain)
             path: Path to save checkpoint
             metadata: Optional metadata dict
-            compress: Whether to compress (future feature)
+            compression: Compression type ('zstd', 'lz4', or None)
+                        If None, auto-detects from file extension (.zst or .lz4)
+            compression_level: Compression level (1-22 for zstd, 1-12 for lz4)
 
         Returns:
             Summary dict with file info
+            
+        Example:
+            >>> # Uncompressed
+            >>> BrainCheckpoint.save(brain, "checkpoint.thalia")
+            
+            >>> # zstd compression (auto-detect from extension)
+            >>> BrainCheckpoint.save(brain, "checkpoint.thalia.zst")
+            
+            >>> # Explicit compression
+            >>> BrainCheckpoint.save(brain, "checkpoint.thalia", compression='zstd', compression_level=9)
         """
+        from .compression import detect_compression, compress_data, CompressedFile
+        import io
+        
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-
+        
+        # Auto-detect compression if not specified
+        if compression is None:
+            compression = detect_compression(path)
+        
         # Get brain state
         state = brain.get_full_state()
 
@@ -225,17 +245,33 @@ class BrainCheckpoint:
             
             # Write checksum at end
             f.write(checksum)
-
+        
+        # Apply compression if requested
+        if compression is not None:
+            # Read uncompressed file
+            with open(path, 'rb') as f:
+                uncompressed_data = f.read()
+            
+            # Compress
+            compressed_data = compress_data(uncompressed_data, compression, compression_level)
+            
+            # Overwrite with compressed version
+            with open(path, 'wb') as f:
+                f.write(compressed_data)
+        
         file_size = path.stat().st_size
 
         return {
             "path": str(path),
             "file_size": file_size,
+            "file_size_mb": file_size / (1024 * 1024),
             "num_regions": len(state["regions"]),
             "num_pathways": len(state.get("pathways", {})),
             "total_neurons": total_neurons,
             "total_synapses": total_synapses,
             "checksum": checksum.hex(),
+            "compression": compression,
+            "compression_level": compression_level if compression else None,
         }
 
     @staticmethod
@@ -245,6 +281,8 @@ class BrainCheckpoint:
         regions_to_load: Optional[list] = None,
     ) -> Dict[str, Any]:
         """Load brain state from binary checkpoint file.
+        
+        Automatically handles compressed checkpoints (.zst, .lz4) and delta checkpoints (.delta.thalia).
 
         Args:
             path: Path to checkpoint file
@@ -253,74 +291,112 @@ class BrainCheckpoint:
 
         Returns:
             State dict suitable for brain.load_full_state()
+            
+        Example:
+            >>> # Load uncompressed
+            >>> brain = BrainCheckpoint.load("checkpoint.thalia")
+            
+            >>> # Load compressed (auto-detects)
+            >>> brain = BrainCheckpoint.load("checkpoint.thalia.zst")
+            
+            >>> # Load delta checkpoint (auto-reconstructs)
+            >>> brain = BrainCheckpoint.load("stage3.delta.thalia")
         """
+        from .compression import detect_compression, decompress_data
+        from .delta import load_delta_checkpoint, DELTA_MAGIC
+        import io
+        
         path = Path(path)
 
         if not path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {path}")
-
+        
+        # Check if this is a delta checkpoint
         with open(path, 'rb') as f:
-            # Validate checksum FIRST (read entire file except checksum, hash it)
-            import hashlib
-            f.seek(0, 2)  # Seek to end
-            file_size = f.tell()
-            f.seek(0)  # Back to start
-
-            # Read everything except the 32-byte checksum at the end
-            data_to_hash = f.read(file_size - 32)
-            computed_hash = hashlib.sha256(data_to_hash).digest()
-
-            # Read stored checksum
-            stored_checksum = f.read(32)
-
-            if computed_hash != stored_checksum:
-                raise ValueError("Checksum validation failed - file may be corrupted")
-
-            # Now parse the data (seek back to start)
+            magic = f.read(4)
             f.seek(0)
-            reader = BinaryReader(f)
+            
+            if magic == DELTA_MAGIC:
+                # This is a delta checkpoint - use special loader
+                return load_delta_checkpoint(path, device=device)
+        
+        # Check for compression
+        compression = detect_compression(path)
+        
+        # Read file (decompress if needed)
+        with open(path, 'rb') as f:
+            file_data = f.read()
+        
+        if compression is not None:
+            file_data = decompress_data(file_data, compression)
+        
+        # Now parse the decompressed data
+        f = io.BytesIO(file_data)
+        
+        # Validate checksum FIRST (read entire file except checksum, hash it)
+        import hashlib
+        f.seek(0, 2)  # Seek to end
+        file_size = f.tell()
+        f.seek(0)  # Back to start
 
-            # Read header (don't hash - already validated)
-            header = reader.read_header()
+        # Read everything except the 32-byte checksum at the end
+        data_to_hash = f.read(file_size - 32)
+        computed_hash = hashlib.sha256(data_to_hash).digest()
 
-            # Read metadata
-            f.seek(header.metadata_offset)
-            metadata_bytes = f.read(header.metadata_length)
-            metadata = json.loads(metadata_bytes.decode('utf-8'))
+        # Read stored checksum
+        stored_checksum = f.read(32)
 
-            # Read region index
-            f.seek(header.region_index_offset)
-            index_data = f.read(header.region_index_length)
-            n_entries = len(index_data) // 48
-            region_index = []
-            for i in range(n_entries):
-                entry_data = index_data[i*48:(i+1)*48]
-                region_index.append(RegionIndexEntry.from_bytes(entry_data))
+        if computed_hash != stored_checksum:
+            raise ValueError("Checksum validation failed - file may be corrupted")
 
-            # Load regions
-            regions = {}
-            pathways = {}
+        # Now parse the data (seek back to start)
+        f.seek(0)
+        reader = BinaryReader(f)
 
-            for entry in region_index:
-                # Skip if not in requested regions
-                if regions_to_load is not None:
-                    if entry.region_name not in regions_to_load:
-                        continue
+        # Read header (don't hash - already validated)
+        header = reader.read_header()
 
-                # Read region JSON
-                f.seek(entry.data_offset)
-                region_json_bytes = f.read(entry.data_length)
-                region_json = json.loads(region_json_bytes.decode('utf-8'))
+        # Read metadata
+        f.seek(header.metadata_offset)
+        metadata_bytes = f.read(header.metadata_length)
+        metadata = json.loads(metadata_bytes.decode('utf-8'))
 
-                # Deserialize region state (decode tensors)
-                region_state = _deserialize_region_state(region_json, f, device)
+        # Read region index
+        f.seek(header.region_index_offset)
+        index_data = f.read(header.region_index_length)
+        n_entries = len(index_data) // 48
+        region_index = []
+        for i in range(n_entries):
+            entry_data = index_data[i*48:(i+1)*48]
+            region_index.append(RegionIndexEntry.from_bytes(entry_data))
 
-                # Store in appropriate dict
-                if entry.region_name.startswith("pathway:"):
-                    pathway_name = entry.region_name[8:]  # Remove "pathway:" prefix
-                    pathways[pathway_name] = region_state
-                else:
-                    regions[entry.region_name] = region_state
+        # Load regions
+        regions = {}
+        pathways = {}
+
+        for entry in region_index:
+            # Skip if not in requested regions
+            if regions_to_load is not None:
+                if entry.region_name not in regions_to_load:
+                    continue
+
+            # Read region JSON
+            f.seek(entry.data_offset)
+            region_json_bytes = f.read(entry.data_length)
+            region_json = json.loads(region_json_bytes.decode('utf-8'))
+
+            # Deserialize region state (decode tensors)
+            region_state = _deserialize_region_state(region_json, f, device)
+
+            # Store in appropriate dict
+            if entry.region_name.startswith("pathway:"):
+                pathway_name = entry.region_name[8:]  # Remove "pathway:" prefix
+                pathways[pathway_name] = region_state
+            else:
+                regions[entry.region_name] = region_state
+        
+        # Close BytesIO if we created it for decompression
+        f.close()
 
         # Build full state dict
         state = {
@@ -337,6 +413,94 @@ class BrainCheckpoint:
             state["pathways"] = pathways
 
         return state
+
+    @staticmethod
+    def save_delta(
+        brain: Any,
+        path: Union[str, Path],
+        base_checkpoint: Union[str, Path],
+        threshold: float = 1e-5,
+        metadata: Optional[Dict[str, Any]] = None,
+        compression: Optional[str] = None,
+        compression_level: int = 3,
+    ) -> Dict[str, Any]:
+        """Save delta checkpoint (only weight changes from base).
+        
+        Huge savings during curriculum learning - typically 80-95% file size reduction.
+        
+        Args:
+            brain: Brain instance
+            path: Where to save delta checkpoint
+            base_checkpoint: Path to base checkpoint
+            threshold: Minimum weight change to store (default: 1e-5)
+            metadata: Optional metadata
+            compression: Optional compression ('zstd', 'lz4', or None)
+            compression_level: Compression level if compression is used
+            
+        Returns:
+            Summary dict with statistics
+            
+        Example:
+            >>> # Save base checkpoint first
+            >>> BrainCheckpoint.save(brain, "stage0.thalia")
+            
+            >>> # Train to stage 1
+            >>> train_stage(brain, stage=1)
+            
+            >>> # Save delta (only changes)
+            >>> BrainCheckpoint.save_delta(
+            ...     brain,
+            ...     "stage1.delta.thalia",
+            ...     base_checkpoint="stage0.thalia"
+            ... )
+        """
+        from .delta import save_delta_checkpoint
+        from .compression import compress_file
+        
+        path = Path(path)
+        base_checkpoint = Path(base_checkpoint)
+        
+        # Get current state
+        current_state = brain.get_full_state()
+        
+        # Save delta checkpoint
+        summary = save_delta_checkpoint(
+            current_state=current_state,
+            base_checkpoint_path=base_checkpoint,
+            output_path=path,
+            threshold=threshold,
+            metadata=metadata,
+        )
+        
+        # Apply compression if requested
+        if compression is not None:
+            uncompressed_path = path
+            
+            if compression == 'zstd':
+                compressed_path = path.with_suffix(path.suffix + '.zst')
+            elif compression == 'lz4':
+                compressed_path = path.with_suffix(path.suffix + '.lz4')
+            else:
+                raise ValueError(f"Unknown compression: {compression}")
+            
+            compress_file(
+                uncompressed_path,
+                compressed_path,
+                compression=compression,
+                level=compression_level,
+            )
+            
+            # Remove uncompressed version
+            uncompressed_path.unlink()
+            
+            # Update summary
+            compressed_size = compressed_path.stat().st_size
+            summary['compressed_path'] = str(compressed_path)
+            summary['compressed_size_mb'] = compressed_size / (1024 * 1024)
+            summary['final_compression_ratio'] = compressed_size / summary['base_size_mb'] / (1024 * 1024)
+            summary['final_savings_percent'] = (1 - summary['final_compression_ratio']) * 100
+        
+        return summary
 
     @staticmethod
     def info(path: Union[str, Path]) -> Dict[str, Any]:

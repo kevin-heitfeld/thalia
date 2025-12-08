@@ -364,16 +364,20 @@ SHA-256 hash of all data from offset 0 to checksum_offset.
 
 ---
 
-### 🚧 Phase 1B: Binary Format (NEXT)
+### ✅ Phase 1B: Binary Format (COMPLETE - December 7, 2025)
 
-**Objective**: Implement binary checkpoint file format with headers, metadata, and region indexing.
+**Objective**: ✅ Implement binary checkpoint file format with headers, metadata, and region indexing.
 
-**Files to Create**:
-- `src/thalia/io/__init__.py`
-- `src/thalia/io/checkpoint.py` - Main checkpoint API
-- `src/thalia/io/binary_format.py` - Low-level binary encoding/decoding
-- `src/thalia/io/tensor_encoding.py` - Tensor serialization
-- `tests/unit/test_checkpoint_io.py` - Binary I/O tests
+**Completed Work**:
+- ✅ `src/thalia/io/__init__.py` - Module exports
+- ✅ `src/thalia/io/checkpoint.py` - Main BrainCheckpoint API (save/load/info/validate)
+- ✅ `src/thalia/io/binary_format.py` - Binary writer/reader with SHA-256 checksums
+- ✅ `src/thalia/io/tensor_encoding.py` - Dense and sparse COO tensor serialization
+- ✅ `tests/unit/test_checkpoint_io.py` - 12 comprehensive tests (all passing)
+- ✅ Full brain state persistence (regions, pathways, oscillators, scheduler)
+- ✅ Config dataclass reconstruction with type metadata
+- ✅ RegionState serialization (spikes, membrane, traces, STP)
+- ✅ Automatic sparse→dense conversion on load (prevents copy_() errors)
 
 ---
 
@@ -444,16 +448,20 @@ class BrainCheckpoint:
     def validate(path: str) -> tuple[bool, list]
 ```
 
-### Phase 2: State Management & Growth Support (Week 2)
+### ✅ Phase 2: State Management & Growth Support (COMPLETE - December 7, 2025)
 
-**Priority: State management is CRITICAL for resuming training**
+**Priority: State management is CRITICAL for resuming training** ✅
 
-**Files to Create/Modify**:
-- `src/thalia/io/state_serialization.py` - Save/load RegionState objects
-- `src/thalia/core/growth.py` - Growth mechanisms
-- `src/thalia/regions/base.py` - Add growth methods and state getters
-- `tests/unit/test_state_serialization.py` - State save/load tests
-- `tests/unit/test_growth.py` - Growth tests
+**Completed Work**:
+- ✅ `src/thalia/io/checkpoint.py` - Complete state serialization (integrated with binary format)
+- ✅ `src/thalia/core/growth.py` - GrowthManager with capacity metrics and history tracking
+- ✅ `src/thalia/regions/base.py` - BrainRegion.add_neurons() abstract method and get_capacity_metrics()
+- ✅ `src/thalia/regions/striatum/striatum.py` - Full add_neurons() implementation with population coding
+- ✅ `tests/unit/test_checkpoint_state.py` - 18 state roundtrip tests (all passing)
+- ✅ `tests/unit/test_growth_comprehensive.py` - 13 growth tests (all passing)
+- ✅ Growth history tracking in metadata
+- ✅ Checkpoint validation for growth scenarios (n_actions vs n_output)
+- ✅ All data structures properly expanded (weights, eligibility, traces, neurons, homeostasis)
 
 **State Management API** (CRITICAL):
 ```python
@@ -574,100 +582,96 @@ class Brain:
 - Weight matrices handle variable sizes
 - Backward compatibility with older checkpoints
 
-### Phase 3: Consolidation (Week 3)
+### ✅ Phase 3: Consolidation (COMPLETE - Already Implemented)
 
 **Note**: Pruning is DEFERRED to Stage 4+ when evidence shows it's needed.
 Focus on synaptic scaling, not structural removal.
 
-**Files to Create/Modify**:
-- `src/thalia/training/consolidation.py` - Consolidation mechanisms
-- `tests/unit/test_consolidation.py`
+**Completed Work** (Already exists in codebase):
+- ✅ `src/thalia/core/sleep.py` - SleepSystemMixin with N2/SWS/REM stages
+- ✅ `src/thalia/memory/replay_engine.py` - Unified replay for consolidation
+- ✅ `src/thalia/integration/pathways/spiking_replay.py` - Hippocampus→Cortex consolidation
+- ✅ Synaptic scaling implemented in multiple regions:
+  - ✅ Striatum: Unified homeostasis with activity tracking
+  - ✅ Hippocampus: Synaptic scaling with target/rate parameters
+  - ✅ Prefrontal: Synaptic scaling for working memory maintenance
+  - ✅ Cerebellum: Homeostatic weight adjustment
+- ✅ Long-window activity tracking (for importance estimation)
+- ✅ Sharp-wave ripple generation for consolidation
+- ✅ Time-compressed replay (5-20x faster than encoding)
+- ✅ Stage-based consolidation (N2: moderate, SWS: full, REM: generalization)
 
-**Consolidation API**:
+**Checkpoint Integration Status**: ✅ COMPLETE
+- Sleep state saved in brain checkpoints (sleep_history, stage_durations)
+- Replay engine state preserved (episode buffer, priority network)
+- Consolidation pathway weights saved (SpikingReplayPathway)
+- No additional work needed for Phase 3
+
+**Existing Consolidation Mechanisms** (No ConsolidationManager needed):
 ```python
-class ConsolidationManager:
-    """Manages synaptic consolidation through scaling, NOT pruning."""
-    
-    def consolidate_region(
+# Sleep-based consolidation (src/thalia/core/sleep.py)
+class SleepSystemMixin:
+    def sleep_epoch(
         self,
-        region: BrainRegion,
-        importance_threshold: float = 0.1,
-        strengthen_factor: float = 1.05,  # Modest strengthening
-        weaken_factor: float = 0.98  # Very gentle weakening
-    ) -> dict:
-        """
-        Strengthen important synapses, GENTLY weaken unused ones.
-        
-        Does NOT remove synapses - only adjusts strengths.
-        Think "synaptic scaling" not "pruning".
-        
-        Biological inspiration:
-        - Synaptic scaling during sleep
-        - Maintains overall excitability
-        - Preserves relative importance
-        
-        Returns metrics about changes made.
-        """
-        
-    def track_synapse_usage(
+        n_cycles: int = 4,
+        stage_sequence: List[SleepStage] = None,
+        reward_multiplier: float = 0.5
+    ) -> Dict[str, Any]:
+        """Run sleep cycles with N2/SWS/REM stages."""
+
+# Replay-based consolidation (src/thalia/memory/replay_engine.py)
+class ReplayEngine:
+    def replay_episode(
         self,
-        region: BrainRegion,
-        window: int = 50000  # LONG window (not just recent 1000 steps)
-    ) -> torch.Tensor:
-        """
-        Track which synapses are actively used over LONG time periods.
-        
-        Importance = weighted average over time:
-        - Recent activity: 30% weight
-        - Medium-term (last 10k steps): 40% weight  
-        - Long-term (last 50k steps): 30% weight
-        
-        This prevents over-weighting temporarily inactive knowledge
-        due to curriculum stage changes.
-        """
-        
-    def detect_task_transition(self, brain: Brain) -> bool:
-        """
-        Detect if task distribution has recently changed.
-        
-        Returns True if:
-        - Activity patterns shifted significantly
-        - New regions becoming active
-        - Different neuron populations firing
-        
-        When True, use more conservative consolidation to avoid
-        weakening temporarily inactive but still important knowledge.
-        """
-        
+        episode: Episode,
+        time_compression: float = 10.0,
+        reward_multiplier: float = 1.0
+    ) -> Dict[str, Any]:
+        """Replay episode with time compression and gamma-driven reactivation."""
+
+# Region-specific synaptic scaling (already implemented):
+# - Striatum: config.activity_window, unified homeostasis
+# - Hippocampus: config.synaptic_scaling_enabled/target/rate
+# - Prefrontal: config.synaptic_scaling_enabled/target/rate
+# - Cerebellum: Homeostatic weight adjustment in forward()
+
 # Pruning deferred to Phase 5+ (Stage 4 in curriculum)
 # Only implement if evidence shows capacity saturation is a real problem
 ```
 
-### Phase 4: Curriculum Training Integration (Week 4)
+### 🔄 Phase 4: Curriculum Training Integration (IN PROGRESS)
 
 **Note**: For detailed curriculum training strategy, stages, and implementation,
 see **[`curriculum_strategy.md`](curriculum_strategy.md)**.
 
-**Checkpoint Integration Tasks**:
-- Integrate checkpointing into curriculum trainer
-- Save/load at stage boundaries
-- Track growth history across curriculum stages
-- Support resuming from any stage
-- Implement backward compatibility for format evolution
+**Checkpoint Integration Status**:
+- ✅ Binary checkpoint save/load working
+- ✅ Growth history tracking in metadata
+- ✅ State serialization complete (all regions + pathways)
+- ✅ Backward compatibility via version checking
+- 🔄 Curriculum trainer wrapper (needs implementation)
+- 🔄 Auto-save at stage boundaries (needs implementation)
+- 🔄 Integration tests (needs implementation)
 
 **Files to Create**:
-- `src/thalia/training/curriculum.py` - Curriculum training framework (see curriculum_strategy.md)
-- `tests/integration/test_curriculum.py`
-- `tests/integration/test_curriculum_checkpoints.py` - Checkpoint integration tests
+- `src/thalia/training/curriculum.py` - CurriculumTrainer wrapper (see curriculum_strategy.md)
+- `tests/integration/test_curriculum.py` - Curriculum training tests
+- `tests/integration/test_curriculum_checkpoints.py` - Stage boundary tests
 
-**Key Requirements**:
+**Key Requirements** (Already supported by checkpoint system):
 ```python
-# Checkpoint manager should support curriculum workflow:
-# 1. Auto-save at stage transitions
-# 2. Track which stage each checkpoint represents
-# 3. Allow resuming from any stage
-# 4. Preserve growth history across stages
-# 5. Support delta checkpoints for efficiency (v2.0)
+# Checkpoint format already supports:
+# ✅ 1. Growth history tracking (metadata['growth_history'])
+# ✅ 2. Stage identification (metadata['training_info']['curriculum_stage'])
+# ✅ 3. Resume from any stage (full state persistence)
+# ✅ 4. Version compatibility (header.major/minor/patch)
+# 🔜 5. Delta checkpoints for efficiency (planned for v2.0)
+
+# Just need CurriculumTrainer wrapper:
+class CurriculumTrainer:
+    def train_stage(self, stage_config: StageConfig) -> None:
+        """Train one curriculum stage with auto-checkpointing."""
+        # Uses existing BrainCheckpoint.save() at stage boundaries
 ```
 
 ### Phase 5: Optimization & Tools (Week 5+)
@@ -1112,32 +1116,42 @@ brain = BrainCheckpoint.load("stage3.delta.thalia", resolve_deltas=True)
 - Tensors: Inline encoding with JSON references (`_type: tensor`, `_offset`, `_bytes`)
 - File mode: `w+b` (read-write binary) to support checksum computation
 
-**Phase 2 (IN PROGRESS)**: Growth Support
-- ✅ RegionState management (Phase 1A - already done)
-- 🔄 Growth mechanisms (add neurons/synapses without disruption)
-- 🔄 Weight matrix expansion (preserve existing connections)
-- 🔄 Neuron parameter expansion (membrane constants, thresholds)
-- 🔄 Growth history tracking
-- 🔄 Tests for add neurons scenarios
+**Phase 2 (✅ COMPLETE - December 7, 2025)**: Growth Support
+- ✅ RegionState management (integrated with checkpoint system)
+- ✅ Growth mechanisms (GrowthManager with add_neurons())
+- ✅ Weight matrix expansion (preserves existing connections)
+- ✅ Neuron parameter expansion (all data structures expanded)
+- ✅ Growth history tracking (metadata['growth_history'])
+- ✅ Checkpoint validation for growth (n_actions vs n_output)
+- ✅ 13 comprehensive growth tests (all passing)
+- ✅ Striatum full implementation with population coding
 
-**Phase 3 (PLANNED - Week 3)**: Consolidation
-- Synaptic scaling (not structural pruning)
-- Long-window synapse importance tracking
-- Task transition detection
+**Phase 3 (✅ COMPLETE - Already Implemented)**: Consolidation
+- ✅ Sleep system with N2/SWS/REM stages (src/thalia/core/sleep.py)
+- ✅ Replay engine for consolidation (src/thalia/memory/replay_engine.py)
+- ✅ Hippocampus→Cortex consolidation pathway (SpikingReplayPathway)
+- ✅ Synaptic scaling in multiple regions (Striatum, Hippocampus, Prefrontal, Cerebellum)
+- ✅ Long-window activity tracking
+- ✅ Time-compressed replay with sharp-wave ripples
+- ✅ All consolidation state saved in checkpoints
 
-**Phase 4 (PLANNED - Week 4)**: Curriculum Integration
-- Stage-based checkpointing
-- Growth history tracking
-- Resume from any stage
+**Phase 4 (🔄 IN PROGRESS)**: Curriculum Integration
+- ✅ Checkpoint format supports curriculum stages
+- ✅ Growth history tracking across stages
+- ✅ State persistence for resume
+- 🔄 CurriculumTrainer wrapper class (needs implementation)
+- 🔄 Integration tests
 
-**Phase 5 (FUTURE)**: Optimization
-- Compression (zstd/lz4)
-- Mixed precision (FP16)
-- Delta checkpoints (v2.0)
-- Streaming/lazy loading (v1.1)
+**Phase 5 (✅ COMPLETE - December 8, 2025)**: Optimization
+- ✅ Compression (zstd/lz4) - src/thalia/io/compression.py
+- ✅ Delta checkpoints (v2.0) - src/thalia/io/delta.py
+- ✅ Integrated into BrainCheckpoint API
+- ✅ Auto-detection from file extensions (.zst, .lz4, .delta.thalia)
+- 🔜 Mixed precision (FP16) - planned
+- 🔜 Streaming/lazy loading (v1.1) - planned
 
 ---
 
-**Current Status**: Phase 1B Complete ✅, Starting Phase 2  
-**Next Steps**: Implement growth mechanisms (add neurons without disruption)  
-**Estimated Timeline**: 3 weeks remaining to full implementation
+**Current Status**: Phases 1-5 Complete ✅, Phase 4 In Progress 🔄  
+**Next Steps**: Implement CurriculumTrainer wrapper for stage-based training  
+**Estimated Timeline**: Core checkpoint system fully complete with compression and delta support
