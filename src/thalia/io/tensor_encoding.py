@@ -33,6 +33,7 @@ class DType(IntEnum):
     INT32 = 2
     INT64 = 3
     BOOL = 4
+    FLOAT16 = 5  # Half precision
 
 
 # PyTorch dtype to code mapping
@@ -42,6 +43,7 @@ DTYPE_TO_CODE = {
     torch.int32: DType.INT32,
     torch.int64: DType.INT64,
     torch.bool: DType.BOOL,
+    torch.float16: DType.FLOAT16,
 }
 
 CODE_TO_DTYPE = {v: k for k, v in DTYPE_TO_CODE.items()}

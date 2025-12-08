@@ -30,6 +30,13 @@ from .binary_format import (
     HEADER_SIZE,
 )
 from .tensor_encoding import encode_tensor, decode_tensor
+from .precision import (
+    get_precision_policy,
+    apply_precision_policy_to_state,
+    restore_precision_to_fp32,
+    get_precision_statistics,
+    PrecisionPolicy,
+)
 
 
 def _convert_to_json_serializable(obj: Any) -> Any:
@@ -79,6 +86,7 @@ class BrainCheckpoint:
         metadata: Optional[Dict[str, Any]] = None,
         compression: Optional[str] = None,
         compression_level: int = 3,
+        precision_policy: Union[str, PrecisionPolicy, None] = None,
     ) -> Dict[str, Any]:
         """Save brain state to binary checkpoint file.
 
@@ -89,19 +97,24 @@ class BrainCheckpoint:
             compression: Compression type ('zstd', 'lz4', or None)
                         If None, auto-detects from file extension (.zst or .lz4)
             compression_level: Compression level (1-22 for zstd, 1-12 for lz4)
+            precision_policy: Mixed precision policy ('fp32', 'fp16', 'mixed', or PrecisionPolicy)
+                            'fp32': All tensors in FP32 (default)
+                            'fp16': Weights/traces in FP16, critical params in FP32 (~50% size savings)
+                            'mixed': Auto-detect precision based on tensor size
 
         Returns:
             Summary dict with file info
             
         Example:
-            >>> # Uncompressed
+            >>> # Uncompressed FP32
             >>> BrainCheckpoint.save(brain, "checkpoint.thalia")
             
-            >>> # zstd compression (auto-detect from extension)
-            >>> BrainCheckpoint.save(brain, "checkpoint.thalia.zst")
+            >>> # FP16 with zstd compression (~75% total size reduction)
+            >>> BrainCheckpoint.save(brain, "checkpoint.thalia.zst", precision_policy='fp16')
             
-            >>> # Explicit compression
-            >>> BrainCheckpoint.save(brain, "checkpoint.thalia", compression='zstd', compression_level=9)
+            >>> # Custom precision policy
+            >>> policy = PrecisionPolicy(weights='fp16', biases='fp32', membrane='fp32')
+            >>> BrainCheckpoint.save(brain, "checkpoint.thalia", precision_policy=policy)
         """
         from .compression import detect_compression, compress_data, CompressedFile
         import io
@@ -115,6 +128,14 @@ class BrainCheckpoint:
         
         # Get brain state
         state = brain.get_full_state()
+        
+        # Apply precision policy if specified
+        policy = get_precision_policy(precision_policy)
+        if precision_policy is not None:
+            state = apply_precision_policy_to_state(state, policy, in_place=True)
+            
+        # Get precision statistics for metadata
+        precision_stats = get_precision_statistics(state)
 
         # Prepare metadata
         if metadata is None:
@@ -131,6 +152,9 @@ class BrainCheckpoint:
             "theta": state.get("theta", {}),
             "scheduler": state.get("scheduler", {}),
             "trial_state": state.get("trial_state", {}),
+            # Precision information
+            "precision_policy": str(precision_policy) if precision_policy else 'fp32',
+            "precision_stats": precision_stats,
         })
 
         # Count neurons and synapses
@@ -272,6 +296,8 @@ class BrainCheckpoint:
             "checksum": checksum.hex(),
             "compression": compression,
             "compression_level": compression_level if compression else None,
+            "precision_policy": str(precision_policy) if precision_policy else 'fp32',
+            "precision_stats": precision_stats,
         }
 
     @staticmethod
@@ -411,6 +437,11 @@ class BrainCheckpoint:
 
         if pathways:
             state["pathways"] = pathways
+        
+        # Restore FP16 tensors to FP32 for computation
+        # (Checkpoint may have FP16 for storage, but we compute in FP32)
+        if metadata.get("precision_policy") and metadata["precision_policy"] != 'fp32':
+            state = restore_precision_to_fp32(state, in_place=True)
 
         return state
 
@@ -423,6 +454,7 @@ class BrainCheckpoint:
         metadata: Optional[Dict[str, Any]] = None,
         compression: Optional[str] = None,
         compression_level: int = 3,
+        precision_policy: Union[str, PrecisionPolicy, None] = None,
     ) -> Dict[str, Any]:
         """Save delta checkpoint (only weight changes from base).
         
@@ -436,6 +468,7 @@ class BrainCheckpoint:
             metadata: Optional metadata
             compression: Optional compression ('zstd', 'lz4', or None)
             compression_level: Compression level if compression is used
+            precision_policy: Mixed precision policy (same as save())
             
         Returns:
             Summary dict with statistics
@@ -447,11 +480,12 @@ class BrainCheckpoint:
             >>> # Train to stage 1
             >>> train_stage(brain, stage=1)
             
-            >>> # Save delta (only changes)
+            >>> # Save delta with FP16 + compression (massive savings)
             >>> BrainCheckpoint.save_delta(
             ...     brain,
-            ...     "stage1.delta.thalia",
-            ...     base_checkpoint="stage0.thalia"
+            ...     "stage1.delta.thalia.zst",
+            ...     base_checkpoint="stage0.thalia",
+            ...     precision_policy='fp16'
             ... )
         """
         from .delta import save_delta_checkpoint
@@ -462,6 +496,11 @@ class BrainCheckpoint:
         
         # Get current state
         current_state = brain.get_full_state()
+        
+        # Apply precision policy if specified
+        if precision_policy is not None:
+            policy = get_precision_policy(precision_policy)
+            current_state = apply_precision_policy_to_state(current_state, policy, in_place=True)
         
         # Save delta checkpoint
         summary = save_delta_checkpoint(

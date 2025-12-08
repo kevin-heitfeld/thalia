@@ -44,6 +44,7 @@ Example:
 from .checkpoint import BrainCheckpoint
 from .compression import compress_file, decompress_file, CompressionError
 from .delta import save_delta_checkpoint, load_delta_checkpoint
+from .precision import PrecisionPolicy, PRECISION_POLICIES, get_precision_statistics
 
 __all__ = [
     "BrainCheckpoint",
@@ -52,4 +53,7 @@ __all__ = [
     "CompressionError",
     "save_delta_checkpoint",
     "load_delta_checkpoint",
+    "PrecisionPolicy",
+    "PRECISION_POLICIES",
+    "get_precision_statistics",
 ]

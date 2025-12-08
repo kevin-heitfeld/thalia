@@ -828,12 +828,14 @@ Use `.thalia` extension with optional suffixes:
 
 **File Size Examples** (estimated for 1M neuron brain):
 ```
-Uncompressed:           2.0 GB
-zstd (level 3):         0.7 GB  (3x compression)
-lz4 (level 1):          1.0 GB  (2x compression, 5x faster)
-Mixed precision (FP16): 1.0 GB  (50% savings on weights)
-FP16 + zstd:            0.35 GB (6x total compression)
-Delta checkpoint:       0.04 GB (20x savings, 98% unchanged weights)
+Uncompressed (FP32):        2.0 GB  (baseline)
+FP16 (no compression):      1.0 GB  (50% savings)
+zstd level 3 (FP32):        0.7 GB  (3x compression)
+lz4 level 1 (FP32):         1.0 GB  (2x compression, 5x faster)
+FP16 + zstd level 3:        0.35 GB (6x total - recommended for archival)
+FP16 + lz4 level 1:         0.5 GB  (4x total - recommended for frequent saves)
+Delta checkpoint (FP32):    0.1 GB  (20x savings, 95% unchanged weights)
+Delta + FP16 + zstd:        0.02 GB (100x+ savings - ultimate compression)
 ```
 
 ## Example Usage
@@ -930,14 +932,46 @@ BrainCheckpoint.save(
     compression='lz4',
     compression_level=1  # Fast compression
 )
+```
 
-# Mixed precision for large brains
+### Mixed Precision (FP16) Examples
+```python
+# FP16 for maximum compression (weights in FP16, critical params in FP32)
+BrainCheckpoint.save(
+    brain,
+    "efficient.thalia",
+    precision_policy='fp16'  # ~50% size savings
+)
+
+# Combined: FP16 + zstd compression
 BrainCheckpoint.save(
     brain,
     "efficient.thalia.zst",
-    mixed_precision=True,  # FP16 for weights
-    compression='zstd'      # + compression = 6x smaller
+    precision_policy='fp16',  # FP16 for weights
+    compression='zstd'        # + compression = ~75% total reduction
 )
+
+# Custom precision policy
+from thalia.io import PrecisionPolicy
+policy = PrecisionPolicy(
+    weights='fp16',       # Large weight matrices in FP16
+    biases='fp32',        # Keep biases in FP32
+    membrane='fp32',      # Critical neuron state in FP32
+    traces='fp16',        # Eligibility traces can be FP16
+    thresholds='fp32',    # Keep thresholds in FP32
+    conductances='fp16',  # Conductances can be FP16
+)
+BrainCheckpoint.save(brain, "custom.thalia", precision_policy=policy)
+
+# Auto-precision (FP16 for large tensors >1MB, FP32 for small)
+BrainCheckpoint.save(
+    brain,
+    "auto.thalia",
+    precision_policy='mixed'
+)
+
+# Note: Loading automatically restores all tensors to FP32 for computation
+state = BrainCheckpoint.load("efficient.thalia.zst")  # Loads as FP32
 ```
 
 ### Delta Checkpoints (v2.0)
@@ -948,24 +982,34 @@ BrainCheckpoint.save(brain, base_path)  # Full checkpoint
 
 # Train stage 1
 train_stage(brain, stage=1)
-BrainCheckpoint.save(
+BrainCheckpoint.save_delta(
     brain,
     "checkpoints/stage1.delta.thalia",
     base_checkpoint=base_path,
-    delta=True  # Only save differences
+    threshold=1e-5  # Only save weight changes > threshold
 )
 
 # Train stage 2
 train_stage(brain, stage=2)
-BrainCheckpoint.save(
+BrainCheckpoint.save_delta(
     brain,
     "checkpoints/stage2.delta.thalia",
-    base_checkpoint="checkpoints/stage1.delta.thalia",
-    delta=True
+    base_checkpoint="checkpoints/stage1.delta.thalia"
 )
 
-# Load any stage (automatically resolves delta chain)
-brain = BrainCheckpoint.load("checkpoints/stage2.delta.thalia")
+# Ultimate compression: FP16 + delta + zstd
+BrainCheckpoint.save_delta(
+    brain,
+    "checkpoints/stage3.delta.thalia.zst",
+    base_checkpoint="checkpoints/stage2.delta.thalia",
+    precision_policy='fp16',  # FP16 encoding
+    compression='zstd',       # + zstd compression
+    compression_level=9       # Max compression
+)
+# Expected total savings: 95-99% vs full FP32 checkpoint
+
+# Load any stage (automatically resolves delta chain and restores FP32)
+brain = BrainCheckpoint.load("checkpoints/stage3.delta.thalia.zst")
 ```
 ```
 
@@ -1145,9 +1189,9 @@ brain = BrainCheckpoint.load("stage3.delta.thalia", resolve_deltas=True)
 **Phase 5 (✅ COMPLETE - December 8, 2025)**: Optimization
 - ✅ Compression (zstd/lz4) - src/thalia/io/compression.py
 - ✅ Delta checkpoints (v2.0) - src/thalia/io/delta.py
+- ✅ Mixed precision (FP16) - src/thalia/io/precision.py
 - ✅ Integrated into BrainCheckpoint API
 - ✅ Auto-detection from file extensions (.zst, .lz4, .delta.thalia)
-- 🔜 Mixed precision (FP16) - planned
 - 🔜 Streaming/lazy loading (v1.1) - planned
 
 ---
