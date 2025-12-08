@@ -518,33 +518,46 @@ def load_delta_checkpoint(
     Automatically finds and loads base checkpoint.
     
     Args:
-        delta_path: Path to delta checkpoint
+        delta_path: Path to delta checkpoint (can be compressed)
         device: Device to place tensors on
         
     Returns:
         Reconstructed full state
     """
     from .checkpoint import BrainCheckpoint
+    from .compression import detect_compression, decompress_data
     import pickle
+    import io
     
     delta_path = Path(delta_path)
     
+    # Check for compression and read file
+    compression = detect_compression(delta_path)
+    
     with open(delta_path, 'rb') as f:
-        # Read header
-        header_bytes = f.read(64)
-        header = DeltaHeader.from_bytes(header_bytes)
-        
-        if header.magic != DELTA_MAGIC:
-            raise ValueError(f"Not a delta checkpoint: {delta_path}")
-        
-        # Read delta state
-        delta_state = pickle.load(f)
-        
-        # Read metadata
-        metadata_length_bytes = f.read(4)
-        metadata_length = struct.unpack('<I', metadata_length_bytes)[0]
-        metadata_json = f.read(metadata_length)
-        metadata = json.loads(metadata_json.decode('utf-8'))
+        file_data = f.read()
+    
+    if compression is not None:
+        file_data = decompress_data(file_data, compression)
+    
+    # Parse decompressed data
+    f = io.BytesIO(file_data)
+    
+    # Read header
+    header_bytes = f.read(64)
+    header = DeltaHeader.from_bytes(header_bytes)
+    
+    if header.magic != DELTA_MAGIC:
+        raise ValueError(f"Not a delta checkpoint: {delta_path}")
+    
+    # Read delta state
+    delta_state = pickle.load(f)
+    
+    # Read metadata
+    metadata_length_bytes = f.read(4)
+    metadata_length = struct.unpack('<I', metadata_length_bytes)[0]
+    metadata_json = f.read(metadata_length)
+    metadata = json.loads(metadata_json.decode('utf-8'))
     
     # Find base checkpoint
     base_checkpoint_path = metadata['delta_info']['base_checkpoint']
@@ -579,6 +592,7 @@ def load_delta_checkpoint(
     reconstructed_state = reconstruct_state_from_delta(base_state, delta_state, device=device)
     
     # Restore FP16 tensors to FP32 (delta may have been saved with FP16)
+    # Safe to modify in-place since reconstructed_state is already a fresh copy
     from .precision import restore_precision_to_fp32
     reconstructed_state = restore_precision_to_fp32(reconstructed_state, in_place=True)
     
