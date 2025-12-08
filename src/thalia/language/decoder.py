@@ -466,6 +466,11 @@ class SpikeDecoder(BaseSpikeDecoder):
         log_probs = F.log_softmax(logits, dim=-1)
         sampled_log_probs = log_probs.gather(-1, tokens.unsqueeze(-1)).squeeze(-1)
 
+        # ADR-005: Remove batch dimension if batch_size=1
+        if batch == 1:
+            tokens = tokens.squeeze(0)
+            sampled_log_probs = sampled_log_probs.squeeze(0)
+
         return tokens, sampled_log_probs
 
     def greedy_decode(
@@ -479,13 +484,18 @@ class SpikeDecoder(BaseSpikeDecoder):
             spikes: Spike patterns [batch, seq_len, n_timesteps, n_neurons]
 
         Returns:
-            tokens: Token IDs [batch, seq_len]
-            probs: Probabilities of selected tokens [batch, seq_len]
+            tokens: Token IDs [batch, seq_len] or [seq_len] if batch=1 (ADR-005)
+            probs: Probabilities of selected tokens [batch, seq_len] or [seq_len] if batch=1
         """
         logits = self(spikes)
         probs = F.softmax(logits, dim=-1)
 
         max_probs, tokens = probs.max(dim=-1)
+
+        # ADR-005: Remove batch dimension if batch_size=1
+        if logits.shape[0] == 1:
+            tokens = tokens.squeeze(0)
+            max_probs = max_probs.squeeze(0)
 
         return tokens, max_probs
 
@@ -555,6 +565,10 @@ class ConfidenceEstimator(nn.Module):
         # Combine features
         confidence = 0.3 * mean_rate + 0.3 * (1 - synchrony) + 0.4 * learned_conf
         confidence = torch.clamp(confidence, 0, 1)
+
+        # ADR-005: Remove batch dimension if batch_size=1
+        if batch == 1:
+            confidence = confidence.squeeze(0)
 
         return confidence
 

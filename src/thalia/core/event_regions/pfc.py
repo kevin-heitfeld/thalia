@@ -130,8 +130,8 @@ class EventDrivenPFC(EventDrivenRegionBase):
         1. We have input from both sources, OR
         2. One input times out (process with zeros for missing source)
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        # ADR-005: Keep 1D tensors, no batch dimension
+        # input_spikes should be [n_neurons]
 
         # Buffer input using base class method
         if source in ["cortex", "hippocampus"]:
@@ -173,7 +173,7 @@ class EventDrivenPFC(EventDrivenRegionBase):
         # Clear pending dopamine after use
         self._pending_dopamine_signal = 0.0
 
-        return output.squeeze()
+        return output.squeeze() if output.dim() > 1 else output
 
     def learn(
         self,

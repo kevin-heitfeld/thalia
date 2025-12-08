@@ -272,7 +272,11 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
             # Sum over timesteps for single-vector input to brain
             # (brain expects [input_size] per call)
             # Scale by gain to reach neuron threshold (SDR spikes ~0.05, need ~1.0+ input)
-            token_input = token_spikes.sum(dim=1).squeeze(0) * 2.0  # [input_size]
+            token_input = token_spikes.sum(dim=1)  # [batch, input_size]
+            # ADR-005: Remove batch dimension if batch_size=1
+            if batch == 1:
+                token_input = token_input.squeeze(0)  # [input_size]
+            token_input = token_input * 2.0  # Scale AFTER squeeze
 
             # Process through brain
             # Gamma slot auto-advances in hippocampus - no explicit position needed
@@ -505,6 +509,10 @@ class MinimalSpikingLM(nn.Module):
             logits = self(current_ids)
             next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
             current_ids = torch.cat([current_ids, next_token], dim=1)
+
+        # ADR-005: Always squeeze when batch_size=1
+        if current_ids.shape[0] == 1:
+            current_ids = current_ids.squeeze(0)
 
         return current_ids
 

@@ -134,8 +134,8 @@ class EventDrivenStriatum(EventDrivenRegionBase):
 
         Striatum requires concatenated input from cortex L5, hippocampus, and PFC.
         """
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        # ADR-005: Keep 1D tensors, no batch dimension
+        # input_spikes should be [n_neurons]
 
         # Buffer input using base class method
         if source in ["cortex", "hippocampus", "pfc"]:

@@ -116,8 +116,8 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
         source: str,
     ) -> Optional[torch.Tensor]:
         """Process motor command spikes through cerebellum."""
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        # ADR-005: Keep 1D tensors, no batch dimension
+        # input_spikes should be [n_neurons]
 
         # Store for learning
         self._recent_input = input_spikes.clone()

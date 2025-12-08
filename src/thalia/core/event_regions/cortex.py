@@ -103,23 +103,25 @@ class EventDrivenCortex(EventDrivenRegionBase):
         source: str,
     ) -> Optional[torch.Tensor]:
         """Process input through cortex layers."""
-        # Ensure batch dimension
-        if input_spikes.dim() == 1:
-            input_spikes = input_spikes.unsqueeze(0)
+        # ADR-005: Keep 1D tensors, no batch dimension
+        # input_spikes should be [n_neurons]
 
         # Handle top-down input from PFC
         if source == "pfc":
+            # For projection, we need 2D [1, n_neurons] temporarily
+            input_2d = input_spikes.unsqueeze(0) if input_spikes.dim() == 1 else input_spikes
+            
             # Project PFC spikes to L2/3 size if projection exists
             if self._top_down_projection is not None:
-                projected = self._top_down_projection(input_spikes.float())
+                projected = self._top_down_projection(input_2d.float())
                 # Convert to modulatory signal (between 0 and 1)
-                self._pending_top_down = torch.sigmoid(projected)
+                self._pending_top_down = torch.sigmoid(projected).squeeze(0)
             else:
                 # No projection - skip top-down (sizes don't match)
                 self._pending_top_down = None
             return None  # Top-down alone doesn't drive output
 
-        # Forward through cortex with current theta modulation
+        # Forward through cortex with current theta modulation (expects 1D)
         output = self.impl.forward(
             input_spikes,
             encoding_mod=self._encoding_strength,
@@ -130,9 +132,8 @@ class EventDrivenCortex(EventDrivenRegionBase):
         # Clear pending top-down after use
         self._pending_top_down = None
 
-        # Output is typically L5 activity (for subcortical targets)
-        # But we might want L2/3 for cortical targets
-        return output.squeeze()
+        # Output should be 1D
+        return output.squeeze() if output.dim() > 1 else output
 
     def _create_output_events(self, spikes: torch.Tensor) -> List[Event]:
         """Create layer-specific output events.

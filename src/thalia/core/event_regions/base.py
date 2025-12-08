@@ -275,7 +275,7 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
                            If None, only the first source is required.
         
         Returns:
-            Combined tensor of shape [batch, sum(input_sizes)], or None if not ready
+            Combined tensor of shape [sum(input_sizes)], or None if not ready
         """
         if require_sources is None:
             require_sources = [source_order[0]] if source_order else []
@@ -286,20 +286,18 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
                 # Required source not available
                 return None
         
-        # Determine device and batch size from available buffers
+        # Determine device from available buffers (ADR-005: no batch dimension)
         device = None
-        batch_size = 1
         for source in source_order:
             buf = self._input_buffers.get(source)
             if buf is not None:
                 device = buf.device
-                batch_size = buf.shape[0]
                 break
         
         if device is None:
             return None
         
-        # Build parts, using zeros for missing/timed-out sources
+        # Build parts, using zeros for missing/timed-out sources (ADR-005: 1D tensors)
         parts = []
         for source in source_order:
             buf = self._input_buffers.get(source)
@@ -308,13 +306,13 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
             elif source in self._input_sizes and self._input_sizes[source] > 0:
                 # Use zeros for timed-out or missing optional sources
                 parts.append(
-                    torch.zeros(batch_size, self._input_sizes[source], device=device)
+                    torch.zeros(self._input_sizes[source], device=device)
                 )
         
         if not parts:
             return None
         
-        return torch.cat(parts, dim=-1)
+        return torch.cat(parts, dim=-1) if len(parts) > 1 else parts[0]
 
     # ===== End Input Buffering Methods =====
 
