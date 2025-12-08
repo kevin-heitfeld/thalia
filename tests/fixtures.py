@@ -294,16 +294,16 @@ def region_specs(layered_cortex_config, cerebellum_config, striatum_config, pref
 
 @pytest.fixture
 def learning_input_pattern(n_neurons):
-    """Consistent input pattern for learning tests."""
+    """Consistent input pattern for learning tests (ADR-005: 1D)."""
     torch.manual_seed(42)  # Ensure reproducibility
-    return torch.randn(1, n_neurons) * 2.0
+    return torch.randn(n_neurons) * 2.0
 
 
 @pytest.fixture
 def target_spike_pattern(n_neurons):
-    """Target spike pattern for supervised learning tests."""
+    """Target spike pattern for supervised learning tests (ADR-005: 1D)."""
     torch.manual_seed(43)
-    return (torch.rand(1, n_neurons) > 0.7).float()
+    return (torch.rand(n_neurons) > 0.7).float()
 
 
 @pytest.fixture

@@ -26,16 +26,16 @@ class TestLIFNeuronValidation:
     """Test input validation for LIF neurons."""
 
     def test_accepts_single_neuron(self):
-        """Test that single neuron works (edge case)."""
+        """Test that single neuron works (edge case) (ADR-005: 1D)."""
         neuron = LIFNeuron(n_neurons=1)
         neuron.reset_state()
-        assert neuron.membrane.shape == (1, 1)
+        assert neuron.membrane.shape == (1,)
 
     def test_accepts_large_neuron_count(self):
-        """Test that large neuron counts work."""
+        """Test that large neuron counts work (ADR-005: 1D)."""
         neuron = LIFNeuron(n_neurons=10000)
         neuron.reset_state()
-        assert neuron.membrane.shape == (1, 10000)
+        assert neuron.membrane.shape == (10000,)
 
     def test_rejects_wrong_input_shape(self):
         """Test that wrong input shape is caught."""
@@ -57,11 +57,11 @@ class TestLIFNeuronValidation:
         assert spikes.shape == (10,)
 
     def test_handles_nan_input_gracefully(self):
-        """Test that NaN input doesn't crash (should either reject or handle)."""
+        """Test that NaN input doesn't crash (ADR-005: 1D)."""
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        nan_input = torch.full((4, 10), float('nan'))
+        nan_input = torch.full((10,), float('nan'))
 
         # Either reject NaN or produce valid output
         try:
@@ -73,11 +73,11 @@ class TestLIFNeuronValidation:
             pass
 
     def test_handles_inf_input_gracefully(self):
-        """Test that infinite input is handled."""
+        """Test that infinite input is handled (ADR-005: 1D)."""
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        inf_input = torch.full((4, 10), float('inf'))
+        inf_input = torch.full((10,), float('inf'))
 
         try:
             spikes, _ = neuron(inf_input)
@@ -173,15 +173,15 @@ class TestLayeredCortexValidation:
     """Test input validation for LayeredCortex."""
 
     def test_handles_single_neuron_layers(self):
-        """Test edge case of single neuron per layer."""
+        """Test edge case of single neuron per layer (ADR-005: 1D)."""
         config = LayeredCortexConfig(n_input=1, n_output=1, dual_output=False)
         cortex = LayeredCortex(config)
         cortex.reset_state()
 
         output = cortex.forward(torch.randn(1))
-        # With dual_output=False, output is only from one layer
-        # assert output.shape[0] == 1  # REMOVED: ADR-005 uses 1D tensors
-        assert output.shape[1] >= 1  # At least 1 output neuron
+        # With dual_output=False, output is 1D [n_output]
+        assert output.ndim == 1
+        assert output.shape[0] >= 1  # At least 1 output neuron
 
     def test_handles_wrong_input_size(self):
         """Test that wrong input size is caught."""

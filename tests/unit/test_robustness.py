@@ -115,19 +115,15 @@ class TestEIBalanceRegulator:
         assert final_scale < 1.0
     
     def test_balanced_state_stable(self):
-        """Test that balanced E/I ratio keeps scaling near 1."""
+        """Test that balanced E/I ratio keeps scaling near 1 (ADR-005: 1D)."""
         config = EIBalanceConfig(target_ratio=4.0)
         regulator = EIBalanceRegulator(config)
         
-        # Simulate balanced state (E/I ≈ 4)
-        exc_spikes = torch.tensor([[1, 0, 1, 0, 1, 0, 1, 0]])  # 50%
-        inh_spikes = torch.tensor([[1, 0]])  # 50% -> ratio ≈ 1 (need adjustment)
-        
-        # Actually create a 4:1 ratio scenario
+        # Actually create a 4:1 ratio scenario (ADR-005: 1D tensors)
         exc_spikes = torch.zeros(100)
-        exc_spikes[0, :40] = 1  # 40% excitatory
+        exc_spikes[:40] = 1  # 40% excitatory
         inh_spikes = torch.zeros(10)
-        inh_spikes[0, :1] = 1   # 10% inhibitory -> ratio = 4
+        inh_spikes[:1] = 1   # 10% inhibitory -> ratio = 4
         
         for _ in range(100):
             regulator.update(exc_spikes, inh_spikes)

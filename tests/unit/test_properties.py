@@ -55,19 +55,18 @@ class TestLIFNeuronProperties:
     )
     @settings(max_examples=50, deadline=1000)  # Run 50 random examples
     def test_shape_consistency(self, n_neurons):
-        """Test that LIF neuron maintains shape consistency for any valid inputs."""
-        batch_size = 1  # THALIA enforces single-instance architecture
+        """Test that LIF neuron maintains shape consistency (ADR-005: 1D)."""
         neuron = LIFNeuron(n_neurons=n_neurons)
         neuron.reset_state()
 
-        # Membrane shape should match
-        assert neuron.membrane.shape == (batch_size, n_neurons)
+        # Membrane shape should be 1D [n_neurons]
+        assert neuron.membrane.shape == (n_neurons,)
 
-        # Forward pass should maintain batch dimension
-        input_current = torch.randn(batch_size, n_neurons)
+        # Forward pass should maintain 1D shape
+        input_current = torch.randn(n_neurons)
         spikes, traces = neuron(input_current)
 
-        assert spikes.shape == (batch_size, n_neurons)
+        assert spikes.shape == (n_neurons,)
         assert_spike_train_valid(spikes)
 
     @given(
@@ -118,14 +117,13 @@ class TestLIFNeuronProperties:
     )
     @settings(max_examples=30, deadline=1000)
     def test_reset_clears_state(self, n_neurons):
-        """Test that reset_state properly clears neuron state."""
-        batch_size = 1  # THALIA enforces single-instance architecture
+        """Test that reset_state properly clears neuron state (ADR-005: 1D)."""
         neuron = LIFNeuron(n_neurons=n_neurons)
 
         # Run with some input to build up state
         neuron.reset_state()
         for _ in range(10):
-            neuron(torch.randn(batch_size, n_neurons))
+            neuron(torch.randn(n_neurons))
 
         # Reset and check membrane is at rest
         neuron.reset_state()
@@ -243,7 +241,7 @@ class TestInvariantProperties:
     )
     @settings(max_examples=30, deadline=1000)
     def test_spike_count_never_exceeds_neuron_count(self, n_neurons):
-        """Test that number of spikes never exceeds number of neurons."""
+        """Test that number of spikes never exceeds number of neurons (ADR-005: 1D)."""
         neuron = LIFNeuron(n_neurons=n_neurons)
         neuron.reset_state()
 
@@ -251,10 +249,10 @@ class TestInvariantProperties:
         strong_input = torch.ones(n_neurons) * 100.0
         spikes, _ = neuron(strong_input)
 
-        # Each batch item can have at most n_neurons spikes
-        spikes_per_batch = spikes.sum(dim=1)
-        assert (spikes_per_batch <= n_neurons).all(), \
-            f"Found {spikes_per_batch.max().item()} spikes but only {n_neurons} neurons"
+        # Total spikes can be at most n_neurons
+        total_spikes = spikes.sum()
+        assert total_spikes <= n_neurons, \
+            f"Found {total_spikes.item()} spikes but only {n_neurons} neurons"
 
     @given(
         n_neurons=valid_neuron_counts(),
