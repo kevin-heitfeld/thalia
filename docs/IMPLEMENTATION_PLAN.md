@@ -340,36 +340,53 @@ class SleepSystemMixin:
 
 ---
 
-#### 2.3.2 Social Learning Module ⚠️ NEW
+#### 2.3.2 Social Learning Module ✅ COMPLETE
 **Curriculum**: Stage 1, Week 10-11.5
-**Status**: Missing
+**Status**: Complete (39 tests passing)
 **Complexity**: Medium (2-3 days)
 **Impact**: Fast learning from demonstration (2x LR)
+**Commit**: 6ece1bf
 
 **Implementation**:
-- **File**: `src/thalia/learning/social_learning.py`
+- **File**: `src/thalia/learning/social_learning.py` (441 lines)
 - **Class**: `SocialLearningModule`
 
-```python
-class SocialLearningModule:
-    """Fast learning from social cues."""
+**Features**:
+- **Imitation Learning**: 2x learning rate from demonstrations
+  * `imitation_learning()`: Boost learning when observing actions
+  * `motor_imitation()`: Error-corrective learning from demonstrated actions
+  * Mirror neuron-inspired observational learning
+- **Natural Pedagogy**: 1.5x learning rate when teaching detected
+  * Ostensive cue detection: eye contact, motherese (infant-directed speech), pointing
+  * Teaching signal: eye contact + at least one other cue
+  * `pedagogy_boost()`: Enhanced learning in pedagogical contexts
+  * `_detect_teaching_signal()`: Boolean detection of teaching intent
+- **Joint Attention**: Gaze-directed attention modulation
+  * `joint_attention()`: Modulate attention based on gaze direction
+  * `_compute_gaze_modulation()`: Attention boost at gaze target
+  * `compute_shared_attention()`: Measure overlap between attention distributions
+  * Threshold-based joint attention event tracking
+- **Combined Social Learning**: Multiplicative boost stacking
+  * `modulate_learning()`: Apply all learning boosts
+  * `modulate_attention()`: Apply all attention modulations
+  * Imitation + pedagogy boosts can stack (e.g., 2.0 × 1.5 = 3.0x)
+- **Social Context**: Structured social information
+  * `SocialContext` dataclass: Encapsulates cue type, ostensive signals, gaze
+  * `SocialCueType` enum: DEMONSTRATION, OSTENSIVE, GAZE, JOINT_ATTENTION, NONE
+- **Statistics Tracking**: Event counting and learning boost averaging
+  * Tracks demonstrations, pedagogy episodes, joint attention events
+  * Exponential moving average of learning boosts
 
-    def imitation_learning(self, demonstration, base_lr):
-        """2x learning rate from demonstration."""
-        return base_lr * 2.0
-
-    def pedagogy_boost(self, ostensive_cues, base_lr):
-        """1.5x learning rate when teaching detected."""
-        if self.detect_teaching_signal(ostensive_cues):
-            return base_lr * 1.5
-        return base_lr
-
-    def joint_attention(self, gaze_direction, attention_weights):
-        """Weight attention by gaze cues."""
-        return attention_weights * self.gaze_modulation(gaze_direction)
-```
-
-**Tests**: `tests/unit/test_social_learning.py`
+**Tests**: `tests/unit/test_social_learning.py` (39 tests)
+- Imitation Learning: 4 tests (boost, motor imitation, custom config)
+- Natural Pedagogy: 6 tests (cue detection logic, boost, custom config)
+- Joint Attention: 6 tests (modulation, gaze effects, threshold tracking, device)
+- Combined Social Learning: 5 tests (demonstration only, pedagogy only, both, attention)
+- Shared Attention: 3 tests (high overlap, low overlap, perfect overlap)
+- Statistics: 4 tests (reset, empty, events, avg boost tracking)
+- Social Context: 3 tests (creation, full parameters, helper method)
+- Integration: 3 tests (full episode, sequential episodes, device consistency)
+- Edge Cases: 5 tests (zero LR, extreme boosts, empty cues, zero gaze, negative strength)
 
 ---
 
