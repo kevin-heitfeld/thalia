@@ -900,7 +900,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         dt: float = 1.0,
         encoding_mod: float = 1.0,
         retrieval_mod: float = 1.0,
-        explore: bool = True,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input and select action using SEPARATE D1/D2 populations.
@@ -918,7 +917,8 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             dt: Time step in ms
             encoding_mod: Theta modulation for encoding phase (0-1).
             retrieval_mod: Theta modulation for retrieval phase (0-1).
-            explore: If True, use uncertainty-driven exploration.
+
+        NOTE: Exploration is handled by finalize_action() at trial end, not per-timestep.
 
         With population coding:
         - Each action has N neurons per pathway (neurons_per_action)
