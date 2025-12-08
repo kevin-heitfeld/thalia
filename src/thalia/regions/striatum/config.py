@@ -41,6 +41,9 @@ class StriatumConfig(RegionConfig):
     inhibition_strength: float = 2.0
 
     # REWARD_MODULATED_STDP parameters
+    # Uses D1/D2 eligibility traces: spike-timing correlations modulated by dopamine
+    # Δw_d1 = d1_eligibility × dopamine (standard)
+    # Δw_d2 = d2_eligibility × (-dopamine) (inverted)
     learning_rule: LearningRule = LearningRule.REWARD_MODULATED_STDP
     stdp_tau_ms: float = 20.0
     heterosynaptic_ratio: float = 0.3

@@ -159,13 +159,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Track last action for credit assignment
         self.last_action: Optional[int] = None
 
-        # STDP traces for REWARD_MODULATED_STDP (spike-based learning)
-        self.input_trace = torch.zeros(config.n_input, device=self.device)
-        self.output_trace = torch.zeros(config.n_output, device=self.device)
-        self.stdp_eligibility = torch.zeros(
-            config.n_output, config.n_input, device=self.device
-        )
-
         # Exploration state (uncertainty-driven, no epsilon-greedy)
         self.exploring = False  # Track if current action was exploratory
         self._last_uncertainty = 0.0
@@ -508,7 +501,17 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.d2_weights = torch.cat([self.d2_weights, new_d2_weights], dim=0)
 
         # =====================================================================
-        # 2. EXPAND ELIGIBILITY TRACES
+        # 2. UPDATE CONFIG (DO THIS BEFORE CREATING NEURONS!)
+        # =====================================================================
+        # Neurons are created based on config.n_output, so update it first
+        # BOTH config.n_output and striatum_config.n_output store TOTAL NEURONS
+        # We track n_actions separately in self.n_actions
+        self.n_actions += n_new
+        self.config = replace(self.config, n_output=new_n_output)
+        self.striatum_config = replace(self.striatum_config, n_output=new_n_output)
+
+        # =====================================================================
+        # 3. EXPAND ELIGIBILITY TRACES
         # =====================================================================
         new_d1_elig = torch.zeros(n_new_neurons, self.config.n_input, device=self.device)
         new_d2_elig = torch.zeros(n_new_neurons, self.config.n_input, device=self.device)
@@ -531,17 +534,14 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.d1_output_trace = torch.cat([self.d1_output_trace, new_d1_trace], dim=0)
         self.d2_output_trace = torch.cat([self.d2_output_trace, new_d2_trace], dim=0)
 
-        if hasattr(self, 'output_trace'):
-            self.output_trace = torch.cat([
-                self.output_trace,
-                torch.zeros(n_new_neurons, device=self.device)
-            ], dim=0)
-
         if hasattr(self, 'recent_spikes'):
             self.recent_spikes = torch.cat([
                 self.recent_spikes,
                 torch.zeros(n_new_neurons, device=self.device)
             ], dim=0)
+        else:
+            # Initialize if it doesn't exist
+            self.recent_spikes = torch.zeros(new_n_output, device=self.device)
 
         # =====================================================================
         # 4. EXPAND NEURON POPULATIONS
@@ -588,9 +588,58 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # =====================================================================
         # 5. UPDATE ACTION-RELATED TRACKING
         # =====================================================================
-        # Expand action-level structures
-        self.n_actions += n_new
-
+        # Expand D1/D2 vote accumulators
+        self._d1_votes_accumulated = torch.cat([
+            self._d1_votes_accumulated,
+            torch.zeros(n_new, device=self.device)
+        ], dim=0)
+        self._d2_votes_accumulated = torch.cat([
+            self._d2_votes_accumulated,
+            torch.zeros(n_new, device=self.device)
+        ], dim=0)
+        
+        # Expand action counts for UCB
+        self._action_counts = torch.cat([
+            self._action_counts,
+            torch.zeros(n_new, device=self.device)
+        ], dim=0)
+        
+        # Expand unified homeostasis if it exists
+        if self.unified_homeostasis is not None:
+            # Expand activity tracking buffers
+            old_size = self.unified_homeostasis.n_neurons
+            new_size = old_size + n_new_neurons
+            
+            # Expand D1 and D2 activity tracking
+            self.unified_homeostasis.d1_activity_avg = torch.cat([
+                self.unified_homeostasis.d1_activity_avg,
+                torch.zeros(n_new_neurons, device=self.device)
+            ], dim=0)
+            self.unified_homeostasis.d2_activity_avg = torch.cat([
+                self.unified_homeostasis.d2_activity_avg,
+                torch.zeros(n_new_neurons, device=self.device)
+            ], dim=0)
+            
+            # Expand excitability modulation factors
+            self.unified_homeostasis.d1_excitability = torch.cat([
+                self.unified_homeostasis.d1_excitability,
+                torch.ones(n_new_neurons, device=self.device)
+            ], dim=0)
+            self.unified_homeostasis.d2_excitability = torch.cat([
+                self.unified_homeostasis.d2_excitability,
+                torch.ones(n_new_neurons, device=self.device)
+            ], dim=0)
+            
+            # Update size tracking
+            self.unified_homeostasis.n_actions = self.n_actions
+            self.unified_homeostasis.n_neurons = new_size
+            
+            # Expand action_budgets
+            self.unified_homeostasis.action_budgets = torch.cat([
+                self.unified_homeostasis.action_budgets,
+                torch.ones(n_new, device=self.device) * self.unified_homeostasis.config.weight_budget
+            ], dim=0)
+        
         # Value estimates for new actions (start at 0)
         if hasattr(self, 'value_estimates'):
             self.value_estimates = torch.cat([
@@ -604,12 +653,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 self.rpe_trace,
                 torch.zeros(n_new, device=self.device)
             ], dim=0)
-
-        # =====================================================================
-        # 6. UPDATE CONFIG
-        # =====================================================================
-        self.config = replace(self.config, n_output=new_n_output)
-        self.striatum_config = replace(self.striatum_config, n_output=self.n_actions)
 
     def _initialize_pathway_weights(self) -> torch.Tensor:
         """Initialize weights for D1 or D2 pathway with balanced, principled scaling.
@@ -639,55 +682,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         weights = weights * self.config.w_max
 
         return weights.clamp(self.config.w_min, self.config.w_max)
-
-    def _update_stdp_eligibility(self, input_spikes: torch.Tensor, output_spikes: torch.Tensor, dt: float = 1.0) -> None:
-        """Update STDP eligibility traces from spike timing.
-
-        This is called from forward() so eligibility accumulates during the
-        trial before reward is delivered.
-
-        Args:
-            input_spikes: Input spike tensor [n_input] (1D)
-            output_spikes: Output spike tensor [n_output] (1D)
-            dt: Time step in ms
-        """
-        # Ensure 1D
-        if input_spikes.dim() != 1:
-            input_spikes = input_spikes.squeeze()
-        if output_spikes.dim() != 1:
-            output_spikes = output_spikes.squeeze()
-
-        cfg = self.striatum_config
-
-        # Decay and update spike traces
-        trace_decay = 1.0 - dt / cfg.stdp_tau_ms
-        self.input_trace = self.input_trace * trace_decay + input_spikes.float()
-        self.output_trace = self.output_trace * trace_decay + output_spikes.float()
-
-        # STDP rule:
-        # - LTP: post spike with pre trace → strengthen
-        # - LTD: pre spike with post trace → weaken
-        ltp = torch.outer(output_spikes.float(), self.input_trace)
-        ltd = torch.outer(self.output_trace, input_spikes.float())
-
-        # Soft bounds: reduce learning as weights approach limits
-        w_normalized = (self.weights - self.config.w_min) / (self.config.w_max - self.config.w_min)
-        ltp_factor = 1.0 - w_normalized
-        ltd_factor = w_normalized
-
-        soft_ltp = ltp * ltp_factor
-        soft_ltd = ltd * ltd_factor
-
-        # Competitive anti-Hebbian: non-spiking neurons get weaker to active inputs
-        non_spiking = (~output_spikes).float()
-        anti_hebbian = torch.outer(non_spiking, input_spikes.float()) * w_normalized
-
-        # Compute STDP weight change (direction from spike timing)
-        stdp_dw = cfg.stdp_lr * (soft_ltp - cfg.heterosynaptic_ratio * soft_ltd - 0.1 * anti_hebbian)
-
-        # Accumulate into eligibility trace (long timescale: 500-2000ms)
-        eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
-        self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
 
     def _update_d1_d2_eligibility(
         self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor,
@@ -1073,10 +1067,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Update D1/D2 eligibility traces for ALL active neurons
         # The action-specific masking happens in deliver_reward(), not here
         self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes, dt=dt)
-
-        # For REWARD_MODULATED_STDP, also update the spike-based eligibility trace
-        if self.striatum_config.learning_rule == LearningRule.REWARD_MODULATED_STDP:
-            self._update_stdp_eligibility(input_spikes, output_spikes, dt=dt)
 
         # NOTE: Dopamine is now managed centrally by Brain (VTA).
         # Dopamine decay happens in Brain._update_tonic_dopamine(), not here.
@@ -1708,18 +1698,15 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 end = start + self.neurons_per_action
                 self.d1_eligibility[start:end].zero_()
                 self.d2_eligibility[start:end].zero_()
-                self.stdp_eligibility[start:end].zero_()
             else:
                 self.d1_eligibility[self.last_action].zero_()
                 self.d2_eligibility[self.last_action].zero_()
-                self.stdp_eligibility[self.last_action].zero_()
             # Input traces are shared, so we do decay them but don't zero
             # (they'll decay naturally via the eligibility_decay factor)
         else:
             # Full reset (original behavior)
             self.d1_eligibility.zero_()
             self.d2_eligibility.zero_()
-            self.stdp_eligibility.zero_()
 
         # Always reset the spike traces (these are per-timestep, not per-action)
         self.d1_input_trace.zero_()
@@ -1735,10 +1722,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # NOTE: Dopamine is now managed by Brain, no local dopamine system to reset
         self.recent_spikes.zero_()
         self.last_action = None
-        # Reset STDP traces for REWARD_MODULATED_STDP
-        self.input_trace.zero_()
-        self.output_trace.zero_()
-        self.stdp_eligibility.zero_()
         self.exploring = False
         # Reset D1/D2 traces (always enabled)
         self.d1_eligibility.zero_()
@@ -1918,10 +1901,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             "d1_eligibility": self.d1_eligibility.detach().clone(),
             "d2_eligibility": self.d2_eligibility.detach().clone(),
 
-            # STDP traces (for REWARD_MODULATED_STDP)
-            "input_trace": self.input_trace.detach().clone(),
-            "output_trace": self.output_trace.detach().clone(),
-            "stdp_eligibility": self.stdp_eligibility.detach().clone(),
+            # D1/D2 spike traces
             "d1_input_trace": self.d1_input_trace.detach().clone(),
             "d2_input_trace": self.d2_input_trace.detach().clone(),
             "d1_output_trace": self.d1_output_trace.detach().clone(),
@@ -1979,6 +1959,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             "neuromodulator_state": neuromodulator_state,
             "oscillator_state": oscillator_state,
             "config": self.striatum_config,
+            "n_actions": self.n_actions,  # Store explicitly for validation
         }
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
@@ -1992,15 +1973,29 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         """
         # Validate configuration compatibility
         saved_config = state["config"]
+        
+        # Always validate input dimension
         if saved_config.n_input != self.config.n_input:
             raise ValueError(
                 f"Input dimension mismatch: saved={saved_config.n_input}, "
                 f"current={self.config.n_input}"
             )
+        
+        # Validate n_actions (number of actions, not total neurons)
+        saved_n_actions = state.get("n_actions", saved_config.n_output)  # Fallback for old checkpoints
+        if saved_n_actions != self.n_actions:
+            raise ValueError(
+                f"Action count mismatch: saved={saved_n_actions}, "
+                f"current={self.n_actions}"
+            )
+        
+        # Validate total neuron count (n_actions × neurons_per_action)
         if saved_config.n_output != self.config.n_output:
             raise ValueError(
                 f"Output dimension mismatch: saved={saved_config.n_output}, "
-                f"current={self.config.n_output}"
+                f"current={self.config.n_output}. "
+                f"This usually means population coding settings differ "
+                f"(saved: {saved_n_actions} actions, current: {self.n_actions} actions)"
             )
 
         # 1. RESTORE WEIGHTS
@@ -2039,10 +2034,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.d1_eligibility = learning_state["d1_eligibility"].to(self.device)
         self.d2_eligibility = learning_state["d2_eligibility"].to(self.device)
 
-        # STDP traces
-        self.input_trace = learning_state["input_trace"].to(self.device)
-        self.output_trace = learning_state["output_trace"].to(self.device)
-        self.stdp_eligibility = learning_state["stdp_eligibility"].to(self.device)
+        # D1/D2 spike traces
         self.d1_input_trace = learning_state["d1_input_trace"].to(self.device)
         self.d2_input_trace = learning_state["d2_input_trace"].to(self.device)
         self.d1_output_trace = learning_state["d1_output_trace"].to(self.device)

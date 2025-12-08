@@ -38,7 +38,7 @@ class TestGrowthManager:
 
     def test_capacity_metrics_computation(self):
         """Test capacity metrics calculation."""
-        # Create simple striatum
+        # Create simple striatum (n_output=32 actions with default 10 neurons/action = 320 total neurons)
         config = StriatumConfig(n_input=64, n_output=32, device="cpu")
         region = Striatum(config)
 
@@ -49,7 +49,7 @@ class TestGrowthManager:
         assert 0 <= metrics.firing_rate <= 1
         assert 0 <= metrics.weight_saturation <= 1
         assert 0 <= metrics.synapse_usage <= 1
-        assert metrics.neuron_count == 32
+        assert metrics.neuron_count == 320  # 32 actions × 10 neurons/action
         assert metrics.synapse_count > 0
 
     def test_growth_history_tracking(self):
@@ -173,22 +173,25 @@ class TestStriatumGrowth:
             assert striatum.d2_output_trace.shape[0] == 30
 
     def test_striatum_expands_neuron_populations(self):
-        """Test that D1 and D2 neuron lists expand."""
+        """Test that D1 and D2 neuron populations expand."""
         config = StriatumConfig(n_input=64, n_output=2, neurons_per_action=10, device="cpu")
         striatum = Striatum(config)
         
-        old_d1_count = striatum.d1_neurons.n_neurons
-        old_d2_count = striatum.d2_neurons.n_neurons
+        # Initial: 2 actions × 10 neurons/action = 20 neurons each pathway
+        assert striatum.d1_neurons.n_neurons == 20
+        assert striatum.d2_neurons.n_neurons == 20
+        assert striatum.n_actions == 2
         
-        # Grow
+        # Grow by 1 action (adds 10 neurons per pathway)
         striatum.add_neurons(n_new=1)
         
-        # Neuron populations should expand
-        assert striatum.d1_neurons.n_neurons == old_d1_count + 10
-        assert striatum.d2_neurons.n_neurons == old_d2_count + 10
+        # After growth: 3 actions × 10 neurons/action = 30 neurons each pathway
+        assert striatum.d1_neurons.n_neurons == 30
+        assert striatum.d2_neurons.n_neurons == 30
+        assert striatum.n_actions == 3
 
     def test_striatum_preserves_neuron_state(self):
-        """Test that existing neurons preserve membrane potential, etc."""
+        """Test that existing neurons preserve membrane potential after growth."""
         config = StriatumConfig(n_input=64, n_output=2, neurons_per_action=10, device="cpu")
         striatum = Striatum(config)
         
@@ -196,16 +199,19 @@ class TestStriatumGrowth:
         input_spikes = (torch.rand(64) > 0.5).float()
         striatum.forward(input_spikes)
         
-        # Save first neuron's membrane potential
-        if hasattr(striatum.d1_neurons[0], 'v_mem'):
-            old_vmem = striatum.d1_neurons[0].v_mem.clone()
+        # Save membrane state of first 20 neurons (first 2 actions)
+        old_d1_membrane = striatum.d1_neurons.membrane[:20].clone()
+        old_d2_membrane = striatum.d2_neurons.membrane[:20].clone()
         
-        # Grow
+        # Grow by 1 action (adds 10 neurons)
         striatum.add_neurons(n_new=1)
         
-        # First neuron should have same state
-        if hasattr(striatum.d1_neurons[0], 'v_mem'):
-            assert torch.allclose(striatum.d1_neurons[0].v_mem, old_vmem)
+        # First 20 neurons should preserve their membrane state
+        assert torch.allclose(striatum.d1_neurons.membrane[:20], old_d1_membrane, atol=1e-6)
+        assert torch.allclose(striatum.d2_neurons.membrane[:20], old_d2_membrane, atol=1e-6)
+        
+        # New neurons (indices 20-29) should be initialized
+        assert striatum.d1_neurons.membrane[20:].numel() == 10
 
     def test_striatum_updates_value_estimates(self):
         """Test that value_estimates expands for new actions."""
@@ -243,21 +249,28 @@ class TestStriatumGrowth:
         config = StriatumConfig(n_input=64, n_output=2, neurons_per_action=10, device="cpu")
         striatum = Striatum(config)
         
-        # Grow and process some data (ADR-005: 1D)
-        striatum.add_neurons(n_new=1)
+        # Grow first, then process data (ADR-005: 1D)
+        striatum.add_neurons(n_new=1)  # Now has 3 actions
         input_spikes = (torch.rand(64) > 0.5).float()
+        
+        # Process through striatum to build state
         output_spikes = striatum.forward(input_spikes)
         
         # Checkpoint
         state = striatum.get_full_state()
         
-        # Create new striatum with grown size
+        # Create new striatum with matching grown size (3 actions)
         config2 = StriatumConfig(n_input=64, n_output=3, neurons_per_action=10, device="cpu")
         striatum2 = Striatum(config2)
         striatum2.load_full_state(state)
         
         # Verify weights match
         assert torch.allclose(striatum.d1_weights, striatum2.d1_weights)
+        assert torch.allclose(striatum.d2_weights, striatum2.d2_weights)
+        
+        # Verify neuron populations match
+        assert striatum2.d1_neurons.n_neurons == 30  # 3 actions × 10 neurons
+        assert striatum2.d2_neurons.n_neurons == 30
         assert torch.allclose(striatum.d2_weights, striatum2.d2_weights)
 
 
