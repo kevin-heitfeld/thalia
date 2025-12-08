@@ -304,29 +304,39 @@ class SleepSystemMixin:
 
 ### 2.3 Stage 1: Toddler Brain (Week 12-20)
 
-#### 2.3.1 Executive Function Tasks (Stage 1) ⚠️ NEW
+#### 2.3.1 Executive Function Tasks (Stage 1) ✅ COMPLETE
 **Curriculum**: Stage 1, Week 18-20
-**Status**: Missing
+**Status**: Complete (37 tests passing)
 **Complexity**: Medium (1-2 days)
 **Impact**: Inhibitory control foundation
+**Commit**: b4b9243
 
 **Implementation**:
-- **File**: `src/thalia/tasks/executive_function.py`
-- **Tasks**: Go/no-go, delayed gratification
+- **File**: `src/thalia/tasks/executive_function.py` (585 lines)
+- **Tasks**: Go/No-Go, Delayed Gratification, DCCS (Stage 2 preview)
 
-```python
-class ExecutiveFunctionTasks:
-    def go_no_go(self, stimulus, rule):
-        """
-        Go: Respond to target
-        No-go: Inhibit response to distractor
-        """
+**Features**:
+- **Go/No-Go**: Inhibitory control test
+  * Target stimuli (respond) vs distractor stimuli (inhibit)
+  * Evaluation: accuracy, hit rate, false alarm rate, d-prime
+  * Pattern-based stimulus generation
+- **Delayed Gratification**: Temporal discounting (marshmallow test)
+  * Immediate small reward vs delayed large reward
+  * Exponential discounting calculation
+  * Optimal choice based on present value
+- **DCCS** (Stage 2): Dimensional Change Card Sort
+  * Pre-switch/post-switch rule changes
+  * Perseveration detection, switch cost measurement
+- **Batch generation** for Go/No-Go and DCCS
+- **Statistics tracking** across all task types
 
-    def delayed_gratification(self, reward_immediate, reward_delayed, delay_steps):
-        """Choose smaller now vs larger later."""
-```
-
-**Tests**: `tests/unit/test_executive_function.py`
+**Tests**: `tests/unit/test_executive_function.py` (37 tests)
+- Go/No-Go: 10 tests (trial generation, evaluation, patterns)
+- Delayed Gratification: 8 tests (discounting, choice evaluation)
+- DCCS: 8 tests (rule switching, perseveration)
+- Statistics: 3 tests (reset, tracking, multi-task)
+- Integration: 3 tests (sequential tasks, device consistency, reproducibility)
+- Edge cases: 5 tests (empty evaluation, invalid types, extreme parameters)
 
 ---
 
