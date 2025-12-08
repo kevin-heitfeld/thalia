@@ -23,9 +23,16 @@ import numpy as np
 import torch
 
 
+class Language(Enum):
+    """Supported languages for phonological training."""
+    ENGLISH = "en"
+    GERMAN = "de"
+    SPANISH = "es"
+
+
 class PhonemeCategory(Enum):
-    """Phoneme categories for discrimination tasks."""
-    # Voicing contrasts (VOT continuum)
+    """Phoneme categories for discrimination tasks (multi-language)."""
+    # ===== UNIVERSAL: Voicing contrasts (VOT continuum) =====
     P = "p"  # Voiceless bilabial stop (VOT ~60ms)
     B = "b"  # Voiced bilabial stop (VOT ~0ms)
     T = "t"  # Voiceless alveolar stop (VOT ~70ms)
@@ -33,7 +40,7 @@ class PhonemeCategory(Enum):
     K = "k"  # Voiceless velar stop (VOT ~80ms)
     G = "g"  # Voiced velar stop (VOT ~0ms)
     
-    # Vowel categories (formant space)
+    # ===== ENGLISH: Vowel categories =====
     AA = "aa"  # /ɑ/ as in "father" (F1=730, F2=1090)
     AE = "ae"  # /æ/ as in "cat" (F1=660, F2=1720)
     AH = "ah"  # /ʌ/ as in "but" (F1=640, F2=1190)
@@ -43,7 +50,32 @@ class PhonemeCategory(Enum):
     UH = "uh"  # /ʊ/ as in "book" (F1=440, F2=1020)
     UW = "uw"  # /u/ as in "boot" (F1=300, F2=870)
     
-    # Place of articulation
+    # ===== GERMAN: Unique vowels =====
+    UE = "ue"  # /y/ as in "über" (F1=270, F2=2100) - high front rounded
+    OE = "oe"  # /ø/ as in "schön" (F1=390, F2=1680) - mid front rounded
+    AE_DE = "ae_de"  # /ɛː/ as in "Käse" (F1=530, F2=1840) - long mid front
+    
+    # ===== GERMAN: Consonants =====
+    X = "x"  # /x/ as in "Bach" (F1=1500, F2=2500) - voiceless velar fricative
+    R_UVULAR = "r_uvular"  # /ʁ/ German uvular r (F1=500, F2=1400)
+    
+    # ===== SPANISH: Vowels (5-vowel system) =====
+    A_ES = "a_es"  # /a/ as in "casa" (F1=700, F2=1200)
+    E_ES = "e_es"  # /e/ as in "peso" (F1=400, F2=2000)
+    I_ES = "i_es"  # /i/ as in "piso" (F1=280, F2=2250)
+    O_ES = "o_es"  # /o/ as in "poco" (F1=400, F2=800)
+    U_ES = "u_es"  # /u/ as in "puro" (F1=300, F2=700)
+    
+    # ===== SPANISH: Critical contrasts =====
+    R_TAP = "r_tap"  # /ɾ/ single tap as in "pero" (duration ~30ms)
+    R_TRILL = "r_trill"  # /r/ trill as in "perro" (duration ~100ms, multiple taps)
+    
+    # ===== SPANISH: Voiced fricatives =====
+    B_FRIC = "b_fric"  # /β/ voiced bilabial fricative (intervocalic b)
+    D_FRIC = "d_fric"  # /ð/ voiced dental fricative (intervocalic d)
+    G_FRIC = "g_fric"  # /ɣ/ voiced velar fricative (intervocalic g)
+    
+    # ===== UNIVERSAL: Place of articulation =====
     M = "m"  # Bilabial nasal
     N = "n"  # Alveolar nasal
     NG = "ng"  # Velar nasal
@@ -68,17 +100,17 @@ class PhonemeFeatures:
 
 # Standard acoustic features for each phoneme
 PHONEME_FEATURES: Dict[PhonemeCategory, PhonemeFeatures] = {
-    # Voiceless stops (long VOT)
+    # ===== UNIVERSAL: Voiceless stops (long VOT) =====
     PhonemeCategory.P: PhonemeFeatures(vot=60.0, duration=100.0),
     PhonemeCategory.T: PhonemeFeatures(vot=70.0, duration=100.0),
     PhonemeCategory.K: PhonemeFeatures(vot=80.0, duration=100.0),
     
-    # Voiced stops (short VOT)
+    # ===== UNIVERSAL: Voiced stops (short VOT) =====
     PhonemeCategory.B: PhonemeFeatures(vot=5.0, duration=100.0),
     PhonemeCategory.D: PhonemeFeatures(vot=5.0, duration=100.0),
     PhonemeCategory.G: PhonemeFeatures(vot=5.0, duration=100.0),
     
-    # Vowels (formants)
+    # ===== ENGLISH: Vowels =====
     PhonemeCategory.AA: PhonemeFeatures(f1=730.0, f2=1090.0, f3=2440.0, duration=150.0),
     PhonemeCategory.AE: PhonemeFeatures(f1=660.0, f2=1720.0, f3=2410.0, duration=150.0),
     PhonemeCategory.AH: PhonemeFeatures(f1=640.0, f2=1190.0, f3=2390.0, duration=150.0),
@@ -88,16 +120,153 @@ PHONEME_FEATURES: Dict[PhonemeCategory, PhonemeFeatures] = {
     PhonemeCategory.UH: PhonemeFeatures(f1=440.0, f2=1020.0, f3=2240.0, duration=150.0),
     PhonemeCategory.UW: PhonemeFeatures(f1=300.0, f2=870.0, f3=2240.0, duration=150.0),
     
-    # Nasals
+    # ===== GERMAN: Unique vowels =====
+    PhonemeCategory.UE: PhonemeFeatures(f1=270.0, f2=2100.0, f3=2700.0, duration=150.0),  # /y/ über
+    PhonemeCategory.OE: PhonemeFeatures(f1=390.0, f2=1680.0, f3=2300.0, duration=150.0),  # /ø/ schön
+    PhonemeCategory.AE_DE: PhonemeFeatures(f1=530.0, f2=1840.0, f3=2480.0, duration=180.0),  # /ɛː/ Käse (longer)
+    
+    # ===== GERMAN: Consonants =====
+    PhonemeCategory.X: PhonemeFeatures(f1=1500.0, f2=2500.0, f3=3500.0, duration=120.0),  # /x/ Bach (fricative noise)
+    PhonemeCategory.R_UVULAR: PhonemeFeatures(f1=500.0, f2=1400.0, f3=2200.0, duration=80.0),  # /ʁ/ uvular r
+    
+    # ===== SPANISH: 5-vowel system =====
+    PhonemeCategory.A_ES: PhonemeFeatures(f1=700.0, f2=1200.0, f3=2500.0, duration=150.0),  # /a/ casa
+    PhonemeCategory.E_ES: PhonemeFeatures(f1=400.0, f2=2000.0, f3=2800.0, duration=150.0),  # /e/ peso
+    PhonemeCategory.I_ES: PhonemeFeatures(f1=280.0, f2=2250.0, f3=3000.0, duration=150.0),  # /i/ piso
+    PhonemeCategory.O_ES: PhonemeFeatures(f1=400.0, f2=800.0, f3=2300.0, duration=150.0),   # /o/ poco
+    PhonemeCategory.U_ES: PhonemeFeatures(f1=300.0, f2=700.0, f3=2200.0, duration=150.0),   # /u/ puro
+    
+    # ===== SPANISH: Critical tap vs trill =====
+    PhonemeCategory.R_TAP: PhonemeFeatures(f1=500.0, f2=1500.0, f3=2500.0, duration=30.0),   # /ɾ/ pero (single tap)
+    PhonemeCategory.R_TRILL: PhonemeFeatures(f1=500.0, f2=1500.0, f3=2500.0, duration=100.0),  # /r/ perro (trill)
+    
+    # ===== SPANISH: Voiced fricatives (intervocalic) =====
+    PhonemeCategory.B_FRIC: PhonemeFeatures(f1=300.0, f2=900.0, f3=2200.0, duration=80.0),  # /β/ cabo
+    PhonemeCategory.D_FRIC: PhonemeFeatures(f1=300.0, f2=1700.0, f3=2600.0, duration=80.0),  # /ð/ cada
+    PhonemeCategory.G_FRIC: PhonemeFeatures(f1=300.0, f2=2200.0, f3=2850.0, duration=80.0),  # /ɣ/ hago
+    
+    # ===== UNIVERSAL: Nasals =====
     PhonemeCategory.M: PhonemeFeatures(f1=280.0, f2=900.0, f3=2200.0, duration=120.0),
     PhonemeCategory.N: PhonemeFeatures(f1=280.0, f2=1700.0, f3=2600.0, duration=120.0),
     PhonemeCategory.NG: PhonemeFeatures(f1=280.0, f2=2200.0, f3=2850.0, duration=120.0),
 }
 
 
+# Language-specific phoneme sets and contrasts
+LANGUAGE_PHONEMES: Dict[Language, List[PhonemeCategory]] = {
+    Language.ENGLISH: [
+        # Stops
+        PhonemeCategory.P, PhonemeCategory.B,
+        PhonemeCategory.T, PhonemeCategory.D,
+        PhonemeCategory.K, PhonemeCategory.G,
+        # Vowels
+        PhonemeCategory.AA, PhonemeCategory.AE, PhonemeCategory.AH,
+        PhonemeCategory.EH, PhonemeCategory.IH, PhonemeCategory.IY,
+        PhonemeCategory.UH, PhonemeCategory.UW,
+        # Nasals
+        PhonemeCategory.M, PhonemeCategory.N, PhonemeCategory.NG,
+    ],
+    Language.GERMAN: [
+        # Stops (shared with English)
+        PhonemeCategory.P, PhonemeCategory.B,
+        PhonemeCategory.T, PhonemeCategory.D,
+        PhonemeCategory.K, PhonemeCategory.G,
+        # German-specific vowels
+        PhonemeCategory.UE, PhonemeCategory.OE, PhonemeCategory.AE_DE,
+        # Also use some English vowels
+        PhonemeCategory.IY, PhonemeCategory.IH,
+        PhonemeCategory.UW, PhonemeCategory.UH,
+        PhonemeCategory.AA, PhonemeCategory.EH,
+        # German consonants
+        PhonemeCategory.X, PhonemeCategory.R_UVULAR,
+        # Nasals
+        PhonemeCategory.M, PhonemeCategory.N, PhonemeCategory.NG,
+    ],
+    Language.SPANISH: [
+        # Stops (shared with English)
+        PhonemeCategory.P, PhonemeCategory.B,
+        PhonemeCategory.T, PhonemeCategory.D,
+        PhonemeCategory.K, PhonemeCategory.G,
+        # Spanish 5-vowel system
+        PhonemeCategory.A_ES, PhonemeCategory.E_ES, PhonemeCategory.I_ES,
+        PhonemeCategory.O_ES, PhonemeCategory.U_ES,
+        # Critical tap/trill distinction
+        PhonemeCategory.R_TAP, PhonemeCategory.R_TRILL,
+        # Voiced fricatives
+        PhonemeCategory.B_FRIC, PhonemeCategory.D_FRIC, PhonemeCategory.G_FRIC,
+        # Nasals
+        PhonemeCategory.M, PhonemeCategory.N,
+    ],
+}
+
+
+# Language-specific contrasts for training
+LANGUAGE_CONTRASTS: Dict[Language, Dict[str, List[Tuple[PhonemeCategory, PhonemeCategory]]]] = {
+    Language.ENGLISH: {
+        "voicing": [
+            (PhonemeCategory.P, PhonemeCategory.B),
+            (PhonemeCategory.T, PhonemeCategory.D),
+            (PhonemeCategory.K, PhonemeCategory.G),
+        ],
+        "vowel": [
+            (PhonemeCategory.IY, PhonemeCategory.IH),  # beat vs bit
+            (PhonemeCategory.EH, PhonemeCategory.AE),  # bed vs bad
+            (PhonemeCategory.UW, PhonemeCategory.UH),  # boot vs book
+        ],
+        "place": [
+            (PhonemeCategory.M, PhonemeCategory.N),
+            (PhonemeCategory.N, PhonemeCategory.NG),
+        ],
+    },
+    Language.GERMAN: {
+        "voicing": [
+            (PhonemeCategory.P, PhonemeCategory.B),
+            (PhonemeCategory.T, PhonemeCategory.D),
+            (PhonemeCategory.K, PhonemeCategory.G),
+        ],
+        "vowel": [
+            (PhonemeCategory.UE, PhonemeCategory.IY),  # ü vs i (front rounded vs unrounded)
+            (PhonemeCategory.OE, PhonemeCategory.EH),  # ö vs e (front rounded vs unrounded)
+            (PhonemeCategory.UW, PhonemeCategory.UE),  # u vs ü (back vs front, both rounded)
+        ],
+        "fricative": [
+            (PhonemeCategory.X, PhonemeCategory.K),  # Bach-Laut vs k
+            (PhonemeCategory.R_UVULAR, PhonemeCategory.R_TAP),  # German r vs tap
+        ],
+        "place": [
+            (PhonemeCategory.M, PhonemeCategory.N),
+            (PhonemeCategory.N, PhonemeCategory.NG),
+        ],
+    },
+    Language.SPANISH: {
+        "voicing": [
+            (PhonemeCategory.P, PhonemeCategory.B),
+            (PhonemeCategory.T, PhonemeCategory.D),
+            (PhonemeCategory.K, PhonemeCategory.G),
+        ],
+        "vowel": [
+            (PhonemeCategory.E_ES, PhonemeCategory.I_ES),  # e vs i
+            (PhonemeCategory.O_ES, PhonemeCategory.U_ES),  # o vs u
+            (PhonemeCategory.A_ES, PhonemeCategory.E_ES),  # a vs e
+        ],
+        "tap_trill": [  # CRITICAL for Spanish!
+            (PhonemeCategory.R_TAP, PhonemeCategory.R_TRILL),  # pero vs perro
+        ],
+        "fricative": [
+            (PhonemeCategory.B, PhonemeCategory.B_FRIC),  # boca vs cabo (stop vs fricative)
+            (PhonemeCategory.D, PhonemeCategory.D_FRIC),  # donde vs cada
+            (PhonemeCategory.G, PhonemeCategory.G_FRIC),  # gato vs hago
+        ],
+    },
+}
+
+
 @dataclass
 class PhonologicalConfig:
     """Configuration for phonological dataset."""
+    # Language selection
+    language: Language = Language.ENGLISH  # Primary language for training
+    
     # Acoustic encoding
     n_freq_channels: int = 64  # Mel-frequency channels
     n_time_steps: int = 100  # Time steps per stimulus
@@ -128,27 +297,43 @@ class PhonologicalDataset:
     Used in Stage 0 for critical period phonology learning.
     """
     
-    def __init__(self, config: Optional[PhonologicalConfig] = None):
+    def __init__(self, config: Optional[PhonologicalConfig] = None, language: Optional[Language] = None):
         self.config = config or PhonologicalConfig()
+        
+        # Override language if specified
+        if language is not None:
+            self.config.language = language
+        
         self.device = torch.device(self.config.device)
+        self.language = self.config.language
         
-        # Standard contrasts for training
-        self.voicing_contrasts = [
-            (PhonemeCategory.P, PhonemeCategory.B),
-            (PhonemeCategory.T, PhonemeCategory.D),
-            (PhonemeCategory.K, PhonemeCategory.G),
-        ]
+        # Load language-specific contrasts
+        language_contrasts = LANGUAGE_CONTRASTS[self.language]
         
-        self.vowel_contrasts = [
-            (PhonemeCategory.IY, PhonemeCategory.IH),  # /i/ vs /ɪ/ (beat vs bit)
-            (PhonemeCategory.EH, PhonemeCategory.AE),  # /ɛ/ vs /æ/ (bed vs bad)
-            (PhonemeCategory.UW, PhonemeCategory.UH),  # /u/ vs /ʊ/ (boot vs book)
-        ]
+        # Standard contrasts for training (language-dependent)
+        self.voicing_contrasts = language_contrasts.get("voicing", [])
+        self.vowel_contrasts = language_contrasts.get("vowel", [])
+        self.place_contrasts = language_contrasts.get("place", [])
         
-        self.place_contrasts = [
-            (PhonemeCategory.M, PhonemeCategory.N),    # Bilabial vs alveolar
-            (PhonemeCategory.N, PhonemeCategory.NG),   # Alveolar vs velar
-        ]
+        # Language-specific contrasts
+        if self.language == Language.GERMAN:
+            self.fricative_contrasts = language_contrasts.get("fricative", [])
+        elif self.language == Language.SPANISH:
+            self.tap_trill_contrasts = language_contrasts.get("tap_trill", [])
+            self.fricative_contrasts = language_contrasts.get("fricative", [])
+        
+        # All available contrasts for this language
+        self.all_contrasts = {
+            "voicing": self.voicing_contrasts,
+            "vowel": self.vowel_contrasts,
+            "place": self.place_contrasts,
+        }
+        
+        if self.language == Language.GERMAN:
+            self.all_contrasts["fricative"] = self.fricative_contrasts
+        elif self.language == Language.SPANISH:
+            self.all_contrasts["tap_trill"] = self.tap_trill_contrasts
+            self.all_contrasts["fricative"] = self.fricative_contrasts
         
         # Statistics for performance tracking
         self.reset_statistics()
@@ -340,21 +525,27 @@ class PhonologicalDataset:
         Args:
             task_type: "discrimination" or "continuum"
             batch_size: Number of trials
-            contrast_type: "voicing", "vowel", or "place"
+            contrast_type: Language-specific contrast type
+                English: "voicing", "vowel", "place"
+                German: "voicing", "vowel", "place", "fricative"
+                Spanish: "voicing", "vowel", "tap_trill", "fricative"
         
         Returns:
             stimuli: Batch of acoustic patterns (batch × n_freq × n_time)
             labels: Category labels (batch,)
         """
-        # Select contrast set
-        if contrast_type == "voicing":
-            contrasts = self.voicing_contrasts
-        elif contrast_type == "vowel":
-            contrasts = self.vowel_contrasts
-        elif contrast_type == "place":
-            contrasts = self.place_contrasts
-        else:
-            raise ValueError(f"Unknown contrast type: {contrast_type}")
+        # Select contrast set (language-specific)
+        if contrast_type not in self.all_contrasts:
+            available = list(self.all_contrasts.keys())
+            raise ValueError(
+                f"Unknown contrast type '{contrast_type}' for {self.language.value}. "
+                f"Available: {available}"
+            )
+        
+        contrasts = self.all_contrasts[contrast_type]
+        
+        if len(contrasts) == 0:
+            raise ValueError(f"No contrasts available for type '{contrast_type}'")
         
         stimuli_list = []
         labels_list = []

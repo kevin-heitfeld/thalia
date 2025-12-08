@@ -248,10 +248,15 @@ class SleepSystemMixin:
 
 #### 2.2.1 Phonological Tasks ✅ COMPLETE
 **Curriculum**: Stage 0, Week 6-8 (45% of time)
-**Status**: ✅ Implemented with acoustic feature encoding
-**Time**: ~3 hours
-**Tests**: 31 tests passing (1.30s)
-**Commit**: 03dca65
+**Status**: ✅ Multi-language support (English, German, Spanish)
+**Time**: ~4 hours (3h initial + 1h multi-language)
+**Tests**: 58 tests passing (1.50s) - 31 core + 27 multi-language
+**Commit**: 03dca65, [multi-lang to be added]
+
+**Languages Supported**:
+- **English**: 11 vowels, 6 stops, 3 nasals
+- **German**: + Umlauts (ü, ö, ä), Bach-Laut (x), uvular r
+- **Spanish**: 5-vowel system, tap/trill (pero/perro), voiced fricatives
 
 **Implementation**:
 - **File**: `src/thalia/datasets/phonology.py` (473 lines)

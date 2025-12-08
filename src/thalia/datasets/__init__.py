@@ -2,7 +2,7 @@
 Datasets for Thalia training.
 
 Provides task-specific datasets for each developmental stage:
-- Phonological tasks (Stage 0)
+- Phonological tasks (Stage 0) - English, German, Spanish
 - Visual object recognition (Stage 1+)
 - Language tasks (Stage 2+)
 - Social interaction (Stage 3+)
@@ -14,6 +14,9 @@ from thalia.datasets.phonology import (
     PhonemeCategory,
     PhonemeFeatures,
     PHONEME_FEATURES,
+    Language,
+    LANGUAGE_PHONEMES,
+    LANGUAGE_CONTRASTS,
 )
 
 __all__ = [
@@ -22,4 +25,7 @@ __all__ = [
     "PhonemeCategory",
     "PhonemeFeatures",
     "PHONEME_FEATURES",
+    "Language",
+    "LANGUAGE_PHONEMES",
+    "LANGUAGE_CONTRASTS",
 ]
