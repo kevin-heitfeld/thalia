@@ -251,7 +251,7 @@ class SleepSystemMixin:
 **Status**: ✅ Multi-language support (English, German, Spanish)
 **Time**: ~4 hours (3h initial + 1h multi-language)
 **Tests**: 58 tests passing (1.50s) - 31 core + 27 multi-language
-**Commit**: 03dca65, [multi-lang to be added]
+**Commit**: 03dca65, 0ecf471
 
 **Languages Supported**:
 - **English**: 11 vowels, 6 stops, 3 nasals
