@@ -1,7 +1,7 @@
 # Thalia Curriculum Implementation Plan
 
-**Date**: December 8, 2025  
-**Status**: In Progress  
+**Date**: December 8, 2025
+**Status**: In Progress
 **Goal**: Implement missing curriculum-specific components before training begins
 
 ## Executive Summary
@@ -10,8 +10,8 @@
 - All learning rules, regions, pathways, and training infrastructure exist
 - Gaps are curriculum-specific mechanisms that layer on top of core
 
-**Implementation Timeline**: 2-4 weeks before Stage -0.5 training  
-**Estimated Components**: 13 new/enhanced modules  
+**Implementation Timeline**: 2-4 weeks before Stage -0.5 training
+**Estimated Components**: 13 new/enhanced modules
 **Priority**: 3 critical blockers, 10 stage-specific requirements
 
 ---
@@ -19,9 +19,9 @@
 ## Priority 1: 🔴 CRITICAL (Week 1-2, Must Have Before ANY Training)
 
 ### 1.1 Critical Period Gating ⚠️ NEW
-**Curriculum**: Stage 0 phonology (0-50k steps), grammar (25k-150k steps)  
-**Status**: Missing  
-**Complexity**: Small (4-8 hours)  
+**Curriculum**: Stage 0 phonology (0-50k steps), grammar (25k-150k steps)
+**Status**: Missing
+**Complexity**: Small (4-8 hours)
 **Impact**: Without this, phonology learning will miss critical window
 
 **Implementation**:
@@ -34,14 +34,14 @@
 ```python
 class CriticalPeriodGating:
     """Modulate learning rates based on developmental windows."""
-    
+
     def __init__(self):
         self.plasticity_window = {
             'phonology': (0, 50000),      # Peak: Stage 0
             'grammar': (25000, 150000),    # Peak: Stage 1-2
             'semantics': (50000, 300000),  # Extended window
         }
-    
+
     def gate_learning(self, learning_rate, domain, age):
         """Apply critical period modulation."""
         window = self.plasticity_window[domain]
@@ -60,9 +60,9 @@ class CriticalPeriodGating:
 ---
 
 ### 1.2 Curriculum Training Infrastructure ⚠️ NEW
-**Curriculum**: All stages, continuous  
-**Status**: Missing  
-**Complexity**: Medium (2-3 days)  
+**Curriculum**: All stages, continuous
+**Status**: Missing
+**Complexity**: Medium (2-3 days)
 **Impact**: Core curriculum mechanics (interleaving, spacing, testing effect)
 
 **Implementation**:
@@ -74,7 +74,7 @@ class CriticalPeriodGating:
 ```python
 class InterleavedCurriculumSampler:
     """Sample tasks from distribution each step."""
-    
+
     def sample_next_task(self, stage_weights):
         """
         stage_weights: {0: 0.05, 1: 0.10, 2: 0.15, 4: 0.70}
@@ -88,7 +88,7 @@ class InterleavedCurriculumSampler:
 ```python
 class SpacedRepetitionScheduler:
     """Calculate review intervals based on performance."""
-    
+
     def calculate_review_schedule(self, stage_history, performance):
         """
         Expanding intervals:
@@ -103,7 +103,7 @@ class SpacedRepetitionScheduler:
 ```python
 class TestingPhaseProtocol:
     """Low-stakes testing without immediate feedback."""
-    
+
     def testing_phase(self, brain, test_set, frequency=0.15):
         """15% of steps are tests (no learning signal)."""
 ```
@@ -120,7 +120,7 @@ class ProductiveFailurePhase:
 ```python
 class CurriculumDifficultyCalibrator:
     """Adjust difficulty to maintain optimal learning."""
-    
+
     def calibrate(self, success_rate, current_difficulty):
         if success_rate > 0.90: difficulty += 0.05  # Too easy
         elif success_rate < 0.60: difficulty -= 0.05  # Too hard
@@ -131,7 +131,7 @@ class CurriculumDifficultyCalibrator:
 ```python
 class StageTransitionProtocol:
     """Smooth transitions with 4-week difficulty ramp."""
-    
+
     def transition(self, old_stage, new_stage):
         # Week 1: 0.3 difficulty, 70% old stage
         # Week 2: 0.5 difficulty, 50% old stage
@@ -144,9 +144,9 @@ class StageTransitionProtocol:
 ---
 
 ### 1.3 Enhanced Consolidation ⚠️ ENHANCE EXISTING
-**Curriculum**: All stages, every 10-200k steps  
-**Status**: Partially implemented (SleepSystemMixin exists)  
-**Complexity**: Small (1 day)  
+**Curriculum**: All stages, every 10-200k steps
+**Status**: Partially implemented (SleepSystemMixin exists)
+**Complexity**: Small (1 day)
 **Impact**: Memory pressure triggers, adaptive scheduling
 
 **Implementation**:
@@ -166,24 +166,24 @@ class SleepSystemMixin:
             recent_dw = region.get_recent_weight_changes()
             weight_changes.append(recent_dw.abs().mean())
         return np.mean(weight_changes)
-    
+
     def should_consolidate(self, step, last_consol, performance_delta, memory_pressure):
         """Adaptive consolidation triggers."""
         # Memory pressure override
         if memory_pressure > 0.8: return True, 3000
-        
+
         # Forgetting detected
         if performance_delta < -0.05: return True, 5000
-        
+
         # Standard adaptive schedule
         base_interval = {0: 15000, 1: 25000, 2: 40000, 3: 60000}[stage]
-        if performance_delta > 0.10: 
+        if performance_delta > 0.10:
             interval = base_interval * 0.7  # More frequent
         elif performance_delta < 0.01:
             interval = base_interval * 1.5  # Less frequent
         else:
             interval = base_interval
-        
+
         return (step - last_consol) >= interval, interval
 ```
 
@@ -196,9 +196,9 @@ class SleepSystemMixin:
 ### 2.1 Stage -0.5: Sensorimotor Environment (Week 0-4)
 
 #### 2.1.1 Sensorimotor Environment ⚠️ NEW OR LIBRARY
-**Curriculum**: Stage -0.5, 100% of training  
-**Status**: Likely missing  
-**Complexity**: Large (1-2 weeks) OR use library  
+**Curriculum**: Stage -0.5, 100% of training
+**Status**: Likely missing
+**Complexity**: Large (1-2 weeks) OR use library
 **Impact**: Foundation for all grounded learning
 
 **Options**:
@@ -206,7 +206,7 @@ class SleepSystemMixin:
    - Gym, PyBullet, or MuJoCo
    - Wrap with Thalia interface
    - **Time**: 2-3 days for wrapper
-   
+
 2. **Build Custom**:
    - 2D/3D grid world with physics
    - Motor control, proprioception
@@ -229,9 +229,9 @@ class SleepSystemMixin:
 ### 2.2 Stage 0: Phonological Tasks (Week 4-12)
 
 #### 2.2.1 Phonological Tasks ⚠️ NEW
-**Curriculum**: Stage 0, Week 6-8 (45% of time)  
-**Status**: Missing  
-**Complexity**: Small (4-8 hours)  
+**Curriculum**: Stage 0, Week 6-8 (45% of time)
+**Status**: Missing
+**Complexity**: Small (4-8 hours)
 **Impact**: Critical period phonology learning
 
 **Implementation**:
@@ -242,14 +242,14 @@ class SleepSystemMixin:
 ```python
 class PhonologicalDataset:
     """Categorical perception tasks for phonemes."""
-    
+
     def __init__(self):
         self.contrasts = [
             ('p', 'b'),  # Voicing distinction
             ('d', 't'),  # Voicing distinction
             ('a', 'i', 'u'),  # Vowel categories
         ]
-    
+
     def generate_contrast_pair(self, contrast):
         """Generate phoneme pair for discrimination."""
 ```
@@ -261,9 +261,9 @@ class PhonologicalDataset:
 ### 2.3 Stage 1: Toddler Brain (Week 12-20)
 
 #### 2.3.1 Executive Function Tasks (Stage 1) ⚠️ NEW
-**Curriculum**: Stage 1, Week 18-20  
-**Status**: Missing  
-**Complexity**: Medium (1-2 days)  
+**Curriculum**: Stage 1, Week 18-20
+**Status**: Missing
+**Complexity**: Medium (1-2 days)
 **Impact**: Inhibitory control foundation
 
 **Implementation**:
@@ -277,7 +277,7 @@ class ExecutiveFunctionTasks:
         Go: Respond to target
         No-go: Inhibit response to distractor
         """
-    
+
     def delayed_gratification(self, reward_immediate, reward_delayed, delay_steps):
         """Choose smaller now vs larger later."""
 ```
@@ -287,9 +287,9 @@ class ExecutiveFunctionTasks:
 ---
 
 #### 2.3.2 Social Learning Module ⚠️ NEW
-**Curriculum**: Stage 1, Week 10-11.5  
-**Status**: Missing  
-**Complexity**: Medium (2-3 days)  
+**Curriculum**: Stage 1, Week 10-11.5
+**Status**: Missing
+**Complexity**: Medium (2-3 days)
 **Impact**: Fast learning from demonstration (2x LR)
 
 **Implementation**:
@@ -299,17 +299,17 @@ class ExecutiveFunctionTasks:
 ```python
 class SocialLearningModule:
     """Fast learning from social cues."""
-    
+
     def imitation_learning(self, demonstration, base_lr):
         """2x learning rate from demonstration."""
         return base_lr * 2.0
-    
+
     def pedagogy_boost(self, ostensive_cues, base_lr):
         """1.5x learning rate when teaching detected."""
         if self.detect_teaching_signal(ostensive_cues):
             return base_lr * 1.5
         return base_lr
-    
+
     def joint_attention(self, gaze_direction, attention_weights):
         """Weight attention by gaze cues."""
         return attention_weights * self.gaze_modulation(gaze_direction)
@@ -320,9 +320,9 @@ class SocialLearningModule:
 ---
 
 #### 2.3.3 Attention Mechanisms (Enhanced) ⚠️ ENHANCE EXISTING
-**Curriculum**: Stage 1, continuous  
-**Status**: Partially implemented (top-down exists)  
-**Complexity**: Small (4-8 hours)  
+**Curriculum**: Stage 1, continuous
+**Status**: Partially implemented (top-down exists)
+**Complexity**: Small (4-8 hours)
 **Impact**: Bottom-up salience + developmental progression
 
 **Implementation**:
@@ -332,7 +332,7 @@ class SocialLearningModule:
 ```python
 class AttentionMechanisms:
     """Two-pathway attention with developmental progression."""
-    
+
     def bottom_up_salience(self, visual_input):
         """Stimulus-driven attention."""
         salience = (
@@ -341,16 +341,16 @@ class AttentionMechanisms:
             0.2 * novelty_detector(visual_input)
         )
         return salience
-    
+
     def top_down_modulation(self, visual_input, goal):
         """Goal-directed attention (existing SpikingAttentionPathway)."""
         return self.attention_pathway(visual_input, goal)
-    
+
     def combined_attention(self, visual_input, goal, stage):
         """Developmental weighting."""
         bottom_up = self.bottom_up_salience(visual_input)
         top_down = self.top_down_modulation(visual_input, goal)
-        
+
         # Stage-dependent weighting
         weights = {
             1: (0.7, 0.3),  # Stage 1: 70% bottom-up
@@ -358,7 +358,7 @@ class AttentionMechanisms:
             3: (0.3, 0.7),  # Stage 3+: 70% top-down
         }
         w_bu, w_td = weights.get(stage, (0.3, 0.7))
-        
+
         return w_bu * bottom_up + w_td * top_down
 ```
 
@@ -367,9 +367,9 @@ class AttentionMechanisms:
 ---
 
 #### 2.3.4 Metacognitive Monitor (Stage-Aware) ⚠️ NEW
-**Curriculum**: Stage 1 (binary) → Stage 4 (calibrated)  
-**Status**: Partially implemented (ConfidenceEstimator exists)  
-**Complexity**: Medium (2-3 days)  
+**Curriculum**: Stage 1 (binary) → Stage 4 (calibrated)
+**Status**: Partially implemented (ConfidenceEstimator exists)
+**Complexity**: Medium (2-3 days)
 **Impact**: Uncertainty estimation, abstention, active learning
 
 **Implementation**:
@@ -379,38 +379,38 @@ class AttentionMechanisms:
 ```python
 class MetacognitiveMonitor:
     """Stage-aware confidence estimation."""
-    
+
     def __init__(self, confidence_estimator):
         self.estimator = confidence_estimator  # Existing component
         self.stage = 1
-    
+
     def estimate_confidence(self, population_activity):
         """Stage-specific confidence levels."""
         raw_confidence = self.estimator.estimate(population_activity)
-        
+
         if self.stage == 1:
             # Binary: know vs don't know
             return 1.0 if raw_confidence > 0.7 else 0.0
-        
+
         elif self.stage == 2:
             # Coarse: high/medium/low
             if raw_confidence > 0.8: return 1.0
             elif raw_confidence > 0.5: return 0.5
             else: return 0.0
-        
+
         elif self.stage == 3:
             # Continuous (poorly calibrated)
             return raw_confidence
-        
+
         elif self.stage >= 4:
             # Calibrated (with training)
             return self.calibrated_confidence(raw_confidence)
-    
+
     def should_abstain(self, confidence):
         """Decide whether to abstain from answering."""
         threshold = {1: 0.5, 2: 0.3, 3: 0.4, 4: 0.3}[self.stage]
         return confidence < threshold
-    
+
     def calibrate(self, predicted_conf, actual_correct, dopamine):
         """Train calibration network (Stage 3-4)."""
         error = abs(predicted_conf - actual_correct)
@@ -422,9 +422,9 @@ class MetacognitiveMonitor:
 ---
 
 #### 2.3.5 Theta-Gamma Working Memory ⚠️ NEW
-**Curriculum**: Stage 1, Week 9-11  
-**Status**: Components exist (oscillators, prefrontal)  
-**Complexity**: Small (4-8 hours)  
+**Curriculum**: Stage 1, Week 9-11
+**Status**: Components exist (oscillators, prefrontal)
+**Complexity**: Small (4-8 hours)
 **Impact**: N-back tasks with phase coding
 
 **Implementation**:
@@ -438,27 +438,27 @@ def theta_gamma_n_back(prefrontal, stimulus_sequence, n=2):
     Each item encoded at different theta phase within gamma cycle.
     """
     results = []
-    
+
     for t, stimulus in enumerate(stimulus_sequence):
         # Theta phase: position within cycle (0-1)
         theta_phase = (t % 8) / 8.0  # 8 items per theta cycle
         gamma_phase = 0.5  # Peak excitability
-        
+
         # Encode with phase information
         prefrontal.maintain(
             stimulus,
             theta_phase=theta_phase,
             gamma_phase=gamma_phase
         )
-        
+
         # Retrieve item from n cycles ago
         target_phase = ((t - n) % 8) / 8.0
         retrieved = prefrontal.retrieve(theta_phase=target_phase)
-        
+
         # Compare current to n-back
         is_match = (stimulus == retrieved)
         results.append(is_match)
-    
+
     return results
 ```
 
@@ -469,9 +469,9 @@ def theta_gamma_n_back(prefrontal, stimulus_sequence, n=2):
 ### 2.4 Stage 2: Grammar & Composition (Week 20-28)
 
 #### 2.4.1 Executive Function Tasks (Stage 2) ⚠️ ADD TO EXISTING
-**Curriculum**: Stage 2, Week 26-28  
-**Status**: Missing  
-**Complexity**: Medium (1-2 days)  
+**Curriculum**: Stage 2, Week 26-28
+**Status**: Missing
+**Complexity**: Medium (1-2 days)
 **Impact**: Set shifting, cognitive flexibility
 
 **Implementation**:
@@ -481,7 +481,7 @@ def theta_gamma_n_back(prefrontal, stimulus_sequence, n=2):
 ```python
 class ExecutiveFunctionTasks:
     # ... (Stage 1 tasks above)
-    
+
     def dimensional_change_card_sort(self, card, current_rule):
         """
         DCCS: Sort by color, then switch to shape.
@@ -491,7 +491,7 @@ class ExecutiveFunctionTasks:
             return self.sort_by_color(card)
         elif current_rule == 'shape':
             return self.sort_by_shape(card)  # Must inhibit color
-    
+
     def task_switching(self, stimulus, task_cue):
         """Alternate between two tasks based on cue."""
         # Switch cost: slower/less accurate on switch trials
@@ -502,9 +502,9 @@ class ExecutiveFunctionTasks:
 ---
 
 #### 2.4.2 Cross-Modal Gamma Binding ⚠️ NEW
-**Curriculum**: Stage 2, Week 24-26  
-**Status**: Missing  
-**Complexity**: Medium (1-2 days)  
+**Curriculum**: Stage 2, Week 24-26
+**Status**: Missing
+**Complexity**: Medium (1-2 days)
 **Impact**: Synchronize visual + auditory via gamma
 
 **Implementation**:
@@ -514,10 +514,10 @@ class ExecutiveFunctionTasks:
 ```python
 class CrossModalGammaBinding:
     """Force gamma synchrony across modalities."""
-    
+
     def __init__(self, gamma_oscillator):
         self.gamma = gamma_oscillator
-    
+
     def bind_modalities(self, visual_spikes, auditory_spikes):
         """
         Force both to spike at same gamma phase.
@@ -525,15 +525,15 @@ class CrossModalGammaBinding:
         """
         # Current gamma phase
         gamma_phase = self.gamma.gamma_phase
-        
+
         # Gate each modality by gamma phase
         gamma_window = self.compute_gamma_gate(gamma_phase)
-        
+
         visual_gated = visual_spikes * gamma_window
         auditory_gated = auditory_spikes * gamma_window
-        
+
         return visual_gated, auditory_gated
-    
+
     def compute_gamma_gate(self, gamma_phase, width=0.3):
         """Gaussian gate around current phase."""
         return torch.exp(-4 * (gamma_phase - 0.5) ** 2)
@@ -546,9 +546,9 @@ class CrossModalGammaBinding:
 ### 2.5 Stage 3-4: Reading & Abstract Reasoning (Week 28-70)
 
 #### 2.5.1 Executive Function Tasks (Stage 3-4) ⚠️ ADD TO EXISTING
-**Curriculum**: Stage 3 (Tower of Hanoi), Stage 4 (Raven's)  
-**Status**: Missing  
-**Complexity**: Large (1 week)  
+**Curriculum**: Stage 3 (Tower of Hanoi), Stage 4 (Raven's)
+**Status**: Missing
+**Complexity**: Large (1 week)
 **Impact**: Planning, fluid reasoning
 
 **Implementation**:
@@ -558,21 +558,21 @@ class CrossModalGammaBinding:
 ```python
 class ExecutiveFunctionTasks:
     # ... (Stage 1-2 tasks above)
-    
+
     def tower_of_hanoi(self, n_disks, start, target, auxiliary):
         """
         Planning task requiring subgoaling.
         Must decompose into subproblems.
         """
         # Track planning depth, subgoal creation
-    
+
     def ravens_matrices(self, pattern_matrix):
         """
         Abstract rule induction from visual patterns.
         Stage 4 fluid reasoning.
         """
         # Extract abstract rules, test hypotheses
-    
+
     def analogical_reasoning(self, source_domain, target_domain):
         """Map structure across domains."""
 ```
@@ -584,8 +584,8 @@ class ExecutiveFunctionTasks:
 ## Priority 3: 🟢 ENHANCEMENTS (Nice to Have, Not Blocking)
 
 ### 3.1 Growth Integration with Curriculum
-**Status**: GrowthManager exists, needs curriculum integration  
-**Complexity**: Small (configuration)  
+**Status**: GrowthManager exists, needs curriculum integration
+**Complexity**: Small (configuration)
 **Impact**: Auto-growth at 80% capacity
 
 **Implementation**:
@@ -605,8 +605,8 @@ class CurriculumConfig:
 ---
 
 ### 3.2 Advanced Consolidation Features
-**Status**: Basic replay exists  
-**Complexity**: Medium  
+**Status**: Basic replay exists
+**Complexity**: Medium
 **Impact**: Schema extraction, prototypical averaging
 
 **Implementation**:
@@ -619,10 +619,10 @@ def rem_schema_extraction(self, replay_buffer, n_steps):
     for step in range(n_steps // 2):
         # Sample similar episodes
         cluster = replay_buffer.sample_cluster(k=5, similarity=0.7)
-        
+
         # Create prototypical average
         prototypical = torch.stack([ep['input'] for ep in cluster]).mean(dim=0)
-        
+
         # Replay with noise (generalization)
         noisy = prototypical + torch.randn_like(prototypical) * 0.3
         brain.forward(noisy)
@@ -748,15 +748,15 @@ Before training begins:
 ## Risk Mitigation
 
 ### Risk 1: Sensorimotor Environment Too Complex
-**Mitigation**: Use existing library (Gym/PyBullet) instead of custom build  
+**Mitigation**: Use existing library (Gym/PyBullet) instead of custom build
 **Fallback**: Simplified 2D environment for initial testing
 
 ### Risk 2: Curriculum Infrastructure Bugs
-**Mitigation**: Extensive unit tests, small-scale integration tests first  
+**Mitigation**: Extensive unit tests, small-scale integration tests first
 **Fallback**: Manual curriculum control for initial stages
 
 ### Risk 3: Timeline Slippage
-**Mitigation**: Prioritize critical components, defer enhancements  
+**Mitigation**: Prioritize critical components, defer enhancements
 **Fallback**: Start with Stage 0 (skip Stage -0.5) if sensorimotor delayed
 
 ---
@@ -788,17 +788,6 @@ Before starting Stage -0.5 training:
 - [ ] Cerebellum forward/inverse models training correctly
 - [ ] Proprioception integration working
 - [ ] Success criteria defined and measurable
-
-**Monitoring**:
-- [ ] Logging infrastructure for curriculum metrics
-- [ ] Visualization of stage progression
-- [ ] Health checks operational
-- [ ] Checkpoint saving/loading tested
-
-**Documentation**:
-- [ ] Training guide written
-- [ ] API documentation complete
-- [ ] Example notebooks created
 
 ---
 
@@ -854,6 +843,6 @@ tests/
 3. **Daily progress updates** to this document
 4. **Weekly reviews** with stakeholders
 
-**Status**: Ready to begin implementation  
-**Expected Completion**: December 22-29, 2025 (2-3 weeks)  
+**Status**: Ready to begin implementation
+**Expected Completion**: December 22-29, 2025 (2-3 weeks)
 **Training Start**: January 2026

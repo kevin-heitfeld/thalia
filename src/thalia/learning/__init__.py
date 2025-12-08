@@ -12,11 +12,17 @@ This module provides:
    - EIBalanceRegulator - E/I balance regulation
    - IntrinsicPlasticity - threshold adaptation
    - MetabolicConstraint - energy-based regularization
+5. Critical Period Gating - time-windowed plasticity modulation
 """
 
 from thalia.learning.bcm import (
     BCMRule,
     BCMConfig,
+)
+from thalia.learning.critical_periods import (
+    CriticalPeriodGating,
+    CriticalPeriodConfig,
+    CriticalPeriodWindow,
 )
 from thalia.learning.unified_homeostasis import (
     UnifiedHomeostasis,
@@ -66,6 +72,10 @@ __all__ = [
     # BCM (Bienenstock-Cooper-Munro) - legacy
     "BCMRule",
     "BCMConfig",
+    # Critical Period Gating
+    "CriticalPeriodGating",
+    "CriticalPeriodConfig",
+    "CriticalPeriodWindow",
     # Unified Homeostasis (constraint-based)
     "UnifiedHomeostasis",
     "UnifiedHomeostasisConfig",
