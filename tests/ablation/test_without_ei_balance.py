@@ -68,11 +68,11 @@ class TestWithoutEIBalance:
             ablated_spikes.append(ablated_cortex.state.l5_spikes.sum().item())
 
         # Analyze stability
-        baseline_variance = torch.tensor(baseline_spikes).var().item()
-        ablated_variance = torch.tensor(ablated_spikes).var().item()
+        baseline_variance = torch.tensor(baseline_spikes, dtype=torch.float32).var().item()
+        ablated_variance = torch.tensor(ablated_spikes, dtype=torch.float32).var().item()
 
-        baseline_mean = torch.tensor(baseline_spikes).mean().item()
-        ablated_mean = torch.tensor(ablated_spikes).mean().item()
+        baseline_mean = torch.tensor(baseline_spikes, dtype=torch.float32).mean().item()
+        ablated_mean = torch.tensor(ablated_spikes, dtype=torch.float32).mean().item()
 
         # Print results for documentation
         print("\n" + "="*60)
@@ -249,11 +249,11 @@ if __name__ == "__main__":
             ablated_spikes.append(ablated_cortex.state.l5_spikes.sum().item())
 
         # Analyze stability
-        baseline_variance = torch.tensor(baseline_spikes).var().item()
-        ablated_variance = torch.tensor(ablated_spikes).var().item()
+        baseline_variance = torch.tensor(baseline_spikes, dtype=torch.float32).var().item()
+        ablated_variance = torch.tensor(ablated_spikes, dtype=torch.float32).var().item()
 
-        baseline_mean = torch.tensor(baseline_spikes).mean().item()
-        ablated_mean = torch.tensor(ablated_spikes).mean().item()
+        baseline_mean = torch.tensor(baseline_spikes, dtype=torch.float32).mean().item()
+        ablated_mean = torch.tensor(ablated_spikes, dtype=torch.float32).mean().item()
 
         # Print results
         print("\n" + "="*60)

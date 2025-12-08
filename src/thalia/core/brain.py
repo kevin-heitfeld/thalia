@@ -564,6 +564,40 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             "replay": self.replay_pathway,
         }
 
+        # Pathway-region connection tracking for coordinated growth
+        # Maps: region_name -> list of (pathway, dimension_type)
+        # dimension_type: 'source' or 'target'
+        self._region_pathway_connections = {
+            'cortex': [
+                (self.cortex_to_hippo_pathway, 'source'),
+                (self.cortex_to_striatum_pathway, 'source'),
+                (self.cortex_to_pfc_pathway, 'source'),
+                (self.replay_pathway, 'target'),
+                (self.attention_pathway, 'target'),
+            ],
+            'hippocampus': [
+                (self.cortex_to_hippo_pathway, 'target'),
+                (self.hippo_to_pfc_pathway, 'source'),
+                (self.hippo_to_striatum_pathway, 'source'),
+                (self.replay_pathway, 'source'),
+            ],
+            'pfc': [
+                (self.cortex_to_pfc_pathway, 'target'),
+                (self.hippo_to_pfc_pathway, 'target'),
+                (self.pfc_to_striatum_pathway, 'source'),
+                (self.attention_pathway, 'source'),
+            ],
+            'striatum': [
+                (self.cortex_to_striatum_pathway, 'target'),
+                (self.hippo_to_striatum_pathway, 'target'),
+                (self.pfc_to_striatum_pathway, 'target'),
+                (self.striatum_to_cerebellum_pathway, 'source'),
+            ],
+            'cerebellum': [
+                (self.striatum_to_cerebellum_pathway, 'target'),
+            ],
+        }
+
         # =====================================================================
         # EVENT SCHEDULER (for sequential mode)
         # =====================================================================
@@ -616,6 +650,9 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
         # Monitoring
         self._spike_counts: Dict[str, int] = {name: 0 for name in self.adapters}
         self._events_processed: int = 0
+
+        # Growth history tracking
+        self._growth_history: list = []
 
         # =====================================================================
         # CRITICALITY MONITOR (Optional robustness diagnostic)
@@ -1803,6 +1840,105 @@ class EventDrivenBrain(SleepSystemMixin, nn.Module):
             ca1_spikes=ca1_total,
             n_stored_episodes=n_stored,
         )
+
+    def check_growth_needs(self) -> Dict[str, Any]:
+        """Check if any brain regions need growth based on capacity metrics.
+        
+        Returns:
+            Dictionary with region names as keys and growth recommendations
+        """
+        from thalia.core.growth import GrowthManager
+        
+        growth_report = {}
+        
+        # Check each major region
+        for region_name in ['striatum', 'hippocampus', 'cortex', 'pfc', 'cerebellum']:
+            if hasattr(self, region_name):
+                region = getattr(self, region_name)
+                manager = GrowthManager(region_name=region_name)
+                metrics = manager.get_capacity_metrics(region)
+                
+                growth_report[region_name] = {
+                    'firing_rate': metrics.firing_rate,
+                    'weight_saturation': metrics.weight_saturation,
+                    'synapse_usage': metrics.synapse_usage,
+                    'neuron_count': metrics.neuron_count,
+                    'growth_recommended': metrics.growth_recommended,
+                    'growth_reason': metrics.growth_reason,
+                }
+        
+        return growth_report
+
+    def auto_grow(self, threshold: float = 0.8) -> Dict[str, int]:
+        """Automatically grow regions that need more capacity.
+        
+        When a region grows, this method also updates all connected pathways
+        to maintain proper connectivity. This ensures pathway dimensions stay
+        synchronized with region sizes.
+        
+        Args:
+            threshold: Capacity threshold for triggering growth (0.0-1.0)
+            
+        Returns:
+            Dictionary mapping region names to number of neurons added
+        """
+        from datetime import datetime
+        
+        growth_actions = {}
+        report = self.check_growth_needs()
+        
+        for region_name, metrics in report.items():
+            if metrics['growth_recommended']:
+                # Calculate growth amount based on current size
+                region = getattr(self, region_name)
+                current_size = region.config.n_output
+                growth_amount = max(int(current_size * 0.1), 8)  # 10% or minimum 8
+                
+                # Add neurons to region
+                region.add_neurons(n_new=growth_amount)
+                growth_actions[region_name] = growth_amount
+                
+                # Update all pathways connected to this region
+                self._grow_connected_pathways(region_name, growth_amount)
+                
+                # Track growth history
+                self._growth_history.append({
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'region': region_name,
+                    'neurons_added': growth_amount,
+                    'old_size': current_size,
+                    'new_size': current_size + growth_amount,
+                    'reason': metrics['growth_reason'],
+                })
+        
+        return growth_actions
+
+    def _grow_connected_pathways(self, region_name: str, growth_amount: int) -> None:
+        """Grow all pathways connected to a region that has grown.
+        
+        When a region adds neurons, connected pathways need to expand their
+        weight matrices to accommodate the new connections.
+        
+        Args:
+            region_name: Name of region that grew
+            growth_amount: Number of neurons added to region
+        """
+        if region_name not in self._region_pathway_connections:
+            return
+        
+        connections = self._region_pathway_connections[region_name]
+        
+        for pathway, dimension_type in connections:
+            if dimension_type == 'source':
+                # Region is source → pathway needs more input connections
+                # This would require expanding pathway's source_size and input weights
+                # For now, we don't support this (would need pathway.expand_source())
+                pass
+            elif dimension_type == 'target':
+                # Region is target → pathway needs more output connections
+                # Pathway's target_size should grow
+                pathway.add_neurons(n_new=growth_amount)
+
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information about brain state.

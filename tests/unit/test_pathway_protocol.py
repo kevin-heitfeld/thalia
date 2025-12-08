@@ -70,8 +70,17 @@ class TestProtocolCompliance:
 
     def test_language_pathway_implements_protocol(self, device):
         """Language pathway should implement NeuralPathway protocol (ADR-007)."""
-        # Skip if import fails (language pathway uses deprecated imports)
-        pytest.skip("LanguagePathway uses deprecated EncodingType - needs refactoring")
+        from thalia.sensory import LanguagePathway, LanguageConfig
+        
+        config = LanguageConfig(device=device)
+        pathway = LanguagePathway(config)
+
+        assert isinstance(pathway, NeuralPathway)
+        # ADR-007: All pathways use forward(), not encode()
+        assert hasattr(pathway, 'forward')
+        assert hasattr(pathway, 'get_modality')
+        assert hasattr(pathway, 'reset_state')
+        assert hasattr(pathway, 'get_diagnostics')
 
     def test_spiking_pathway_implements_protocol(self, device):
         """Spiking pathway should implement NeuralPathway (always learns via STDP)."""
@@ -160,15 +169,33 @@ class TestSensoryPathwayInterface:
         assert pathway.get_modality() == Modality.AUDITION
 
     def test_language_encode(self, device):
-        """Language pathway encode should return spikes and metadata."""
-        pytest.skip("LanguagePathway uses deprecated EncodingType - needs refactoring")
+        """Language pathway forward() should return spikes and metadata (ADR-007)."""
+        from thalia.sensory import LanguagePathway, LanguageConfig, Modality
+        
+        config = LanguageConfig(output_size=128, device=device)
+        pathway = LanguagePathway(config)
+
+        # ADR-005: Single brain = single token (scalar or [1])
+        token_id = torch.tensor(42)  # Single token
+        spikes, metadata = pathway(token_id)  # Callable syntax (ADR-007)
+
+        # Check output format
+        assert isinstance(spikes, torch.Tensor)
+        assert isinstance(metadata, dict)
+        assert spikes.dim() == 2  # [n_timesteps, output_size]
+        assert spikes.shape[1] == 128  # output_size
+        
+        # Check modality
+        assert pathway.get_modality() == Modality.LANGUAGE
 
     def test_sensory_reset_state(self, device):
         """Sensory pathways should have reset_state() method."""
+        from thalia.sensory import LanguagePathway, LanguageConfig
+        
         pathways = [
             VisualPathway(VisualConfig(device=device)),
             AuditoryPathway(AuditoryConfig(device=device)),
-            # Skip LanguagePathway - has import issues
+            LanguagePathway(LanguageConfig(device=device)),
         ]
 
         for pathway in pathways:
@@ -279,7 +306,31 @@ class TestSpecializedPathways:
 
     def test_attention_pathway_forward(self, device):
         """Attention pathway should modulate input."""
-        pytest.skip("SpikingAttentionPathway forward signature differs - specialized behavior")
+        config = SpikingAttentionPathwayConfig(
+            source_size=16,    # PFC/source size
+            target_size=32,    # Cortex/target size
+            input_size=64,     # Input dimension to modulate
+            device=device,
+        )
+        pathway = SpikingAttentionPathway(config)
+
+        # Test 1: Standard forward() inherited from SpikingPathway
+        pfc_spikes = torch.rand(16) > 0.9  # Sparse PFC spikes [source_size]
+        output = pathway(pfc_spikes.float(), dt=1.0)
+        
+        assert isinstance(output, torch.Tensor)
+        assert output.shape == (32,)  # target_size
+
+        # Test 2: Specialized modulate() method for attention
+        input_signal = torch.randn(64)  # [input_size]
+        pfc_activity = torch.randn(16)  # [source_size] - PFC activity
+        modulated = pathway.modulate(input_signal, pfc_activity, dt=1.0)
+        
+        assert isinstance(modulated, torch.Tensor)
+        assert modulated.shape == (64,)  # Same as input_signal
+        
+        # Modulation should have changed the signal (usually, unless gain is exactly 1)
+        # Just check it runs without error - exact modulation depends on learned weights
 
     def test_replay_pathway_forward(self, device):
         """Replay pathway should support replay mode."""

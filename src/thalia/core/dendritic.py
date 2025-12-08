@@ -173,41 +173,39 @@ class DendriticBranch(nn.Module):
         self.plateau: Optional[torch.Tensor] = None
 
     def reset_state(self) -> None:
-        """Reset branch state to batch_size=1."""
+        """Reset branch state."""
         device = self.weights.device
-        self.plateau = torch.zeros(1, device=device)
+        # Internal state is scalar (no batch dimension per ADR-005)
+        self.plateau = torch.tensor(0.0, device=device)
 
     def forward(
         self,
-        inputs: torch.Tensor,  # (batch,) or (batch, n_inputs)
-        membrane_potential: Optional[torch.Tensor] = None,  # For voltage-dependent NMDA
+        inputs: torch.Tensor,  # [n_inputs] (1D per ADR-005)
+        membrane_potential: Optional[torch.Tensor] = None,  # Scalar, for voltage-dependent NMDA
     ) -> torch.Tensor:
         """Compute branch output with NMDA nonlinearity.
 
+        ADR-005 compliant: accepts 1D input, returns scalar output.
+        Uses internal batch dimension only for computation efficiency.
+
         Args:
-            inputs: Input conductances to this branch
-                If shape (batch, n_inputs): weighted sum is computed
-                If shape (batch,): assumed to be pre-summed input
-            membrane_potential: Somatic membrane potential for NMDA gating
+            inputs: Input conductances to this branch, shape [n_inputs]
+            membrane_potential: Somatic membrane potential (scalar) for NMDA gating
                 If provided, NMDA gain is voltage-dependent (stronger when depolarized)
 
         Returns:
-            Branch output conductance, shape (batch,)
+            Branch output conductance (scalar)
         """
         # Initialize state if needed
         if self.plateau is None:
             self.reset_state()
 
-        # Compute weighted sum if needed
-        if inputs.dim() == 2 and inputs.shape[1] == self.n_inputs:
-            # (batch, n_inputs) @ (n_inputs,) → (batch,)
-            linear_sum = torch.matmul(inputs, self.weights.clamp(min=0))
-        else:
-            linear_sum = inputs
+        # ADR-005: Expect 1D input
+        assert inputs.dim() == 1 and inputs.shape[0] == self.n_inputs, \
+            f"DendriticBranch.forward: Expected 1D input [n_inputs={self.n_inputs}], got shape {inputs.shape}"
 
-        # Ensure batch dimension
-        if linear_sum.dim() == 0:
-            linear_sum = linear_sum.unsqueeze(0)
+        # Compute weighted sum: [n_inputs] @ [n_inputs] → scalar
+        linear_sum = torch.dot(inputs, self.weights.clamp(min=0))
 
         # === NMDA Nonlinearity ===
         threshold = self.config.nmda_threshold
@@ -256,6 +254,7 @@ class DendriticBranch(nn.Module):
         # Apply branch-soma coupling
         branch_output = branch_output * self.config.branch_coupling
 
+        # ADR-005: Return scalar
         return branch_output
 
     def get_state(self) -> dict:
@@ -386,23 +385,28 @@ class DendriticNeuron(nn.Module):
         return self._cached_weights
 
     def reset_state(self) -> None:
-        """Reset all state (branches and soma)."""
+        """Reset all state (branches and soma).
+
+        Internal implementation uses batch dimension for vectorization
+        across neurons, but public API is ADR-005 compliant (1D).
+        """
         device = self.branch_weights.device
+        # Internal batch=1 for efficient vectorization across neurons
         batch_size = 1
 
-        # Reset branch plateaus
+        # Reset branch plateaus: [1, n_neurons, n_branches]
         self.branch_plateaus = torch.zeros(
             batch_size, self.n_neurons, self.n_branches,
             device=device
         )
 
-        # Reset synaptic conductance (for temporal integration)
+        # Reset synaptic conductance (for temporal integration): [1, n_neurons, n_branches]
         self.branch_g_syn = torch.zeros(
             batch_size, self.n_neurons, self.n_branches,
             device=device
         )
 
-        # Reset soma
+        # Reset soma (ConductanceLIF already ADR-005 compliant)
         self.soma.reset_state()
 
     @property
@@ -417,15 +421,17 @@ class DendriticNeuron(nn.Module):
 
     def _route_inputs_to_branches(
         self,
-        inputs: torch.Tensor,  # (batch, total_inputs)
+        inputs: torch.Tensor,  # [total_inputs] externally, [1, total_inputs] internally
     ) -> torch.Tensor:
         """Route inputs to branches based on routing mode.
 
+        Internal method: uses batch dimension for vectorization.
+
         Args:
-            inputs: Input tensor, shape (batch, total_inputs)
+            inputs: Input tensor, shape [1, total_inputs] (internal batch representation)
 
         Returns:
-            Routed inputs, shape (batch, n_neurons, n_branches, inputs_per_branch)
+            Routed inputs, shape [1, n_neurons, n_branches, inputs_per_branch]
         """
         batch_size = inputs.shape[0]
 
@@ -464,12 +470,14 @@ class DendriticNeuron(nn.Module):
 
         return routed
 
-    def compute_branch_outputs(
+    def _compute_branch_outputs(
         self,
-        inputs: torch.Tensor,  # (batch, total_inputs) or (batch, n_neurons, n_branches, inputs_per_branch)
-        membrane_potential: Optional[torch.Tensor] = None,  # (batch, n_neurons)
+        inputs: torch.Tensor,  # [1, total_inputs] (internal batch representation)
+        membrane_potential: Optional[torch.Tensor] = None,  # [n_neurons] (1D per ADR-005)
     ) -> torch.Tensor:
         """Compute outputs from all branches with NMDA nonlinearity.
+
+        Internal method: uses batch dimension for vectorization.
 
         This uses synaptic conductance dynamics for temporal integration:
         - Incoming spikes are weighted and added to g_syn
@@ -478,16 +486,14 @@ class DendriticNeuron(nn.Module):
         - This allows sequential spikes to sum and trigger NMDA
 
         Args:
-            inputs: Input spike conductances (binary or weighted)
-            membrane_potential: Somatic membrane for voltage-dependent NMDA
+            inputs: Input spike conductances, shape [1, total_inputs]
+            membrane_potential: Somatic membrane for voltage-dependent NMDA, shape [n_neurons]
 
         Returns:
-            Branch outputs, shape (batch, n_neurons, n_branches)
+            Branch outputs, shape [1, n_neurons, n_branches]
         """
         # Initialize state if needed
         if self.branch_plateaus is None or self.branch_g_syn is None:
-            from .utils import assert_single_instance
-            assert_single_instance(inputs.shape[0], "DendriticNeuron")
             self.reset_state()
 
         # Route inputs to branches if needed
@@ -519,7 +525,9 @@ class DendriticNeuron(nn.Module):
         # This combines subthreshold attenuation and suprathreshold gain in one operation
         if membrane_potential is not None:
             # Voltage-dependent NMDA: gain varies with membrane potential
-            voltage_gate = torch.sigmoid(membrane_potential.unsqueeze(-1) * 2)
+            # membrane_potential is [n_neurons] (1D per ADR-005), need to add batch dim and branch dim
+            # [n_neurons] → [1, n_neurons, 1] for broadcasting
+            voltage_gate = torch.sigmoid(membrane_potential.unsqueeze(0).unsqueeze(-1) * 2)
             # effective_gain = 1 + (nmda_gain - 1) * voltage_gate
             # gain_diff = effective_gain - attenuation = (1 - atten) + (nmda_gain - 1) * voltage_gate
             effective_gain_diff = (1.0 - self.subthreshold_attenuation) + (self.nmda_gain - 1.0) * voltage_gate
@@ -551,47 +559,87 @@ class DendriticNeuron(nn.Module):
 
     def forward(
         self,
-        inputs: torch.Tensor,  # (batch, total_inputs)
-        g_inh: Optional[torch.Tensor] = None,  # (batch, n_neurons)
+        inputs: torch.Tensor,  # [total_inputs] per ADR-005
+        g_inh: Optional[torch.Tensor] = None,  # [n_neurons] per ADR-005
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Process inputs through dendrites then soma.
 
+        ADR-005 compliant: accepts 1D inputs, returns 1D outputs.
+        Uses internal batch dimension only for vectorization efficiency.
+
         Args:
-            inputs: Input conductances, shape (batch, total_inputs)
-            g_inh: Inhibitory conductance to soma, shape (batch, n_neurons)
+            inputs: Input conductances, shape [total_inputs]
+            g_inh: Inhibitory conductance to soma, shape [n_neurons]
 
         Returns:
-            spikes: Binary spike tensor, shape (batch, n_neurons)
-            membrane: Membrane potentials, shape (batch, n_neurons)
+            spikes: Binary spike tensor, shape [n_neurons]
+            membrane: Membrane potentials, shape [n_neurons]
         """
+        # ADR-005: Validate 1D inputs
+        assert inputs.dim() == 1 and inputs.shape[0] == self.config.total_inputs, \
+            f"DendriticNeuron.forward: Expected 1D input [total_inputs={self.config.total_inputs}], got shape {inputs.shape}"
+        if g_inh is not None:
+            assert g_inh.dim() == 1 and g_inh.shape[0] == self.n_neurons, \
+                f"DendriticNeuron.forward: Expected 1D g_inh [n_neurons={self.n_neurons}], got shape {g_inh.shape}"
+
+        # Add internal batch dimension for vectorization: [total_inputs] → [1, total_inputs]
+        inputs_batched = inputs.unsqueeze(0)
+        if g_inh is not None:
+            g_inh_batched = g_inh.unsqueeze(0)
+        else:
+            g_inh_batched = None
         # Get current membrane potential for voltage-dependent NMDA
+        # soma.membrane is already 1D [n_neurons] per ADR-005
         membrane_potential = self.soma.membrane
 
-        # Compute branch outputs
-        branch_outputs = self.compute_branch_outputs(inputs, membrane_potential)
+        # Compute branch outputs (internal batched computation)
+        branch_outputs = self._compute_branch_outputs(inputs_batched, membrane_potential)
+        # branch_outputs shape: [1, n_neurons, n_branches]
 
         # Sum across branches → somatic excitatory conductance
-        g_exc_soma = branch_outputs.sum(dim=-1)  # (batch, n_neurons)
+        g_exc_soma_batched = branch_outputs.sum(dim=-1)  # [1, n_neurons]
+        g_exc_soma = g_exc_soma_batched.squeeze(0)  # [n_neurons] - ADR-005 compliant
 
-        # Process through conductance-based soma
+        # Process through conductance-based soma (already ADR-005 compliant)
         spikes, membrane = self.soma(g_exc_soma, g_inh)
 
+        # Return 1D tensors per ADR-005
         return spikes, membrane
 
     def forward_with_branch_info(
         self,
-        inputs: torch.Tensor,
-        g_inh: Optional[torch.Tensor] = None,
+        inputs: torch.Tensor,  # [total_inputs] per ADR-005
+        g_inh: Optional[torch.Tensor] = None,  # [n_neurons] per ADR-005
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Forward pass that also returns branch outputs for analysis.
 
+        ADR-005 compliant: accepts 1D inputs, returns 1D spikes/membrane,
+        and 2D branch outputs [n_neurons, n_branches].
+
         Returns:
-            spikes, membrane, branch_outputs
+            spikes: [n_neurons]
+            membrane: [n_neurons]
+            branch_outputs: [n_neurons, n_branches] (internal batch dim squeezed)
         """
+        # Add batch dimension for internal computation
+        inputs_batched = inputs.unsqueeze(0)
+        if g_inh is not None:
+            g_inh_batched = g_inh.unsqueeze(0)
+        else:
+            g_inh_batched = None
+
         membrane_potential = self.soma.membrane
-        branch_outputs = self.compute_branch_outputs(inputs, membrane_potential)
-        g_exc_soma = branch_outputs.sum(dim=-1)
+        branch_outputs_batched = self._compute_branch_outputs(inputs_batched, membrane_potential)
+        # branch_outputs_batched: [1, n_neurons, n_branches]
+
+        g_exc_soma_batched = branch_outputs_batched.sum(dim=-1)
+        g_exc_soma = g_exc_soma_batched.squeeze(0)
+
         spikes, membrane = self.soma(g_exc_soma, g_inh)
+
+        # Squeeze batch dimension from branch_outputs for return
+        branch_outputs = branch_outputs_batched.squeeze(0)  # [n_neurons, n_branches]
+
         return spikes, membrane, branch_outputs
 
     def get_state(self) -> dict:
@@ -618,7 +666,7 @@ class DendriticNeuron(nn.Module):
 
 def compute_branch_selectivity(
     neuron: DendriticNeuron,
-    input_patterns: torch.Tensor,  # (n_patterns, total_inputs)
+    input_patterns: torch.Tensor,  # [n_patterns, total_inputs]
 ) -> torch.Tensor:
     """Compute which branches respond to which input patterns.
 
@@ -626,20 +674,21 @@ def compute_branch_selectivity(
 
     Args:
         neuron: DendriticNeuron instance
-        input_patterns: Test patterns
+        input_patterns: Test patterns, shape [n_patterns, total_inputs]
 
     Returns:
-        Selectivity matrix, shape (n_patterns, n_neurons, n_branches)
+        Selectivity matrix, shape [n_patterns, n_neurons, n_branches]
     """
-    neuron.reset_state(batch_size=1)
+    neuron.reset_state()
 
     selectivity = []
     for pattern in input_patterns:
-        pattern = pattern.unsqueeze(0)  # Add batch dim
-        branch_outputs = neuron.compute_branch_outputs(pattern)
-        selectivity.append(branch_outputs.squeeze(0))  # Remove batch dim
+        # pattern is 1D [total_inputs] per ADR-005
+        _, _, branch_outputs = neuron.forward_with_branch_info(pattern)
+        # branch_outputs is [n_neurons, n_branches]
+        selectivity.append(branch_outputs)
 
-    return torch.stack(selectivity)
+    return torch.stack(selectivity)  # [n_patterns, n_neurons, n_branches]
 
 
 def create_clustered_input(

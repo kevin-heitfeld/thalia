@@ -187,7 +187,15 @@ class TestRegisterDecorator:
                 return None
             
             def forward(self, input_spikes, **kwargs):
-                return torch.zeros(1, self.config.n_output)
+                return torch.zeros(self.config.n_output)  # ADR-005: 1D output
+            
+            def get_full_state(self):
+                """Implement abstract method."""
+                return {"weights": self.weights.clone()}
+            
+            def load_full_state(self, state):
+                """Implement abstract method."""
+                self.weights = state["weights"].clone()
         
         # Check it's registered
         assert RegionRegistry.is_registered("test_region")

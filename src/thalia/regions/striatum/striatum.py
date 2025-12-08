@@ -500,6 +500,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.d1_weights = torch.cat([self.d1_weights, new_d1_weights], dim=0)
         self.d2_weights = torch.cat([self.d2_weights, new_d2_weights], dim=0)
 
+        # Update generic weights reference (use d1_weights for compatibility)
+        self.weights = self.d1_weights
+
         # =====================================================================
         # 2. UPDATE CONFIG (DO THIS BEFORE CREATING NEURONS!)
         # =====================================================================

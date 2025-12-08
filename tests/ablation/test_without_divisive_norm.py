@@ -159,8 +159,8 @@ class TestWithoutDivisiveNorm:
             without_norm_responses.append(without_norm.state.l5_spikes.sum().item())
 
         # Compute response variance across contrasts
-        with_norm_variance = torch.tensor(with_norm_responses).var().item()
-        without_norm_variance = torch.tensor(without_norm_responses).var().item()
+        with_norm_variance = torch.tensor(with_norm_responses, dtype=torch.float32).var().item()
+        without_norm_variance = torch.tensor(without_norm_responses, dtype=torch.float32).var().item()
 
         print("\n" + "="*60)
         print("CONTRAST INVARIANCE TEST")

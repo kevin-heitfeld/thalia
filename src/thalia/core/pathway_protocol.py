@@ -272,14 +272,15 @@ class BaseNeuralPathway(nn.Module, ABC):
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to pathway without disrupting existing weights.
+        """Add neurons to pathway for growth and capacity expansion.
         
         This is a default implementation that should be overridden by
         specific pathway implementations for proper weight matrix expansion.
         
         Pathways need growth support because they connect regions that may
         themselves grow. When a region adds neurons, connected pathways must
-        expand their weight matrices to accommodate the new connections.
+        expand their weight matrices to accommodate the new connections,
+        preserve existing learned weights, and maintain capacity for continued learning.
         
         Args:
             n_new: Number of neurons to add

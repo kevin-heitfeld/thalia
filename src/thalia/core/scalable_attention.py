@@ -241,10 +241,10 @@ class SpikingQueryKeyValue(nn.Module):
             
             for b in range(batch):
                 for s in range(seq_len):
-                    # Process single position: [1, n_heads * d_head]
-                    q_single = Q[b:b+1, s:s+1, :, :].reshape(1, -1)
-                    k_single = K[b:b+1, s:s+1, :, :].reshape(1, -1)
-                    v_single = V[b:b+1, s:s+1, :, :].reshape(1, -1)
+                    # Process single position: [n_heads * d_head] (1D per ADR-005)
+                    q_single = Q[b, s, :, :].reshape(-1)
+                    k_single = K[b, s, :, :].reshape(-1)
+                    v_single = V[b, s, :, :].reshape(-1)
                     
                     q_spike, _ = self.q_neurons(q_single)
                     k_spike, _ = self.k_neurons(k_single)
@@ -673,9 +673,10 @@ class ScalableSpikingAttention(nn.Module):
         _, n_keys, _ = x_key.shape
         
         # Get Q, K, V through spiking projections
-        Q, K, V = self.qkv(x_query, return_spikes=True)
-        K_full, _, V_full = self.qkv(x_key, return_spikes=True)
-        _, _, _ = self.qkv(x_value, return_spikes=True)
+        # Use membrane potentials (not spikes) for attention computation
+        Q, K, V = self.qkv(x_query, return_spikes=False)
+        K_full, _, V_full = self.qkv(x_key, return_spikes=False)
+        _, _, _ = self.qkv(x_value, return_spikes=False)
         
         # Use K and V from key/value inputs
         K = K_full

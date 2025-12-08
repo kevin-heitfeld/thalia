@@ -35,12 +35,12 @@ class TestLIFNeuronErrorHandling:
                 f"Error message should be helpful, got: {str(e)}"
 
     def test_mismatched_batch_size_raises_error(self):
-        """Test that batch_size != 1 raises error."""
+        """Test that batch_size != 1 raises error (ADR-005: expect 1D)."""
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        # Should raise error for batch_size > 1
-        with pytest.raises(ValueError, match="only supports batch_size=1"):
+        # Should raise error for batch_size > 1 (2D input)
+        with pytest.raises((ValueError, AssertionError), match="(only supports batch_size=1|Expected 1D input)"):
             neuron(torch.randn(8, 10))
 
     def test_wrong_number_of_neurons_raises_error(self):
@@ -57,15 +57,15 @@ class TestLIFNeuronErrorHandling:
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        # Very large positive input
-        large_input = torch.full((1, 10), 1e6)
+        # Very large positive input (1D per ADR-005)
+        large_input = torch.full((10,), 1e6)
         spikes, _ = neuron(large_input)
         assert not torch.isnan(spikes).any()
         assert not torch.isinf(spikes).any()
 
         # Very large negative input
         neuron.reset_state()
-        large_neg_input = torch.full((1, 10), -1e6)
+        large_neg_input = torch.full((10,), -1e6)
         spikes, _ = neuron(large_neg_input)
         assert not torch.isnan(spikes).any()
         assert not torch.isinf(spikes).any()
@@ -93,7 +93,8 @@ class TestLIFNeuronErrorHandling:
         spikes, _ = neuron(torch.randn(10))
 
         assert spikes.shape == (10,)
-        assert neuron.membrane.shape == (1, 10)
+        # ADR-005: Membrane is 1D [n_neurons]
+        assert neuron.membrane.shape == (10,)
 
 
 @pytest.mark.unit
@@ -154,9 +155,9 @@ class TestCortexErrorHandling:
         # Note: THALIA only supports batch_size=1 (single-instance architecture)
         try:
             output = cortex.forward(torch.randn(32))
-            # If it succeeds, check output shape - LayeredCortex may have different output size based on config
-            # assert output.shape[0] == 1  # REMOVED: ADR-005 uses 1D tensors, "Should have batch_size=1"
-            assert output.shape[1] > 0, "Should have non-zero output dimension"
+            # If it succeeds, check output shape (ADR-005: 1D output [n_output])
+            assert output.dim() == 1, "Should return 1D tensor"
+            assert output.shape[0] > 0, "Should have non-zero output dimension"
         except (RuntimeError, AttributeError) as e:
             # Current implementation requires reset - document this
             # This is acceptable behavior
@@ -221,8 +222,8 @@ class TestGradientFlow:
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        # Create input that requires gradients
-        input_current = torch.randn(1, 10, requires_grad=True)
+        # Create input that requires gradients (ADR-005: 1D)
+        input_current = torch.randn(10, requires_grad=True)
 
         # Forward pass
         spikes, _ = neuron(input_current)
@@ -249,7 +250,8 @@ class TestGradientFlow:
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        input_sequence = [torch.randn(1, 10, requires_grad=True) for _ in range(10)]
+        # ADR-005: Use 1D inputs
+        input_sequence = [torch.randn(10, requires_grad=True) for _ in range(10)]
 
         # Track membrane values instead of spikes
         membrane_sum = torch.tensor(0.0, requires_grad=True)

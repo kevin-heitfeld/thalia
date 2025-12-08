@@ -170,20 +170,21 @@ class TestDendriticNeuronProperties:
         neuron.reset_state()
 
         total_inputs = n_branches * inputs_per_branch
-        input_spikes = torch.randn(batch_size, total_inputs)
+        # ADR-005: Use 1D input [total_inputs]
+        input_spikes = torch.randn(total_inputs)
 
         output = neuron(input_spikes)
 
         # DendriticNeuron returns (spikes, membrane) tuple
         if isinstance(output, tuple):
             spikes, membrane = output
-            assert spikes.shape == (batch_size, n_neurons), \
-                f"Expected spike shape ({batch_size}, {n_neurons}), got {spikes.shape}"
-            assert membrane.shape == (batch_size, n_neurons), \
-                f"Expected membrane shape ({batch_size}, {n_neurons}), got {membrane.shape}"
+            assert spikes.shape == (n_neurons,), \
+                f"Expected spike shape ({n_neurons},), got {spikes.shape}"
+            assert membrane.shape == (n_neurons,), \
+                f"Expected membrane shape ({n_neurons},), got {membrane.shape}"
         else:
-            assert output.shape == (batch_size, n_neurons), \
-                f"Expected shape ({batch_size}, {n_neurons}), got {output.shape}"
+            assert output.shape == (n_neurons,), \
+                f"Expected shape ({n_neurons},), got {output.shape}"
 
 
 @pytest.mark.unit

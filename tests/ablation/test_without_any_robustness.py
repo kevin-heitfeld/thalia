@@ -162,8 +162,8 @@ class TestWithoutAnyRobustness:
             unstable_responses.extend(unstable_pattern_responses)
 
         # Check response consistency
-        stable_consistency = 1.0 / (1.0 + torch.tensor(stable_responses).std().item())
-        unstable_consistency = 1.0 / (1.0 + torch.tensor(unstable_responses).std().item())
+        stable_consistency = 1.0 / (1.0 + torch.tensor(stable_responses, dtype=torch.float32).std().item())
+        unstable_consistency = 1.0 / (1.0 + torch.tensor(unstable_responses, dtype=torch.float32).std().item())
 
         print("\n" + "="*60)
         print("LEARNING STABILITY TEST")

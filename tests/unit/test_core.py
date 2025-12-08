@@ -226,6 +226,7 @@ class TestConductanceLIF:
         builds) vs later ISIs (after adaptation accumulates).
         """
         config = ConductanceLIFConfig(
+            dt=0.1,                # Small dt for fine temporal resolution
             adapt_increment=1.0,   # Strong adaptation increment per spike
             tau_adapt=500.0,       # Slow decay so it accumulates over many spikes
             v_threshold=1.0,
@@ -283,7 +284,8 @@ class TestDendriticBranch:
         branch.reset_state()
 
         assert branch.weights.shape == (50,)
-        assert branch.plateau.shape == (1,)
+        # ADR-005: plateau is now scalar (no batch dimension)
+        assert branch.plateau.dim() == 0
         assert (branch.plateau == 0).all()
 
     def test_subthreshold_linear(self):
@@ -418,33 +420,35 @@ class TestDendriticNeuron:
         # Set uniform weights for controlled test
         neuron.branch_weights.data = torch.ones_like(neuron.branch_weights) * 0.15
 
-        # Create clustered input: 20 active inputs all on branch 0
+        # Create clustered input: 20 active inputs all on branch 0 (1D per ADR-005)
         # Branch 0 gets: 20 * 0.15 * 1.0 = 3.0 (well above threshold 0.5)
         clustered = create_clustered_input(
             n_inputs=100,
             n_active=20,
             cluster_branch=0,
             n_branches=4,
-        ).unsqueeze(0)
+        )  # Returns 1D [100]
 
-        # Create scattered input: 5 active inputs on each of 4 branches
+        # Create scattered input: 5 active inputs on each of 4 branches (1D per ADR-005)
         # Each branch gets: 5 * 0.15 * 1.0 = 0.75 (slightly above threshold)
         # But we'll use fewer to stay below threshold
-        scattered = torch.zeros(100)
+        scattered = torch.zeros(100)  # 1D
         for b in range(4):
             start = b * 25
-            scattered[0, start:start + 3] = 1.0  # Only 3 per branch
+            scattered[start:start + 3] = 1.0  # Only 3 per branch
         # Each branch gets: 3 * 0.15 = 0.45 (below threshold 0.5)
 
         # Process clustered input
         neuron.reset_state()
         _, _, branch_out_c = neuron.forward_with_branch_info(clustered)
-        max_branch_clustered = branch_out_c.max().item()
+        # branch_out_c is [n_neurons=1, n_branches=4]
+        max_branch_clustered = branch_out_c[0].max().item()
 
         # Process scattered input
         neuron.reset_state()
         _, _, branch_out_s = neuron.forward_with_branch_info(scattered)
-        max_branch_scattered = branch_out_s.max().item()
+        # branch_out_s is [n_neurons=1, n_branches=4]
+        max_branch_scattered = branch_out_s[0].max().item()
 
         # Clustered should produce higher MAX branch output due to NMDA spike
         assert max_branch_clustered > max_branch_scattered, \
@@ -460,16 +464,17 @@ class TestDendriticNeuron:
         neuron = DendriticNeuron(n_neurons=1, config=config)
         neuron.reset_state()
 
-        # Activate only branch 0
+        # Activate only branch 0 (1D per ADR-005)
         inputs = torch.zeros(100)
-        inputs[0, 0:10] = 1.0  # Only first 10 inputs (branch 0)
+        inputs[0:10] = 1.0  # Only first 10 inputs (branch 0)
 
         _, _, branch_outputs = neuron.forward_with_branch_info(inputs)
+        # branch_outputs is [n_neurons=1, n_branches=4]
 
         # Branch 0 should be active, others should be near zero
-        assert branch_outputs[0, 0, 0] > branch_outputs[0, 0, 1]
-        assert branch_outputs[0, 0, 0] > branch_outputs[0, 0, 2]
-        assert branch_outputs[0, 0, 0] > branch_outputs[0, 0, 3]
+        assert branch_outputs[0, 0] > branch_outputs[0, 1]
+        assert branch_outputs[0, 0] > branch_outputs[0, 2]
+        assert branch_outputs[0, 0] > branch_outputs[0, 3]
 
     def test_forward_produces_spikes(self):
         """Test that the neuron can produce spikes."""

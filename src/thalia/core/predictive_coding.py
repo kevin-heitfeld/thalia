@@ -320,14 +320,14 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         
     def reset_state(self) -> None:
         """Reset layer state for new sequence."""
-        batch_size = 1
+        # ADR-005: Single-instance architecture (1D tensors, no batch dimension)
         self.state = PredictiveCodingState(
-            prediction=torch.zeros(batch_size, self.config.n_input, device=self.device),
-            representation=torch.zeros(batch_size, self.config.n_representation, device=self.device),
-            error=torch.zeros(batch_size, self.config.n_input, device=self.device),
+            prediction=torch.zeros(self.config.n_input, device=self.device),
+            representation=torch.zeros(self.config.n_representation, device=self.device),
+            error=torch.zeros(self.config.n_input, device=self.device),
             precision=self.precision,
             eligibility=torch.zeros(
-                batch_size, self.config.n_input, self.config.n_representation, 
+                self.config.n_input, self.config.n_representation, 
                 device=self.device
             ),
         )
@@ -337,8 +337,8 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         self._timestep_counter = 0
         
         if self.config.use_spiking:
-            self.error_neurons.reset_state(batch_size)
-            self.prediction_neurons.reset_state(batch_size)
+            self.error_neurons.reset_state()
+            self.prediction_neurons.reset_state()
     
     def get_state(self) -> Dict[str, Any]:
         """Get state for checkpointing."""
@@ -405,12 +405,14 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         - Positive error: under-predicted (need to increase prediction)
         - Negative error: over-predicted (need to decrease prediction)
         
+        Per ADR-005: Single-instance architecture (1D tensors, no batch dimension)
+        
         Args:
-            actual: Actual input [batch, n_input]
-            predicted: Predicted input [batch, n_input]
+            actual: Actual input [n_input]
+            predicted: Predicted input [n_input]
             
         Returns:
-            error: Precision-weighted prediction error [batch, n_input]
+            error: Precision-weighted prediction error [n_input]
         """
         # Raw error
         raw_error = actual - predicted
@@ -461,18 +463,18 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         """
         Process one timestep of predictive coding.
         
+        Per ADR-005: Single-instance architecture (1D tensors, no batch dimension)
+        
         Args:
-            actual_input: Bottom-up input (sensory or from lower layer) [batch, n_input]
-            representation: Current representation from higher layer [batch, n_representation]
-            top_down_prediction: Optional direct prediction from above [batch, n_input]
+            actual_input: Bottom-up input (sensory or from lower layer) [n_input]
+            representation: Current representation from higher layer [n_representation]
+            top_down_prediction: Optional direct prediction from above [n_input]
             
         Returns:
             error: Prediction error (goes UP to higher layers)
             prediction: Current prediction (for diagnostics)
             representation_update: Suggested update to representation
         """
-        batch_size = actual_input.shape[0]
-        
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
@@ -494,7 +496,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         
         # Initialize state if needed
         if self.state.prediction is None:
-            self.reset_state(batch_size)
+            self.reset_state()
         
         # Get current representation (from input or stored)
         if representation is not None:
@@ -547,15 +549,15 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         Eligibility = outer_product(error, representation)
         This is a Hebbian-like trace: which inputs were active when error occurred.
         """
-        # Outer product: [batch, n_input] x [batch, n_representation]
-        # → [batch, n_input, n_representation]
-        batch_eligibility = torch.einsum('bi,bj->bij', error, representation)
+        # Outer product: [n_input] x [n_representation] → [n_input, n_representation]
+        # Per ADR-005: single-instance architecture (1D tensors, no batch dimension)
+        eligibility_update = torch.einsum('i,j->ij', error, representation)
         
         # Exponential moving average of eligibility
         eligibility_decay = 0.95
         self.state.eligibility = (
             eligibility_decay * self.state.eligibility +
-            (1 - eligibility_decay) * batch_eligibility
+            (1 - eligibility_decay) * eligibility_update
         )
     
     def learn(self, reward_signal: Optional[torch.Tensor] = None) -> Dict[str, float]:

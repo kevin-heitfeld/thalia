@@ -266,18 +266,18 @@ class BrainRegion(NeuromodulatorMixin, ABC):
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to region without disrupting existing weights.
+        """Add neurons to region for growth and capacity expansion.
         
         This is a default implementation that should be overridden by
         specific region implementations for proper weight matrix expansion.
         
-        Strategy:
+        Growth Strategy:
         1. Expand weight matrix: [n_output, n_input] → [n_output+n_new, n_input]
         2. Initialize new rows with sparse random connections
         3. Preserve existing weights exactly (no reinitialization)
-        4. Update config.n_output
+        4. Update config.n_output and capacity metrics
         5. Expand neuron state arrays if needed
-        6. Update capacity metrics
+        6. Maintain functional continuity during growth
         
         Args:
             n_new: Number of neurons to add
@@ -400,14 +400,14 @@ class BrainRegion(NeuromodulatorMixin, ABC):
             metrics=self.get_diagnostics()
         )
     
-    def get_capacity_metrics(self) -> Dict[str, float]:
+    def get_capacity_metrics(self) -> "CapacityMetrics":
         """Get capacity utilization metrics for growth decisions.
         
         Default implementation provides basic metrics. Regions can override
         for more sophisticated analysis.
         
         Returns:
-            Dict with metrics:
+            CapacityMetrics with:
             - firing_rate: Average firing rate (0-1)
             - weight_saturation: Fraction of weights near max
             - synapse_usage: Fraction of active synapses
@@ -420,7 +420,7 @@ class BrainRegion(NeuromodulatorMixin, ABC):
         # Use GrowthManager for standard metrics computation
         manager = GrowthManager(region_name=self.__class__.__name__)
         metrics = manager.get_capacity_metrics(self)
-        return metrics.to_dict()
+        return metrics  # Return CapacityMetrics object, not dict
 
     @abstractmethod
     def get_full_state(self) -> Dict[str, Any]:

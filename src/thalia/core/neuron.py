@@ -322,8 +322,10 @@ class LIFNeuron(nn.Module):
 
 
 @dataclass
-class ConductanceLIFConfig:
+class ConductanceLIFConfig(NeuralComponentConfig):
     """Configuration for conductance-based LIF neuron.
+
+    Inherits n_neurons, dt, device, dtype, seed from NeuralComponentConfig.
 
     This implements biologically realistic membrane dynamics where currents
     depend on the difference between membrane potential and reversal potentials.
@@ -367,9 +369,6 @@ class ConductanceLIFConfig:
         v_reset: Reset potential after spike (default: 0.0)
         tau_ref: Absolute refractory period in ms (default: 2.0)
 
-        # Simulation
-        dt: Timestep in ms (default: 0.1)
-
         # Adaptation
         tau_adapt: Adaptation time constant in ms (default: 100.0)
         adapt_increment: Adaptation conductance increment per spike (default: 0.0)
@@ -397,9 +396,6 @@ class ConductanceLIFConfig:
     v_threshold: float = 1.0
     v_reset: float = 0.0
     tau_ref: float = 2.0
-
-    # Simulation
-    dt: float = 0.1
 
     # Adaptation (conductance-based)
     tau_adapt: float = 100.0

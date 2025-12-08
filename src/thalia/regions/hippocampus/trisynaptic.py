@@ -477,6 +477,103 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             ffi_strength=0.0,
         )
 
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to hippocampus, expanding all layers proportionally.
+        
+        This expands DG, CA3, and CA1 while maintaining the circuit ratios:
+        - DG expands by (dg_expansion * n_new)
+        - CA3 expands by (ca3_size_ratio * DG_growth)
+        - CA1 expands by n_new
+        
+        All inter-layer weights are expanded to accommodate new neurons.
+        
+        Args:
+            n_new: Number of neurons to add to CA1 (output layer)
+            initialization: Weight initialization strategy
+            sparsity: Sparsity for new connections
+        """
+        from thalia.core.weight_init import WeightInitializer
+        from dataclasses import replace
+        
+        # Calculate proportional growth for all layers
+        old_ca1_size = self.ca1_size
+        new_ca1_size = old_ca1_size + n_new
+        
+        # Maintain circuit ratios
+        dg_growth = int(n_new * self.tri_config.dg_expansion / self.tri_config.ca1_size_ratio)
+        old_dg_size = self.dg_size
+        new_dg_size = old_dg_size + dg_growth
+        
+        ca3_growth = int(dg_growth * self.tri_config.ca3_size_ratio / self.tri_config.dg_expansion)
+        old_ca3_size = self.ca3_size
+        new_ca3_size = old_ca3_size + ca3_growth
+        
+        # Helper to create new weights
+        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
+            if initialization == 'xavier':
+                return WeightInitializer.xavier(n_out, n_in, device=self.device)
+            elif initialization == 'sparse_random':
+                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
+            else:
+                return WeightInitializer.uniform(n_out, n_in, device=self.device)
+        
+        # 1. Expand input→DG weights [dg, input]
+        # Add rows for new DG neurons
+        new_input_dg = new_weights_for(dg_growth, self.tri_config.n_input)
+        self.w_ec_dg = nn.Parameter(
+            torch.cat([self.w_ec_dg.data, new_input_dg], dim=0)
+        )
+        
+        # 2. Expand DG→CA3 weights [ca3, dg]
+        # Add rows for new CA3 neurons, columns for new DG neurons
+        # First expand rows (new CA3 neurons receiving from all DG)
+        new_ca3_rows = new_weights_for(ca3_growth, old_dg_size)
+        expanded_rows = torch.cat([self.w_dg_ca3.data, new_ca3_rows], dim=0)
+        # Then expand columns (all CA3 receiving from new DG)
+        new_dg_cols = new_weights_for(new_ca3_size, dg_growth)
+        self.w_dg_ca3 = nn.Parameter(
+            torch.cat([expanded_rows, new_dg_cols], dim=1)
+        )
+        
+        # 3. Expand CA3→CA3 recurrent weights [ca3, ca3]
+        # Add rows and columns for new CA3 neurons
+        new_ca3_recurrent_rows = new_weights_for(ca3_growth, old_ca3_size)
+        expanded_recurrent_rows = torch.cat([self.w_ca3_ca3.data, new_ca3_recurrent_rows], dim=0)
+        new_ca3_recurrent_cols = new_weights_for(new_ca3_size, ca3_growth)
+        self.w_ca3_ca3 = nn.Parameter(
+            torch.cat([expanded_recurrent_rows, new_ca3_recurrent_cols], dim=1)
+        )
+        
+        # 4. Expand CA3→CA1 weights [ca1, ca3]
+        # Add rows for new CA1 neurons, columns for new CA3 neurons
+        new_ca1_rows = new_weights_for(n_new, old_ca3_size)
+        expanded_ca1_rows = torch.cat([self.w_ca3_ca1.data, new_ca1_rows], dim=0)
+        new_ca3_cols_to_ca1 = new_weights_for(new_ca1_size, ca3_growth)
+        self.w_ca3_ca1 = nn.Parameter(
+            torch.cat([expanded_ca1_rows, new_ca3_cols_to_ca1], dim=1)
+        )
+        
+        # Update main weights reference (for base class compatibility)
+        self.weights = self.w_ca3_ca1
+        
+        # 5. Expand neurons for all layers
+        self.dg_size = new_dg_size
+        self.dg_neurons = LIFNeuron(self.dg_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        
+        self.ca3_size = new_ca3_size
+        self.ca3_neurons = LIFNeuron(self.ca3_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        
+        self.ca1_size = new_ca1_size
+        self.ca1_neurons = LIFNeuron(self.ca1_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        
+        # 6. Update config
+        self.config = replace(self.config, n_output=new_ca1_size)
+
     def forward(  # type: ignore[override]
         self,
         input_spikes: torch.Tensor,

@@ -152,6 +152,8 @@ class BrainCheckpoint:
             "theta": state.get("theta", {}),
             "scheduler": state.get("scheduler", {}),
             "trial_state": state.get("trial_state", {}),
+            # Growth history tracking
+            "growth_history": getattr(brain, '_growth_history', []),
             # Precision information
             "precision_policy": str(precision_policy) if precision_policy else 'fp32',
             "precision_stats": precision_stats,

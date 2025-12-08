@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
 import torch
+import torch.nn as nn
 
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
@@ -234,6 +235,66 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         neurons = ConductanceLIF(n_neurons=self.config.n_output, config=neuron_config)
         neurons.to(self.device)
         return neurons
+
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to cerebellum (Purkinje cells).
+        
+        Expands motor learning capacity by adding neurons.
+        
+        Args:
+            n_new: Number of neurons to add
+            initialization: Weight initialization strategy
+            sparsity: Sparsity for new connections
+        """
+        from thalia.core.weight_init import WeightInitializer
+        from dataclasses import replace
+        
+        old_n_output = self.config.n_output
+        new_n_output = old_n_output + n_new
+        n_granule = self.config.n_input  # Granule layer is input layer
+        
+        # Expand granule→Purkinje weights
+        if initialization == 'xavier':
+            new_weights = WeightInitializer.xavier(
+                n_output=n_new,
+                n_input=n_granule,
+                device=self.device,
+            )
+        elif initialization == 'sparse_random':
+            new_weights = WeightInitializer.sparse_random(
+                n_output=n_new,
+                n_input=n_granule,
+                sparsity=sparsity,
+                device=self.device,
+            )
+        else:
+            new_weights = WeightInitializer.uniform(
+                n_output=n_new,
+                n_input=n_granule,
+                device=self.device,
+            )
+        
+        # Update weights (Cerebellum uses self.weights directly, not w_granule_purkinje)
+        self.weights = nn.Parameter(
+            torch.cat([self.weights.data, new_weights], dim=0)
+        )
+        
+        # Expand Purkinje neurons
+        from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+        neuron_config = ConductanceLIFConfig(
+            v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
+            tau_E=3.0, tau_I=8.0,
+        )
+        self.neurons = ConductanceLIF(n_neurons=new_n_output, config=neuron_config)
+        self.neurons.to(self.device)
+        
+        # Update config
+        self.config = replace(self.config, n_output=new_n_output)
 
     def forward(
         self,

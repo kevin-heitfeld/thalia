@@ -434,6 +434,106 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         # Note: FFI state decays naturally, no hard reset needed
 
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to cortex, expanding all layers proportionally.
+        
+        This expands L4, L2/3, and L5 while maintaining layer ratios:
+        - L4 expands by (l4_ratio * n_new)
+        - L2/3 expands by (l23_ratio * n_new)
+        - L5 expands by (l5_ratio * n_new)
+        
+        All inter-layer weights are expanded to accommodate new neurons.
+        
+        Args:
+            n_new: Number of neurons to add to total cortex size
+            initialization: Weight initialization strategy
+            sparsity: Sparsity for new connections
+        """
+        from thalia.core.weight_init import WeightInitializer
+        from dataclasses import replace
+        
+        # Calculate proportional growth for all layers
+        l4_growth = int(n_new * self.layer_config.l4_ratio)
+        l23_growth = int(n_new * self.layer_config.l23_ratio)
+        l5_growth = int(n_new * self.layer_config.l5_ratio)
+        
+        old_l4_size = self.l4_size
+        old_l23_size = self.l23_size
+        old_l5_size = self.l5_size
+        
+        new_l4_size = old_l4_size + l4_growth
+        new_l23_size = old_l23_size + l23_growth
+        new_l5_size = old_l5_size + l5_growth
+        
+        # Helper to create new weights
+        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
+            if initialization == 'xavier':
+                return WeightInitializer.xavier(n_out, n_in, device=self.device)
+            elif initialization == 'sparse_random':
+                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
+            else:
+                return WeightInitializer.uniform(n_out, n_in, device=self.device)
+        
+        # 1. Expand input→L4 weights [l4, input]
+        # Add rows for new L4 neurons
+        new_input_l4 = new_weights_for(l4_growth, self.layer_config.n_input)
+        self.w_input_l4 = nn.Parameter(
+            torch.cat([self.w_input_l4.data, new_input_l4], dim=0)
+        )
+        
+        # 2. Expand L4→L2/3 weights [l23, l4]
+        # Add rows for new L2/3 neurons, columns for new L4 neurons
+        new_l23_rows = new_weights_for(l23_growth, old_l4_size)
+        expanded_l23_rows = torch.cat([self.w_l4_l23.data, new_l23_rows], dim=0)
+        new_l4_cols = new_weights_for(new_l23_size, l4_growth)
+        self.w_l4_l23 = nn.Parameter(
+            torch.cat([expanded_l23_rows, new_l4_cols], dim=1)
+        )
+        
+        # 3. Expand L2/3→L2/3 recurrent weights [l23, l23]
+        # Add rows and columns for new L2/3 neurons
+        new_l23_recurrent_rows = new_weights_for(l23_growth, old_l23_size)
+        expanded_recurrent_rows = torch.cat([self.w_l23_recurrent.data, new_l23_recurrent_rows], dim=0)
+        new_l23_recurrent_cols = new_weights_for(new_l23_size, l23_growth)
+        self.w_l23_recurrent = nn.Parameter(
+            torch.cat([expanded_recurrent_rows, new_l23_recurrent_cols], dim=1)
+        )
+        
+        # 4. Expand L2/3→L5 weights [l5, l23]
+        # Add rows for new L5 neurons, columns for new L2/3 neurons
+        new_l5_rows = new_weights_for(l5_growth, old_l23_size)
+        expanded_l5_rows = torch.cat([self.w_l23_l5.data, new_l5_rows], dim=0)
+        new_l23_cols_to_l5 = new_weights_for(new_l5_size, l23_growth)
+        self.w_l23_l5 = nn.Parameter(
+            torch.cat([expanded_l5_rows, new_l23_cols_to_l5], dim=1)
+        )
+        
+        # Update main weights reference (for base class compatibility)
+        self.weights = self.w_l23_l5
+        
+        # 5. Expand neurons for all layers
+        self.l4_size = new_l4_size
+        self.l4_neurons = LIFNeuron(self.l4_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        
+        self.l23_size = new_l23_size
+        self.l23_neurons = LIFNeuron(self.l23_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        
+        self.l5_size = new_l5_size
+        self.l5_neurons = LIFNeuron(self.l5_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        
+        # 6. Update configs
+        new_total_output = new_l5_size if self.layer_config.output_layer == "L5" else new_l23_size
+        if self.layer_config.dual_output:
+            new_total_output = new_l23_size + new_l5_size
+        
+        self.config = replace(self.config, n_output=new_total_output)
+        self.layer_config = replace(self.layer_config, n_output=new_total_output)
+
     def forward(
         self,
         input_spikes: torch.Tensor,

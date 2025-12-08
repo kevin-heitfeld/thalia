@@ -63,7 +63,7 @@ from thalia.regions.base import (
     RegionState,
     LearningRule,
 )
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig, LIFNeuron, LIFConfig
 
 
 @dataclass
@@ -360,13 +360,74 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
 
     def reset_state(self) -> None:
         """Reset state for new episode."""
-        super().reset_state()
+        # Don't call super().reset_state() because it creates RegionState
+        # Instead, create PrefrontalState directly with proper tensor shapes
+        self.state = PrefrontalState(
+            working_memory=torch.zeros(self.config.n_output, device=self.device),
+            update_gate=torch.zeros(self.config.n_output, device=self.device),
+            active_rule=None,  # Optional, can be None
+            dopamine=0.2,  # Baseline
+        )
+        
         self.neurons.reset_state()
         self.dopamine_system.reset_state()
 
         # Reset STP state
         if hasattr(self, 'stp_recurrent') and self.stp_recurrent is not None:
             self.stp_recurrent.reset_state()
+
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to prefrontal cortex.
+        
+        Expands working memory capacity by adding neurons.
+        
+        Args:
+            n_new: Number of neurons to add
+            initialization: Weight initialization strategy
+            sparsity: Sparsity for new connections
+        """
+        from thalia.core.weight_init import WeightInitializer
+        from dataclasses import replace
+        
+        old_n_output = self.config.n_output
+        new_n_output = old_n_output + n_new
+        
+        # Expand weights
+        if initialization == 'xavier':
+            new_weights = WeightInitializer.xavier(
+                n_output=n_new,
+                n_input=self.config.n_input,
+                device=self.device,
+            )
+        elif initialization == 'sparse_random':
+            new_weights = WeightInitializer.sparse_random(
+                n_output=n_new,
+                n_input=self.config.n_input,
+                sparsity=sparsity,
+                device=self.device,
+            )
+        else:
+            new_weights = WeightInitializer.uniform(
+                n_output=n_new,
+                n_input=self.config.n_input,
+                device=self.device,
+            )
+        
+        # Update weights
+        self.weights = torch.cat([self.weights, new_weights], dim=0)
+        
+        # Expand neurons
+        self.neurons = LIFNeuron(new_n_output, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        
+        # Update config
+        self.config = replace(self.config, n_output=new_n_output)
+        if hasattr(self, 'pfc_config'):
+            self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
 
         # Reset learning strategy state (traces, eligibility)
         if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:

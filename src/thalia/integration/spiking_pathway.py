@@ -32,6 +32,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from thalia.config.base import NeuralComponentConfig
 from thalia.core.pathway_protocol import BaseNeuralPathway
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.utils import clamp_weights
@@ -58,12 +59,18 @@ class SpikingLearningRule(Enum):
 
 
 @dataclass
-class SpikingPathwayConfig:
+class SpikingPathwayConfig(NeuralComponentConfig):
     """Configuration for a spiking pathway.
+
+    Inherits n_neurons, dt, device, dtype, seed from NeuralComponentConfig.
+    
+    Note: For pathways, you can set either n_neurons OR target_size (they're synonyms).
+    If both are provided, target_size takes precedence. If neither is set, defaults to 100.
+    The n_neurons field represents the pathway's intermediate neuron population size.
 
     Attributes:
         source_size: Number of neurons in source region
-        target_size: Number of neurons in target region
+        target_size: Synonym for n_neurons (pathway's intermediate population size)
 
         # Neuron model parameters
         tau_mem_ms: Membrane time constant
@@ -100,11 +107,22 @@ class SpikingPathwayConfig:
         # Homeostasis
         synaptic_scaling: Enable homeostatic scaling
         target_rate: Target firing rate for scaling
-
-        device: Compute device
+        
+    Note: Set source_size and either n_neurons or target_size when creating config.
+    They will be automatically synchronized.
     """
-    source_size: int
-    target_size: int
+    # Required field - set this when creating config!
+    source_size: int = 0  # Must be set explicitly
+    target_size: int = 100  # Synonym for n_neurons (pathway neuron population)
+
+    def __post_init__(self):
+        """Synchronize n_neurons and target_size (they're synonyms for pathways)."""
+        # If target_size was explicitly set (not default), use it for n_neurons
+        if self.target_size != 100:
+            self.n_neurons = self.target_size
+        # Otherwise, use n_neurons value (from parent or explicitly set)
+        else:
+            self.target_size = self.n_neurons
 
     # Neuron model
     tau_mem_ms: float = 20.0
@@ -153,8 +171,6 @@ class SpikingPathwayConfig:
     # BCM sliding threshold (metaplasticity)
     bcm_enabled: bool = False
     bcm_config: Optional[BCMConfig] = None  # Custom BCM parameters
-
-    device: str = "cpu"
 
 
 class SpikingPathway(BaseNeuralPathway):
@@ -729,6 +745,141 @@ class SpikingPathway(BaseNeuralPathway):
             "total_ltp": self.total_ltp,
             "total_ltd": self.total_ltd,
         }
+
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to pathway (expands target dimension).
+        
+        Pathways expand the target side (output) when adding neurons.
+        This maintains connectivity with source while increasing capacity.
+        
+        Args:
+            n_new: Number of target neurons to add
+            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
+            sparsity: Connection sparsity for new neurons (if sparse_random)
+            
+        Implementation:
+            1. Expand weight matrix: [target, source] → [target+n_new, source]
+            2. Expand all target-side state tensors (membrane, traces, etc.)
+            3. Expand axonal delays and connectivity mask
+            4. Update config
+        """
+        cfg = self.config
+        device = self.weights.device
+        old_target_size = cfg.target_size
+        new_target_size = old_target_size + n_new
+        
+        # 1. Expand weight matrix [target, source] → [target+n_new, source]
+        old_weights = self.weights.data.clone()
+        
+        # Initialize new weights for added neurons
+        if initialization == 'xavier':
+            new_weights = WeightInitializer.xavier(
+                n_output=n_new,
+                n_input=cfg.source_size,
+                device=device
+            )
+        elif initialization == 'uniform':
+            new_weights = WeightInitializer.uniform(
+                n_output=n_new,
+                n_input=cfg.source_size,
+                low=cfg.w_min,
+                high=cfg.w_max,
+                device=device
+            )
+        else:  # sparse_random (default)
+            new_weights = WeightInitializer.sparse_random(
+                n_output=n_new,
+                n_input=cfg.source_size,
+                sparsity=sparsity,
+                mean=cfg.init_mean,
+                std=cfg.init_std,
+                device=device
+            )
+        
+        # Clamp to weight bounds
+        new_weights = new_weights.clamp(cfg.w_min, cfg.w_max)
+        
+        # Concatenate old and new weights
+        expanded_weights = torch.cat([old_weights, new_weights], dim=0)
+        self.weights = nn.Parameter(expanded_weights, requires_grad=False)
+        
+        # 2. Expand axonal delays [target, source] → [target+n_new, source]
+        new_delays = WeightInitializer.gaussian(
+            n_output=n_new,
+            n_input=cfg.source_size,
+            mean=cfg.axonal_delay_ms,
+            std=cfg.delay_variability * cfg.axonal_delay_ms,
+            device=device
+        ).clamp(min=0.1)
+        expanded_delays = torch.cat([self.axonal_delays, new_delays], dim=0)
+        self.register_buffer("axonal_delays", expanded_delays)
+        
+        # 3. Expand connectivity mask if present
+        if self.connectivity_mask is not None:
+            new_mask = WeightInitializer.sparse_random(
+                n_output=n_new,
+                n_input=cfg.source_size,
+                sparsity=cfg.sparsity,
+                device=device
+            )
+            expanded_mask = torch.cat([self.connectivity_mask, new_mask], dim=0)
+            self.register_buffer("connectivity_mask", expanded_mask)
+        
+        # 4. Expand all target-side state tensors
+        # Membrane potential
+        new_membrane = torch.zeros(n_new, device=device) + cfg.v_rest
+        expanded_membrane = torch.cat([self.membrane, new_membrane], dim=0)
+        self.register_buffer("membrane", expanded_membrane)
+        
+        # Synaptic current
+        new_current = torch.zeros(n_new, device=device)
+        expanded_current = torch.cat([self.synaptic_current, new_current], dim=0)
+        self.register_buffer("synaptic_current", expanded_current)
+        
+        # Refractory counter
+        new_refractory = torch.zeros(n_new, device=device)
+        expanded_refractory = torch.cat([self.refractory, new_refractory], dim=0)
+        self.register_buffer("refractory", expanded_refractory)
+        
+        # Post-synaptic trace (target-side)
+        new_post_trace = torch.zeros(n_new, device=device)
+        expanded_post_trace = torch.cat([self.post_trace, new_post_trace], dim=0)
+        self.register_buffer("post_trace", expanded_post_trace)
+        
+        # Firing rate estimate
+        new_firing_rate = torch.zeros(n_new, device=device) + cfg.target_rate
+        expanded_firing_rate = torch.cat([self.firing_rate_estimate, new_firing_rate], dim=0)
+        self.register_buffer("firing_rate_estimate", expanded_firing_rate)
+        
+        # 5. Update STP if enabled
+        if self.stp is not None:
+            # STP tracks post-synaptic resources
+            self.stp = ShortTermPlasticity(
+                n_pre=cfg.source_size,
+                n_post=new_target_size,
+                config=self.stp.config,
+                per_synapse=True,
+            )
+            self.stp.to(device)
+        
+        # 6. Update BCM if enabled
+        if self.bcm is not None:
+            # BCM tracks sliding threshold per target neuron
+            old_bcm_config = self.bcm.config
+            self.bcm = BCMRule(
+                n_post=new_target_size,
+                config=old_bcm_config,
+            )
+            self.bcm.to(device)
+        
+        # 7. Update config
+        self.config.target_size = new_target_size
+        self.config.n_neurons = new_target_size  # Keep n_neurons in sync
 
     def get_state(self) -> Dict[str, Any]:
         """Get pathway state for checkpointing.

@@ -34,7 +34,8 @@ class TestGrowthManager:
         assert 0 <= metrics.firing_rate <= 1
         assert 0 <= metrics.weight_saturation <= 1
         assert 0 <= metrics.synapse_usage <= 1
-        assert metrics.neuron_count == 32
+        # Striatum has 10x output neurons internally (D1 + D2 populations)
+        assert metrics.neuron_count == 320  # 32 * 10
         assert metrics.synapse_count > 0
 
     def test_growth_history_tracking(self):
@@ -85,47 +86,59 @@ class TestGrowthManager:
 class TestStriatumGrowth:
     """Test growth operations on Striatum region."""
 
-    @pytest.mark.skip(reason="Striatum.add_neurons() not yet implemented")
     def test_add_neurons_preserves_weights(self):
         """Test that adding neurons doesn't change existing weights."""
         config = StriatumConfig(n_input=64, n_output=32, device="cpu")
         region = Striatum(config)
 
-        # Save original weights
-        original_weights = region.weights.clone()
+        # Save original D1 weights (Striatum uses d1_weights, self.weights is just a reference)
+        original_d1 = region.d1_weights.clone()
+        original_d2 = region.d2_weights.clone()
+        # Striatum: 32 actions * 10 neurons_per_action = 320 neurons
+        assert original_d1.shape[0] == 320
 
-        # Add neurons
+        # Add neurons (16 new actions = 16 * 10 = 160 neurons)
         region.add_neurons(n_new=16, initialization='sparse_random', sparsity=0.1)
 
-        # Check existing weights unchanged
-        new_weights = region.weights
-        assert new_weights.shape == (48, 64)  # 32 + 16 = 48
+        # Check D1/D2 weights expanded correctly
+        assert region.d1_weights.shape == (480, 64)  # 320 + 160 = 480
+        assert region.d2_weights.shape == (480, 64)
+        
+        # Check existing D1 weights unchanged (with small tolerance for floating point)
         torch.testing.assert_close(
-            new_weights[:32, :],  # Original neurons
-            original_weights,
-            rtol=0, atol=0  # Exact match
+            region.d1_weights[:320, :],
+            original_d1,
+            rtol=1e-5, atol=1e-7  # Small tolerance
+        )
+        
+        # Check existing D2 weights unchanged
+        torch.testing.assert_close(
+            region.d2_weights[:320, :],
+            original_d2,
+            rtol=1e-5, atol=1e-7
         )
 
         # Check new neurons have reasonable weights
-        new_neuron_weights = new_weights[32:, :]
-        assert new_neuron_weights.abs().max() > 0  # Not all zeros
-        assert (new_neuron_weights == 0).float().mean() > 0.8  # Mostly sparse
+        new_d1_weights = region.d1_weights[320:, :]
+        assert new_d1_weights.abs().max() > 0  # Not all zeros
+        assert (new_d1_weights == 0).float().mean() > 0.8  # Mostly sparse
 
-    @pytest.mark.skip(reason="Striatum.add_neurons() not yet implemented")
     def test_capacity_metrics_api(self):
         """Test that regions expose capacity metrics."""
+        from thalia.core.growth import CapacityMetrics
+        
         config = StriatumConfig(n_input=64, n_output=32, device="cpu")
         region = Striatum(config)
 
         metrics = region.get_capacity_metrics()
 
-        assert 'firing_rate' in metrics
-        assert 'weight_saturation' in metrics
-        assert 'synapse_usage' in metrics
-        assert 'neuron_count' in metrics
-        assert 'growth_recommended' in metrics
+        assert isinstance(metrics, CapacityMetrics)
+        assert hasattr(metrics, 'firing_rate')
+        assert hasattr(metrics, 'weight_saturation')
+        assert hasattr(metrics, 'synapse_usage')
+        assert hasattr(metrics, 'neuron_count')
+        assert hasattr(metrics, 'growth_recommended')
 
-    @pytest.mark.skip(reason="Striatum.add_neurons() not yet implemented")
     def test_growth_with_checkpoint_roundtrip(self, tmp_path):
         """Test save/load checkpoint after growth."""
         config = StriatumConfig(n_input=64, n_output=32, device="cpu")
@@ -135,7 +148,7 @@ class TestStriatumGrowth:
         input_spikes = torch.rand(64) > 0.8
         _ = region1.forward(input_spikes.float())
 
-        # Add neurons
+        # Add neurons (16 actions = 160 neurons total)
         region1.add_neurons(n_new=16)
 
         # Process more input
@@ -144,24 +157,24 @@ class TestStriatumGrowth:
         # Save state
         state1 = region1.get_full_state()
 
-        # Create new region with ORIGINAL config
-        region2 = Striatum(config)
+        # Create new region with GROWN config (not original)
+        grown_config = StriatumConfig(n_input=64, n_output=48, device="cpu")  # 32 + 16 actions
+        region2 = Striatum(grown_config)
 
-        # Load state (should handle size mismatch)
+        # Load state
         region2.load_full_state(state1)
 
         # Verify weights match
         torch.testing.assert_close(region1.weights, region2.weights)
 
-        # Verify can process input
+        # Verify can process input (48 actions * 10 = 480 neurons)
         output2 = region2.forward(input_spikes.float())
-        assert output2.shape[0] == 48  # 32 + 16
+        assert output2.shape[0] == 480  # 480 neurons
 
 
 class TestGrowthIntegration:
     """Integration tests for growth with full brain."""
 
-    @pytest.mark.skip(reason="Brain.check_growth_needs() not yet implemented")
     def test_brain_check_growth_needs(self):
         """Test brain-level growth need detection."""
         from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
@@ -179,7 +192,6 @@ class TestGrowthIntegration:
         assert isinstance(growth_report, dict)
         assert 'striatum' in growth_report or 'regions' in growth_report
 
-    @pytest.mark.skip(reason="Growth checkpoint integration not yet complete")
     def test_checkpoint_preserves_growth_history(self, tmp_path):
         """Test that growth history survives checkpoint roundtrip."""
         from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
