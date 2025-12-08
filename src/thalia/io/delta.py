@@ -50,24 +50,24 @@ DELTA_VERSION = 1
 class DeltaHeader:
     """Delta checkpoint header (64 bytes)."""
     
-    magic: bytes  # 4 bytes - "ΔTHL"
+    magic: bytes  # 5 bytes - "ΔTHL" (Δ is 2 bytes in UTF-8)
     delta_version: int  # 4 bytes
     base_checkpoint_hash: bytes  # 32 bytes (SHA-256)
     base_step: int  # 8 bytes
     current_step: int  # 8 bytes
-    # reserved: 8 bytes
+    # reserved: 7 bytes (to pad to 64 bytes)
     
     def to_bytes(self) -> bytes:
         """Serialize to 64 bytes."""
         data = struct.pack(
-            '<4sI32sQQ',
+            '<5sI32sQQ',  # 5 + 4 + 32 + 8 + 8 = 57 bytes
             self.magic,
             self.delta_version,
             self.base_checkpoint_hash,
             self.base_step,
             self.current_step,
         )
-        # Pad to 64 bytes
+        # Pad to 64 bytes (need 7 more bytes)
         return data + b'\x00' * (64 - len(data))
     
     @classmethod
@@ -76,7 +76,7 @@ class DeltaHeader:
         if len(data) < 64:
             raise ValueError(f"Delta header too short: {len(data)} < 64")
         
-        fields = struct.unpack('<4sI32sQQ', data[:56])
+        fields = struct.unpack('<5sI32sQQ', data[:57])  # Read 57 bytes
         
         return cls(
             magic=fields[0],
@@ -442,9 +442,8 @@ def save_delta_checkpoint(
     base_checkpoint_path = Path(base_checkpoint_path)
     output_path = Path(output_path)
     
-    # Load base state
-    base_brain = BrainCheckpoint.load(base_checkpoint_path)
-    base_state = base_brain.get_full_state()
+    # Load base state (returns dict, not brain object)
+    base_state = BrainCheckpoint.load(base_checkpoint_path)
     
     # Compute delta
     delta_state = compute_state_delta(current_state, base_state, threshold=threshold)
@@ -492,7 +491,8 @@ def save_delta_checkpoint(
     # Compute statistics
     base_size = base_checkpoint_path.stat().st_size
     delta_size = output_path.stat().st_size
-    compression_ratio = delta_size / base_size if base_size > 0 else 1.0
+    compression_factor = base_size / delta_size if delta_size > 0 else 1.0
+    savings_percent = (1 - (delta_size / base_size)) * 100 if base_size > 0 else 0.0
     
     num_changed_regions = len(delta_state['regions'])
     num_changed_pathways = len(delta_state['pathways'])
@@ -502,8 +502,8 @@ def save_delta_checkpoint(
         'delta_checkpoint': str(output_path),
         'base_size_mb': base_size / (1024 * 1024),
         'delta_size_mb': delta_size / (1024 * 1024),
-        'compression_ratio': compression_ratio,
-        'savings_percent': (1 - compression_ratio) * 100,
+        'compression_ratio': compression_factor,  # e.g., 3.0 means 3x smaller
+        'savings_percent': savings_percent,  # e.g., 66.7 means 66.7% savings
         'changed_regions': num_changed_regions,
         'changed_pathways': num_changed_pathways,
     }
@@ -572,11 +572,14 @@ def load_delta_checkpoint(
             f"The base checkpoint may have been modified or corrupted."
         )
     
-    # Load base state
-    base_brain = BrainCheckpoint.load(base_checkpoint_path, device=device)
-    base_state = base_brain.get_full_state()
+    # Load base state (returns dict, not brain object)
+    base_state = BrainCheckpoint.load(base_checkpoint_path, device=device)
     
     # Reconstruct full state
     reconstructed_state = reconstruct_state_from_delta(base_state, delta_state, device=device)
+    
+    # Restore FP16 tensors to FP32 (delta may have been saved with FP16)
+    from .precision import restore_precision_to_fp32
+    reconstructed_state = restore_precision_to_fp32(reconstructed_state, in_place=True)
     
     return reconstructed_state

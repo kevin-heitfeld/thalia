@@ -337,9 +337,9 @@ class BrainCheckpoint:
         if not path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {path}")
         
-        # Check if this is a delta checkpoint
+        # Check if this is a delta checkpoint (magic is 5 bytes: \xCE\x94THL)
         with open(path, 'rb') as f:
-            magic = f.read(4)
+            magic = f.read(5)
             f.seek(0)
             
             if magic == DELTA_MAGIC:

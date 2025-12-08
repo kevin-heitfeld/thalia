@@ -197,6 +197,9 @@ def _decode_dense(file: BinaryIO, shape: Tuple[int, ...], dtype: torch.dtype, de
     elif dtype == torch.float64:
         np_dtype = np.float64
         bytes_per_elem = 8
+    elif dtype == torch.float16:
+        np_dtype = np.float16
+        bytes_per_elem = 2
     elif dtype == torch.int32:
         np_dtype = np.int32
         bytes_per_elem = 4
