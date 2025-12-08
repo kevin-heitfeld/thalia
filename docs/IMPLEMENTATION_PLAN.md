@@ -390,15 +390,15 @@ class SleepSystemMixin:
 
 ---
 
-#### 2.3.3 Attention Mechanisms (Enhanced) ⚠️ ENHANCE EXISTING
+#### 2.3.3 Attention Mechanisms (Enhanced) ✅ COMPLETE
 **Curriculum**: Stage 1, continuous
-**Status**: Partially implemented (top-down exists)
+**Status**: **IMPLEMENTED** (Commit: 4cf1db4)
 **Complexity**: Small (4-8 hours)
 **Impact**: Bottom-up salience + developmental progression
 
 **Implementation**:
-- **File**: `src/thalia/integration/pathways/attention.py` (enhance)
-- **Add**: Bottom-up salience, developmental weighting
+- **File**: `src/thalia/integration/pathways/attention.py` (NEW - 443 lines)
+- **Tests**: `tests/unit/test_attention_mechanisms.py` (36 tests, 0.33s)
 
 ```python
 class AttentionMechanisms:
@@ -424,16 +424,33 @@ class AttentionMechanisms:
 
         # Stage-dependent weighting
         weights = {
-            1: (0.7, 0.3),  # Stage 1: 70% bottom-up
-            2: (0.5, 0.5),  # Stage 2: balanced
-            3: (0.3, 0.7),  # Stage 3+: 70% top-down
+            0: (1.0, 0.0),  # Infant: Pure bottom-up
+            1: (0.7, 0.3),  # Toddler: Mostly bottom-up
+            2: (0.5, 0.5),  # Preschool: Balanced
+            3: (0.3, 0.7),  # School-age: Mostly top-down
         }
         w_bu, w_td = weights.get(stage, (0.3, 0.7))
 
         return w_bu * bottom_up + w_td * top_down
 ```
 
-**Tests**: `tests/unit/test_attention_mechanisms.py`
+**Features**:
+- Bottom-up: Brightness/contrast, motion, novelty (EMA)
+- Top-down: Wraps existing `SpikingAttentionPathway`
+- Developmental progression: 4 stages (infant → school-age)
+- Memory: Motion history (prev_input), novelty history (EMA)
+- Statistics: Event counting, strength averaging
+
+**Tests**: 36 passing (0.33s)
+- Bottom-up: Contrast detection, motion, novelty (7 tests)
+- Top-down: Modulation, statistics (2 tests)
+- Combined: Stage weighting, without goals (5 tests)
+- Developmental: Stage setting, weights, progression (6 tests)
+- Memory: Motion updates, novelty EMA, persistence (3 tests)
+- Application: Attended input, shape preservation (2 tests)
+- Integration: Full pipeline, temporal dynamics (3 tests)
+- Edge cases: Zero/uniform/sparse input, device consistency (5 tests)
+- Configuration: Custom weights, stage, weight override (3 tests)
 
 ---
 
