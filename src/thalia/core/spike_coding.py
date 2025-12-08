@@ -291,7 +291,6 @@ class SpikeDecoder(nn.Module, ABC):
             # (Subclasses define size)
             pass
 
-    @abstractmethod
     def decode(self, spikes: torch.Tensor) -> Any:
         """
         Decode spike patterns to output.
@@ -301,8 +300,14 @@ class SpikeDecoder(nn.Module, ABC):
 
         Returns:
             output: Modality-specific output
+            
+        Note:
+            This provides a default rate-code implementation.
+            Subclasses should override for better strategies.
         """
-        pass
+        # Default implementation: rate-code decoding
+        # Subclasses should override for modality-specific behavior
+        return self._integrate_spikes(spikes)
 
     def forward(self, spikes: torch.Tensor) -> Any:
         """Forward pass delegates to decode()."""

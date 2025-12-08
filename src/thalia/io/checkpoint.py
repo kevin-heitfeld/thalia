@@ -337,15 +337,6 @@ class BrainCheckpoint:
         if not path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {path}")
         
-        # Check if this is a delta checkpoint (magic is 5 bytes: \xCE\x94THL)
-        with open(path, 'rb') as f:
-            magic = f.read(5)
-            f.seek(0)
-            
-            if magic == DELTA_MAGIC:
-                # This is a delta checkpoint - use special loader
-                return load_delta_checkpoint(path, device=device)
-        
         # Check for compression
         compression = detect_compression(path)
         
@@ -355,6 +346,14 @@ class BrainCheckpoint:
         
         if compression is not None:
             file_data = decompress_data(file_data, compression)
+        
+        # Check if this is a delta checkpoint AFTER decompression (magic is 5 bytes: \xCE\x94THL)
+        if file_data[:5] == DELTA_MAGIC:
+            # This is a delta checkpoint - use special loader
+            # For compressed delta, we need to decompress first, then pass to delta loader
+            # But delta loader expects a path. We need to handle this differently.
+            # The load_delta_checkpoint function will re-read and decompress, so pass the original path
+            return load_delta_checkpoint(path, device=device)
         
         # Now parse the decompressed data
         f = io.BytesIO(file_data)

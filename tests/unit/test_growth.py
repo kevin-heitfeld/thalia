@@ -44,7 +44,8 @@ class TestGrowthManager:
         # Create mock event
         event = GrowthEvent(
             timestamp="2025-12-07T10:00:00",
-            region_name="test",
+            component_name="test",
+            component_type="region",
             event_type="add_neurons",
             n_neurons_added=10,
             reason="test growth"
@@ -62,7 +63,8 @@ class TestGrowthManager:
         # Add some history
         event = GrowthEvent(
             timestamp="2025-12-07T10:00:00",
-            region_name="test",
+            component_name="test",
+            component_type="region",
             event_type="add_neurons",
             n_neurons_added=10
         )

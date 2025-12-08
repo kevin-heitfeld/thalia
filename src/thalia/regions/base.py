@@ -291,6 +291,114 @@ class BrainRegion(NeuromodulatorMixin, ABC):
             "Growth support requires region-specific implementation."
         )
     
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get current activity and health metrics.
+        
+        Returns dictionary with region-specific diagnostics:
+        - firing_rate: Average firing rate
+        - weight_stats: Weight statistics (mean, std, min, max)
+        - spike_count: Total spikes this timestep
+        - neuromodulator_levels: Current dopamine, ACh, NE
+        
+        Returns:
+            Dict with diagnostic information
+        """
+        diagnostics = {
+            'region_name': self.__class__.__name__,
+            'n_neurons': self.n_output,
+            'timestep': self.state.t,
+        }
+        
+        # Spike statistics
+        if self.state.spikes is not None:
+            spikes = self.state.spikes
+            diagnostics['spike_count'] = int(spikes.sum().item())
+            diagnostics['firing_rate'] = float(spikes.float().mean().item())
+        else:
+            diagnostics['spike_count'] = 0
+            diagnostics['firing_rate'] = 0.0
+        
+        # Weight statistics
+        if hasattr(self, 'weights'):
+            w = self.weights.detach()
+            diagnostics['weight_stats'] = {
+                'mean': float(w.mean().item()),
+                'std': float(w.std().item()),
+                'min': float(w.min().item()),
+                'max': float(w.max().item()),
+            }
+        
+        # Neuromodulator levels
+        diagnostics['neuromodulators'] = self.get_neuromodulator_state()
+        
+        return diagnostics
+    
+    def check_health(self) -> 'HealthReport':
+        """Check for pathological states.
+        
+        Detects:
+        - Silence: Firing rate too low (<1%)
+        - Runaway activity: Firing rate too high (>90%)
+        - Weight saturation: Too many weights at limits
+        - Dead neurons: No activity
+        
+        Returns:
+            HealthReport with detected issues
+        """
+        from thalia.diagnostics.health_monitor import HealthReport, IssueReport, IssueSeverity
+        
+        issues = []
+        
+        # Check firing rate
+        if self.state.spikes is not None:
+            firing_rate = float(self.state.spikes.float().mean().item())
+            
+            if firing_rate < 0.01:  # Less than 1%
+                issues.append(IssueReport(
+                    severity=IssueSeverity.HIGH,
+                    issue_type='silence',
+                    message=f'Firing rate too low: {firing_rate:.1%}',
+                    suggested_fix='Check input strength, reduce thresholds, or increase excitation'
+                ))
+            elif firing_rate > 0.90:  # More than 90%
+                issues.append(IssueReport(
+                    severity=IssueSeverity.HIGH,
+                    issue_type='runaway',
+                    message=f'Firing rate too high: {firing_rate:.1%}',
+                    suggested_fix='Increase inhibition, increase thresholds, or reduce input strength'
+                ))
+        
+        # Check weight saturation
+        if hasattr(self, 'weights'):
+            w = self.weights.detach()
+            near_max = (w > self.config.w_max * 0.95).float().mean().item()
+            near_min = (w < self.config.w_min + 0.05).float().mean().item()
+            
+            if near_max > 0.5 or near_min > 0.5:
+                issues.append(IssueReport(
+                    severity=IssueSeverity.MEDIUM,
+                    issue_type='weight_saturation',
+                    message=f'Weight saturation: {near_max:.1%} near max, {near_min:.1%} near min',
+                    suggested_fix='Consider synaptic scaling or weight normalization'
+                ))
+        
+        # Create report
+        is_healthy = len(issues) == 0
+        overall_severity = max([issue.severity.value for issue in issues]) if issues else 0.0
+        
+        if is_healthy:
+            summary = f"{self.__class__.__name__}: Healthy"
+        else:
+            summary = f"{self.__class__.__name__}: {len(issues)} issue(s) detected"
+        
+        return HealthReport(
+            is_healthy=is_healthy,
+            overall_severity=overall_severity,
+            issues=issues,
+            summary=summary,
+            metrics=self.get_diagnostics()
+        )
+    
     def get_capacity_metrics(self) -> Dict[str, float]:
         """Get capacity utilization metrics for growth decisions.
         

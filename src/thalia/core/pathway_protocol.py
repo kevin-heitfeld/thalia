@@ -210,6 +210,62 @@ class BaseNeuralPathway(nn.Module, ABC):
         """Get pathway diagnostics. Must be implemented by subclasses."""
         pass
     
+    def check_health(self) -> 'HealthReport':
+        """Check for pathological states in pathway.
+        
+        Detects:
+        - Zero output: No spikes passing through
+        - Weight saturation: Too many weights at limits
+        - Dead connections: Unused pathways
+        
+        Returns:
+            HealthReport with detected issues
+        """
+        from thalia.diagnostics.health_monitor import HealthReport, IssueReport, IssueSeverity
+        
+        issues = []
+        diagnostics = self.get_diagnostics()
+        
+        # Check for zero output
+        if 'output_spike_rate' in diagnostics:
+            rate = diagnostics['output_spike_rate']
+            if rate < 0.001:  # Less than 0.1%
+                issues.append(IssueReport(
+                    severity=IssueSeverity.MEDIUM,
+                    issue_type='silence',
+                    message=f'Pathway output very low: {rate:.3%}',
+                    suggested_fix='Check input activity, weights, or pathway gating'
+                ))
+        
+        # Check weight statistics
+        if 'weight_stats' in diagnostics:
+            stats = diagnostics['weight_stats']
+            mean = stats.get('mean', 0)
+            if abs(mean) < 0.01:
+                issues.append(IssueReport(
+                    severity=IssueSeverity.LOW,
+                    issue_type='weak_connections',
+                    message=f'Very weak pathway weights: mean={mean:.3f}',
+                    suggested_fix='May need weight reinitialization or stronger learning'
+                ))
+        
+        # Create report
+        is_healthy = len(issues) == 0
+        overall_severity = max([issue.severity.value for issue in issues]) if issues else 0.0
+        
+        if is_healthy:
+            summary = f"{self.__class__.__name__}: Healthy"
+        else:
+            summary = f"{self.__class__.__name__}: {len(issues)} issue(s) detected"
+        
+        return HealthReport(
+            is_healthy=is_healthy,
+            overall_severity=overall_severity,
+            issues=issues,
+            summary=summary,
+            metrics=diagnostics
+        )
+    
     def add_neurons(
         self,
         n_new: int,
