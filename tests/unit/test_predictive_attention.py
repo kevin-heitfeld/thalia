@@ -176,7 +176,7 @@ class TestHierarchicalPredictiveCoding:
         )
         hierarchy.reset_state()
 
-        sensory = torch.randn(1, 64)
+        sensory = torch.randn(64)
         errors, representations = hierarchy(sensory)
 
         assert len(errors) == 2
@@ -190,7 +190,7 @@ class TestHierarchicalPredictiveCoding:
         )
         hierarchy.reset_state()
 
-        sensory = torch.randn(1, 64)
+        sensory = torch.randn(64)
 
         # Forward pass
         for _ in range(10):
@@ -486,8 +486,8 @@ class TestPredictiveAttentionIntegration:
         pred_layer.reset_state()
 
         # Forward through prediction
-        input_data = torch.randn(1, 64)
-        representation = torch.randn(1, 32)
+        input_data = torch.randn(64)
+        representation = torch.randn(32)
         error, _, _ = pred_layer(input_data, representation)
 
         # Use precision to modulate attention
@@ -497,7 +497,7 @@ class TestPredictiveAttentionIntegration:
         assert precision.shape == (64,), f"Precision should have shape (n_input,) but got {precision.shape}"
 
         # Verify error output
-        assert error.shape == (1, 64), "Error should have correct shape"
+        assert error.shape == (64,), "Error should have correct shape"
 class TestLearningWithoutBackprop:
     """Test that learning works without backpropagation."""
 
@@ -512,8 +512,8 @@ class TestLearningWithoutBackprop:
         layer.reset_state()
 
         # Forward pass
-        input_data = torch.randn(1, 64)
-        representation = torch.randn(1, 32)
+        input_data = torch.randn(64)
+        representation = torch.randn(32)
 
         for _ in range(10):
             layer(input_data, representation)
@@ -536,10 +536,10 @@ class TestLearningWithoutBackprop:
         layer.reset_state()
 
         # Create a pattern with specific structure
-        input_pattern = torch.zeros(1, 64)
+        input_pattern = torch.zeros(64)
         input_pattern[:, :16] = 1.0  # Active in first 16 dimensions
 
-        representation = torch.zeros(1, 32)
+        representation = torch.zeros(32)
         representation[:, :8] = 1.0  # Active in first 8 dimensions
 
         initial_weights = layer.W_pred.clone()

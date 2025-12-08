@@ -40,7 +40,7 @@ class TestWithoutAnyRobustness:
         ablated_cortex = LayeredCortex(ablated_config)
 
         # Run with moderate input
-        input_pattern = torch.randn(1, 64) * 1.0
+        input_pattern = torch.randn(64) * 1.0
 
         # Track activity
         baseline_activities = []
@@ -130,9 +130,9 @@ class TestWithoutAnyRobustness:
 
         # Training sequence: gradually increasing complexity
         patterns = [
-            torch.randn(1, 64) * 0.5,   # Weak
-            torch.randn(1, 64) * 1.0,   # Moderate
-            torch.randn(1, 64) * 1.5,   # Strong
+            torch.randn(64) * 0.5,   # Weak
+            torch.randn(64) * 1.0,   # Moderate
+            torch.randn(64) * 1.5,   # Strong
         ]
 
         stable_responses = []
@@ -206,7 +206,7 @@ class TestWithoutAnyRobustness:
         ))
 
         # Test with challenging input
-        input_pattern = torch.randn(1, 64) * 1.5
+        input_pattern = torch.randn(64) * 1.5
 
         # Collect responses
         configs = {

@@ -25,7 +25,7 @@ class TestLIFNeuronErrorHandling:
         # The implementation may auto-initialize or raise an error
         # Both behaviors are acceptable
         try:
-            spikes, _ = neuron(torch.randn(1, 10))
+            spikes, _ = neuron(torch.randn(10))
             # If it succeeds, membrane should be initialized
             assert hasattr(neuron, 'membrane')
             assert neuron.membrane is not None
@@ -50,7 +50,7 @@ class TestLIFNeuronErrorHandling:
 
         # Try to pass wrong number of neurons
         with pytest.raises((ValueError, RuntimeError, AssertionError)):
-            neuron(torch.randn(1, 20))  # Should be 10 neurons
+            neuron(torch.randn(20))  # Should be 10 neurons
 
     def test_handles_extreme_input_values(self):
         """Test that extreme (but not inf/nan) input values don't crash."""
@@ -77,8 +77,8 @@ class TestLIFNeuronErrorHandling:
         # Multiple resets should work fine
         for _ in range(4):
             neuron.reset_state()
-            spikes, _ = neuron(torch.randn(1, 10))
-            assert spikes.shape == (1, 10)
+            spikes, _ = neuron(torch.randn(10))
+            assert spikes.shape == (10,)
 
     def test_reset_with_different_batch_size_updates_state(self):
         """Test that reset properly updates internal state."""
@@ -86,13 +86,13 @@ class TestLIFNeuronErrorHandling:
 
         # First reset
         neuron.reset_state()
-        neuron(torch.randn(1, 10))
+        neuron(torch.randn(10))
 
         # Reset again
         neuron.reset_state()
-        spikes, _ = neuron(torch.randn(1, 10))
+        spikes, _ = neuron(torch.randn(10))
 
-        assert spikes.shape == (1, 10)
+        assert spikes.shape == (10,)
         assert neuron.membrane.shape == (1, 10)
 
 
@@ -105,8 +105,8 @@ class TestConductanceLIFErrorHandling:
         neuron = ConductanceLIF(n_neurons=10)
         neuron.reset_state()
 
-        exc = torch.randn(1, 10)
-        inh = torch.randn(1, 5)  # Wrong size!
+        exc = torch.randn(10)
+        inh = torch.randn(5)  # Wrong size!
 
         with pytest.raises((ValueError, RuntimeError, AssertionError)):
             neuron(exc, inh)
@@ -116,10 +116,10 @@ class TestConductanceLIFErrorHandling:
         neuron = ConductanceLIF(n_neurons=10)
         neuron.reset_state()
 
-        exc = torch.randn(1, 10)
+        exc = torch.randn(10)
         spikes, _ = neuron(exc, None)  # Should work
 
-        assert spikes.shape == (1, 10)
+        assert spikes.shape == (10,)
 
 
 @pytest.mark.unit
@@ -133,10 +133,10 @@ class TestDendriticNeuronErrorHandling:
         neuron.reset_state()
 
         # Total inputs = n_branches * inputs_per_branch = 3 * 10 = 30
-        branch_inputs = torch.randn(1, 30)
+        branch_inputs = torch.randn(30)
         spikes, _ = neuron(branch_inputs)
 
-        assert spikes.shape == (1, 5), f"Expected (1, 5), got {spikes.shape}"
+        assert spikes.shape == (5,), f"Expected (1, 5), got {spikes.shape}"
 
 
 @pytest.mark.unit
@@ -153,7 +153,7 @@ class TestCortexErrorHandling:
         # Test that it either works or gives clear error
         # Note: THALIA only supports batch_size=1 (single-instance architecture)
         try:
-            output = cortex.forward(torch.randn(1, 32))
+            output = cortex.forward(torch.randn(32))
             # If it succeeds, check output shape - LayeredCortex may have different output size based on config
             assert output.shape[0] == 1, "Should have batch_size=1"
             assert output.shape[1] > 0, "Should have non-zero output dimension"
@@ -170,7 +170,7 @@ class TestCortexErrorHandling:
 
         # Wrong input size - should be caught
         try:
-            cortex.forward(torch.randn(1, 64))  # Should be 32
+            cortex.forward(torch.randn(64))  # Should be 32
             # If it doesn't raise, at least document that it didn't crash
             pass
         except (ValueError, RuntimeError, AssertionError):
@@ -195,7 +195,7 @@ class TestThreadSafety:
                 neuron.reset_state()
 
                 for _ in range(10):
-                    spikes, _ = neuron(torch.randn(1, 100))
+                    spikes, _ = neuron(torch.randn(100))
                     results.append(spikes.sum().item())
             except Exception as e:
                 errors.append(e)

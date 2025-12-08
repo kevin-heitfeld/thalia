@@ -161,7 +161,7 @@ class TestCortexWithRobustness:
         cortex = LayeredCortex(config)
 
         # Test with different input magnitudes
-        weak_pattern = torch.randn(1, 32) * 0.5  # (batch, features)
+        weak_pattern = torch.randn(32) * 0.5  # (batch, features)
         strong_pattern = weak_pattern * 3.0  # Same pattern, 3x stronger
 
         # Get responses
@@ -250,12 +250,12 @@ class TestCortexRobustnessInteractions:
             # Run with fresh input each step - DON'T reset so mechanisms adapt
             for _ in range(50):
                 if phase == "weak":
-                    test_input = torch.randn(1, 32) * 0.5  # (batch, features)
+                    test_input = torch.randn(32) * 0.5  # (batch, features)
                 elif phase == "strong":
-                    test_input = torch.randn(1, 32) * 1.5
+                    test_input = torch.randn(32) * 1.5
                 else:
                     # Random variable
-                    test_input = torch.randn(1, 32) * (0.5 + torch.rand(1).item())
+                    test_input = torch.randn(32) * (0.5 + torch.rand(1).item())
 
                 output = cortex.forward(test_input)            # Check health after each phase
             diagnostics = cortex.get_diagnostics()
@@ -294,7 +294,7 @@ class TestCortexRobustnessInteractions:
 
             spike_counts = []
             for _ in range(100):
-                test_input = torch.randn(1, 32) * 0.8  # (batch, features)
+                test_input = torch.randn(32) * 0.8  # (batch, features)
                 output = cortex.forward(test_input)
                 spike_counts.append(cortex.state.l5_spikes.sum().item())            # Get diagnostics
             diagnostics = cortex.get_diagnostics()

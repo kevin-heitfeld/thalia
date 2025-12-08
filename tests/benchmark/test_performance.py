@@ -69,7 +69,7 @@ class TestLIFPerformance:
         """Benchmark small LIF forward pass (5000 neurons, batch_size=1)."""
         neuron = LIFNeuron(n_neurons=5000)
         neuron.reset_state()
-        input_current = torch.randn(1, 5000)
+        input_current = torch.randn(5000)
 
         def forward():
             neuron(input_current)
@@ -88,7 +88,7 @@ class TestLIFPerformance:
         """Benchmark large LIF forward pass (50k neurons, batch_size=1)."""
         neuron = LIFNeuron(n_neurons=50000)
         neuron.reset_state()
-        input_current = torch.randn(1, 50000)
+        input_current = torch.randn(50000)
 
         def forward():
             neuron(input_current)
@@ -107,7 +107,7 @@ class TestLIFPerformance:
         """Test LIF performance with single-instance architecture."""
         neuron = LIFNeuron(n_neurons=1000)
         neuron.reset_state()
-        input_current = torch.randn(1, 1000)
+        input_current = torch.randn(1000)
 
         def forward():
             neuron(input_current)
@@ -132,7 +132,7 @@ class TestCortexPerformance:
         config = LayeredCortexConfig(n_input=2048, n_output=1024)
         cortex = LayeredCortex(config)
         cortex.reset_state()
-        input_data = torch.randn(1, 2048)
+        input_data = torch.randn(2048)
 
         def forward():
             cortex.forward(input_data)
@@ -152,7 +152,7 @@ class TestCortexPerformance:
         config = LayeredCortexConfig(n_input=8192, n_output=4096)
         cortex = LayeredCortex(config)
         cortex.reset_state()
-        input_data = torch.randn(1, 8192)
+        input_data = torch.randn(8192)
 
         def forward():
             cortex.forward(input_data)
@@ -189,7 +189,7 @@ class TestCortexPerformance:
         cortex_with_rob = LayeredCortex(config_with_rob)
         cortex_with_rob.reset_state()
 
-        input_data = torch.randn(1, 2048)
+        input_data = torch.randn(2048)
 
         # Benchmark both
         def forward_no_rob():
@@ -233,7 +233,7 @@ class TestDendriticPerformance:
         
         # Input size must be n_branches * inputs_per_branch = 100
         input_size = n_branches * inputs_per_branch
-        input_spikes = torch.randn(1, input_size)
+        input_spikes = torch.randn(input_size)
 
         def forward():
             neuron(input_spikes)
@@ -256,8 +256,8 @@ class TestLearningPerformance:
     def test_ei_balance_update(self):
         """Benchmark E/I balance regulator update (batch_size=1, more neurons)."""
         regulator = EIBalanceRegulator()
-        exc_spikes = torch.randn(1, 2000)
-        inh_spikes = torch.randn(1, 500)
+        exc_spikes = torch.randn(2000)
+        inh_spikes = torch.randn(500)
 
         def update():
             regulator.update(exc_spikes, inh_spikes)
@@ -331,7 +331,7 @@ class TestMemoryUsage:
         # Run many forward passes with batch_size=1 (THALIA single-instance architecture)
         for _ in range(100):
             cortex.reset_state()
-            input_data = torch.randn(1, 256)
+            input_data = torch.randn(256)
             output = cortex.forward(input_data)
             del output
 

@@ -65,7 +65,7 @@ class TestRegionFixtures:
         """Test LayeredCortex fixture creates valid region."""
         assert layered_cortex is not None
         # Test basic forward pass
-        input_spikes = torch.randn(1, small_n_input)
+        input_spikes = torch.randn(small_n_input)
         output = layered_cortex.forward(input_spikes)
         assert output is not None
     
@@ -231,16 +231,16 @@ class TestLearningHelpers:
     
     def test_learning_input_pattern(self, learning_input_pattern, n_neurons):
         """Test learning input pattern is consistent."""
-        assert learning_input_pattern.shape == (1, n_neurons)
+        assert learning_input_pattern.shape == (n_neurons,)
         
         # Should be reproducible
         torch.manual_seed(42)
-        expected = torch.randn(1, n_neurons) * 2.0
+        expected = torch.randn(n_neurons) * 2.0
         assert torch.allclose(learning_input_pattern, expected)
     
     def test_target_spike_pattern(self, target_spike_pattern, n_neurons):
         """Test target spike pattern."""
-        assert target_spike_pattern.shape == (1, n_neurons)
+        assert target_spike_pattern.shape == (n_neurons,)
         assert all(v in [0.0, 1.0] for v in torch.unique(target_spike_pattern).tolist())
     
     def test_reward_signal(self, reward_signal):

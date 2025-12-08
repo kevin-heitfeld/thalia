@@ -52,7 +52,7 @@ class TestWithoutEIBalance:
         ablated_cortex = LayeredCortex(ablated_config)
 
         # Test with strong input (stress test)
-        strong_input = torch.randn(1, 64) * 1.5
+        strong_input = torch.randn(64) * 1.5
 
         # Run both for same duration
         baseline_spikes = []
@@ -147,7 +147,7 @@ class TestWithoutEIBalance:
         baseline_cortex = LayeredCortex(baseline_config)
 
         # Strong pulse input
-        strong_pulse = torch.randn(1, 64) * 3.0
+        strong_pulse = torch.randn(64) * 3.0
 
         # Track activity over time
         baseline_activity = []
@@ -159,8 +159,8 @@ class TestWithoutEIBalance:
                 baseline_cortex.forward(strong_pulse)
                 ablated_cortex.forward(strong_pulse)
             else:
-                baseline_cortex.forward(torch.zeros(1, 64))
-                ablated_cortex.forward(torch.zeros(1, 64))
+                baseline_cortex.forward(torch.zeros(64))
+                ablated_cortex.forward(torch.zeros(64))
 
             baseline_activity.append(baseline_cortex.state.l23_spikes.sum().item())
             ablated_activity.append(ablated_cortex.state.l23_spikes.sum().item())
@@ -233,7 +233,7 @@ if __name__ == "__main__":
         ablated_cortex = LayeredCortex(ablated_config)
 
         # Test with strong input (stress test)
-        strong_input = torch.randn(1, 64) * 1.5
+        strong_input = torch.randn(64) * 1.5
 
         # Run both for same duration
         baseline_spikes = []
@@ -319,7 +319,7 @@ if __name__ == "__main__":
         baseline_cortex = LayeredCortex(baseline_config)
 
         # Strong pulse input
-        strong_pulse = torch.randn(1, 64) * 3.0
+        strong_pulse = torch.randn(64) * 3.0
 
         # Track activity over time
         baseline_activity = []
@@ -331,8 +331,8 @@ if __name__ == "__main__":
                 baseline_cortex.forward(strong_pulse)
                 ablated_cortex.forward(strong_pulse)
             else:
-                baseline_cortex.forward(torch.zeros(1, 64))
-                ablated_cortex.forward(torch.zeros(1, 64))
+                baseline_cortex.forward(torch.zeros(64))
+                ablated_cortex.forward(torch.zeros(64))
 
             baseline_activity.append(baseline_cortex.state.l23_spikes.sum().item())
             ablated_activity.append(ablated_cortex.state.l23_spikes.sum().item())

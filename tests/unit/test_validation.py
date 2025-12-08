@@ -44,17 +44,17 @@ class TestLIFNeuronValidation:
 
         # Wrong n_neurons dimension
         with pytest.raises((ValueError, RuntimeError, AssertionError)):
-            neuron(torch.randn(1, 50))  # Should be (8, 100)
+            neuron(torch.randn(50))  # Should be (8, 100)
 
     def test_handles_zero_input(self):
         """Test that zero input is handled correctly."""
         neuron = LIFNeuron(n_neurons=10)
         neuron.reset_state()
 
-        spikes, _ = neuron(torch.zeros(1, 10))
+        spikes, _ = neuron(torch.zeros(10))
 
         assert_spike_train_valid(spikes)
-        assert spikes.shape == (1, 10)
+        assert spikes.shape == (10,)
 
     def test_handles_nan_input_gracefully(self):
         """Test that NaN input doesn't crash (should either reject or handle)."""
@@ -118,8 +118,8 @@ class TestConductanceLIFValidation:
         neuron = ConductanceLIF(n_neurons=10)
         neuron.reset_state()
 
-        exc = torch.randn(1, 10)
-        inh = torch.randn(1, 5)  # Wrong size!
+        exc = torch.randn(10)
+        inh = torch.randn(5)  # Wrong size!
 
         with pytest.raises((ValueError, RuntimeError)):
             neuron(exc, inh)
@@ -129,7 +129,7 @@ class TestConductanceLIFValidation:
         neuron = ConductanceLIF(n_neurons=10)
         neuron.reset_state()
 
-        exc = torch.randn(1, 10)
+        exc = torch.randn(10)
         spikes, _ = neuron(exc, None)
 
         assert_spike_train_valid(spikes)
@@ -143,8 +143,8 @@ class TestEIBalanceValidation:
         """Test behavior with all-zero spike trains."""
         regulator = EIBalanceRegulator()
 
-        exc_spikes = torch.zeros(1, 100)
-        inh_spikes = torch.zeros(1, 10)
+        exc_spikes = torch.zeros(100)
+        inh_spikes = torch.zeros(10)
 
         # Should not crash, but ratio might be undefined
         try:
@@ -158,7 +158,7 @@ class TestEIBalanceValidation:
         """Test error handling for mismatched batch sizes."""
         regulator = EIBalanceRegulator()
 
-        exc_spikes = torch.randn(1, 100)  # Batch size 4
+        exc_spikes = torch.randn(100)  # Batch size 4
         inh_spikes = torch.randn(2, 10)   # Batch size 2
 
         # Should either work (broadcast) or raise error
@@ -178,7 +178,7 @@ class TestLayeredCortexValidation:
         cortex = LayeredCortex(config)
         cortex.reset_state()
 
-        output = cortex.forward(torch.randn(1, 1))
+        output = cortex.forward(torch.randn(1))
         # With dual_output=False, output is only from one layer
         assert output.shape[0] == 1
         assert output.shape[1] >= 1  # At least 1 output neuron
@@ -189,7 +189,7 @@ class TestLayeredCortexValidation:
         cortex = LayeredCortex(config)
         cortex.reset_state()
 
-        wrong_input = torch.randn(1, 32)  # Should be (1, 64)
+        wrong_input = torch.randn(32)  # Should be (1, 64)
 
         with pytest.raises((ValueError, RuntimeError, AssertionError)):
             cortex.forward(wrong_input)
@@ -201,11 +201,11 @@ class TestLayeredCortexValidation:
 
         # THALIA only supports batch_size=1 (single-instance architecture)
         cortex.reset_state()
-        output1 = cortex.forward(torch.randn(1, 32))
+        output1 = cortex.forward(torch.randn(32))
         assert output1.shape[0] == 1
         
         # Using batch_size=1 consistently should work
-        output2 = cortex.forward(torch.randn(1, 32))
+        output2 = cortex.forward(torch.randn(32))
         assert output2.shape[0] == 1
 
 
@@ -222,16 +222,16 @@ class TestDendriticNeuronValidation:
         neuron = DendriticNeuron(n_neurons=5, config=config)
         neuron.reset_state()
 
-        input_spikes = torch.randn(1, 10)
+        input_spikes = torch.randn(10)
         output = neuron(input_spikes)
 
         # DendriticNeuron returns (spikes, membrane) tuple
         if isinstance(output, tuple):
             spikes, membrane = output
-            assert spikes.shape == (1, 5)
-            assert membrane.shape == (1, 5)
+            assert spikes.shape == (5,)
+            assert membrane.shape == (5,)
         else:
-            assert output.shape == (1, 5)
+            assert output.shape == (5,)
 
 
 @pytest.mark.unit
@@ -248,7 +248,7 @@ class TestBoundaryValues:
         # Need significant margin because neuron dynamics may decay before spike check
         neuron.membrane = torch.full((1, 10), 1.5)
 
-        spikes, _ = neuron(torch.zeros(1, 10))
+        spikes, _ = neuron(torch.zeros(10))
 
         # Should spike when above threshold
         assert spikes.sum() > 0
@@ -260,8 +260,8 @@ class TestBoundaryValues:
         neuron.reset_state()
 
         # Should still work, just decay very quickly
-        neuron.membrane = torch.ones(1, 10)
-        neuron(torch.zeros(1, 10))
+        neuron.membrane = torch.ones(10)
+        neuron(torch.zeros(10))
 
         # Membrane should decay significantly
         assert neuron.membrane.max() < 0.5
@@ -273,9 +273,9 @@ class TestBoundaryValues:
         neuron.reset_state()
 
         # Should still work, just decay very slowly
-        neuron.membrane = torch.ones(1, 10)
+        neuron.membrane = torch.ones(10)
         initial = neuron.membrane.clone()
-        neuron(torch.zeros(1, 10))
+        neuron(torch.zeros(10))
 
         # Membrane should barely decay
         assert (neuron.membrane > initial * 0.99).all()
@@ -322,7 +322,7 @@ class TestNumericalStability:
         if hasattr(neuron, 'weights'):
             # Simulate many updates
             for _ in range(1000):
-                neuron(torch.randn(1, 10))
+                neuron(torch.randn(10))
 
             # Weights should remain in reasonable range
             if hasattr(neuron, 'weights') and neuron.weights is not None:

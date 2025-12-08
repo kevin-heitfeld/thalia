@@ -321,8 +321,8 @@ class TestSpikeDecoder:
         spikes = (torch.rand(1, 5, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
         tokens, log_probs = decoder.sample(spikes, temperature=1.0)
 
-        assert tokens.shape == (1, 5)
-        assert log_probs.shape == (1, 5)
+        assert tokens.shape == (5,)
+        assert log_probs.shape == (5,)
         assert (tokens >= 0).all() and (tokens < small_vocab_size).all()
 
     def test_greedy_decode(self, device, small_vocab_size, small_n_neurons, small_n_timesteps):
@@ -339,8 +339,8 @@ class TestSpikeDecoder:
         spikes = (torch.rand(1, 5, small_n_timesteps, small_n_neurons, device=device) > 0.9).float()
         tokens, probs = decoder.greedy_decode(spikes)
 
-        assert tokens.shape == (1, 5)
-        assert probs.shape == (1, 5)
+        assert tokens.shape == (5,)
+        assert probs.shape == (5,)
 
 
 # ============================================================================
@@ -612,7 +612,7 @@ class TestMinimalSpikingLM:
         prompt = torch.randint(0, small_vocab_size, (1, 3), device=device)
         generated = model.generate(prompt, max_new_tokens=5)
 
-        assert generated.shape == (1, 8)
+        assert generated.shape == (8,)
 
 
 # ============================================================================
@@ -716,7 +716,7 @@ class TestConfidenceEstimator:
 
         confidence = estimator(spikes, features)
 
-        assert confidence.shape == (1, 5)
+        assert confidence.shape == (5,)
         assert (confidence >= 0).all() and (confidence <= 1).all()
 
 

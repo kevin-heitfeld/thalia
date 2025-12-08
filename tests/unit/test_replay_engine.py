@@ -50,7 +50,7 @@ class TestReplayEngine:
     @pytest.fixture
     def sequence_episode(self):
         """Create episode with sequence."""
-        sequence = [torch.randn(1, 100) for _ in range(5)]
+        sequence = [torch.randn(100) for _ in range(5)]
         return Episode(
             state=sequence[-1].clone(),
             action=0,
@@ -63,7 +63,7 @@ class TestReplayEngine:
     def single_episode(self):
         """Create episode without sequence."""
         return Episode(
-            state=torch.randn(1, 100),
+            state=torch.randn(100),
             action=0,
             reward=1.0,
             correct=True,
@@ -244,7 +244,7 @@ class TestReplayEngine:
     def test_empty_sequence_fallback(self, engine):
         """Test handling empty sequence."""
         episode = Episode(
-            state=torch.randn(1, 100),
+            state=torch.randn(100),
             action=0,
             reward=1.0,
             correct=True,

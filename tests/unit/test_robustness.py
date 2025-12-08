@@ -77,8 +77,8 @@ class TestEIBalanceRegulator:
         regulator = EIBalanceRegulator(config)
         
         # Simulate high excitation (E/I >> 4)
-        exc_spikes = torch.ones(1, 100)  # All firing
-        inh_spikes = torch.zeros(1, 10)   # None firing
+        exc_spikes = torch.ones(100)  # All firing
+        inh_spikes = torch.zeros(10)   # None firing
         
         initial_scale = regulator.get_inh_scaling()
         
@@ -102,8 +102,8 @@ class TestEIBalanceRegulator:
         regulator = EIBalanceRegulator(config)
         
         # Simulate high inhibition (E/I << 4)
-        exc_spikes = torch.zeros(1, 100)  # None firing
-        inh_spikes = torch.ones(1, 10)     # All firing
+        exc_spikes = torch.zeros(100)  # None firing
+        inh_spikes = torch.ones(10)     # All firing
         
         # Update multiple times
         for _ in range(50):
@@ -124,9 +124,9 @@ class TestEIBalanceRegulator:
         inh_spikes = torch.tensor([[1, 0]])  # 50% -> ratio ≈ 1 (need adjustment)
         
         # Actually create a 4:1 ratio scenario
-        exc_spikes = torch.zeros(1, 100)
+        exc_spikes = torch.zeros(100)
         exc_spikes[0, :40] = 1  # 40% excitatory
-        inh_spikes = torch.zeros(1, 10)
+        inh_spikes = torch.zeros(10)
         inh_spikes[0, :1] = 1   # 10% inhibitory -> ratio = 4
         
         for _ in range(100):

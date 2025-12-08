@@ -52,7 +52,7 @@ class TestWithoutDivisiveNorm:
         ablated_cortex = LayeredCortex(ablated_config)
 
         # Test with different input magnitudes
-        weak_input = torch.randn(1, 64) * 0.5
+        weak_input = torch.randn(64) * 0.5
         strong_input = weak_input * 3.0  # 3x stronger, same pattern
 
         # Baseline responses
@@ -146,7 +146,7 @@ class TestWithoutDivisiveNorm:
         without_norm_responses = []
 
         for contrast in contrasts:
-            input_pattern = torch.randn(1, 64) * contrast
+            input_pattern = torch.randn(64) * contrast
 
             # With norm
             with_norm.reset_state()

@@ -52,7 +52,7 @@ class TestWithoutIntrinsicPlasticity:
         ablated_cortex = LayeredCortex(ablated_config)
 
         # Run with consistent input for adaptation
-        input_pattern = torch.randn(1, 64) * 1.0
+        input_pattern = torch.randn(64) * 1.0
 
         # Track firing rates over time
         baseline_rates = []
@@ -152,7 +152,7 @@ class TestWithoutIntrinsicPlasticity:
 
         # Test response to input distribution shift
         # Phase 1: Weak inputs (adapt to low input)
-        weak_input = torch.randn(1, 64) * 0.5
+        weak_input = torch.randn(64) * 0.5
 
         with_ip_weak_rates = []
         without_ip_weak_rates = []
