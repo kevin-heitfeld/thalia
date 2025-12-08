@@ -9,6 +9,7 @@ Components:
 - ContextBuffer: Working memory for recent context
 - EpisodicStore: Long-term episodic memory storage
 - Consolidation: Memory pressure detection and sleep-based replay
+- Advanced Consolidation: Schema extraction, semantic reorganization, interference resolution
 
 Configuration:
 - Use ``thalia.config.SequenceMemoryConfig`` for new code
@@ -34,6 +35,16 @@ from thalia.memory.consolidation import (
     ConsolidationTrigger,
     ConsolidationTriggerConfig,
 )
+from thalia.memory.advanced_consolidation import (
+    SchemaExtractionConsolidation,
+    SchemaExtractionConfig,
+    Schema,
+    SemanticReorganization,
+    SemanticReorganizationConfig,
+    InterferenceResolution,
+    InterferenceResolutionConfig,
+    run_advanced_consolidation,
+)
 
 # Re-export from canonical location for backwards compatibility
 from thalia.config import SequenceMemoryConfig
@@ -44,7 +55,7 @@ __all__ = [
     "SequenceContext",
     "ContextBuffer",
     "ContextBufferConfig",
-    # Consolidation
+    # Basic Consolidation
     "MemoryPressureDetector",
     "MemoryPressureConfig",
     "SleepStageController",
@@ -54,4 +65,13 @@ __all__ = [
     "ConsolidationSnapshot",
     "ConsolidationTrigger",
     "ConsolidationTriggerConfig",
+    # Advanced Consolidation
+    "SchemaExtractionConsolidation",
+    "SchemaExtractionConfig",
+    "Schema",
+    "SemanticReorganization",
+    "SemanticReorganizationConfig",
+    "InterferenceResolution",
+    "InterferenceResolutionConfig",
+    "run_advanced_consolidation",
 ]

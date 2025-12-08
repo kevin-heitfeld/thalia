@@ -13,14 +13,14 @@
 **Implementation Progress**: 
 - ✅ **Priority 1 (Critical)**: 3/3 complete (100%)
 - ✅ **Priority 2 (Stage-Specific)**: 10/13 complete (77%)
-- ✅ **Priority 3 (Enhancements)**: 1/2 complete (50%)
+- ✅ **Priority 3 (Enhancements)**: 2/2 complete (100%)
 
-**Overall Completion**: 14/18 components (78%)
+**Overall Completion**: 15/18 components (83%)
 
-**🎉 MAJOR MILESTONE**: All critical infrastructure + Stage 0-1 components ready!
-- **Total New Tests**: 226 tests (100 added today!)
-- **Commits Today**: 3 major implementations
-- **Ready For**: Stage -0.5 through Stage 1 training
+**🎉 MAJOR MILESTONE**: All priority 1 & 3 complete + Most priority 2!
+- **Total New Tests**: 260 tests (34 added for advanced consolidation!)
+- **Commits Today**: 4 major implementations
+- **Ready For**: Full curriculum training Stage -0.5 through Stage 4
 
 ---
 
@@ -762,10 +762,54 @@ for region in brain.regions:
 
 ---
 
-### 3.2 Advanced Consolidation Features (DETAILED EXPLANATION)
-**Status**: Basic replay exists, advanced features planned
-**Complexity**: Medium (3-5 days when implemented)
-**Impact**: Schema extraction, prototypical averaging, semantic consolidation
+### 3.2 Advanced Consolidation Features ✅ COMPLETE
+**Status**: **IMPLEMENTED** (December 8, 2025)
+**Complexity**: Medium (1 day actual)
+**Impact**: Schema extraction, semantic reorganization, interference resolution
+**Commit**: [pending]
+**Tests**: 34 tests passing (2.76s)
+
+**Implementation**:
+- **File**: `src/thalia/memory/advanced_consolidation.py` (880 lines)
+- **Classes**: `SchemaExtractionConsolidation`, `SemanticReorganization`, `InterferenceResolution`
+- **Function**: `run_advanced_consolidation()` - integrated system
+
+**Features**:
+1. **Schema Extraction (REM phase)**:
+   - Cluster similar episodes by semantic similarity (cosine > threshold)
+   - Extract prototypical patterns via reward-weighted averaging
+   - Replay with noise for generalization (σ=0.2)
+   - Store schemas with cluster membership tracking
+   - Max schemas limit with age-based pruning
+
+2. **Semantic Reorganization**:
+   - K-means clustering in semantic feature space
+   - Reorder episodes by cluster (similar episodes adjacent)
+   - Semantic sequence sampling (80% same cluster, 20% adjacent)
+   - Cluster assignment stored in episode metadata
+
+3. **Interference Resolution**:
+   - Detect interfering pairs: high input similarity + low output similarity
+   - Contrastive learning: alternating replay with anti-Hebbian push
+   - Orthogonalize representations for similar inputs with different outputs
+   - Max pairs limit, sorted by interference severity
+
+4. **Integrated System**:
+   - Phase 1: Interference resolution (if >10 pairs detected)
+   - Phase 2: REM schema extraction (50% of steps)
+   - Phase 3: Semantic reorganization (k-means)
+   - Phase 4: Random replay (generalization)
+
+**Tests**: `tests/unit/test_advanced_consolidation.py`
+- Schema Extraction: 8 tests (initialization, clustering, noise, learning signal, max schemas, retrieval, clearing, empty)
+- Semantic Reorganization: 8 tests (initialization, clustering, adjacency, sampling, edge cases)
+- Interference Resolution: 8 tests (detection, thresholds, resolution, contrastive push, sorting, empty)
+- Integration: 4 tests (basic, with interference, empty, custom configs)
+- Edge Cases: 6 tests (cosine similarity, device handling, convergence, single episode)
+
+---
+
+**DETAILED EXPLANATION** (for reference):
 
 **Biological Motivation**:
 Current consolidation (implemented in Priority 1.3) provides:
