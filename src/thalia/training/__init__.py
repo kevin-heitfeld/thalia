@@ -13,6 +13,7 @@ Components:
 - LocalTrainer: Main training loop with local rules
 - DataPipeline: Text data loading and batching
 - Metrics: Learning progress tracking
+- Curriculum: Advanced curriculum strategies (interleaving, spaced repetition, etc.)
 
 Configuration:
 - Use ``thalia.config.TrainingConfig`` for new code
@@ -27,6 +28,21 @@ from thalia.training.data_pipeline import (
     TextDataPipeline,
     DataConfig,
 )
+from thalia.training.curriculum import (
+    InterleavedCurriculumSampler,
+    InterleavedCurriculumSamplerConfig,
+    SpacedRepetitionScheduler,
+    SpacedRepetitionSchedulerConfig,
+    TestingPhaseProtocol,
+    TestingPhaseConfig,
+    ProductiveFailurePhase,
+    ProductiveFailureConfig,
+    CurriculumDifficultyCalibrator,
+    DifficultyCalibratorConfig,
+    StageTransitionProtocol,
+    StageTransitionConfig,
+    TransitionWeekConfig,
+)
 
 # Re-export from canonical location for backwards compatibility
 from thalia.config import TrainingConfig
@@ -37,4 +53,18 @@ __all__ = [
     "TrainingMetrics",
     "TextDataPipeline",
     "DataConfig",
+    # Curriculum infrastructure
+    "InterleavedCurriculumSampler",
+    "InterleavedCurriculumSamplerConfig",
+    "SpacedRepetitionScheduler",
+    "SpacedRepetitionSchedulerConfig",
+    "TestingPhaseProtocol",
+    "TestingPhaseConfig",
+    "ProductiveFailurePhase",
+    "ProductiveFailureConfig",
+    "CurriculumDifficultyCalibrator",
+    "DifficultyCalibratorConfig",
+    "StageTransitionProtocol",
+    "StageTransitionConfig",
+    "TransitionWeekConfig",
 ]
