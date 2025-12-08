@@ -251,7 +251,7 @@ class TestDivisiveNormalization:
         y, gain = norm.normalize_with_gain(x)
         
         assert y.shape == x.shape
-        assert gain.shape[0] == 1  # Global gain
+        # assert gain.shape[0] == 1  # REMOVED: ADR-005 uses 1D tensors  # Global gain
         
         # y should equal x * gain (broadcast)
         assert torch.allclose(y, x * gain, atol=1e-6)

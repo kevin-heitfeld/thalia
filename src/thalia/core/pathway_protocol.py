@@ -315,6 +315,55 @@ class BaseNeuralPathway(nn.Module, ABC):
         metrics = manager.get_capacity_metrics(self)
         return metrics.to_dict()
     
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete pathway state for checkpointing.
+        
+        Default implementation captures common pathway state.
+        Pathways with specialized state should override this.
+        
+        Returns:
+            Dictionary with keys:
+            - 'weights': Dict[str, torch.Tensor] - All learnable parameters
+            - 'pathway_state': Dict[str, Any] - Dynamic state (traces, etc.)
+            - 'class_name': str - Pathway class for reconstruction
+            - 'diagnostics': Dict[str, Any] - Current metrics
+        """
+        state = {
+            'weights': {
+                name: param.detach().clone()
+                for name, param in self.named_parameters()
+            },
+            'pathway_state': {},  # Subclasses should populate this
+            'class_name': self.__class__.__name__,
+            'diagnostics': self.get_diagnostics(),
+        }
+        return state
+    
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore complete pathway state from checkpoint.
+        
+        Default implementation restores weights.
+        Pathways with specialized state should override this.
+        
+        Args:
+            state: Dictionary from get_full_state()
+            
+        Raises:
+            ValueError: If state is incompatible
+        """
+        # Verify class matches
+        if state.get('class_name') != self.__class__.__name__:
+            raise ValueError(
+                f"State class mismatch: expected {self.__class__.__name__}, "
+                f"got {state.get('class_name')}"
+            )
+        
+        # Restore weights
+        weights = state.get('weights', {})
+        for name, param in self.named_parameters():
+            if name in weights:
+                param.data.copy_(weights[name])
+    
     # Note: forward() is already abstract in nn.Module, so no need to redeclare
 
 
