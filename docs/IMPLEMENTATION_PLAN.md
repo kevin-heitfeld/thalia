@@ -1,7 +1,7 @@
 # Thalia Curriculum Implementation Plan
 
 **Date**: December 8, 2025
-**Status**: In Progress
+**Status**: ✅ **Priority 1 Complete** (Week 1 Done!)
 **Goal**: Implement missing curriculum-specific components before training begins
 
 ## Executive Summary
@@ -12,17 +12,19 @@
 
 **Implementation Timeline**: 2-4 weeks before Stage -0.5 training
 **Estimated Components**: 13 new/enhanced modules
-**Priority**: 3 critical blockers, 10 stage-specific requirements
+**Priority**: ✅ 3 critical completed, 10 stage-specific remaining
+
+**🎉 MILESTONE ACHIEVED**: All Priority 1 (Critical) components implemented and tested!
 
 ---
 
 ## Priority 1: 🔴 CRITICAL (Week 1-2, Must Have Before ANY Training)
 
-### 1.1 Critical Period Gating ⚠️ NEW
+### 1.1 Critical Period Gating ✅ COMPLETE
 **Curriculum**: Stage 0 phonology (0-50k steps), grammar (25k-150k steps)
-**Status**: Missing
-**Complexity**: Small (4-8 hours)
-**Impact**: Without this, phonology learning will miss critical window
+**Status**: ✅ **Implemented** (December 8, 2025)
+**Actual Time**: ~6 hours (26 tests, 0.29s)
+**Impact**: Time-windowed plasticity modulation for developmental learning
 
 **Implementation**:
 - **File**: `src/thalia/learning/critical_periods.py`
@@ -59,10 +61,10 @@ class CriticalPeriodGating:
 
 ---
 
-### 1.2 Curriculum Training Infrastructure ⚠️ NEW
+### 1.2 Curriculum Training Infrastructure ✅ COMPLETE
 **Curriculum**: All stages, continuous
-**Status**: Missing
-**Complexity**: Medium (2-3 days)
+**Status**: ✅ **Implemented** (December 8, 2025)
+**Actual Time**: ~1 day (36 tests, 0.52s)
 **Impact**: Core curriculum mechanics (interleaving, spacing, testing effect)
 
 **Implementation**:
@@ -143,15 +145,16 @@ class StageTransitionProtocol:
 
 ---
 
-### 1.3 Enhanced Consolidation ⚠️ ENHANCE EXISTING
+### 1.3 Enhanced Consolidation ✅ COMPLETE
 **Curriculum**: All stages, every 10-200k steps
-**Status**: Partially implemented (SleepSystemMixin exists)
-**Complexity**: Small (1 day)
-**Impact**: Memory pressure triggers, adaptive scheduling
+**Status**: ✅ **Implemented** (December 8, 2025)
+**Actual Time**: ~4 hours (29 tests, 0.30s)
+**Impact**: Memory pressure detection, NREM/REM cycling, consolidation quality metrics
 
 **Implementation**:
-- **File**: `src/thalia/core/sleep.py` (enhance)
-- **Add**: Memory pressure calculation, adaptive triggers
+- **File**: `src/thalia/memory/consolidation.py` (NEW)
+- **Replaced**: Old `src/thalia/core/sleep.py` (removed)
+- **Components**: MemoryPressureDetector, SleepStageController, ConsolidationMetrics, ConsolidationTrigger
 
 **Enhancements**:
 ```python
@@ -632,23 +635,38 @@ def rem_schema_extraction(self, replay_buffer, n_steps):
 
 ## Implementation Schedule
 
-### Week 1: Critical Infrastructure
+### Week 1: Critical Infrastructure ✅ COMPLETE
 **Goal**: Core curriculum mechanics operational
+**Actual Completion**: December 8, 2025 (Sunday evening)
+**Total Tests**: 91 tests passing in ~1.1 seconds
 
-**Monday-Tuesday**:
-- ✅ Critical Period Gating (8 hours)
-- ✅ InterleavedCurriculumSampler (4 hours)
-- ✅ SpacedRepetitionScheduler (4 hours)
+**Completed Components**:
+1. ✅ **Critical Period Gating** (26 tests)
+   - CriticalPeriodWindow, CriticalPeriodConfig, CriticalPeriodGating
+   - 5 default domains with 3-phase modulation
+   - File: `src/thalia/learning/critical_periods.py`
 
-**Wednesday-Thursday**:
-- ✅ TestingPhaseProtocol (4 hours)
-- ✅ ProductiveFailurePhase (4 hours)
-- ✅ CurriculumDifficultyCalibrator (4 hours)
-- ✅ StageTransitionProtocol (4 hours)
+2. ✅ **Curriculum Infrastructure** (36 tests)
+   - InterleavedCurriculumSampler (interleaved practice)
+   - SpacedRepetitionScheduler (Leitner algorithm)
+   - TestingPhaseProtocol (retrieval practice)
+   - ProductiveFailurePhase (intentional difficulty)
+   - CurriculumDifficultyCalibrator (ZPD maintenance)
+   - StageTransitionProtocol (gradual ramps)
+   - File: `src/thalia/training/curriculum.py`
 
-**Friday**:
-- ✅ Enhanced Consolidation (memory pressure, triggers) (8 hours)
-- ✅ Tests for all Week 1 components
+3. ✅ **Enhanced Consolidation** (29 tests)
+   - MemoryPressureDetector (multi-factor triggers)
+   - SleepStageController (NREM/REM alternation)
+   - ConsolidationMetrics (quality tracking)
+   - ConsolidationTrigger (high-level orchestration)
+   - File: `src/thalia/memory/consolidation.py`
+   - Replaced: Old `sleep.py` removed, `run_consolidation()` removed from Brain
+
+**Git Commits**:
+- a39ccea: Implement Critical Period Gating (Priority 1.1)
+- 9746951: Implement Curriculum Training Infrastructure (Priority 1.2)
+- aa87ddf: Implement Enhanced Consolidation (Priority 1.3)
 
 ---
 

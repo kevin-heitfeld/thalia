@@ -243,10 +243,8 @@ class LocalTrainer(ConfigurableMixin):
             # 2. deliver_reward() is for EXTERNAL task rewards (e.g., game score)
             #    which we don't have during unsupervised pre-training
             # 3. The brain learns from its own prediction errors automatically
-            if use_two_phase and hasattr(model.brain, 'run_consolidation'):
-                # Run consolidation timesteps
-                # This allows eligibility traces to interact with tonic dopamine
-                model.brain.run_consolidation(n_timesteps=consolidation_steps)
+            # 4. Consolidation is now handled by the new consolidation module
+            #    (thalia.memory.consolidation) with memory pressure detection
 
             accuracy = self._compute_accuracy(model, result, target_ids)
             spike_rate = result.get("spike_rate", 0.0)

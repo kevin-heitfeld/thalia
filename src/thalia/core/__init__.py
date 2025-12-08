@@ -109,12 +109,6 @@ from thalia.core.traces import (
     update_trace,
     compute_decay,
 )
-from thalia.core.sleep import (
-    SleepStage,
-    StageConfig,
-    STAGE_CONFIGS,
-    SleepSystemMixin,
-)
 from thalia.core.weight_init import (
     InitStrategy,
     WeightInitializer,
@@ -219,11 +213,6 @@ __all__ = [
     "create_trace",
     "update_trace",
     "compute_decay",
-    # Sleep System
-    "SleepStage",
-    "StageConfig",
-    "STAGE_CONFIGS",
-    "SleepSystemMixin",
     # Weight Initialization
     "InitStrategy",
     "WeightInitializer",
