@@ -12,6 +12,14 @@ from thalia.tasks.executive_function import (
     TaskResult,
 )
 
+from thalia.tasks.working_memory import (
+    NBackTask,
+    ThetaGammaEncoder,
+    WorkingMemoryTaskConfig,
+    theta_gamma_n_back,
+    create_n_back_sequence,
+)
+
 __all__ = [
     "ExecutiveFunctionTasks",
     "TaskType",
@@ -20,4 +28,9 @@ __all__ = [
     "DelayedGratificationConfig",
     "DCCSConfig",
     "TaskResult",
+    "NBackTask",
+    "ThetaGammaEncoder",
+    "WorkingMemoryTaskConfig",
+    "theta_gamma_n_back",
+    "create_n_back_sequence",
 ]
