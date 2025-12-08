@@ -24,6 +24,13 @@ from thalia.learning.critical_periods import (
     CriticalPeriodConfig,
     CriticalPeriodWindow,
 )
+from thalia.learning.social_learning import (
+    SocialLearningModule,
+    SocialLearningConfig,
+    SocialContext,
+    SocialCueType,
+    compute_shared_attention,
+)
 from thalia.learning.unified_homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
@@ -76,6 +83,12 @@ __all__ = [
     "CriticalPeriodGating",
     "CriticalPeriodConfig",
     "CriticalPeriodWindow",
+    # Social Learning
+    "SocialLearningModule",
+    "SocialLearningConfig",
+    "SocialContext",
+    "SocialCueType",
+    "compute_shared_attention",
     # Unified Homeostasis (constraint-based)
     "UnifiedHomeostasis",
     "UnifiedHomeostasisConfig",
