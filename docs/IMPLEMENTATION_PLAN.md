@@ -246,33 +246,54 @@ class SleepSystemMixin:
 
 ### 2.2 Stage 0: Phonological Tasks (Week 4-12)
 
-#### 2.2.1 Phonological Tasks ⚠️ NEW
+#### 2.2.1 Phonological Tasks ✅ COMPLETE
 **Curriculum**: Stage 0, Week 6-8 (45% of time)
-**Status**: Missing
-**Complexity**: Small (4-8 hours)
-**Impact**: Critical period phonology learning
+**Status**: ✅ Implemented with acoustic feature encoding
+**Time**: ~3 hours
+**Tests**: 31 tests passing (1.30s)
+**Commit**: [to be added]
 
 **Implementation**:
-- **File**: `src/thalia/datasets/phonology.py`
-- **Datasets**: /p/ vs /b/, /d/ vs /t/, vowel categories
+- **File**: `src/thalia/datasets/phonology.py` (473 lines)
+- **Config**: `PhonologicalConfig` dataclass
+- **Features**:
+  - 16 phoneme categories (stops, vowels, nasals)
+  - VOT-based encoding for stops (voice onset time)
+  - Formant-based encoding for vowels (F1/F2/F3)
+  - Acoustic noise (σ=0.1) and within-category variance (0.15)
+  - 64 mel-frequency channels × 100 time steps
 
-**Structure**:
-```python
-class PhonologicalDataset:
-    """Categorical perception tasks for phonemes."""
+**Components**:
+1. `PhonologicalDataset`: Main dataset class
+   - `generate_discrimination_pair()`: Same/different task
+   - `generate_continuum()`: VOT/formant continua (11 steps)
+   - `generate_batch()`: Batch generation for training
+   - `evaluate_discrimination()`: Performance metrics (accuracy, d-prime)
 
-    def __init__(self):
-        self.contrasts = [
-            ('p', 'b'),  # Voicing distinction
-            ('d', 't'),  # Voicing distinction
-            ('a', 'i', 'u'),  # Vowel categories
-        ]
+**Tasks**:
+- Voicing contrasts: /p/ vs /b/, /t/ vs /d/, /k/ vs /g/ (VOT continuum)
+- Vowel contrasts: /i/ vs /ɪ/, /ɛ/ vs /æ/, /u/ vs /ʊ/ (formant space)
+- Place contrasts: /m/ vs /n/, /n/ vs /ŋ/ (nasal place of articulation)
 
-    def generate_contrast_pair(self, contrast):
-        """Generate phoneme pair for discrimination."""
-```
+**Acoustic Encoding**:
+- Stops: Burst at onset (high freq), voicing after VOT (low freq)
+- Vowels: Formant peaks (F1=200-1000Hz, F2=800-3000Hz) sustained
+- Continua: Linear interpolation with categorical boundary (sigmoid)
+
+**Metrics**:
+- Accuracy: Proportion correct
+- d-prime: Signal detection sensitivity (hit rate - FA rate)
+- By-contrast tracking: Performance per phoneme pair
 
 **Tests**: `tests/unit/test_phonology_dataset.py`
+- Phoneme encoding (6 tests) - stops, vowels, VOT, formants, noise
+- Discrimination tasks (3 tests) - same/different pairs, contrasts
+- Continuum generation (4 tests) - VOT, vowels, steps, boundary
+- Batch generation (4 tests) - discrimination, continuum, sizes
+- Performance evaluation (5 tests) - accuracy, d-prime, statistics
+- Integration (3 tests) - training cycle, curriculum, all contrasts
+- Edge cases (4 tests) - invalid inputs, zero batch, high noise
+- Configuration (2 tests) - custom config, device handling
 
 ---
 
