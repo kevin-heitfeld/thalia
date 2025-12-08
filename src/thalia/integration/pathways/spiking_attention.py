@@ -93,6 +93,30 @@ class SpikingAttentionPathway(SpikingPathway):
         # Attention strength tracking
         self.current_attention: Optional[torch.Tensor] = None
 
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete attention pathway state for checkpointing."""
+        base_state = super().get_full_state()
+        # Add attention-specific state
+        base_state['pathway_state']['attention'] = {
+            'beta_phase': self.beta_phase.item(),
+            'current_attention': self.current_attention.clone() if self.current_attention is not None else None,
+            'input_projection_weight': self.input_projection.weight.detach().clone(),
+            'input_projection_bias': self.input_projection.bias.detach().clone(),
+        }
+        return base_state
+
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore complete attention pathway state from checkpoint."""
+        super().load_full_state(state)
+        # Restore attention-specific state
+        if 'attention' in state['pathway_state']:
+            attn_state = state['pathway_state']['attention']
+            self.beta_phase.fill_(attn_state['beta_phase'])
+            self.current_attention = attn_state['current_attention']
+            if 'input_projection_weight' in attn_state:
+                self.input_projection.weight.data.copy_(attn_state['input_projection_weight'])
+                self.input_projection.bias.data.copy_(attn_state['input_projection_bias'])
+
     def _compute_beta_phase(self, dt: float) -> torch.Tensor:
         """Compute current beta oscillation phase."""
         self.beta_phase = (self.beta_phase + dt) % self.beta_period

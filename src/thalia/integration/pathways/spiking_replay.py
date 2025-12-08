@@ -451,3 +451,22 @@ class SpikingReplayPathway(SpikingPathway):
             self.sleep_stage = replay_state["sleep_stage"]
             self.replay_count = replay_state["replay_count"]
             self.last_ripple_time = replay_state["last_ripple_time"]
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete replay pathway state for checkpointing (BrainComponent protocol).
+        
+        Returns:
+            Dictionary with complete state for checkpointing
+        """
+        base_state = super().get_full_state()
+        # Add replay-specific state (already captured in get_state())
+        return base_state
+
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore complete replay pathway state from checkpoint (BrainComponent protocol).
+        
+        Args:
+            state: Dictionary from get_full_state()
+        """
+        # Use base class implementation which calls load_state()
+        super().load_full_state(state)

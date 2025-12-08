@@ -834,3 +834,41 @@ class SpikingPathway(BaseNeuralPathway):
             bcm_state = state["bcm_state"]
             if bcm_state["theta"] is not None:
                 self.bcm.theta = bcm_state["theta"].to(device)
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete pathway state for checkpointing (BrainComponent protocol).
+        
+        Returns:
+            Dictionary with keys:
+            - 'weights': Dict[str, torch.Tensor] - All learnable parameters
+            - 'pathway_state': Dict[str, Any] - Dynamic state
+            - 'config': SpikingPathwayConfig - Configuration
+            - 'class_name': str - Class name for reconstruction
+        """
+        return {
+            'weights': {
+                'weights': self.weights.detach().clone(),
+            },
+            'pathway_state': self.get_state(),  # Use existing get_state()
+            'config': self.config,
+            'class_name': self.__class__.__name__,
+        }
+
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore complete pathway state from checkpoint (BrainComponent protocol).
+        
+        Args:
+            state: Dictionary from get_full_state()
+            
+        Raises:
+            ValueError: If state is incompatible
+        """
+        # Verify class matches
+        if state.get('class_name') != self.__class__.__name__:
+            raise ValueError(
+                f"State class mismatch: expected {self.__class__.__name__}, "
+                f"got {state.get('class_name')}"
+            )
+        
+        # Use existing load_state() for pathway state
+        self.load_state(state['pathway_state'])
