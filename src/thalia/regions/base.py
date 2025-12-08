@@ -277,6 +277,7 @@ class BrainRegion(NeuromodulatorMixin, ABC):
         3. Preserve existing weights exactly (no reinitialization)
         4. Update config.n_output
         5. Expand neuron state arrays if needed
+        6. Update capacity metrics
         
         Args:
             n_new: Number of neurons to add

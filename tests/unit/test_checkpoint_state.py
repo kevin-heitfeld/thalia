@@ -55,8 +55,8 @@ class TestStriatumStateRoundtrip:
         
         striatum1 = Striatum(config)
         
-        # Run some forward passes to build up state
-        input_spikes = (torch.rand(1, 32) > 0.8).float()
+        # Run some forward passes to build up state (ADR-005: 1D tensors)
+        input_spikes = (torch.rand(32) > 0.8).float()
         for _ in range(10):
             output = striatum1.forward(input_spikes)
         
@@ -164,8 +164,8 @@ class TestHippocampusStateRoundtrip:
         
         hipp1 = TrisynapticHippocampus(config)
         
-        # Encode a sequence (convert bool to float)
-        sequence_patterns = [(torch.rand(1, 64) > 0.9).float() for _ in range(5)]
+        # Encode a sequence (convert bool to float) (ADR-005: 1D patterns)
+        sequence_patterns = [(torch.rand(64) > 0.9).float() for _ in range(5)]
         
         for pattern in sequence_patterns:
             output = hipp1.forward(
@@ -209,9 +209,9 @@ class TestHippocampusStateRoundtrip:
         
         hipp1 = TrisynapticHippocampus(config)
         
-        # Store some episodes
+        # Store some episodes (ADR-005: 1D patterns)
         for i in range(3):
-            state_pattern = torch.rand(1, 100)
+            state_pattern = torch.rand(100)
             hipp1.store_episode(
                 state=state_pattern,
                 action=i,
@@ -343,8 +343,8 @@ class TestPrefrontalStateRoundtrip:
         
         pfc1 = Prefrontal(config)
         
-        # Set working memory
-        wm_pattern = torch.rand(1, 64)
+        # Set working memory (ADR-005: 1D context)
+        wm_pattern = torch.rand(64)
         pfc1.set_context(wm_pattern)
         
         # Save and load
@@ -400,8 +400,8 @@ class TestCerebellumStateRoundtrip:
         
         cereb1 = Cerebellum(config)
         
-        # Build up some eligibility traces
-        input_spikes = (torch.rand(1, 32) > 0.8).float()
+        # Build up some eligibility traces (ADR-005: 1D tensors)
+        input_spikes = (torch.rand(32) > 0.8).float()
         for _ in range(5):
             cereb1.forward(input_spikes)
         
@@ -549,8 +549,8 @@ class TestPathwayStateRoundtrip:
         
         pathway1 = SpikingAttentionPathway(config)
         
-        # Run some forward passes to accumulate state
-        pfc_activity = torch.rand(1, 64) > 0.8
+        # Run some forward passes to accumulate state (ADR-005: 1D tensors)
+        pfc_activity = torch.rand(64) > 0.8
         for _ in range(5):
             pathway1.compute_attention(pfc_activity.float(), dt=1.0)
         
@@ -592,9 +592,9 @@ class TestPathwayStateRoundtrip:
         
         pathway1 = SpikingReplayPathway(config)
         
-        # Store some patterns in the replay buffer
+        # Store some patterns in the replay buffer (ADR-005: 1D patterns)
         for i in range(3):
-            pattern = torch.rand(1, 128) > 0.7
+            pattern = torch.rand(128) > 0.7
             pathway1.store_pattern(pattern.float(), priority=float(i + 1))
         
         # Set sleep stage and trigger replay
@@ -654,8 +654,8 @@ class TestPathwayStateRoundtrip:
         sample = torch.rand(64) > 0.8
         brain1.process_sample(sample.float(), n_timesteps=10)
         
-        # Store patterns in replay pathway
-        hippo_pattern = torch.rand(1, 64) > 0.7
+        # Store patterns in replay pathway (ADR-005: 1D patterns)
+        hippo_pattern = torch.rand(64) > 0.7
         brain1.replay_pathway.store_pattern(hippo_pattern.float())
         
         # Save state
