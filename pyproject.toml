@@ -124,3 +124,124 @@ exclude_lines = [
 
 [tool.coverage.html]
 directory = "htmlcov"
+
+# =============================================================================
+# Pylint Configuration
+# =============================================================================
+# Suppress false positives and noise while keeping useful checks.
+# These settings reflect the realities of our AI/ML codebase:
+# - Type stubs incomplete for PyTorch/NumPy
+# - Forward references needed for circular imports
+# - Dynamic features (dataclasses, protocols, mixins)
+# - Research code exploration patterns
+
+[tool.pylint.main]
+# Use multiple processes for faster linting
+jobs = 0
+
+# Pickle collected data for later comparisons
+persistent = true
+
+# Discover python modules and packages in the file system subtree
+recursive = true
+
+[tool.pylint.messages_control]
+# Disable specific warnings that create noise without value
+disable = [
+    # === Type Checking Issues (handled by mypy) ===
+    "no-member",                    # Often wrong for torch.Tensor, dynamic attrs
+    "not-callable",                 # Wrong for __call__ methods, functorch
+    "unsubscriptable-object",       # Wrong for generics, protocols
+    "unsupported-membership-test",  # Wrong for __contains__ protocols
+    "unsupported-assignment-operation",  # Wrong for __setitem__ protocols
+    "unbalanced-tuple-unpacking",   # Often wrong for dataclass fields
+    
+    # === Import/Module Issues ===
+    "import-error",                 # False positives with namespace packages
+    "no-name-in-module",           # Wrong for torch, numpy submodules
+    "cyclic-import",               # Acceptable with TYPE_CHECKING guards
+    
+    # === Code Style (handled by black/ruff) ===
+    "line-too-long",               # Black handles this
+    "missing-module-docstring",    # Not every file needs module docs
+    "missing-class-docstring",     # Dataclasses often self-documenting
+    "missing-function-docstring",  # Helper functions often self-documenting
+    
+    # === Design Decisions (intentional patterns) ===
+    "too-many-arguments",          # Config classes need many params
+    "too-many-instance-attributes",  # Brain regions are complex
+    "too-many-locals",             # Forward passes have many intermediate values
+    "too-many-branches",           # State machines need branches
+    "too-many-statements",         # Complex initialization is fine
+    "too-few-public-methods",      # Protocols, mixins, utilities
+    "too-many-public-methods",     # Brain API is intentionally rich
+    
+    # === Protected Access (intentional for internal APIs) ===
+    "protected-access",            # _impl access is part of our architecture
+    
+    # === Unused Variables (often wrong) ===
+    "unused-argument",             # Protocol methods, hooks, callbacks
+    "unused-variable",             # Intentional in comprehensions, unpacking
+    
+    # === Abstract Methods (handled by type checker) ===
+    "abstract-method",             # Mypy catches this better
+    
+    # === Fixme Comments (we use TODO.md) ===
+    "fixme",                       # We track TODOs separately
+    
+    # === Duplicate Code (acceptable in tests, configs) ===
+    "duplicate-code",              # Test setup often similar
+    
+    # === Invalid Names (research code patterns) ===
+    "invalid-name",                # x, y, z, W, b are standard in ML
+    
+    # === Broad Exception Catching (intentional for robustness) ===
+    "broad-exception-caught",      # Catch-all needed in cleanup, __del__
+    
+    # === Redefined Outer Name (intentional shadowing) ===
+    "redefined-outer-name",        # Pytest fixtures do this intentionally
+]
+
+[tool.pylint.format]
+# Maximum number of characters on a single line
+max-line-length = 100  # Slightly more lenient than black (88)
+
+[tool.pylint.basic]
+# Good variable names (ML conventions)
+good-names = [
+    "i", "j", "k",       # Loop indices
+    "x", "y", "z",       # Coordinates, inputs
+    "W", "b",            # Weights, biases
+    "lr", "dt",          # Learning rate, timestep
+    "CA1", "CA3", "DG",  # Hippocampus regions
+    "L23", "L4", "L5",   # Cortical layers
+    "fc", "bn",          # Fully connected, batch norm
+    "fn",                # Function callback
+    "f", "g", "h",       # Generic functions
+    "pe",                # Prediction error
+    "td",                # Temporal difference
+    "rpe",               # Reward prediction error
+]
+
+[tool.pylint.design]
+# Maximum number of arguments for function/method (we need this for configs)
+max-args = 10
+
+# Maximum number of attributes for a class (brain regions are complex)
+max-attributes = 15
+
+# Maximum number of boolean expressions in an if statement
+max-bool-expr = 5
+
+[tool.pylint.similarities]
+# Minimum lines number of a similarity (to ignore small duplications)
+min-similarity-lines = 10
+
+# Comments are removed from the similarity computation
+ignore-comments = true
+
+# Docstrings are removed from the similarity computation  
+ignore-docstrings = true
+
+# Imports are removed from the similarity computation
+ignore-imports = true
