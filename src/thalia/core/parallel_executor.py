@@ -78,7 +78,7 @@ from typing import Dict, List, Optional, Any, Tuple
 import torch
 
 from .event_system import (
-    Event, EventType, EventScheduler, ThetaGenerator,
+    Event, EventType, EventScheduler,
     SpikePayload, RegionInterface, get_axonal_delay,
 )
 
@@ -193,8 +193,7 @@ class _ParallelExecutor:
 
     def __init__(
         self,
-        region_creators: Dict[str, callable],
-        theta_frequency: float = 8.0,
+        region_creators: Dict[str, Callable[[], RegionInterface]],
         batch_tolerance_ms: float = 0.1,
     ):
         """Initialize parallel simulation.
@@ -203,7 +202,6 @@ class _ParallelExecutor:
             region_creators: Dict mapping region names to callables that
                             create RegionInterface instances. Using callables
                             avoids pickling the actual region objects.
-            theta_frequency: Theta oscillation frequency in Hz
             batch_tolerance_ms: Events within this tolerance are batched
         """
         self.region_names = list(region_creators.keys())
@@ -211,10 +209,6 @@ class _ParallelExecutor:
 
         # Event scheduling (in main process)
         self.scheduler = EventScheduler()
-        self.theta = ThetaGenerator(
-            frequency_hz=theta_frequency,
-            connected_regions=self.region_names,
-        )
 
         # Per-region queues and control events
         self.input_queues: Dict[str, Queue] = {}
@@ -308,18 +302,6 @@ class _ParallelExecutor:
                 )
                 self.scheduler.schedule(event)
 
-    def _schedule_theta(self, until_time: float) -> None:
-        """Schedule theta events up to the given time."""
-        theta_interval = 1.0  # 1ms resolution
-
-        while True:
-            next_theta = self.theta.time + theta_interval
-            if next_theta > until_time:
-                break
-
-            theta_events = self.theta.advance_to(next_theta)
-            self.scheduler.schedule_many(theta_events)
-
     def _process_batch(self, events: List[Event]) -> List[Event]:
         """Process a batch of events in parallel.
 
@@ -381,9 +363,6 @@ class _ParallelExecutor:
 
         Processes events in batches, distributing to parallel workers.
         """
-        # Schedule initial theta
-        self._schedule_theta(min(10.0, end_time))
-
         while True:
             # Check if we're done
             next_time = self.scheduler.peek_time()
@@ -395,10 +374,6 @@ class _ParallelExecutor:
 
             if not batch:
                 break
-
-            # Schedule more theta if needed
-            batch_time = batch[0].time
-            self._schedule_theta(min(batch_time + 50.0, end_time))
 
             # Process batch in parallel
             output_events = self._process_batch(batch)
@@ -442,17 +417,15 @@ class ThreadedEventSimulation:
     def __init__(
         self,
         regions: Dict[str, RegionInterface],
-        theta_frequency: float = 8.0,
     ):
         """Initialize threaded simulation.
 
         Args:
             regions: Dict mapping region names to RegionInterface instances
-            theta_frequency: Theta oscillation frequency in Hz
         """
         # Store the underlying simulation components
         from .event_system import EventDrivenSimulation
-        self._sim = EventDrivenSimulation(regions, theta_frequency)
+        self._sim = EventDrivenSimulation(regions)
 
     def inject_sensory_input(
         self,
@@ -474,187 +447,3 @@ class ThreadedEventSimulation:
     def get_region_states(self) -> Dict[str, Dict[str, Any]]:
         """Get current state of all regions."""
         return self._sim.get_region_states()
-
-
-# =============================================================================
-# Simple test for parallel execution
-# =============================================================================
-
-# Module-level creator functions (required for pickling on Windows)
-def _create_test_cortex():
-    from .event_regions import SimpleLIFRegion, EventRegionConfig
-    return SimpleLIFRegion(
-        EventRegionConfig(name="cortex", output_targets=["hippocampus"]),
-        n_neurons=20, n_inputs=10,
-    )
-
-def _create_test_hippocampus():
-    from .event_regions import SimpleLIFRegion, EventRegionConfig
-    return SimpleLIFRegion(
-        EventRegionConfig(name="hippocampus", output_targets=["pfc"]),
-        n_neurons=15, n_inputs=20,
-    )
-
-def _create_test_pfc():
-    from .event_regions import SimpleLIFRegion, EventRegionConfig
-    return SimpleLIFRegion(
-        EventRegionConfig(name="pfc", output_targets=[]),
-        n_neurons=10, n_inputs=15,
-    )
-
-
-def test_parallel_execution():
-    """Test the parallel execution framework."""
-    print("\n=== Test: Parallel Execution ===")
-
-    region_creators = {
-        "cortex": _create_test_cortex,
-        "hippocampus": _create_test_hippocampus,
-        "pfc": _create_test_pfc,
-    }
-
-    # Create parallel simulation
-    sim = _ParallelExecutor(region_creators, theta_frequency=8.0)
-
-    print("  Starting worker processes...")
-    sim.start()
-
-    # Inject some input
-    pattern = torch.ones(10) * 0.5
-    sim.inject_sensory_input(pattern, target="cortex", time=0.0)
-
-    print("  Running simulation for 50ms...")
-    result = sim.run_until(50.0)
-
-    print(f"\n  Results:")
-    print(f"    Events processed: {result['events_processed']}")
-    print(f"    Spike counts: {result['spike_counts']}")
-
-    # Stop workers
-    print("  Stopping worker processes...")
-    sim.stop()
-
-    print("\n  PASSED: Parallel execution works")
-
-
-# Module-level creator functions for REAL brain regions
-def _create_real_cortex():
-    """Create a real LayeredCortex wrapped in EventDrivenCortex."""
-    from .event_regions import EventDrivenCortex, EventRegionConfig
-    from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
-
-    cortex = LayeredCortex(LayeredCortexConfig(
-        n_input=100,
-        n_output=64,
-        device="cpu",
-    ))
-    cortex.reset_state()
-
-    return EventDrivenCortex(
-        EventRegionConfig(name="cortex", output_targets=["hippocampus"]),
-        cortex,
-    )
-
-
-def _create_real_hippocampus():
-    """Create a real Hippocampus wrapped in EventDrivenHippocampus."""
-    from .event_regions import EventDrivenHippocampus, EventRegionConfig
-    from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
-
-    # Cortex L2/3 has 64 * 1.5 = 96 neurons
-    hippo = TrisynapticHippocampus(TrisynapticConfig(
-        n_input=96,
-        n_output=40,  # CA1 size
-        device="cpu",
-    ))
-
-    return EventDrivenHippocampus(
-        EventRegionConfig(name="hippocampus", output_targets=["pfc"]),
-        hippo,
-    )
-
-
-def _create_real_pfc():
-    """Create a real PrefrontalCortex wrapped in EventDrivenPFC."""
-    from .event_regions import EventDrivenPFC, EventRegionConfig
-    from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-
-    # Hippocampus CA1 has 40 neurons
-    pfc = Prefrontal(PrefrontalConfig(
-        n_input=40,
-        n_output=20,
-        device="cpu",
-    ))
-    pfc.reset_state()
-
-    return EventDrivenPFC(
-        EventRegionConfig(name="pfc", output_targets=["striatum"]),
-        pfc,
-    )
-
-
-def _create_real_striatum():
-    """Create a real Striatum wrapped in EventDrivenStriatum."""
-    from .event_regions import EventDrivenStriatum, EventRegionConfig
-    from thalia.regions.striatum import Striatum, StriatumConfig
-
-    # PFC has 20 output neurons, 4 actions
-    striatum = Striatum(StriatumConfig(
-        n_input=20,
-        n_output=4,  # n_actions
-        device="cpu",
-    ))
-    striatum.reset_state()
-
-    return EventDrivenStriatum(
-        EventRegionConfig(name="striatum", output_targets=[]),
-        striatum,
-    )
-
-
-def test_parallel_with_real_regions():
-    """Test parallel execution with real brain regions."""
-    print("\n=== Test: Parallel Execution with Real Brain Regions ===")
-
-    region_creators = {
-        "cortex": _create_real_cortex,
-        "hippocampus": _create_real_hippocampus,
-        "pfc": _create_real_pfc,
-        "striatum": _create_real_striatum,
-    }
-
-    sim = _ParallelExecutor(region_creators, theta_frequency=8.0)
-
-    print("  Starting 4 region workers (cortex, hippocampus, pfc, striatum)...")
-    sim.start()
-
-    # Inject sensory input (strong enough to generate spikes)
-    import torch
-    pattern = (torch.rand(100) > 0.5).float()
-    print(f"  Injecting sensory input: {pattern.sum().item():.0f}/100 active neurons")
-
-    # Inject multiple patterns
-    for t in range(5):
-        pattern = (torch.rand(100) > 0.5).float()
-        sim.inject_sensory_input(pattern, target="cortex", time=float(t))
-
-    # Also inject reward to test dopamine pathway
-    sim.inject_reward(1.0, time=10.0)
-
-    print("  Running simulation for 100ms...")
-    result = sim.run_until(100.0)
-
-    print(f"\n  Results:")
-    print(f"    Total events processed: {result['events_processed']}")
-    print(f"    Final time: {result['final_time']:.1f}ms")
-    print(f"    Spike counts by region:")
-    for region, count in result['spike_counts'].items():
-        print(f"      {region}: {count}")
-
-    sim.stop()
-    print("\n  PASSED: Parallel execution with real regions works")
-
-
-if __name__ == "__main__":
-    test_parallel_execution()
-    test_parallel_with_real_regions()

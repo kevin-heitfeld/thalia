@@ -7,15 +7,12 @@ Theta oscillations (6-10 Hz) are critical for:
 3. Coordinating hippocampal-cortical communication
 
 This module provides:
-- ThetaState: Tracks theta phase and provides encoding/retrieval strengths
-- ThetaConfig: Configuration for theta oscillations
 - TrialPhase: Enum for task phases (ENCODE, DELAY, RETRIEVE)
 - FeedforwardInhibition: Computes transient inhibition at stimulus changes
 - TemporalIntegrationLayer: Models EC layer II/III for cortex→hippocampus
 
-NOTE: ThetaState, ThetaConfig, and TrialPhase are now re-exported from
-      thalia.core.event_system for consistency. This module is maintained
-      for backward compatibility and provides additional utility classes.
+NOTE: TrialPhase is re-exported from thalia.core.event_system for consistency.
+      This module is maintained for backward compatibility and utility classes.
 
 References:
 - Hasselmo et al. (2002): Theta rhythm and encoding/retrieval
@@ -28,17 +25,13 @@ import math
 
 import torch
 
-# Re-export canonical implementations from event_system
+# Re-export TrialPhase from event_system
 from ..core.event_system import (
-    ThetaGenerator as ThetaState,  # ThetaState is now an alias for ThetaGenerator
-    ThetaConfig,
     TrialPhase,
 )
 
 # Export for backward compatibility
 __all__ = [
-    "ThetaState",
-    "ThetaConfig", 
     "TrialPhase",
     "FeedforwardInhibition",
     "TemporalIntegrationLayer",

@@ -48,10 +48,6 @@ from thalia.core.event_system import (
     SpikePayload,
     ThetaPayload,
     DopaminePayload,
-    # Theta oscillations (canonical implementation)
-    ThetaGenerator,
-    ThetaState,  # Alias for ThetaGenerator
-    ThetaConfig,
     TrialPhase,
     # Event scheduling
     EventScheduler,
@@ -145,10 +141,6 @@ __all__ = [
     "SpikePayload",
     "ThetaPayload",
     "DopaminePayload",
-    # Theta oscillations
-    "ThetaGenerator",
-    "ThetaState",
-    "ThetaConfig",
     "TrialPhase",
     # Event scheduling
     "EventScheduler",

@@ -1,7 +1,7 @@
 """
 Event-Driven Region Base Classes.
 
-This module provides the base adapter class that wraps existing brain regions 
+This module provides the base adapter class that wraps existing brain regions
 to work with the event-driven simulation framework.
 
 Adapters handle:
@@ -102,7 +102,7 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
     @abstractmethod
     def impl(self) -> Any:
         """Return the underlying brain region implementation.
-        
+
         This provides a consistent interface to access the wrapped region
         regardless of which adapter type is being used.
         """
@@ -147,12 +147,12 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         """Update dopamine state from dopamine event."""
         if isinstance(event.payload, DopaminePayload):
             self._dopamine_level = event.payload.level
-            
+
             # Set dopamine on underlying region state if available
             if hasattr(self, 'impl') and hasattr(self.impl, 'state'):
                 if self.impl.state is not None:
                     self.impl.state.dopamine = event.payload.level
-            
+
             # Trigger region-specific learning updates
             self._on_dopamine(event.payload)
         return []  # Dopamine updates typically don't produce output events
@@ -218,13 +218,13 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
 
     # ===== Input Buffering Methods =====
     # Common functionality for regions that receive multi-source input
-    
+
     def configure_input_sources(self, **source_sizes: int) -> None:
         """Configure expected input sources and their sizes.
-        
+
         Example:
             region.configure_input_sources(cortex=512, hippocampus=256, pfc=128)
-        
+
         Args:
             **source_sizes: Named arguments mapping source names to input sizes
         """
@@ -232,28 +232,28 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         for source in source_sizes:
             self._input_buffers[source] = None
             self._last_input_times[source] = -1000.0
-    
+
     def _buffer_input(self, source: str, spikes: torch.Tensor) -> None:
         """Store input spikes in buffer for given source.
-        
+
         Args:
             source: Name of the source region
             spikes: Spike tensor to buffer
         """
         self._input_buffers[source] = spikes
         self._last_input_times[source] = self._current_time
-    
+
     def _clear_input_buffers(self) -> None:
         """Clear all input buffers after processing."""
         for source in self._input_buffers:
             self._input_buffers[source] = None
-    
+
     def _is_source_timed_out(self, source: str) -> bool:
         """Check if a source has timed out waiting for input.
-        
+
         Args:
             source: Name of the source to check
-            
+
         Returns:
             True if the source hasn't sent input within accumulation window
         """
@@ -261,31 +261,31 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
             return True
         time_since_input = self._current_time - self._last_input_times[source]
         return time_since_input > self._accumulation_window
-    
+
     def _build_combined_input(
         self,
         source_order: List[str],
         require_sources: Optional[List[str]] = None,
     ) -> Optional[torch.Tensor]:
         """Build combined input from buffers in specified order.
-        
+
         Args:
             source_order: List of source names in the order to concatenate
             require_sources: List of sources that must be present (not timed out).
                            If None, only the first source is required.
-        
+
         Returns:
             Combined tensor of shape [sum(input_sizes)], or None if not ready
         """
         if require_sources is None:
             require_sources = [source_order[0]] if source_order else []
-        
+
         # Check if required sources are available
         for source in require_sources:
             if source not in self._input_buffers or self._input_buffers[source] is None:
                 # Required source not available
                 return None
-        
+
         # Determine device from available buffers (ADR-005: no batch dimension)
         device = None
         for source in source_order:
@@ -293,10 +293,10 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
             if buf is not None:
                 device = buf.device
                 break
-        
+
         if device is None:
             return None
-        
+
         # Build parts, using zeros for missing/timed-out sources (ADR-005: 1D tensors)
         parts = []
         for source in source_order:
@@ -308,10 +308,10 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
                 parts.append(
                     torch.zeros(self._input_sizes[source], device=device)
                 )
-        
+
         if not parts:
             return None
-        
+
         return torch.cat(parts, dim=-1) if len(parts) > 1 else parts[0]
 
     # ===== End Input Buffering Methods =====
@@ -335,84 +335,3 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         self._encoding_strength = 0.5
         self._retrieval_strength = 0.5
         self._dopamine_level = 0.0
-
-
-class SimpleLIFRegion(EventDrivenRegionBase):
-    """Simple LIF neuron population for testing the event system.
-
-    This is a minimal implementation to verify the event-driven
-    architecture works correctly before adapting the full regions.
-    """
-
-    def __init__(
-        self,
-        config: EventRegionConfig,
-        n_neurons: int,
-        n_inputs: int,
-    ):
-        super().__init__(config)
-
-        self.n_neurons = n_neurons
-        self.n_inputs = n_inputs
-
-        # Neuron state
-        self.membrane = torch.zeros(n_neurons, device=self._device)
-        self.threshold = torch.ones(n_neurons, device=self._device)
-
-        # Weights
-        self.weights = nn.Parameter(
-            torch.randn(n_neurons, n_inputs, device=self._device) * 0.1
-        )
-
-    def _apply_decay(self, dt_ms: float) -> None:
-        """Apply exponential membrane decay."""
-        decay = math.exp(-dt_ms / self._membrane_tau)
-        self.membrane *= decay
-
-    def _process_spikes(
-        self,
-        input_spikes: torch.Tensor,
-        source: str,
-    ) -> Optional[torch.Tensor]:
-        """Process input spikes through LIF neurons."""
-        # Flatten input if needed
-        if input_spikes.dim() > 1:
-            input_spikes = input_spikes.squeeze()
-
-        # Compute input current
-        if input_spikes.shape[0] == self.n_inputs:
-            current = torch.matmul(self.weights, input_spikes.float())
-        else:
-            # Input size mismatch - skip or adapt
-            return None
-
-        # Update membrane
-        self.membrane += current
-
-        # Check for spikes
-        spikes = (self.membrane >= self.threshold).float()
-
-        # Reset spiked neurons
-        self.membrane = torch.where(
-            spikes > 0,
-            torch.zeros_like(self.membrane),
-            self.membrane,
-        )
-
-        return spikes
-
-    def get_state(self) -> Dict[str, Any]:
-        """Return current state."""
-        state = super().get_state()
-        state.update(
-            {
-                "membrane_mean": self.membrane.mean().item(),
-                "membrane_max": self.membrane.max().item(),
-            }
-        )
-        return state
-
-    def reset_state(self) -> None:
-        """Reset neuron state."""
-        super().reset_state()
-        self.membrane.zero_()
