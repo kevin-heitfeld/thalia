@@ -14,7 +14,6 @@ from typing import Dict, Optional, Any
 
 import torch
 
-from ..event_system import DopaminePayload
 from .base import EventDrivenRegionBase, EventRegionConfig
 
 
@@ -112,19 +111,6 @@ class EventDrivenStriatum(EventDrivenRegionBase):
             and self.impl.d2_neurons.membrane is not None
         ):
             self.impl.d2_neurons.membrane *= decay_factor
-
-    def _on_dopamine(self, payload: DopaminePayload) -> None:
-        """Handle dopamine for reinforcement learning.
-
-        Dopamine drives learning via the three-factor rule:
-        - Positive DA (burst) → strengthen eligible synapses (D1 LTP, D2 LTD)
-        - Negative DA (dip) → weaken eligible synapses (D1 LTD, D2 LTP)
-
-        Note: Base class already sets dopamine on impl.state for continuous plasticity.
-        """
-        # Also trigger immediate learning via deliver_reward if there's a clear reward signal
-        if hasattr(self.impl, "deliver_reward") and abs(payload.level) > 0.1:
-            self.impl.deliver_reward(reward=payload.level)
 
     def _process_spikes(
         self,

@@ -1,5 +1,8 @@
 # TODO
 
+- What is delayed gradification?
+  - Ability of a system to go against its gradient
+
 ## Next Priorities
 
 ### Architecture & Infrastructure

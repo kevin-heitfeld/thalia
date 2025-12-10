@@ -46,7 +46,6 @@ from thalia.core.event_system import (
     Event,
     EventType,
     SpikePayload,
-    DopaminePayload,
     TrialPhase,
     # Event scheduling
     EventScheduler,

@@ -14,7 +14,6 @@ from typing import Dict, Optional, Any
 
 import torch
 
-from ..event_system import DopaminePayload
 from .base import EventDrivenRegionBase, EventRegionConfig
 
 
@@ -74,42 +73,6 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
             and self.impl.neurons.membrane is not None
         ):
             self.impl.neurons.membrane *= decay_factor
-
-    def _on_dopamine(self, payload: DopaminePayload) -> None:
-        """Handle dopamine signals.
-
-        In the cerebellum, dopamine modulates climbing fiber sensitivity.
-        We use the dopamine signal as a proxy for error feedback.
-
-        Note: Cerebellum uses error-corrective learning which requires an
-        explicit target signal. Dopamine in the cerebellum primarily modulates
-        plasticity rate, not direction. For proper cerebellar learning, use
-        learn_with_error() with an explicit target.
-        """
-        # Set dopamine level for plasticity modulation
-        self.impl.state.dopamine = payload.level
-
-        # Only apply immediate learning if we have both input/output AND a clear error signal
-        if self._recent_input is not None and self._recent_output is not None:
-            if abs(payload.level) > 0.1 and hasattr(self.impl, "learn"):
-                # Create target based on dopamine direction
-                # Positive: reinforce current output
-                # Negative: suppress current output
-                if payload.is_burst:
-                    # Reward - reinforce what we did
-                    target = self._recent_output.clone()
-                elif payload.is_dip:
-                    # Error - suppress what we did
-                    target = torch.zeros_like(self._recent_output)
-                else:
-                    # Neutral - no learning
-                    return
-
-                self.impl.learn(
-                    input_spikes=self._recent_input,
-                    output_spikes=self._recent_output,
-                    target=target,
-                )
 
     def _process_spikes(
         self,

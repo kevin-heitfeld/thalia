@@ -791,7 +791,7 @@ class EventDrivenBrain(nn.Module):
             Dict with region activities
         """
         n_timesteps = n_timesteps or self.config.delay_timesteps
-        
+
         # Set trial phase for diagnostics/monitoring
         # (Actual phase used by hippocampus is determined from oscillator states)
         self._trial_phase = TrialPhase.DELAY
@@ -929,26 +929,6 @@ class EventDrivenBrain(nn.Module):
         self.pfc.impl.set_dopamine(dopamine)
         self.striatum.impl.set_dopamine(dopamine)
         self.cerebellum.impl.set_dopamine(dopamine)
-
-        # Create dopamine events for all regions (event-driven pathway)
-        for region_name in self.adapters:
-            delay = get_axonal_delay("vta", region_name)
-            phasic_da = self.vta.get_phasic_dopamine()
-            event = Event(
-                time=self._current_time + delay,
-                event_type=EventType.DOPAMINE,
-                source="reward_system",
-                target=region_name,
-                payload=DopaminePayload(
-                    level=dopamine,
-                    is_burst=phasic_da > 0.5,
-                    is_dip=phasic_da < -0.5,
-                ),
-            )
-            self.scheduler.schedule(event)
-
-        # Process dopamine events
-        self._process_pending_events()
 
         # =====================================================================
         # STEP 7: Trigger striatum learning (D1/D2 plasticity)
@@ -1650,7 +1630,7 @@ class EventDrivenBrain(nn.Module):
 
         Delegates to parallel executor if parallel mode is enabled,
         otherwise runs sequentially in the main process.
-        
+
         Note: Trial phase for hippocampus is determined automatically
         from oscillator states (theta encoding/retrieval strength),
         not from self._trial_phase which is only for diagnostics.
@@ -1683,10 +1663,6 @@ class EventDrivenBrain(nn.Module):
             target="cortex",
             time=self._current_time,
         )
-
-        # Inject dopamine if specified
-        if abs(dopamine) > 1e-6:
-            self._parallel_executor.inject_reward(dopamine, time=self._current_time)
 
         # Run parallel simulation
         result = self._parallel_executor.run_until(end_time)
@@ -1736,18 +1712,7 @@ class EventDrivenBrain(nn.Module):
             )
             self.scheduler.schedule(event)
 
-            # Schedule dopamine if specified (external override)
-            if abs(dopamine) > 1e-6:
-                for region_name in ["striatum", "pfc"]:
-                    delay = get_axonal_delay("vta", region_name)
-                    event = Event(
-                        time=step_time + delay,
-                        event_type=EventType.DOPAMINE,
-                        source="tonic_dopamine",
-                        target=region_name,
-                        payload=DopaminePayload(level=dopamine),
-                    )
-                    self.scheduler.schedule(event)
+            # Dopamine is broadcast directly to all regions via set_dopamine() above
 
             # =========================================================
             # CONTINUOUS NEUROMODULATOR UPDATES

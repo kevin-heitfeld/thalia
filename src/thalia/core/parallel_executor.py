@@ -276,32 +276,6 @@ class ParallelExecutor:
         )
         self.scheduler.schedule(event)
 
-    def inject_reward(
-        self,
-        reward: float,
-        time: Optional[float] = None,
-    ) -> None:
-        """Inject reward signal (converted to dopamine)."""
-        from .event_system import DopaminePayload
-
-        event_time = time if time is not None else self.scheduler.current_time
-
-        for target in ["striatum", "pfc", "hippocampus"]:
-            if target in self.region_names:
-                delay = get_axonal_delay("vta", target)
-                event = Event(
-                    time=event_time + delay,
-                    event_type=EventType.DOPAMINE,
-                    source="reward_system",
-                    target=target,
-                    payload=DopaminePayload(
-                        level=reward,
-                        is_burst=reward > 0.5,
-                        is_dip=reward < -0.5,
-                    ),
-                )
-                self.scheduler.schedule(event)
-
     def _process_batch(self, events: List[Event]) -> List[Event]:
         """Process a batch of events in parallel.
 

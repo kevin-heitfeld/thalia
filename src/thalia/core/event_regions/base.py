@@ -28,7 +28,6 @@ from ..event_system import (
     Event,
     EventType,
     SpikePayload,
-    DopaminePayload,
     Connection,
     RegionInterface,
     get_axonal_delay,
@@ -125,26 +124,10 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         self._last_update_time = event.time
 
         # Handle event by type
-        if event.event_type == EventType.DOPAMINE:
-            return self._handle_dopamine(event)
-        elif event.event_type in (EventType.SPIKE, EventType.SENSORY):
+        if event.event_type in (EventType.SPIKE, EventType.SENSORY):
             return self._handle_spikes(event)
         else:
             return []
-
-    def _handle_dopamine(self, event: Event) -> List[Event]:
-        """Update dopamine state from dopamine event."""
-        if isinstance(event.payload, DopaminePayload):
-            self._dopamine_level = event.payload.level
-
-            # Set dopamine on underlying region state if available
-            if hasattr(self, 'impl') and hasattr(self.impl, 'state'):
-                if self.impl.state is not None:
-                    self.impl.state.dopamine = event.payload.level
-
-            # Trigger region-specific learning updates
-            self._on_dopamine(event.payload)
-        return []  # Dopamine updates typically don't produce output events
 
     def _handle_spikes(self, event: Event) -> List[Event]:
         """Process incoming spikes - to be implemented by subclass."""
@@ -200,10 +183,6 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
             Output spike tensor, or None if no output
         """
         raise NotImplementedError
-
-    def _on_dopamine(self, payload: DopaminePayload) -> None:
-        """Handle dopamine signal - override for learning."""
-        pass
 
     # ===== Input Buffering Methods =====
     # Common functionality for regions that receive multi-source input

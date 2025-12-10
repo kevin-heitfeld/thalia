@@ -14,7 +14,6 @@ from typing import Dict, Optional, Any
 
 import torch
 
-from ..event_system import DopaminePayload
 from .base import EventDrivenRegionBase, EventRegionConfig
 
 
@@ -106,18 +105,6 @@ class EventDrivenPFC(EventDrivenRegionBase):
         # The update() method handles decay internally
         if hasattr(self.impl, "dopamine_system"):
             self.impl.dopamine_system.update(0.0, dt_ms)
-
-    def _on_dopamine(self, payload: DopaminePayload) -> None:
-        """Handle dopamine signal for PFC.
-
-        DA level gets passed to PFC.forward() which uses it to:
-        - Gate what enters working memory (high DA = update WM)
-        - Modulate learning (via dopamine-gated STDP)
-
-        Note: Base class already sets dopamine on impl.state for continuous plasticity.
-        """
-        # Store dopamine signal for next forward pass (WM gating)
-        self._pending_dopamine_signal = payload.level
 
     def _process_spikes(
         self,

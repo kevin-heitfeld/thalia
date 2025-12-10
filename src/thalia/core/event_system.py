@@ -66,9 +66,7 @@ import torch
 class EventType(Enum):
     """Types of events in the simulation."""
     SPIKE = "spike"           # Spike activity from a region
-    DOPAMINE = "dopamine"     # Dopamine neuromodulator signal
     SENSORY = "sensory"       # External sensory input
-    REWARD = "reward"         # Reward signal
     CLOCK = "clock"           # Periodic clock tick (for regions that need it)
 
 
@@ -108,14 +106,6 @@ class TrialPhase(Enum):
     ENCODE = "encode"
     DELAY = "delay"
     RETRIEVE = "retrieve"
-
-
-@dataclass
-class DopaminePayload:
-    """Payload for dopamine events."""
-    level: float                         # Dopamine level (-1 to +1 typically)
-    is_burst: bool = False               # True for phasic burst
-    is_dip: bool = False                 # True for phasic dip
 
 
 @dataclass
