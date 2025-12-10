@@ -305,40 +305,6 @@ class ThaliaConfig:
     # LEGACY CONFIG CREATION
     # =========================================================================
 
-    def to_event_driven_brain_config(self) -> Any:
-        """Create EventDrivenBrainConfig for legacy API.
-
-        This creates the old-style config object for backward compatibility.
-        Deprecation warning is suppressed since this is intentional internal use.
-        """
-        import warnings
-
-        # Import here to avoid circular imports
-        from thalia.core.brain import EventDrivenBrainConfig
-        from thalia.core.diagnostics import DiagnosticLevel
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            return EventDrivenBrainConfig(
-                input_size=self.brain.sizes.input_size,
-                cortex_size=self.brain.sizes.cortex_size,
-                hippocampus_size=self.brain.sizes.hippocampus_size,
-                pfc_size=self.brain.sizes.pfc_size,
-                n_actions=self.brain.sizes.n_actions,
-                cortex_type=self.brain.cortex_type,
-                cortex_config=self.brain.cortex,  # Pass the full cortex config
-                dt_ms=self.global_.dt_ms,
-                theta_frequency_hz=self.global_.theta_frequency_hz,
-                encoding_timesteps=self.brain.encoding_timesteps,
-                delay_timesteps=self.brain.delay_timesteps,
-                test_timesteps=self.brain.test_timesteps,
-                neurons_per_action=self.brain.striatum.neurons_per_action,
-                oscillator_couplings=self.brain.oscillator_couplings,
-                parallel=self.brain.parallel,
-                diagnostic_level=DiagnosticLevel.SUMMARY,
-                device=self.global_.device,
-            )
-
     def to_language_interface_config(self) -> Any:
         """Create LanguageInterfaceConfig for legacy API."""
         import warnings
@@ -436,75 +402,6 @@ class ThaliaConfig:
     # =========================================================================
     # CONVENIENCE FACTORY METHODS
     # =========================================================================
-
-    @classmethod
-    def for_language(
-        cls,
-        vocab_size: int = 10000,
-        device: str = "cpu",
-        cortex_size: int = 256,
-        hippocampus_size: int = 128,
-    ) -> "ThaliaConfig":
-        """Create configuration optimized for language processing.
-
-        Args:
-            vocab_size: Token vocabulary size
-            device: Computation device
-            cortex_size: Size of cortex output
-            hippocampus_size: Size of hippocampus output
-
-        Returns:
-            ThaliaConfig configured for language
-        """
-        return cls(
-            global_=GlobalConfig(
-                device=device,
-                vocab_size=vocab_size,
-                theta_frequency_hz=6.0,  # Slower theta for longer sequences
-            ),
-            brain=BrainConfig(
-                sizes=RegionSizes(
-                    input_size=cortex_size,  # Match cortex for language
-                    cortex_size=cortex_size,
-                    hippocampus_size=hippocampus_size,
-                    pfc_size=64,
-                    n_actions=vocab_size,  # For next-token prediction
-                ),
-            ),
-        )
-
-    @classmethod
-    def for_classification(
-        cls,
-        n_classes: int,
-        input_size: int = 256,
-        device: str = "cpu",
-    ) -> "ThaliaConfig":
-        """Create configuration for classification tasks.
-
-        Args:
-            n_classes: Number of output classes
-            input_size: Size of input (e.g., from image encoder)
-            device: Computation device
-
-        Returns:
-            ThaliaConfig configured for classification
-        """
-        return cls(
-            global_=GlobalConfig(
-                device=device,
-                theta_frequency_hz=8.0,
-            ),
-            brain=BrainConfig(
-                sizes=RegionSizes(
-                    input_size=input_size,
-                    cortex_size=128,
-                    hippocampus_size=64,
-                    pfc_size=32,
-                    n_actions=n_classes,
-                ),
-            ),
-        )
 
     @classmethod
     def minimal(cls, device: str = "cpu") -> "ThaliaConfig":

@@ -193,9 +193,28 @@ class EventDrivenBrain(nn.Module):
         
         super().__init__()
         
-        # Convert to legacy config structure for now (internal implementation detail)
-        legacy_config = config.to_event_driven_brain_config()
-        self.config = legacy_config
+        # Store ThaliaConfig directly
+        self.thalia_config = config
+        # Create a simple namespace for backwards compatibility with code that accesses self.config
+        from types import SimpleNamespace
+        self.config = SimpleNamespace(
+            input_size=config.brain.sizes.input_size,
+            cortex_size=config.brain.sizes.cortex_size,
+            hippocampus_size=config.brain.sizes.hippocampus_size,
+            pfc_size=config.brain.sizes.pfc_size,
+            n_actions=config.brain.sizes.n_actions,
+            cortex_type=config.brain.cortex_type,
+            cortex_config=config.brain.cortex,
+            dt_ms=config.global_.dt_ms,
+            theta_frequency_hz=config.global_.theta_frequency_hz,
+            encoding_timesteps=config.brain.encoding_timesteps,
+            delay_timesteps=config.brain.delay_timesteps,
+            test_timesteps=config.brain.test_timesteps,
+            neurons_per_action=config.brain.striatum.neurons_per_action,
+            oscillator_couplings=config.brain.oscillator_couplings,
+            parallel=config.brain.parallel,
+            device=config.global_.device,
+        )
 
         # Current simulation time
         self._current_time: float = 0.0
@@ -209,9 +228,9 @@ class EventDrivenBrain(nn.Module):
 
         # 1. CORTEX: Feature extraction
         # Build cortex config by merging user config with computed sizes
-        if config.cortex_config is not None:
+        if self.config.cortex_config is not None:
             # Use provided config, but override sizes
-            base_cortex_config = config.cortex_config
+            base_cortex_config = self.config.cortex_config
         else:
             # Create default config
             base_cortex_config = LayeredCortexConfig(n_input=0, n_output=0)
@@ -219,14 +238,14 @@ class EventDrivenBrain(nn.Module):
         # Merge with sizes from this config (sizes always come from here)
         cortex_config = replace(
             base_cortex_config,
-            n_input=config.input_size,
-            n_output=config.cortex_size,
-            dt=config.dt_ms,  # RegionConfigBase uses 'dt' not 'dt_ms'
-            device=config.device,
+            n_input=self.config.input_size,
+            n_output=self.config.cortex_size,
+            dt=self.config.dt_ms,  # RegionConfigBase uses 'dt' not 'dt_ms'
+            device=self.config.device,
         )
 
         # Select implementation based on config
-        if config.cortex_type == CortexType.PREDICTIVE:
+        if self.config.cortex_type == CortexType.PREDICTIVE:
             # PredictiveCortex with local error learning
             # Convert LayeredCortexConfig to PredictiveCortexConfig
             pred_config = PredictiveCortexConfig(
