@@ -219,6 +219,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
+        self._output_size = _output_size  # Track output size for growth
         assert self.l4_size == l4_size, f"L4 size mismatch: {self.l4_size} != {l4_size}"
         assert self.l23_size == l23_size, f"L2/3 size mismatch: {self.l23_size} != {l23_size}"
         assert self.l5_size == l5_size, f"L5 size mismatch: {self.l5_size} != {l5_size}"
@@ -331,7 +332,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
     def set_oscillator_phases(
         self,
         phases: Dict[str, float],
-        signals: Dict[str, float],
+        signals: Optional[Dict[str, float]] = None,
         theta_slot: int = 0,
         coupled_amplitudes: Optional[Dict[str, float]] = None,
     ) -> None:
@@ -384,7 +385,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
         
-        # Update output size
+        # Update output size (note: _output_size initialized in __init__)
         self._output_size = self.l23_size + self.l5_size
         
         # Update parent config
@@ -395,8 +396,6 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         
         # Recreate prediction layer with new sizes
         if self.predictive_config.prediction_enabled:
-            from thalia.core.predictive_coding import PredictiveCodingLayer, PredictiveCodingConfig
-            
             self.prediction_layer = PredictiveCodingLayer(
                 PredictiveCodingConfig(
                     n_input=self.l4_size,
@@ -737,7 +736,7 @@ class PredictiveHierarchy(nn.Module):
                 n_input=area_sizes[i],
                 n_output=area_sizes[i + 1],
                 prediction_enabled=True,
-                use_attention=(i > 0),  # Attention in higher areas
+                # Attention controlled by use_gamma_attention (inherited from LayeredCortexConfig)
                 device=base_config.device,
             )
             self.areas.append(PredictiveCortex(area_config))

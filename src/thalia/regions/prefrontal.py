@@ -47,10 +47,14 @@ When to Use:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import TYPE_CHECKING, Optional, Dict, Any
 
 import torch
 import torch.nn as nn
+
+if TYPE_CHECKING:
+    from thalia.regions.prefrontal_hierarchy import Goal, GoalHierarchyManager, GoalHierarchyConfig
+    from thalia.regions.prefrontal_hierarchy import HyperbolicDiscounter, HyperbolicDiscountingConfig
 
 from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
 
@@ -449,7 +453,6 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        from thalia.core.weight_init import WeightInitializer
         from dataclasses import replace
 
         old_n_output = self.config.n_output
@@ -1030,30 +1033,30 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
 
         return state_dict
 
-    def load_full_state(self, state_dict: Dict[str, Any]) -> None:
+    def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
 
         Args:
-            state_dict: State dictionary from get_full_state()
+            state: State dictionary from get_full_state()
 
         Raises:
             ValueError: If config dimensions don't match
         """
         # Validate config compatibility
-        config = state_dict.get("config", {})
+        config = state.get("config", {})
         if config.get("n_input") != self.config.n_input:
             raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
         if config.get("n_output") != self.config.n_output:
             raise ValueError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
 
         # Restore weights
-        weights = state_dict["weights"]
+        weights = state["weights"]
         self.weights.data.copy_(weights["feedforward"].to(self.device))
         self.rec_weights.data.copy_(weights["recurrent"].to(self.device))
         self.inhib_weights.data.copy_(weights["inhibition"].to(self.device))
 
         # Restore neuron state
-        region_state = state_dict["region_state"]
+        region_state = state["region_state"]
         self.neurons.load_state(region_state["neurons"])
 
         # Restore working memory and gating
@@ -1069,7 +1072,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             self.state.active_rule = region_state["active_rule"].to(self.device)
 
         # Restore learning state
-        learning_state = state_dict["learning_state"]
+        learning_state = state["learning_state"]
         if "stdp_strategy" in learning_state and hasattr(self, 'learning_strategy'):
             if hasattr(self.learning_strategy, 'load_state'):
                 self.learning_strategy.load_state(learning_state["stdp_strategy"])
@@ -1078,6 +1081,6 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             self.stp_recurrent.load_state(learning_state["stp_recurrent"])
 
         # Restore dopamine gating system
-        neuromod = state_dict["neuromodulator_state"]
+        neuromod = state["neuromodulator_state"]
         self.state.dopamine = neuromod["dopamine"]
         self.dopamine_system.load_state(neuromod["dopamine_system"])

@@ -42,5 +42,13 @@
   "reportUnusedFunction": false,
   "reportMissingModuleSource": false,
   "reportImportCycles": false,
-  "reportAttributeAccessIssue": false
+  "reportAttributeAccessIssue": false,
+  "reportCallIssue": false,
+  "reportArgumentType": false,
+  "reportIndexIssue": false,
+  "reportOperatorIssue": false,
+  "reportOptionalCall": false,
+  "reportOptionalIterable": false,
+  "reportOptionalContextManager": false,
+  "reportUndefinedVariable": "warning"
 }

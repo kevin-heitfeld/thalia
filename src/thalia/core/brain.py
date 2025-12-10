@@ -79,9 +79,12 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Dict, Optional, Any
+from typing import TYPE_CHECKING, Dict, Optional, Any
 import torch
 import torch.nn as nn
+
+if TYPE_CHECKING:
+    from thalia.config import ThaliaConfig
 
 from .event_system import (
     Event, EventType, EventScheduler,
@@ -188,8 +191,6 @@ class EventDrivenBrain(nn.Module):
         Note:
             Prefer using EventDrivenBrain.from_thalia_config(config) for clarity.
         """
-        from thalia.config import ThaliaConfig
-
         super().__init__()
 
         # Store ThaliaConfig directly
@@ -632,6 +633,12 @@ class EventDrivenBrain(nn.Module):
         # Growth history tracking
         self._growth_history: list = []
 
+        # Comparison signal state (for match/mismatch detection)
+        self._ca1_accumulated: float = 0.0
+        self._last_comparison_decision: Optional[str] = None
+        self._last_similarity: float = 0.0
+        self._novelty_signal: float = 0.0
+
         # =====================================================================
         # CRITICALITY MONITOR (Optional robustness diagnostic)
         # =====================================================================
@@ -738,7 +745,6 @@ class EventDrivenBrain(nn.Module):
                 "pfc": _create_real_pfc,
                 "striatum": _create_real_striatum,
             },
-            theta_frequency=self.config.theta_frequency_hz,
         )
         self._parallel_executor.start()
 
@@ -962,14 +968,14 @@ class EventDrivenBrain(nn.Module):
         # VTA handles normalization, phasic burst computation, and decay
         if external_reward != 0.0:
             # External reward
-            normalized_rpe = self.vta.deliver_reward(
+            self.vta.deliver_reward(
                 external_reward=external_reward,
                 expected_value=expected
             )
         else:
             # Pure intrinsic reward
             intrinsic = self._compute_intrinsic_reward()
-            normalized_rpe = self.vta.deliver_reward(
+            self.vta.deliver_reward(
                 external_reward=intrinsic,
                 expected_value=expected
             )

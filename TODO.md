@@ -3,6 +3,7 @@
 ## Architecture & Infrastructure
 
 - Review public brain API
+- Implement all functions of the `CurriculumTrainer` (e.g. `_check_and_trigger_growth()`)
 
 - [ ] Sleep/Wake System 🟢 **LOW PRIORITY**
   - Already partially handled by oscillator frequency modulation

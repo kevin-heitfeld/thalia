@@ -30,6 +30,7 @@ References:
 """
 
 import math
+from dataclasses import replace
 from typing import Optional, Dict, Any, List, cast
 
 import torch
@@ -117,6 +118,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # Call parent init
         super().__init__(config)
+
+        # Initialize oscillator-related state
+        self._gamma_amplitude_effective: float = 1.0
 
         # Override weights with trisynaptic circuit weights
         self._init_circuit_weights()
@@ -537,9 +541,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        from thalia.core.weight_init import WeightInitializer
-        from dataclasses import replace
-
         # Calculate proportional growth for all layers
         old_ca1_size = self.ca1_size
         new_ca1_size = old_ca1_size + n_new
@@ -634,10 +635,11 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # 6. Update config
         self.config = replace(self.config, n_output=new_ca1_size)
 
-    def forward(  # type: ignore[override]
+    def forward(
         self,
         input_spikes: torch.Tensor,
         ec_direct_input: Optional[torch.Tensor] = None,
+        **kwargs
     ) -> torch.Tensor:
         """
         Process input spikes through DG→CA3→CA1 circuit.
@@ -1595,21 +1597,21 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     ) -> List[Dict[str, Any]]:
         """
         Retrieve K most similar past experiences from episodic memory.
-        
+
         For Phase 2 model-based planning: provides outcome predictions based
         on similar past experiences. Uses pattern completion capability of
         hippocampus to predict what will happen next.
-        
+
         Biology: Hippocampus retrieves similar past episodes during planning
         and decision-making (Johnson & Redish, 2007). CA3 pattern completion
         allows partial cues to retrieve full memories.
-        
+
         Args:
             query_state: State to find similar experiences for [n] (1D, ADR-005)
             query_action: Optional action to filter by (boosts similarity)
             k: Number of similar experiences to retrieve
             similarity_threshold: Minimum similarity to return (0.0-1.0)
-        
+
         Returns:
             similar_episodes: List of dicts with keys:
                 - 'state': Episode state tensor
@@ -1619,16 +1621,16 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 - 'similarity': Cosine similarity score (0.0-1.0)
                 - 'context': Optional context tensor
                 - 'metadata': Optional metadata dict
-        
+
         Note:
             Uses cosine similarity in state space. For more sophisticated
             retrieval, could use CA3 recurrent dynamics or DG-CA3-CA1 circuit.
         """
         if not self.episode_buffer:
             return []
-        
+
         k = min(k, len(self.episode_buffer))
-        
+
         # Compute similarity to all stored episodes
         similarities = []
         for episode in self.episode_buffer:
@@ -1637,16 +1639,16 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 query_state.unsqueeze(0),
                 episode.state.unsqueeze(0)
             ).item()
-            
+
             # If action provided, boost similarity for matching actions
             if query_action is not None and episode.action == query_action:
                 sim = min(1.0, sim * 1.2)  # 20% boost for matching action
-            
+
             similarities.append((sim, episode))
-        
+
         # Sort by similarity (descending)
         similarities.sort(key=lambda x: x[0], reverse=True)
-        
+
         # Build result list with top-K above threshold
         similar = []
         for sim, episode in similarities[:k]:
@@ -1655,7 +1657,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 # For now, use the state itself as a proxy
                 # In full implementation, would track state transitions
                 next_state_approx = episode.state  # Could be improved
-                
+
                 similar.append({
                     'state': episode.state,
                     'action': episode.action,
@@ -1667,7 +1669,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                     'correct': episode.correct,
                     'priority': episode.priority,
                 })
-        
+
         return similar
 
     # =========================================================================
@@ -1685,7 +1687,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         achieved_goal: Optional[torch.Tensor] = None
     ) -> None:
         """Add experience to HER buffer for goal-conditioned learning.
-        
+
         Args:
             state: Current state (CA3 pattern or cortex output)
             action: Action taken
@@ -1697,11 +1699,11 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         """
         if self.her_integration is None:
             return
-        
+
         # If achieved_goal not provided, use CA1 output as proxy
         if achieved_goal is None:
             achieved_goal = self.state.ca1_spikes if self.state.ca1_spikes is not None else next_state
-        
+
         self.her_integration.add_experience(
             state=state,
             action=action,
@@ -1711,10 +1713,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             done=done,
             achieved_goal=achieved_goal
         )
-    
+
     def enter_consolidation_mode(self) -> None:
         """Enter consolidation/sleep mode for HER replay.
-        
+
         During consolidation:
         - Hippocampus replays stored experiences
         - Hindsight goals are generated
@@ -1722,34 +1724,34 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         """
         if self.her_integration is not None:
             self.her_integration.enter_consolidation()
-    
+
     def exit_consolidation_mode(self) -> None:
         """Exit consolidation mode, return to active learning."""
         if self.her_integration is not None:
             self.her_integration.exit_consolidation()
-    
+
     def sample_her_replay_batch(self, batch_size: int = 32) -> List:
         """Sample batch of experiences for HER replay learning.
-        
+
         Returns mix of real and hindsight-relabeled experiences.
         Only returns data during consolidation mode.
-        
+
         Args:
             batch_size: Number of transitions to sample
-            
+
         Returns:
             List of EpisodeTransition objects (real + hindsight mix)
         """
         if self.her_integration is None:
             return []
-        
+
         return self.her_integration.replay_for_learning(batch_size)
-    
+
     def get_her_diagnostics(self) -> Dict[str, Any]:
         """Get HER system diagnostics."""
         if self.her_integration is None:
             return {"her_enabled": False}
-        
+
         diagnostics = self.her_integration.get_diagnostics()
         diagnostics["her_enabled"] = True
         return diagnostics

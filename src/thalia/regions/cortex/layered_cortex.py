@@ -495,7 +495,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
     def set_oscillator_phases(
         self,
         phases: Dict[str, float],
-        signals: Dict[str, float],
+        signals: Optional[Dict[str, float]] = None,
         theta_slot: int = 0,
         coupled_amplitudes: Optional[Dict[str, float]] = None,
     ) -> None:
@@ -1277,17 +1277,17 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         return state_dict
 
-    def load_full_state(self, state_dict: Dict[str, Any]) -> None:
+    def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
 
         Args:
-            state_dict: State dictionary from get_full_state()
+            state: State dictionary from get_full_state()
 
         Raises:
             ValueError: If config dimensions don't match
         """
         # Validate config compatibility
-        config = state_dict.get("config", {})
+        config = state.get("config", {})
         if config.get("n_input") != self.config.n_input:
             raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
         if config.get("n_output") != self.config.n_output:
@@ -1300,7 +1300,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             raise ValueError(f"Config mismatch: l5_size {config.get('l5_size')} != {self.l5_size}")
 
         # Restore weights
-        weights = state_dict["weights"]
+        weights = state["weights"]
         self.w_input_l4.data.copy_(weights["w_input_l4"].to(self.device))
         self.w_l4_l23.data.copy_(weights["w_l4_l23"].to(self.device))
         self.w_l23_recurrent.data.copy_(weights["w_l23_recurrent"].to(self.device))
@@ -1308,7 +1308,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.w_l23_inhib.data.copy_(weights["w_l23_inhib"].to(self.device))
 
         # Restore neuron states
-        region_state = state_dict["region_state"]
+        region_state = state["region_state"]
         self.l4_neurons.load_state(region_state["l4_neurons"])
         self.l23_neurons.load_state(region_state["l23_neurons"])
         self.l5_neurons.load_state(region_state["l5_neurons"])
@@ -1330,7 +1330,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.state.l23_recurrent_activity = region_state["l23_recurrent_activity"].to(self.device)
 
         # Restore BCM thresholds
-        learning_state = state_dict["learning_state"]
+        learning_state = state["learning_state"]
         if "bcm_l4_theta" in learning_state and self.bcm_l4 is not None:
             self.bcm_l4.theta.copy_(learning_state["bcm_l4_theta"].to(self.device))
         if "bcm_l23_theta" in learning_state and self.bcm_l23 is not None:
@@ -1343,7 +1343,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.stp_l23_recurrent.load_state(learning_state["stp_l23_recurrent"])
 
         # Restore neuromodulators
-        neuromod = state_dict["neuromodulator_state"]
+        neuromod = state["neuromodulator_state"]
         self.state.dopamine = neuromod["dopamine"]
         self.state.norepinephrine = neuromod["norepinephrine"]
         self.state.acetylcholine = neuromod["acetylcholine"]

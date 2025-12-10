@@ -237,7 +237,7 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
     def set_oscillator_phases(
         self,
         phases: Dict[str, float],
-        signals: Dict[str, float],
+        signals: Optional[Dict[str, float]] = None,
         theta_slot: int = 0,
         coupled_amplitudes: Optional[Dict[str, float]] = None,
     ) -> None:
@@ -329,7 +329,6 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        from thalia.core.weight_init import WeightInitializer
         from dataclasses import replace
 
         old_n_output = self.config.n_output
@@ -363,7 +362,6 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         )
 
         # Expand Purkinje neurons
-        from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
         neuron_config = ConductanceLIFConfig(
             v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
             tau_E=3.0, tau_I=8.0,
@@ -410,11 +408,12 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         # ======================================================================
         import math
         encoding_mod = 0.5 * (1.0 + math.cos(self._theta_phase))
-        retrieval_mod = 1.0 - encoding_mod
+        _ = 1.0 - encoding_mod  # retrieval_mod - reserved for future output gain modulation
 
         # Encoding phase: stronger input drive for error detection
         # Retrieval phase: stronger output for motor correction
         input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
+        # Note: retrieval_mod could be used for output gain if needed for motor commands
 
         # Update STDP traces (already 1D)
         dt = self.config.dt_ms
@@ -685,28 +684,28 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
 
         return state_dict
 
-    def load_full_state(self, state_dict: Dict[str, Any]) -> None:
+    def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
 
         Args:
-            state_dict: State dictionary from get_full_state()
+            state: State dictionary from get_full_state()
 
         Raises:
             ValueError: If config dimensions don't match
         """
         # Validate config compatibility
-        config = state_dict.get("config", {})
+        config = state.get("config", {})
         if config.get("n_input") != self.config.n_input:
             raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
         if config.get("n_output") != self.config.n_output:
             raise ValueError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
 
         # Restore weights
-        weights = state_dict["weights"]
+        weights = state["weights"]
         self.weights.data.copy_(weights["parallel_fiber_purkinje"].to(self.device))
 
         # Restore neuron state
-        region_state = state_dict["region_state"]
+        region_state = state["region_state"]
         if self.neurons is not None and region_state["neurons"] is not None:
             self.neurons.load_state(region_state["neurons"])
 
@@ -715,6 +714,6 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         self.output_trace.copy_(region_state["output_trace"].to(self.device))
 
         # Restore learning state
-        learning_state = state_dict["learning_state"]
+        learning_state = state["learning_state"]
         self.stdp_eligibility.copy_(learning_state["stdp_eligibility"].to(self.device))
         self.climbing_fiber.load_state(learning_state["climbing_fiber"])
