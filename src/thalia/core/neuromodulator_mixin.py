@@ -2,75 +2,112 @@
 Neuromodulator Mixin for Brain Regions.
 
 This mixin provides standardized neuromodulator handling (dopamine, acetylcholine,
-norepinephrine) for brain regions, eliminating duplicate decay logic and providing
-consistent interfaces.
+norepinephrine) for brain regions, with setter interfaces for centralized broadcast.
 
 Design Pattern:
 ===============
-Instead of implementing custom neuromodulator methods in each region:
-1. Inherit from NeuromodulatorMixin
-2. Access neuromodulators via self.state.dopamine, etc.
-3. Call self.decay_neuromodulators(dt_ms) in forward()
-4. Optionally override DEFAULT_TAU_* constants for region-specific timescales
+Neuromodulators are now CENTRALLY MANAGED by Brain and BROADCAST to regions:
+
+1. **VTA (Dopamine)**: Brain.vta computes DA from RPE, broadcasts to all regions
+2. **Locus Coeruleus (NE)**: Brain.locus_coeruleus computes NE from uncertainty
+3. **Nucleus Basalis (ACh)**: Brain.nucleus_basalis computes ACh from prediction error
+
+Regions:
+- Inherit from NeuromodulatorMixin
+- Access neuromodulators via self.state.dopamine, etc.
+- DO NOT call decay_neuromodulators() (handled by Brain)
+- Just use set_dopamine(), set_norepinephrine(), set_acetylcholine() as interfaces
 
 This consolidates:
-- Exponential decay logic with configurable time constants
-- set_dopamine() interface for external modulation
+- Setter interfaces for centralized broadcast
 - get_effective_learning_rate() for dopamine-modulated plasticity
 - set_neuromodulator() for generic access
 
-Hybrid Decay Architecture:
-==========================
-**Dopamine - Centralized in Brain**:
-- Brain computes RPE and manages tonic/phasic dopamine
-- Brain decays phasic dopamine (τ=200ms) in _update_tonic_dopamine()
-- Brain broadcasts combined dopamine to all regions via set_dopamine()
-- Regions DON'T decay dopamine locally (Brain handles it)
-- Rationale: Dopamine is global signal from VTA/SNc
+**IMPORTANT**: Regions should NOT call decay_neuromodulators() anymore!
+All decay is handled centrally by Brain._update_neuromodulators() which:
+1. Updates VTA dopamine (tonic + phasic decay)
+2. Updates LC norepinephrine (arousal tracking + phasic decay)
+3. Updates NB acetylcholine (encoding mode + phasic decay)
+4. Broadcasts all three to regions every timestep
 
-**Acetylcholine & Norepinephrine - Local Decay**:
-- Regions call self.decay_neuromodulators(dt) in their forward() methods
-- ACh/NE decay locally with their own time constants
-- Dopamine is NOT decayed (already handled by Brain)
-- Rationale: ACh (nucleus basalis) and NE (locus coeruleus) have regional specificity
+**Regional Specificity vs Global Broadcast**:
+The old architecture assumed ACh/NE had "regional specificity" requiring local decay.
+This was neuroanatomically incorrect:
+- Nucleus Basalis projects broadly (cortex + hippocampus)
+- Locus Coeruleus projects globally (entire brain)
+- Both are centralized nuclei like VTA
+
+However, regions CAN respond differently to the SAME global signal:
+- Different receptor densities (e.g., D1 vs D2 in striatum)
+- Different sensitivity parameters (e.g., dopamine_sensitivity in get_effective_learning_rate)
+- Region-specific gating (e.g., hippocampus uses ACh differently than cortex)
+
+This is implemented via:
+1. **Global broadcast**: Same signal to all regions (biologically accurate)
+2. **Local interpretation**: Each region uses signal according to its receptor profile
+3. **Configurable sensitivity**: Regions can override sensitivity parameters
+
+Example - Dopamine sensitivity varies by region:
+```python
+# Striatum: highly dopamine-sensitive (rich D1/D2)
+striatum_lr = self.get_effective_learning_rate(base_lr=0.01, dopamine_sensitivity=2.0)
+
+# Cortex: moderately dopamine-sensitive
+cortex_lr = self.get_effective_learning_rate(base_lr=0.01, dopamine_sensitivity=1.0)
+
+# Cerebellum: less dopamine-sensitive
+cerebellum_lr = self.get_effective_learning_rate(base_lr=0.01, dopamine_sensitivity=0.5)
+```
+
+This matches biology: VTA broadcasts DA globally, but regions respond according to
+their D1/D2 receptor densities, not because DA "decays differently" per region.
 
 Biological Basis:
 =================
 Neuromodulators gate synaptic plasticity and influence neural dynamics:
 
-- **Dopamine (DA)**: Reward prediction error, gates learning
+- **Dopamine (DA)**: Reward prediction error, gates learning (VTA/SNc)
   - High DA → consolidate current patterns (LTP enhancement)
   - Low DA → exploratory, reduce learning
   - Tau ~200ms (reuptake by DAT transporters)
-  - Primary targets: Striatum, PFC, Hippocampus
+  - Managed by: VTADopamineSystem in Brain
 
-- **Acetylcholine (ACh)**: Attention, novelty detection, encoding
-  - High ACh → enhance sensory processing, suppress recurrence
+- **Acetylcholine (ACh)**: Attention, novelty detection, encoding (Nucleus Basalis)
+  - High ACh → enhance sensory processing, encoding mode
   - Low ACh → retrieval mode, enhance consolidation
   - Tau ~50ms (rapid degradation by AChE)
-  - Primary targets: Cortex, Hippocampus
+  - Managed by: NucleusBasalisSystem in Brain
+  - Projection: Broad to cortex and hippocampus
+  - Regional specificity via: Different receptor densities and gating mechanisms
 
-- **Norepinephrine (NE)**: Arousal, flexibility, network gain
+- **Norepinephrine (NE)**: Arousal, flexibility, network gain (Locus Coeruleus)
   - High NE → increase neural gain, reset dynamics
   - Modulates signal-to-noise ratio
   - Tau ~100ms (reuptake by NET transporters)
-  - Widespread targets: Cortex, Hippocampus, PFC
+  - Managed by: LocusCoeruleusSystem in Brain
+  - Projection: Global throughout entire brain (one of most widespread systems)
+  - Regional specificity via: Different α/β receptor densities and local circuit properties
 
 Usage Example:
 ==============
     class MyRegion(NeuromodulatorMixin, BrainRegion):
-        # Override tau constants if region-specific
-        DEFAULT_ACETYLCHOLINE_TAU_MS = 30.0  # Faster ACh in this region
-        
         def forward(self, input, dt=1.0):
             output = self._compute_output(input)
             
-            # Decay ACh/NE locally (dopamine managed by Brain)
-            self.decay_neuromodulators(dt_ms=dt)
+            # NO LONGER NEEDED - Brain handles decay:
+            # self.decay_neuromodulators(dt_ms=dt)  # ❌ Don't do this!
             
-            # Use dopamine-modulated learning rate
+            # Just use dopamine-modulated learning rate:
             lr = self.get_effective_learning_rate(base_lr=0.01)
             self._apply_plasticity(lr=lr)
+            
+            # Optionally use ACh for encoding/retrieval mode:
+            if self.state.acetylcholine > 0.5:
+                # Encoding mode
+                pass
+            else:
+                # Retrieval mode
+                pass
             
             return output
 

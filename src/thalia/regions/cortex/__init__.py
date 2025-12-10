@@ -16,11 +16,12 @@ Author: Thalia Project
 Date: December 2025
 """
 
-from .config import CorticalLayer, LayeredCortexConfig, LayeredCortexState
+from .config import CorticalLayer, LayeredCortexConfig, LayeredCortexState, calculate_layer_sizes
 from .layered_cortex import LayeredCortex
 from .predictive_cortex import PredictiveCortex, PredictiveCortexConfig, PredictiveCortexState
 
 __all__ = [
+    "calculate_layer_sizes",
     "CorticalLayer",
     "LayeredCortex",
     "LayeredCortexConfig",

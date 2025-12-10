@@ -76,6 +76,33 @@ from thalia.core import (
     clamp_weights,
 )
 
+# Oscillators (for working memory, consolidation)
+from thalia.core.oscillator import (
+    SinusoidalOscillator,
+    OscillatorManager,
+    OSCILLATOR_DEFAULTS,
+)
+
+# Neuromodulator Systems (centralized)
+from thalia.core.vta import (
+    VTADopamineSystem,
+    VTAConfig,
+)
+from thalia.core.locus_coeruleus import (
+    LocusCoeruleusSystem,
+    LocusCoeruleusConfig,
+)
+from thalia.core.nucleus_basalis import (
+    NucleusBasalisSystem,
+    NucleusBasalisConfig,
+)
+from thalia.core.homeostatic_regulation import (
+    HomeostaticRegulator,
+    HomeostaticConfig,
+    NeuromodulatorCoordination,
+    inverted_u_function,
+)
+
 # Learning Rules (common)
 from thalia.learning import (
     BCMRule,
@@ -86,6 +113,13 @@ from thalia.learning import (
 
 # Pathways
 from thalia.integration import SpikingPathway, SpikingPathwayConfig
+
+# Visualization (optional - requires manim)
+try:
+    from thalia.visualization import BrainActivityVisualization, MANIM_AVAILABLE
+except ImportError:
+    BrainActivityVisualization = None
+    MANIM_AVAILABLE = False
 
 # Namespaces for topic-level imports (advanced users)
 from thalia import regions  # noqa: F401
@@ -135,6 +169,24 @@ __all__ = [
     # Pathways
     "SpikingPathway",
     "SpikingPathwayConfig",
+    # Oscillators
+    "SinusoidalOscillator",
+    "OscillatorManager",
+    "OSCILLATOR_DEFAULTS",
+    # Neuromodulator Systems
+    "VTADopamineSystem",
+    "VTAConfig",
+    "LocusCoeruleusSystem",
+    "LocusCoeruleusConfig",
+    "NucleusBasalisSystem",
+    "NucleusBasalisConfig",
+    "HomeostaticRegulator",
+    "HomeostaticConfig",
+    "NeuromodulatorCoordination",
+    "inverted_u_function",
+    # Visualization
+    "BrainActivityVisualization",
+    "MANIM_AVAILABLE",
     # Namespaces
     "regions",
     "core",

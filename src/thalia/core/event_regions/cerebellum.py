@@ -41,7 +41,8 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
         cerebellum: Any,  # Cerebellum instance
     ):
         super().__init__(config)
-        self._cerebellum = cerebellum
+        self.impl_module = cerebellum  # Register as public attribute for nn.Module
+        self._cerebellum = cerebellum  # Keep reference for backwards compatibility
 
         # Track recent activity for learning
         self._recent_input: Optional[torch.Tensor] = None

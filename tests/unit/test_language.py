@@ -452,7 +452,10 @@ class TestSequenceTimer:
         timer = SequenceTimer(n_neurons=64, device=device)
         timer.to(device)
 
-        spikes = timer.step(n_steps=1)
+        # Set oscillator phases (normally done by Brain)
+        timer.set_oscillator_phases(theta_phase=0.5, gamma_phase=1.2)
+        
+        spikes = timer.step()
         assert spikes.shape == (64,)
 
     def test_reset(self, device):
@@ -460,7 +463,10 @@ class TestSequenceTimer:
         timer = SequenceTimer(n_neurons=64, device=device)
         timer.to(device)
 
-        timer.step(n_steps=10)
+        # Set phases and generate spikes
+        timer.set_oscillator_phases(theta_phase=1.5, gamma_phase=2.3)
+        timer.step()
+        
         timer.reset_state()
 
         state = timer.get_state()

@@ -328,6 +328,19 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self._last_d1_spikes = None
         self._last_d2_spikes = None
 
+        # =====================================================================
+        # BETA OSCILLATOR TRACKING (Motor Control Modulation)
+        # =====================================================================
+        # Beta oscillations (13-30 Hz, typically 20 Hz) modulate action selection:
+        # - High beta: Maintain current action (D1 dominant, suppress switching)
+        # - Low beta: Allow action switching (D2 can suppress, facilitate change)
+        # - Beta desynchronization (ERD): Action change window
+        # - Beta rebound (ERS): Action stabilization
+        self._beta_phase: float = 0.0
+        self._theta_phase: float = 0.0
+        self._beta_amplitude: float = 1.0
+        self._coupled_amplitudes: Dict[str, float] = {}
+
     # =========================================================================
     # PLASTICITY CONTROL (for debugging only)
     # =========================================================================
@@ -809,6 +822,55 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.THREE_FACTOR
 
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float],
+        theta_slot: int = 0,
+        coupled_amplitudes: Optional[Dict[str, float]] = None,
+    ) -> None:
+        """Receive oscillator information from brain broadcast.
+
+        Beta oscillations modulate action selection and maintenance:
+        - High beta amplitude: Action persistence (D1 dominant)
+          * Increases D1 gain → stronger GO signals
+          * Decreases D2 gain → weaker NOGO signals
+          * Results in action maintenance (harder to switch)
+        
+        - Low beta amplitude: Action flexibility (D2 effective)
+          * Decreases D1 gain → weaker GO signals
+          * Allows D2 to suppress → easier to switch actions
+          * Results in action exploration (easier to change)
+
+        Biology:
+        - Motor cortex shows high beta during action maintenance
+        - Beta desynchronization (ERD) precedes action changes
+        - Beta rebound (ERS) stabilizes new action after selection
+        - Striatum receives beta-modulated cortico-striatal input
+
+        Args:
+            phases: Oscillator phases in radians {'theta': ..., 'beta': ..., 'gamma': ...}
+            signals: Oscillator signal values (sin/cos waveforms)
+            theta_slot: Current theta slot [0, n_slots-1] for working memory
+            coupled_amplitudes: Coupled amplitudes {'beta_by_theta': ..., etc}
+
+        Note:
+            Called automatically by Brain before each forward() call.
+            Do not call this manually.
+        """
+        # Store oscillator phases for action selection
+        self._beta_phase = phases.get('beta', 0.0)
+        self._theta_phase = phases.get('theta', 0.0)
+        
+        # Store effective amplitude (pre-computed by OscillatorManager)
+        # Automatic multiplicative coupling:
+        # - Beta modulated by ALL slower oscillators (delta, theta, alpha)
+        # OscillatorManager handles the multiplication, we just store the result.
+        if coupled_amplitudes is not None:
+            self._beta_amplitude = coupled_amplitudes.get('beta', 1.0)
+        else:
+            self._beta_amplitude = 1.0
+
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize with small positive weights."""
         weights = WeightInitializer.uniform(
@@ -972,6 +1034,24 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             d1_gain = 1.0 + tonic_factor  # e.g., tonic=0.3, scale=0.5 → gain=1.15
 
         # =====================================================================
+        # BETA OSCILLATION MODULATION (Motor Control)
+        # =====================================================================
+        # Beta amplitude modulates D1/D2 balance for action maintenance vs switching:
+        # - High beta (e.g., 0.8-1.0): Action maintenance
+        #   * Boost D1 gain → stronger GO signals → maintain current action
+        #   * Reduce D2 gain → weaker NOGO signals → harder to switch
+        # - Low beta (e.g., 0.2-0.4): Action flexibility
+        #   * Reduce D1 gain → weaker GO signals → easier to interrupt
+        #   * Boost D2 gain → stronger NOGO signals → allow suppression
+        #
+        # Biology: Motor cortex shows high beta during postural maintenance,
+        # beta desynchronization (ERD) before action changes, and beta rebound
+        # (ERS) after new action selection.
+        beta_mod = self.striatum_config.beta_modulation_strength
+        d1_gain = d1_gain * (1.0 + beta_mod * (self._beta_amplitude - 0.5))
+        d2_gain = d2_gain * (1.0 - beta_mod * (self._beta_amplitude - 0.5))
+
+        # =====================================================================
         # ACTIVITY-BASED EXCITABILITY MODULATION
         # =====================================================================
         # Intrinsic excitability based on recent activity history.
@@ -991,6 +1071,17 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Apply tonic DA gain modulation to D1 pathway
         d1_g_exc = (d1_activation * theta_contrast_mod * d1_gain + baseline_exc).clamp(min=0)
         d1_g_inh = torch.zeros_like(d1_g_exc)  # No direct inhibition
+
+        # =====================================================================
+        # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
+        # =====================================================================
+        # High NE (arousal/uncertainty): Increase gain → more exploration
+        # Low NE (baseline): Normal gain
+        # Biological: NE modulates striatal excitability and action variability
+        ne_level = self.state.norepinephrine
+        # NE gain: 1.0 (baseline) to 1.5 (high arousal)
+        ne_gain = 1.0 + 0.5 * ne_level
+        d1_g_exc = d1_g_exc * ne_gain
 
         # Add lateral inhibition within D1 population if enabled
         if self.striatum_config.lateral_inhibition:
@@ -1071,10 +1162,10 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # The action-specific masking happens in deliver_reward(), not here
         self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes, dt=dt)
 
-        # NOTE: Dopamine is now managed centrally by Brain (VTA).
-        # Dopamine decay happens in Brain._update_tonic_dopamine(), not here.
-        # But ACh/NE (if used) decay locally.
-        self.decay_neuromodulators(dt_ms=dt)
+        # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
+        # VTA updates dopamine, LC updates NE, NB updates ACh.
+        # Brain broadcasts to all regions every timestep via _update_neuromodulators().
+        # No local decay needed.
 
         # Update recent spikes (based on D1 output) - already 1D
         self.recent_spikes = self.recent_spikes.float() * 0.9 + d1_spikes.float()

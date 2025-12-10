@@ -43,7 +43,8 @@ class EventDrivenCortex(EventDrivenRegionBase):
         pfc_size: int = 0,  # Size of PFC output for top-down projection
     ):
         super().__init__(config)
-        self._cortex = cortex
+        self.impl_module = cortex  # Register as public attribute for nn.Module
+        self._cortex = cortex  # Keep reference for backwards compatibility
         self._pfc_size = pfc_size
 
         # Track pending top-down modulation

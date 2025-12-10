@@ -20,6 +20,28 @@ from thalia.learning.bcm import BCMConfig
 from thalia.config.robustness_config import RobustnessConfig
 
 
+def calculate_layer_sizes(n_output: int, l4_ratio: float, l23_ratio: float, l5_ratio: float) -> tuple[int, int, int]:
+    """Calculate layer sizes from output size and ratios.
+    
+    Args:
+        n_output: Desired output size (typically n_output from config)
+        l4_ratio: L4 size as ratio of n_output (typically 1.0)
+        l23_ratio: L2/3 size as ratio of n_output (typically 1.5)
+        l5_ratio: L5 size as ratio of n_output (typically 1.0)
+        
+    Returns:
+        Tuple of (l4_size, l23_size, l5_size)
+        
+    Note:
+        This is the canonical calculation used throughout the codebase.
+        All layer size computations should use this function to ensure consistency.
+    """
+    l4_size = int(n_output * l4_ratio)
+    l23_size = int(n_output * l23_ratio)
+    l5_size = int(n_output * l5_ratio)
+    return l4_size, l23_size, l5_size
+
+
 class CorticalLayer(Enum):
     """Cortical layer identifiers."""
 
@@ -140,6 +162,11 @@ class LayeredCortexConfig(RegionConfig):
     ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
     ffi_strength: float = 0.8  # How much FFI suppresses L2/3 recurrent activity
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
+    
+    # Gamma-based attention (spike-native phase gating for L2/3)
+    use_gamma_attention: bool = True
+    gamma_attention_freq_hz: float = 40.0  # Gamma frequency for attention
+    gamma_attention_width: float = 0.3     # Phase window width
 
     # =========================================================================
     # BCM SLIDING THRESHOLD (Metaplasticity)
@@ -196,6 +223,13 @@ class LayeredCortexState(RegionState):
 
     # Feedforward inhibition strength (0-1, 1 = max suppression)
     ffi_strength: float = 0.0
+
+    # Alpha oscillation suppression (0-1, 1 = no suppression, 0.5 = max suppression)
+    alpha_suppression: float = 1.0
+    
+    # Gamma attention state (spike-native phase gating)
+    gamma_attention_phase: Optional[float] = None  # Current gamma phase
+    gamma_attention_gate: Optional[torch.Tensor] = None  # Per-neuron gating [l23_size]
 
     # Last plasticity delta (for monitoring continuous learning)
     last_plasticity_delta: float = 0.0

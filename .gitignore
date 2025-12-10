@@ -103,11 +103,14 @@ dmypy.json
 data/*
 !data/.gitkeep
 
+# Generated files
+media/
+
 # Model checkpoints
 *.pt
 *.pth
 *.ckpt
-checkpoints/
+training_runs/**/checkpoints/
 
 # Logs
 logs/
@@ -119,4 +122,3 @@ Thumbs.db
 
 # Experiment outputs (keep notebooks, ignore outputs)
 experiments/notebooks/*.html
-experiments/outputs/

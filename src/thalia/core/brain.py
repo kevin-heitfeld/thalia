@@ -79,7 +79,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 import torch
 import torch.nn as nn
 
@@ -92,6 +92,10 @@ from .event_regions import (
     EventDrivenCortex, EventDrivenHippocampus, EventDrivenPFC, EventDrivenStriatum,
     EventDrivenCerebellum, EventRegionConfig,
 )
+from .vta import VTADopamineSystem, VTAConfig
+from .locus_coeruleus import LocusCoeruleusSystem, LocusCoeruleusConfig
+from .nucleus_basalis import NucleusBasalisSystem, NucleusBasalisConfig
+from .homeostatic_regulation import NeuromodulatorCoordination
 from .parallel_executor import _ParallelExecutor
 from .diagnostics import (
     DiagnosticsManager,
@@ -166,6 +170,11 @@ class EventDrivenBrainConfig:
 
     # Striatum settings
     neurons_per_action: int = 10
+
+    # Oscillator configuration
+    oscillator_couplings: Optional[List] = None
+    """Cross-frequency couplings for oscillator system.
+    If None, uses default theta-gamma coupling. Pass empty list to disable coupling."""
 
     # Execution mode
     parallel: bool = False  # Use multiprocessing for regions
@@ -438,6 +447,23 @@ class EventDrivenBrain(nn.Module):
         )
 
         # =====================================================================
+        # OSCILLATOR MANAGER (centralized, like dopamine)
+        # =====================================================================
+        # Manages all brain-wide oscillations (delta, theta, alpha, beta, gamma)
+        # and broadcasts phases to regions. This ensures:
+        # 1. Biological accuracy (EEG shows brain-wide synchronization)
+        # 2. Efficiency (single oscillator per frequency)
+        # 3. Consistent with dopamine architecture (centralized broadcast)
+        # 4. Easy phase-amplitude coupling across regions
+        from thalia.core.oscillator import OscillatorManager
+        self.oscillators = OscillatorManager(
+            dt_ms=config.dt_ms,
+            device=config.device,
+            theta_freq=config.theta_frequency_hz,
+            couplings=config.oscillator_couplings,
+        )
+
+        # =====================================================================
         # LEARNABLE PATHWAYS
         # =====================================================================
         # All inter-region connections are explicit pathways with:
@@ -618,33 +644,23 @@ class EventDrivenBrain(nn.Module):
         self._last_action: Optional[int] = None
 
         # =====================================================================
-        # VTA DOPAMINE SYSTEM (centralized RPE computation)
+        # CENTRALIZED NEUROMODULATOR SYSTEMS
         # =====================================================================
-        # Brain acts as VTA: computes reward prediction error and broadcasts
-        # normalized dopamine signal to all regions. This centralizes what
-        # was previously in Striatum's DopamineSystem.
-        #
-        # We separate TONIC and PHASIC dopamine (biologically accurate):
-        # - TONIC: Slow, continuous signal from intrinsic prediction quality
-        # - PHASIC: Sharp bursts/dips from external rewards, decays over time
-        #
-        # Regions receive: global_dopamine = tonic + phasic
-        self._tonic_dopamine: float = 0.0   # Slow baseline (intrinsic)
-        self._phasic_dopamine: float = 0.0  # Fast bursts (external rewards)
-        self._global_dopamine: float = 0.0  # Combined signal to regions
+        # VTA DOPAMINE SYSTEM (reward prediction error)
+        # Manages tonic + phasic dopamine, broadcasts to all regions
+        self.vta = VTADopamineSystem(VTAConfig())
 
-        # Phasic dopamine decay parameters
-        # τ = 200ms for dopamine reuptake (decay = exp(-dt/τ))
-        # At dt=1ms: decay = exp(-1/200) ≈ 0.995 per timestep
-        self._phasic_decay: float = 0.995  # Per-timestep decay factor
+        # LOCUS COERULEUS (norepinephrine arousal)
+        # Manages arousal/uncertainty, broadcasts NE to all regions
+        self.locus_coeruleus = LocusCoeruleusSystem(LocusCoeruleusConfig())
 
-        # Adaptive normalization prevents saturation from reward scaling:
-        # - Tracks running average of |RPE| to adapt to reward statistics
-        # - Outputs normalized RPE in range [-rpe_clip, +rpe_clip]
-        self._vta_avg_abs_rpe: float = 0.5  # Running average of |RPE|
-        self._vta_rpe_history_count: int = 0  # Number of rewards seen
-        self._vta_rpe_avg_tau: float = 0.9  # EMA decay for running average
-        self._vta_rpe_clip: float = 2.0  # Clip normalized RPE to this range
+        # NUCLEUS BASALIS (acetylcholine attention/encoding)
+        # Manages encoding/retrieval mode, broadcasts ACh to cortex/hippocampus
+        self.nucleus_basalis = NucleusBasalisSystem(NucleusBasalisConfig())
+
+        # NEUROMODULATOR COORDINATION
+        # Implements biological interactions between systems (DA-ACh, NE-ACh, DA-NE)
+        self.neuromodulator_coordination = NeuromodulatorCoordination()
 
         # Monitoring
         self._spike_counts: Dict[str, int] = {name: 0 for name in self.adapters}
@@ -919,7 +935,7 @@ class EventDrivenBrain(nn.Module):
         # STEP 1: Compute phasic dopamine from external reward
         # =====================================================================
         # External rewards create PHASIC bursts/dips that add to tonic baseline.
-        # The tonic component already flows continuously via _update_tonic_dopamine().
+        # The tonic component flows continuously via _update_neuromodulators().
         #
         # If no external reward (0.0), we just compute the phasic component from
         # the current state for the striatum value update.
@@ -930,55 +946,47 @@ class EventDrivenBrain(nn.Module):
         expected = self.striatum.impl.get_expected_value(self._last_action)
 
         # =====================================================================
-        # STEP 3: Compute reward prediction error
+        # STEP 3: Compute RPE and deliver to VTA
         # =====================================================================
-        # RPE = actual - expected
-        # For external rewards, the "actual" is the external signal
-        # For pure intrinsic (external=0), compute from current intrinsic
+        # VTA handles normalization, phasic burst computation, and decay
         if external_reward != 0.0:
-            rpe = external_reward - expected
+            # External reward
+            normalized_rpe = self.vta.deliver_reward(
+                external_reward=external_reward,
+                expected_value=expected
+            )
         else:
+            # Pure intrinsic reward
             intrinsic = self._compute_intrinsic_reward()
-            rpe = intrinsic - expected
+            normalized_rpe = self.vta.deliver_reward(
+                external_reward=intrinsic,
+                expected_value=expected
+            )
 
         # =====================================================================
-        # STEP 4: Normalize RPE (adaptive to reward statistics)
+        # STEP 4: Get dopamine signal from VTA and broadcast to ALL regions
         # =====================================================================
-        da_level = self._compute_normalized_dopamine(rpe)
+        dopamine = self.vta.get_global_dopamine()
 
-        # =====================================================================
-        # STEP 5: SET PHASIC DOPAMINE (this is the key change!)
-        # =====================================================================
-        # Instead of directly setting _global_dopamine, we set the PHASIC component.
-        # This will decay over time via _update_tonic_dopamine(), giving the
-        # eligibility traces time to overlap with the dopamine signal.
-        self._phasic_dopamine = da_level
-
-        # Update global immediately (regions get the sum)
-        self._global_dopamine = self._tonic_dopamine + self._phasic_dopamine
-        self._global_dopamine = max(-2.0, min(2.0, self._global_dopamine))
-
-        # =====================================================================
-        # STEP 6: Broadcast to ALL regions
-        # =====================================================================
-        self.cortex.impl.set_dopamine(self._global_dopamine)
-        self.hippocampus.impl.set_dopamine(self._global_dopamine)
-        self.pfc.impl.set_dopamine(self._global_dopamine)
-        self.striatum.impl.set_dopamine(self._global_dopamine)
-        self.cerebellum.impl.set_dopamine(self._global_dopamine)
+        self.cortex.impl.set_dopamine(dopamine)
+        self.hippocampus.impl.set_dopamine(dopamine)
+        self.pfc.impl.set_dopamine(dopamine)
+        self.striatum.impl.set_dopamine(dopamine)
+        self.cerebellum.impl.set_dopamine(dopamine)
 
         # Create dopamine events for all regions (event-driven pathway)
         for region_name in self.adapters:
             delay = get_axonal_delay("vta", region_name)
+            phasic_da = self.vta.get_phasic_dopamine()
             event = Event(
                 time=self._current_time + delay,
                 event_type=EventType.DOPAMINE,
                 source="reward_system",
                 target=region_name,
                 payload=DopaminePayload(
-                    level=self._global_dopamine,
-                    is_burst=self._phasic_dopamine > 0.5,
-                    is_dip=self._phasic_dopamine < -0.5,
+                    level=dopamine,
+                    is_burst=phasic_da > 0.5,
+                    is_dip=phasic_da < -0.5,
                 ),
             )
             self.scheduler.schedule(event)
@@ -1000,42 +1008,39 @@ class EventDrivenBrain(nn.Module):
         if self._last_action is not None:
             self.striatum.impl.update_value_estimate(self._last_action, reward_for_striatum)
 
-    def _compute_normalized_dopamine(self, rpe: float) -> float:
-        """Compute normalized dopamine from raw RPE.
+    def _compute_uncertainty(self) -> float:
+        """Compute current task uncertainty for arousal modulation.
 
-        Uses adaptive normalization to prevent saturation:
-        - Tracks running average of |RPE| to adapt to reward statistics
-        - Outputs normalized RPE in range [-rpe_clip, +rpe_clip]
+        Uncertainty drives norepinephrine release from locus coeruleus.
+        High uncertainty → high arousal → increased neural gain.
 
-        This is the VTA's core computation: converting prediction error
-        into a normalized dopamine signal suitable for learning.
-
-        Args:
-            rpe: Raw reward prediction error
+        Sources:
+        1. Prediction error magnitude (cortex)
+        2. Value estimate variance (striatum)
+        3. Novelty detection
 
         Returns:
-            Normalized dopamine level
+            Uncertainty estimate in [0, 1]
         """
-        abs_rpe = abs(rpe)
-        self._vta_rpe_history_count += 1
+        uncertainty = 0.0
+        n_sources = 0
 
-        # Adaptive smoothing: slower early on for stability
-        if self._vta_rpe_history_count < 10:
-            alpha = 1.0 / self._vta_rpe_history_count
+        # Cortex prediction error as uncertainty proxy
+        if hasattr(self.cortex.impl, 'state') and hasattr(self.cortex.impl.state, 'free_energy'):
+            free_energy = self.cortex.impl.state.free_energy
+            # High FE → high uncertainty
+            cortex_uncertainty = min(1.0, free_energy / 10.0)
+            uncertainty += cortex_uncertainty
+            n_sources += 1
+
+        # Average across sources
+        if n_sources > 0:
+            uncertainty = uncertainty / n_sources
         else:
-            alpha = 1.0 - self._vta_rpe_avg_tau
+            # No signals → assume moderate uncertainty
+            uncertainty = 0.3
 
-        # Update running average of |RPE|
-        self._vta_avg_abs_rpe = (
-            self._vta_rpe_avg_tau * self._vta_avg_abs_rpe + alpha * abs_rpe
-        )
-
-        # Normalize RPE by running average (with epsilon for stability)
-        epsilon = 0.1
-        normalized_rpe = rpe / (self._vta_avg_abs_rpe + epsilon)
-
-        # Clip to prevent extreme updates
-        return max(-self._vta_rpe_clip, min(self._vta_rpe_clip, normalized_rpe))
+        return max(0.0, min(1.0, uncertainty))
 
     def _compute_intrinsic_reward(self) -> float:
         """Compute intrinsic reward from the brain's internal objectives.
@@ -1105,64 +1110,172 @@ class EventDrivenBrain(nn.Module):
 
         return max(-1.0, min(1.0, reward))
 
-    def _update_tonic_dopamine(self) -> None:
-        """Update dopamine levels every timestep.
+    def _compute_prediction_error(self) -> float:
+        """Compute current prediction error for ACh modulation.
 
-        This handles both dopamine channels:
+        Prediction error drives ACh release from nucleus basalis.
+        High PE → novelty → ACh burst → encoding mode.
 
-        1. TONIC DOPAMINE (slow, intrinsic):
-           - Updates based on current prediction quality
-           - Smoothed with EMA (τ ~100ms)
-           - Represents ongoing "mood"/motivation
+        Sources:
+        1. Cortex free energy (prediction error magnitude)
+        2. Hippocampus retrieval mismatch
 
-        2. PHASIC DOPAMINE (fast, external):
-           - Decays toward zero each timestep (τ ~200ms)
-           - Set by deliver_reward() when external rewards arrive
-           - Represents reward prediction error bursts/dips
+        Returns:
+            Prediction error estimate in [0, 1]
+        """
+        prediction_error = 0.0
+        n_sources = 0
 
-        GLOBAL DOPAMINE = tonic + phasic
-        This is what regions receive for plasticity modulation.
+        # Cortex predictive coding error
+        if hasattr(self.cortex.impl, 'state') and hasattr(self.cortex.impl.state, 'free_energy'):
+            free_energy = self.cortex.impl.state.free_energy
+            # Map FE to [0, 1]: 0 → 0, 5 → 0.5, 10+ → 1.0
+            cortex_pe = min(1.0, free_energy / 10.0)
+            prediction_error += cortex_pe
+            n_sources += 1
 
-        Biologically:
-        - VTA neurons fire tonically at ~4-5Hz (baseline)
-        - Phasic bursts (5-20 spikes) for unexpected rewards
-        - Phasic pauses for unexpected punishments
-        - Both components sum at target synapses
+        # Average across sources
+        if n_sources > 0:
+            prediction_error = prediction_error / n_sources
+        else:
+            # No signals → assume low PE (familiar context)
+            prediction_error = 0.2
+
+        return max(0.0, min(1.0, prediction_error))
+
+    def _update_neuromodulators(self) -> None:
+        """Update all centralized neuromodulator systems every timestep.
+
+        Updates:
+        1. VTA dopamine (tonic from intrinsic reward, phasic decays)
+        2. Locus coeruleus NE (arousal from uncertainty)
+        3. Nucleus basalis ACh (encoding from prediction error)
+        4. Broadcasts all signals to regions
+
+        Called every timestep to maintain neuromodulator dynamics.
         """
         # =====================================================================
-        # 1. UPDATE TONIC DOPAMINE (slow, intrinsic)
+        # 1. UPDATE VTA (DOPAMINE)
         # =====================================================================
-        intrinsic = self._compute_intrinsic_reward()
-
-        # Smooth the tonic signal (slow changes)
-        # alpha = 0.1 → τ ≈ 10ms at dt=1ms (could make slower)
-        tonic_alpha = 0.05  # Slower smoothing for tonic baseline
-        self._tonic_dopamine = (1 - tonic_alpha) * self._tonic_dopamine + tonic_alpha * intrinsic
+        intrinsic_reward = self._compute_intrinsic_reward()
+        self.vta.update(dt_ms=self.config.dt_ms, intrinsic_reward=intrinsic_reward)
 
         # =====================================================================
-        # 2. DECAY PHASIC DOPAMINE (fast, external)
+        # 2. UPDATE LOCUS COERULEUS (NOREPINEPHRINE)
         # =====================================================================
-        # Exponential decay with τ ~200ms
-        # decay = 0.995 per ms → after 200ms: 0.995^200 ≈ 0.37 (≈ 1/e)
-        self._phasic_dopamine *= self._phasic_decay
+        uncertainty = self._compute_uncertainty()
+        self.locus_coeruleus.update(dt_ms=self.config.dt_ms, uncertainty=uncertainty)
 
         # =====================================================================
-        # 3. COMPUTE GLOBAL DOPAMINE (sum of both)
+        # 3. UPDATE NUCLEUS BASALIS (ACETYLCHOLINE)
         # =====================================================================
-        self._global_dopamine = self._tonic_dopamine + self._phasic_dopamine
-
-        # Clip to reasonable range (dopamine has physiological limits)
-        self._global_dopamine = max(-2.0, min(2.0, self._global_dopamine))
+        prediction_error = self._compute_prediction_error()
+        self.nucleus_basalis.update(dt_ms=self.config.dt_ms, prediction_error=prediction_error)
 
         # =====================================================================
-        # 4. BROADCAST TO ALL REGIONS
+        # 4. BROADCAST TO ALL REGIONS (with coordination)
         # =====================================================================
-        self.cortex.impl.set_dopamine(self._global_dopamine)
-        self.hippocampus.impl.set_dopamine(self._global_dopamine)
-        self.pfc.impl.set_dopamine(self._global_dopamine)
-        self.striatum.impl.set_dopamine(self._global_dopamine)
-        self.cerebellum.impl.set_dopamine(self._global_dopamine)
+        # Get raw neuromodulator signals
+        dopamine = self.vta.get_global_dopamine()
+        norepinephrine = self.locus_coeruleus.get_norepinephrine()
+        acetylcholine = self.nucleus_basalis.get_acetylcholine()
 
+        # Apply biological coordination between systems
+        # 1. NE-ACh: Optimal encoding at moderate arousal (inverted-U)
+        acetylcholine = self.neuromodulator_coordination.coordinate_ne_ach(
+            norepinephrine, acetylcholine
+        )
+        
+        # 2. DA-ACh: High reward without novelty suppresses encoding
+        acetylcholine = self.neuromodulator_coordination.coordinate_da_ach(
+            dopamine, acetylcholine
+        )
+        
+        # 3. DA-NE: High uncertainty + reward enhances both
+        dopamine, norepinephrine = self.neuromodulator_coordination.coordinate_da_ne(
+            dopamine, norepinephrine, prediction_error
+        )
+
+        # Broadcast coordinated signals to all regions
+        self.cortex.impl.set_dopamine(dopamine)
+        self.cortex.impl.set_norepinephrine(norepinephrine)
+        self.cortex.impl.set_acetylcholine(acetylcholine)
+
+        self.hippocampus.impl.set_dopamine(dopamine)
+        self.hippocampus.impl.set_norepinephrine(norepinephrine)
+        self.hippocampus.impl.set_acetylcholine(acetylcholine)
+
+        self.pfc.impl.set_dopamine(dopamine)
+        self.pfc.impl.set_norepinephrine(norepinephrine)
+        self.pfc.impl.set_acetylcholine(acetylcholine)
+
+        self.striatum.impl.set_dopamine(dopamine)
+        self.striatum.impl.set_norepinephrine(norepinephrine)
+        self.striatum.impl.set_acetylcholine(acetylcholine)
+
+        self.cerebellum.impl.set_dopamine(dopamine)
+        self.cerebellum.impl.set_norepinephrine(norepinephrine)
+        self.cerebellum.impl.set_acetylcholine(acetylcholine)
+
+        # =====================================================================
+        # 5. BROADCAST OSCILLATOR PHASES
+        # =====================================================================
+        self._broadcast_oscillator_phases()
+
+    def _broadcast_oscillator_phases(self) -> None:
+        """Broadcast oscillator phases and effective amplitudes to all regions.
+
+        Effective amplitudes implement automatic multiplicative coupling:
+        Each oscillator's amplitude reflects the combined effect of ALL
+        phase-amplitude couplings. For example, if gamma is modulated by
+        theta (×0.8) and beta (×0.6), the effective gamma amplitude is 0.48.
+
+        This enables emergent higher-order coupling without explicit programming.
+
+        Regions use oscillator information for:
+        - Phase-dependent gating (theta encoding vs retrieval)
+        - Attention modulation (alpha suppression)
+        - Motor preparation (beta synchrony)
+        - Feature binding (gamma synchrony)
+        - Amplitude-dependent learning (effective_amplitudes)
+
+        Called every timestep, similar to dopamine broadcast.
+        """
+        phases = self.oscillators.get_phases()
+        signals = self.oscillators.get_signals()
+
+        # Compute effective amplitudes (automatic multiplicative coupling)
+        effective_amplitudes = self.oscillators.get_effective_amplitudes()
+
+        # Get theta slot for sequence encoding (working memory)
+        theta_slot = self.oscillators.get_theta_slot(n_slots=7)
+
+        # Pass to regions that implement set_oscillator_phases
+        # (optional - regions can ignore if not needed)
+        if hasattr(self.cortex.impl, 'set_oscillator_phases'):
+            self.cortex.impl.set_oscillator_phases(
+                phases, signals, theta_slot, effective_amplitudes
+            )
+
+        if hasattr(self.hippocampus.impl, 'set_oscillator_phases'):
+            self.hippocampus.impl.set_oscillator_phases(
+                phases, signals, theta_slot, effective_amplitudes
+            )
+
+        if hasattr(self.pfc.impl, 'set_oscillator_phases'):
+            self.pfc.impl.set_oscillator_phases(
+                phases, signals, theta_slot, effective_amplitudes
+            )
+
+        if hasattr(self.striatum.impl, 'set_oscillator_phases'):
+            self.striatum.impl.set_oscillator_phases(
+                phases, signals, theta_slot, effective_amplitudes
+            )
+
+        if hasattr(self.cerebellum.impl, 'set_oscillator_phases'):
+            self.cerebellum.impl.set_oscillator_phases(
+                phases, signals, theta_slot, effective_amplitudes
+            )
 
     def store_experience(
         self,
@@ -1478,7 +1591,21 @@ class EventDrivenBrain(nn.Module):
         # Get novelty-based learning boost if available
         novelty_boost = self._get_novelty_boost()
         modulated_reward = reward * novelty_boost
-        self._global_dopamine = modulated_reward
+
+        # Deliver to VTA and broadcast
+        expected = self.striatum.impl.get_expected_value(selected_action)
+        self.vta.deliver_reward(
+            external_reward=modulated_reward,
+            expected_value=expected
+        )
+        dopamine = self.vta.get_global_dopamine()
+
+        # Broadcast to all regions
+        self.cortex.impl.set_dopamine(dopamine)
+        self.hippocampus.impl.set_dopamine(dopamine)
+        self.pfc.impl.set_dopamine(dopamine)
+        self.striatum.impl.set_dopamine(dopamine)
+        self.cerebellum.impl.set_dopamine(dopamine)
 
         # 1. Real learning: update striatum for SELECTED action
         real_result = self.striatum.impl.deliver_reward(modulated_reward)
@@ -1638,6 +1765,9 @@ class EventDrivenBrain(nn.Module):
             theta_events = self.theta.advance_to(step_time)
             self.scheduler.schedule_many(theta_events)
 
+            # Advance oscillators (once per timestep, like dopamine)
+            self.oscillators.advance(self.config.dt_ms)
+
             # Schedule sensory input (or zero input for consolidation)
             cortex_input = self._get_cortex_input(sensory_input)
             delay = get_axonal_delay("sensory", "cortex")
@@ -1664,12 +1794,13 @@ class EventDrivenBrain(nn.Module):
                     self.scheduler.schedule(event)
 
             # =========================================================
-            # CONTINUOUS INTRINSIC DOPAMINE (tonic modulation)
+            # CONTINUOUS NEUROMODULATOR UPDATES
             # =========================================================
-            # Update tonic dopamine based on ongoing prediction quality.
-            # This happens every timestep - the brain continuously
-            # evaluates its own predictions and modulates learning rates.
-            self._update_tonic_dopamine()
+            # Update all centralized neuromodulator systems:
+            # - VTA dopamine (tonic from intrinsic reward, phasic decay)
+            # - Locus coeruleus NE (arousal from uncertainty)
+            # This happens every timestep for continuous modulation.
+            self._update_neuromodulators()
 
         # Update time
         end_time = self._current_time + n_timesteps * self.config.dt_ms
@@ -1724,6 +1855,108 @@ class EventDrivenBrain(nn.Module):
         """Process all pending events (used for reward delivery)."""
         max_time = self._current_time + 100.0  # Process up to 100ms ahead
         self._process_events_until(max_time)
+
+    # =========================================================================
+    # GROWTH MANAGEMENT
+    # =========================================================================
+
+    def check_growth_needs(self) -> Dict[str, Any]:
+        """Check if any brain regions need growth based on capacity metrics.
+
+        Returns:
+            Dictionary with region names as keys and growth recommendations
+        """
+        from thalia.core.growth import GrowthManager
+
+        growth_report = {}
+
+        # Check each major region
+        for region_name in ['striatum', 'hippocampus', 'cortex', 'pfc', 'cerebellum']:
+            if hasattr(self, region_name):
+                region = getattr(self, region_name)
+                manager = GrowthManager(region_name=region_name)
+                metrics = manager.get_capacity_metrics(region)
+
+                growth_report[region_name] = {
+                    'firing_rate': metrics.firing_rate,
+                    'weight_saturation': metrics.weight_saturation,
+                    'synapse_usage': metrics.synapse_usage,
+                    'neuron_count': metrics.neuron_count,
+                    'growth_recommended': metrics.growth_recommended,
+                    'growth_reason': metrics.growth_reason,
+                }
+
+        return growth_report
+
+    def auto_grow(self, threshold: float = 0.8) -> Dict[str, int]:
+        """Automatically grow regions that need more capacity.
+
+        When a region grows, this method also updates all connected pathways
+        to maintain proper connectivity. This ensures pathway dimensions stay
+        synchronized with region sizes.
+
+        Args:
+            threshold: Capacity threshold for triggering growth (0.0-1.0)
+
+        Returns:
+            Dictionary mapping region names to number of neurons added
+        """
+        from datetime import datetime
+
+        growth_actions = {}
+        report = self.check_growth_needs()
+
+        for region_name, metrics in report.items():
+            if metrics['growth_recommended']:
+                # Calculate growth amount based on current size
+                region = getattr(self, region_name)
+                current_size = region.config.n_output
+                growth_amount = max(int(current_size * 0.1), 8)  # 10% or minimum 8
+
+                # Add neurons to region
+                region.add_neurons(n_new=growth_amount)
+                growth_actions[region_name] = growth_amount
+
+                # Update all pathways connected to this region
+                self._grow_connected_pathways(region_name, growth_amount)
+
+                # Track growth history
+                self._growth_history.append({
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'region': region_name,
+                    'neurons_added': growth_amount,
+                    'old_size': current_size,
+                    'new_size': current_size + growth_amount,
+                    'reason': metrics['growth_reason'],
+                })
+
+        return growth_actions
+
+    def _grow_connected_pathways(self, region_name: str, growth_amount: int) -> None:
+        """Grow all pathways connected to a region that has grown.
+
+        When a region adds neurons, connected pathways need to expand their
+        weight matrices to accommodate the new connections.
+
+        Args:
+            region_name: Name of region that grew
+            growth_amount: Number of neurons added to region
+        """
+        if region_name not in self._region_pathway_connections:
+            return
+
+        connections = self._region_pathway_connections[region_name]
+
+        for pathway, dimension_type in connections:
+            if dimension_type == 'source':
+                # Region is source → pathway needs more input connections
+                # This would require expanding pathway's source_size and input weights
+                # For now, we don't support this (would need pathway.expand_source())
+                pass
+            elif dimension_type == 'target':
+                # Region is target → pathway needs more output connections
+                # Pathway's target_size should grow
+                pathway.add_neurons(n_new=growth_amount)
 
     # =========================================================================
     # DIAGNOSTICS
@@ -1808,105 +2041,6 @@ class EventDrivenBrain(nn.Module):
             n_stored_episodes=n_stored,
         )
 
-    def check_growth_needs(self) -> Dict[str, Any]:
-        """Check if any brain regions need growth based on capacity metrics.
-        
-        Returns:
-            Dictionary with region names as keys and growth recommendations
-        """
-        from thalia.core.growth import GrowthManager
-        
-        growth_report = {}
-        
-        # Check each major region
-        for region_name in ['striatum', 'hippocampus', 'cortex', 'pfc', 'cerebellum']:
-            if hasattr(self, region_name):
-                region = getattr(self, region_name)
-                manager = GrowthManager(region_name=region_name)
-                metrics = manager.get_capacity_metrics(region)
-                
-                growth_report[region_name] = {
-                    'firing_rate': metrics.firing_rate,
-                    'weight_saturation': metrics.weight_saturation,
-                    'synapse_usage': metrics.synapse_usage,
-                    'neuron_count': metrics.neuron_count,
-                    'growth_recommended': metrics.growth_recommended,
-                    'growth_reason': metrics.growth_reason,
-                }
-        
-        return growth_report
-
-    def auto_grow(self, threshold: float = 0.8) -> Dict[str, int]:
-        """Automatically grow regions that need more capacity.
-        
-        When a region grows, this method also updates all connected pathways
-        to maintain proper connectivity. This ensures pathway dimensions stay
-        synchronized with region sizes.
-        
-        Args:
-            threshold: Capacity threshold for triggering growth (0.0-1.0)
-            
-        Returns:
-            Dictionary mapping region names to number of neurons added
-        """
-        from datetime import datetime
-        
-        growth_actions = {}
-        report = self.check_growth_needs()
-        
-        for region_name, metrics in report.items():
-            if metrics['growth_recommended']:
-                # Calculate growth amount based on current size
-                region = getattr(self, region_name)
-                current_size = region.config.n_output
-                growth_amount = max(int(current_size * 0.1), 8)  # 10% or minimum 8
-                
-                # Add neurons to region
-                region.add_neurons(n_new=growth_amount)
-                growth_actions[region_name] = growth_amount
-                
-                # Update all pathways connected to this region
-                self._grow_connected_pathways(region_name, growth_amount)
-                
-                # Track growth history
-                self._growth_history.append({
-                    'timestamp': datetime.utcnow().isoformat(),
-                    'region': region_name,
-                    'neurons_added': growth_amount,
-                    'old_size': current_size,
-                    'new_size': current_size + growth_amount,
-                    'reason': metrics['growth_reason'],
-                })
-        
-        return growth_actions
-
-    def _grow_connected_pathways(self, region_name: str, growth_amount: int) -> None:
-        """Grow all pathways connected to a region that has grown.
-        
-        When a region adds neurons, connected pathways need to expand their
-        weight matrices to accommodate the new connections.
-        
-        Args:
-            region_name: Name of region that grew
-            growth_amount: Number of neurons added to region
-        """
-        if region_name not in self._region_pathway_connections:
-            return
-        
-        connections = self._region_pathway_connections[region_name]
-        
-        for pathway, dimension_type in connections:
-            if dimension_type == 'source':
-                # Region is source → pathway needs more input connections
-                # This would require expanding pathway's source_size and input weights
-                # For now, we don't support this (would need pathway.expand_source())
-                pass
-            elif dimension_type == 'target':
-                # Region is target → pathway needs more output connections
-                # Pathway's target_size should grow
-                pathway.add_neurons(n_new=growth_amount)
-
-
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information about brain state.
 
@@ -1934,20 +2068,21 @@ class EventDrivenBrain(nn.Module):
 
             # VTA Dopamine System (centralized)
             "dopamine": {
-                "global": self._global_dopamine,  # Combined signal to regions
-                "tonic": self._tonic_dopamine,    # Slow baseline (intrinsic)
-                "phasic": self._phasic_dopamine,  # Fast bursts (external rewards)
-                "phasic_decay": self._phasic_decay,
+                "global": self.vta.get_global_dopamine(),  # Combined signal to regions
+                "tonic": self.vta.get_tonic_dopamine(),    # Slow baseline (intrinsic)
+                "phasic": self.vta.get_phasic_dopamine(),  # Fast bursts (external rewards)
             },
-            # VTA normalization state
-            "vta": {
-                "avg_abs_rpe": self._vta_avg_abs_rpe,
-                "rpe_history_count": self._vta_rpe_history_count,
-                "rpe_clip": self._vta_rpe_clip,
-            },
+            # VTA state for monitoring
+            "vta": self.vta.get_state(),
+
+            # Locus Coeruleus (norepinephrine/arousal)
+            "locus_coeruleus": self.locus_coeruleus.get_state(),
+
+            # Nucleus Basalis (acetylcholine/encoding)
+            "nucleus_basalis": self.nucleus_basalis.get_state(),
 
             # Legacy key for backwards compatibility
-            "global_dopamine": self._global_dopamine,
+            "global_dopamine": self.vta.get_global_dopamine(),
 
             # Structured component diagnostics
             "striatum": striatum_diag.to_dict(),
@@ -1959,9 +2094,14 @@ class EventDrivenBrain(nn.Module):
                 "exploring": striatum_diag.exploring,
                 "net_weight_means": striatum_diag.net_per_action,
                 "ca1_spikes": hippo_diag.ca1_spikes,
-                "dopamine_global": self._global_dopamine,
-                "dopamine_tonic": self._tonic_dopamine,
-                "dopamine_phasic": self._phasic_dopamine,
+                "dopamine_global": self.vta.get_global_dopamine(),
+                "dopamine_tonic": self.vta.get_tonic_dopamine(),
+                "dopamine_phasic": self.vta.get_phasic_dopamine(),
+                "norepinephrine": self.locus_coeruleus.get_norepinephrine(),
+                "arousal": self.locus_coeruleus.get_arousal(),
+                "acetylcholine": self.nucleus_basalis.get_acetylcholine(),
+                "encoding_mode": self.nucleus_basalis.is_encoding_mode(),
+                "encoding_strength": self.nucleus_basalis.get_encoding_strength(),
             },
 
             # Robustness/Criticality diagnostics

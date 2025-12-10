@@ -50,7 +50,8 @@ class EventDrivenPFC(EventDrivenRegionBase):
         hippocampus_input_size: int = 0,
     ):
         super().__init__(config)
-        self._pfc = pfc
+        self.impl_module = pfc  # Register as public attribute for nn.Module
+        self._pfc = pfc  # Keep reference for backwards compatibility
 
         # Configure input buffering using base class
         if cortex_input_size > 0 and hippocampus_input_size > 0:

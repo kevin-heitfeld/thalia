@@ -48,7 +48,7 @@ import math
 import torch
 import torch.nn as nn
 
-from thalia.core.oscillator import ThetaOscillator, GammaOscillatorBase
+# Oscillators managed centrally by Brain (no local imports needed)
 
 
 class PositionEncodingType(Enum):
@@ -543,7 +543,7 @@ class SequenceTimer(nn.Module):
     
     Useful for generating predictions about timing.
     
-    Uses composition with ThetaOscillator and GammaOscillatorBase
+    Uses composition with ThetaOscillator and GammaOscillator
     for phase tracking and advancement.
     """
     
@@ -559,9 +559,10 @@ class SequenceTimer(nn.Module):
         self.n_neurons = n_neurons
         self.device_str = device
         
-        # Create base oscillators for phase tracking
-        self.theta = ThetaOscillator(frequency_hz=theta_freq_hz, dt_ms=dt_ms)
-        self.gamma = GammaOscillatorBase(frequency_hz=gamma_freq_hz, dt_ms=dt_ms)
+        # Oscillator phases come from Brain via set_oscillator_phases()
+        # Store expected frequencies for reference
+        self.theta_freq_hz = theta_freq_hz
+        self.gamma_freq_hz = gamma_freq_hz
         
         # Position tracking
         self.register_buffer("position", torch.tensor(0))
@@ -569,38 +570,50 @@ class SequenceTimer(nn.Module):
         # Phase to neuron mapping
         phases = torch.linspace(0, 2 * math.pi, n_neurons)
         self.register_buffer("neuron_phases", phases)
+        
+        # Current oscillator phases (set by Brain)
+        self.theta_phase = 0.0
+        self.gamma_phase = 0.0
     
     def reset_state(self) -> None:
-        """Reset timer state."""
-        self.theta.reset_state()
-        self.gamma.reset_state()
-        self.position.zero_()
-    
-    def step(self, n_steps: int = 1) -> torch.Tensor:
+        """Reset timer state.
+        
+        Note: Oscillator phases come from Brain, not reset locally.
         """
-        Advance timer by n_steps.
+        self.position.zero_()
+        self.theta_phase = 0.0
+        self.gamma_phase = 0.0
+    
+    def set_oscillator_phases(self, theta_phase: float, gamma_phase: float) -> None:
+        """Set oscillator phases from Brain's centralized oscillators.
         
         Args:
-            n_steps: Number of timesteps to advance
-            
+            theta_phase: Theta phase [0, 2π) from Brain
+            gamma_phase: Gamma phase [0, 2π) from Brain
+        """
+        self.theta_phase = theta_phase
+        self.gamma_phase = gamma_phase
+    
+    def step(self) -> torch.Tensor:
+        """
+        Generate spikes based on current oscillator phases.
+        
+        Note: Oscillator phases are set by Brain via set_oscillator_phases().
+        This method does NOT advance oscillators - that's done centrally by Brain.
+        
         Returns:
             spikes: Current oscillatory state as spikes [n_neurons]
         """
-        # Advance oscillators
-        dt = n_steps * self.theta.config.dt_ms
-        self.theta.advance(dt)
-        self.gamma.advance(dt)
-        
         # Generate spikes based on phase proximity
         n_theta = self.n_neurons // 2
         
-        # Theta neurons
-        theta_diff = (self.theta.phase - self.neuron_phases[:n_theta]) % (2 * math.pi)
+        # Theta neurons - use centralized phase
+        theta_diff = (self.theta_phase - self.neuron_phases[:n_theta]) % (2 * math.pi)
         theta_diff = torch.min(theta_diff, 2 * math.pi - theta_diff)
         theta_prob = torch.exp(-4 * theta_diff ** 2) * 0.3
         
-        # Gamma neurons
-        gamma_diff = (self.gamma.phase - self.neuron_phases[:self.n_neurons - n_theta]) % (2 * math.pi)
+        # Gamma neurons - use centralized phase
+        gamma_diff = (self.gamma_phase - self.neuron_phases[:self.n_neurons - n_theta]) % (2 * math.pi)
         gamma_diff = torch.min(gamma_diff, 2 * math.pi - gamma_diff)
         gamma_prob = torch.exp(-4 * gamma_diff ** 2) * 0.3
         
@@ -619,7 +632,7 @@ class SequenceTimer(nn.Module):
     def get_state(self) -> Dict[str, float]:
         """Get current timer state."""
         return {
-            "theta_phase": self.theta.phase,
-            "gamma_phase": self.gamma.phase,
+            "theta_phase": self.theta_phase,
+            "gamma_phase": self.gamma_phase,
             "position": self.position.item(),
         }

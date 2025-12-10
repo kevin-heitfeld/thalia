@@ -167,7 +167,15 @@ class TestHippocampusStateRoundtrip:
         # Encode a sequence (convert bool to float) (ADR-005: 1D patterns)
         sequence_patterns = [(torch.rand(64) > 0.9).float() for _ in range(5)]
         
+        # Note: Oscillator phases now managed by Brain's OscillatorManager
+        # Set gamma phase manually for this unit test
+        gamma_phase = 0.0
         for pattern in sequence_patterns:
+            hipp1.set_oscillator_phases(
+                phases={"theta": 0.0, "gamma": gamma_phase, "alpha": 0.0, "beta": 0.0},
+                signals={"theta": 0.0, "gamma": 0.0, "alpha": 0.0, "beta": 0.0},
+                theta_slot=0,
+            )
             output = hipp1.forward(
                 pattern,
                 phase=TrialPhase.ENCODE,
@@ -175,8 +183,7 @@ class TestHippocampusStateRoundtrip:
                 retrieval_mod=0.0,
                 dt=1.0,
             )
-            if hipp1.gamma_oscillator is not None:
-                hipp1.gamma_oscillator.advance(dt_ms=20.0)  # Advance gamma
+            gamma_phase += 0.5  # Advance gamma phase
         
         # Save state
         state = hipp1.get_full_state()
@@ -185,18 +192,7 @@ class TestHippocampusStateRoundtrip:
         hipp2 = TrisynapticHippocampus(config)
         hipp2.load_full_state(state)
         
-        # Verify oscillator state matches
-        if hipp1.gamma_oscillator is not None:
-            assert abs(
-                hipp1.gamma_oscillator.theta_phase -
-                hipp2.gamma_oscillator.theta_phase
-            ) < 1e-5
-            assert abs(
-                hipp1.gamma_oscillator.gamma_phase -
-                hipp2.gamma_oscillator.gamma_phase
-            ) < 1e-5
-        
-        # Verify sequence position matches
+        # Verify sequence position matches (oscillator state is now in Brain)
         assert hipp1._sequence_position == hipp2._sequence_position
 
     def test_episode_buffer_preserved(self):

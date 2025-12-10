@@ -54,6 +54,8 @@ Historical documentation and completed planning documents.
 - **Adding a Region**: See [patterns/configuration.md](./patterns/configuration.md) and [patterns/mixins.md](./patterns/mixins.md)
 - **Testing**: See [../tests/README.md](../tests/README.md) and [../tests/WRITING_TESTS.md](../tests/WRITING_TESTS.md)
 - **Training**: See [design/curriculum_strategy.md](./design/curriculum_strategy.md)
+- **Monitoring & Diagnostics**: See [MONITORING_GUIDE.md](./MONITORING_GUIDE.md) (⭐ start here)
+- **Visualizations**: See [MANIM_QUICK_REFERENCE.md](./MANIM_QUICK_REFERENCE.md)
 
 ### For Understanding Design
 - **Why PyTorch?**: [decisions/adr-001-simulation-backend.md](./decisions/adr-001-simulation-backend.md)

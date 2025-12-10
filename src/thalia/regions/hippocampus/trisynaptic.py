@@ -44,7 +44,6 @@ from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import BrainRegion, LearningRule
 from thalia.regions.theta_dynamics import TrialPhase, FeedforwardInhibition
-from thalia.regions.gamma_dynamics import GammaOscillator, ThetaGammaConfig
 from .config import Episode, TrisynapticConfig, TrisynapticState
 
 
@@ -220,23 +219,25 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self._ca3_activity_history: Optional[torch.Tensor] = None  # EMA of firing rate
 
         # =====================================================================
-        # THETA-GAMMA COUPLING
+        # THETA-GAMMA COUPLING (from centralized oscillators)
         # =====================================================================
-        # Initialize gamma oscillator for sequence encoding
+        # Store oscillator values received from brain broadcast
+        # These replace the local GammaOscillator instance
         if config.theta_gamma_enabled:
-            gamma_config = ThetaGammaConfig(
-                theta_freq_hz=8.0,  # Standard theta
-                gamma_freq_hz=config.gamma_freq_hz,
-                n_slots=config.gamma_n_slots,
-                coupling_strength=config.gamma_coupling_strength,
-            )
-            self.gamma_oscillator = GammaOscillator(gamma_config)
-
+            # Storage for broadcast values from brain's OscillatorManager
+            self._theta_phase: float = 0.0
+            self._gamma_phase: float = 0.0
+            self._theta_slot: int = 0
+            self._coupled_amplitudes: Dict[str, float] = {}
+            
             # Replay engine for sequence replay (lazy import to avoid circular dependency)
+            # NOTE: ReplayEngine receives timing via replay() parameters (gamma_phase, theta_slot)
+            # from hippocampus, which gets them from brain's centralized OscillatorManager
             from thalia.memory.replay_engine import ReplayEngine, ReplayConfig, ReplayMode
             replay_config = ReplayConfig(
                 compression_factor=5.0,
-                theta_gamma_config=gamma_config,
+                n_slots=config.gamma_n_slots,
+                slot_duration_ms=18.0,  # ~18ms per slot for 7 slots in 125ms theta
                 mode=ReplayMode.SEQUENCE,
                 apply_gating=True,
                 pattern_completion=True,
@@ -247,7 +248,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # Neurons in different slots fire at different gamma phases
             self._ca3_slot_assignment = torch.arange(self.ca3_size) % config.gamma_n_slots
         else:
-            self.gamma_oscillator = None
+            self._theta_phase = 0.0
+            self._gamma_phase = 0.0
+            self._theta_slot = 0
+            self._coupled_amplitudes = {}
             self.replay_engine = None
             self._ca3_slot_assignment = None
 
@@ -435,8 +439,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # Reset gamma position for new sequence
         self._sequence_position = 0
-        if self.gamma_oscillator is not None:
-            self.gamma_oscillator.set_to_slot(0)
+        # Note: Gamma slot now comes from brain broadcast, no local control
 
     def _init_state(self) -> None:
         """Initialize all layer states (internal method)."""
@@ -781,6 +784,22 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Without STP, recurrent connections cause the same neurons to fire
         # every timestep (frozen attractor). With DEPRESSING STP, frequently-
         # used synapses get temporarily weaker, allowing pattern transitions.
+        
+        # =====================================================================
+        # ACETYLCHOLINE MODULATION OF CA3 RECURRENCE (Hasselmo 2006)
+        # =====================================================================
+        # High ACh (encoding mode): Suppress CA3 recurrence to prevent 
+        # interference from old patterns during new encoding
+        # Low ACh (retrieval mode): Enhance CA3 recurrence to enable 
+        # pattern completion from partial cues
+        #
+        # Biological mechanism: ACh preferentially blocks recurrent (feedback)
+        # connections via muscarinic receptors, while sparing feedforward input
+        ach_level = self.state.acetylcholine
+        # ACh > 0.5 → encoding mode → suppress recurrence (down to 0.3x)
+        # ACh < 0.5 → retrieval mode → full recurrence (1.0x)
+        ach_recurrent_modulation = 1.0 - 0.7 * max(0.0, ach_level - 0.5) / 0.5
+        
         if self.stp_ca3_recurrent is not None and self.state.ca3_spikes is not None:
             # Get STP efficacy for CA3 recurrent synapses
             # CA3 recurrent is DEPRESSING - prevents frozen attractors
@@ -791,13 +810,13 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             ca3_rec = torch.matmul(
                 effective_w_ca3_ca3,
                 self.state.ca3_spikes.float()
-            ) * self.tri_config.ca3_recurrent_strength * rec_gate  # [ca3_size]
+            ) * self.tri_config.ca3_recurrent_strength * rec_gate * ach_recurrent_modulation  # [ca3_size]
         else:
-            # Recurrent from previous CA3 activity (theta-gated)
+            # Recurrent from previous CA3 activity (theta-gated + ACh-modulated)
             ca3_rec = torch.matmul(
                 self.w_ca3_ca3,
                 self.state.ca3_spikes.float() if self.state.ca3_spikes is not None else torch.zeros(self.ca3_size, device=input_spikes.device)
-            ) * self.tri_config.ca3_recurrent_strength * rec_gate  # [ca3_size]
+            ) * self.tri_config.ca3_recurrent_strength * rec_gate * ach_recurrent_modulation  # [ca3_size]
 
         # =====================================================================
         # ACTIVITY-DEPENDENT FEEDBACK INHIBITION
@@ -840,6 +859,17 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Total CA3 input = feedforward + recurrent + persistent - inhibition
         ca3_input = ca3_ff + ca3_rec + ca3_persistent_input - feedback_inhibition
 
+        # =====================================================================
+        # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
+        # =====================================================================
+        # High NE (arousal/uncertainty): Increase gain → more responsive
+        # Low NE (baseline): Normal gain
+        # Biological: β-adrenergic receptors increase neuronal excitability
+        ne_level = self.state.norepinephrine
+        # NE gain: 1.0 (baseline) to 1.5 (high arousal)
+        ne_gain = 1.0 + 0.5 * ne_level
+        ca3_input = ca3_input * ne_gain
+
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
         # Neurons that fire too much have higher thresholds (less excitable)
         if (self.tri_config.intrinsic_plasticity_enabled and
@@ -856,17 +886,16 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         #
         # Two modes:
         # - "item": Slot from _sequence_position (each item gets own slot)
-        # - "time": Slot from oscillator phase (timing-based, used in replay)
-        if self.gamma_oscillator is not None and self._ca3_slot_assignment is not None:
+        # - "time": Slot from theta_slot (timing-based, used in replay)
+        if self.tri_config.theta_gamma_enabled and self._ca3_slot_assignment is not None:
             cfg = self.tri_config
 
-            # Advance gamma oscillator
-            self.gamma_oscillator.advance(float(dt))
+            # Note: Oscillators advance centrally in Brain, no local advance needed
 
             # Get current slot based on mode
             if cfg.gamma_slot_mode == "time":
-                # Time-based: slot from oscillator phase (used during replay)
-                current_slot = self.gamma_oscillator.current_slot
+                # Time-based: slot from brain's theta_slot broadcast
+                current_slot = self._theta_slot
             else:  # "item" mode (default)
                 # Item-based: slot from sequence position
                 current_slot = self._sequence_position % cfg.gamma_n_slots
@@ -886,7 +915,8 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             #
             # This implements phase-amplitude coupling (PAC) where gamma
             # power is highest at the encoding phase of theta.
-            gamma_amplitude = self.gamma_oscillator.gamma_amplitude  # [0, 1]
+            # Automatic coupling: gamma modulated by ALL slower oscillators
+            gamma_amplitude = self._gamma_amplitude_effective  # [0, 1]
 
             # Scale gating strength by gamma amplitude
             # High amplitude → full gating strength
@@ -995,9 +1025,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 # during periods of strong gamma oscillations.
                 base_lr = self.tri_config.learning_rate * encoding_mod
 
-                # Apply gamma amplitude modulation if available
-                if self.gamma_oscillator is not None:
-                    gamma_mod = self.gamma_oscillator.gamma_amplitude
+                # Apply automatic gamma amplitude modulation
+                # Gamma is modulated by ALL slower oscillators (emergent multi-order coupling)
+                if self.tri_config.theta_gamma_enabled:
+                    gamma_mod = self._gamma_amplitude_effective
                     effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)  # Range: 50-100% based on gamma
                 else:
                     effective_lr = base_lr
@@ -1169,9 +1200,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 # Hebbian outer product: w_ij += lr * post_j * pre_i
                 base_lr = cfg.ec_ca1_learning_rate * encoding_mod
 
-                # Apply gamma amplitude modulation if available
-                if self.gamma_oscillator is not None:
-                    gamma_mod = self.gamma_oscillator.gamma_amplitude
+                # Apply automatic gamma amplitude modulation
+                # Gamma modulated by ALL slower oscillators (emergent multi-order coupling)
+                if self.tri_config.theta_gamma_enabled:
+                    gamma_mod = self._gamma_amplitude_effective
                     effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)
                 else:
                     effective_lr = base_lr
@@ -1263,10 +1295,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # This is biologically realistic: position in sequence is determined
         # by WHEN the item arrives during the theta cycle, not by an external
         # counter. Each input naturally advances the gamma phase.
-        if self.gamma_oscillator is not None:
+        if self.tri_config.theta_gamma_enabled:
             self._sequence_position += 1
-            # The gamma oscillator already advanced in the CA3 section via
-            # gamma_oscillator.advance(dt), so we just track position here.
+            # Oscillators advance centrally in Brain, so we just track position here.
             # The position is used for diagnostics and can be reset by new_trial().
 
         # Ensure bool output (CA1 neurons already return bool from Phase 1)
@@ -1330,6 +1361,43 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self.state.dg_trace = None
         self.state.ca3_trace = None
 
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float],
+        theta_slot: int = 0,
+        coupled_amplitudes: Optional[Dict[str, float]] = None,
+    ) -> None:
+        """Receive oscillator information from brain broadcast.
+
+        Replaces local GammaOscillator with centralized timing from OscillatorManager.
+        Gamma effective amplitude implements automatic multiplicative coupling.
+
+        Args:
+            phases: Oscillator phases in radians {'theta': ..., 'gamma': ..., etc}
+            signals: Oscillator signal values {'theta': ..., 'gamma': ..., etc}
+            theta_slot: Current theta slot [0, n_slots-1] for working memory
+            coupled_amplitudes: Effective amplitudes per oscillator (pre-computed)
+
+        Note:
+            Called automatically by Brain before each forward() call.
+            Do not call this manually.
+        """
+        # Store oscillator values for use in forward()
+        self._theta_phase = phases.get('theta', 0.0)
+        self._gamma_phase = phases.get('gamma', 0.0)
+        self._theta_slot = theta_slot
+        
+        # Store effective gamma amplitude (pre-computed by OscillatorManager)
+        # Automatic multiplicative coupling:
+        # - Gamma modulated by ALL slower oscillators (delta, theta, alpha, beta)
+        # OscillatorManager handles the multiplication, we just store the result.
+        # This gives emergent delta-theta-alpha-beta-gamma multi-order coupling.
+        if coupled_amplitudes is not None:
+            self._gamma_amplitude_effective = coupled_amplitudes.get('gamma', 1.0)
+        else:
+            self._gamma_amplitude_effective = 1.0
+
     def _apply_plasticity(
         self,
         _input_spikes: torch.Tensor,
@@ -1351,8 +1419,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         cfg = self.tri_config
 
-        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
-        self.decay_neuromodulators(dt_ms=_dt)
+        # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
+        # VTA updates dopamine, LC updates NE, NB updates ACh.
+        # Brain broadcasts to all regions every timestep via _update_neuromodulators().
+        # No local decay needed.
 
         # Get dopamine-modulated learning rate
         effective_lr = self.get_effective_learning_rate(cfg.ca3_learning_rate)
@@ -1554,11 +1624,12 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         def get_gating(slot: int) -> float:
             return self._get_gamma_gating(slot)
 
-        # Run replay through unified engine
+        # Run replay through unified engine, passing gamma phase from brain
         result = self.replay_engine.replay(
             episode=episode,
             pattern_processor=process_pattern,
             gating_fn=get_gating,
+            gamma_phase=self._gamma_phase,  # From brain's OscillatorManager
         )
 
         # Restore original mode
@@ -1575,7 +1646,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
     def _get_gamma_gating(self, slot: int) -> float:
         """Get gamma gating strength for a specific slot."""
-        if self.gamma_oscillator is None:
+        if not self.tri_config.theta_gamma_enabled:
             return 1.0
 
         cfg = self.tri_config
@@ -1583,7 +1654,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # Compute phase difference from target slot
         target_phase = (slot / n_slots) * (2 * math.pi)
-        current_gamma_phase = self.gamma_oscillator.gamma_phase
+        current_gamma_phase = self._gamma_phase  # From brain broadcast
 
         # Gaussian gating around target phase
         phase_diff = abs(current_gamma_phase - target_phase)
@@ -1720,95 +1791,30 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     # =========================================================================
 
     def set_sequence_position(self, position: int) -> None:
-        """Manually override the current sequence position.
+        """Set the current sequence position.
 
-        NOTE: Position normally auto-advances on each forward() call.
-        Use this only for special cases like:
-        - Jumping to a specific position during replay
-        - Testing specific gamma slots
-        - Synchronizing with external position tracking
-
-        For normal operation, position is implicit from arrival order.
+        Position auto-advances on each forward() call. Use this to:
+        - Reset to start of sequence
+        - Jump to specific position during replay
+        - Test specific gamma slots
 
         Args:
             position: Sequence position (0, 1, 2, ...)
         """
         self._sequence_position = position
 
-        if self.gamma_oscillator is not None:
-            cfg = self.tri_config
-            # Set gamma to the slot for this position
-            target_slot = position % cfg.gamma_n_slots
-            self.gamma_oscillator.set_to_slot(target_slot)
-
-    def sync_gamma_to_theta(self, theta_phase: float) -> None:
-        """Synchronize gamma oscillator to external theta phase.
-
-        Use this when you have a separate ThetaGenerator/ThetaState
-        and want the gamma oscillator to stay in sync.
-
-        Args:
-            theta_phase: External theta phase in radians
-        """
-        if self.gamma_oscillator is not None:
-            self.gamma_oscillator.sync_to_theta_phase(theta_phase)
-
     def get_current_gamma_slot(self) -> Optional[int]:
         """Get the current gamma slot (working memory position).
 
-        Slot is determined by sequence position (item-based), not by
-        time-based gamma phase. This ensures each item gets its own slot.
+        Returns the slot for this region's sequence position.
+        For oscillator diagnostics, query brain.oscillators instead.
 
         Returns:
             Current slot index [0, n_slots-1], or None if gamma disabled
         """
-        if self.gamma_oscillator is not None:
+        if self.tri_config.theta_gamma_enabled:
             return self._sequence_position % self.tri_config.gamma_n_slots
         return None
-
-    def get_gamma_diagnostics(self) -> Dict[str, Any]:
-        """Get gamma oscillator diagnostics.
-
-        Returns:
-            Dictionary with gamma state info including theta-modulated values
-        """
-        if self.gamma_oscillator is None:
-            return {"enabled": False}
-
-        cfg = self.tri_config
-        item_slot = self._sequence_position % cfg.gamma_n_slots
-        time_slot = self.gamma_oscillator.current_slot
-
-        # Current slot depends on mode
-        if cfg.gamma_slot_mode == "time":
-            current_slot = time_slot
-        else:
-            current_slot = item_slot
-
-        # Gamma amplitude is modulated by theta phase
-        gamma_amplitude = self.gamma_oscillator.gamma_amplitude
-
-        # Effective gating strength (theta-modulated)
-        effective_gating = cfg.gamma_gating_strength * gamma_amplitude
-
-        # Effective learning rate multiplier (theta+gamma modulated)
-        # This is the factor applied to base learning rate: 0.5 + 0.5 * gamma_amplitude
-        lr_multiplier = 0.5 + 0.5 * gamma_amplitude
-
-        return {
-            "enabled": True,
-            "slot_mode": cfg.gamma_slot_mode,
-            "theta_phase": self.gamma_oscillator.theta_phase,
-            "gamma_phase": self.gamma_oscillator.gamma_phase,
-            "time_based_slot": time_slot,  # From oscillator timing
-            "item_based_slot": item_slot,  # From sequence position
-            "current_slot": current_slot,  # Active slot based on mode
-            "gamma_amplitude": gamma_amplitude,  # Theta-modulated (strong at trough)
-            "effective_gating_strength": effective_gating,  # Actual gating applied
-            "learning_rate_multiplier": lr_multiplier,  # LR scaling factor
-            "n_slots": cfg.gamma_n_slots,
-            "sequence_position": self._sequence_position,
-        }
 
     # =========================================================================
     # CHECKPOINT STATE MANAGEMENT
@@ -1875,10 +1881,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         if self.stp_ca3_recurrent is not None:
             learning_state["stp_ca3_recurrent"] = self.stp_ca3_recurrent.get_state()
 
-        # 4. OSCILLATOR STATE (gamma oscillator and replay engine)
+        # 4. OSCILLATOR STATE
+        # Note: Oscillator phases now come from brain broadcast, not stored locally.
+        # We only save replay_engine state (which still needs migration separately).
         oscillator_state = {}
-        if self.gamma_oscillator is not None:
-            oscillator_state["gamma"] = self.gamma_oscillator.get_state()
         if self.replay_engine is not None:
             oscillator_state["replay_engine"] = self.replay_engine.get_state()
 
@@ -1995,9 +2001,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             self.stp_ca3_recurrent.load_state(learning_state["stp_ca3_recurrent"])
 
         # 4. RESTORE OSCILLATOR STATE
+        # Note: Oscillator phases now come from brain broadcast via set_oscillator_phases().
+        # We only restore replay_engine state (which still needs migration separately).
         oscillator_state = state["oscillator_state"]
-        if "gamma" in oscillator_state and self.gamma_oscillator is not None:
-            self.gamma_oscillator.load_state(oscillator_state["gamma"])
         if "replay_engine" in oscillator_state and self.replay_engine is not None:
             self.replay_engine.load_state(oscillator_state["replay_engine"])
 

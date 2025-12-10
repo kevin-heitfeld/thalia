@@ -212,6 +212,13 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
             config.n_output, config.n_input, device=self.device
         )
 
+        # Beta oscillator phase tracking for motor timing
+        self._beta_phase: float = 0.0
+        self._gamma_phase: float = 0.0
+        self._beta_amplitude: float = 1.0
+        self._gamma_amplitude: float = 1.0
+        self._coupled_amplitudes: Dict[str, float] = {}
+
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.ERROR_CORRECTIVE
 
@@ -225,6 +232,75 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
             std=0.02,
             device=self.device
         ).clamp(self.config.w_min, self.config.w_max)
+
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float],
+        theta_slot: int = 0,
+        coupled_amplitudes: Optional[Dict[str, float]] = None,
+    ) -> None:
+        """Receive oscillator information from brain broadcast.
+
+        Beta oscillations are critical for motor control and learning:
+        - Pre-movement: beta increases during planning phase
+        - Movement initiation: beta desynchronizes (ERD)
+        - During movement: low beta allows rapid adjustments
+        - Post-movement: beta rebounds (ERS)
+
+        The cerebellum uses beta phase to gate climbing fiber learning:
+        - Beta trough (phase = π): Peak learning window (movement initiation)
+        - Beta peak (phase = 0/2π): Minimal learning (action maintenance)
+
+        Args:
+            phases: Oscillator phases in radians {'theta': ..., 'beta': ..., 'gamma': ...}
+            signals: Oscillator signal values (sin/cos waveforms)
+            theta_slot: Current theta slot [0, n_slots-1] for working memory
+            coupled_amplitudes: Effective amplitudes per oscillator (pre-computed)
+
+        Note:
+            Called automatically by Brain before each forward() call.
+            Do not call this manually.
+        """
+        # Store oscillator phases for motor timing
+        self._beta_phase = phases.get('beta', 0.0)
+        self._gamma_phase = phases.get('gamma', 0.0)
+        
+        # Store effective amplitudes (pre-computed by OscillatorManager)
+        # Automatic multiplicative coupling:
+        # - Beta modulated by ALL slower oscillators (delta, theta, alpha)
+        # - Gamma modulated by ALL slower oscillators (delta, theta, alpha, beta)
+        # OscillatorManager handles the multiplication, we just store the result.
+        if coupled_amplitudes is not None:
+            self._beta_amplitude = coupled_amplitudes.get('beta', 1.0)
+            self._gamma_amplitude = coupled_amplitudes.get('gamma', 1.0)
+        else:
+            self._beta_amplitude = 1.0
+            self._gamma_amplitude = 1.0
+
+    def _compute_beta_gate(self) -> float:
+        """Compute beta-gated learning modulation.
+
+        Biology:
+        - Climbing fibers from inferior olive fire most effectively during beta trough
+        - Beta desynchronization (ERD) signals movement initiation window
+        - This is when cerebellum should update motor predictions
+        - Automatic multiplicative coupling: beta modulated by all slower oscillators
+
+        Returns:
+            Gate value [0, 1] - peak at beta trough (phase = π), modulated by coupling
+        """
+        import math
+        # Peak learning at β = π (beta trough = movement initiation)
+        phase_diff = abs(self._beta_phase - math.pi)
+        width = math.pi / 4  # ±45° learning window
+        gate = math.exp(-(phase_diff ** 2) / (2 * width ** 2))
+        
+        # Modulate by ALL coupling effects (theta, beta modulation)
+        # This gives emergent theta-beta-gamma triple coupling automatically
+        gate = gate * self._gamma_amplitude
+        
+        return gate
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create Purkinje-like neurons."""
@@ -346,14 +422,27 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
         g_exc = (self.weights @ input_spikes.float()) * input_gain
 
+        # =====================================================================
+        # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
+        # =====================================================================
+        # High NE (arousal/stress): Increase motor gain → faster reactions
+        # Low NE (baseline): Normal gain
+        # Biological: NE modulates cerebellar Purkinje cell excitability
+        ne_level = self.state.norepinephrine
+        # NE gain: 1.0 (baseline) to 1.5 (high arousal)
+        ne_gain = 1.0 + 0.5 * ne_level
+        g_exc = g_exc * ne_gain
+
         # Forward through neurons (returns 1D bool spikes)
         output_spikes, _ = self.neurons(g_exc, None)
 
         # Update output trace after spiking
         self.output_trace = self.output_trace + output_spikes.float()
 
-        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
-        self.decay_neuromodulators(dt_ms=dt)
+        # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
+        # VTA updates dopamine, LC updates NE, NB updates ACh.
+        # Brain broadcasts to all regions every timestep via _update_neuromodulators().
+        # No local decay needed.
 
         # ======================================================================
         # Update STDP eligibility (spike-timing based)
@@ -421,6 +510,14 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
             return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
 
         # ======================================================================
+        # BETA GATING - Motor timing modulation
+        # ======================================================================
+        # Climbing fiber learning is most effective during beta trough (movement initiation)
+        # This implements the biological observation that error signals are processed
+        # during movement execution, not during movement maintenance
+        beta_gate = self._compute_beta_gate()
+
+        # ======================================================================
         # Error-modulated STDP learning
         # ======================================================================
         # The key insight: use error to select WHICH neurons update
@@ -435,7 +532,8 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
 
         # Modulate eligibility by error magnitude and sign
         # Dopamine provides arousal/attention modulation (from VTA via Brain)
-        effective_lr = self.get_effective_learning_rate()
+        # Beta gate provides motor timing modulation (movement initiation window)
+        effective_lr = self.get_effective_learning_rate() * beta_gate
         dw = self.stdp_eligibility * error_sign * error.abs().unsqueeze(1) * effective_lr
 
         # Apply soft bounds
@@ -465,6 +563,7 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
             "ltd": ltd,
             "net_change": ltp + ltd,
             "eligibility_max": self.stdp_eligibility.abs().max().item(),
+            "beta_gate": beta_gate,  # Motor timing window
         }
 
     def deliver_error(

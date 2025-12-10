@@ -258,6 +258,28 @@ class BrainConfig:
     cortex_type: CortexType = CortexType.LAYERED
     """Which cortex implementation to use. PREDICTIVE enables local error learning."""
 
+    # Oscillator configuration
+    oscillator_couplings: Optional[List[OscillatorCoupling]] = None
+    """Custom cross-frequency couplings (e.g., delta-theta, alpha-gamma).
+    
+    If None, uses default theta-gamma coupling (coupling_strength=0.8).
+    If empty list [], disables all coupling.
+    If provided, replaces defaults with custom couplings.
+    
+    Example:
+        ```python
+        config = BrainConfig(
+            oscillator_couplings=[
+                OscillatorCoupling('theta', 'gamma', coupling_strength=0.8),
+                OscillatorCoupling('delta', 'theta', coupling_strength=0.6),
+                OscillatorCoupling('alpha', 'gamma', coupling_strength=0.7),
+            ]
+        )
+        ```
+    
+    See thalia.core.oscillator.OscillatorCoupling for full parameters.
+    """
+
     # Timing (trial phases)
     encoding_timesteps: int = 15
     delay_timesteps: int = 10

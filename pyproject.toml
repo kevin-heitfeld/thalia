@@ -58,13 +58,16 @@ experiments = [
     "seaborn",
     "pandas",
 ]
+visualization = [
+    "manim>=0.17.0",
+]
 all = [
-    "thalia[dev,experiments]",
+    "thalia[dev,experiments,visualization]",
 ]
 
 [project.urls]
-Documentation = "https://github.com/username/thalia#readme"
-Repository = "https://github.com/username/thalia"
+Documentation = "https://github.com/kevin-heitfeld/thalia#readme"
+Repository = "https://github.com/kevin-heitfeld/thalia"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/thalia"]

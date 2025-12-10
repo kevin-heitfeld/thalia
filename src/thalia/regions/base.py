@@ -13,6 +13,7 @@ from enum import Enum, auto
 from typing import Optional, Dict, Any, List
 
 import torch
+import torch.nn as nn
 
 from thalia.config.base import RegionConfigBase
 from thalia.core.neuromodulator_mixin import NeuromodulatorMixin
@@ -98,7 +99,7 @@ class RegionState:
     t: int = 0
 
 
-class BrainRegion(NeuromodulatorMixin, ABC):
+class BrainRegion(nn.Module, NeuromodulatorMixin, ABC):
     """Abstract base class for brain regions.
 
     Each brain region implements:
@@ -153,14 +154,24 @@ class BrainRegion(NeuromodulatorMixin, ABC):
         Args:
             config: Configuration parameters for the region
         """
+        # MUST call nn.Module.__init__() first before setting any attributes
+        nn.Module.__init__(self)
+        
         self.config = config
         self.device = torch.device(config.device)
 
-        # Initialize weights
-        self.weights = self._initialize_weights()
+        # Initialize weights (may be deferred for composition-based regions)
+        # Subclasses that use composition (like PredictiveCortex) can override
+        # _initialize_weights() to delegate, and should set self.weights themselves
+        # after calling super().__init__()
+        weights = self._initialize_weights()
+        if weights is not None:
+            self.weights = weights
 
-        # Initialize neurons
-        self.neurons = self._create_neurons()
+        # Initialize neurons (may also be deferred for composition-based regions)
+        neurons = self._create_neurons()
+        if neurons is not None:
+            self.neurons = neurons
 
         # Initialize state
         self.state = RegionState()
@@ -180,19 +191,25 @@ class BrainRegion(NeuromodulatorMixin, ABC):
         pass
 
     @abstractmethod
-    def _initialize_weights(self) -> torch.Tensor:
+    def _initialize_weights(self) -> Optional[torch.Tensor]:
         """Initialize the weight matrix for this region.
 
         Different regions may have different initialization strategies
         (e.g., sparse vs dense, structured vs random).
+        
+        Returns:
+            Weights tensor, or None for composition-based regions that
+            defer weight initialization until after super().__init__()
         """
         pass
 
     @abstractmethod
-    def _create_neurons(self) -> Any:
+    def _create_neurons(self) -> Optional[Any]:
         """Create the neuron model for this region.
 
-        Returns the neuron object(s) used in this region.
+        Returns the neuron object(s) used in this region, or None for
+        composition-based regions that defer neuron creation until after
+        super().__init__().
         """
         pass
 
@@ -243,6 +260,54 @@ class BrainRegion(NeuromodulatorMixin, ABC):
         self.state = RegionState()
         if hasattr(self.neurons, 'reset_state'):
             self.neurons.reset_state()
+    
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float],
+        theta_slot: int = 0,
+        coupled_amplitudes: Optional[Dict[str, float]] = None,
+    ) -> None:
+        """Set current oscillator phases and effective amplitudes from brain.
+        
+        Effective amplitudes are pre-computed by OscillatorManager with automatic
+        multiplicative coupling. Each oscillator's amplitude reflects ALL
+        phase-amplitude coupling effects.
+        
+        Regions use oscillator information for:
+        - Phase-dependent gating (e.g., theta encoding vs retrieval)
+        - Attention modulation (e.g., alpha suppression)
+        - Motor preparation (e.g., beta synchrony)
+        - Feature binding (e.g., gamma synchrony)
+        - Sequence encoding (e.g., theta_slot for working memory)
+        - Amplitude-gated learning (e.g., effective gamma amplitude)
+        
+        Called every timestep, similar to set_dopamine.
+        Default implementation stores phases but doesn't use them.
+        Subclasses override to implement oscillator-dependent behavior.
+        
+        Args:
+            phases: Dict mapping oscillator name to phase [0, 2π)
+            signals: Dict mapping oscillator name to signal [-1, 1]
+            theta_slot: Current theta slot [0, n_slots-1] for sequence encoding
+            coupled_amplitudes: Effective amplitudes per oscillator (pre-computed)
+                               {'delta': 1.0, 'theta': 0.73, 'gamma': 0.48, ...}
+                               Values reflect automatic multiplicative coupling.
+        
+        Example:
+            # In hippocampus, use theta slot for sequence encoding:
+            slot = theta_slot  # 0-6, maps to gamma cycle
+            
+            # Use effective amplitude for gating:
+            gamma_amp = coupled_amplitudes.get('gamma', 1.0)  # Pre-computed!
+            excitability = gamma_amp * base_excitability
+        """
+        # Default: store but don't require all regions to use
+        if not hasattr(self.state, '_oscillator_phases'):
+            self.state._oscillator_phases = {}
+            self.state._oscillator_signals = {}
+        self.state._oscillator_phases = phases
+        self.state._oscillator_signals = signals
 
     def get_weights(self) -> torch.Tensor:
         """Return the current weight matrix."""

@@ -49,7 +49,6 @@ import math
 import torch
 import torch.nn as nn
 
-from thalia.core.oscillator import ThetaOscillator, GammaOscillatorBase, OscillatorConfig
 from thalia.regions.prefrontal import Prefrontal
 
 
@@ -84,24 +83,47 @@ class ThetaGammaEncoder(nn.Module):
     - Optimal encoding at gamma peak (high excitability)
     
     This allows temporal ordering and capacity limits (~7±2 items).
+    
+    **Migration Note**: This class now uses centrally-managed oscillator
+    phases from the brain instead of creating local oscillators. Call
+    set_oscillator_phases() to provide current phases before using
+    encoding/retrieval methods.
     """
     
     def __init__(self, config: WorkingMemoryTaskConfig):
         super().__init__()
         self.config = config
         
-        # Create oscillators
-        self.theta = ThetaOscillator(
-            frequency_hz=config.theta_freq_hz,
-            dt_ms=config.dt_ms
-        )
-        self.gamma = GammaOscillatorBase(
-            frequency_hz=config.gamma_freq_hz,
-            dt_ms=config.dt_ms
-        )
+        # Store current oscillator phases (provided by brain)
+        # These are updated via set_oscillator_phases()
+        self._theta_phase: float = 0.0
+        self._gamma_phase: float = 0.0
+        self._theta_signal: float = 0.0
+        self._gamma_signal: float = 0.0
+        self._theta_slot: int = 0
+        self._coupled_amplitudes: Dict[str, float] = {}
         
         # Time tracking
         self.item_count = 0
+    
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float]
+    ) -> None:
+        """Receive current oscillator phases from brain.
+        
+        This should be called before encoding/retrieval operations
+        to ensure phase information is current.
+        
+        Args:
+            phases: Dict mapping oscillator name to phase [0, 2π)
+            signals: Dict mapping oscillator name to signal [-1, 1]
+        """
+        self._theta_phase = phases.get('theta', 0.0)
+        self._gamma_phase = phases.get('gamma', 0.0)
+        self._theta_signal = signals.get('theta', 0.0)
+        self._gamma_signal = signals.get('gamma', 0.0)
         
     def get_encoding_phase(self, item_index: int) -> Tuple[float, float]:
         """
@@ -144,17 +166,21 @@ class ThetaGammaEncoder(nn.Module):
         
         return theta_phase
     
-    def advance_oscillators(self, steps: int = 1) -> None:
-        """Advance both oscillators through time."""
-        for _ in range(steps):
-            self.theta.advance(self.config.dt_ms)
-            self.gamma.advance(self.config.dt_ms)
+    def get_current_theta_phase(self) -> float:
+        """Get current theta phase (from brain).
+        
+        Returns:
+            Current theta phase in radians [0, 2π)
+        """
+        return self._theta_phase
     
-    def sync_to_item(self, item_index: int) -> None:
-        """Synchronize oscillators to the phase for a specific item."""
-        theta_phase, gamma_phase = self.get_encoding_phase(item_index)
-        self.theta.sync_to_phase(theta_phase)
-        self.gamma.sync_to_phase(gamma_phase)
+    def get_current_gamma_phase(self) -> float:
+        """Get current gamma phase (from brain).
+        
+        Returns:
+            Current gamma phase in radians [0, 2π)
+        """
+        return self._gamma_phase
     
     def get_excitability_modulation(self) -> float:
         """
@@ -167,7 +193,7 @@ class ThetaGammaEncoder(nn.Module):
         """
         # Peak at gamma phase = π/2 (90°)
         # Use cosine shifted to make peak at π/2
-        gamma_signal = math.sin(self.gamma.phase)
+        gamma_signal = math.sin(self._gamma_phase)
         # Map to [0, 1] for modulation
         modulation = (gamma_signal + 1.0) / 2.0
         return max(0.0, modulation)
@@ -234,6 +260,9 @@ class NBackTask:
         """
         Encode a stimulus into working memory at specific theta phase.
         
+        **Note**: Caller must ensure encoder has current oscillator phases
+        via set_oscillator_phases() before calling this method.
+        
         Args:
             stimulus: Input stimulus pattern [n_input]
             item_index: Position in sequence
@@ -241,10 +270,7 @@ class NBackTask:
         Returns:
             Encoding metrics (phase, excitability, etc.)
         """
-        # Sync oscillators to item phase
-        self.encoder.sync_to_item(item_index)
-        
-        # Get phase information
+        # Get phase information for this item
         theta_phase, gamma_phase = self.encoder.get_encoding_phase(item_index)
         excitability = self.encoder.get_excitability_modulation()
         
@@ -259,9 +285,7 @@ class NBackTask:
             dt=self.config.dt_ms
         )
         
-        # Advance oscillators through encoding window
-        encoding_steps = int(self.config.encoding_window_ms / self.config.dt_ms)
-        self.encoder.advance_oscillators(encoding_steps)
+        # Note: Oscillators are advanced by brain, not here
         
         return {
             "theta_phase": theta_phase,
@@ -278,6 +302,9 @@ class NBackTask:
         """
         Retrieve item from N positions back using phase addressing.
         
+        **Note**: Caller must ensure encoder has current oscillator phases
+        via set_oscillator_phases() before calling this method.
+        
         Args:
             current_index: Current position in sequence
             n_back: How many items back to retrieve
@@ -293,17 +320,12 @@ class NBackTask:
             # Can't retrieve before sequence start
             return None, {"error": "Target before sequence start"}
         
-        # Sync to retrieval phase
-        self.encoder.theta.sync_to_phase(target_phase)
-        
         # Retrieve from working memory
         # In this simplified version, we use the working memory contents
         # In full version, phase would index into different slots
         retrieved = self.prefrontal.get_working_memory()
         
-        # Advance through retrieval window
-        retrieval_steps = int(self.config.retrieval_window_ms / self.config.dt_ms)
-        self.encoder.advance_oscillators(retrieval_steps)
+        # Note: Oscillators are advanced by brain, not here
         
         return retrieved, {
             "target_phase": target_phase,

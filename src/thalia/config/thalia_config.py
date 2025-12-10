@@ -332,6 +332,7 @@ class ThaliaConfig:
                 delay_timesteps=self.brain.delay_timesteps,
                 test_timesteps=self.brain.test_timesteps,
                 neurons_per_action=self.brain.striatum.neurons_per_action,
+                oscillator_couplings=self.brain.oscillator_couplings,
                 parallel=self.brain.parallel,
                 diagnostic_level=DiagnosticLevel.SUMMARY,
                 device=self.global_.device,

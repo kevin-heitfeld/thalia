@@ -66,15 +66,10 @@ from thalia.core.predictive_coding import (
     HierarchicalPredictiveCoding,
     ErrorType,
 )
-from thalia.core.scalable_attention import (
-    ScalableSpikingAttention,
-    ScalableAttentionConfig,
-    AttentionType,
-    CoincidenceAttention,
-    WinnerTakeAllAttention,
-    GammaPhaseAttention,
-    MultiScaleSpikingAttention,
-)
+# NOTE: scalable_attention module removed - attention emerges from brain mechanisms
+# - Coincidence detection: STDP, gamma synchrony, theta-gamma coupling
+# - Winner-take-all: Lateral inhibition, striatum action selection, PFC gating
+# - Phase binding: Gamma oscillations, cross-modal binding pathways
 from thalia.core.utils import (
     ensure_batch_dim,
     ensure_batch_dims,
@@ -166,14 +161,7 @@ __all__ = [
     "PredictiveCodingState",
     "HierarchicalPredictiveCoding",
     "ErrorType",
-    # Scalable Spiking Attention
-    "ScalableSpikingAttention",
-    "ScalableAttentionConfig",
-    "AttentionType",
-    "CoincidenceAttention",
-    "WinnerTakeAllAttention",
-    "GammaPhaseAttention",
-    "MultiScaleSpikingAttention",
+    # NOTE: Scalable attention removed - emerges from gamma/STDP/lateral-inhibition
     # Utilities
     "ensure_batch_dim",
     "ensure_batch_dims",

@@ -32,8 +32,6 @@ from enum import Enum
 import torch
 import torch.nn as nn
 
-from thalia.regions.gamma_dynamics import GammaOscillator, ThetaGammaConfig
-
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.config import Episode
 
@@ -53,8 +51,9 @@ class ReplayConfig:
     compression_factor: float = 5.0  # How much faster than encoding (5-20x typical)
     dt_ms: float = 1.0               # Base time step in ms
     
-    # Gamma oscillator (for sequence replay)
-    theta_gamma_config: Optional[ThetaGammaConfig] = None
+    # Gamma slot configuration (replaces oscillator config)
+    n_slots: int = 7                 # Number of gamma slots for sequence replay
+    slot_duration_ms: float = 18.0   # Duration per slot in ms (~18ms for 7 slots in 125ms theta)
     
     # Ripple parameters (for sleep replay)
     ripple_enabled: bool = False
@@ -133,12 +132,6 @@ class ReplayEngine(nn.Module):
         super().__init__()
         self.config = config
         
-        # Gamma oscillator for sequence replay
-        if config.theta_gamma_config is not None:
-            self.gamma_oscillator = GammaOscillator(config.theta_gamma_config)
-        else:
-            self.gamma_oscillator = None
-        
         # Ripple generator state
         if config.ripple_enabled:
             self._ripple_phase = 0.0
@@ -150,8 +143,12 @@ class ReplayEngine(nn.Module):
         episode: Episode,
         pattern_processor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         gating_fn: Optional[Callable[[int], float]] = None,
+        gamma_phase: float = 0.0,
     ) -> ReplayResult:
         """Replay an episode with time compression.
+        
+        Uses gamma_phase for fine-grained timing within the theta cycle,
+        allowing precise phase-based replay that respects gamma oscillations.
         
         Args:
             episode: Episode to replay (contains state or sequence)
@@ -161,22 +158,20 @@ class ReplayEngine(nn.Module):
             gating_fn: Function to compute gating for each slot
                        (e.g., lambda slot: get_gamma_gating(slot))
                        If None, no gating applied
+            gamma_phase: Current gamma phase from brain's OscillatorManager (radians [0, 2π])
         
         Returns:
             ReplayResult with replayed patterns and metrics
         """
         # Determine replay mode
         if episode.sequence is not None and len(episode.sequence) > 0:
-            if self.gamma_oscillator is None:
-                # Have sequence but no oscillator → fall back to single
-                return self._replay_single(episode.state, pattern_processor)
-            else:
-                # Full sequence replay with gamma
-                return self._replay_sequence(
-                    episode.sequence,
-                    pattern_processor,
-                    gating_fn
-                )
+            # Have sequence → use sequence replay
+            return self._replay_sequence(
+                episode.sequence,
+                pattern_processor,
+                gating_fn,
+                gamma_phase,
+            )
         else:
             # No sequence → single-state replay
             return self._replay_single(episode.state, pattern_processor)
@@ -186,15 +181,22 @@ class ReplayEngine(nn.Module):
         sequence: List[torch.Tensor],
         pattern_processor: Optional[Callable],
         gating_fn: Optional[Callable],
+        gamma_phase: float,
     ) -> ReplayResult:
-        """Replay a sequence using gamma oscillator."""
+        """Replay a sequence using gamma phase timing from brain.
+        
+        The gamma phase (0 to 2π) is converted to a slot index, allowing
+        for sub-slot precision and smooth phase-based replay.
+        
+        Args:
+            sequence: List of patterns to replay (one per slot)
+            pattern_processor: Optional function to process each pattern
+            gating_fn: Optional function to compute slot-specific gating
+            gamma_phase: Current gamma phase in radians [0, 2π]
+        """
+        import math
+        
         n_slots = len(sequence)
-        
-        # Reset gamma oscillator for fresh replay
-        self.gamma_oscillator.reset_state()
-        
-        # Compute compressed timing
-        compressed_dt = self.config.dt_ms * self.config.compression_factor
         
         # Result tracking
         result = ReplayResult(
@@ -203,51 +205,36 @@ class ReplayEngine(nn.Module):
             sequence_length=n_slots,
         )
         
-        # Track slot transitions
-        prev_slot = -1
+        # Convert gamma phase to slot index using finer-grained timing
+        # gamma_phase ranges from 0 to 2π over one gamma cycle
+        # Map this to slot indices: phase=0 → slot 0, phase=2π → slot n_slots
+        normalized_phase = (gamma_phase % (2 * math.pi)) / (2 * math.pi)  # [0, 1]
+        current_slot = int(normalized_phase * n_slots) % n_slots
         
-        # Replay loop
-        max_steps = int(n_slots * self.config.max_steps_per_slot / self.config.compression_factor)
-        
-        for step in range(max_steps):
-            # Advance gamma oscillator with compressed time
-            self.gamma_oscillator.advance(compressed_dt)
-            current_slot = self.gamma_oscillator.current_slot
+        # Replay the pattern for the current slot
+        if current_slot < n_slots:
+            # Get pattern for this slot
+            pattern = sequence[current_slot]
             
-            # Check for slot transition
-            if current_slot != prev_slot and current_slot < n_slots:
-                # Get pattern for this slot
-                pattern = sequence[current_slot]
-                
-                # Apply gating if enabled
-                if self.config.apply_gating and gating_fn is not None:
-                    gating = gating_fn(current_slot)
-                    if pattern.dim() == 1:
-                        pattern = pattern.unsqueeze(0)
-                    pattern = pattern * gating
-                
-                # Process pattern (e.g., through CA3 for completion)
-                if pattern_processor is not None:
-                    if pattern.dim() > 1:
-                        pattern = pattern.squeeze(0)
-                    output = pattern_processor(pattern)
-                else:
-                    output = pattern
-                
-                # Record
-                result.replayed_patterns.append(output)
-                result.total_activity += output.sum().item()
-                result.slots_replayed += 1
-                
-                prev_slot = current_slot
+            # Apply gating if enabled
+            if self.config.apply_gating and gating_fn is not None:
+                gating = gating_fn(current_slot)
+                if pattern.dim() == 1:
+                    pattern = pattern.unsqueeze(0)
+                pattern = pattern * gating
             
-            # Track gamma cycles
-            if self.gamma_oscillator.gamma_phase < 0.1 and step > 0:
-                result.gamma_cycles += 1
+            # Process pattern (e.g., through CA3 for completion)
+            if pattern_processor is not None:
+                if pattern.dim() > 1:
+                    pattern = pattern.squeeze(0)
+                output = pattern_processor(pattern)
+            else:
+                output = pattern
             
-            # Stop when all slots replayed
-            if result.slots_replayed >= n_slots:
-                break
+            # Record
+            result.replayed_patterns.append(output)
+            result.total_activity += output.sum().item()
+            result.slots_replayed = 1  # Single slot replayed per call
         
         return result
     
@@ -327,9 +314,6 @@ class ReplayEngine(nn.Module):
     
     def reset_state(self) -> None:
         """Reset replay engine state."""
-        if self.gamma_oscillator is not None:
-            self.gamma_oscillator.reset_state()
-        
         if self.config.ripple_enabled:
             self._ripple_phase = 0.0
             self._ripple_active = False
@@ -341,14 +325,8 @@ class ReplayEngine(nn.Module):
             "compression_factor": self.config.compression_factor,
             "mode": self.config.mode.value,
             "ripple_enabled": self.config.ripple_enabled,
+            "n_slots": self.config.n_slots,
         }
-        
-        if self.gamma_oscillator is not None:
-            diag["gamma_oscillator"] = {
-                "theta_phase": self.gamma_oscillator.theta_phase,
-                "gamma_phase": self.gamma_oscillator.gamma_phase,
-                "current_slot": self.gamma_oscillator.current_slot,
-            }
         
         if self.config.ripple_enabled:
             diag["ripple_state"] = {
@@ -361,16 +339,11 @@ class ReplayEngine(nn.Module):
 
     def get_state(self) -> Dict[str, Any]:
         """Get replay engine state for checkpointing."""
-        state = {
+        return {
             "ripple_phase": self._ripple_phase if self.config.ripple_enabled else 0.0,
             "ripple_active": self._ripple_active if self.config.ripple_enabled else False,
             "ripple_time": self._ripple_time if self.config.ripple_enabled else 0.0,
         }
-        
-        if self.gamma_oscillator is not None:
-            state["gamma_oscillator"] = self.gamma_oscillator.get_state()
-        
-        return state
     
     def load_state(self, state: Dict[str, Any]) -> None:
         """Restore replay engine state from checkpoint."""
@@ -378,6 +351,3 @@ class ReplayEngine(nn.Module):
             self._ripple_phase = state["ripple_phase"]
             self._ripple_active = state["ripple_active"]
             self._ripple_time = state["ripple_time"]
-        
-        if "gamma_oscillator" in state and self.gamma_oscillator is not None:
-            self.gamma_oscillator.load_state(state["gamma_oscillator"])

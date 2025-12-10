@@ -126,3 +126,11 @@ class StriatumConfig(RegionConfig):
     tonic_d1_gain_scale: float = 0.5
     tonic_modulates_exploration: bool = True
     tonic_exploration_scale: float = 0.1
+
+    # =========================================================================
+    # BETA OSCILLATION MODULATION (Motor Control)
+    # =========================================================================
+    # Beta amplitude modulates D1/D2 balance for action maintenance vs switching
+    # High beta → action persistence (D1 dominant, D2 suppressed)
+    # Low beta → action flexibility (D2 effective, D1 reduced)
+    beta_modulation_strength: float = 0.3  # [0, 1] - strength of beta influence

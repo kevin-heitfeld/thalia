@@ -85,26 +85,26 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Output contains both L2/3 (cortico-cortical) and L5 (subcortical)
         l23_out = output[:, :cortex.l23_size]
         l5_out = output[:, cortex.l23_size:]
-    
+
     Mixins Provide:
     ---------------
     From LearningStrategyMixin:
         - add_strategy(strategy) → None
         - apply_learning(pre, post, **kwargs) → Dict
         - Pluggable learning rules (Hebbian, STDP, BCM)
-    
+
     From DiagnosticsMixin:
         - check_health() → HealthMetrics
         - get_firing_rate(spikes) → float
         - check_weight_health(weights, name) → WeightHealth
         - detect_runaway_excitation(spikes) → bool
-    
+
     From BrainRegion (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
         - Neuromodulator control methods
-    
+
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
         docs/patterns/state-management.md for LayeredCortexState
@@ -115,9 +115,10 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.layer_config = config
 
         # Compute layer sizes
-        self.l4_size = int(config.n_output * config.l4_ratio)
-        self.l23_size = int(config.n_output * config.l23_ratio)
-        self.l5_size = int(config.n_output * config.l5_ratio)
+        from thalia.regions.cortex.config import calculate_layer_sizes
+        self.l4_size, self.l23_size, self.l5_size = calculate_layer_sizes(
+            config.n_output, config.l4_ratio, config.l23_ratio, config.l5_ratio
+        )
 
         # Actual output size depends on dual_output setting
         if config.dual_output:
@@ -191,6 +192,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # ROBUSTNESS MECHANISMS (from RobustnessConfig)
         # =====================================================================
         self._init_robustness_mechanisms()
+        self._init_gamma_attention()
 
     def _get_learning_rule(self) -> LearningRule:
         """Cortex uses unsupervised Hebbian learning."""
@@ -287,6 +289,25 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.pop_intrinsic_plasticity = PopulationIntrinsicPlasticity(
                 config=rob.intrinsic_plasticity,
             )
+
+    def _init_gamma_attention(self) -> None:
+        """Initialize gamma-based attention (spike-native phase gating for L2/3).
+
+        Uses centralized gamma oscillator from Brain (via set_oscillator_phases).
+        Regions don't create their own oscillators - they receive phases from Brain.
+        """
+        cfg = self.layer_config
+        device = torch.device(cfg.device)
+
+        if cfg.use_gamma_attention:
+            # Learnable phase preferences for each L2/3 neuron
+            self.l23_phase_prefs = nn.Parameter(
+                torch.rand(self.l23_size, device=device) * 2 * torch.pi
+            )
+            self.gamma_attention_width = cfg.gamma_attention_width
+            self.use_gamma_attention = True
+        else:
+            self.use_gamma_attention = False
 
     def _init_weights(self) -> None:
         """Initialize inter-layer weight matrices.
@@ -415,6 +436,12 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         if self.stp_l23_recurrent is not None:
             self.stp_l23_recurrent.reset_state()
 
+        # Note: No local oscillators to reset - phases come from Brain
+
+        # Preserve oscillator signals if they exist (set via set_oscillator_phases)
+        existing_phases = getattr(self.state, '_oscillator_phases', {})
+        existing_signals = getattr(self.state, '_oscillator_signals', {})
+
         self.state = LayeredCortexState(
             l4_spikes=torch.zeros(self.l4_size, device=dev),
             l23_spikes=torch.zeros(self.l23_size, device=dev),
@@ -427,12 +454,51 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             ffi_strength=0.0,
         )
 
+        # Restore/initialize oscillator signals
+        self.state._oscillator_phases = existing_phases
+        self.state._oscillator_signals = existing_signals
+
         # Reset cumulative spike counters (for diagnostics across timesteps)
         self._cumulative_l4_spikes = 0
         self._cumulative_l23_spikes = 0
         self._cumulative_l5_spikes = 0
 
         # Note: FFI state decays naturally, no hard reset needed
+
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float],
+        theta_slot: int = 0,
+        coupled_amplitudes: Optional[Dict[str, float]] = None,
+    ) -> None:
+        """Set oscillator phases and effective amplitudes for attention gating.
+
+        Stores oscillator state in LayeredCortexState for use during forward().
+        Alpha signals gate input processing (early suppression).
+        Gamma effective amplitude modulates learning (automatic multiplicative coupling).
+
+        Args:
+            phases: Dict mapping oscillator name ('alpha', 'theta', etc.) to phase [0, 2π)
+            signals: Dict mapping oscillator name to signal magnitude [-1, 1]
+            theta_slot: Current theta slot [0, n_slots-1] for sequence encoding
+            coupled_amplitudes: Effective amplitudes per oscillator (pre-computed)
+        """
+        # Store in state for forward() to access
+        if not hasattr(self.state, '_oscillator_phases'):
+            self.state._oscillator_phases = {}
+            self.state._oscillator_signals = {}
+        self.state._oscillator_phases = phases
+        self.state._oscillator_signals = signals
+
+        # Store effective gamma amplitude (pre-computed by OscillatorManager)
+        # Automatic multiplicative coupling:
+        # - Gamma modulated by ALL slower oscillators (delta, theta, alpha, beta)
+        # OscillatorManager handles the multiplication, we just store the result.
+        if coupled_amplitudes is not None:
+            self.state._gamma_amplitude = coupled_amplitudes.get('gamma', 1.0)
+        else:
+            self.state._gamma_amplitude = 1.0
 
     def add_neurons(
         self,
@@ -441,14 +507,14 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         sparsity: float = 0.1,
     ) -> None:
         """Add neurons to cortex, expanding all layers proportionally.
-        
+
         This expands L4, L2/3, and L5 while maintaining layer ratios:
         - L4 expands by (l4_ratio * n_new)
         - L2/3 expands by (l23_ratio * n_new)
         - L5 expands by (l5_ratio * n_new)
-        
+
         All inter-layer weights are expanded to accommodate new neurons.
-        
+
         Args:
             n_new: Number of neurons to add to total cortex size
             initialization: Weight initialization strategy
@@ -456,20 +522,21 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         """
         from thalia.core.weight_init import WeightInitializer
         from dataclasses import replace
-        
+
         # Calculate proportional growth for all layers
-        l4_growth = int(n_new * self.layer_config.l4_ratio)
-        l23_growth = int(n_new * self.layer_config.l23_ratio)
-        l5_growth = int(n_new * self.layer_config.l5_ratio)
-        
+        from thalia.regions.cortex.config import calculate_layer_sizes
+        l4_growth, l23_growth, l5_growth = calculate_layer_sizes(
+            n_new, self.layer_config.l4_ratio, self.layer_config.l23_ratio, self.layer_config.l5_ratio
+        )
+
         old_l4_size = self.l4_size
         old_l23_size = self.l23_size
         old_l5_size = self.l5_size
-        
+
         new_l4_size = old_l4_size + l4_growth
         new_l23_size = old_l23_size + l23_growth
         new_l5_size = old_l5_size + l5_growth
-        
+
         # Helper to create new weights
         def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
             if initialization == 'xavier':
@@ -478,14 +545,14 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
             else:
                 return WeightInitializer.uniform(n_out, n_in, device=self.device)
-        
+
         # 1. Expand input→L4 weights [l4, input]
         # Add rows for new L4 neurons
         new_input_l4 = new_weights_for(l4_growth, self.layer_config.n_input)
         self.w_input_l4 = nn.Parameter(
             torch.cat([self.w_input_l4.data, new_input_l4], dim=0)
         )
-        
+
         # 2. Expand L4→L2/3 weights [l23, l4]
         # Add rows for new L2/3 neurons, columns for new L4 neurons
         new_l23_rows = new_weights_for(l23_growth, old_l4_size)
@@ -494,7 +561,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.w_l4_l23 = nn.Parameter(
             torch.cat([expanded_l23_rows, new_l4_cols], dim=1)
         )
-        
+
         # 3. Expand L2/3→L2/3 recurrent weights [l23, l23]
         # Add rows and columns for new L2/3 neurons
         new_l23_recurrent_rows = new_weights_for(l23_growth, old_l23_size)
@@ -503,7 +570,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.w_l23_recurrent = nn.Parameter(
             torch.cat([expanded_recurrent_rows, new_l23_recurrent_cols], dim=1)
         )
-        
+
         # 4. Expand L2/3→L5 weights [l5, l23]
         # Add rows for new L5 neurons, columns for new L2/3 neurons
         new_l5_rows = new_weights_for(l5_growth, old_l23_size)
@@ -512,25 +579,25 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.w_l23_l5 = nn.Parameter(
             torch.cat([expanded_l5_rows, new_l23_cols_to_l5], dim=1)
         )
-        
+
         # Update main weights reference (for base class compatibility)
         self.weights = self.w_l23_l5
-        
+
         # 5. Expand neurons for all layers
         self.l4_size = new_l4_size
         self.l4_neurons = LIFNeuron(self.l4_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
-        
+
         self.l23_size = new_l23_size
         self.l23_neurons = LIFNeuron(self.l23_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
-        
+
         self.l5_size = new_l5_size
         self.l5_neurons = LIFNeuron(self.l5_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
-        
+
         # 6. Update configs
         new_total_output = new_l5_size if self.layer_config.output_layer == "L5" else new_l23_size
         if self.layer_config.dual_output:
             new_total_output = new_l23_size + new_l5_size
-        
+
         self.config = replace(self.config, n_output=new_total_output)
         self.layer_config = replace(self.layer_config, n_output=new_total_output)
 
@@ -549,14 +616,14 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         happens continuously at each timestep, modulated by neuromodulators (dopamine).
         This is how biological cortex works - plasticity is part of the dynamics,
         not a separate training phase.
-        
+
         Args:
             input_spikes: Input spike tensor [n_input] (1D per ADR-005)
             dt: Timestep in ms
             encoding_mod: Theta modulation for encoding
             retrieval_mod: Theta modulation for retrieval
             top_down: Optional top-down modulation [l23_size] (1D)
-        
+
         Returns:
             Output spikes [l23_size + l5_size] if dual_output else [n_output] (1D)
         """
@@ -569,7 +636,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             f"LayeredCortex.forward: input_spikes has shape {input_spikes.shape} "
             f"but n_input={self.layer_config.n_input}. Check that input matches cortex config."
         )
-        
+
         if top_down is not None:
             assert top_down.dim() == 1, (
                 f"LayeredCortex.forward: Expected 1D top_down (ADR-005), got shape {top_down.shape}"
@@ -584,9 +651,43 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         cfg = self.layer_config
 
+        # =====================================================================
+        # ALPHA-BASED ATTENTION GATING
+        # =====================================================================
+        # Alpha oscillations (8-13 Hz) suppress processing in cortical areas.
+        # High alpha = attention directed elsewhere (suppress this region)
+        # Low alpha = attention focused here (normal processing)
+        #
+        # Biological basis: Alpha power is inversely related to cortical
+        # excitability. Regions with high alpha are "idling" or suppressed
+        # to prevent interference with attended regions.
+        alpha_suppression = 1.0  # Default: no suppression
+        gamma_modulation = 1.0  # Default: no gamma modulation
+
+        if hasattr(self.state, '_oscillator_signals') and self.state._oscillator_signals is not None:
+            alpha_signal = self.state._oscillator_signals.get('alpha', 0.0)
+
+            # Alpha signal ranges [-1, 1], convert to suppression [0, 0.5]
+            # High positive alpha (near 1.0) → max suppression (50%)
+            # Low/negative alpha → minimal suppression
+            alpha_magnitude = max(0.0, alpha_signal)  # Only positive values
+            alpha_suppression = 1.0 - (alpha_magnitude * 0.5)  # Scale to 50-100%
+
+            # Automatic gamma modulation: ALL slower oscillators affect gamma
+            # This gives emergent multi-oscillator coupling (e.g., theta-alpha-beta-gamma)
+            if hasattr(self.state, '_gamma_amplitude'):
+                gamma_modulation = self.state._gamma_amplitude
+
+            # Store for diagnostics
+            self.state.alpha_suppression = alpha_suppression
+            self.state.gamma_modulation = gamma_modulation
+
+        # Apply alpha suppression to input (early gating)
+        gated_input_spikes = input_spikes * alpha_suppression
+
         # L4: Input processing (1D tensors)
         l4_input = (
-            torch.matmul(self.w_input_l4, input_spikes.float())
+            torch.matmul(self.w_input_l4, gated_input_spikes.float())
             * cfg.input_to_l4_strength
         )
         l4_input = l4_input * (0.5 + 0.5 * encoding_mod)
@@ -594,6 +695,17 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Apply Divisive Normalization to L4 input (automatic gain control)
         if self.divisive_norm_l4 is not None:
             l4_input = self.divisive_norm_l4(l4_input)
+
+        # =====================================================================
+        # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
+        # =====================================================================
+        # High NE (arousal/uncertainty): Increase gain → more responsive
+        # Low NE (baseline): Normal gain
+        # Biological: β-adrenergic receptors increase neuronal excitability
+        ne_level = self.state.norepinephrine
+        # NE gain: 1.0 (baseline) to 1.5 (high arousal)
+        ne_gain = 1.0 + 0.5 * ne_level
+        l4_input = l4_input * ne_gain
 
         l4_spikes, _ = self.l4_neurons(l4_input)
         l4_spikes = self._apply_sparsity_1d(l4_spikes, cfg.l4_sparsity)
@@ -628,19 +740,36 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Without STP, recurrent connections cause the same neurons to fire
         # every timestep (frozen attractor). With DEPRESSING STP, frequently-
         # used synapses get temporarily weaker, allowing pattern transitions.
+        
+        # =====================================================================
+        # ACETYLCHOLINE MODULATION OF HORIZONTAL CONNECTIONS (Hasselmo 1999)
+        # =====================================================================
+        # High ACh (encoding mode): Suppress horizontal/recurrent connections
+        # to prevent contextual interference during new sensory encoding
+        # Low ACh (retrieval mode): Enhance recurrent connections for
+        # associative processing and pattern completion
+        #
+        # Biological mechanism: ACh from nucleus basalis suppresses horizontal
+        # connections in cortex via presynaptic muscarinic receptors (M2/M4)
+        ach_level = self.state.acetylcholine
+        # ACh > 0.5 → encoding mode → suppress recurrence (down to 0.2x)
+        # ACh < 0.5 → retrieval mode → full recurrence (1.0x)
+        ach_recurrent_modulation = 1.0 - 0.8 * max(0.0, ach_level - 0.5) / 0.5
+        
         if self.state.l23_recurrent_activity is not None:
             recurrent_scale = 0.5 + 0.5 * retrieval_mod
 
             if self.stp_l23_recurrent is not None:
                 # Apply STP to recurrent connections (1D)
                 stp_efficacy = self.stp_l23_recurrent(self.state.l23_recurrent_activity.float())  # [l23_size, l23_size]
-                
+
                 effective_w_rec = self.w_l23_recurrent * stp_efficacy
                 l23_rec = (
                     torch.matmul(effective_w_rec, self.state.l23_recurrent_activity.float())
                     * cfg.l23_recurrent_strength
                     * recurrent_scale
                     * ffi_suppression
+                    * ach_recurrent_modulation  # ACh suppression
                 )
             else:
                 l23_rec = (
@@ -648,6 +777,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                     * cfg.l23_recurrent_strength
                     * recurrent_scale
                     * ffi_suppression
+                    * ach_recurrent_modulation  # ACh suppression
                 )
         else:
             l23_rec = torch.zeros_like(l23_ff)
@@ -695,6 +825,25 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             f"but expected ({self.l23_size},). "
             f"Check L2/3 sparsity or L4→L2/3 weights shape."
         )
+
+        # Gamma-phase attention: Modulate L2/3 spikes by gamma phase from Brain
+        if self.use_gamma_attention and hasattr(self.state, '_oscillator_phases'):
+            gamma_phase = self.state._oscillator_phases.get('gamma', 0.0)
+
+            # Compute phase-based gating for each L2/3 neuron
+            import math
+            phase_diff = torch.abs(self.l23_phase_prefs - gamma_phase)
+            phase_diff = torch.min(phase_diff, 2 * math.pi - phase_diff)
+
+            # Gaussian gating based on phase proximity
+            gamma_gate = torch.exp(-phase_diff ** 2 / (2 * self.gamma_attention_width ** 2))
+
+            # Modulate L2/3 spikes (attention without Q/K/V projections!)
+            l23_spikes = l23_spikes * gamma_gate
+
+            # Store gating in state for diagnostics
+            self.state.gamma_attention_phase = gamma_phase
+            self.state.gamma_attention_gate = gamma_gate
 
         # Update recurrent activity trace
         if self.state.l23_recurrent_activity is not None:
@@ -760,13 +909,13 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
     ) -> torch.Tensor:
         """Apply winner-take-all sparsity to 1D spike tensor (ADR-005)."""
         assert spikes.dim() == 1, f"Expected 1D spikes, got shape {spikes.shape}"
-        
+
         n_neurons = spikes.shape[0]
         k = max(1, int(n_neurons * target_sparsity))
 
         sparse_spikes = torch.zeros_like(spikes)
         active = spikes.nonzero(as_tuple=True)[0]
-        
+
         if len(active) > k:
             keep_indices = active[torch.randperm(len(active))[:k]]
             sparse_spikes[keep_indices] = spikes[keep_indices]
@@ -799,8 +948,10 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.state.last_plasticity_delta = 0.0
             return
 
-        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain)
-        self.decay_neuromodulators(dt_ms=dt)
+        # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
+        # VTA updates dopamine, LC updates NE, NB updates ACh.
+        # Brain broadcasts to all regions every timestep via _update_neuromodulators().
+        # No local decay needed.
 
         # Get 1D versions of spike tensors for torch.outer
         l4_spikes = ensure_1d(self.state.l4_spikes)

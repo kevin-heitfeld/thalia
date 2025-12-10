@@ -20,6 +20,18 @@ from thalia.tasks.working_memory import (
     create_n_back_sequence,
 )
 
+from thalia.tasks.sensorimotor import (
+    SensorimotorTaskType,
+    MovementDirection,
+    MotorControlConfig,
+    ReachingConfig,
+    ManipulationConfig,
+    MotorControlTask,
+    ReachingTask,
+    ManipulationTask,
+    SensorimotorTaskLoader,
+)
+
 __all__ = [
     "ExecutiveFunctionTasks",
     "TaskType",
@@ -33,4 +45,14 @@ __all__ = [
     "WorkingMemoryTaskConfig",
     "theta_gamma_n_back",
     "create_n_back_sequence",
+    # Sensorimotor (Stage -0.5)
+    "SensorimotorTaskType",
+    "MovementDirection",
+    "MotorControlConfig",
+    "ReachingConfig",
+    "ManipulationConfig",
+    "MotorControlTask",
+    "ReachingTask",
+    "ManipulationTask",
+    "SensorimotorTaskLoader",
 ]

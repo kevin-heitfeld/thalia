@@ -54,7 +54,7 @@ Usage:
     auditory_spikes = torch.rand(256) > 0.8
 
     bound_output, coherence = binder(visual_spikes, auditory_spikes)
-    
+
     # High coherence (> 0.7) = good binding
     # Low coherence (< 0.3) = weak binding
     ```
@@ -73,7 +73,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.core.oscillator import GammaOscillatorBase, OscillatorConfig
 from thalia.core.pathway_protocol import BaseNeuralPathway
 from thalia.core.weight_init import WeightInitializer
 
@@ -165,11 +164,11 @@ class CrossModalGammaBinding(BaseNeuralPathway):
         self.device = torch.device(config.device)
 
         # Separate gamma oscillators for each modality
-        self.visual_gamma = GammaOscillatorBase(
+        self.visual_gamma = GammaOscillator(
             frequency_hz=config.gamma_freq_hz,
             dt_ms=config.dt_ms,
         )
-        self.auditory_gamma = GammaOscillatorBase(
+        self.auditory_gamma = GammaOscillator(
             frequency_hz=config.gamma_freq_hz,
             dt_ms=config.dt_ms,
         )
@@ -384,7 +383,7 @@ class CrossModalGammaBinding(BaseNeuralPathway):
     def reset_state(self) -> None:
         """
         Reset pathway temporal state (required by BaseNeuralPathway).
-        
+
         Clears oscillator phases and returns system to initial state.
         """
         self.reset_phases()

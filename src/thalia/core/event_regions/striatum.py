@@ -50,7 +50,8 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         pfc_input_size: int = 0,
     ):
         super().__init__(config)
-        self._striatum = striatum
+        self.impl_module = striatum  # Register as public attribute for nn.Module
+        self._striatum = striatum  # Keep reference for backwards compatibility
 
         # Configure input buffering using base class
         if cortex_input_size > 0:

@@ -365,11 +365,11 @@ Connect regions into a functioning brain with event-driven communication.
   - Level 4: Brain-wide dopamine broadcast
 
 ### Oscillations (Theta, Gamma)
-- **Files**: `src/thalia/regions/theta_dynamics.py`, `src/thalia/regions/gamma_dynamics.py`
-- **Implements**: Phase-based modulation
+- **Files**: `src/thalia/core/oscillator.py`
+- **Implements**: Centralized oscillator management with theta-gamma coupling
 - **Affects**: Levels 3-4
-  - Level 3: Regions can be theta/gamma modulated
-  - Level 4: Brain generates oscillations
+  - Level 3: Regions receive oscillator phases via broadcast (set_oscillator_phases)
+  - Level 4: Brain's OscillatorManager coordinates all rhythms
 
 ### Predictive Coding
 - **Files**: `src/thalia/core/predictive_coding.py`

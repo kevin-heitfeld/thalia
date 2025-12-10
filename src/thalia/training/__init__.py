@@ -16,6 +16,7 @@ Components:
 - Curriculum: Advanced curriculum strategies (interleaving, spaced repetition, etc.)
 - CurriculumTrainer: Multi-stage developmental training orchestration
 - StageEvaluation: Milestone checking for stage transitions
+- TrainingMonitor: Interactive matplotlib-based monitoring (works in notebooks & locally)
 
 Configuration:
 - Use ``thalia.config.TrainingConfig`` for new code
@@ -73,6 +74,20 @@ from thalia.training.metacognition import (
     CalibrationMetrics,
     create_simple_task_generator,
 )
+from thalia.training.task_loaders import (
+    BaseTaskLoader,
+    SensorimotorTaskLoader,
+    SensorimotorConfig,
+    PhonologyTaskLoader,
+    PhonologyConfig,
+    TaskLoaderRegistry,
+    create_sensorimotor_loader,
+    create_phonology_loader,
+)
+from thalia.training.monitor import (
+    TrainingMonitor,
+    quick_monitor,
+)
 
 # Re-export from canonical location for backwards compatibility
 from thalia.config import TrainingConfig
@@ -125,5 +140,17 @@ __all__ = [
     "CalibrationPrediction",
     "CalibrationMetrics",
     "create_simple_task_generator",
+    # Task loaders
+    "BaseTaskLoader",
+    "SensorimotorTaskLoader",
+    "SensorimotorConfig",
+    "PhonologyTaskLoader",
+    "PhonologyConfig",
+    "TaskLoaderRegistry",
+    "create_sensorimotor_loader",
+    "create_phonology_loader",
+    # Monitoring
+    "TrainingMonitor",
+    "quick_monitor",
 ]
 

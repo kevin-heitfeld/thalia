@@ -289,21 +289,47 @@ class LIFNeuron(nn.Module):
 
     def load_state(self, state: dict[str, torch.Tensor]) -> None:
         """Restore neuron state from checkpoint.
-        
+
         Args:
             state: Dictionary from get_state()
         """
         # Infer device from existing tensors or incoming state
-        device = (self.membrane.device if self.membrane is not None 
+        device = (self.membrane.device if self.membrane is not None
                  else state["membrane"].device if state["membrane"] is not None
                  else torch.device("cpu"))
-        
+
         if state["membrane"] is not None:
             self.membrane = state["membrane"].to(device)
         if state["refractory"] is not None:
             self.refractory = state["refractory"].to(device)
         if state["adaptation"] is not None:
             self.adaptation = state["adaptation"].to(device)
+
+    def _apply(self, fn, recurse: bool = True):
+        """Apply a function to all tensors, including state variables.
+
+        This is called by .to(), .cuda(), .cpu() etc. to move tensors to devices.
+        Override to also move non-parameter state tensors.
+
+        Args:
+            fn: Function to apply to each tensor
+            recurse: Whether to recurse into child modules
+
+        Returns:
+            Self (for chaining)
+        """
+        # Call parent to handle parameters and buffers
+        super()._apply(fn, recurse)
+
+        # Apply to state variables if they exist
+        if self.membrane is not None:
+            self.membrane = fn(self.membrane)
+        if self.refractory is not None:
+            self.refractory = fn(self.refractory)
+        if self.adaptation is not None:
+            self.adaptation = fn(self.adaptation)
+
+        return self
 
     def __repr__(self) -> str:
         adapt_str = f", adapt={self.config.adapt_increment}" if self.config.adapt_increment > 0 else ""
@@ -690,15 +716,15 @@ class ConductanceLIF(nn.Module):
 
     def load_state(self, state: dict[str, Optional[torch.Tensor]]) -> None:
         """Restore neuron state from checkpoint.
-        
+
         Args:
             state: Dictionary from get_state()
         """
         # Infer device from existing tensors or incoming state
-        device = (self.membrane.device if self.membrane is not None 
+        device = (self.membrane.device if self.membrane is not None
                  else state["membrane"].device if state["membrane"] is not None
                  else torch.device("cpu"))
-        
+
         if state["membrane"] is not None:
             self.membrane = state["membrane"].to(device)
         if state["g_E"] is not None:
@@ -709,6 +735,36 @@ class ConductanceLIF(nn.Module):
             self.g_adapt = state["g_adapt"].to(device)
         if state["refractory"] is not None:
             self.refractory = state["refractory"].to(device)
+
+    def _apply(self, fn, recurse: bool = True):
+        """Apply a function to all tensors, including state variables.
+
+        This is called by .to(), .cuda(), .cpu() etc. to move tensors to devices.
+        Override to also move non-parameter state tensors.
+
+        Args:
+            fn: Function to apply to each tensor
+            recurse: Whether to recurse into child modules
+
+        Returns:
+            Self (for chaining)
+        """
+        # Call parent to handle parameters and buffers
+        super()._apply(fn, recurse)
+
+        # Apply to state variables if they exist
+        if self.membrane is not None:
+            self.membrane = fn(self.membrane)
+        if self.g_E is not None:
+            self.g_E = fn(self.g_E)
+        if self.g_I is not None:
+            self.g_I = fn(self.g_I)
+        if self.g_adapt is not None:
+            self.g_adapt = fn(self.g_adapt)
+        if self.refractory is not None:
+            self.refractory = fn(self.refractory)
+
+        return self
 
     def __repr__(self) -> str:
         return (

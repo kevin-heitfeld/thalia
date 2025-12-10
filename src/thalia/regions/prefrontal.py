@@ -486,8 +486,10 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         gate = self.dopamine_system.get_gate()
         self.state.dopamine = da_level
 
-        # Decay neuromodulators (ACh/NE decay locally, dopamine set by Brain/DopamineGatingSystem)
-        self.decay_neuromodulators(dt_ms=dt)
+        # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
+        # VTA updates dopamine, LC updates NE, NB updates ACh.
+        # Brain broadcasts to all regions every timestep via _update_neuromodulators().
+        # No local decay needed.
 
         # =====================================================================
         # THETA MODULATION
@@ -500,6 +502,18 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         # Feedforward input - modulated by encoding phase
         # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
         ff_input = (self.weights @ input_spikes.float()) * ff_gain
+
+        # =====================================================================
+        # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
+        # =====================================================================
+        # High NE (arousal/uncertainty): Increase gain → more responsive WM
+        # Low NE (baseline): Normal gain
+        # Biological: β-adrenergic receptors modulate PFC excitability and
+        # working memory flexibility (Arnsten 2009)
+        ne_level = self.state.norepinephrine
+        # NE gain: 1.0 (baseline) to 1.5 (high arousal)
+        ne_gain = 1.0 + 0.5 * ne_level
+        ff_input = ff_input * ne_gain
 
         # =====================================================================
         # RECURRENT INPUT WITH STP (prevents frozen WM attractors)

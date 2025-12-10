@@ -38,7 +38,8 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
         hippocampus: Any,  # TrisynapticHippocampus instance
     ):
         super().__init__(config)
-        self._hippocampus = hippocampus
+        self.impl_module = hippocampus  # Register as public attribute for nn.Module
+        self._hippocampus = hippocampus  # Keep reference for backwards compatibility
 
         # Track EC direct input (from sensory, bypasses cortex)
         self._ec_direct_input: Optional[torch.Tensor] = None
