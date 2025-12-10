@@ -96,7 +96,7 @@ from .vta import VTADopamineSystem, VTAConfig
 from .locus_coeruleus import LocusCoeruleusSystem, LocusCoeruleusConfig
 from .nucleus_basalis import NucleusBasalisSystem, NucleusBasalisConfig
 from .homeostatic_regulation import NeuromodulatorCoordination
-from .parallel_executor import _ParallelExecutor
+from .parallel_executor import ParallelExecutor
 from .diagnostics import (
     DiagnosticsManager,
     StriatumDiagnostics,
@@ -592,7 +592,7 @@ class EventDrivenBrain(nn.Module):
         # PARALLEL EXECUTION (optional)
         # =====================================================================
 
-        self._parallel_executor: Optional[_ParallelExecutor] = None
+        self._parallel_executor: Optional[ParallelExecutor] = None
         if config.parallel:
             self._init_parallel_executor()
 
@@ -694,7 +694,7 @@ class EventDrivenBrain(nn.Module):
 
         # Create parallel executor with module-level creators
         # These are pickle-able because they're defined at module level
-        self._parallel_executor = _ParallelExecutor(
+        self._parallel_executor = ParallelExecutor(
             region_creators={
                 "cortex": _create_real_cortex,
                 "hippocampus": _create_real_hippocampus,

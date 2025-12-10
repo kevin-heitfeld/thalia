@@ -66,7 +66,6 @@ import torch
 class EventType(Enum):
     """Types of events in the simulation."""
     SPIKE = "spike"           # Spike activity from a region
-    THETA = "theta"           # Theta rhythm phase update
     DOPAMINE = "dopamine"     # Dopamine neuromodulator signal
     SENSORY = "sensory"       # External sensory input
     REWARD = "reward"         # Reward signal
@@ -92,15 +91,6 @@ class SpikePayload:
     """Payload for spike events."""
     spikes: torch.Tensor                 # Spike vector (binary)
     source_layer: Optional[str] = None   # e.g., "L5", "CA1" for layer-specific routing
-
-
-@dataclass
-class ThetaPayload:
-    """Payload for theta rhythm events."""
-    phase: float                         # Current theta phase (0 to 2π)
-    frequency: float = 8.0               # Theta frequency in Hz
-    encoding_strength: float = 0.0       # Encoding modulation (high at trough)
-    retrieval_strength: float = 0.0      # Retrieval modulation (high at peak)
 
 
 # =============================================================================

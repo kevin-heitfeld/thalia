@@ -46,7 +46,6 @@ from thalia.core.event_system import (
     Event,
     EventType,
     SpikePayload,
-    ThetaPayload,
     DopaminePayload,
     TrialPhase,
     # Event scheduling
@@ -139,7 +138,6 @@ __all__ = [
     "Event",
     "EventType",
     "SpikePayload",
-    "ThetaPayload",
     "DopaminePayload",
     "TrialPhase",
     # Event scheduling

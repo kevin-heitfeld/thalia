@@ -69,12 +69,10 @@ Date: December 2025
 
 from __future__ import annotations
 
-import multiprocessing as mp
 from multiprocessing import Process, Queue, Event as MPEvent
 from queue import Empty
-import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 import torch
 
 from .event_system import (
@@ -181,11 +179,13 @@ def worker_process(
         import traceback
         print(f"[{name}] ERROR: {e}", file=sys.stderr, flush=True)
         traceback.print_exc()
-class _ParallelExecutor:
-    """Internal: Event-driven simulation with parallel region execution.
 
-    This is an internal implementation detail of EventDrivenBrain.
-    Use EventDrivenBrain with parallel=True instead of using this directly.
+
+class ParallelExecutor:
+    """Event-driven simulation with parallel region execution.
+
+    Used by EventDrivenBrain when parallel=True to distribute event
+    processing across multiple CPU cores.
 
     Distributes events to region processes running in parallel,
     collects output events, and schedules them appropriately.

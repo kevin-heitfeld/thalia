@@ -28,7 +28,6 @@ from ..event_system import (
     Event,
     EventType,
     SpikePayload,
-    ThetaPayload,
     DopaminePayload,
     Connection,
     RegionInterface,
@@ -126,22 +125,12 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         self._last_update_time = event.time
 
         # Handle event by type
-        if event.event_type == EventType.THETA:
-            return self._handle_theta(event)
-        elif event.event_type == EventType.DOPAMINE:
+        if event.event_type == EventType.DOPAMINE:
             return self._handle_dopamine(event)
         elif event.event_type in (EventType.SPIKE, EventType.SENSORY):
             return self._handle_spikes(event)
         else:
             return []
-
-    def _handle_theta(self, event: Event) -> List[Event]:
-        """Update theta state from theta event."""
-        if isinstance(event.payload, ThetaPayload):
-            self._theta_phase = event.payload.phase
-            self._encoding_strength = event.payload.encoding_strength
-            self._retrieval_strength = event.payload.retrieval_strength
-        return []  # Theta updates don't produce output events
 
     def _handle_dopamine(self, event: Event) -> List[Event]:
         """Update dopamine state from dopamine event."""
