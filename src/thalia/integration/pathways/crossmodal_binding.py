@@ -75,6 +75,7 @@ import torch.nn.functional as F
 
 from thalia.core.pathway_protocol import BaseNeuralPathway
 from thalia.core.weight_init import WeightInitializer
+from thalia.core.oscillator import SinusoidalOscillator
 
 
 @dataclass
@@ -164,11 +165,11 @@ class CrossModalGammaBinding(BaseNeuralPathway):
         self.device = torch.device(config.device)
 
         # Separate gamma oscillators for each modality
-        self.visual_gamma = GammaOscillator(
+        self.visual_gamma = SinusoidalOscillator(
             frequency_hz=config.gamma_freq_hz,
             dt_ms=config.dt_ms,
         )
-        self.auditory_gamma = GammaOscillator(
+        self.auditory_gamma = SinusoidalOscillator(
             frequency_hz=config.gamma_freq_hz,
             dt_ms=config.dt_ms,
         )

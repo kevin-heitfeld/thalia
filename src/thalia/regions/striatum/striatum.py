@@ -50,6 +50,7 @@ from dataclasses import replace
 from typing import Optional, Dict, Any, List, Generator
 
 import torch
+import torch.nn as nn
 
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
@@ -287,6 +288,71 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             self.unified_homeostasis = None
 
         # =====================================================================
+        # TD(λ) - MULTI-STEP CREDIT ASSIGNMENT (Phase 1 Enhancement)
+        # =====================================================================
+        # TD(λ) extends temporal credit assignment from ~1 second to 5-10 seconds
+        # by combining eligibility traces with multi-step returns.
+        # 
+        # When enabled, replaces basic eligibility traces with TD(λ) traces that
+        # accumulate with factor (γλ) instead of simple exponential decay.
+        if self.striatum_config.use_td_lambda:
+            from .td_lambda import TDLambdaLearner, TDLambdaConfig
+            
+            td_config = TDLambdaConfig(
+                lambda_=self.striatum_config.td_lambda,
+                gamma=self.striatum_config.td_gamma,
+                accumulating=self.striatum_config.td_lambda_accumulating,
+                device=self.config.device,
+            )
+            
+            # Create TD(λ) learner for D1 and D2 pathways
+            # Note: Use config.n_output (actual neuron count) not n_actions
+            # because with population coding, n_output = n_actions * neurons_per_action
+            self.td_lambda_d1 = TDLambdaLearner(
+                n_actions=self.config.n_output,  # Total neurons, not actions
+                n_input=self.config.n_input,
+                config=td_config,
+            )
+            self.td_lambda_d2 = TDLambdaLearner(
+                n_actions=self.config.n_output,  # Total neurons, not actions
+                n_input=self.config.n_input,
+                config=td_config,
+            )
+        else:
+            self.td_lambda_d1 = None
+            self.td_lambda_d2 = None
+
+        # =====================================================================
+        # GOAL-CONDITIONED VALUES (Phase 1 Week 2-3 Enhancement)
+        # =====================================================================
+        # Enable PFC goal context to modulate striatal action values via gating.
+        # Biology: PFC working memory → Striatum modulation (Miller & Cohen 2001)
+        # Learning: Three-factor rule extended with goal context:
+        #   Δw = eligibility × dopamine × goal_context
+        if self.striatum_config.use_goal_conditioning:
+            # Initialize PFC → D1 modulation weights
+            self.pfc_modulation_d1 = nn.Parameter(
+                WeightInitializer.sparse_random(
+                    n_output=self.config.n_output,  # D1 neurons
+                    n_input=self.striatum_config.pfc_size,
+                    sparsity=0.3,
+                    device=torch.device(self.config.device),
+                )
+            )
+            # Initialize PFC → D2 modulation weights
+            self.pfc_modulation_d2 = nn.Parameter(
+                WeightInitializer.sparse_random(
+                    n_output=self.config.n_output,  # D2 neurons
+                    n_input=self.striatum_config.pfc_size,
+                    sparsity=0.3,
+                    device=torch.device(self.config.device),
+                )
+            )
+        else:
+            self.pfc_modulation_d1 = None
+            self.pfc_modulation_d2 = None
+
+        # =====================================================================
         # D1/D2 SEPARATE NEURON POPULATIONS (Biological Architecture)
         # =====================================================================
         # In biology, D1-MSNs and D2-MSNs are SEPARATE neurons with different
@@ -327,6 +393,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self._last_expected = 0.0
         self._last_d1_spikes = None
         self._last_d2_spikes = None
+        self._last_pfc_goal_context = None  # For goal-conditioned learning
 
         # =====================================================================
         # BETA OSCILLATOR TRACKING (Motor Control Modulation)
@@ -420,6 +487,71 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             self.value_estimates[action]
             + cfg.rpe_learning_rate * (reward - self.value_estimates[action])
         )
+
+    def evaluate_state(
+        self,
+        state: torch.Tensor,
+        pfc_goal_context: Optional[torch.Tensor] = None
+    ) -> float:
+        """
+        Evaluate state quality using learned action values.
+        
+        For Phase 2 model-based planning: predicts how good a simulated state is
+        by computing the maximum Q-value (best action value) from that state.
+        
+        Uses existing value estimates to evaluate states during mental simulation.
+        If goal-conditioning is enabled, modulates values based on goal context.
+        
+        Biology: Striatum represents action values (Q-values) learned through
+        dopaminergic reinforcement. During planning, these values can evaluate
+        simulated future states (Daw et al., 2011).
+        
+        Args:
+            state: State to evaluate [n_input] (1D, ADR-005)
+            pfc_goal_context: Optional goal context from PFC [n_pfc]
+        
+        Returns:
+            state_value: Maximum action value (best Q-value) from this state
+        
+        Note:
+            This is a simplified evaluator using cached Q-values. In full
+            implementation, would process state through forward() to get
+            D1-D2 competition values.
+        """
+        if self.value_estimates is None:
+            # No value estimates available, return neutral value
+            return 0.0
+        
+        # Get all action values
+        action_values = self.value_estimates.clone()
+        
+        # If goal conditioning enabled and goal context provided, modulate values
+        if (self.striatum_config.use_goal_conditioning and 
+            pfc_goal_context is not None and 
+            hasattr(self, 'pfc_modulation_d1')):
+            
+            # Compute goal modulation for D1 (Go pathway)
+            goal_mod_d1 = torch.sigmoid(
+                self.pfc_modulation_d1 @ pfc_goal_context
+            )
+            
+            # Scale action values by goal relevance
+            # Higher goal modulation → boost that action's value
+            if self.striatum_config.population_coding:
+                # With population coding, modulation applies per action
+                for action_idx in range(self.n_actions):
+                    start = action_idx * self.neurons_per_action
+                    end = start + self.neurons_per_action
+                    action_mod = goal_mod_d1[start:end].mean()
+                    # Modulate value: centered around 1.0, range [0.5, 1.5]
+                    action_values[action_idx] *= (0.5 + action_mod)
+            else:
+                # Direct modulation per action
+                action_mod = goal_mod_d1[:self.n_actions]
+                action_values *= (0.5 + action_mod)
+        
+        # Return max value (best action from this state)
+        return action_values.max().item()
 
     def add_neurons(
         self,
@@ -613,19 +745,19 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             self._d2_votes_accumulated,
             torch.zeros(n_new, device=self.device)
         ], dim=0)
-        
+
         # Expand action counts for UCB
         self._action_counts = torch.cat([
             self._action_counts,
             torch.zeros(n_new, device=self.device)
         ], dim=0)
-        
+
         # Expand unified homeostasis if it exists
         if self.unified_homeostasis is not None:
             # Expand activity tracking buffers
             old_size = self.unified_homeostasis.n_neurons
             new_size = old_size + n_new_neurons
-            
+
             # Expand D1 and D2 activity tracking
             self.unified_homeostasis.d1_activity_avg = torch.cat([
                 self.unified_homeostasis.d1_activity_avg,
@@ -635,7 +767,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 self.unified_homeostasis.d2_activity_avg,
                 torch.zeros(n_new_neurons, device=self.device)
             ], dim=0)
-            
+
             # Expand excitability modulation factors
             self.unified_homeostasis.d1_excitability = torch.cat([
                 self.unified_homeostasis.d1_excitability,
@@ -645,17 +777,17 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 self.unified_homeostasis.d2_excitability,
                 torch.ones(n_new_neurons, device=self.device)
             ], dim=0)
-            
+
             # Update size tracking
             self.unified_homeostasis.n_actions = self.n_actions
             self.unified_homeostasis.n_neurons = new_size
-            
+
             # Expand action_budgets
             self.unified_homeostasis.action_budgets = torch.cat([
                 self.unified_homeostasis.action_budgets,
                 torch.ones(n_new, device=self.device) * self.unified_homeostasis.config.weight_budget
             ], dim=0)
-        
+
         # Value estimates for new actions (start at 0)
         if hasattr(self, 'value_estimates'):
             self.value_estimates = torch.cat([
@@ -701,7 +833,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
     def _update_d1_d2_eligibility(
         self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor,
-        chosen_action: int | None = None, dt: float = 1.0
+        chosen_action: int | None = None
     ) -> None:
         """Update separate eligibility traces for D1 and D2 pathways.
 
@@ -714,12 +846,17 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         only synapses where the post-synaptic neuron fired should become eligible.
         This prevents both actions from building eligibility from the same input.
 
+        Timestep (dt) is obtained from self.config.dt_ms for temporal dynamics.
+
         Args:
             input_spikes: Input spike tensor [n_input] (1D)
             d1_spikes: D1 neuron population spikes [n_d1] (1D)
             d2_spikes: D2 neuron population spikes [n_d2] (1D)
             chosen_action: If provided, only build eligibility for this action's neurons
         """
+        # Get timestep from config
+        dt = self.config.dt_ms
+
         # Ensure 1D
         if input_spikes.dim() != 1:
             input_spikes = input_spikes.squeeze()
@@ -796,7 +933,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.d2_eligibility = self.d2_eligibility * eligibility_decay + d2_stdp_dw
 
     def _update_d1_d2_eligibility_all(
-        self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor, dt: float = 1.0
+        self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor
     ) -> None:
         """Update eligibility traces for ALL active D1/D2 neurons.
 
@@ -809,15 +946,16 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         This is the correct approach when action selection happens at trial
         end (via finalize_action) rather than per-timestep.
 
+        Timestep (dt) is obtained from self.config.dt_ms for temporal dynamics.
+
         Args:
             input_spikes: Input spike tensor
             d1_spikes: D1 neuron population spikes
             d2_spikes: D2 neuron population spikes
-            dt: Time step in ms
         """
         # Just call the existing method with chosen_action=None
         # which will update eligibility for all active neurons
-        self._update_d1_d2_eligibility(input_spikes, d1_spikes, d2_spikes, chosen_action=None, dt=dt)
+        self._update_d1_d2_eligibility(input_spikes, d1_spikes, d2_spikes, chosen_action=None)
 
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.THREE_FACTOR
@@ -836,7 +974,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
           * Increases D1 gain → stronger GO signals
           * Decreases D2 gain → weaker NOGO signals
           * Results in action maintenance (harder to switch)
-        
+
         - Low beta amplitude: Action flexibility (D2 effective)
           * Decreases D1 gain → weaker GO signals
           * Allows D2 to suppress → easier to switch actions
@@ -861,7 +999,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Store oscillator phases for action selection
         self._beta_phase = phases.get('beta', 0.0)
         self._theta_phase = phases.get('theta', 0.0)
-        
+
         # Store effective amplitude (pre-computed by OscillatorManager)
         # Automatic multiplicative coupling:
         # - Beta modulated by ALL slower oscillators (delta, theta, alpha)
@@ -892,7 +1030,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         neuron_config = ConductanceLIFConfig(
             v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
             tau_E=5.0, tau_I=5.0,
-            dt=1.0,
+            dt_ms=1.0,
             tau_ref=2.0,
         )
         neurons = ConductanceLIF(n_neurons=self.config.n_output, config=neuron_config)
@@ -915,7 +1053,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         neuron_config = ConductanceLIFConfig(
             v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
             tau_E=5.0, tau_I=5.0,
-            dt=1.0,
+            dt_ms=self.config.dt_ms,
             tau_ref=2.0,
             tau_adapt=100.0,        # Adaptation time constant
             adapt_increment=0.1,    # Enable spike-frequency adaptation
@@ -944,7 +1082,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         neuron_config = ConductanceLIFConfig(
             v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
             tau_E=5.0, tau_I=5.0,
-            dt=1.0,
+            dt_ms=self.config.dt_ms,
             tau_ref=2.0,
             tau_adapt=100.0,        # Adaptation time constant
             adapt_increment=0.1,    # Enable spike-frequency adaptation
@@ -956,7 +1094,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     def forward(
         self,
         input_spikes: torch.Tensor,
-        dt: float = 1.0,
+        pfc_goal_context: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input and select action using SEPARATE D1/D2 populations.
@@ -971,7 +1109,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
         Args:
             input_spikes: Input spike tensor [n_input] (1D)
-            dt: Time step in ms
+            pfc_goal_context: Optional goal context from PFC [pfc_size] (1D)
 
         NOTE: Exploration is handled by finalize_action() at trial end, not per-timestep.
         NOTE: Theta modulation computed internally from self._theta_phase (set by Brain)
@@ -1012,6 +1150,10 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # =====================================================================
         # THETA MODULATION
         # =====================================================================
+        # Compute theta modulation from current phase (set by Brain's OscillatorManager)
+        encoding_mod = (1 + torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
+        retrieval_mod = (1 - torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
+
         theta_baseline_mod = 0.7 + 0.3 * encoding_mod  # 0.7-1.0 range
         theta_contrast_mod = 0.8 + 0.2 * retrieval_mod  # 0.8-1.0 range
 
@@ -1047,6 +1189,39 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         beta_mod = self.striatum_config.beta_modulation_strength
         d1_gain = d1_gain * (1.0 + beta_mod * (self._beta_amplitude - 0.5))
         d2_gain = d2_gain * (1.0 - beta_mod * (self._beta_amplitude - 0.5))
+
+        # =====================================================================
+        # GOAL-CONDITIONED MODULATION (PFC → Striatum Gating)
+        # =====================================================================
+        # PFC goal context modulates D1/D2 pathways to implement goal-conditioned
+        # action selection. Different goals activate different striatal ensembles.
+        # Biology: PFC working memory → Striatum gating (Miller & Cohen 2001)
+        if (self.striatum_config.use_goal_conditioning and 
+            pfc_goal_context is not None and 
+            self.pfc_modulation_d1 is not None):
+            
+            # Ensure goal context is 1D
+            if pfc_goal_context.dim() != 1:
+                pfc_goal_context = pfc_goal_context.squeeze()
+            
+            # Convert bool to float if needed
+            if pfc_goal_context.dtype == torch.bool:
+                pfc_goal_context = pfc_goal_context.float()
+            
+            # Compute goal modulation via learned PFC → striatum weights
+            # Uses sigmoid to get modulation in [0, 1] range
+            goal_mod_d1 = torch.sigmoid(
+                torch.matmul(self.pfc_modulation_d1, pfc_goal_context)
+            )  # [n_output]
+            goal_mod_d2 = torch.sigmoid(
+                torch.matmul(self.pfc_modulation_d2, pfc_goal_context)
+            )  # [n_output]
+            
+            # Modulate D1/D2 gains by goal context
+            # Strength parameter controls how much goals affect action selection
+            strength = self.striatum_config.goal_modulation_strength
+            d1_activation = d1_activation * (1.0 + strength * (goal_mod_d1 - 0.5))
+            d2_activation = d2_activation * (1.0 + strength * (goal_mod_d2 - 0.5))
 
         # =====================================================================
         # ACTIVITY-BASED EXCITABILITY MODULATION
@@ -1148,16 +1323,50 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         output_spikes = d1_spikes.clone()
 
         # =====================================================================
+        # STORE GOAL CONTEXT AND SPIKES FOR LEARNING
+        # =====================================================================
+        # Store PFC goal context and D1/D2 spikes for goal-conditioned learning
+        # These will be used in deliver_reward() to modulate weight updates
+        if self.striatum_config.use_goal_conditioning and pfc_goal_context is not None:
+            self._last_pfc_goal_context = pfc_goal_context.clone()
+        else:
+            self._last_pfc_goal_context = None
+        
+        # Store D1/D2 spikes for PFC modulation weight learning
+        self._last_d1_spikes = d1_spikes.clone()
+        self._last_d2_spikes = d2_spikes.clone()
+
+        # =====================================================================
         # UPDATE ELIGIBILITY TRACES (for all active neurons)
+        # Get timestep from config for temporal dynamics
+        dt = self.config.dt_ms
+
         # =====================================================================
         # Eligibility accumulates for ALL neurons that fire during the trial.
         # When reward arrives, deliver_reward() uses last_action (set by finalize_action)
         # to apply learning only to the chosen action's synapses.
         self.eligibility.update(input_spikes, output_spikes, dt)
+        
+        # Update D1/D2 STDP-style eligibility (always enabled)
+        self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes)
+        
+        # UPDATE TD(λ) ELIGIBILITY (if enabled)
+        # TD(λ) traces accumulate with factor (γλ) instead of simple decay,
+        # enabling credit assignment over longer delays (5-10 seconds)
+        if self.td_lambda_d1 is not None:
+            # Update TD(λ) eligibility for D1 pathway
+            # Note: We update for ALL neurons here; masking to chosen action
+            # happens in deliver_reward() using last_action
+            d1_gradient = torch.outer(d1_spikes.float(), input_spikes_float)
+            self.td_lambda_d1.traces.update(d1_gradient)
+            
+            # Update TD(λ) eligibility for D2 pathway
+            d2_gradient = torch.outer(d2_spikes.float(), input_spikes_float)
+            self.td_lambda_d2.traces.update(d2_gradient)
 
         # Update D1/D2 eligibility traces for ALL active neurons
         # The action-specific masking happens in deliver_reward(), not here
-        self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes, dt=dt)
+        self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes)
 
         # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
         # VTA updates dopamine, LC updates NE, NB updates ACh.
@@ -1516,8 +1725,18 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Dopamine alone determines direction (strengthen vs weaken).
         # If we don't use abs(), negative eligibility × negative DA = positive dw,
         # which would INCREASE weights on punishment - completely backwards!
+        
+        # Choose eligibility source: TD(λ) if enabled, otherwise basic STDP traces
+        if self.td_lambda_d1 is not None:
+            # TD(λ) MODE: Use multi-step returns for extended credit assignment
+            # Mask TD(λ) traces to chosen action
+            d1_traces = self.td_lambda_d1.traces.get().abs()
+            d1_masked_elig = d1_traces * action_mask.unsqueeze(1)
+        else:
+            # BASIC MODE: Use STDP eligibility traces
+            d1_masked_elig = self.d1_eligibility.abs() * action_mask.unsqueeze(1)
+        
         d1_da = da_level * cfg.d1_da_sensitivity
-        d1_masked_elig = self.d1_eligibility.abs() * action_mask.unsqueeze(1)
         d1_dw = d1_masked_elig * d1_da
 
         # =====================================================================
@@ -1538,7 +1757,16 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             d2_da = -da_level * cfg.d2_da_sensitivity * d2_ltd_scale
         else:
             d2_da = -da_level * cfg.d2_da_sensitivity  # Full strength for LTP
-        d2_masked_elig = self.d2_eligibility.abs() * action_mask.unsqueeze(1)
+        
+        # Choose eligibility source for D2
+        if self.td_lambda_d2 is not None:
+            # TD(λ) MODE: Use multi-step returns for extended credit assignment
+            d2_traces = self.td_lambda_d2.traces.get().abs()
+            d2_masked_elig = d2_traces * action_mask.unsqueeze(1)
+        else:
+            # BASIC MODE: Use STDP eligibility traces
+            d2_masked_elig = self.d2_eligibility.abs() * action_mask.unsqueeze(1)
+        
         d2_dw = d2_masked_elig * d2_da
 
         # =====================================================================
@@ -1569,6 +1797,59 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             d2_other_elig = self.d2_eligibility.abs() * other_mask.unsqueeze(1)
             d2_dw_competition = d2_other_elig * (-d2_da) * competition_scale
             d2_dw = d2_dw + d2_dw_competition
+
+        # =====================================================================
+        # GOAL-CONDITIONED LEARNING: Modulate weight updates by goal context
+        # =====================================================================
+        # Extended three-factor rule: Δw = eligibility × dopamine × goal_context
+        # Only synapses active during current goal context receive full updates
+        # Biology: PFC → Striatum modulation gates which synapses learn
+        if (self.striatum_config.use_goal_conditioning and 
+            hasattr(self, '_last_pfc_goal_context') and 
+            self._last_pfc_goal_context is not None):
+            
+            # Get goal context from last forward pass
+            goal_context = self._last_pfc_goal_context  # [pfc_size]
+            
+            # Compute goal-based modulation (which striatal neurons are active for this goal)
+            # This comes from the learned PFC → striatum weights
+            goal_weight_d1 = torch.sigmoid(
+                torch.matmul(self.pfc_modulation_d1, goal_context)
+            )  # [n_output] - which D1 neurons participate in this goal
+            goal_weight_d2 = torch.sigmoid(
+                torch.matmul(self.pfc_modulation_d2, goal_context)
+            )  # [n_output] - which D2 neurons participate in this goal
+            
+            # Modulate weight updates: only goal-relevant neurons learn fully
+            # Shape: d1_dw is [n_output, n_input], goal_weight_d1 is [n_output]
+            d1_dw = d1_dw * goal_weight_d1.unsqueeze(1)
+            d2_dw = d2_dw * goal_weight_d2.unsqueeze(1)
+            
+            # Also update PFC modulation weights via Hebbian learning
+            # When goal active + neuron active + reward → strengthen PFC → striatum connection
+            # This is local learning (no backprop!)
+            if abs(da_level) > 0.01:
+                # Hebbian update: outer product of post-synaptic (striatal) and pre-synaptic (PFC)
+                # Modulated by dopamine to only learn during success/failure
+                pfc_lr = self.striatum_config.goal_modulation_lr
+                
+                # D1 modulation learning
+                if self._last_d1_spikes is not None:
+                    d1_hebbian = torch.outer(
+                        self._last_d1_spikes.float(),
+                        goal_context
+                    ) * da_level * pfc_lr
+                    self.pfc_modulation_d1.data += d1_hebbian
+                    self.pfc_modulation_d1.data.clamp_(self.config.w_min, self.config.w_max)
+                
+                # D2 modulation learning (inverted DA response like main D2 pathway)
+                if self._last_d2_spikes is not None:
+                    d2_hebbian = torch.outer(
+                        self._last_d2_spikes.float(),
+                        goal_context
+                    ) * (-da_level) * pfc_lr  # Inverted for D2
+                    self.pfc_modulation_d2.data += d2_hebbian
+                    self.pfc_modulation_d2.data.clamp_(self.config.w_min, self.config.w_max)
 
         old_d1 = self.d1_weights.clone()
         self.d1_weights = (self.d1_weights + d1_dw).clamp(
@@ -1789,15 +2070,30 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 end = start + self.neurons_per_action
                 self.d1_eligibility[start:end].zero_()
                 self.d2_eligibility[start:end].zero_()
+                
+                # Reset TD(λ) traces if enabled
+                if self.td_lambda_d1 is not None:
+                    self.td_lambda_d1.traces.traces[start:end].zero_()
+                    self.td_lambda_d2.traces.traces[start:end].zero_()
             else:
                 self.d1_eligibility[self.last_action].zero_()
                 self.d2_eligibility[self.last_action].zero_()
+                
+                # Reset TD(λ) traces if enabled
+                if self.td_lambda_d1 is not None:
+                    self.td_lambda_d1.traces.traces[self.last_action].zero_()
+                    self.td_lambda_d2.traces.traces[self.last_action].zero_()
             # Input traces are shared, so we do decay them but don't zero
             # (they'll decay naturally via the eligibility_decay factor)
         else:
             # Full reset (original behavior)
             self.d1_eligibility.zero_()
             self.d2_eligibility.zero_()
+            
+            # Reset TD(λ) traces if enabled
+            if self.td_lambda_d1 is not None:
+                self.td_lambda_d1.traces.reset_state()
+                self.td_lambda_d2.traces.reset_state()
 
         # Always reset the spike traces (these are per-timestep, not per-action)
         self.d1_input_trace.zero_()
@@ -1821,6 +2117,12 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.d2_input_trace.zero_()
         self.d1_output_trace.zero_()
         self.d2_output_trace.zero_()
+        
+        # Reset TD(λ) traces if enabled
+        if self.td_lambda_d1 is not None:
+            self.td_lambda_d1.reset_episode()
+            self.td_lambda_d2.reset_episode()
+        
         # Reset homeostatic trial counters (but NOT the EMA - that persists)
         self._trial_spike_count = 0.0
         self._trial_timesteps = 0
@@ -1915,6 +2217,19 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             **self.trace_diagnostics(self.d1_eligibility, "d1_elig"),
             **self.trace_diagnostics(self.d2_eligibility, "d2_elig"),
         }
+        
+        # TD(λ) diagnostics (if enabled)
+        td_lambda_state = {}
+        if self.td_lambda_d1 is not None:
+            td_lambda_state = {
+                "td_lambda_enabled": True,
+                "lambda": self.td_lambda_d1.config.lambda_,
+                "gamma": self.td_lambda_d1.config.gamma,
+                "d1_td_lambda": self.td_lambda_d1.get_diagnostics(),
+                "d2_td_lambda": self.td_lambda_d2.get_diagnostics(),
+            }
+        else:
+            td_lambda_state = {"td_lambda_enabled": False}
 
         return {
             "region": "striatum",
@@ -1942,6 +2257,8 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             "value_estimates": value_estimates,
             # Eligibility (from mixin)
             "eligibility": eligibility_state,
+            # TD(λ) state
+            "td_lambda": td_lambda_state,
         }
 
     # =========================================================================
@@ -2064,14 +2381,14 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         """
         # Validate configuration compatibility
         saved_config = state["config"]
-        
+
         # Always validate input dimension
         if saved_config.n_input != self.config.n_input:
             raise ValueError(
                 f"Input dimension mismatch: saved={saved_config.n_input}, "
                 f"current={self.config.n_input}"
             )
-        
+
         # Validate n_actions (number of actions, not total neurons)
         saved_n_actions = state.get("n_actions", saved_config.n_output)  # Fallback for old checkpoints
         if saved_n_actions != self.n_actions:
@@ -2079,7 +2396,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 f"Action count mismatch: saved={saved_n_actions}, "
                 f"current={self.n_actions}"
             )
-        
+
         # Validate total neuron count (n_actions × neurons_per_action)
         if saved_config.n_output != self.config.n_output:
             raise ValueError(

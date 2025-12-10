@@ -89,7 +89,7 @@ class LanguageInterfaceConfig:
     This is NOT a user-facing API. Users should use ThaliaConfig for all configuration.
     This class is an internal, flattened representation of language-related parameters
     extracted from ThaliaConfig for convenience within LanguageBrainInterface.
-    
+
     Typically created automatically via:
     ``LanguageBrainInterface.from_thalia_config(brain, config)``
 
@@ -132,7 +132,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
         # Generate continuation
         generated = lang_interface.generate(token_ids, max_new_tokens=50)
     """
-    
+
     # For ConfigurableMixin - specifies how to extract config from ThaliaConfig
     CONFIG_CONVERTER_METHOD = "to_language_interface_config"
 
@@ -143,14 +143,14 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
         config: "ThaliaConfig",
     ) -> "LanguageBrainInterface":
         """Create interface from ThaliaConfig.
-        
+
         This overrides ConfigurableMixin.from_thalia_config to accept brain
         as a required positional argument.
-        
+
         Args:
             brain: Instantiated EventDrivenBrain
             config: ThaliaConfig with all settings
-            
+
         Returns:
             LanguageBrainInterface instance
         """
@@ -163,7 +163,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
             brain_input_size=config.brain.sizes.input_size,
             device=config.global_.device,
         )
-        
+
         return cls(brain, interface_config)
 
     def __init__(
@@ -180,7 +180,6 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
             )
 
         self.config = config
-        self.brain = brain
         self.device = torch.device(config.device)
 
         # Token → Spike encoder
@@ -222,7 +221,12 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
         # Buffer for collecting brain output spikes
         self.output_buffer: List[torch.Tensor] = []
 
+        # Move all submodules to device BEFORE storing brain
+        # (brain is not a submodule and causes hashability issues)
         self.to(self.device)
+
+        # Store brain reference AFTER .to() to avoid hashability issues
+        self._brain = brain
 
     def forward(
         self,
@@ -284,10 +288,10 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
 
             # Process through brain
             # Gamma slot auto-advances in hippocampus - no explicit position needed
-            result = self.brain.process_sample(token_input, n_timesteps=n_timesteps)
+            result = self._brain.process_sample(token_input, n_timesteps=n_timesteps)
             all_results.append(result)            # Collect PFC output for decoding
-            if hasattr(self.brain, '_last_pfc_output') and self.brain._last_pfc_output is not None:
-                self.output_buffer.append(self.brain._last_pfc_output.clone())
+            if hasattr(self._brain, '_last_pfc_output') and self._brain._last_pfc_output is not None:
+                self.output_buffer.append(self._brain._last_pfc_output.clone())
 
         return {
             "n_tokens": seq_len,

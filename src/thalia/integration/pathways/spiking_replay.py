@@ -262,7 +262,7 @@ class SpikingReplayPathway(SpikingPathway):
         compressed_dt = dt * self.compression_factor
         
         # Process through spiking pathway - forward returns just output spikes
-        output_spikes = self.forward(pattern.squeeze(), dt=compressed_dt)
+        output_spikes = self.forward(pattern.squeeze())
         
         # Modulate by ripple phase
         ripple_modulation = 0.5 * (1 + ripple_value)

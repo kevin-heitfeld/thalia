@@ -23,11 +23,11 @@ class Episode:
     Episodes are stored with priority for experience replay,
     where more important episodes (high reward, correct trials)
     are replayed more frequently.
-    
+
     Episodes can store either:
     - A single state (traditional): Just the activity pattern at decision time
     - A sequence (extended): List of states from each gamma slot during encoding
-    
+
     During sleep replay, sequences are replayed time-compressed using
     the gamma oscillator to drive slot-by-slot reactivation.
     """
@@ -211,6 +211,18 @@ class TrisynapticConfig(RegionConfig):
     # - "time": Slot determined by oscillator phase (time-based)
     #           Best for continuous input or replay where timing matters
     gamma_slot_mode: str = "item"  # "item" or "time"
+
+    # =========================================================================
+    # HINDSIGHT EXPERIENCE REPLAY (HER)
+    # =========================================================================
+    # Enable goal relabeling for multi-goal learning.
+    # "What if my actual outcome WAS my goal?" → learn from every episode
+    use_her: bool = True  # Enable hindsight experience replay
+    her_k_hindsight: int = 4  # Number of hindsight goals per real experience
+    her_replay_ratio: float = 0.8  # Fraction of replays that are hindsight
+    her_strategy: str = "future"  # "future", "final", "episode", or "random"
+    her_goal_tolerance: float = 0.1  # Distance threshold for goal achievement
+    her_buffer_size: int = 1000  # Maximum episodes to store
 
 
 @dataclass

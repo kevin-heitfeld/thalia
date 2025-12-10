@@ -163,7 +163,7 @@ def conductance_lif_config():
         v_threshold=1.0,
         v_reset=0.0,
         tau_ref=2.0,
-        dt=1.0,
+        dt_ms=1.0,
         tau_adapt=100.0,
         adapt_increment=0.0,
         E_adapt=-0.5,

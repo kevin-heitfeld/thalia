@@ -194,7 +194,7 @@ class SensorimotorTaskLoader:
         nn.init.sparse_(self.sensory_projection.weight, sparsity=0.7)
         self.sensory_projection.to(self.config.device)
         
-        print(f"✅ SensorimotorTaskLoader: {wrapper_output_size} → {self.config.output_size} neurons")
+        print(f"[OK] SensorimotorTaskLoader: {wrapper_output_size} -> {self.config.output_size} neurons")
     
     def _encode_sensory(self, raw_spikes: torch.Tensor) -> torch.Tensor:
         """Project raw sensorimotor spikes to fixed output size.
@@ -532,7 +532,7 @@ class PhonologyTaskLoader:
             )
             self._visual_encoder = RetinalEncoder(visual_config)
             self._visual_encoder.to(self.device)
-            print(f"✅ Initialized RetinalEncoder: 784 → {self.config.output_size}")
+            print(f"[OK] Initialized RetinalEncoder: 784 -> {self.config.output_size}")
         
         return self._visual_encoder
     
@@ -555,9 +555,9 @@ class PhonologyTaskLoader:
                     transform=transform,
                 )
 
-                print(f"✅ Loaded MNIST: {len(self._mnist_dataset)} samples")
+                print(f"[OK] Loaded MNIST: {len(self._mnist_dataset)} samples")
             except Exception as e:
-                print(f"⚠️ Failed to load MNIST: {e}")
+                print(f"[WARN] Failed to load MNIST: {e}")
                 self._mnist_dataset = None
 
         return self._mnist_dataset
@@ -573,9 +573,9 @@ class PhonologyTaskLoader:
                     device=self.device
                 )
 
-                print("✅ Loaded Temporal Sequences dataset")
+                print("[OK] Loaded Temporal Sequences dataset")
             except Exception as e:
-                print(f"⚠️ Failed to load temporal dataset: {e}")
+                print(f"[WARN] Failed to load temporal dataset: {e}")
                 self._temporal_dataset = None
 
         return self._temporal_dataset
@@ -595,9 +595,9 @@ class PhonologyTaskLoader:
                     language=Language.ENGLISH,
                 )
 
-                print("✅ Loaded Phonological dataset (English)")
+                print("[OK] Loaded Phonological dataset (English)")
             except Exception as e:
-                print(f"⚠️ Failed to load phonological dataset: {e}")
+                print(f"[WARN] Failed to load phonological dataset: {e}")
                 self._phonology_dataset = None
 
         return self._phonology_dataset
@@ -606,22 +606,34 @@ class PhonologyTaskLoader:
     def temporal_projection(self):
         """Lazy initialize temporal projection layer."""
         if self._temporal_projection is None:
-            # Temporal sequences are typically 20-dimensional one-hot vectors
-            self._temporal_projection = nn.Linear(20, self.config.output_size, bias=False)
+            # Get actual n_symbols from dataset if available
+            if self.temporal_dataset is not None:
+                input_size = self.temporal_dataset.config.n_symbols
+            else:
+                input_size = 20  # Fallback
+                
+            self._temporal_projection = nn.Linear(input_size, self.config.output_size, bias=False)
             nn.init.sparse_(self._temporal_projection.weight, sparsity=0.8)
             self._temporal_projection.to(self.device)
-            print(f"✅ Initialized temporal projection: 20 → {self.config.output_size}")
+            print(f"[OK] Initialized temporal projection: {input_size} -> {self.config.output_size}")
         return self._temporal_projection
     
     @property
     def phonology_projection(self):
         """Lazy initialize phonology projection layer."""
         if self._phonology_projection is None:
-            # Phoneme features are typically 40-dimensional
-            self._phonology_projection = nn.Linear(40, self.config.output_size, bias=False)
+            # Get actual spectrogram dimensions from dataset if available
+            if self.phonology_dataset is not None:
+                # Spectrogram is (n_freq_channels × n_time_steps)
+                input_size = (self.phonology_dataset.config.n_freq_channels * 
+                             self.phonology_dataset.config.n_time_steps)
+            else:
+                input_size = 40  # Fallback for feature-based encoding
+                
+            self._phonology_projection = nn.Linear(input_size, self.config.output_size, bias=False)
             nn.init.sparse_(self._phonology_projection.weight, sparsity=0.7)
             self._phonology_projection.to(self.device)
-            print(f"✅ Initialized phonology projection: 40 → {self.config.output_size}")
+            print(f"[OK] Initialized phonology projection: {input_size} -> {self.config.output_size}")
         return self._phonology_projection
 
     def get_task(self, task_name: str) -> Dict[str, Any]:
@@ -746,11 +758,11 @@ class PhonologyTaskLoader:
             
             # Use simple voiced/voiceless contrast
             contrast = (PhonemeCategory.P, PhonemeCategory.B)
-            phoneme1_features, phoneme2_features = self.phonology_dataset.get_contrast_pair(contrast)
+            same = torch.randint(0, 2, (1,), device=self.device).item() == 1
+            phoneme1, phoneme2, is_same = self.phonology_dataset.generate_discrimination_pair(contrast, same)
             
-            # Use first phoneme features
-            spikes_raw = torch.tensor(phoneme1_features, device=self.device, dtype=torch.float32)
-            is_same = 0  # Different phonemes
+            # Use first phoneme features (flatten spectrogram)
+            spikes_raw = phoneme1.flatten()
         
         # Project to output size
         spikes = self.phonology_projection(spikes_raw)

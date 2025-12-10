@@ -236,7 +236,7 @@ class EventDrivenBrain(nn.Module):
             base_cortex_config,
             n_input=self.config.input_size,
             n_output=self.config.cortex_size,
-            dt=self.config.dt_ms,  # RegionConfigBase uses 'dt' not 'dt_ms'
+            dt_ms=self.config.dt_ms,
             device=self.config.device,
         )
 
@@ -275,7 +275,6 @@ class EventDrivenBrain(nn.Module):
                 dual_output=cortex_config.dual_output,
                 # Predictive-specific defaults
                 prediction_enabled=True,
-                use_attention=True,
             )
             _cortex_impl = PredictiveCortex(pred_config)
         else:
@@ -291,19 +290,19 @@ class EventDrivenBrain(nn.Module):
         # 2. HIPPOCAMPUS: Episodic memory
         _hippocampus_impl = TrisynapticHippocampus(TrisynapticConfig(
             n_input=cortex_to_hippo_size,
-            n_output=config.hippocampus_size,
-            dt=config.dt_ms,
-            ec_l3_input_size=config.input_size,
-            device=config.device,
+            n_output=self.config.hippocampus_size,
+            dt_ms=self.config.dt_ms,
+            ec_l3_input_size=self.config.input_size,
+            device=self.config.device,
         ))
 
         # 3. PFC: Working memory
-        pfc_input_size = cortex_to_hippo_size + config.hippocampus_size
+        pfc_input_size = cortex_to_hippo_size + self.config.hippocampus_size
         _pfc_impl = Prefrontal(PrefrontalConfig(
             n_input=pfc_input_size,
-            n_output=config.pfc_size,
-            dt=config.dt_ms,
-            device=config.device,
+            n_output=self.config.pfc_size,
+            dt_ms=self.config.dt_ms,
+            device=self.config.device,
         ))
         _pfc_impl.reset_state()
 
@@ -311,23 +310,23 @@ class EventDrivenBrain(nn.Module):
         # Receives: cortex L5 + hippocampus + PFC
         # NOTE: Pass n_output=n_actions (not n_actions*neurons_per_action)
         # The Striatum internally handles population coding expansion
-        striatum_input = self._cortex_l5_size + config.hippocampus_size + config.pfc_size
+        striatum_input = self._cortex_l5_size + self.config.hippocampus_size + self.config.pfc_size
         _striatum_impl = Striatum(StriatumConfig(
             n_input=striatum_input,
-            n_output=config.n_actions,  # Number of actions, NOT total neurons
-            neurons_per_action=config.neurons_per_action,
-            device=config.device,
+            n_output=self.config.n_actions,  # Number of actions, NOT total neurons
+            neurons_per_action=self.config.neurons_per_action,
+            device=self.config.device,
         ))
         _striatum_impl.reset_state()
 
         # 5. CEREBELLUM: Motor refinement
         # Receives: striatum output (action signals)
         # After population coding, striatum outputs n_actions * neurons_per_action
-        cerebellum_input = config.n_actions * config.neurons_per_action
+        cerebellum_input = self.config.n_actions * self.config.neurons_per_action
         _cerebellum_impl = Cerebellum(CerebellumConfig(
             n_input=cerebellum_input,
-            n_output=config.n_actions,  # Refined motor output
-            device=config.device,
+            n_output=self.config.n_actions,  # Refined motor output
+            device=self.config.device,
         ))
 
         # =====================================================================
@@ -341,7 +340,7 @@ class EventDrivenBrain(nn.Module):
                 output_targets=["hippocampus", "pfc", "striatum"],
             ),
             _cortex_impl,
-            pfc_size=config.pfc_size,  # For top-down projection
+            pfc_size=self.config.pfc_size,  # For top-down projection
         )
 
         self.hippocampus = EventDrivenHippocampus(
@@ -359,7 +358,7 @@ class EventDrivenBrain(nn.Module):
             ),
             _pfc_impl,
             cortex_input_size=self._cortex_l23_size,
-            hippocampus_input_size=config.hippocampus_size,
+            hippocampus_input_size=self.config.hippocampus_size,
         )
 
         self.striatum = EventDrivenStriatum(
@@ -369,8 +368,9 @@ class EventDrivenBrain(nn.Module):
             ),
             _striatum_impl,
             cortex_input_size=self._cortex_l5_size,
-            hippocampus_input_size=config.hippocampus_size,
-            pfc_input_size=config.pfc_size,
+            hippocampus_input_size=self.config.hippocampus_size,
+            pfc_input_size=self.config.pfc_size,
+            pfc_region=self.pfc,  # Pass PFC for goal-conditioned values
         )
 
         self.cerebellum = EventDrivenCerebellum(
@@ -399,7 +399,7 @@ class EventDrivenBrain(nn.Module):
             tau=50.0,
             threshold=0.5,
             gain=2.0,
-            device=torch.device(config.device),
+            device=torch.device(self.config.device),
         )
 
         # =====================================================================
@@ -413,10 +413,10 @@ class EventDrivenBrain(nn.Module):
         # 4. Easy phase-amplitude coupling across regions
         from thalia.core.oscillator import OscillatorManager
         self.oscillators = OscillatorManager(
-            dt_ms=config.dt_ms,
-            device=config.device,
-            theta_freq=config.theta_frequency_hz,
-            couplings=config.oscillator_couplings,
+            dt_ms=self.config.dt_ms,
+            device=self.config.device,
+            theta_freq=self.config.theta_frequency_hz,
+            couplings=self.config.oscillator_couplings,
         )
 
         # =====================================================================
@@ -438,7 +438,8 @@ class EventDrivenBrain(nn.Module):
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.PHASE,  # Theta phase coding
                 stdp_lr=0.001,
-                device=config.device,
+                dt_ms=self.config.dt_ms,
+                device=self.config.device,
             )
         )
 
@@ -450,7 +451,8 @@ class EventDrivenBrain(nn.Module):
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.RATE,
                 stdp_lr=0.002,
-                device=config.device,
+                dt_ms=self.config.dt_ms,
+                device=self.config.device,
             )
         )
 
@@ -462,73 +464,78 @@ class EventDrivenBrain(nn.Module):
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.SYNCHRONY,  # Binding via synchrony
                 stdp_lr=0.0015,
-                device=config.device,
+                dt_ms=self.config.dt_ms,
+                device=self.config.device,
             )
         )
 
         # 4. Hippocampus → PFC (episodic to working memory)
         self.hippo_to_pfc_pathway = SpikingPathway(
             SpikingPathwayConfig(
-                source_size=config.hippocampus_size,
-                target_size=config.hippocampus_size,
+                source_size=self.config.hippocampus_size,
+                target_size=self.config.hippocampus_size,
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.PHASE,  # Theta-coupled
                 stdp_lr=0.001,
-                device=config.device,
+                dt_ms=self.config.dt_ms,
+                device=self.config.device,
             )
         )
 
         # 5. Hippocampus → Striatum (context for action selection)
         self.hippo_to_striatum_pathway = SpikingPathway(
             SpikingPathwayConfig(
-                source_size=config.hippocampus_size,
-                target_size=config.hippocampus_size,
+                source_size=self.config.hippocampus_size,
+                target_size=self.config.hippocampus_size,
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.PHASE,
                 stdp_lr=0.0015,
-                device=config.device,
+                dt_ms=self.config.dt_ms,
+                device=self.config.device,
             )
         )
 
         # 6. PFC → Striatum (goal-directed control)
         self.pfc_to_striatum_pathway = SpikingPathway(
             SpikingPathwayConfig(
-                source_size=config.pfc_size,
-                target_size=config.pfc_size,
+                source_size=self.config.pfc_size,
+                target_size=self.config.pfc_size,
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.RATE,
                 stdp_lr=0.002,
-                device=config.device,
+                dt_ms=self.config.dt_ms,
+                device=self.config.device,
             )
         )
 
         # 7. Striatum → Cerebellum (action refinement)
         self.striatum_to_cerebellum_pathway = SpikingPathway(
             SpikingPathwayConfig(
-                source_size=config.n_actions * config.neurons_per_action,
-                target_size=config.n_actions * config.neurons_per_action,
+                source_size=self.config.n_actions * self.config.neurons_per_action,
+                target_size=self.config.n_actions * self.config.neurons_per_action,
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.LATENCY,  # Precise timing for motor control
                 stdp_lr=0.001,
-                device=config.device,
+                dt_ms=self.config.dt_ms,
+                device=self.config.device,
             )
         )
 
         # 8. PFC → Cortex (top-down attention modulation) [SPECIALIZED]
         self.attention_pathway = SpikingAttentionPathway(
             SpikingAttentionPathwayConfig(
-                source_size=config.pfc_size,
-                target_size=config.input_size,
-                device=config.device,
+                source_size=self.config.pfc_size,
+                target_size=self.config.input_size,
+                device=self.config.device,
             )
         )
 
         # 9. Hippocampus → Cortex (replay/consolidation during sleep) [SPECIALIZED]
         self.replay_pathway = SpikingReplayPathway(
             SpikingReplayPathwayConfig(
-                source_size=config.hippocampus_size,
-                target_size=config.cortex_size,
-                device=config.device,
+                source_size=self.config.hippocampus_size,
+                target_size=self.config.cortex_size,
+                device=self.config.device,
             )
         )
 
@@ -590,7 +597,7 @@ class EventDrivenBrain(nn.Module):
         # =====================================================================
 
         self._parallel_executor: Optional[ParallelExecutor] = None
-        if config.parallel:
+        if self.config.parallel:
             self._init_parallel_executor()
 
         # State tracking
@@ -637,12 +644,45 @@ class EventDrivenBrain(nn.Module):
         # DIAGNOSTICS
         # =====================================================================
 
-        self.diagnostics = DiagnosticsManager(level=config.diagnostic_level)
+        self.diagnostics = DiagnosticsManager()
         self.diagnostics.configure_component("striatum", enabled=True)
         self.diagnostics.configure_component("hippocampus", enabled=True)
         self.diagnostics.configure_component("cortex", enabled=True)
         self.diagnostics.configure_component("pfc", enabled=True)
         self.diagnostics.configure_component("cerebellum", enabled=True)
+
+        # =====================================================================
+        # MODEL-BASED PLANNING (Phase 2)
+        # =====================================================================
+        # Mental simulation coordinator and Dyna background planning
+        # Only initialized if use_model_based_planning=True
+        self.mental_simulation: Optional["MentalSimulationCoordinator"] = None
+        self.dyna_planner: Optional["DynaPlanner"] = None
+
+        if self.thalia_config.brain.use_model_based_planning:
+            from thalia.planning import (
+                MentalSimulationCoordinator,
+                SimulationConfig,
+                DynaPlanner,
+                DynaConfig,
+            )
+
+            # Create mental simulation coordinator
+            self.mental_simulation = MentalSimulationCoordinator(
+                pfc=self.prefrontal,
+                hippocampus=self.hippocampus,
+                striatum=self.striatum.impl,
+                cortex=self.cortex,
+                config=SimulationConfig(),
+            )
+
+            # Create Dyna planner for background planning
+            self.dyna_planner = DynaPlanner(
+                coordinator=self.mental_simulation,
+                striatum=self.striatum.impl,
+                hippocampus=self.hippocampus,
+                config=DynaConfig(),
+            )
 
     @classmethod
     def from_thalia_config(cls, config: "ThaliaConfig") -> "EventDrivenBrain":
@@ -823,7 +863,7 @@ class EventDrivenBrain(nn.Module):
 
         return results
 
-    def select_action(self, explore: bool = True) -> tuple[int, float]:
+    def select_action(self, explore: bool = True, use_planning: bool = True) -> tuple[int, float]:
         """Select action based on current striatum state.
 
         Uses the striatum's finalize_action method which handles:
@@ -831,12 +871,45 @@ class EventDrivenBrain(nn.Module):
         - UCB exploration bonus
         - Softmax selection
 
+        If use_planning=True and model-based planning is enabled:
+        - Uses MentalSimulationCoordinator for tree search
+        - Returns best action from simulated rollouts
+        - Falls back to striatum if planning disabled
+
         Args:
             explore: Whether to allow exploration
+            use_planning: Whether to use mental simulation
 
         Returns:
             (action, confidence): Selected action index and confidence [0, 1]
         """
+        # Phase 2: Mental simulation planning
+        if use_planning and self.mental_simulation is not None:
+            # Get current state from PFC working memory
+            current_state = self._last_pfc_output
+            if current_state is None:
+                # No state yet, fall back to model-free
+                pass
+            else:
+                # Get goal context from PFC
+                goal_context = self.prefrontal.get_goal_context() if hasattr(self.prefrontal, 'get_goal_context') else None
+
+                # Plan best action using mental simulation
+                available_actions = list(range(self.config.n_actions))
+                best_action, best_rollout = self.mental_simulation.plan_best_action(
+                    current_state=current_state,
+                    available_actions=available_actions,
+                    goal_context=goal_context
+                )
+
+                # Confidence from rollout (higher value = higher confidence)
+                # Normalize cumulative value to [0, 1] range
+                confidence = float(torch.sigmoid(torch.tensor(best_rollout.cumulative_value)).item())
+
+                self._last_action = best_action
+                return best_action, confidence
+
+        # Model-free action selection (standard)
         # Use striatum's finalize_action method
         result = self.striatum.impl.finalize_action(explore=explore)
 
@@ -925,6 +998,28 @@ class EventDrivenBrain(nn.Module):
         # =====================================================================
         if self._last_action is not None:
             self.striatum.impl.update_value_estimate(self._last_action, reward_for_striatum)
+
+        # =====================================================================
+        # STEP 9: Trigger background planning (Phase 2)
+        # =====================================================================
+        # After processing real experience, do simulated planning
+        if self.dyna_planner is not None and self._last_action is not None:
+            # Get state, action, reward, next_state for Dyna
+            current_state = self._last_pfc_output
+            next_state = self.prefrontal.state.spikes  # Current PFC state is "next" after action
+
+            if current_state is not None:
+                goal_context = self.prefrontal.get_goal_context() if hasattr(self.prefrontal, 'get_goal_context') else None
+
+                # Trigger background planning
+                self.dyna_planner.process_real_experience(
+                    state=current_state,
+                    action=self._last_action,
+                    reward=reward_for_striatum,
+                    next_state=next_state,
+                    done=False,  # Would need task-specific logic to determine episode end
+                    goal_context=goal_context
+                )
 
     def _compute_uncertainty(self) -> float:
         """Compute current task uncertainty for arousal modulation.
@@ -1136,9 +1231,47 @@ class EventDrivenBrain(nn.Module):
         self.cerebellum.impl.set_acetylcholine(acetylcholine)
 
         # =====================================================================
-        # 5. BROADCAST OSCILLATOR PHASES
+        # 5. PHASE 3: UPDATE COGNITIVE LOAD (HYPERBOLIC DISCOUNTING)
+        # =====================================================================
+        # Automatically update cognitive load based on PFC working memory usage
+        # This modulates temporal discounting (high load → more impulsive)
+        if hasattr(self.prefrontal, 'discounter') and self.prefrontal.discounter is not None:
+            cognitive_load = self._compute_cognitive_load()
+            self.prefrontal.update_cognitive_load(cognitive_load)
+
+        # =====================================================================
+        # 6. BROADCAST OSCILLATOR PHASES
         # =====================================================================
         self._broadcast_oscillator_phases()
+
+    def _compute_cognitive_load(self) -> float:
+        """Compute current cognitive load from PFC working memory usage.
+        
+        Phase 3 functionality: Cognitive load drives temporal discounting.
+        High working memory usage → high load → more impulsive choices.
+        
+        Returns:
+            Cognitive load (0-1), where 1 = maximum capacity
+        """
+        if self.prefrontal.state.working_memory is None:
+            return 0.0
+        
+        # Measure working memory activity
+        wm_activity = self.prefrontal.state.working_memory.abs().mean().item()
+        
+        # Also consider number of active goals (if hierarchical goals enabled)
+        goal_load = 0.0
+        if (hasattr(self.prefrontal, 'goal_manager') and 
+            self.prefrontal.goal_manager is not None):
+            n_active = len(self.prefrontal.goal_manager.active_goals)
+            max_goals = self.prefrontal.goal_manager.config.max_active_goals
+            goal_load = n_active / max(max_goals, 1)
+        
+        # Combine WM activity and goal count (weighted average)
+        cognitive_load = 0.7 * wm_activity + 0.3 * goal_load
+        
+        # Clamp to [0, 1]
+        return max(0.0, min(1.0, cognitive_load))
 
     def _broadcast_oscillator_phases(self) -> None:
         """Broadcast oscillator phases and effective amplitudes to all regions.
@@ -1248,6 +1381,24 @@ class EventDrivenBrain(nn.Module):
             pfc_out.view(-1),
         ])
 
+        # =====================================================================
+        # GOAL-CONDITIONED EPISODIC MEMORY WITH HER
+        # =====================================================================
+        # If HER is enabled, we need to pass goal information.
+        # Goal = what PFC wanted (working memory content)
+        # Achieved goal = what actually happened (CA1 output represents achieved state)
+        #
+        # The hippocampus will store BOTH:
+        # 1. Normal episode (for prioritized replay)
+        # 2. HER experience (goal + achieved_goal for hindsight relabeling)
+        #
+        # This makes HER completely automatic - no manual calls needed!
+        # =====================================================================
+        goal_for_her = None
+        if self.hippocampus.impl.her_integration is not None:  # Check if HER enabled
+            # Goal = PFC working memory content (what we were trying to achieve)
+            goal_for_her = pfc_out.clone()
+
         self.hippocampus.impl.store_episode(
             state=combined_state,
             action=selected_action,
@@ -1259,6 +1410,10 @@ class EventDrivenBrain(nn.Module):
                 "test_pattern": test_pattern.clone() if test_pattern is not None else None,
             },
             priority_boost=priority_boost,
+            # HER parameters (automatically handled if use_her=True)
+            goal=goal_for_her,
+            achieved_goal=hippo_out.clone(),  # What was actually achieved
+            done=correct,  # Episode ends on correct trial
         )
 
     def reset_state(self) -> None:
@@ -1317,8 +1472,13 @@ class EventDrivenBrain(nn.Module):
             },
             "pathways": {},
             "oscillators": {
-                "theta_frequency_hz": self.oscillators.theta_freq,
-                "phases": self.oscillators.get_phases(),
+                # Store oscillator states - manager has delta, theta, alpha, beta, gamma
+                # Each has get_state() method for checkpointing
+                "delta": self.oscillators.delta.get_state() if hasattr(self.oscillators, 'delta') else None,
+                "theta": self.oscillators.theta.get_state() if hasattr(self.oscillators, 'theta') else None,
+                "alpha": self.oscillators.alpha.get_state() if hasattr(self.oscillators, 'alpha') else None,
+                "beta": self.oscillators.beta.get_state() if hasattr(self.oscillators, 'beta') else None,
+                "gamma": self.oscillators.gamma.get_state() if hasattr(self.oscillators, 'gamma') else None,
             },
             "scheduler": {
                 "current_time": self._current_time,
@@ -1683,7 +1843,8 @@ class EventDrivenBrain(nn.Module):
                 event_type=EventType.SENSORY,
                 source="sensory_input",
                 target="cortex",
-                payload=SpikePayload(spikes=cortex_input),
+                # Detach tensor to prevent memory leak from accumulated events
+                payload=SpikePayload(spikes=cortex_input.detach().clone()),
             )
             self.scheduler.schedule(event)
 

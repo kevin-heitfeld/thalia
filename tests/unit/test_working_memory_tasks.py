@@ -53,11 +53,12 @@ class TestThetaGammaEncoder:
     """Test phase encoding system."""
     
     def test_encoder_initialization(self, wm_config):
-        """Test encoder creates oscillators correctly."""
+        """Test encoder initializes correctly without local oscillators."""
         encoder = ThetaGammaEncoder(wm_config)
         
-        assert encoder.theta.frequency_hz == 8.0
-        assert encoder.gamma.frequency_hz == 40.0
+        # Encoder stores phases internally (provided by brain)
+        assert hasattr(encoder, '_theta_phase')
+        assert hasattr(encoder, '_gamma_phase')
         assert encoder.item_count == 0
     
     def test_encoding_phase_calculation(self, wm_config):
@@ -92,44 +93,53 @@ class TestThetaGammaEncoder:
         assert phase < 0  # Error indicator
     
     def test_oscillator_advancement(self, wm_config):
-        """Test oscillators advance through time."""
+        """Test encoder can receive updated oscillator phases."""
         encoder = ThetaGammaEncoder(wm_config)
         
-        initial_theta = encoder.theta.phase
-        initial_gamma = encoder.gamma.phase
+        # Provide initial phases
+        encoder.set_oscillator_phases(
+            phases={'theta': 0.0, 'gamma': 0.0},
+            signals={'theta': 0.0, 'gamma': 0.0}
+        )
         
-        # Advance 100 steps
-        encoder.advance_oscillators(100)
+        # Update to new phases (as brain would after advancing)
+        encoder.set_oscillator_phases(
+            phases={'theta': math.pi/4, 'gamma': math.pi/2},
+            signals={'theta': 0.707, 'gamma': 1.0}
+        )
         
-        # Phases should have changed
-        assert encoder.theta.phase != initial_theta
-        assert encoder.gamma.phase != initial_gamma
-        
-        # Time should have advanced
-        assert encoder.theta.time_ms == 100.0
+        # Phases should have updated
+        assert encoder._theta_phase == math.pi/4
+        assert encoder._gamma_phase == math.pi/2
     
     def test_sync_to_item(self, wm_config):
-        """Test synchronizing to specific item phase."""
+        """Test calculating target phase for specific item."""
         encoder = ThetaGammaEncoder(wm_config)
         
-        # Sync to item 3
-        encoder.sync_to_item(3)
+        # Calculate encoding phase for item 3
+        theta_phase, gamma_phase = encoder.get_encoding_phase(3)
         
         expected_theta = (3 / 8) * (2 * math.pi)
-        assert abs(encoder.theta.phase - expected_theta) < 0.01
-        assert abs(encoder.gamma.phase - math.pi/2) < 0.01
+        assert abs(theta_phase - expected_theta) < 0.01
+        assert abs(gamma_phase - math.pi/2) < 0.01
     
     def test_excitability_modulation(self, wm_config):
         """Test gamma-based excitability modulation."""
         encoder = ThetaGammaEncoder(wm_config)
         
-        # At gamma peak (π/2)
-        encoder.gamma.sync_to_phase(math.pi / 2)
+        # Simulate brain providing gamma peak phase
+        encoder.set_oscillator_phases(
+            phases={'theta': 0.0, 'gamma': math.pi / 2},
+            signals={'theta': 0.0, 'gamma': 1.0}
+        )
         excitability_peak = encoder.get_excitability_modulation()
         assert excitability_peak > 0.9  # Near maximum
         
-        # At gamma trough (3π/2)
-        encoder.gamma.sync_to_phase(3 * math.pi / 2)
+        # Simulate brain providing gamma trough phase
+        encoder.set_oscillator_phases(
+            phases={'theta': 0.0, 'gamma': 3 * math.pi / 2},
+            signals={'theta': 0.0, 'gamma': -1.0}
+        )
         excitability_trough = encoder.get_excitability_modulation()
         assert excitability_trough < 0.1  # Near minimum
 
@@ -508,7 +518,7 @@ class TestConfiguration:
         )
         
         task = NBackTask(prefrontal, config, n_back=2)
-        assert task.encoder.theta.frequency_hz == 6.0
+        assert task.encoder.config.theta_freq_hz == 6.0
     
     def test_custom_gamma_frequency(self, prefrontal, device):
         """Test custom gamma frequency."""
@@ -518,7 +528,7 @@ class TestConfiguration:
         )
         
         task = NBackTask(prefrontal, config, n_back=2)
-        assert task.encoder.gamma.frequency_hz == 60.0
+        assert task.encoder.config.gamma_freq_hz == 60.0
     
     def test_custom_items_per_cycle(self, prefrontal, device):
         """Test custom items per theta cycle."""

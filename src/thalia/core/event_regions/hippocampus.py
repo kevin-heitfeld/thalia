@@ -120,11 +120,7 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
 
         # Forward through hippocampus (already expects 1D after ADR-005 update)
         # Theta modulation computed internally by TrisynapticHippocampus
-        output = self.impl.forward(
-            input_spikes,
-            dt=1.0,  # Event-driven doesn't use fixed dt
-            ec_direct_input=self._ec_direct_input,
-        )
+        output = self.impl.forward(input_spikes, ec_direct_input=self._ec_direct_input)
 
         return output
 

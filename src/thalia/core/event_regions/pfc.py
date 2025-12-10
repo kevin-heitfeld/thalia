@@ -138,7 +138,7 @@ class EventDrivenPFC(EventDrivenRegionBase):
             source_order=["cortex", "hippocampus"],
             require_sources=["cortex"],  # Cortex is required, hippocampus optional
         )
-        
+
         if combined is not None:
             result = self._forward_pfc(combined)
             self._clear_input_buffers()
@@ -150,11 +150,7 @@ class EventDrivenPFC(EventDrivenRegionBase):
     def _forward_pfc(self, combined_input: torch.Tensor) -> torch.Tensor:
         """Forward combined input through PFC."""
         # Forward through PFC (theta modulation computed internally)
-        output = self.impl.forward(
-            combined_input,
-            dt=1.0,  # Event-driven doesn't use fixed dt
-            dopamine_signal=self._pending_dopamine_signal,
-        )
+        output = self.impl.forward(combined_input, dopamine_signal=self._pending_dopamine_signal)
 
         # Clear pending dopamine after use
         self._pending_dopamine_signal = 0.0

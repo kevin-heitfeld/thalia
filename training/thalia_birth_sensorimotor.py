@@ -19,6 +19,21 @@ Duration: 1 simulated month (50,000 steps)
 Success criteria: >95% motor accuracy, >90% reaching, >85% manipulation
 Next stage: Stage 0 - Sensory Foundations (object recognition, phonology)
 
+AUTOMATIC FEATURES (ALL ENABLED BY DEFAULT):
+============================================
+✅ Phase 1: TD(λ) + Goal-Conditioned Learning (multi-step credit assignment)
+✅ Phase 2: Mental Simulation + Dyna Planning (model-based planning)
+✅ Phase 3: Hierarchical Goals + Hyperbolic Discounting (delayed gratification)
+
+All features automatically apply during training:
+- TD(λ) bridges 5-10 second delays
+- Mental simulation plans ahead
+- Cognitive load tracked from working memory
+- Temporal discounting adapts to load
+- Goal hierarchies auto-configured for Stages 3+ (planning, reasoning)
+
+No manual intervention required! The brain does everything automatically.
+
 Usage:
     python training/thalia_birth_sensorimotor.py
 
@@ -29,6 +44,7 @@ Usage:
 
 Author: Thalia Project
 Date: December 9, 2025
+Updated: December 10, 2025 (Phase 3 auto-integration)
 Milestone: First Curriculum Training Session
 """
 
@@ -68,7 +84,7 @@ def print_birth_banner():
     print("  'And the first sensation was movement.'")
     print()
     print(f"  Birth timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("  Stage: -0.5 (Sensorimotor Grounding)")
+    print("  Stage: 0 (Sensorimotor Grounding)")
     print("  Duration: 1 month simulated (~50,000 steps)")
     print()
     print("  Thalia is about to experience her first sensations.")
@@ -211,12 +227,12 @@ def create_curriculum_trainer(
 
 
 def configure_stage_sensorimotor() -> StageConfig:
-    """Configure Stage -0.5 training parameters.
+    """Configure Stage 0 (Sensorimotor) training parameters.
 
     Returns:
         StageConfig for sensorimotor training
     """
-    print("\n[4/4] Configuring Stage -0.5...")
+    print("\n[4/4] Configuring Stage 0 (Sensorimotor)...")
 
     config = StageConfig(
         # Duration (1 month simulated = 50k steps)
@@ -436,7 +452,7 @@ def main():
             "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
     )
-    
+
     print("\n--- STAGE CONFIGURATION ---")
     print(f"  Duration: {stage_config.duration_steps:,} steps")
     print(f"  Interleaved practice: {stage_config.interleaved_practice}")
@@ -471,6 +487,27 @@ def main():
     print("sensorimotor coordination develops from pure experience.")
     print()
     print("This is not optimization. This is development.")
+    print()
+    print("="*80)
+    print()
+    print("💡 AUTOMATIC FEATURES ENABLED:")
+    print("="*80)
+    print()
+    print("  ✅ Phase 1: TD(λ) + Goal-Conditioned Learning")
+    print("     → Multi-step credit assignment (5-10 second delays)")
+    print()
+    print("  ✅ Phase 2: Mental Simulation + Dyna Planning")
+    print("     → Model-based planning during action selection")
+    print()
+    print("  ✅ Phase 3: Hierarchical Goals + Hyperbolic Discounting")
+    print("     → Context-dependent temporal discounting")
+    print("     → Goal hierarchies auto-configured for Stages 3+ (planning tasks)")
+    print()
+    print("  All features work automatically - no manual intervention required!")
+    print()
+    print("  Note: Stage -0.5 focuses on sensorimotor grounding.")
+    print("        Hierarchical goals activate in Stage 3 (Reading/Planning)")
+    print("        and Stage 4 (Abstract Reasoning).")
     print()
     print("="*80)
     print()

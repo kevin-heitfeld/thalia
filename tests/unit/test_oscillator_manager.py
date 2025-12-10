@@ -97,11 +97,11 @@ class TestOscillatorManagerBasics:
         manager = OscillatorManager(dt_ms=1.0, device="cpu")
 
         delta = manager.get_oscillator('delta')
-        assert isinstance(delta, DeltaOscillator)
+        assert isinstance(delta, SinusoidalOscillator)
         assert delta is manager.delta
 
         theta = manager.get_oscillator('theta')
-        assert isinstance(theta, ThetaOscillator)
+        assert isinstance(theta, SinusoidalOscillator)
         assert theta is manager.theta
 
     def test_get_oscillator_invalid(self):

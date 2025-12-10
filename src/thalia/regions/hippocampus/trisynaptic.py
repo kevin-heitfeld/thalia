@@ -36,7 +36,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.core.neuron import LIFNeuron, LIFConfig
+from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig
 from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.traces import update_trace
@@ -53,29 +53,28 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
     Architecture:
     ```
-    Input (from cortex)
+    Input (EC from cortex)
            │
-           ▼
-    ┌──────────────┐
-    │ Dentate Gyrus│  Very sparse (~2%), random projections
-    │   (DG)       │  Pattern SEPARATION: similar inputs → different codes
-    └──────────────┘
-           │
-           ▼
-    ┌──────────────┐
-    │     CA3      │  Recurrent connections
-    │              │  Pattern COMPLETION: partial cue → full pattern
-    └──────┬───────┘
-           │ ◄──────── (recurrent loop back to CA3)
-           ▼
-    ┌──────────────┐
-    │     CA1      │  Output layer with comparison
-    │              │  COINCIDENCE DETECTION: match vs mismatch
-    └──────────────┘
-           │
-           ▼
-    Output (to cortex/striatum)
+           ├──────────────────────┐ (Direct perforant path)
+           ▼                      ▼
+    ┌──────────────┐        ┌──────────────┐
+    │ Dentate Gyrus│        │     CA3      │  Recurrent connections
+    │   (DG)       │─────-->│              │  Pattern COMPLETION: partial cue → full pattern
+    │ Pattern SEP  │        └──────┬───────┘
+    └──────────────┘               │ ◄──────── (recurrent loop back to CA3)
+                                   ▼
+                            ┌──────────────┐
+                            │     CA1      │  Output layer with comparison
+                            │              │  COINCIDENCE DETECTION: match vs mismatch
+                            └──────────────┘
+                                   │
+                                   ▼
+                            Output (to cortex/striatum)
     ```
+
+    Two pathways to CA3:
+    - EC→DG→CA3: Pattern-separated (sparse), strong during encoding
+    - EC→CA3 direct: Preserves similarity (less sparse), provides retrieval cues
 
     Key biological features:
     1. THETA MODULATION: 6-10 Hz oscillations separate encoding from retrieval
@@ -123,17 +122,23 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self._init_circuit_weights()
 
         # Create LIF neurons for each layer
+        # Convert to ConductanceLIF for proper E/I balance
+        base_neuron_config = ConductanceLIFConfig(
+            g_L=0.05,  # Standard leak (τ_m ≈ 20ms)
+            tau_E=5.0,  # Fast excitatory (AMPA)
+            tau_I=10.0,  # Slower inhibitory (GABA_A)
+        )
         # CA3 gets spike-frequency adaptation to prevent frozen attractors
-        lif_config = LIFConfig(tau_mem=20.0, v_threshold=1.0)
-        ca3_lif_config = LIFConfig(
-            tau_mem=20.0,
-            v_threshold=1.0,
+        ca3_neuron_config = ConductanceLIFConfig(
+            g_L=0.05,
+            tau_E=5.0,
+            tau_I=10.0,
             adapt_increment=config.ca3_adapt_increment,  # SFA enabled!
             tau_adapt=config.ca3_adapt_tau,
         )
-        self.dg_neurons = LIFNeuron(self.dg_size, lif_config)
-        self.ca3_neurons = LIFNeuron(self.ca3_size, ca3_lif_config)
-        self.ca1_neurons = LIFNeuron(self.ca1_size, lif_config)
+        self.dg_neurons = ConductanceLIF(self.dg_size, base_neuron_config)
+        self.ca3_neurons = ConductanceLIF(self.ca3_size, ca3_neuron_config)
+        self.ca1_neurons = ConductanceLIF(self.ca1_size, base_neuron_config)
 
         # Feedforward inhibition module
         self.feedforward_inhibition = FeedforwardInhibition(
@@ -226,7 +231,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             self._gamma_phase: float = 0.0
             self._theta_slot: int = 0
             self._coupled_amplitudes: Dict[str, float] = {}
-            
+
             # Replay engine for sequence replay (lazy import to avoid circular dependency)
             # NOTE: ReplayEngine receives timing via replay() parameters (gamma_phase, theta_slot)
             # from hippocampus, which gets them from brain's centralized OscillatorManager
@@ -258,6 +263,29 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Theta-driven reset: when True, reset happens at next theta trough
         # This replaces hard resets with biologically-realistic theta-aligned resets
         self._pending_theta_reset: bool = False
+
+        # =====================================================================
+        # HINDSIGHT EXPERIENCE REPLAY (HER)
+        # =====================================================================
+        # Goal relabeling for multi-goal learning
+        if config.use_her:
+            from thalia.regions.hippocampus.hindsight_relabeling import (
+                HippocampalHERIntegration,
+                HERConfig,
+                HERStrategy,
+            )
+            her_config = HERConfig(
+                strategy=HERStrategy[config.her_strategy.upper()],
+                k_hindsight=config.her_k_hindsight,
+                replay_ratio=config.her_replay_ratio,
+                goal_dim=config.n_output,  # Use output size as goal dimension
+                goal_tolerance=config.her_goal_tolerance,
+                buffer_size=config.her_buffer_size,
+                device=config.device,
+            )
+            self.her_integration = HippocampalHERIntegration(her_config)
+        else:
+            self.her_integration = None
 
         # State
         self.state = TrisynapticState()
@@ -291,7 +319,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             )
         )
 
-        # DG → CA3: Random but less sparse
+        # DG → CA3: Random but less sparse (mossy fibers)
         # Uses row normalization for reliable activity propagation
         self.w_dg_ca3 = nn.Parameter(
             WeightInitializer.sparse_random(
@@ -300,6 +328,21 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 sparsity=0.5,
                 weight_scale=0.5,  # Strong weights for propagation
                 normalize_rows=True,  # Normalize for reliable propagation
+                device=device
+            )
+        )
+
+        # EC → CA3: Direct perforant path (layer II)
+        # Less sparse than DG→CA3, preserves input similarity for retrieval cues
+        # This is CRITICAL for cue-based retrieval: partial cues seed the CA3 attractor
+        # Biological: ~40% connectivity, weaker than DG→CA3 but more direct
+        self.w_ec_ca3 = nn.Parameter(
+            WeightInitializer.sparse_random(
+                n_output=self.ca3_size,
+                n_input=self.tri_config.n_input,
+                sparsity=0.4,  # Less sparse than DG path
+                weight_scale=0.3,  # Weaker than DG→CA3
+                normalize_rows=True,
                 device=device
             )
         )
@@ -481,14 +524,14 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         sparsity: float = 0.1,
     ) -> None:
         """Add neurons to hippocampus, expanding all layers proportionally.
-        
+
         This expands DG, CA3, and CA1 while maintaining the circuit ratios:
         - DG expands by (dg_expansion * n_new)
         - CA3 expands by (ca3_size_ratio * DG_growth)
         - CA1 expands by n_new
-        
+
         All inter-layer weights are expanded to accommodate new neurons.
-        
+
         Args:
             n_new: Number of neurons to add to CA1 (output layer)
             initialization: Weight initialization strategy
@@ -496,20 +539,20 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         """
         from thalia.core.weight_init import WeightInitializer
         from dataclasses import replace
-        
+
         # Calculate proportional growth for all layers
         old_ca1_size = self.ca1_size
         new_ca1_size = old_ca1_size + n_new
-        
+
         # Maintain circuit ratios
         dg_growth = int(n_new * self.tri_config.dg_expansion / self.tri_config.ca1_size_ratio)
         old_dg_size = self.dg_size
         new_dg_size = old_dg_size + dg_growth
-        
+
         ca3_growth = int(dg_growth * self.tri_config.ca3_size_ratio / self.tri_config.dg_expansion)
         old_ca3_size = self.ca3_size
         new_ca3_size = old_ca3_size + ca3_growth
-        
+
         # Helper to create new weights
         def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
             if initialization == 'xavier':
@@ -518,14 +561,14 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
             else:
                 return WeightInitializer.uniform(n_out, n_in, device=self.device)
-        
+
         # 1. Expand input→DG weights [dg, input]
         # Add rows for new DG neurons
         new_input_dg = new_weights_for(dg_growth, self.tri_config.n_input)
         self.w_ec_dg = nn.Parameter(
             torch.cat([self.w_ec_dg.data, new_input_dg], dim=0)
         )
-        
+
         # 2. Expand DG→CA3 weights [ca3, dg]
         # Add rows for new CA3 neurons, columns for new DG neurons
         # First expand rows (new CA3 neurons receiving from all DG)
@@ -536,8 +579,15 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self.w_dg_ca3 = nn.Parameter(
             torch.cat([expanded_rows, new_dg_cols], dim=1)
         )
-        
-        # 3. Expand CA3→CA3 recurrent weights [ca3, ca3]
+
+        # 3. Expand EC→CA3 direct perforant path [ca3, n_input]
+        # Only expand rows (CA3), input size is fixed
+        new_ec_ca3_rows = new_weights_for(ca3_growth, self.tri_config.n_input)
+        self.w_ec_ca3 = nn.Parameter(
+            torch.cat([self.w_ec_ca3.data, new_ec_ca3_rows], dim=0)
+        )
+
+        # 4. Expand CA3→CA3 recurrent weights [ca3, ca3]
         # Add rows and columns for new CA3 neurons
         new_ca3_recurrent_rows = new_weights_for(ca3_growth, old_ca3_size)
         expanded_recurrent_rows = torch.cat([self.w_ca3_ca3.data, new_ca3_recurrent_rows], dim=0)
@@ -545,8 +595,8 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self.w_ca3_ca3 = nn.Parameter(
             torch.cat([expanded_recurrent_rows, new_ca3_recurrent_cols], dim=1)
         )
-        
-        # 4. Expand CA3→CA1 weights [ca1, ca3]
+
+        # 5. Expand CA3→CA1 weights [ca1, ca3]
         # Add rows for new CA1 neurons, columns for new CA3 neurons
         new_ca1_rows = new_weights_for(n_new, old_ca3_size)
         expanded_ca1_rows = torch.cat([self.w_ca3_ca1.data, new_ca1_rows], dim=0)
@@ -554,27 +604,39 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self.w_ca3_ca1 = nn.Parameter(
             torch.cat([expanded_ca1_rows, new_ca3_cols_to_ca1], dim=1)
         )
-        
+
         # Update main weights reference (for base class compatibility)
         self.weights = self.w_ca3_ca1
-        
-        # 5. Expand neurons for all layers
+
+        # 5. Expand neurons for all layers (must match __init__ - ConductanceLIF)
+        base_config = ConductanceLIFConfig(
+            g_L=0.05,  # τ_m ≈ 20ms
+            tau_E=5.0,
+            tau_I=10.0,
+        )
+        ca3_config = ConductanceLIFConfig(
+            g_L=0.05,
+            tau_E=5.0,
+            tau_I=10.0,
+            adapt_increment=self.tri_config.ca3_adapt_increment,
+            tau_adapt=self.tri_config.ca3_adapt_tau,
+        )
+
         self.dg_size = new_dg_size
-        self.dg_neurons = LIFNeuron(self.dg_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
-        
+        self.dg_neurons = ConductanceLIF(self.dg_size, base_config)
+
         self.ca3_size = new_ca3_size
-        self.ca3_neurons = LIFNeuron(self.ca3_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
-        
+        self.ca3_neurons = ConductanceLIF(self.ca3_size, ca3_config)
+
         self.ca1_size = new_ca1_size
-        self.ca1_neurons = LIFNeuron(self.ca1_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
-        
+        self.ca1_neurons = ConductanceLIF(self.ca1_size, base_config)
+
         # 6. Update config
         self.config = replace(self.config, n_output=new_ca1_size)
 
     def forward(  # type: ignore[override]
         self,
         input_spikes: torch.Tensor,
-        dt: float = 1.0,
         ec_direct_input: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
@@ -582,7 +644,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         Args:
             input_spikes: Input spike pattern [n_input] (1D, no batch)
-            dt: Time step in ms
             ec_direct_input: Optional separate input for EC→CA1 direct pathway [n_input] (1D)
                             If None, uses input_spikes (original behavior).
                             When provided, this models EC layer III input which
@@ -687,8 +748,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         ffi_factor = 1.0 - self.state.ffi_strength * 0.5
         dg_code = dg_code * ffi_factor
 
-        # Run through DG neurons
-        dg_spikes, _ = self.dg_neurons(dg_code)
+        # Run through DG neurons (ConductanceLIF expects g_exc, g_inh)
+        # DG has minimal inhibition - primarily feedforward excitation for pattern separation
+        dg_g_exc = F.relu(dg_code)  # Clamp to positive conductance
+        dg_spikes, _ = self.dg_neurons(dg_g_exc, g_inh_input=None)
 
         # Apply extreme winner-take-all sparsity
         # Note: cast needed because hasattr check doesn't narrow type for Pylance
@@ -731,15 +794,18 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         #   3. Provides positive feedback (self-sustaining activity)
         # This enables stable attractor states during delay periods.
 
-        # Feedforward gate: Strong during encoding, suppressed during retrieval
-        # Use encoding_mod directly - varies continuously with theta phase
-        ff_gate = encoding_mod  # 0.0 to 1.0 based on theta phase
+        # Theta-modulated gating (gradual, not binary ON/OFF)
+        # DG→CA3 (pattern separation path): Strong during encoding, weak during retrieval
+        dg_ca3_gate = 0.1 + 0.9 * encoding_mod  # Range: 0.1 (retrieval) to 1.0 (encoding)
 
-        # Recurrence gate: Weak during encoding, strong during retrieval
-        # Use retrieval_mod directly - varies continuously with theta phase
+        # EC→CA3 (direct perforant path): Stronger during retrieval for cue-based recall
+        # This provides the "seed" for pattern completion from partial cues
+        ec_ca3_gate = 0.3 + 0.7 * retrieval_mod  # Range: 0.3 (encoding) to 1.0 (retrieval)
+
+        # CA3 recurrence: Weak during encoding, strong during retrieval
         rec_gate = 0.2 + 0.8 * retrieval_mod  # Range: 0.2 (encoding) to 1.0 (retrieval)
 
-        # Feedforward from DG (theta-gated) with optional STP
+        # Feedforward from DG (mossy fibers, theta-gated) with optional STP
         if self.stp_mossy is not None:
             # Get STP efficacy for mossy fiber synapses
             # Mossy fibers are FACILITATING - repeated DG spikes progressively
@@ -747,9 +813,16 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             stp_efficacy = self.stp_mossy(dg_spikes.float())
             # Apply STP to weights: (n_post, n_pre) * (n_pre, n_post).T
             effective_w_dg_ca3 = self.w_dg_ca3 * stp_efficacy.T
-            ca3_ff = torch.matmul(effective_w_dg_ca3, dg_spikes.float()) * ff_gate  # [ca3_size]
+            ca3_from_dg = torch.matmul(effective_w_dg_ca3, dg_spikes.float()) * dg_ca3_gate  # [ca3_size]
         else:
-            ca3_ff = torch.matmul(self.w_dg_ca3, dg_spikes.float()) * ff_gate  # [ca3_size]
+            ca3_from_dg = torch.matmul(self.w_dg_ca3, dg_spikes.float()) * dg_ca3_gate  # [ca3_size]
+
+        # Direct perforant path from EC (provides retrieval cues)
+        # Strong during retrieval to seed the CA3 attractor from partial cues
+        ca3_from_ec = torch.matmul(self.w_ec_ca3, input_spikes.float()) * ec_ca3_gate  # [ca3_size]
+
+        # Total feedforward input to CA3
+        ca3_ff = ca3_from_dg + ca3_from_ec
 
         # =====================================================================
         # RECURRENT CA3 WITH STP (CRITICAL FOR PREVENTING FROZEN ATTRACTORS)
@@ -757,13 +830,13 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Without STP, recurrent connections cause the same neurons to fire
         # every timestep (frozen attractor). With DEPRESSING STP, frequently-
         # used synapses get temporarily weaker, allowing pattern transitions.
-        
+
         # =====================================================================
         # ACETYLCHOLINE MODULATION OF CA3 RECURRENCE (Hasselmo 2006)
         # =====================================================================
-        # High ACh (encoding mode): Suppress CA3 recurrence to prevent 
+        # High ACh (encoding mode): Suppress CA3 recurrence to prevent
         # interference from old patterns during new encoding
-        # Low ACh (retrieval mode): Enhance CA3 recurrence to enable 
+        # Low ACh (retrieval mode): Enhance CA3 recurrence to enable
         # pattern completion from partial cues
         #
         # Biological mechanism: ACh preferentially blocks recurrent (feedback)
@@ -772,7 +845,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # ACh > 0.5 → encoding mode → suppress recurrence (down to 0.3x)
         # ACh < 0.5 → retrieval mode → full recurrence (1.0x)
         ach_recurrent_modulation = 1.0 - 0.7 * max(0.0, ach_level - 0.5) / 0.5
-        
+
         if self.stp_ca3_recurrent is not None and self.state.ca3_spikes is not None:
             # Get STP efficacy for CA3 recurrent synapses
             # CA3 recurrent is DEPRESSING - prevents frozen attractors
@@ -799,10 +872,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         if self._ca3_activity_trace is None:
             self._ca3_activity_trace = torch.zeros(1, device=input_spikes.device)
 
-        # Update activity trace (exponential moving average of total CA3 activity)
+        # Update activity trace (exponential moving average of total CA3 activity) - in-place
         if self.state.ca3_spikes is not None:
             current_activity = self.state.ca3_spikes.sum()
-            self._ca3_activity_trace = 0.9 * self._ca3_activity_trace + 0.1 * current_activity
+            self._ca3_activity_trace.mul_(0.9).add_(current_activity, alpha=0.1)
 
         # Compute feedback inhibition (scales with activity trace)
         feedback_inhibition = self._ca3_activity_trace * self.tri_config.ca3_feedback_inhibition
@@ -903,8 +976,10 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             )
             ca3_input = ca3_input * gamma_gate
 
-        # Run through CA3 neurons
-        ca3_spikes, _ = self.ca3_neurons(ca3_input)
+        # Run through CA3 neurons (ConductanceLIF expects g_exc, g_inh)
+        # Inhibition is handled by FFI module upstream
+        ca3_g_exc = F.relu(ca3_input)  # Clamp to positive conductance
+        ca3_spikes, _ = self.ca3_neurons(ca3_g_exc, g_inh_input=None)
 
         # CRITICAL FIX FOR OSCILLATION:
         # The LIF neuron resets membrane to v_reset after spiking, which causes
@@ -938,7 +1013,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             input_sum = input_spikes.sum().item()
             print(f"      [HIPPO FWD] input_sum={input_sum:.0f}, "
                   f"dg_active={dg_active_count:.0f}, ca3_active={len(ca3_active_indices)}, "
-                  f"ff_gate={ff_gate:.3f}, rec_gate={rec_gate:.3f}")
+                  f"dg_gate={dg_ca3_gate:.3f}, ec_gate={ec_ca3_gate:.3f}, rec_gate={rec_gate:.3f}")
             if len(ca3_active_indices) <= 10:
                 print(f"        CA3 indices: {ca3_active_indices}")
             else:
@@ -955,6 +1030,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # The trace accumulates spike activity with slow decay
         # Using a direct accumulation: trace += spike - decay*trace
         # This ensures spikes have strong immediate effect but decay slowly
+        dt = self.config.dt_ms
         decay_rate = dt / self.tri_config.ca3_persistent_tau
 
         # Update persistent activity: stronger during encoding, decay otherwise
@@ -1128,16 +1204,20 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Total CA1 input
         ca1_input = ca3_contribution + ampa_current + nmda_current
 
-        # Lateral inhibition
+        # Split excitation and inhibition for ConductanceLIF
+        # Excitatory: CA3 + EC pathways
+        ca1_g_exc = F.relu(ca1_input)  # Clamp to positive
+
+        # Inhibitory: lateral inhibition from other CA1 neurons
+        ca1_g_inh = None
         if self.state.ca1_spikes is not None:
-            ca1_inhib = torch.matmul(
+            ca1_g_inh = F.relu(torch.matmul(
                 self.state.ca1_spikes.float(),
                 self.w_ca1_inhib.t()
-            )
-            ca1_input = ca1_input - ca1_inhib
+            ))
 
-        # Run through CA1 neurons
-        ca1_spikes, _ = self.ca1_neurons(F.relu(ca1_input))
+        # Run through CA1 neurons (ConductanceLIF with E/I separation)
+        ca1_spikes, _ = self.ca1_neurons(ca1_g_exc, ca1_g_inh)
 
         # Apply sparsity (more lenient during retrieval to allow mismatch detection)
         ca1_membrane_v = getattr(self.ca1_neurons, 'v', None)
@@ -1272,7 +1352,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     def set_oscillator_phases(
         self,
         phases: Dict[str, float],
-        signals: Dict[str, float],
+        signals: Optional[Dict[str, float]] = None,
         theta_slot: int = 0,
         coupled_amplitudes: Optional[Dict[str, float]] = None,
     ) -> None:
@@ -1295,7 +1375,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self._theta_phase = phases.get('theta', 0.0)
         self._gamma_phase = phases.get('gamma', 0.0)
         self._theta_slot = theta_slot
-        
+
         # Store effective gamma amplitude (pre-computed by OscillatorManager)
         # Automatic multiplicative coupling:
         # - Gamma modulated by ALL slower oscillators (delta, theta, alpha, beta)
@@ -1348,10 +1428,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
             dW = effective_lr * (ltp - ltd)
 
-            # DEBUG: Check weight update
-            dW_abs_mean = dW.abs().mean().item()
-            w_before = self.w_ca3_ca3.data.abs().mean().item()
-
             with torch.no_grad():
                 self.w_ca3_ca3.data += dW
                 self.w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
@@ -1369,10 +1445,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                     self.w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
                     clamp_weights(self.w_ca3_ca3.data, cfg.w_min, cfg.w_max)
 
-            w_after = self.w_ca3_ca3.data.abs().mean().item()
-            if dW_abs_mean > 1e-6:
-                print(f"      [CA3 STDP] dW_mean={dW_abs_mean:.6f}, w_before={w_before:.6f}, w_after={w_after:.6f}, eff_lr={effective_lr:.4f}")
-
         # =====================================================================
         # INTRINSIC PLASTICITY
         # =====================================================================
@@ -1387,16 +1459,13 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             if self._ca3_threshold_offset is None:
                 self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=ca3_spikes_1d.device)
 
-            # Update activity history (exponential moving average)
-            self._ca3_activity_history = (
-                0.99 * self._ca3_activity_history + 0.01 * ca3_spikes_1d
-            )
+            # Update activity history (exponential moving average) - in-place to avoid memory leak
+            self._ca3_activity_history.mul_(0.99).add_(ca3_spikes_1d, alpha=0.01)
 
-            # Adjust threshold: high activity → higher threshold (less excitable)
+            # Adjust threshold: high activity → higher threshold (less excitable) - in-place
             rate_error = self._ca3_activity_history - cfg.intrinsic_target_rate
-            self._ca3_threshold_offset = (
-                self._ca3_threshold_offset + cfg.intrinsic_adaptation_rate * rate_error
-            ).clamp(-0.5, 0.5)  # Limit threshold adjustment range
+            self._ca3_threshold_offset.add_(rate_error, alpha=cfg.intrinsic_adaptation_rate)
+            self._ca3_threshold_offset.clamp_(-0.5, 0.5)  # Limit threshold adjustment range
 
     def get_state(self) -> TrisynapticState:
         """Get current state."""
@@ -1412,10 +1481,18 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         metadata: Optional[Dict[str, Any]] = None,
         priority_boost: float = 0.0,
         sequence: Optional[List[torch.Tensor]] = None,
+        # HER parameters (automatic integration)
+        goal: Optional[torch.Tensor] = None,
+        achieved_goal: Optional[torch.Tensor] = None,
+        done: bool = False,
     ) -> None:
         """Store an episode in episodic memory for later replay.
 
         Priority is computed based on reward magnitude and correctness.
+
+        **AUTOMATIC HER INTEGRATION**: If use_her=True and goal/achieved_goal
+        are provided, this method AUTOMATICALLY calls add_her_experience()
+        to populate the HER buffer. No manual calls needed during training!
 
         Args:
             state: Final activity pattern at decision time
@@ -1427,6 +1504,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             priority_boost: Extra priority for this episode
             sequence: Optional list of CA3 patterns from each gamma slot
                       during encoding. Enables gamma-driven replay.
+            goal: (HER) What the agent was trying to achieve (PFC working memory)
+            achieved_goal: (HER) What was actually achieved (CA1 output)
+            done: (HER) Whether episode terminated
         """
         cfg = self.tri_config
 
@@ -1463,6 +1543,37 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         self.episode_buffer.append(episode)
 
+        # =====================================================================
+        # AUTOMATIC HER INTEGRATION
+        # =====================================================================
+        # If HER is enabled AND goal information was provided, automatically
+        # add this experience to the HER buffer. This makes HER completely
+        # automatic during normal brain operation - no manual calls needed!
+        #
+        # HER needs:
+        # - state: Current state (provided)
+        # - action: Action taken (provided)
+        # - next_state: For simplicity, use state (single-step experiences)
+        # - goal: What we were trying to achieve (from PFC)
+        # - achieved_goal: What actually happened (from CA1)
+        # - reward: Reward received (provided)
+        # - done: Episode termination (provided)
+        #
+        # During consolidation, HER will relabel failed attempts as successes
+        # for the goals that were actually achieved, providing sample-efficient
+        # multi-goal learning.
+        # =====================================================================
+        if self.her_integration is not None and goal is not None:
+            self.add_her_experience(
+                state=state.clone(),
+                action=action,
+                next_state=state.clone(),  # Single-step (decision point)
+                goal=goal,
+                reward=reward,
+                done=done,
+                achieved_goal=achieved_goal,
+            )
+
     def sample_episodes_prioritized(self, n: int) -> List[Episode]:
         """Sample episodes with probability proportional to priority."""
         if not self.episode_buffer:
@@ -1474,6 +1585,174 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         indices = torch.multinomial(probs, n, replacement=False)
         return [self.episode_buffer[i] for i in indices]
+
+    def retrieve_similar(
+        self,
+        query_state: torch.Tensor,
+        query_action: Optional[int] = None,
+        k: int = 5,
+        similarity_threshold: float = 0.0
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve K most similar past experiences from episodic memory.
+        
+        For Phase 2 model-based planning: provides outcome predictions based
+        on similar past experiences. Uses pattern completion capability of
+        hippocampus to predict what will happen next.
+        
+        Biology: Hippocampus retrieves similar past episodes during planning
+        and decision-making (Johnson & Redish, 2007). CA3 pattern completion
+        allows partial cues to retrieve full memories.
+        
+        Args:
+            query_state: State to find similar experiences for [n] (1D, ADR-005)
+            query_action: Optional action to filter by (boosts similarity)
+            k: Number of similar experiences to retrieve
+            similarity_threshold: Minimum similarity to return (0.0-1.0)
+        
+        Returns:
+            similar_episodes: List of dicts with keys:
+                - 'state': Episode state tensor
+                - 'action': Action taken
+                - 'next_state': Resulting state (approximated)
+                - 'reward': Reward received
+                - 'similarity': Cosine similarity score (0.0-1.0)
+                - 'context': Optional context tensor
+                - 'metadata': Optional metadata dict
+        
+        Note:
+            Uses cosine similarity in state space. For more sophisticated
+            retrieval, could use CA3 recurrent dynamics or DG-CA3-CA1 circuit.
+        """
+        if not self.episode_buffer:
+            return []
+        
+        k = min(k, len(self.episode_buffer))
+        
+        # Compute similarity to all stored episodes
+        similarities = []
+        for episode in self.episode_buffer:
+            # Cosine similarity between query and episode state
+            sim = cosine_similarity_safe(
+                query_state.unsqueeze(0),
+                episode.state.unsqueeze(0)
+            ).item()
+            
+            # If action provided, boost similarity for matching actions
+            if query_action is not None and episode.action == query_action:
+                sim = min(1.0, sim * 1.2)  # 20% boost for matching action
+            
+            similarities.append((sim, episode))
+        
+        # Sort by similarity (descending)
+        similarities.sort(key=lambda x: x[0], reverse=True)
+        
+        # Build result list with top-K above threshold
+        similar = []
+        for sim, episode in similarities[:k]:
+            if sim >= similarity_threshold:
+                # Approximate next_state (we don't explicitly store it)
+                # For now, use the state itself as a proxy
+                # In full implementation, would track state transitions
+                next_state_approx = episode.state  # Could be improved
+                
+                similar.append({
+                    'state': episode.state,
+                    'action': episode.action,
+                    'next_state': next_state_approx,
+                    'reward': episode.reward,
+                    'similarity': sim,
+                    'context': episode.context,
+                    'metadata': episode.metadata,
+                    'correct': episode.correct,
+                    'priority': episode.priority,
+                })
+        
+        return similar
+
+    # =========================================================================
+    # HINDSIGHT EXPERIENCE REPLAY (HER)
+    # =========================================================================
+
+    def add_her_experience(
+        self,
+        state: torch.Tensor,
+        action: int,
+        next_state: torch.Tensor,
+        goal: torch.Tensor,
+        reward: float,
+        done: bool,
+        achieved_goal: Optional[torch.Tensor] = None
+    ) -> None:
+        """Add experience to HER buffer for goal-conditioned learning.
+        
+        Args:
+            state: Current state (CA3 pattern or cortex output)
+            action: Action taken
+            next_state: Resulting state
+            goal: Intended goal (from PFC working memory)
+            reward: Reward received
+            done: Episode terminated?
+            achieved_goal: What was actually achieved (if None, uses next_state)
+        """
+        if self.her_integration is None:
+            return
+        
+        # If achieved_goal not provided, use CA1 output as proxy
+        if achieved_goal is None:
+            achieved_goal = self.state.ca1_spikes if self.state.ca1_spikes is not None else next_state
+        
+        self.her_integration.add_experience(
+            state=state,
+            action=action,
+            next_state=next_state,
+            goal=goal,
+            reward=reward,
+            done=done,
+            achieved_goal=achieved_goal
+        )
+    
+    def enter_consolidation_mode(self) -> None:
+        """Enter consolidation/sleep mode for HER replay.
+        
+        During consolidation:
+        - Hippocampus replays stored experiences
+        - Hindsight goals are generated
+        - Both real and hindsight experiences available for learning
+        """
+        if self.her_integration is not None:
+            self.her_integration.enter_consolidation()
+    
+    def exit_consolidation_mode(self) -> None:
+        """Exit consolidation mode, return to active learning."""
+        if self.her_integration is not None:
+            self.her_integration.exit_consolidation()
+    
+    def sample_her_replay_batch(self, batch_size: int = 32) -> List:
+        """Sample batch of experiences for HER replay learning.
+        
+        Returns mix of real and hindsight-relabeled experiences.
+        Only returns data during consolidation mode.
+        
+        Args:
+            batch_size: Number of transitions to sample
+            
+        Returns:
+            List of EpisodeTransition objects (real + hindsight mix)
+        """
+        if self.her_integration is None:
+            return []
+        
+        return self.her_integration.replay_for_learning(batch_size)
+    
+    def get_her_diagnostics(self) -> Dict[str, Any]:
+        """Get HER system diagnostics."""
+        if self.her_integration is None:
+            return {"her_enabled": False}
+        
+        diagnostics = self.her_integration.get_diagnostics()
+        diagnostics["her_enabled"] = True
+        return diagnostics
 
     # =========================================================================
     # GAMMA-DRIVEN SEQUENCE REPLAY
@@ -1673,6 +1952,8 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             "ffi": ffi_state,
             # Episode buffer
             "episode_buffer_size": len(self.episode_buffer),
+            # HER diagnostics
+            "her": self.get_her_diagnostics(),
         }
 
     def get_pattern_similarity(self) -> Optional[float]:

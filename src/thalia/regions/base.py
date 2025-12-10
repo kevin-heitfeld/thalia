@@ -217,9 +217,6 @@ class BrainRegion(nn.Module, NeuromodulatorMixin, ABC):
     def forward(
         self,
         input_spikes: torch.Tensor,
-        dt: float = 1.0,
-        encoding_mod: float = 1.0,
-        retrieval_mod: float = 1.0,
         **kwargs
     ) -> torch.Tensor:
         """Process input through the region AND apply continuous plasticity.
@@ -229,14 +226,15 @@ class BrainRegion(nn.Module, NeuromodulatorMixin, ABC):
         is applied at each timestep, modulated by neuromodulators (dopamine).
 
         Args:
-            input_spikes: Input spike tensor, shape (batch, n_input)
-            dt: Time step in milliseconds
-            encoding_mod: Theta modulation for encoding (0-1, high at theta trough)
-            retrieval_mod: Theta modulation for retrieval (0-1, high at theta peak)
+            input_spikes: Input spike tensor [n_input] (1D per ADR-005)
             **kwargs: Additional region-specific inputs
 
         Returns:
-            Output spikes, shape (batch, n_output)
+            Output spikes [n_output] (1D per ADR-005)
+            
+        Note:
+            Theta modulation and timestep (dt_ms) are computed internally from
+            self._theta_phase and self.config.dt_ms (both set by Brain)
         """
         pass
 
@@ -258,13 +256,13 @@ class BrainRegion(nn.Module, NeuromodulatorMixin, ABC):
         spike history) while preserving learned weights.
         """
         self.state = RegionState()
-        if hasattr(self.neurons, 'reset_state'):
+        if hasattr(self, 'neurons') and hasattr(self.neurons, 'reset_state'):
             self.neurons.reset_state()
     
     def set_oscillator_phases(
         self,
         phases: Dict[str, float],
-        signals: Dict[str, float],
+        signals: Optional[Dict[str, float]] = None,
         theta_slot: int = 0,
         coupled_amplitudes: Optional[Dict[str, float]] = None,
     ) -> None:

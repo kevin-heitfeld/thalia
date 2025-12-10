@@ -114,7 +114,7 @@ class TrainingMonitor:
     def show_progress(self) -> None:
         """Display training progress with matplotlib."""
         if 'error' in self.data:
-            print(f"❌ {self.data['error']}")
+            print(f"[ERROR] {self.data['error']}")
             return
         
         latest = self.data.get('latest')
@@ -150,7 +150,7 @@ class TrainingMonitor:
         
         Checkpoints: {len(self.data['checkpoints'])}
         
-        Status: {'✅ Complete' if progress_pct >= 100 else '🔄 Training'}
+        Status: {'[COMPLETE]' if progress_pct >= 100 else '[TRAINING]'}
         """
         ax2.text(0.1, 0.5, status_text.strip(), fontsize=11, family='monospace',
                 verticalalignment='center', bbox=dict(boxstyle='round', 
@@ -162,7 +162,7 @@ class TrainingMonitor:
     def show_metrics(self) -> None:
         """Display training metrics over time."""
         if 'error' in self.data:
-            print(f"❌ {self.data['error']}")
+            print(f"[ERROR] {self.data['error']}")
             return
         
         if not self.data['checkpoints']:
@@ -228,7 +228,7 @@ class TrainingMonitor:
     def show_growth(self) -> None:
         """Display neuron growth over time."""
         if 'error' in self.data:
-            print(f"❌ {self.data['error']}")
+            print(f"[ERROR] {self.data['error']}")
             return
         
         if not self.data['checkpoints']:
@@ -314,7 +314,7 @@ class TrainingMonitor:
         
         self._refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
         self._refresh_thread.start()
-        print(f"✅ Auto-refresh started (interval: {interval}s)")
+        print(f"[OK] Auto-refresh started (interval: {interval}s)")
         print("   Call monitor.stop_auto_refresh() to stop")
     
     def stop_auto_refresh(self) -> None:
@@ -332,7 +332,7 @@ class TrainingMonitor:
             output_path: Path to save report (PNG or PDF)
         """
         if 'error' in self.data:
-            print(f"❌ Cannot save report: {self.data['error']}")
+            print(f"[ERROR] Cannot save report: {self.data['error']}")
             return
         
         # Create comprehensive figure
@@ -355,7 +355,7 @@ class TrainingMonitor:
         fig.suptitle('🧠 Thalia Training Report', fontsize=18, fontweight='bold')
         
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Report saved to: {output_path}")
+        print(f"[OK] Report saved to: {output_path}")
         plt.close(fig)
     
     def _plot_progress_to_ax(self, ax):

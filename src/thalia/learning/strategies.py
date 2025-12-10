@@ -98,7 +98,7 @@ class STDPConfig(LearningConfig):
     a_minus: float = 0.012    # LTD amplitude (slightly larger for stability)
     tau_plus: float = 20.0    # LTP time constant (ms)
     tau_minus: float = 20.0   # LTD time constant (ms)
-    dt: float = 1.0           # Simulation timestep (ms)
+    dt_ms: float = 1.0        # Simulation timestep (ms)
 
 
 @dataclass
@@ -317,7 +317,7 @@ class STDPStrategy(BaseStrategy):
         self.stdp_config: STDPConfig = self.config  # type: ignore
         
         # Compute decay factors
-        dt = self.stdp_config.dt
+        dt = self.stdp_config.dt_ms
         self.register_buffer(
             "decay_pre",
             torch.tensor(1.0 - dt / self.stdp_config.tau_plus, dtype=torch.float32),

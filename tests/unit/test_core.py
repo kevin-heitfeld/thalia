@@ -226,7 +226,7 @@ class TestConductanceLIF:
         builds) vs later ISIs (after adaptation accumulates).
         """
         config = ConductanceLIFConfig(
-            dt=0.1,                # Small dt for fine temporal resolution
+            dt_ms=0.1,             # Small dt for fine temporal resolution
             adapt_increment=1.0,   # Strong adaptation increment per spike
             tau_adapt=500.0,       # Slow decay so it accumulates over many spikes
             v_threshold=1.0,
@@ -260,7 +260,7 @@ class TestConductanceLIF:
 
     def test_refractory_period(self):
         """Test absolute refractory period."""
-        config = ConductanceLIFConfig(tau_ref=2.0, dt=0.1)  # 20 timesteps refractory
+        config = ConductanceLIFConfig(tau_ref=2.0, dt_ms=0.1)  # 20 timesteps refractory
         neuron = ConductanceLIF(n_neurons=5, config=config)
         neuron.reset_state()
 

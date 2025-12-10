@@ -592,7 +592,7 @@ class TestPrefrontal:
         initial_wm = prefrontal.get_working_memory().clone()
 
         # Run maintenance (fewer steps to allow for decay)
-        metrics = prefrontal.maintain(n_steps=5, dt=1.0)
+        metrics = prefrontal.maintain(n_steps=5)
 
         # Should retain some information (relaxed threshold)
         assert metrics["retention"] > 0.075, f"WM retention {metrics['retention']:.3f} too low"

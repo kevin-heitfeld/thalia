@@ -20,7 +20,7 @@ import torch
 from thalia.core.growth import GrowthManager, CapacityMetrics, GrowthEvent
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
-from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig, PredictiveCortex, PredictiveCortexConfig
+from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 from thalia.integration.spiking_pathway import SpikingPathway, SpikingPathwayConfig
@@ -368,7 +368,7 @@ class TestCortexGrowth:
             n_input=128,
             n_output=64,
             prediction_enabled=True,
-            use_attention=True,
+            use_precision_weighting=True,
             device="cpu"
         )
         cortex = PredictiveCortex(config)
@@ -385,9 +385,8 @@ class TestCortexGrowth:
         assert cortex.l23_size > initial_l23
         assert cortex.l5_size > initial_l5
 
-        # Prediction and attention modules should be recreated
+        # Prediction module should be recreated
         assert cortex.prediction_layer is not None
-        assert cortex.attention is not None
 
     def test_cortex_layer_sizes_scale_proportionally(self):
         """Test that all layers expand proportionally."""

@@ -198,7 +198,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         parent_config = RegionConfig(
             n_input=config.n_input,
             n_output=_output_size,
-            dt=config.dt,
+            dt_ms=config.dt_ms,
             device=config.device,
         )
 
@@ -417,7 +417,6 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
     def forward(
         self,
         input_spikes: torch.Tensor,
-        dt: float = 1.0,
         top_down: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -426,7 +425,6 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
         Args:
             input_spikes: Input spike pattern [n_input] (1D)
-            dt: Time step in ms (for compatibility)
             top_down: Optional top-down modulation from higher areas [l23_size] (1D)
                       NOTE: This is for L2/3 modulation, NOT L4 prediction!
             **kwargs: Additional arguments for compatibility
@@ -435,7 +433,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             output: Output spikes (L2/3 + L5) [l23_size + l5_size] (1D)
         
         Note:
-            Theta modulation computed internally from self._theta_phase (set by Brain)
+            Theta modulation and timestep (dt_ms) computed internally from config
         """
         # ADR-005: Expect 1D tensors
         assert input_spikes.dim() == 1, (
@@ -465,7 +463,6 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         # Pass through to the base LayeredCortex (computes theta modulation internally)
         cortex_output = self.cortex.forward(
             input_spikes,
-            dt=dt,
             top_down=top_down,
         )
 
@@ -636,18 +633,18 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         - neuromodulator_state: Current neuromodulators
         - config: Configuration for validation
         """
-        # Get base LayeredCortex state
-        state_dict = super().get_full_state()
+        # Get base LayeredCortex state (from wrapped cortex, not super())
+        state_dict = self.cortex.get_full_state()
 
         # Add prediction layer state
         if self.prediction_layer is not None:
             pred_state = self.prediction_layer.get_state()
             state_dict["prediction_state"] = {
-                "W_pred": pred_state.get("W_pred").clone() if "W_pred" in pred_state else None,
-                "W_encode": pred_state.get("W_encode").clone() if "W_encode" in pred_state else None,
-                "log_precision": pred_state.get("log_precision").clone() if "log_precision" in pred_state else None,
-                "prediction": pred_state.get("prediction").clone() if "prediction" in pred_state else None,
-                "error": pred_state.get("error").clone() if "error" in pred_state else None,
+                "W_pred": pred_state["W_pred"].clone() if "W_pred" in pred_state and pred_state["W_pred"] is not None else None,
+                "W_encode": pred_state["W_encode"].clone() if "W_encode" in pred_state and pred_state["W_encode"] is not None else None,
+                "log_precision": pred_state["log_precision"].clone() if "log_precision" in pred_state and pred_state["log_precision"] is not None else None,
+                "prediction": pred_state["prediction"].clone() if "prediction" in pred_state and pred_state["prediction"] is not None else None,
+                "error": pred_state["error"].clone() if "error" in pred_state and pred_state["error"] is not None else None,
             }
         else:
             state_dict["prediction_state"] = None
@@ -669,8 +666,8 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         Raises:
             ValueError: If config dimensions don't match
         """
-        # Load base LayeredCortex state
-        super().load_full_state(state)
+        # Load base LayeredCortex state (PredictiveCortex wraps LayeredCortex)
+        self.cortex.load_full_state(state)
 
         # Load prediction layer state
         if "prediction_state" in state and state["prediction_state"] is not None:

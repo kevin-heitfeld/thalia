@@ -120,11 +120,11 @@ class ClimbingFiberSystem:
         target: torch.Tensor,
     ) -> torch.Tensor:
         """Compute error signal (climbing fiber activity).
-        
+
         Args:
             actual: Actual output [n_output] (1D)
             target: Target output [n_output] (1D)
-            
+
         Returns:
             Error signal [n_output] (1D)
         """
@@ -158,7 +158,7 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
     - Error signal = target - actual (from climbing fibers)
     - Weight change = learning_rate × input × error
     - This is essentially the delta rule / perceptron learning
-    
+
     Mixins Provide:
     ---------------
     From DiagnosticsMixin:
@@ -167,13 +167,13 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         - check_weight_health(weights, name) → WeightHealth
         - detect_runaway_excitation(spikes) → bool
         - detect_silence(spikes) → bool
-    
+
     From BrainRegion (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
         - deliver_error(target) → Dict [cerebellum-specific]
-    
+
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
     """
@@ -215,6 +215,7 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         # Beta oscillator phase tracking for motor timing
         self._beta_phase: float = 0.0
         self._gamma_phase: float = 0.0
+        self._theta_phase: float = 0.0
         self._beta_amplitude: float = 1.0
         self._gamma_amplitude: float = 1.0
         self._coupled_amplitudes: Dict[str, float] = {}
@@ -266,7 +267,7 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         self._theta_phase = phases.get('theta', 0.0)
         self._beta_phase = phases.get('beta', 0.0)
         self._gamma_phase = phases.get('gamma', 0.0)
-        
+
         # Store effective amplitudes (pre-computed by OscillatorManager)
         # Automatic multiplicative coupling:
         # - Beta modulated by ALL slower oscillators (delta, theta, alpha)
@@ -296,11 +297,11 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         phase_diff = abs(self._beta_phase - math.pi)
         width = math.pi / 4  # ±45° learning window
         gate = math.exp(-(phase_diff ** 2) / (2 * width ** 2))
-        
+
         # Modulate by ALL coupling effects (theta, beta modulation)
         # This gives emergent theta-beta-gamma triple coupling automatically
         gate = gate * self._gamma_amplitude
-        
+
         return gate
 
     def _create_neurons(self) -> ConductanceLIF:
@@ -320,9 +321,9 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         sparsity: float = 0.1,
     ) -> None:
         """Add neurons to cerebellum (Purkinje cells).
-        
+
         Expands motor learning capacity by adding neurons.
-        
+
         Args:
             n_new: Number of neurons to add
             initialization: Weight initialization strategy
@@ -330,11 +331,11 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         """
         from thalia.core.weight_init import WeightInitializer
         from dataclasses import replace
-        
+
         old_n_output = self.config.n_output
         new_n_output = old_n_output + n_new
         n_granule = self.config.n_input  # Granule layer is input layer
-        
+
         # Expand granule→Purkinje weights
         if initialization == 'xavier':
             new_weights = WeightInitializer.xavier(
@@ -355,12 +356,12 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
                 n_input=n_granule,
                 device=self.device,
             )
-        
+
         # Update weights (Cerebellum uses self.weights directly, not w_granule_purkinje)
         self.weights = nn.Parameter(
             torch.cat([self.weights.data, new_weights], dim=0)
         )
-        
+
         # Expand Purkinje neurons
         from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
         neuron_config = ConductanceLIFConfig(
@@ -369,27 +370,25 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         )
         self.neurons = ConductanceLIF(n_neurons=new_n_output, config=neuron_config)
         self.neurons.to(self.device)
-        
+
         # Update config
         self.config = replace(self.config, n_output=new_n_output)
 
     def forward(
         self,
         input_spikes: torch.Tensor,
-        dt: float = 1.0,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input through cerebellar circuit.
 
         Args:
             input_spikes: Input spike pattern [n_input] (1D bool tensor, ADR-005)
-            dt: Time step in ms
 
         Returns:
             Output spikes [n_output] (1D bool tensor, ADR-004/005)
-        
+
         Note:
-            Theta modulation computed internally from self._theta_phase (set by Brain)
+            Theta modulation and timestep (dt_ms) computed internally from config
         """
         # Assert 1D input
         assert input_spikes.dim() == 1, (
@@ -418,6 +417,7 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
 
         # Update STDP traces (already 1D)
+        dt = self.config.dt_ms
         trace_decay = 1.0 - dt / cfg.stdp_tau_ms
         self.input_trace = self.input_trace * trace_decay + input_spikes.float()
         self.output_trace = self.output_trace * trace_decay

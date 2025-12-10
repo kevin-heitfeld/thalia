@@ -100,6 +100,14 @@ class StriatumConfig(RegionConfig):
     max_tonic_dopamine: float = 0.5
 
     # =========================================================================
+    # TD(λ) - MULTI-STEP CREDIT ASSIGNMENT (Phase 1 Enhancement)
+    # =========================================================================
+    use_td_lambda: bool = True  # Enable TD(λ) instead of basic TD(0) [DEFAULT: Enabled]
+    td_lambda: float = 0.9  # Trace decay rate (0=TD(0), 0.9=~10 steps, 1.0=Monte Carlo)
+    td_gamma: float = 0.99  # Discount factor for future rewards
+    td_lambda_accumulating: bool = True  # Accumulating vs replacing traces
+
+    # =========================================================================
     # UCB EXPLORATION BONUS
     # =========================================================================
     ucb_exploration: bool = True
@@ -134,3 +142,13 @@ class StriatumConfig(RegionConfig):
     # High beta → action persistence (D1 dominant, D2 suppressed)
     # Low beta → action flexibility (D2 effective, D1 reduced)
     beta_modulation_strength: float = 0.3  # [0, 1] - strength of beta influence
+
+    # =========================================================================
+    # GOAL-CONDITIONED VALUES (Phase 1 Week 2-3 Enhancement)
+    # =========================================================================
+    # Enable PFC goal context to modulate striatal action values
+    # Biology: PFC → Striatum projections gate action selection by goal context
+    use_goal_conditioning: bool = True  # Enable goal-conditioned value learning
+    pfc_size: int = 128  # Size of PFC goal context input (must match PFC n_output)
+    goal_modulation_strength: float = 0.5  # How strongly goals modulate values
+    goal_modulation_lr: float = 0.001  # Learning rate for PFC → striatum weights

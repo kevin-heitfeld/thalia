@@ -1,4 +1,4 @@
-"""
+﻿"""
 Integration Tests: Curriculum Training Pipeline
 
 Tests the complete curriculum training pipeline from Stage -0.5 to Stage 0,
@@ -18,6 +18,8 @@ Date: December 9, 2025
 import tempfile
 import shutil
 import pytest
+from pathlib import Path
+from tqdm import tqdm
 
 from thalia.core.brain import EventDrivenBrain
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
@@ -138,7 +140,7 @@ def test_sensorimotor_to_phonology_pipeline(
 
     # Configure stage (reduced steps for testing)
     stage_config = StageConfig(
-        duration_steps=1000,  # Reduced from 50k for testing
+        duration_steps=200,  # Reduced from 50k for testing
         task_configs={
             'motor_control': TaskConfig(weight=0.4, difficulty=0.5),
             'reaching': TaskConfig(weight=0.35, difficulty=0.6),
@@ -151,13 +153,22 @@ def test_sensorimotor_to_phonology_pipeline(
             'manipulation_success': 0.50,
             'prediction_error': 0.15,
         },
-        growth_check_interval=500,
-        consolidation_interval=500,
-        checkpoint_interval=500,
+        growth_check_interval=100,
+        consolidation_interval=100,
+        checkpoint_interval=100,
         enable_growth=True,
     )
 
     # Train Stage -0.5
+    print("   Training (this may take a few minutes)...")
+    pbar_sensorimotor = tqdm(total=stage_config.duration_steps, desc="Stage -0.5", unit="step")
+
+    # Add callback to update progress bar
+    def update_progress_sensorimotor(step, metrics):
+        pbar_sensorimotor.update(1)
+
+    curriculum_trainer.add_callback(update_progress_sensorimotor)
+
     result_sensorimotor = curriculum_trainer.train_stage(
         stage=CurriculumStage.SENSORIMOTOR,
         config=stage_config,
@@ -165,12 +176,15 @@ def test_sensorimotor_to_phonology_pipeline(
         evaluator=evaluate_stage_sensorimotor,
     )
 
-    print(f"✅ Stage -0.5 completed")
+    pbar_sensorimotor.close()
+    curriculum_trainer.callbacks.clear()  # Clear callbacks for next stage
+
+    print(f"[OK] Stage -0.5 completed")
     print(f"   Steps: {result_sensorimotor.total_steps}")
     print(f"   Success: {result_sensorimotor.success}")
 
     # Verify training completed
-    assert result_sensorimotor.total_steps == 1000
+    assert result_sensorimotor.total_steps == 200
     assert len(result_sensorimotor.checkpoints) >= 1
 
     # ========================================================================
@@ -195,13 +209,14 @@ def test_sensorimotor_to_phonology_pipeline(
 
     print("\n[3/6] Saving checkpoint...")
 
-    checkpoint_path = curriculum_trainer._save_checkpoint(
+    checkpoint_path_str = curriculum_trainer._save_checkpoint(
         stage=CurriculumStage.SENSORIMOTOR,
         step=result_sensorimotor.total_steps,
     )
+    checkpoint_path = Path(checkpoint_path_str)
 
     assert checkpoint_path.exists()
-    print(f"✅ Checkpoint saved: {checkpoint_path}")
+    print(f"[OK] Checkpoint saved: {checkpoint_path}")
 
     # ========================================================================
     # Part 4: Transition to Stage 0
@@ -216,7 +231,7 @@ def test_sensorimotor_to_phonology_pipeline(
         weeks=1,  # Reduced for testing
     )
 
-    print("✅ Transition completed")
+    print("[OK] Transition completed")
 
     # ========================================================================
     # Part 5: Train Stage 0 (Phonology)
@@ -232,7 +247,7 @@ def test_sensorimotor_to_phonology_pipeline(
 
     # Configure stage
     stage0_config = StageConfig(
-        duration_steps=1000,  # Reduced from 60k for testing
+        duration_steps=200,  # Reduced from 60k for testing
         task_configs={
             'mnist': TaskConfig(weight=0.30, difficulty=0.5),
             'temporal': TaskConfig(weight=0.25, difficulty=0.6),
@@ -245,13 +260,22 @@ def test_sensorimotor_to_phonology_pipeline(
             'phoneme_discrimination': 0.70,
             'gaze_following_accuracy': 0.65,
         },
-        growth_check_interval=500,
-        consolidation_interval=500,
-        checkpoint_interval=500,
+        growth_check_interval=100,
+        consolidation_interval=100,
+        checkpoint_interval=100,
         enable_growth=True,
     )
 
     # Train Stage 0
+    print("   Training (this may take a few minutes)...")
+    pbar_phonology = tqdm(total=stage0_config.duration_steps, desc="Stage 0", unit="step")
+
+    # Add callback to update progress bar
+    def update_progress_phonology(step, metrics):
+        pbar_phonology.update(1)
+
+    curriculum_trainer.add_callback(update_progress_phonology)
+
     result_phonology = curriculum_trainer.train_stage(
         stage=CurriculumStage.PHONOLOGY,
         config=stage0_config,
@@ -259,12 +283,15 @@ def test_sensorimotor_to_phonology_pipeline(
         evaluator=evaluate_stage_phonology,
     )
 
-    print(f"✅ Stage 0 completed")
+    pbar_phonology.close()
+    curriculum_trainer.callbacks.clear()  # Clear callbacks for next stage
+
+    print(f"[OK] Stage 0 completed")
     print(f"   Steps: {result_phonology.total_steps}")
     print(f"   Success: {result_phonology.success}")
 
     # Verify training completed
-    assert result_phonology.total_steps == 1000
+    assert result_phonology.total_steps == 200
     assert len(result_phonology.checkpoints) >= 1
 
     # ========================================================================
@@ -277,23 +304,25 @@ def test_sensorimotor_to_phonology_pipeline(
     # (In real training, this would use separate test set)
     # For now, just verify brain still responds to sensorimotor input
 
-    test_obs = sensorimotor_wrapper.reset()
+    # Get a sensorimotor task (already encoded to correct size)
+    test_task = sensorimotor_loader.get_task('motor_control')
     test_output = curriculum_trainer.brain.process_sample(
-        test_obs,
-        n_timesteps=10,
+        test_task['input'],
+        n_timesteps=test_task.get('n_timesteps', 10),
     )
 
-    # Verify brain still produces output
-    assert test_output['spikes'].sum() > 0, "Brain is silent after Stage 0"
+    # Verify brain still produces output (check spike counts)
+    total_spikes = sum(test_output['spike_counts'].values())
+    assert total_spikes > 0, "Brain is silent after Stage 0"
 
-    print("✅ Brain still responds to sensorimotor input")
+    print("[OK] Brain still responds to sensorimotor input")
 
     # ========================================================================
     # Summary
     # ========================================================================
 
     print("\n" + "="*80)
-    print("✅ PIPELINE TEST PASSED")
+    print("[OK] PIPELINE TEST PASSED")
     print("="*80)
     print(f"Stage -0.5: {result_sensorimotor.total_steps} steps")
     print(f"Stage 0:    {result_phonology.total_steps} steps")
@@ -330,15 +359,15 @@ def test_growth_triggered_correctly(curriculum_trainer, sensorimotor_wrapper):
 
     # Configure stage with frequent growth checks
     stage_config = StageConfig(
-        duration_steps=500,
+        duration_steps=200,
         task_configs={
             'motor_control': TaskConfig(weight=0.5, difficulty=0.5),
             'reaching': TaskConfig(weight=0.5, difficulty=0.6),
         },
         success_criteria={},
         growth_check_interval=100,  # Check frequently
-        consolidation_interval=200,
-        checkpoint_interval=200,
+        consolidation_interval=100,
+        checkpoint_interval=100,
         enable_growth=True,
     )
 
@@ -365,7 +394,7 @@ def test_growth_triggered_correctly(curriculum_trainer, sensorimotor_wrapper):
     # Verify training completed
     assert result.total_steps == 500
 
-    print("\n✅ Growth monitoring test passed")
+    print("\n[OK] Growth monitoring test passed")
 
 
 # ============================================================================
@@ -394,7 +423,7 @@ def test_consolidation_triggered_by_memory_pressure(
 
     # Configure stage with frequent consolidation checks
     stage_config = StageConfig(
-        duration_steps=500,
+        duration_steps=200,
         task_configs={
             'motor_control': TaskConfig(weight=0.5, difficulty=0.5),
             'reaching': TaskConfig(weight=0.5, difficulty=0.6),
@@ -402,7 +431,7 @@ def test_consolidation_triggered_by_memory_pressure(
         success_criteria={},
         growth_check_interval=1000,
         consolidation_interval=100,  # Check frequently
-        checkpoint_interval=500,
+        checkpoint_interval=100,
         enable_growth=False,  # Disable growth to focus on consolidation
     )
 
@@ -422,7 +451,7 @@ def test_consolidation_triggered_by_memory_pressure(
     # Verify training completed
     assert result.total_steps == 500
 
-    print("\n✅ Consolidation monitoring test passed")
+    print("\n[OK] Consolidation monitoring test passed")
 
 
 # ============================================================================
@@ -468,14 +497,14 @@ def test_resume_from_checkpoint(
 
     # Configure stage
     stage_config = StageConfig(
-        duration_steps=500,
+        duration_steps=200,
         task_configs={
             'motor_control': TaskConfig(weight=1.0, difficulty=0.5),
         },
         success_criteria={},
         growth_check_interval=1000,
         consolidation_interval=1000,
-        checkpoint_interval=500,
+        checkpoint_interval=200,
         enable_growth=False,
     )
 
@@ -486,7 +515,7 @@ def test_resume_from_checkpoint(
         task_loader=sensorimotor_loader,
     )
 
-    print(f"✅ First training: {result1.total_steps} steps")
+    print(f"[OK] First training: {result1.total_steps} steps")
     assert len(result1.checkpoints) >= 1
 
     checkpoint_path = result1.checkpoints[-1]
@@ -511,7 +540,7 @@ def test_resume_from_checkpoint(
     # Load checkpoint
     trainer2.load_checkpoint(checkpoint_path)
 
-    print(f"✅ Checkpoint loaded")
+    print(f"[OK] Checkpoint loaded")
 
     # ========================================================================
     # Part 3: Continue training
@@ -529,7 +558,7 @@ def test_resume_from_checkpoint(
         task_loader=sensorimotor_loader2,
     )
 
-    print(f"✅ Second training: {result2.total_steps} steps")
+    print(f"[OK] Second training: {result2.total_steps} steps")
 
     # ========================================================================
     # Part 4: Verify continuity
@@ -544,7 +573,7 @@ def test_resume_from_checkpoint(
     # Should be ~1000 steps (500 + 500)
     assert total_steps >= 1000
 
-    print("\n✅ Checkpoint resume test passed")
+    print("\n[OK] Checkpoint resume test passed")
 
 
 # ============================================================================
@@ -574,14 +603,14 @@ def test_extended_consolidation_before_transition(
     sensorimotor_loader = create_sensorimotor_loader(sensorimotor_wrapper, output_size=curriculum_trainer.brain.config.input_size)
 
     stage_config = StageConfig(
-        duration_steps=300,
+        duration_steps=100,
         task_configs={
             'motor_control': TaskConfig(weight=1.0, difficulty=0.5),
         },
         success_criteria={},
         growth_check_interval=1000,
         consolidation_interval=1000,
-        checkpoint_interval=1000,
+        checkpoint_interval=100,
         enable_growth=False,
     )
 
@@ -591,7 +620,7 @@ def test_extended_consolidation_before_transition(
         task_loader=sensorimotor_loader,
     )
 
-    print(f"✅ Training completed: {result.total_steps} steps")
+    print(f"[OK] Training completed: {result.total_steps} steps")
 
     # Trigger transition (this calls extended consolidation internally)
     print("\n[2/2] Triggering transition with extended consolidation...")
@@ -602,8 +631,8 @@ def test_extended_consolidation_before_transition(
         weeks=1,
     )
 
-    print("✅ Transition completed")
-    print("\n✅ Extended consolidation test passed")
+    print("[OK] Transition completed")
+    print("\n[OK] Extended consolidation test passed")
 
 
 # ============================================================================

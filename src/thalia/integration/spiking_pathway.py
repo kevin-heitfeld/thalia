@@ -62,8 +62,9 @@ class SpikingLearningRule(Enum):
 class SpikingPathwayConfig(NeuralComponentConfig):
     """Configuration for a spiking pathway.
 
-    Inherits n_neurons, dt, device, dtype, seed from NeuralComponentConfig.
-    
+    Inherits n_neurons, dt_ms, device, dtype, seed from NeuralComponentConfig.
+    The dt_ms should be set from GlobalConfig.dt_ms by Brain.
+
     Note: For pathways, you can set either n_neurons OR target_size (they're synonyms).
     If both are provided, target_size takes precedence. If neither is set, defaults to 100.
     The n_neurons field represents the pathway's intermediate neuron population size.
@@ -107,7 +108,7 @@ class SpikingPathwayConfig(NeuralComponentConfig):
         # Homeostasis
         synaptic_scaling: Enable homeostatic scaling
         target_rate: Target firing rate for scaling
-        
+
     Note: Set source_size and either n_neurons or target_size when creating config.
     They will be automatically synchronized.
     """
@@ -176,7 +177,7 @@ class SpikingPathwayConfig(NeuralComponentConfig):
 class SpikingPathway(BaseNeuralPathway):
     """
     Fully spiking inter-region pathway with temporal dynamics.
-    
+
     Inherits from BaseNeuralPathway, implementing the NeuralPathway protocol
     interface with a standardized API for inter-region connections.
 
@@ -189,12 +190,12 @@ class SpikingPathway(BaseNeuralPathway):
 
     The pathway acts as a "mini-region" that transforms spikes
     from source to target while maintaining temporal structure.
-    
+
     Protocol Compliance:
     - forward(): Process spikes through pathway (**learning happens automatically**)
     - reset_state(): Clear membrane potentials, traces, delays
     - get_diagnostics(): Report activity and learning metrics
-    
+
     Note on Learning:
     Like brain regions (Prefrontal, Hippocampus, etc.), this pathway
     ALWAYS learns during forward passes via STDP. There is no separate
@@ -375,19 +376,22 @@ class SpikingPathway(BaseNeuralPathway):
     def forward(
         self,
         source_spikes: torch.Tensor,
-        dt: float = 1.0,
         time_ms: float = 0.0,
     ) -> torch.Tensor:
         """Process source spikes and generate target spikes.
 
         Args:
             source_spikes: Binary spike tensor from source (source_size,)
-            dt: Timestep in ms
             time_ms: Current time in ms (for phase coding)
 
         Returns:
             Binary spike tensor for target (target_size,)
+
+        Note:
+            Timestep (dt_ms) is obtained from self.config.dt_ms (set from GlobalConfig)
         """
+        # Get timestep from config
+        dt = self.config.dt_ms
         cfg = self.config
 
         # =====================================================================
@@ -498,7 +502,7 @@ class SpikingPathway(BaseNeuralPathway):
         # 8. APPLY STDP LEARNING
         # =====================================================================
         if cfg.learning_rule != SpikingLearningRule.REPLAY_STDP or self.replay_active:
-            self._apply_stdp(source_spikes, target_spikes, dt)
+            self._apply_stdp(source_spikes, target_spikes)
 
         # =====================================================================
         # 9. UPDATE FIRING RATE ESTIMATE (for homeostasis)
@@ -511,7 +515,7 @@ class SpikingPathway(BaseNeuralPathway):
 
         # Apply synaptic scaling
         if cfg.synaptic_scaling:
-            self._apply_synaptic_scaling(dt)
+            self._apply_synaptic_scaling()
 
         return target_spikes
 
@@ -519,9 +523,13 @@ class SpikingPathway(BaseNeuralPathway):
         self,
         pre_spikes: torch.Tensor,
         post_spikes: torch.Tensor,
-        dt: float,
     ) -> None:
-        """Apply STDP weight updates with optional BCM modulation."""
+        """Apply STDP weight updates with optional BCM modulation.
+
+        Note:
+            Timestep (dt_ms) obtained from self.config
+        """
+        dt = self.config.dt_ms
         cfg = self.config
 
         # =====================================================================
@@ -601,8 +609,13 @@ class SpikingPathway(BaseNeuralPathway):
             self.weights.data += dw
             clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
 
-    def _apply_synaptic_scaling(self, dt: float) -> None:
-        """Apply homeostatic synaptic scaling."""
+    def _apply_synaptic_scaling(self) -> None:
+        """Apply homeostatic synaptic scaling.
+
+        Note:
+            Timestep (dt_ms) obtained from self.config
+        """
+        dt = self.config.dt_ms
         cfg = self.config
 
         # Compute scaling factor per neuron
@@ -753,15 +766,15 @@ class SpikingPathway(BaseNeuralPathway):
         sparsity: float = 0.1,
     ) -> None:
         """Add neurons to pathway (expands target dimension).
-        
+
         Pathways expand the target side (output) when adding neurons.
         This maintains connectivity with source while increasing capacity.
-        
+
         Args:
             n_new: Number of target neurons to add
             initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
             sparsity: Connection sparsity for new neurons (if sparse_random)
-            
+
         Implementation:
             1. Expand weight matrix: [target, source] → [target+n_new, source]
             2. Expand all target-side state tensors (membrane, traces, etc.)
@@ -772,10 +785,10 @@ class SpikingPathway(BaseNeuralPathway):
         device = self.weights.device
         old_target_size = cfg.target_size
         new_target_size = old_target_size + n_new
-        
+
         # 1. Expand weight matrix [target, source] → [target+n_new, source]
         old_weights = self.weights.data.clone()
-        
+
         # Initialize new weights for added neurons
         if initialization == 'xavier':
             new_weights = WeightInitializer.xavier(
@@ -800,14 +813,14 @@ class SpikingPathway(BaseNeuralPathway):
                 std=cfg.init_std,
                 device=device
             )
-        
+
         # Clamp to weight bounds
         new_weights = new_weights.clamp(cfg.w_min, cfg.w_max)
-        
+
         # Concatenate old and new weights
         expanded_weights = torch.cat([old_weights, new_weights], dim=0)
         self.weights = nn.Parameter(expanded_weights, requires_grad=False)
-        
+
         # 2. Expand axonal delays [target, source] → [target+n_new, source]
         new_delays = WeightInitializer.gaussian(
             n_output=n_new,
@@ -818,7 +831,7 @@ class SpikingPathway(BaseNeuralPathway):
         ).clamp(min=0.1)
         expanded_delays = torch.cat([self.axonal_delays, new_delays], dim=0)
         self.register_buffer("axonal_delays", expanded_delays)
-        
+
         # 3. Expand connectivity mask if present
         if self.connectivity_mask is not None:
             new_mask = WeightInitializer.sparse_random(
@@ -829,33 +842,33 @@ class SpikingPathway(BaseNeuralPathway):
             )
             expanded_mask = torch.cat([self.connectivity_mask, new_mask], dim=0)
             self.register_buffer("connectivity_mask", expanded_mask)
-        
+
         # 4. Expand all target-side state tensors
         # Membrane potential
         new_membrane = torch.zeros(n_new, device=device) + cfg.v_rest
         expanded_membrane = torch.cat([self.membrane, new_membrane], dim=0)
         self.register_buffer("membrane", expanded_membrane)
-        
+
         # Synaptic current
         new_current = torch.zeros(n_new, device=device)
         expanded_current = torch.cat([self.synaptic_current, new_current], dim=0)
         self.register_buffer("synaptic_current", expanded_current)
-        
+
         # Refractory counter
         new_refractory = torch.zeros(n_new, device=device)
         expanded_refractory = torch.cat([self.refractory, new_refractory], dim=0)
         self.register_buffer("refractory", expanded_refractory)
-        
+
         # Post-synaptic trace (target-side)
         new_post_trace = torch.zeros(n_new, device=device)
         expanded_post_trace = torch.cat([self.post_trace, new_post_trace], dim=0)
         self.register_buffer("post_trace", expanded_post_trace)
-        
+
         # Firing rate estimate
         new_firing_rate = torch.zeros(n_new, device=device) + cfg.target_rate
         expanded_firing_rate = torch.cat([self.firing_rate_estimate, new_firing_rate], dim=0)
         self.register_buffer("firing_rate_estimate", expanded_firing_rate)
-        
+
         # 5. Update STP if enabled
         if self.stp is not None:
             # STP tracks post-synaptic resources
@@ -866,7 +879,7 @@ class SpikingPathway(BaseNeuralPathway):
                 per_synapse=True,
             )
             self.stp.to(device)
-        
+
         # 6. Update BCM if enabled
         if self.bcm is not None:
             # BCM tracks sliding threshold per target neuron
@@ -876,7 +889,7 @@ class SpikingPathway(BaseNeuralPathway):
                 config=old_bcm_config,
             )
             self.bcm.to(device)
-        
+
         # 7. Update config
         self.config.target_size = new_target_size
         self.config.n_neurons = new_target_size  # Keep n_neurons in sync
@@ -988,7 +1001,7 @@ class SpikingPathway(BaseNeuralPathway):
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete pathway state for checkpointing (BrainComponent protocol).
-        
+
         Returns:
             Dictionary with keys:
             - 'weights': Dict[str, torch.Tensor] - All learnable parameters
@@ -1007,10 +1020,10 @@ class SpikingPathway(BaseNeuralPathway):
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Restore complete pathway state from checkpoint (BrainComponent protocol).
-        
+
         Args:
             state: Dictionary from get_full_state()
-            
+
         Raises:
             ValueError: If state is incompatible
         """
@@ -1020,6 +1033,6 @@ class SpikingPathway(BaseNeuralPathway):
                 f"State class mismatch: expected {self.__class__.__name__}, "
                 f"got {state.get('class_name')}"
             )
-        
+
         # Use existing load_state() for pathway state
         self.load_state(state['pathway_state'])

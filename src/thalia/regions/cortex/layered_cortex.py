@@ -39,6 +39,7 @@ Date: December 2025
 
 from __future__ import annotations
 
+import math
 from typing import Optional, Dict, Any
 
 import torch
@@ -46,9 +47,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.regions.base import BrainRegion, RegionConfig, LearningRule
-from thalia.core.neuron import LIFNeuron, LIFConfig
+from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
+from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
 from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
@@ -115,7 +117,6 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.layer_config = config
 
         # Compute layer sizes
-        from thalia.regions.cortex.config import calculate_layer_sizes
         self.l4_size, self.l23_size, self.l5_size = calculate_layer_sizes(
             config.n_output, config.l4_ratio, config.l23_ratio, config.l5_ratio
         )
@@ -132,7 +133,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         parent_config = RegionConfig(
             n_input=config.n_input,
             n_output=actual_output,
-            dt=config.dt,
+            dt_ms=config.dt_ms,
             device=config.device,
         )
 
@@ -179,6 +180,9 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # State
         self.state = LayeredCortexState()
 
+        # Theta phase for encoding/retrieval modulation
+        self._theta_phase = 0.0
+
         # Cumulative spike counters (for diagnostics across timesteps)
         self._cumulative_l4_spikes = 0
         self._cumulative_l23_spikes = 0
@@ -209,22 +213,48 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         return None
 
     def _init_layers(self) -> None:
-        """Initialize LIF neurons for each layer."""
+        """Initialize conductance-based LIF neurons for each layer.
+        
+        Uses ConductanceLIF for biologically realistic gain control:
+        - Separate excitatory and inhibitory conductances
+        - Shunting inhibition (divisive effect)
+        - Natural saturation at reversal potentials
+        - No need for artificial divisive normalization
+        """
         cfg = self.layer_config
 
-        l4_config = LIFConfig(tau_mem=15.0, v_threshold=1.0)
-        # L2/3 gets spike-frequency adaptation to prevent frozen attractors
-        l23_config = LIFConfig(
-            tau_mem=20.0,
+        # L4: Fast integration, sensitive to sensory input
+        l4_config = ConductanceLIFConfig(
+            tau_E=5.0,   # Fast excitation (AMPA-like)
+            tau_I=10.0,  # Slower inhibition (GABA-like)
             v_threshold=1.0,
-            adapt_increment=cfg.l23_adapt_increment,  # SFA enabled!
-            tau_adapt=cfg.l23_adapt_tau,
+            E_E=3.0,     # Excitatory reversal (well above threshold)
+            E_I=-0.5,    # Inhibitory reversal (hyperpolarizing)
         )
-        l5_config = LIFConfig(tau_mem=20.0, v_threshold=0.9)
+        
+        # L2/3: Recurrent processing with adaptation
+        l23_config = ConductanceLIFConfig(
+            tau_E=5.0,
+            tau_I=10.0,
+            v_threshold=1.0,
+            adapt_increment=cfg.l23_adapt_increment,  # SFA to prevent frozen attractors
+            tau_adapt=cfg.l23_adapt_tau,
+            E_E=3.0,
+            E_I=-0.5,
+        )
+        
+        # L5: Output layer, slightly lower threshold
+        l5_config = ConductanceLIFConfig(
+            tau_E=5.0,
+            tau_I=10.0,
+            v_threshold=0.9,
+            E_E=3.0,
+            E_I=-0.5,
+        )
 
-        self.l4_neurons = LIFNeuron(self.l4_size, l4_config)
-        self.l23_neurons = LIFNeuron(self.l23_size, l23_config)
-        self.l5_neurons = LIFNeuron(self.l5_size, l5_config)
+        self.l4_neurons = ConductanceLIF(self.l4_size, l4_config)
+        self.l23_neurons = ConductanceLIF(self.l23_size, l23_config)
+        self.l5_neurons = ConductanceLIF(self.l5_size, l5_config)
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for L2/3 recurrent connections
@@ -236,7 +266,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.stp_l23_recurrent = ShortTermPlasticity(
                 n_pre=self.l23_size,
                 n_post=self.l23_size,
-                config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt),
+                config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt_ms),
                 per_synapse=True,
             )
             self.stp_l23_recurrent.to(device)
@@ -274,14 +304,11 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 device=device,
             )
 
-        # Divisive Normalization for L4 input processing
-        # Provides automatic gain control regardless of input intensity
-        if rob.enable_divisive_norm:
-            self.divisive_norm_l4 = DivisiveNormalization(
-                config=rob.divisive_norm,
-                n_features=self.l4_size,
-                device=device,
-            )
+        # NOTE: Divisive normalization disabled for cortex.
+        # ConductanceLIF provides natural gain control via shunting inhibition.
+        # Divisive norm is appropriate for sensory pathways (retina, LGN),
+        # not for cortical processing where E/I balance handles gain control.
+        self.divisive_norm_l4 = None
 
         # Population Intrinsic Plasticity for L2/3
         # Global excitability modulation based on population activity
@@ -414,7 +441,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 a_minus=0.012,
                 tau_plus=20.0,
                 tau_minus=20.0,
-                dt=cfg.dt,
+                dt_ms=cfg.dt_ms,
                 w_min=cfg.w_min,
                 w_max=cfg.w_max,
                 soft_bounds=cfg.soft_bounds,
@@ -490,6 +517,9 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self.state._oscillator_signals = {}
         self.state._oscillator_phases = phases
         self.state._oscillator_signals = signals
+
+        # Update theta phase for encoding/retrieval modulation
+        self._theta_phase = phases.get('theta', 0.0)
 
         # Store effective gamma amplitude (pre-computed by OscillatorManager)
         # Automatic multiplicative coupling:
@@ -585,13 +615,20 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         # 5. Expand neurons for all layers
         self.l4_size = new_l4_size
-        self.l4_neurons = LIFNeuron(self.l4_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        l4_config = ConductanceLIFConfig(tau_E=5.0, tau_I=10.0, v_threshold=1.0, E_E=3.0, E_I=-0.5)
+        self.l4_neurons = ConductanceLIF(self.l4_size, l4_config)
 
         self.l23_size = new_l23_size
-        self.l23_neurons = LIFNeuron(self.l23_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        l23_config = ConductanceLIFConfig(
+            tau_E=5.0, tau_I=10.0, v_threshold=1.0, E_E=3.0, E_I=-0.5,
+            adapt_increment=self.layer_config.l23_adapt_increment,
+            tau_adapt=self.layer_config.l23_adapt_tau,
+        )
+        self.l23_neurons = ConductanceLIF(self.l23_size, l23_config)
 
         self.l5_size = new_l5_size
-        self.l5_neurons = LIFNeuron(self.l5_size, LIFConfig(tau_mem=20.0, v_threshold=1.0))
+        l5_config = ConductanceLIFConfig(tau_E=5.0, tau_I=10.0, v_threshold=0.9, E_E=3.0, E_I=-0.5)
+        self.l5_neurons = ConductanceLIF(self.l5_size, l5_config)
 
         # 6. Update configs
         new_total_output = new_l5_size if self.layer_config.output_layer == "L5" else new_l23_size
@@ -604,7 +641,6 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
     def forward(
         self,
         input_spikes: torch.Tensor,
-        dt: float = 1.0,
         top_down: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
@@ -617,15 +653,23 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         Args:
             input_spikes: Input spike tensor [n_input] (1D per ADR-005)
-            dt: Timestep in ms
             top_down: Optional top-down modulation [l23_size] (1D)
 
         Returns:
             Output spikes [l23_size + l5_size] if dual_output else [n_output] (1D)
-        
+
         Note:
-            Theta modulation computed internally from self._theta_phase (set by Brain)
+            Theta modulation and timestep (dt_ms) computed internally from config
         """
+        # Get timestep from config for temporal dynamics
+        dt = self.config.dt_ms
+
+        # Compute theta modulation from oscillator phase (set by Brain)
+        # encoding_mod: high at theta peak (0°), low at trough (180°)
+        # retrieval_mod: low at theta peak, high at trough
+        encoding_mod = 0.5 * (1.0 + math.cos(self._theta_phase))
+        retrieval_mod = 0.5 * (1.0 - math.cos(self._theta_phase))
+
         # ADR-005: Expect 1D tensors (no batch dimension)
         assert input_spikes.dim() == 1, (
             f"LayeredCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}. "
@@ -684,16 +728,17 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Apply alpha suppression to input (early gating)
         gated_input_spikes = input_spikes * alpha_suppression
 
-        # L4: Input processing (1D tensors)
-        l4_input = (
+        # L4: Input processing with conductance-based neurons
+        # Compute excitatory conductance from input
+        l4_g_exc = (
             torch.matmul(self.w_input_l4, gated_input_spikes.float())
             * cfg.input_to_l4_strength
         )
-        l4_input = l4_input * (0.5 + 0.5 * encoding_mod)
+        l4_g_exc = l4_g_exc * (0.5 + 0.5 * encoding_mod)
 
-        # Apply Divisive Normalization to L4 input (automatic gain control)
-        if self.divisive_norm_l4 is not None:
-            l4_input = self.divisive_norm_l4(l4_input)
+        # Inhibitory conductance: ~25% of excitatory (4:1 E/I ratio)
+        # This provides feedback inhibition for gain control
+        l4_g_inh = l4_g_exc * 0.25
 
         # =====================================================================
         # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -704,9 +749,10 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
         ne_gain = 1.0 + 0.5 * ne_level
-        l4_input = l4_input * ne_gain
+        l4_g_exc = l4_g_exc * ne_gain
 
-        l4_spikes, _ = self.l4_neurons(l4_input)
+        # ConductanceLIF automatically handles shunting inhibition
+        l4_spikes, _ = self.l4_neurons(l4_g_exc, l4_g_inh)
         l4_spikes = self._apply_sparsity_1d(l4_spikes, cfg.l4_sparsity)
         self.state.l4_spikes = l4_spikes
 
@@ -739,7 +785,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Without STP, recurrent connections cause the same neurons to fire
         # every timestep (frozen attractor). With DEPRESSING STP, frequently-
         # used synapses get temporarily weaker, allowing pattern transitions.
-        
+
         # =====================================================================
         # ACETYLCHOLINE MODULATION OF HORIZONTAL CONNECTIONS (Hasselmo 1999)
         # =====================================================================
@@ -754,7 +800,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # ACh > 0.5 → encoding mode → suppress recurrence (down to 0.2x)
         # ACh < 0.5 → retrieval mode → full recurrence (1.0x)
         ach_recurrent_modulation = 1.0 - 0.8 * max(0.0, ach_level - 0.5) / 0.5
-        
+
         if self.state.l23_recurrent_activity is not None:
             recurrent_scale = 0.5 + 0.5 * retrieval_mod
 
@@ -814,7 +860,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             self._l23_threshold_offset is not None):
             l23_input = l23_input - self._l23_threshold_offset
 
-        l23_spikes, _ = self.l23_neurons(F.relu(l23_input))
+        l23_spikes, _ = self.l23_neurons(F.relu(l23_input), F.relu(l23_input) * 0.25)
         l23_spikes = self._apply_sparsity_1d(l23_spikes, cfg.l23_sparsity)
         self.state.l23_spikes = l23_spikes
 
@@ -830,7 +876,6 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             gamma_phase = self.state._oscillator_phases.get('gamma', 0.0)
 
             # Compute phase-based gating for each L2/3 neuron
-            import math
             phase_diff = torch.abs(self.l23_phase_prefs - gamma_phase)
             phase_diff = torch.min(phase_diff, 2 * math.pi - phase_diff)
 
@@ -853,12 +898,16 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         else:
             self.state.l23_recurrent_activity = l23_spikes.float()
 
-        # L5: Subcortical output
-        l5_input = (
+        # L5: Subcortical output (conductance-based)
+        l5_g_exc = (
             torch.matmul(self.w_l23_l5, l23_spikes.float())
             * cfg.l23_to_l5_strength
         )
-        l5_spikes, _ = self.l5_neurons(l5_input)
+        
+        # L5 inhibition: ~25% of excitation (4:1 E/I ratio)
+        l5_g_inh = l5_g_exc * 0.25
+        
+        l5_spikes, _ = self.l5_neurons(l5_g_exc, l5_g_inh)
         l5_spikes = self._apply_sparsity_1d(l5_spikes, cfg.l5_sparsity)
         self.state.l5_spikes = l5_spikes
 
@@ -888,7 +937,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.state.input_spikes = input_spikes
 
         # Apply continuous plasticity (learning happens as part of forward dynamics)
-        self._apply_plasticity(dt=dt)
+        self._apply_plasticity()
 
         # Construct output
         if cfg.dual_output:
@@ -898,8 +947,8 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         else:
             output = l23_spikes
 
-        # ADR-005: Return 1D tensor
-        return output
+        # ADR-005: Return 1D tensor as bool spikes
+        return output.bool()
 
     def _apply_sparsity_1d(
         self,
@@ -923,7 +972,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         return sparse_spikes
 
-    def _apply_plasticity(self, dt: float = 1.0) -> None:
+    def _apply_plasticity(self) -> None:
         """Apply continuous STDP learning with BCM modulation.
 
         This is called automatically at each forward() timestep.
@@ -932,6 +981,9 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         In biological cortex, synaptic plasticity happens continuously based on
         pre/post spike timing. Dopamine doesn't trigger learning - it modulates
         how much weight change occurs from the spike-timing-based plasticity.
+
+        Note:
+            Timestep (dt_ms) is obtained from self.config for temporal dynamics
         """
         if self.state.l4_spikes is None or self.state.input_spikes is None:
             return

@@ -106,19 +106,21 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         Handles common event types (theta, dopamine) and delegates
         spike processing to subclass.
         """
-        self._current_time = event.time
+        # Use no_grad to prevent computation graph accumulation during local learning
+        with torch.no_grad():
+            self._current_time = event.time
 
-        # Apply membrane decay since last update
-        dt = event.time - self._last_update_time
-        if dt > 0:
-            self._apply_decay(dt)
-        self._last_update_time = event.time
+            # Apply membrane decay since last update
+            dt = event.time - self._last_update_time
+            if dt > 0:
+                self._apply_decay(dt)
+            self._last_update_time = event.time
 
-        # Handle event by type
-        if event.event_type in (EventType.SPIKE, EventType.SENSORY):
-            return self._handle_spikes(event)
-        else:
-            return []
+            # Handle event by type
+            if event.event_type in (EventType.SPIKE, EventType.SENSORY):
+                return self._handle_spikes(event)
+            else:
+                return []
 
     def _handle_spikes(self, event: Event) -> List[Event]:
         """Process incoming spikes - to be implemented by subclass."""
@@ -143,7 +145,8 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
                 event_type=EventType.SPIKE,
                 source=self._name,
                 target=conn.target,
-                payload=SpikePayload(spikes=spikes.clone()),
+                # Detach to prevent memory leak from computation graph
+                payload=SpikePayload(spikes=spikes.detach().clone()),
             )
             events.append(event)
         return events

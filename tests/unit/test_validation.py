@@ -296,7 +296,8 @@ class TestNumericalStability:
             if len(params) > 0:
                 # Run forward pass
                 cortex.reset_state()
-                input_data = torch.randn(1, 64, requires_grad=True)
+                # ADR-005: No batch dimension
+                input_data = torch.randn(64, requires_grad=True)
                 output = cortex.forward(input_data)
 
                 # Compute some loss

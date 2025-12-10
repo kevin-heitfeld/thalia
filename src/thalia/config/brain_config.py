@@ -197,6 +197,16 @@ class BrainConfig:
 
     # Execution mode
     parallel: bool = False
+    
+    # Phase 2: Model-based planning
+    use_model_based_planning: bool = True
+    """Enable mental simulation for action selection (Phase 2).
+    
+    When True:
+        - select_action() uses MentalSimulationCoordinator for tree search
+        - deliver_reward() triggers DynaPlanner background planning
+        - Requires: PFC.predict_next_state, Hippocampus.retrieve_similar, Striatum.evaluate_state
+    """
 
     def summary(self) -> str:
         """Return formatted summary of brain configuration."""

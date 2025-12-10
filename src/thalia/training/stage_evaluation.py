@@ -39,18 +39,18 @@ Usage:
         evaluate_stage_toddler,
         check_system_health,
     )
-    
+
     # Evaluate Stage -0.5 (Sensorimotor)
     results = evaluate_stage_sensorimotor(
         brain=brain,
         sensorimotor_wrapper=wrapper,
     )
-    
+
     if all(results.values()):
-        print("✅ Stage -0.5 complete!")
+        print("[OK] Stage -0.5 complete!")
     else:
         failed = [k for k, v in results.items() if not v]
-        print(f"❌ Failed criteria: {failed}")
+        print(f"[FAIL] Failed criteria: {failed}")
 
 References:
 ===========
@@ -64,7 +64,6 @@ Date: December 8, 2025
 from __future__ import annotations
 
 from typing import Dict, Tuple, Optional, Any
-import torch
 
 
 # ============================================================================
@@ -77,12 +76,12 @@ def check_firing_rates(
     window_steps: int = 10000,
 ) -> bool:
     """Check that all regions maintain healthy firing rates.
-    
+
     Args:
         brain: Brain instance
         target_range: (min, max) acceptable firing rates
         window_steps: Window for averaging
-        
+
     Returns:
         True if all regions in range
     """
@@ -98,12 +97,12 @@ def check_no_runaway_excitation(
     window_steps: int = 20000,
 ) -> bool:
     """Check for runaway excitation in any region.
-    
+
     Args:
         brain: Brain instance
         threshold: Max acceptable firing rate
         window_steps: Window to check
-        
+
     Returns:
         True if no runaway detected
     """
@@ -118,12 +117,12 @@ def check_bcm_convergence(
     window_steps: int = 50000,
 ) -> bool:
     """Check that BCM thresholds have stabilized.
-    
+
     Args:
         brain: Brain instance
         drift_threshold: Max acceptable drift
         window_steps: Window for stability check
-        
+
     Returns:
         True if thresholds converged
     """
@@ -137,11 +136,11 @@ def check_weight_saturation(
     max_saturation: float = 0.80,
 ) -> bool:
     """Check that weights aren't saturated at extremes.
-    
+
     Args:
         brain: Brain instance
         max_saturation: Max fraction of saturated weights
-        
+
     Returns:
         True if weight health is good
     """
@@ -156,12 +155,12 @@ def check_no_silent_regions(
     max_silent_steps: int = 1000,
 ) -> bool:
     """Check that no region has been silent too long.
-    
+
     Args:
         brain: Brain instance
         min_firing: Minimum acceptable firing rate
         max_silent_steps: Max steps a region can be silent
-        
+
     Returns:
         True if no prolonged silence
     """
@@ -172,10 +171,10 @@ def check_no_silent_regions(
 
 def check_system_health(brain: Any) -> Dict[str, bool]:
     """Run all common health checks.
-    
+
     Args:
         brain: Brain instance
-        
+
     Returns:
         Dict of health check results
     """
@@ -199,13 +198,13 @@ def test_basic_movements(
     threshold: float = 0.95,
 ) -> bool:
     """Test basic motor control accuracy.
-    
+
     Args:
         brain: Brain instance
         wrapper: SensorimotorWrapper
         n_trials: Number of test trials
         threshold: Success threshold
-        
+
     Returns:
         True if accuracy > threshold
     """
@@ -221,13 +220,13 @@ def test_reaching_accuracy(
     threshold: float = 0.90,
 ) -> bool:
     """Test reaching task accuracy.
-    
+
     Args:
         brain: Brain instance
         wrapper: SensorimotorWrapper
         n_trials: Number of reaching trials
         threshold: Success threshold
-        
+
     Returns:
         True if accuracy > threshold
     """
@@ -244,13 +243,13 @@ def test_manipulation_success(
     threshold: float = 0.85,
 ) -> bool:
     """Test object manipulation success rate.
-    
+
     Args:
         brain: Brain instance
         wrapper: SensorimotorWrapper
         n_trials: Number of manipulation trials
         threshold: Success threshold
-        
+
     Returns:
         True if success rate > threshold
     """
@@ -266,13 +265,13 @@ def test_prediction_error(
     threshold: float = 0.05,
 ) -> bool:
     """Test sensorimotor prediction error.
-    
+
     Args:
         brain: Brain instance
         wrapper: SensorimotorWrapper
         n_trials: Number of trials
         threshold: Max acceptable error
-        
+
     Returns:
         True if error < threshold
     """
@@ -286,11 +285,11 @@ def test_cerebellum_functional(
     wrapper: Any,
 ) -> bool:
     """Test that cerebellum forward/inverse models work.
-    
+
     Args:
         brain: Brain instance
         wrapper: SensorimotorWrapper
-        
+
     Returns:
         True if cerebellum is functional
     """
@@ -304,7 +303,7 @@ def evaluate_stage_sensorimotor(
     wrapper: Any,
 ) -> Dict[str, bool]:
     """Evaluate Stage -0.5 (Sensorimotor) milestones.
-    
+
     Success criteria from curriculum_strategy.md:
     - >95% accurate basic movements
     - >90% reaching accuracy
@@ -312,29 +311,29 @@ def evaluate_stage_sensorimotor(
     - <5% prediction error
     - Stable firing rates (0.05-0.15)
     - Cerebellum forward models functional
-    
+
     Args:
         brain: Brain instance
         wrapper: SensorimotorWrapper instance
-        
+
     Returns:
         Dict mapping criterion name to pass/fail
     """
     results = {}
-    
+
     # Task performance
     results['basic_movements'] = test_basic_movements(brain, wrapper)
     results['reaching_accuracy'] = test_reaching_accuracy(brain, wrapper)
     results['manipulation_success'] = test_manipulation_success(brain, wrapper)
     results['prediction_error'] = test_prediction_error(brain, wrapper)
-    
+
     # System health
     health = check_system_health(brain)
     results.update(health)
-    
+
     # Component-specific
     results['cerebellum_functional'] = test_cerebellum_functional(brain, wrapper)
-    
+
     return results
 
 
@@ -349,13 +348,13 @@ def test_mnist_accuracy(
     threshold: float = 0.95,
 ) -> bool:
     """Test MNIST classification accuracy.
-    
+
     Args:
         brain: Brain instance
         dataset: MNIST dataset
         n_samples: Number of test samples
         threshold: Accuracy threshold
-        
+
     Returns:
         True if accuracy > threshold
     """
@@ -371,13 +370,13 @@ def test_sequence_prediction(
     threshold: float = 0.90,
 ) -> bool:
     """Test temporal sequence prediction (A-B-C patterns).
-    
+
     Args:
         brain: Brain instance
         dataset: Temporal sequence dataset
         n_sequences: Number of test sequences
         threshold: Accuracy threshold
-        
+
     Returns:
         True if accuracy > threshold
     """
@@ -393,13 +392,13 @@ def test_phoneme_discrimination(
     threshold: float = 0.90,
 ) -> bool:
     """Test phoneme discrimination accuracy.
-    
+
     Args:
         brain: Brain instance
         dataset: Phonological dataset
         n_pairs: Number of phoneme pairs to test
         threshold: Accuracy threshold
-        
+
     Returns:
         True if accuracy > threshold
     """
@@ -413,11 +412,11 @@ def test_categorical_perception(
     dataset: Any,
 ) -> bool:
     """Test categorical perception curves for phonemes.
-    
+
     Args:
         brain: Brain instance
         dataset: Phonological dataset with VOT continuum
-        
+
     Returns:
         True if shows categorical boundaries
     """
@@ -432,12 +431,12 @@ def test_gaze_following(
     threshold: float = 0.80,
 ) -> bool:
     """Test social attention (gaze following).
-    
+
     Args:
         brain: Brain instance
         n_trials: Number of gaze trials
         threshold: Accuracy threshold
-        
+
     Returns:
         True if gaze following > threshold
     """
@@ -452,7 +451,7 @@ def evaluate_stage_phonology(
     sensorimotor_wrapper: Optional[Any] = None,
 ) -> Dict[str, bool]:
     """Evaluate Stage 0 (Sensory Foundations) milestones.
-    
+
     Success criteria from curriculum_strategy.md:
     - >95% MNIST accuracy
     - >90% sequence prediction
@@ -461,42 +460,46 @@ def evaluate_stage_phonology(
     - >80% gaze following
     - System health maintained
     - Stage -0.5 maintained (>85%)
-    
+
     Args:
         brain: Brain instance
-        datasets: Dict of datasets {'mnist': ..., 'phonology': ..., 'temporal': ...}
+        datasets: Dict of datasets OR TaskLoader with dataset properties
         sensorimotor_wrapper: Optional wrapper for backward compatibility check
-        
+
     Returns:
         Dict mapping criterion name to pass/fail
     """
     results = {}
-    
+
+    # Handle both dict and TaskLoader interfaces
+    if hasattr(datasets, 'get'):
+        # Dict interface
+        mnist_data = datasets.get('mnist')
+        temporal_data = datasets.get('temporal')
+        phonology_data = datasets.get('phonology')
+    else:
+        # TaskLoader interface
+        mnist_data = getattr(datasets, 'mnist_dataset', None)
+        temporal_data = getattr(datasets, 'temporal_dataset', None)
+        phonology_data = getattr(datasets, 'phonology_dataset', None)
+
     # Task performance
-    results['mnist_accuracy'] = test_mnist_accuracy(
-        brain, datasets.get('mnist')
-    )
-    results['sequence_prediction'] = test_sequence_prediction(
-        brain, datasets.get('temporal')
-    )
-    results['phoneme_discrimination'] = test_phoneme_discrimination(
-        brain, datasets.get('phonology')
-    )
-    results['categorical_perception'] = test_categorical_perception(
-        brain, datasets.get('phonology')
-    )
+    results['mnist_accuracy'] = test_mnist_accuracy(brain, mnist_data)
+    results['sequence_prediction'] = test_sequence_prediction(brain, temporal_data)
+    results['phoneme_discrimination'] = test_phoneme_discrimination(brain, phonology_data)
+    results['categorical_perception'] = test_categorical_perception(brain, phonology_data)
     results['gaze_following'] = test_gaze_following(brain)
-    
+
     # System health
     health = check_system_health(brain)
     results.update(health)
-    
+
     # Backward compatibility (Stage -0.5)
     if sensorimotor_wrapper is not None:
         results['sensorimotor_maintained'] = test_reaching_accuracy(
             brain, sensorimotor_wrapper, threshold=0.85
         )
-    
+
     return results
 
 
@@ -511,13 +514,13 @@ def test_cifar10_accuracy(
     threshold: float = 0.70,
 ) -> bool:
     """Test CIFAR-10 object recognition.
-    
+
     Args:
         brain: Brain instance
         dataset: CIFAR-10 dataset
         n_samples: Number of test samples
         threshold: Accuracy threshold
-        
+
     Returns:
         True if accuracy > threshold
     """
@@ -533,13 +536,13 @@ def test_n_back_task(
     threshold: float = 0.80,
 ) -> bool:
     """Test N-back working memory task.
-    
+
     Args:
         brain: Brain instance
         n: N-back level (1 or 2)
         n_trials: Number of trials
         threshold: Accuracy threshold
-        
+
     Returns:
         True if accuracy > threshold
     """
@@ -554,12 +557,12 @@ def test_object_permanence(
     threshold: float = 0.85,
 ) -> bool:
     """Test object permanence understanding.
-    
+
     Args:
         brain: Brain instance
         n_trials: Number of trials
         threshold: Success threshold
-        
+
     Returns:
         True if success > threshold
     """
@@ -574,12 +577,12 @@ def test_binary_confidence(
     threshold: float = 0.70,
 ) -> bool:
     """Test binary uncertainty signaling (know vs don't know).
-    
+
     Args:
         brain: Brain instance
         n_samples: Number of test samples
         threshold: Correct abstention rate
-        
+
     Returns:
         True if abstention accuracy > threshold
     """
@@ -594,7 +597,7 @@ def evaluate_stage_toddler(
     stage0_datasets: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, bool]:
     """Evaluate Stage 1 (Toddler) milestones.
-    
+
     Success criteria from curriculum_strategy.md:
     - >70% CIFAR-10 accuracy
     - >80% 2-back accuracy
@@ -602,17 +605,17 @@ def evaluate_stage_toddler(
     - >70% binary confidence (abstention)
     - System health maintained
     - Stage 0 maintained (>90%)
-    
+
     Args:
         brain: Brain instance
         datasets: Dict of Stage 1 datasets
         stage0_datasets: Optional Stage 0 datasets for backward compatibility
-        
+
     Returns:
         Dict mapping criterion name to pass/fail
     """
     results = {}
-    
+
     # Task performance
     results['cifar10_accuracy'] = test_cifar10_accuracy(
         brain, datasets.get('cifar10')
@@ -620,11 +623,11 @@ def evaluate_stage_toddler(
     results['n_back_2'] = test_n_back_task(brain, n=2)
     results['object_permanence'] = test_object_permanence(brain)
     results['binary_confidence'] = test_binary_confidence(brain)
-    
+
     # System health
     health = check_system_health(brain)
     results.update(health)
-    
+
     # Backward compatibility (Stage 0)
     if stage0_datasets is not None:
         results['mnist_maintained'] = test_mnist_accuracy(
@@ -633,7 +636,7 @@ def evaluate_stage_toddler(
         results['phoneme_maintained'] = test_phoneme_discrimination(
             brain, stage0_datasets.get('phonology'), threshold=0.85
         )
-    
+
     return results
 
 
@@ -646,7 +649,7 @@ def evaluate_stage_grammar(
     datasets: Dict[str, Any],
 ) -> Dict[str, bool]:
     """Evaluate Stage 2 (Grammar & Composition) milestones.
-    
+
     TODO: Implement when Stage 2 is reached.
     """
     results = {}
@@ -662,7 +665,7 @@ def evaluate_stage_reading(
     datasets: Dict[str, Any],
 ) -> Dict[str, bool]:
     """Evaluate Stage 3 (Reading & Writing) milestones.
-    
+
     TODO: Implement when Stage 3 is reached.
     """
     results = {}
@@ -678,7 +681,7 @@ def evaluate_stage_abstract(
     datasets: Dict[str, Any],
 ) -> Dict[str, bool]:
     """Evaluate Stage 4 (Abstract Reasoning) milestones.
-    
+
     TODO: Implement when Stage 4 is reached.
     """
     results = {}
@@ -699,41 +702,41 @@ def generate_evaluation_report(
     verbose: bool = True,
 ) -> str:
     """Generate human-readable evaluation report.
-    
+
     Args:
         stage: Stage name
         results: Evaluation results
         verbose: Whether to include details
-        
+
     Returns:
         Formatted report string
     """
     passed = [k for k, v in results.items() if v]
     failed = [k for k, v in results.items() if not v]
-    
+
     all_passed = len(failed) == 0
-    
+
     report = []
     report.append("=" * 80)
     report.append(f"Stage {stage} Evaluation Report")
     report.append("=" * 80)
-    report.append(f"Overall: {'✅ PASSED' if all_passed else '❌ FAILED'}")
+    report.append(f"Overall: {'[PASS]' if all_passed else '[FAIL]'}")
     report.append(f"Passed: {len(passed)}/{len(results)}")
     report.append("")
-    
+
     if verbose:
         if passed:
             report.append("✅ Passed Criteria:")
             for criterion in passed:
                 report.append(f"  ✅ {criterion}")
             report.append("")
-        
+
         if failed:
             report.append("❌ Failed Criteria:")
             for criterion in failed:
                 report.append(f"  ❌ {criterion}")
             report.append("")
-    
+
     report.append("=" * 80)
-    
+
     return "\n".join(report)

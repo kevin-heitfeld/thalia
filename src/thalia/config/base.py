@@ -63,14 +63,14 @@ class NeuralComponentConfig(BaseConfig):
     
     Extends BaseConfig with neural-specific parameters:
     - n_neurons: Number of neurons
-    - dt: Time step in milliseconds
+    - dt_ms: Simulation timestep (should match GlobalConfig.dt_ms)
     """
     
     n_neurons: int = 100
     """Number of neurons in the component."""
     
-    dt: float = 1.0
-    """Time step in milliseconds."""
+    dt_ms: float = 1.0
+    """Simulation timestep in milliseconds. Set from GlobalConfig.dt_ms by Brain."""
 
 
 @dataclass

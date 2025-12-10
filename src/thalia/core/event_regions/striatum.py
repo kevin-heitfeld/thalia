@@ -47,10 +47,12 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         cortex_input_size: int = 0,
         hippocampus_input_size: int = 0,
         pfc_input_size: int = 0,
+        pfc_region: Optional[Any] = None,  # PFC region for goal context
     ):
         super().__init__(config)
         self.impl_module = striatum  # Register as public attribute for nn.Module
         self._striatum = striatum  # Keep reference for backwards compatibility
+        self._pfc_region = pfc_region  # Store PFC reference for goal-conditioned values
 
         # Configure input buffering using base class
         if cortex_input_size > 0:
@@ -162,12 +164,14 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         # Store for learning
         self._recent_input = combined_input.clone()
 
+        # Get goal context from PFC if available
+        pfc_goal_context = None
+        if self._pfc_region is not None and hasattr(self._pfc_region, "get_goal_context"):
+            pfc_goal_context = self._pfc_region.get_goal_context()
+
         # Forward through striatum (theta modulation computed internally)
-        output = self.impl.forward(
-            combined_input,
-            dt=1.0,
-            explore=True,  # Enable exploration in event-driven mode
-        )
+        # Enable exploration in event-driven mode
+        output = self.impl.forward(combined_input, pfc_goal_context=pfc_goal_context, explore=True)
 
         # Store output for learning
         self._recent_output = output.clone()

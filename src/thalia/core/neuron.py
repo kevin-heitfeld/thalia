@@ -82,17 +82,17 @@ class LIFConfig(NeuralComponentConfig):
     @property
     def decay(self) -> float:
         """Membrane decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_mem)).item()
+        return torch.exp(torch.tensor(-self.dt_ms / self.tau_mem)).item()
 
     @property
     def adapt_decay(self) -> float:
         """Adaptation current decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_adapt)).item()
+        return torch.exp(torch.tensor(-self.dt_ms / self.tau_adapt)).item()
 
     @property
     def ref_steps(self) -> int:
         """Refractory period in timesteps."""
-        return int(self.tau_ref / self.dt)
+        return int(self.tau_ref / self.dt_ms)
 
 
 class LIFNeuron(nn.Module):
@@ -439,22 +439,22 @@ class ConductanceLIFConfig(NeuralComponentConfig):
     @property
     def g_E_decay(self) -> float:
         """Excitatory conductance decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_E)).item()
+        return torch.exp(torch.tensor(-self.dt_ms / self.tau_E)).item()
 
     @property
     def g_I_decay(self) -> float:
         """Inhibitory conductance decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_I)).item()
+        return torch.exp(torch.tensor(-self.dt_ms / self.tau_I)).item()
 
     @property
     def adapt_decay(self) -> float:
         """Adaptation conductance decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_adapt)).item()
+        return torch.exp(torch.tensor(-self.dt_ms / self.tau_adapt)).item()
 
     @property
     def ref_steps(self) -> int:
         """Refractory period in timesteps."""
-        return int(self.tau_ref / self.dt)
+        return int(self.tau_ref / self.dt_ms)
 
 
 class ConductanceLIF(nn.Module):
@@ -647,7 +647,7 @@ class ConductanceLIF(nn.Module):
 
         # Effective time constant: τ_eff = C_m / g_total
         # V(t+dt) = V_inf + (V(t) - V_inf) * exp(-dt * g_total / C_m)
-        decay_factor = torch.exp((-self.config.dt / self.C_m) * g_total)
+        decay_factor = torch.exp((-self.config.dt_ms / self.C_m) * g_total)
 
         # Update membrane for non-refractory neurons
         # Fused: new_V = V_inf + (V - V_inf) * decay = V_inf * (1 - decay) + V * decay

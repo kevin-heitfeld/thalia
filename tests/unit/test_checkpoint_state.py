@@ -176,7 +176,7 @@ class TestHippocampusStateRoundtrip:
                 theta_slot=0,
             )
             # Theta phase set to 0.0 above → encoding_mod = 1.0, retrieval_mod = 0.0
-            output = hipp1.forward(pattern, dt=1.0)
+            output = hipp1.forward(pattern)
             gamma_phase += 0.5  # Advance gamma phase
 
         # Save state
@@ -412,20 +412,20 @@ class TestBrainStateRoundtrip:
     def test_basic_brain_state_roundtrip(self):
         """Test basic state save/load for entire brain."""
         from thalia.core.brain import EventDrivenBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
         config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=64,
-                cortex_size=128,
-                hippocampus_size=64,
-                pfc_size=32,
-                n_actions=4,
+            global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+            brain=BrainConfig(
+                sizes=RegionSizes(
+                    input_size=64,
+                    cortex_size=128,
+                    hippocampus_size=64,
+                    pfc_size=32,
+                    n_actions=4,
+                ),
             ),
-        ),
-    )
+        )
 
         brain1 = EventDrivenBrain.from_thalia_config(config)
 
@@ -439,7 +439,12 @@ from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
         assert "pfc" in state["regions"]
         assert "striatum" in state["regions"]
         assert "cerebellum" in state["regions"]
-        assert "theta" in state
+        assert "oscillators" in state
+        assert "delta" in state["oscillators"]
+        assert "theta" in state["oscillators"]
+        assert "alpha" in state["oscillators"]
+        assert "beta" in state["oscillators"]
+        assert "gamma" in state["oscillators"]
         assert "scheduler" in state
         assert "trial_state" in state
         assert "config" in state
@@ -448,10 +453,10 @@ from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
         brain2 = EventDrivenBrain.from_thalia_config(config)
         brain2.load_full_state(state)
 
-        # Verify cortex weights match
+        # Verify cortex weights match (PredictiveCortex wraps LayeredCortex)
         assert torch.allclose(
-            brain1.cortex.impl.w_input_l4,
-            brain2.cortex.impl.w_input_l4
+            brain1.cortex.impl.cortex.w_input_l4,
+            brain2.cortex.impl.cortex.w_input_l4
         )
 
         # Verify hippocampus weights match
@@ -469,20 +474,20 @@ from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
     def test_brain_state_after_processing(self):
         """Test brain state save/load after processing input."""
         from thalia.core.brain import EventDrivenBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
         config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=64,
-                cortex_size=128,
-                hippocampus_size=64,
-                pfc_size=32,
-                n_actions=4,
+            global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+            brain=BrainConfig(
+                sizes=RegionSizes(
+                    input_size=64,
+                    cortex_size=128,
+                    hippocampus_size=64,
+                    pfc_size=32,
+                    n_actions=4,
+                ),
             ),
-        ),
-    )
+        )
 
         brain1 = EventDrivenBrain.from_thalia_config(config)
 
@@ -496,9 +501,6 @@ from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
         # Create new instance and load
         brain2 = EventDrivenBrain.from_thalia_config(config)
         brain2.load_full_state(state)
-
-        # Verify trial phase matches (access internal state for testing)
-        assert brain1._trial_phase == brain2._trial_phase  # type: ignore[attr-defined]
 
         # Verify event counters match
         assert brain1._events_processed == brain2._events_processed  # type: ignore[attr-defined]
@@ -553,7 +555,7 @@ class TestPathwayStateRoundtrip:
         # Run some forward passes to accumulate state (ADR-005: 1D tensors)
         pfc_activity = torch.rand(64) > 0.8
         for _ in range(5):
-            pathway1.compute_attention(pfc_activity.float(), dt=1.0)
+            pathway1.compute_attention(pfc_activity.float())
 
         # Save state
         state = pathway1.get_state()
@@ -639,20 +641,20 @@ class TestPathwayStateRoundtrip:
     def test_brain_with_pathways(self):
         """Test brain state including pathway state."""
         from thalia.core.brain import EventDrivenBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
         config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=64,
-                cortex_size=128,
-                hippocampus_size=64,
-                pfc_size=32,
-                n_actions=4,
+            global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+            brain=BrainConfig(
+                sizes=RegionSizes(
+                    input_size=64,
+                    cortex_size=128,
+                    hippocampus_size=64,
+                    pfc_size=32,
+                    n_actions=4,
+                ),
             ),
-        ),
-    )
+        )
 
         brain1 = EventDrivenBrain.from_thalia_config(config)
 

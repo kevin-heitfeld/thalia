@@ -117,26 +117,34 @@ class SpikingAttentionPathway(SpikingPathway):
                 self.input_projection.weight.data.copy_(attn_state['input_projection_weight'])
                 self.input_projection.bias.data.copy_(attn_state['input_projection_bias'])
 
-    def _compute_beta_phase(self, dt: float) -> torch.Tensor:
-        """Compute current beta oscillation phase."""
+    def _compute_beta_phase(self) -> torch.Tensor:
+        """Compute current beta oscillation phase.
+        
+        Note:
+            Timestep obtained from self.config.dt_ms
+        """
+        dt = self.config.dt_ms
         self.beta_phase = (self.beta_phase + dt) % self.beta_period
         return 2 * torch.pi * self.beta_phase / self.beta_period
 
     def compute_attention(
         self,
         pfc_activity: torch.Tensor,
-        dt: float = 1.0
     ) -> torch.Tensor:
         """
         Compute attention signal from PFC activity.
 
         Args:
             pfc_activity: PFC spike rates or potentials [cortex_size] (1D, no batch)
-            dt: Time step in ms
 
         Returns:
             attention: Attention weights [target_size] (1D)
+            
+        Note:
+            Timestep (dt_ms) obtained from self.config
         """
+        # Get timestep from config
+        dt = self.config.dt_ms
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
@@ -146,7 +154,7 @@ class SpikingAttentionPathway(SpikingPathway):
         )
         
         # Update beta phase
-        beta_phase = self._compute_beta_phase(dt)
+        beta_phase = self._compute_beta_phase()
         
         # Process through spiking pathway
         # First pad to source size if needed
@@ -158,7 +166,7 @@ class SpikingAttentionPathway(SpikingPathway):
             source_input = pfc_activity
 
         # Get spiking dynamics - forward expects 1D [source_size] → returns 1D [target_size]
-        output_spikes = self.forward(source_input, dt=dt)
+        output_spikes = self.forward(source_input)
 
         # Encode attention from output spikes
         attention_raw = self.attention_encoder(output_spikes)
@@ -176,7 +184,6 @@ class SpikingAttentionPathway(SpikingPathway):
         self,
         input_signal: torch.Tensor,
         pfc_activity: torch.Tensor,
-        dt: float = 1.0
     ) -> torch.Tensor:
         """
         Apply attention-based gain modulation to input signal.
@@ -184,13 +191,12 @@ class SpikingAttentionPathway(SpikingPathway):
         Args:
             input_signal: Input to modulate [input_size] (1D, no batch)
             pfc_activity: PFC activity for attention [cortex_size] (1D, no batch)
-            dt: Time step in ms
 
         Returns:
             modulated: Gain-modulated signal [input_size] (1D)
         """
         # Compute attention signal
-        attention = self.compute_attention(pfc_activity, dt)
+        attention = self.compute_attention(pfc_activity)
 
         # Map attention to gain values
         gain_raw = self.gain_output(attention)

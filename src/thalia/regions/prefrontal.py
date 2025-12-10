@@ -63,7 +63,7 @@ from thalia.regions.base import (
     RegionState,
     LearningRule,
 )
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig, LIFNeuron, LIFConfig
+from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 @dataclass
@@ -99,7 +99,6 @@ class PrefrontalConfig(RegionConfig):
     stdp_a_plus: float = 0.01  # LTP amplitude
     stdp_a_minus: float = 0.012  # LTD amplitude (slightly larger for stability)
     heterosynaptic_ratio: float = 0.3  # LTD for non-active synapses
-    dt_ms: float = 1.0  # Simulation timestep
 
     # Recurrent connections for WM maintenance
     recurrent_strength: float = 0.8  # Self-excitation for persistence
@@ -127,6 +126,36 @@ class PrefrontalConfig(RegionConfig):
     synaptic_scaling_enabled: bool = True
     synaptic_scaling_target: float = 0.4
     synaptic_scaling_rate: float = 0.001
+
+    # =========================================================================
+    # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
+    # =========================================================================
+    # Hierarchical goal management and hyperbolic discounting
+    use_hierarchical_goals: bool = True
+    """Enable hierarchical goal structures (Phase 3).
+
+    When True:
+        - Maintains goal hierarchy stack in working memory
+        - Tracks active goals and subgoals
+        - Supports options framework for reusable policies
+        - Requires goal_hierarchy_config
+    """
+
+    goal_hierarchy_config: Optional["GoalHierarchyConfig"] = None
+    """Configuration for goal hierarchy manager (Phase 3)."""
+
+    use_hyperbolic_discounting: bool = True
+    """Enable hyperbolic temporal discounting (Phase 3).
+
+    When True:
+        - Hyperbolic (not exponential) discounting of delayed rewards
+        - Context-dependent k parameter (cognitive load, stress, fatigue)
+        - Adaptive k learning from experience
+        - Requires hyperbolic_config
+    """
+
+    hyperbolic_config: Optional["HyperbolicDiscountingConfig"] = None
+    """Configuration for hyperbolic discounter (Phase 3)."""
 
 
 @dataclass
@@ -297,7 +326,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
                 a_minus=config.stdp_a_minus,
                 tau_plus=config.stdp_tau_ms,
                 tau_minus=config.stdp_tau_ms,
-                dt=config.dt_ms,
+                dt_ms=config.dt_ms,
                 w_min=config.w_min,
                 w_max=config.w_max,
                 soft_bounds=config.soft_bounds,
@@ -310,6 +339,35 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             update_gate=torch.zeros(config.n_output, device=self.device),
             dopamine=config.dopamine_baseline,
         )
+
+        # Initialize theta phase for modulation
+        self._theta_phase: float = 0.0
+
+        # =====================================================================
+        # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
+        # =====================================================================
+        # Initialize goal hierarchy (Phase 3)
+        self.goal_manager: Optional["GoalHierarchyManager"] = None
+        self.discounter: Optional["HyperbolicDiscounter"] = None
+
+        if config.use_hierarchical_goals:
+            from thalia.regions.prefrontal_hierarchy import (
+                GoalHierarchyManager,
+                GoalHierarchyConfig,
+            )
+
+            gh_config = config.goal_hierarchy_config or GoalHierarchyConfig()
+            self.goal_manager = GoalHierarchyManager(gh_config)
+
+            # Hyperbolic discounting
+            if config.use_hyperbolic_discounting:
+                from thalia.regions.prefrontal_hierarchy import (
+                    HyperbolicDiscounter,
+                    HyperbolicDiscountingConfig,
+                )
+
+                hd_config = config.hyperbolic_config or HyperbolicDiscountingConfig()
+                self.discounter = HyperbolicDiscounter(hd_config)
 
     def _get_learning_rule(self) -> LearningRule:
         """PFC uses dopamine-gated STDP learning."""
@@ -368,7 +426,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             active_rule=None,  # Optional, can be None
             dopamine=0.2,  # Baseline
         )
-        
+
         self.neurons.reset_state()
         self.dopamine_system.reset_state()
 
@@ -383,9 +441,9 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         sparsity: float = 0.1,
     ) -> None:
         """Add neurons to prefrontal cortex.
-        
+
         Expands working memory capacity by adding neurons.
-        
+
         Args:
             n_new: Number of neurons to add
             initialization: Weight initialization strategy
@@ -393,10 +451,10 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         """
         from thalia.core.weight_init import WeightInitializer
         from dataclasses import replace
-        
+
         old_n_output = self.config.n_output
         new_n_output = old_n_output + n_new
-        
+
         # Expand weights
         if initialization == 'xavier':
             new_weights = WeightInitializer.xavier(
@@ -417,13 +475,21 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
                 n_input=self.config.n_input,
                 device=self.device,
             )
-        
+
         # Update weights
-        self.weights = torch.cat([self.weights, new_weights], dim=0)
-        
-        # Expand neurons
-        self.neurons = LIFNeuron(new_n_output, LIFConfig(tau_mem=20.0, v_threshold=1.0))
-        
+        self.weights = nn.Parameter(torch.cat([self.weights, new_weights], dim=0))
+
+        # Expand neurons (must match _create_neurons() - ConductanceLIF with SFA)
+        cfg = self.pfc_config
+        neuron_config = ConductanceLIFConfig(
+            g_L=0.02,  # Slower leak (τ_m ≈ 50ms)
+            tau_E=10.0,  # Slower excitatory
+            tau_I=15.0,  # Slower inhibitory
+            adapt_increment=cfg.pfc_adapt_increment,
+            tau_adapt=cfg.pfc_adapt_tau,
+        )
+        self.neurons = ConductanceLIF(new_n_output, neuron_config)
+
         # Update config
         self.config = replace(self.config, n_output=new_n_output)
         if hasattr(self, 'pfc_config'):
@@ -445,7 +511,6 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
     def forward(
         self,
         input_spikes: torch.Tensor,
-        dt: float = 1.0,
         dopamine_signal: float = 0.0,
         **kwargs: Any,
     ) -> torch.Tensor:
@@ -454,16 +519,18 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
 
         Args:
             input_spikes: Input spike pattern [n_input] (1D bool tensor, ADR-005)
-            dt: Time step in ms
             dopamine_signal: External DA signal for gating (-1 to 1)
             **kwargs: Additional inputs
 
         Returns:
             Output spikes [n_output] (1D bool tensor, ADR-005)
-        
+
         Note:
-            Theta modulation computed internally from self._theta_phase (set by Brain)
+            Theta modulation and timestep (dt_ms) computed internally from config
         """
+        # Get timestep from config for temporal dynamics
+        dt = self.config.dt_ms
+
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
@@ -493,6 +560,10 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         # =====================================================================
         # THETA MODULATION
         # =====================================================================
+        # Compute theta modulation from current phase (set by Brain's OscillatorManager)
+        encoding_mod = (1 + torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
+        retrieval_mod = (1 - torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
+
         # Encoding phase (theta trough): gate new info into WM
         # Retrieval phase (theta peak): maintain WM and boost recurrence
         ff_gain = 0.5 + 0.5 * encoding_mod  # 0.5-1.0: boost input during encoding
@@ -583,7 +654,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         )
 
         # Apply continuous plasticity (learning happens as part of forward dynamics)
-        self._apply_plasticity(input_spikes, output_spikes, dt)
+        self._apply_plasticity(input_spikes, output_spikes)
 
         return output_spikes
 
@@ -591,7 +662,6 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         self,
         input_spikes: torch.Tensor,
         output_spikes: torch.Tensor,
-        dt: float = 1.0,
     ) -> None:
         """Apply dopamine-gated STDP learning using strategy pattern.
 
@@ -661,7 +731,99 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             return torch.zeros(self.config.n_output, device=self.device)
         return self.state.working_memory
 
-    def maintain(self, n_steps: int = 10, dt: float = 1.0) -> Dict[str, Any]:
+    def get_goal_context(self) -> torch.Tensor:
+        """Get goal context for striatum modulation.
+
+        Returns working memory as goal representation. This provides
+        goal-conditioned context for striatal value learning via gating.
+
+        Biology: PFC → Striatum projections modulate action values based
+        on current goal context (Miller & Cohen 2001).
+
+        Returns:
+            goal_context: [n_output] tensor representing current goal (1D, ADR-005)
+        """
+        if self.state.working_memory is None:
+            return torch.zeros(self.config.n_output, device=self.device)
+        return self.state.working_memory
+
+    def predict_next_state(
+        self,
+        current_state: torch.Tensor,
+        action: int,
+        n_actions: Optional[int] = None
+    ) -> torch.Tensor:
+        """
+        Predict next state using working memory dynamics.
+
+        For Phase 2 model-based planning: simulates what state would result
+        from taking an action from current state.
+
+        Uses PFC's recurrent dynamics and working memory to generate predictions.
+        This is a simplified predictor - in full implementation, would use
+        interaction with hippocampus for episode-based prediction.
+
+        Biology: PFC maintains mental simulations during planning (Daw et al., 2005).
+        Prefrontal neurons show prospective coding - representing future states
+        before they occur (Fuster, 2001).
+
+        Args:
+            current_state: Current state representation [n_output] (1D, ADR-005)
+            action: Action index to simulate
+            n_actions: Total number of possible actions (for one-hot encoding)
+
+        Returns:
+            predicted_next_state: Predicted next state [n_output] (1D, ADR-005)
+
+        Note:
+            This is a basic predictor. For more accurate predictions, use
+            MentalSimulationCoordinator which combines PFC + Hippocampus +
+            Cortex predictive coding.
+        """
+        # Default n_actions if not provided
+        if n_actions is None:
+            n_actions = 10  # Default, should be passed from config
+
+        # One-hot encode action
+        action_one_hot = torch.zeros(n_actions, device=self.device)
+        action_one_hot[action] = 1.0
+
+        # Concatenate state and action
+        # State: [n_output], Action: [n_actions] → Combined: [n_output + n_actions]
+        state_action = torch.cat([current_state, action_one_hot])
+
+        # Use recurrent weights to predict next state
+        # Simple linear prediction (can be enhanced with nonlinearity)
+        # Project concatenated state-action through recurrent weights
+        if state_action.shape[0] == self.rec_weights.shape[1]:
+            # If dimensions match, use recurrent weights directly
+            prediction = self.rec_weights @ state_action
+        else:
+            # If dimensions don't match, project to appropriate size first
+            # Use feedforward weights to project to output space, then recurrent
+            if hasattr(self, 'weights'):
+                # First project state to output space
+                state_projection = self.rec_weights @ current_state
+
+                # Simple action modulation: scale by action strength
+                action_modulation = 1.0 + 0.1 * (action_one_hot.sum() - 0.5)
+
+                prediction = state_projection * action_modulation
+            else:
+                # Fallback: simple recurrent prediction
+                prediction = self.rec_weights @ current_state
+
+        # Apply nonlinearity (tanh to keep bounded)
+        prediction = torch.tanh(prediction)
+
+        # Add small amount of noise (stochastic prediction)
+        if self.training:
+            noise = torch.randn_like(prediction) * self.pfc_config.wm_noise_std
+            prediction = prediction + noise
+
+        return prediction
+
+    def maintain(self, n_steps: int = 10) -> Dict[str, Any]:
         """
         Run maintenance steps without external input.
 
@@ -669,10 +831,12 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
 
         Args:
             n_steps: Number of maintenance steps
-            dt: Time step in ms
 
         Returns:
             Metrics about maintenance
+
+        Note:
+            Timestep (dt_ms) is obtained from self.config
         """
         if self.state.working_memory is None:
             return {"error": "No working memory to maintain"}
@@ -682,7 +846,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         for _ in range(n_steps):
             # No external input, low DA (maintenance mode)
             null_input = torch.zeros(self.config.n_input, device=self.device)
-            self.forward(null_input, dopamine_signal=-0.3, dt=dt)
+            self.forward(null_input, dopamine_signal=-0.3)
 
         final_wm = self.state.working_memory
 
@@ -697,6 +861,124 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             "initial_activity": initial_wm.mean().item(),
             "final_activity": final_wm.mean().item(),
         }
+
+    # =========================================================================
+    # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
+    # =========================================================================
+
+    def set_goal_hierarchy(self, root_goal: "Goal") -> None:
+        """
+        Set the top-level goal for hierarchical planning.
+
+        Phase 3 functionality: Enables goal decomposition and hierarchical control.
+
+        Args:
+            root_goal: Top-level goal to achieve
+
+        Raises:
+            ValueError: If hierarchical goals not enabled
+
+        Example:
+            essay_goal = Goal(goal_id=0, name="write_essay", level=3)
+            pfc.set_goal_hierarchy(essay_goal)
+        """
+        if self.goal_manager is None:
+            raise ValueError("Hierarchical goals not enabled. Set use_hierarchical_goals=True in config.")
+        self.goal_manager.set_root_goal(root_goal)
+
+    def get_current_goal(self) -> Optional["Goal"]:
+        """
+        Get currently active goal from hierarchy.
+
+        Phase 3 functionality: Returns the goal at the top of the active stack.
+
+        Returns:
+            Current goal or None if no active goals
+
+        Example:
+            goal = pfc.get_current_goal()
+            if goal is not None:
+                print(f"Working on: {goal.name}")
+        """
+        if self.goal_manager is None:
+            return None
+        return self.goal_manager.get_current_goal()
+
+    def update_cognitive_load(self, load: float) -> None:
+        """
+        Update cognitive load (affects temporal discounting).
+
+        Phase 3 functionality: Higher load increases impulsivity (higher k).
+
+        Args:
+            load: Cognitive load level (0-1)
+
+        Example:
+            # High working memory load
+            pfc.update_cognitive_load(0.8)
+            # Now temporal discounting will be steeper (more impulsive)
+        """
+        if self.discounter is not None:
+            self.discounter.update_context(cognitive_load=load)
+
+    def evaluate_delayed_reward(
+        self,
+        reward: float,
+        delay: int
+    ) -> float:
+        """
+        Discount delayed reward (hyperbolic or exponential).
+
+        Phase 3 functionality: If hyperbolic discounting enabled, uses
+        context-dependent k parameter. Otherwise falls back to exponential.
+
+        Args:
+            reward: Reward magnitude
+            delay: Delay in timesteps
+
+        Returns:
+            Discounted value of delayed reward
+
+        Example:
+            # Under low cognitive load, patient
+            pfc.update_cognitive_load(0.1)
+            v1 = pfc.evaluate_delayed_reward(10.0, 100)
+
+            # Under high cognitive load, impulsive
+            pfc.update_cognitive_load(0.9)
+            v2 = pfc.evaluate_delayed_reward(10.0, 100)
+
+            assert v2 < v1  # More discounting when loaded
+        """
+        if self.discounter is not None:
+            # Hyperbolic discounting with context
+            return self.discounter.discount(reward, delay)
+        else:
+            # Fallback: Exponential discounting
+            gamma = 0.99
+            return reward * (gamma ** delay)
+
+    def get_goal_manager(self) -> Optional["GoalHierarchyManager"]:
+        """
+        Get goal hierarchy manager for direct access.
+
+        Phase 3 functionality: Allows external systems to manipulate goals.
+
+        Returns:
+            GoalHierarchyManager or None if not enabled
+        """
+        return self.goal_manager
+
+    def get_discounter(self) -> Optional["HyperbolicDiscounter"]:
+        """
+        Get hyperbolic discounter for direct access.
+
+        Phase 3 functionality: Allows external systems to access discounting.
+
+        Returns:
+            HyperbolicDiscounter or None if not enabled
+        """
+        return self.discounter
 
     def get_state(self) -> PrefrontalState:
         """Get current state."""

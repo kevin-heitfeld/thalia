@@ -71,7 +71,7 @@ class TestProtocolCompliance:
     def test_language_pathway_implements_protocol(self, device):
         """Language pathway should implement NeuralPathway protocol (ADR-007)."""
         from thalia.sensory import LanguagePathway, LanguageConfig
-        
+
         config = LanguageConfig(device=device)
         pathway = LanguagePathway(config)
 
@@ -171,7 +171,7 @@ class TestSensoryPathwayInterface:
     def test_language_encode(self, device):
         """Language pathway forward() should return spikes and metadata (ADR-007)."""
         from thalia.sensory import LanguagePathway, LanguageConfig, Modality
-        
+
         config = LanguageConfig(output_size=128, device=device)
         pathway = LanguagePathway(config)
 
@@ -184,14 +184,14 @@ class TestSensoryPathwayInterface:
         assert isinstance(metadata, dict)
         assert spikes.dim() == 2  # [n_timesteps, output_size]
         assert spikes.shape[1] == 128  # output_size
-        
+
         # Check modality
         assert pathway.get_modality() == Modality.LANGUAGE
 
     def test_sensory_reset_state(self, device):
         """Sensory pathways should have reset_state() method."""
         from thalia.sensory import LanguagePathway, LanguageConfig
-        
+
         pathways = [
             VisualPathway(VisualConfig(device=device)),
             AuditoryPathway(AuditoryConfig(device=device)),
@@ -231,7 +231,7 @@ class TestSpikingPathwayInterface:
         pathway = SpikingPathway(config)
 
         source_spikes = torch.rand(32) > 0.9  # Sparse spikes
-        target_spikes = pathway(source_spikes.float(), dt=1.0)
+        target_spikes = pathway(source_spikes.float())
 
         assert isinstance(target_spikes, torch.Tensor)
         assert target_spikes.shape == (64,)
@@ -265,8 +265,8 @@ class TestSpikingPathwayInterface:
         pathway = SpikingPathway(config)
 
         # Run some spikes through
-        pathway(torch.randn(32), dt=1.0)
-        pathway(torch.randn(32), dt=1.0)
+        pathway(torch.randn(32))
+        pathway(torch.randn(32))
 
         # Reset
         pathway.reset_state()
@@ -287,7 +287,7 @@ class TestSpikingPathwayInterface:
 
         # Run some activity
         for _ in range(10):
-            pathway(torch.rand(32) > 0.9, dt=1.0)
+            pathway(torch.rand(32) > 0.9)
 
         diagnostics = pathway.get_diagnostics()
 
@@ -316,19 +316,19 @@ class TestSpecializedPathways:
 
         # Test 1: Standard forward() inherited from SpikingPathway
         pfc_spikes = torch.rand(16) > 0.9  # Sparse PFC spikes [source_size]
-        output = pathway(pfc_spikes.float(), dt=1.0)
-        
+        output = pathway(pfc_spikes.float())
+
         assert isinstance(output, torch.Tensor)
         assert output.shape == (32,)  # target_size
 
         # Test 2: Specialized modulate() method for attention
         input_signal = torch.randn(64)  # [input_size]
         pfc_activity = torch.randn(16)  # [source_size] - PFC activity
-        modulated = pathway.modulate(input_signal, pfc_activity, dt=1.0)
-        
+        modulated = pathway.modulate(input_signal, pfc_activity)
+
         assert isinstance(modulated, torch.Tensor)
         assert modulated.shape == (64,)  # Same as input_signal
-        
+
         # Modulation should have changed the signal (usually, unless gain is exactly 1)
         # Just check it runs without error - exact modulation depends on learned weights
 
@@ -342,7 +342,7 @@ class TestSpecializedPathways:
         pathway = SpikingReplayPathway(config)
 
         hippocampal_spikes = torch.rand(32) > 0.9
-        output = pathway(hippocampal_spikes.float(), dt=1.0)
+        output = pathway(hippocampal_spikes.float())
 
         assert isinstance(output, torch.Tensor)
         assert output.shape == (64,)
@@ -437,7 +437,7 @@ class TestPathwayIntegration:
         # Process first timestep
         # ADR-006: Temporal coding produces [n_timesteps, n_neurons]
         first_spike = spikes[0, :]  # [128]
-        output = spiking_pathway(first_spike, dt=1.0)
+        output = spiking_pathway(first_spike)
 
         assert output.shape == (64,)
 
@@ -452,7 +452,7 @@ class TestPathwayIntegration:
 
         # 2. Process some spikes
         for _ in range(10):
-            pathway(torch.rand(32) > 0.9, dt=1.0)
+            pathway(torch.rand(32) > 0.9)
 
         # 3. Check state has changed
         diag_active = pathway.get_diagnostics()

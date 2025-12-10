@@ -99,7 +99,7 @@ class TestSpikingPathway:
         # Manually trigger post spikes to test learning
         # (In real usage, post region would produce these)
         pathway.post_trace = pathway.post_trace * 0.9 + post_spikes.float()  # Simulate post spike
-        pathway._apply_stdp(pre_spikes, post_spikes, dt=1.0)
+        pathway._apply_stdp(pre_spikes, post_spikes)
 
         # Weights should have changed
         weight_change = (pathway.weights.data - initial_weights).abs().sum()

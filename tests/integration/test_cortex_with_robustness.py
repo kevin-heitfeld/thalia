@@ -29,8 +29,9 @@ class TestCortexWithRobustness:
         )
         cortex = LayeredCortex(config)
 
-        # Pre-generate consistent test sequence for reproducibility
-        test_inputs = [torch.randn(32) * 0.5 for _ in range(100)]  # Moderate input, 1D tensors
+        # Pre-generate binary spike sequences (proper spike trains)
+        # Use moderate spike probability (~10%)
+        test_inputs = [(torch.randn(32) > 1.2).float() for _ in range(100)]  # Binary spikes, 1D tensors
 
         # Reset once, then let it run - no adaptation mechanisms to track
         cortex.reset_state()
@@ -53,23 +54,28 @@ class TestCortexWithRobustness:
 
     def test_cortex_with_robustness_maintains_activity(self, health_monitor):
         """Test that robustness mechanisms maintain healthy activity levels."""
+        # Use deterministic seed for reproducibility
+        torch.manual_seed(42)
+        
         # Create cortex WITH robustness
         config = LayeredCortexConfig(
             n_input=32,
             n_output=32,
             robustness=RobustnessConfig.stable(),  # Enable robustness
+            seed=42,  # Deterministic weight initialization
         )
         cortex = LayeredCortex(config)
 
-        # Pre-generate consistent test sequence with stronger input
-        # Pre-generate test sequence
-        test_inputs = [torch.randn(32) * 1.5 for _ in range(100)]  # Increased strength, 1D tensors
+        # Pre-generate binary spike sequences with higher spike probability
+        torch.manual_seed(42)  # Reset for input generation
+        # Use threshold of 0.3 to get ~40% spike probability for robust activity
+        test_inputs = [(torch.randn(32) > 0.3).float() for _ in range(150)]  # Binary spikes, 1D tensors
 
         # CRITICAL: Reset once, then let robustness mechanisms adapt over time
         cortex.reset_state()
         
         spike_counts = []
-        for t in range(100):
+        for t in range(150):  # Longer to allow adaptation
             output = cortex.forward(test_inputs[t])
             spike_counts.append(cortex.state.l5_spikes.sum().item())
             
@@ -78,10 +84,13 @@ class TestCortexWithRobustness:
         report = health_monitor.check_health(diagnostics)
 
         # With robustness, should maintain reasonable activity
-        avg_spikes = sum(spike_counts) / len(spike_counts)
-        variance = torch.tensor(spike_counts, dtype=torch.float32).var().item()
+        # Check activity after warmup period (skip first 50 steps)
+        warmup = 50
+        adapted_spikes = spike_counts[warmup:]
+        avg_spikes = sum(adapted_spikes) / len(adapted_spikes)
+        variance = torch.tensor(adapted_spikes, dtype=torch.float32).var().item()
         
-        print(f"With robustness: avg {avg_spikes:.1f} ± {variance**0.5:.1f} spikes/step")
+        print(f"With robustness: avg {avg_spikes:.1f} ± {variance**0.5:.1f} spikes/step (after {warmup}-step warmup)")
         print(f"Health: {report.summary}")
         print(f"Health severity: {report.overall_severity:.1f}/100")
 
@@ -96,6 +105,9 @@ class TestCortexWithRobustness:
 
     def test_cortex_ei_balance_prevents_runaway(self, health_monitor):
         """Test that E/I balance prevents runaway excitation."""
+        # Use deterministic seed for reproducibility
+        torch.manual_seed(43)
+        
         # Create cortex with E/I balance enabled
         config = LayeredCortexConfig(
             n_input=32,
@@ -107,11 +119,14 @@ class TestCortexWithRobustness:
                 enable_criticality=False,
                 enable_metabolic=False,
             ),
+            seed=43,  # Deterministic weight initialization
         )
         cortex = LayeredCortex(config)
 
-        # Pre-generate strong input sequence
-        test_inputs = [torch.randn(32) * 2.0 for _ in range(200)]  # 1D tensors
+        # Pre-generate binary spike sequences with high spike probability
+        torch.manual_seed(43)  # Reset for input generation
+        # Use threshold of 0.0 to get ~50% spike probability (strong stimulation)
+        test_inputs = [(torch.randn(32) > 0.0).float() for _ in range(200)]  # Binary spikes, 1D tensors
 
         # CRITICAL: Reset once, let E/I balance adapt over time
         cortex.reset_state()
@@ -161,9 +176,12 @@ class TestCortexWithRobustness:
         )
         cortex = LayeredCortex(config)
 
-        # Test with different input magnitudes
-        weak_pattern = torch.randn(32) * 0.5  # (batch, features)
-        strong_pattern = weak_pattern * 3.0  # Same pattern, 3x stronger
+        # Test with different spike probabilities
+        torch.manual_seed(50)  # Deterministic
+        # Weak: ~5% spikes, Strong: ~25% spikes (same random seed, different thresholds)
+        base_noise = torch.randn(32)
+        weak_pattern = (base_noise > 1.6).float()  # ~5% spike probability
+        strong_pattern = (base_noise > 0.7).float()  # ~25% spike probability (5x more spikes)
 
         # Get responses
         cortex.reset_state()
@@ -202,9 +220,10 @@ class TestCortexWithRobustness:
         )
         cortex = LayeredCortex(config)
 
-        # Pre-generate consistent input sequence
-        # Use slightly weaker stimuli to test IP adaptation
-        test_inputs = [torch.randn(32) * 0.8 for _ in range(150)]  # 1D tensors
+        # Pre-generate binary spike sequences
+        # Use moderate spike probability to test IP adaptation
+        torch.manual_seed(60)
+        test_inputs = [(torch.randn(32) > 0.8).float() for _ in range(150)]  # ~20% spike probability, 1D tensors
 
         # CRITICAL: Reset once, let IP adapt over time
         cortex.reset_state()
@@ -252,12 +271,13 @@ class TestCortexRobustnessInteractions:
             # Run with fresh input each step - DON'T reset so mechanisms adapt
             for _ in range(50):
                 if phase == "weak":
-                    test_input = torch.randn(32) * 0.5  # (batch, features)
+                    test_input = (torch.randn(32) > 1.5).float()  # ~7% spike probability
                 elif phase == "strong":
-                    test_input = torch.randn(32) * 1.5
+                    test_input = (torch.randn(32) > 0.2).float()  # ~40% spike probability
                 else:
-                    # Random variable
-                    test_input = torch.randn(32) * (0.5 + torch.rand(1).item())
+                    # Random variable spike probability (10-40%)
+                    threshold = 0.2 + torch.rand(1).item() * 1.0
+                    test_input = (torch.randn(32) > threshold).float()
 
                 output = cortex.forward(test_input)            # Check health after each phase
             diagnostics = cortex.get_diagnostics()
@@ -292,11 +312,11 @@ class TestCortexRobustnessInteractions:
             )
             cortex = LayeredCortex(config)
 
-            # Standard test - fresh input each timestep
+            # Standard test - fresh binary spike input each timestep
 
             spike_counts = []
             for _ in range(100):
-                test_input = torch.randn(32) * 0.8  # (batch, features)
+                test_input = (torch.randn(32) > 0.8).float()  # ~20% spike probability
                 output = cortex.forward(test_input)
                 spike_counts.append(cortex.state.l5_spikes.sum().item())            # Get diagnostics
             diagnostics = cortex.get_diagnostics()
