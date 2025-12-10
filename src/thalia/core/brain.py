@@ -84,7 +84,7 @@ import torch
 import torch.nn as nn
 
 from .event_system import (
-    Event, EventType, EventScheduler, TrialPhase,
+    Event, EventType, EventScheduler,
     SpikePayload,
     get_axonal_delay,
 )
@@ -217,9 +217,6 @@ class EventDrivenBrain(nn.Module):
 
         # Current simulation time
         self._current_time: float = 0.0
-
-        # Trial state
-        self._trial_phase = TrialPhase.ENCODE
 
         # =====================================================================
         # CREATE BRAIN REGIONS
@@ -750,10 +747,6 @@ class EventDrivenBrain(nn.Module):
 
         n_timesteps = n_timesteps or self.config.encoding_timesteps
 
-        # Set trial phase for diagnostics/monitoring
-        # (Actual phase used by hippocampus is determined from oscillator states)
-        self._trial_phase = TrialPhase.ENCODE
-
         # Note: No new_trial()/clear() calls here - continuous processing
         # State transitions happen via natural dynamics (decay, FFI)
         # Call new_sequence() explicitly when starting unrelated sequences
@@ -790,10 +783,6 @@ class EventDrivenBrain(nn.Module):
         """
         n_timesteps = n_timesteps or self.config.delay_timesteps
 
-        # Set trial phase for diagnostics/monitoring
-        # (Actual phase used by hippocampus is determined from oscillator states)
-        self._trial_phase = TrialPhase.DELAY
-
         results = self._run_timesteps(
             sensory_input=None,
             n_timesteps=n_timesteps,
@@ -826,10 +815,6 @@ class EventDrivenBrain(nn.Module):
         )
 
         n_timesteps = n_timesteps or self.config.test_timesteps
-
-        # Set trial phase for diagnostics/monitoring
-        # (Actual phase used by hippocampus is determined from oscillator states)
-        self._trial_phase = TrialPhase.RETRIEVE
 
         results = self._run_timesteps(
             sensory_input=test_pattern,
@@ -1283,7 +1268,6 @@ class EventDrivenBrain(nn.Module):
         For starting a new sequence within the same session, use new_sequence().
         """
         self._current_time = 0.0
-        self._trial_phase = TrialPhase.ENCODE
         self.scheduler = EventScheduler()
 
         # Reset regions (full state reset)
@@ -1341,7 +1325,6 @@ class EventDrivenBrain(nn.Module):
                 "events_processed": self._events_processed,
             },
             "trial_state": {
-                "phase": self._trial_phase.name,
                 "spike_counts": self._spike_counts.copy(),
                 "last_action": self._last_action,
             },
@@ -1418,7 +1401,6 @@ class EventDrivenBrain(nn.Module):
 
         # Restore trial state
         trial_state = state_dict["trial_state"]
-        self._trial_phase = TrialPhase[trial_state["phase"]]
         self._spike_counts = trial_state["spike_counts"].copy()
         self._last_action = trial_state["last_action"]
 
@@ -1628,8 +1610,7 @@ class EventDrivenBrain(nn.Module):
         otherwise runs sequentially in the main process.
 
         Note: Trial phase for hippocampus is determined automatically
-        from oscillator states (theta encoding/retrieval strength),
-        not from self._trial_phase which is only for diagnostics.
+        from oscillator states (theta encoding/retrieval strength).
         """
         if self._parallel_executor is not None:
             return self._run_timesteps_parallel(
@@ -1973,7 +1954,6 @@ class EventDrivenBrain(nn.Module):
         diag = {
             # Brain state
             "current_time": self._current_time,
-            "trial_phase": self._trial_phase.value,
             "theta_phase": self.oscillators.get_phases().get('theta', 0.0),
             "theta_frequency": self.oscillators.theta_freq,
             "spike_counts": self._spike_counts.copy(),

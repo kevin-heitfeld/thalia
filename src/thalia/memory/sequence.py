@@ -57,7 +57,6 @@ from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
 from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
 from thalia.core.spike_coding import CodingStrategy
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
-from thalia.core.event_system import TrialPhase
 from thalia.core.utils import cosine_similarity_safe
 from thalia.core.mixins import ConfigurableMixin, DiagnosticCollectorMixin
 from thalia.core.mixins import DiagnosticCollectorMixin
@@ -227,8 +226,9 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
             combined_spikes = token_spikes[:, :n_timesteps, :] * (1.0 + 0.5 * position_enc[:n_timesteps, :])
 
             # Process through hippocampus (use sum over timesteps as input)
+            # Theta modulation computed internally by hippocampus
             hippo_input = combined_spikes.sum(dim=1)  # [batch, neurons]
-            _ = self.hippocampus.forward(hippo_input, phase=TrialPhase.ENCODE)
+            _ = self.hippocampus.forward(hippo_input)
 
             # Get CA3 pattern (the "memory" for this position)
             ca3_spikes = self.hippocampus.state.ca3_spikes

@@ -19,12 +19,9 @@ from .config import Episode, TrisynapticConfig, TrisynapticState
 
 # Import main class from package
 from .trisynaptic import TrisynapticHippocampus
-from thalia.regions.theta_dynamics import TrialPhase
-
 __all__ = [
     "TrisynapticHippocampus",
     "TrisynapticConfig", 
     "TrisynapticState",
     "Episode",
-    "TrialPhase",
 ]

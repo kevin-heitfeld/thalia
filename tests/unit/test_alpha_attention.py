@@ -246,7 +246,8 @@ class TestAlphaIntegration:
             signals={"alpha": 0.8, "theta": 0.0, "gamma": 0.0, "beta": 0.0},
             theta_slot=0,
         )
-        output = cortex.forward(input_spikes, encoding_mod=1.0, retrieval_mod=0.5)
+        # Theta modulation computed internally from theta_phase (set to 0.0 above)
+        output = cortex.forward(input_spikes)
         
         # Should work without errors and show suppression
         assert cortex.state.alpha_suppression == 0.6  # 1.0 - (0.8 * 0.5)

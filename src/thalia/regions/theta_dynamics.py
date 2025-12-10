@@ -25,14 +25,8 @@ import math
 
 import torch
 
-# Re-export TrialPhase from event_system
-from ..core.event_system import (
-    TrialPhase,
-)
-
 # Export for backward compatibility
 __all__ = [
-    "TrialPhase",
     "FeedforwardInhibition",
     "TemporalIntegrationLayer",
 ]

@@ -149,12 +149,10 @@ class EventDrivenPFC(EventDrivenRegionBase):
 
     def _forward_pfc(self, combined_input: torch.Tensor) -> torch.Tensor:
         """Forward combined input through PFC."""
-        # Forward through PFC with theta modulation and dopamine
+        # Forward through PFC (theta modulation computed internally)
         output = self.impl.forward(
             combined_input,
             dt=1.0,  # Event-driven doesn't use fixed dt
-            encoding_mod=self._encoding_strength,
-            retrieval_mod=self._retrieval_strength,
             dopamine_signal=self._pending_dopamine_signal,
         )
 

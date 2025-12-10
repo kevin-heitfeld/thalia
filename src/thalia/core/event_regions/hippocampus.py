@@ -44,11 +44,6 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
         # Track EC direct input (from sensory, bypasses cortex)
         self._ec_direct_input: Optional[torch.Tensor] = None
 
-        # Import TrialPhase for phase determination
-        from thalia.regions.theta_dynamics import TrialPhase
-
-        self._TrialPhase = TrialPhase
-
     @property
     def impl(self) -> Any:
         """Return the underlying hippocampus implementation."""
@@ -64,20 +59,6 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
         if hasattr(self.impl, "get_diagnostics"):
             return self.impl.get_diagnostics()
         return {}
-
-    def _get_trial_phase(self) -> Any:
-        """Determine trial phase from theta modulation.
-
-        Encoding strength high → ENCODE phase
-        Retrieval strength high → RETRIEVE phase
-        Neither dominant → DELAY phase
-        """
-        if self._encoding_strength > 0.6:
-            return self._TrialPhase.ENCODE
-        elif self._retrieval_strength > 0.6:
-            return self._TrialPhase.RETRIEVE
-        else:
-            return self._TrialPhase.DELAY
 
     def _apply_decay(self, dt_ms: float) -> None:
         """Apply decay to hippocampal neurons."""
@@ -137,15 +118,10 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
             f"got shape {input_spikes.shape}"
         )
 
-        # Determine phase from theta
-        phase = self._get_trial_phase()
-
         # Forward through hippocampus (already expects 1D after ADR-005 update)
+        # Theta modulation computed internally by TrisynapticHippocampus
         output = self.impl.forward(
             input_spikes,
-            phase=phase,
-            encoding_mod=self._encoding_strength,
-            retrieval_mod=self._retrieval_strength,
             dt=1.0,  # Event-driven doesn't use fixed dt
             ec_direct_input=self._ec_direct_input,
         )
@@ -161,7 +137,6 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
     def get_state(self) -> Dict[str, Any]:
         """Return hippocampus state."""
         state = super().get_state()
-        state["trial_phase"] = self._get_trial_phase().name
         if hasattr(self.impl, "get_diagnostics"):
             state["impl"] = self.impl.get_diagnostics()
         return state

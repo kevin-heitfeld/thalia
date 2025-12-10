@@ -77,7 +77,7 @@ from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
-from thalia.regions.theta_dynamics import TrialPhase, FeedforwardInhibition
+from thalia.regions.theta_dynamics import FeedforwardInhibition
 
 # Register all regions with the factory
 register_region("cortex", aliases=["layered_cortex"])(LayeredCortex)
@@ -116,6 +116,5 @@ __all__ = [
     "TrisynapticHippocampus",
     "TrisynapticConfig",
     # Theta dynamics
-    "TrialPhase",
     "FeedforwardInhibition",
 ]

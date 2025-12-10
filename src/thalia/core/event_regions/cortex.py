@@ -122,11 +122,9 @@ class EventDrivenCortex(EventDrivenRegionBase):
                 self._pending_top_down = None
             return None  # Top-down alone doesn't drive output
 
-        # Forward through cortex with current theta modulation (expects 1D)
+        # Forward through cortex (theta modulation computed internally)
         output = self.impl.forward(
             input_spikes,
-            encoding_mod=self._encoding_strength,
-            retrieval_mod=self._retrieval_strength,
             top_down=self._pending_top_down,
         )
 

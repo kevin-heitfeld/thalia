@@ -67,14 +67,6 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         self._last_update_time: float = 0.0
         self._current_time: float = 0.0
 
-        # Theta state (updated by theta events)
-        self._theta_phase: float = 0.0
-        self._encoding_strength: float = 0.5
-        self._retrieval_strength: float = 0.5
-
-        # Dopamine state
-        self._dopamine_level: float = 0.0
-
         # Input buffering for multi-source regions
         self._accumulation_window: float = config.accumulation_window_ms
         self._input_buffers: Dict[str, Optional[torch.Tensor]] = {}
@@ -283,22 +275,45 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
 
     # ===== End Input Buffering Methods =====
 
+    def _get_theta_modulation(self) -> tuple[float, float]:
+        """Compute encoding/retrieval modulation from theta oscillator phase.
+        
+        Brain broadcasts oscillator phases to all regions via set_oscillator_phases().
+        This method retrieves the theta phase and computes modulation values.
+        
+        Returns:
+            (encoding_mod, retrieval_mod) where:
+            - encoding_mod: high at theta trough (0°), low at peak (180°)
+            - retrieval_mod: low at theta trough, high at theta peak
+        
+        Biological rationale:
+        - Theta trough: DG→CA3 strong (encoding), CA3 recurrence weak
+        - Theta peak: DG→CA3 weak, CA3 recurrence strong (retrieval)
+        """
+        # Get theta phase from underlying region (set by Brain)
+        if hasattr(self.impl, 'state') and hasattr(self.impl.state, '_oscillator_phases'):
+            theta_phase = self.impl.state._oscillator_phases.get('theta', 0.0)
+        else:
+            theta_phase = 0.0
+        
+        import math
+        # Encoding: max at trough (phase=0), min at peak (phase=π)
+        # Use cosine: (1 + cos(θ))/2 maps [0, 2π] → [0, 1] with max at θ=0
+        encoding_mod = 0.5 * (1.0 + math.cos(theta_phase))
+        
+        # Retrieval: inverse of encoding (max at peak)
+        retrieval_mod = 1.0 - encoding_mod
+        
+        return encoding_mod, retrieval_mod
+
     def get_state(self) -> Dict[str, Any]:
         """Return current state for monitoring."""
         return {
             "name": self._name,
             "current_time": self._current_time,
-            "theta_phase": self._theta_phase,
-            "encoding_strength": self._encoding_strength,
-            "retrieval_strength": self._retrieval_strength,
-            "dopamine": self._dopamine_level,
         }
 
     def reset_state(self) -> None:
         """Reset to initial state."""
         self._last_update_time = 0.0
         self._current_time = 0.0
-        self._theta_phase = 0.0
-        self._encoding_strength = 0.5
-        self._retrieval_strength = 0.5
-        self._dopamine_level = 0.0

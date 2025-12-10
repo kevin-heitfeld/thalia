@@ -957,8 +957,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self,
         input_spikes: torch.Tensor,
         dt: float = 1.0,
-        encoding_mod: float = 1.0,
-        retrieval_mod: float = 1.0,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input and select action using SEPARATE D1/D2 populations.
@@ -974,10 +972,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         Args:
             input_spikes: Input spike tensor [n_input] (1D)
             dt: Time step in ms
-            encoding_mod: Theta modulation for encoding phase (0-1).
-            retrieval_mod: Theta modulation for retrieval phase (0-1).
 
         NOTE: Exploration is handled by finalize_action() at trial end, not per-timestep.
+        NOTE: Theta modulation computed internally from self._theta_phase (set by Brain)
 
         With population coding:
         - Each action has N neurons per pathway (neurons_per_action)

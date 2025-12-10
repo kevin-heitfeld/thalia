@@ -26,7 +26,6 @@ from thalia.regions import (
     TrisynapticHippocampus,
     TrisynapticConfig,
 )
-from thalia.regions.hippocampus import TrialPhase
 
 
 
@@ -275,16 +274,16 @@ class TestTrisynapticHippocampus:
     def test_initialization(self, hippocampus, hippocampus_config):
         """Test that hippocampus initializes correctly."""
         assert hippocampus.learning_rule == LearningRule.THETA_PHASE
-        
+
         # Sizes are computed from config
         expected_dg_size = int(hippocampus_config.n_input * hippocampus_config.dg_expansion)
         expected_ca3_size = int(expected_dg_size * hippocampus_config.ca3_size_ratio)
         expected_ca1_size = int(hippocampus_config.n_output * hippocampus_config.ca1_size_ratio)
-        
+
         assert hippocampus.dg_size == expected_dg_size
         assert hippocampus.ca3_size == expected_ca3_size
         assert hippocampus.ca1_size == expected_ca1_size
-        
+
         # Check weight matrices exist
         assert hippocampus.w_ec_dg.shape == (expected_dg_size, hippocampus_config.n_input)
         assert hippocampus.w_dg_ca3.shape == (expected_ca3_size, expected_dg_size)
@@ -296,22 +295,19 @@ class TestTrisynapticHippocampus:
 
         # 1D architecture - no batch dimension
         input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)
-        
+
         hippocampus.reset_state()
-        output = hippocampus.forward(
-            input_spikes,
-            phase=TrialPhase.ENCODE,
-            encoding_mod=1.0,  # High encoding strength
-            retrieval_mod=0.0  # No retrieval
-        )
-        
+        # Set theta phase to 0 for encoding (cos(0) = 1 → encoding_mod = 1.0)
+        hippocampus.set_oscillator_phases({'theta': 0.0})
+        output = hippocampus.forward(input_spikes)
+
         assert output.shape == (32,)  # 1D output
         assert output.dtype == torch.bool  # Should return bool spikes
-        
+
         # DG should be active (pattern separation)
         assert hippocampus.state.dg_spikes is not None
         assert hippocampus.state.dg_spikes.sum() > 0
-        
+
         # CA3 should be active (receiving DG input)
         assert hippocampus.state.ca3_spikes is not None
         assert hippocampus.state.ca3_spikes.sum() > 0
@@ -321,30 +317,25 @@ class TestTrisynapticHippocampus:
 
         # 1D architecture - no batch dimension
         input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)
-        
+
         # First encode a pattern
         hippocampus.reset_state()
-        hippocampus.forward(
-            input_spikes,
-            phase=TrialPhase.ENCODE,
-            encoding_mod=1.0,
-            retrieval_mod=0.0
-        )
-        
+        # Set theta phase to 0 for encoding
+        hippocampus.set_oscillator_phases({'theta': 0.0})
+        hippocampus.forward(input_spikes)
+
         # Now retrieve with partial cue (first half of pattern)
         partial_input = input_spikes.clone()
         partial_input[32:] = False  # Zero out second half
-        
-        output = hippocampus.forward(
-            partial_input,
-            phase=TrialPhase.RETRIEVE,
-            encoding_mod=0.0,  # No encoding
-            retrieval_mod=1.0  # Strong retrieval
-        )
-        
+
+        # Set theta phase to π for retrieval (cos(π) = -1 → retrieval_mod = 1.0)
+        import math
+        hippocampus.set_oscillator_phases({'theta': math.pi})
+        output = hippocampus.forward(partial_input)
+
         assert output.shape == (32,)  # 1D output
         assert output.dtype == torch.bool
-        
+
         # CA3 recurrence should be active (pattern completion)
         # In retrieval, CA3 should produce output even with partial input
 
@@ -353,30 +344,24 @@ class TestTrisynapticHippocampus:
 
         # 1D architecture - no batch dimension
         input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)
-        
+
         # Encode pattern
         hippocampus.reset_state()
-        hippocampus.forward(
-            input_spikes,
-            phase=TrialPhase.ENCODE,
-            encoding_mod=1.0,
-            retrieval_mod=0.0
-        )
-        
+        # Set theta phase to 0 for encoding
+        hippocampus.set_oscillator_phases({'theta': 0.0})
+        hippocampus.forward(input_spikes)
+
         # Store CA3 activity after encoding
         ca3_after_encode = hippocampus.state.ca3_spikes.clone()
-        
-        # DELAY phase with no input
+
+        # DELAY phase with no input (theta at intermediate phase)
         zero_input = torch.zeros(64, dtype=torch.bool)
-        output = hippocampus.forward(
-            zero_input,
-            phase=TrialPhase.DELAY,
-            encoding_mod=0.3,  # Moderate
-            retrieval_mod=0.5   # Moderate
-        )
-        
+        import math
+        hippocampus.set_oscillator_phases({'theta': math.pi / 2})  # 90° → moderate modulation
+        output = hippocampus.forward(zero_input)
+
         assert output.shape == (32,)  # 1D output
-        
+
         # CA3 persistent activity should maintain pattern
         # (exact match not guaranteed due to noise, but should be correlated)
         assert hippocampus.state.ca3_persistent is not None
@@ -385,29 +370,31 @@ class TestTrisynapticHippocampus:
         """Test that similar inputs produce different DG codes (pattern separation)."""
 
         # 1D architecture - no batch dimension
-        
+
         # Create two similar patterns (90% overlap)
         pattern1 = torch.zeros(64, dtype=torch.bool)
         pattern1[:60] = True  # First 60 neurons
-        
+
         pattern2 = torch.zeros(64, dtype=torch.bool)
         pattern2[4:64] = True  # Offset by 4 neurons
-        
+
         # Encode pattern 1
         hippocampus.reset_state()
-        hippocampus.forward(pattern1, phase=TrialPhase.ENCODE, encoding_mod=1.0, retrieval_mod=0.0)
+        hippocampus.set_oscillator_phases({'theta': 0.0})  # Encoding phase
+        hippocampus.forward(pattern1)
         dg1 = hippocampus.state.dg_spikes.clone()
-        
+
         # Encode pattern 2
         hippocampus.reset_state()
-        hippocampus.forward(pattern2, phase=TrialPhase.ENCODE, encoding_mod=1.0, retrieval_mod=0.0)
+        hippocampus.set_oscillator_phases({'theta': 0.0})  # Encoding phase
+        hippocampus.forward(pattern2)
         dg2 = hippocampus.state.dg_spikes.clone()
-        
+
         # DG codes should be different (pattern separation)
         # Overlap should be much less than input overlap (90%)
         dg_overlap = (dg1 & dg2).float().sum() / dg1.float().sum().clamp(min=1)
         input_overlap = (pattern1 & pattern2).float().sum() / pattern1.float().sum().clamp(min=1)
-        
+
         # DG should decorrelate: overlap should be lower than input
         assert dg_overlap < input_overlap
 
@@ -415,38 +402,31 @@ class TestTrisynapticHippocampus:
         """Test that partial cues can retrieve full patterns (CA3 pattern completion)."""
 
         # 1D architecture - no batch dimension
-        
+
         # Full pattern
         full_pattern = torch.randint(0, 2, (64,), dtype=torch.bool)
-        
+
         # Encode full pattern multiple times to strengthen CA3 recurrent weights
         hippocampus.reset_state()
+        hippocampus.set_oscillator_phases({'theta': 0.0})  # Encoding phase
         for _ in range(5):
-            hippocampus.forward(
-                full_pattern,
-                phase=TrialPhase.ENCODE,
-                encoding_mod=1.0,
-                retrieval_mod=0.0
-            )
+            hippocampus.forward(full_pattern)
         ca3_full = hippocampus.state.ca3_spikes.clone()
-        
+
         # Present partial cue (50% of pattern) WITHOUT reset
         # (pattern completion requires maintained CA3 state)
         partial_pattern = full_pattern.clone()
         partial_pattern[32:] = False
-        
-        hippocampus.forward(
-            partial_pattern,
-            phase=TrialPhase.RETRIEVE,
-            encoding_mod=0.0,
-            retrieval_mod=1.0
-        )
+
+        import math
+        hippocampus.set_oscillator_phases({'theta': math.pi})  # Retrieval phase
+        hippocampus.forward(partial_pattern)
         ca3_retrieved = hippocampus.state.ca3_spikes.clone()
-        
+
         # CA3 should retrieve similar pattern to full encoding
         # (exact match not guaranteed, but correlation should be high)
         overlap = (ca3_full & ca3_retrieved).float().sum()
-        
+
         # Should get some pattern completion (>0 overlap)
         # Even with reset, DG should help reactivate CA3 pattern via learned weights
         assert overlap > 0 or ca3_retrieved.sum() > 0  # At least some activity
@@ -458,26 +438,19 @@ class TestTrisynapticHippocampus:
         # Use pattern with high activity to ensure spikes
         input_spikes = torch.ones(64, dtype=torch.bool)
         input_spikes[::2] = False  # 50% activity
-        
+
         # High encoding modulation should produce different output than high retrieval
         hippocampus.reset_state()
-        output_encode = hippocampus.forward(
-            input_spikes,
-            phase=TrialPhase.ENCODE,
-            encoding_mod=1.0,
-            retrieval_mod=0.0
-        )
+        hippocampus.set_oscillator_phases({'theta': 0.0})  # Encoding phase
+        output_encode = hippocampus.forward(input_spikes)
         dg_encode = hippocampus.state.dg_spikes.clone()
-        
+
         hippocampus.reset_state()
-        output_retrieve = hippocampus.forward(
-            input_spikes,
-            phase=TrialPhase.RETRIEVE,
-            encoding_mod=0.0,
-            retrieval_mod=1.0
-        )
+        import math
+        hippocampus.set_oscillator_phases({'theta': math.pi})  # Retrieval phase
+        output_retrieve = hippocampus.forward(input_spikes)
         dg_retrieve = hippocampus.state.dg_spikes.clone()
-        
+
         # At minimum, DG should be active in both phases (it processes input)
         # CA1 output may be sparse due to downstream gating
         assert dg_encode.sum() > 0, "DG should be active during encoding"
@@ -487,41 +460,31 @@ class TestTrisynapticHippocampus:
         """Test that CA1 performs NMDA-based match/mismatch detection."""
 
         # 1D architecture - no batch dimension
-        
+
         # Encode a pattern
         pattern = torch.randint(0, 2, (64,), dtype=torch.bool)
         hippocampus.reset_state()
-        
+
         # Multiple encoding passes to strengthen weights
+        hippocampus.set_oscillator_phases({'theta': 0.0})  # Encoding phase
         for _ in range(5):
-            hippocampus.forward(
-                pattern,
-                phase=TrialPhase.ENCODE,
-                encoding_mod=1.0,
-                retrieval_mod=0.0
-            )
-        
+            hippocampus.forward(pattern)
+
         # Test with matching pattern (CA3 → CA1 and EC → CA1 should agree)
         hippocampus.reset_state()
-        output_match = hippocampus.forward(
-            pattern,
-            phase=TrialPhase.RETRIEVE,
-            encoding_mod=0.0,
-            retrieval_mod=1.0
-        )
+        import math
+        hippocampus.set_oscillator_phases({'theta': math.pi})  # Retrieval phase
+        output_match = hippocampus.forward(pattern)
         ca1_match_activity = output_match.float().sum()
-        
+
         # Test with mismatching pattern
         different_pattern = ~pattern  # Inverted pattern
         hippocampus.reset_state()
-        output_mismatch = hippocampus.forward(
-            different_pattern,
-            phase=TrialPhase.RETRIEVE,
-            encoding_mod=0.0,
-            retrieval_mod=1.0
-        )
+        import math
+        hippocampus.set_oscillator_phases({'theta': math.pi})  # Retrieval phase
+        output_mismatch = hippocampus.forward(different_pattern)
         ca1_mismatch_activity = output_mismatch.float().sum()
-        
+
         # CA1 should show difference between match and mismatch
         # (exact values depend on NMDA gating, but there should be a measurable difference)
 
@@ -530,25 +493,21 @@ class TestTrisynapticHippocampus:
 
         # 1D architecture - no batch dimension
         input_spikes = torch.randint(0, 2, (64,), dtype=torch.bool)
-        
+
         # Run forward to build up state
-        hippocampus.forward(
-            input_spikes,
-            phase=TrialPhase.ENCODE,
-            encoding_mod=1.0,
-            retrieval_mod=0.0
-        )
-        
+        hippocampus.set_oscillator_phases({'theta': 0.0})  # Encoding phase
+        hippocampus.forward(input_spikes)
+
         # State should have activity
         assert hippocampus.state.dg_spikes is not None
         assert hippocampus.state.ca3_spikes is not None
-        
+
         # Store pre-reset membrane state
         ca3_pre = hippocampus.state.ca3_membrane.clone() if hippocampus.state.ca3_membrane is not None else None
-        
+
         # Call new_trial
         hippocampus.new_trial()
-        
+
         # Key functional behavior: membrane potentials should be reset
         # (This is what matters for new trial processing, not specific storage fields)
         if ca3_pre is not None and hippocampus.state.ca3_membrane is not None:

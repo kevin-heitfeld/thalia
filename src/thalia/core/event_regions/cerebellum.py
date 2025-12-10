@@ -86,12 +86,10 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
         # Store for learning
         self._recent_input = input_spikes.clone()
 
-        # Forward through cerebellum
+        # Forward through cerebellum (theta modulation computed internally)
         output = self.impl.forward(
             input_spikes,
             dt=1.0,
-            encoding_mod=self._encoding_strength,
-            retrieval_mod=self._retrieval_strength,
         )
 
         # Store output for learning

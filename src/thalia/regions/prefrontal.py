@@ -446,8 +446,6 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         self,
         input_spikes: torch.Tensor,
         dt: float = 1.0,
-        encoding_mod: float = 1.0,
-        retrieval_mod: float = 1.0,
         dopamine_signal: float = 0.0,
         **kwargs: Any,
     ) -> torch.Tensor:
@@ -457,13 +455,14 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         Args:
             input_spikes: Input spike pattern [n_input] (1D bool tensor, ADR-005)
             dt: Time step in ms
-            encoding_mod: Theta modulation for encoding (opens gate for new info)
-            retrieval_mod: Theta modulation for retrieval (maintains WM)
             dopamine_signal: External DA signal for gating (-1 to 1)
             **kwargs: Additional inputs
 
         Returns:
             Output spikes [n_output] (1D bool tensor, ADR-005)
+        
+        Note:
+            Theta modulation computed internally from self._theta_phase (set by Brain)
         """
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages

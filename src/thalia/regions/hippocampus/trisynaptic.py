@@ -43,7 +43,7 @@ from thalia.core.traces import update_trace
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import BrainRegion, LearningRule
-from thalia.regions.theta_dynamics import TrialPhase, FeedforwardInhibition
+from thalia.regions.theta_dynamics import FeedforwardInhibition
 from .config import Episode, TrisynapticConfig, TrisynapticState
 
 
@@ -208,9 +208,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
 
         # Feedback inhibition state - tracks recent CA3 activity
         self._ca3_activity_trace: Optional[torch.Tensor] = None
-
-        # Track phase for theta-phase resets
-        self._last_phase: Optional[TrialPhase] = None
 
         # Intrinsic plasticity: per-neuron threshold adjustment
         # Neurons that fire too much get higher thresholds (less excitable)
@@ -462,9 +459,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Reset feedback inhibition trace
         self._ca3_activity_trace = torch.zeros(1, device=device)
 
-        # Reset phase tracking
-        self._last_phase = None
-
         # 1D architecture - no batch dimension
         self.state = TrisynapticState(
             dg_spikes=torch.zeros(self.dg_size, device=device),
@@ -580,23 +574,14 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
     def forward(  # type: ignore[override]
         self,
         input_spikes: torch.Tensor,
-        phase: TrialPhase,
-        encoding_mod: float = 1.0,
-        retrieval_mod: float = 1.0,
         dt: float = 1.0,
         ec_direct_input: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Process input spikes through DG→CA3→CA1 circuit.
 
-        Note: This method has a different signature than the base class
-        because hippocampus requires explicit trial phase for theta modulation.
-
         Args:
             input_spikes: Input spike pattern [n_input] (1D, no batch)
-            phase: Trial phase (ENCODE, DELAY, or RETRIEVE)
-            encoding_mod: Theta modulation for encoding (from BrainSystem)
-            retrieval_mod: Theta modulation for retrieval (from BrainSystem)
             dt: Time step in ms
             ec_direct_input: Optional separate input for EC→CA1 direct pathway [n_input] (1D)
                             If None, uses input_spikes (original behavior).
@@ -606,13 +591,12 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         Returns:
             CA1 output spikes [n_output] (1D)
 
-        Phase Logic:
-            - ENCODE: DG→CA3 encoding, CA3 Hebbian learning, EC→CA1 learning
-            - DELAY: CA3 recurrence maintains memory, CA1 decays naturally
-            - RETRIEVE: NMDA coincidence detection in CA1
+        Theta Modulation:
+            - Encoding (theta trough): DG→CA3 strong, CA3 recurrence weak
+            - Retrieval (theta peak): DG→CA3 suppressed, CA3 recurrence strong
+            - Continuous modulation computed from self._theta_phase (set by Brain)
 
         Features:
-            - Theta modulation: Encoding/retrieval strength passed from BrainSystem
             - Feedforward inhibition: Stimulus changes trigger transient inhibition
             - EC layer III: Optional separate input for direct EC→CA1 (biologically
               accurate - EC L3 carries raw sensory info, EC L2 goes through DG)
@@ -652,15 +636,20 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             self._init_state()
 
         # =====================================================================
+        # COMPUTE THETA MODULATION (from oscillator phase set by Brain)
+        # =====================================================================
+        # encoding_mod: high at theta trough (0°), low at peak (180°)
+        # retrieval_mod: low at theta trough, high at theta peak
+        encoding_mod = 0.5 * (1.0 + math.cos(self._theta_phase))
+        retrieval_mod = 1.0 - encoding_mod
+
+        # =====================================================================
         # THETA-PHASE RESET (prevents frozen attractors + new_trial reset)
         # =====================================================================
-        # When transitioning to ENCODE phase (theta trough):
-        # 1. Partially reset persistent activity to prevent stale attractors
-        # 2. If _pending_theta_reset is set (from new_trial), do full reset
-        #
+        # Detect theta trough transition (encoding_mod > 0.8) for reset logic
         # This is biologically realistic: theta rhythm naturally segments
         # sequences, and new_trial() just schedules reset for next theta trough.
-        at_theta_trough = (phase == TrialPhase.ENCODE and self._last_phase != TrialPhase.ENCODE)
+        at_theta_trough = (encoding_mod > 0.8)
 
         if at_theta_trough:
             # Check if new_trial() requested a full reset
@@ -677,8 +666,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
                 # Normal theta trough: partial decay of persistent activity
                 reset_fraction = self.tri_config.theta_reset_fraction
                 self.state.ca3_persistent = self.state.ca3_persistent * (1.0 - reset_fraction)
-
-        self._last_phase = phase
 
         # =====================================================================
         # FEEDFORWARD INHIBITION
@@ -744,27 +731,13 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         #   3. Provides positive feedback (self-sustaining activity)
         # This enables stable attractor states during delay periods.
 
-        # Compute theta-gated strengths
-        # encoding_mod: high at theta trough (0°), low at peak (180°)
-        # retrieval_mod: low at theta trough, high at theta peak
-
-        # Feedforward gate: Strong during encoding, FULLY suppressed during retrieval
-        # Use encoding_mod directly - when it's low (retrieval phase), gate is low
+        # Feedforward gate: Strong during encoding, suppressed during retrieval
+        # Use encoding_mod directly - varies continuously with theta phase
         ff_gate = encoding_mod  # 0.0 to 1.0 based on theta phase
 
         # Recurrence gate: Weak during encoding, strong during retrieval
-        # Use retrieval_mod directly - when it's high, recurrence is strong
+        # Use retrieval_mod directly - varies continuously with theta phase
         rec_gate = 0.2 + 0.8 * retrieval_mod  # Range: 0.2 (encoding) to 1.0 (retrieval)
-
-        # Apply theta gating based on phase for additional control
-        if phase == TrialPhase.RETRIEVE:
-            # During explicit RETRIEVE phase, ensure feedforward is fully gated
-            ff_gate = min(ff_gate, 0.05)  # Cap at 5% even if theta says otherwise
-            rec_gate = max(rec_gate, 0.9)  # Ensure strong recurrence
-        elif phase == TrialPhase.DELAY:
-            # During DELAY, CA3 should maintain pattern via moderate recurrence
-            ff_gate = ff_gate * 0.3  # Reduce feedforward during delay too
-            rec_gate = max(rec_gate, 0.6)  # Moderate recurrence to maintain
 
         # Feedforward from DG (theta-gated) with optional STP
         if self.stp_mossy is not None:
@@ -963,7 +936,7 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             ca3_active_indices = cast(List[int], ca3_spikes.squeeze().nonzero(as_tuple=True)[0].tolist())
             dg_active_count = dg_spikes.sum().item()
             input_sum = input_spikes.sum().item()
-            print(f"      [HIPPO FWD] phase={phase.name}, input_sum={input_sum:.0f}, "
+            print(f"      [HIPPO FWD] input_sum={input_sum:.0f}, "
                   f"dg_active={dg_active_count:.0f}, ca3_active={len(ca3_active_indices)}, "
                   f"ff_gate={ff_gate:.3f}, rec_gate={rec_gate:.3f}")
             if len(ca3_active_indices) <= 10:
@@ -984,78 +957,77 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # This ensures spikes have strong immediate effect but decay slowly
         decay_rate = dt / self.tri_config.ca3_persistent_tau
 
-        # Only update persistent during ENCODE phase - freeze during DELAY/RETRIEVE
-        # This is biologically motivated: Ca²⁺-dependent currents take time to build
-        # up during active encoding, then provide sustained drive during maintenance
-        if phase == TrialPhase.ENCODE:
-            self.state.ca3_persistent = (
-                self.state.ca3_persistent * (1.0 - decay_rate) +
-                ca3_spikes.float() * 0.5  # Strong spike contribution during encoding
-            )
-        else:
-            # During DELAY and RETRIEVE, just decay (don't update from new spikes)
-            # This preserves the encoded pattern as the dominant memory trace
-            self.state.ca3_persistent = self.state.ca3_persistent * (1.0 - decay_rate * 0.5)
+        # Update persistent activity: stronger during encoding, decay otherwise
+        # Encoding_mod determines how much new spikes contribute vs decay
+        # This is biologically motivated: Ca²⁺-dependent currents build up during
+        # active encoding, then decay during maintenance/retrieval
+        # Continuous modulation: contribution naturally weak when encoding_mod is low
+        self.state.ca3_persistent = (
+            self.state.ca3_persistent * (1.0 - decay_rate * (0.5 + 0.5 * retrieval_mod)) +
+            ca3_spikes.float() * 0.5 * encoding_mod  # Contribution scaled by encoding strength
+        )
 
         # Clamp to prevent runaway
         self.state.ca3_persistent = torch.clamp(self.state.ca3_persistent, 0.0, 3.0)
 
         # =====================================================================
-        # ENCODE PHASE: Apply fast Hebbian learning to CA3 recurrent weights
+        # HEBBIAN LEARNING: Apply to CA3 recurrent weights
         # This is how the hippocampus "stores" the pattern - in the weights!
         # Also store the DG pattern for later match/mismatch detection.
         # Modulated by theta encoding strength!
         # =====================================================================
-        if phase == TrialPhase.ENCODE:
-            # Store the DG pattern (accumulate over timesteps)
+        # Store the DG pattern (accumulate over timesteps, scaled by encoding strength)
+        # Continuous modulation: storage naturally weak when encoding_mod is low
+        if encoding_mod > 0.01:  # Only accumulate if encoding has minimal presence
             if self.state.stored_dg_pattern is None:
-                self.state.stored_dg_pattern = dg_spikes.float().clone()
+                self.state.stored_dg_pattern = dg_spikes.float().clone() * encoding_mod
             else:
-                self.state.stored_dg_pattern = self.state.stored_dg_pattern + dg_spikes.float()
+                self.state.stored_dg_pattern = self.state.stored_dg_pattern + dg_spikes.float() * encoding_mod
 
-            # One-shot Hebbian: strengthen connections between co-active neurons
-            # Learning rate modulated by theta phase AND gamma amplitude
-            ca3_activity = ca3_spikes.float()  # Already 1D, no squeeze needed
-            if ca3_activity.sum() > 0:
-                # Hebbian outer product: neurons that fire together wire together
-                #
-                # Gamma amplitude modulation: Learning is stronger when gamma
-                # is strong (theta trough, encoding phase). This implements
-                # the biological finding that synaptic plasticity is enhanced
-                # during periods of strong gamma oscillations.
-                base_lr = self.tri_config.learning_rate * encoding_mod
+        # One-shot Hebbian: strengthen connections between co-active neurons
+        # Learning rate modulated by theta phase AND gamma amplitude
+        # Continuous: learning automatically weak when encoding_mod is low
+        ca3_activity = ca3_spikes.float()  # Already 1D, no squeeze needed
+        if ca3_activity.sum() > 0:
+            # Hebbian outer product: neurons that fire together wire together
+            #
+            # Gamma amplitude modulation: Learning is stronger when gamma
+            # is strong (theta trough, encoding phase). This implements
+            # the biological finding that synaptic plasticity is enhanced
+            # during periods of strong gamma oscillations.
+            base_lr = self.tri_config.learning_rate * encoding_mod
 
-                # Apply automatic gamma amplitude modulation
-                # Gamma is modulated by ALL slower oscillators (emergent multi-order coupling)
-                if self.tri_config.theta_gamma_enabled:
-                    gamma_mod = self._gamma_amplitude_effective
-                    effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)  # Range: 50-100% based on gamma
-                else:
-                    effective_lr = base_lr
+            # Apply automatic gamma amplitude modulation
+            # Gamma is modulated by ALL slower oscillators (emergent multi-order coupling)
+            if self.tri_config.theta_gamma_enabled:
+                gamma_mod = self._gamma_amplitude_effective
+                effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)  # Range: 50-100% based on gamma
+            else:
+                effective_lr = base_lr
 
-                dW = effective_lr * torch.outer(ca3_activity, ca3_activity)
+            dW = effective_lr * torch.outer(ca3_activity, ca3_activity)
 
-                # =========================================================
-                # HETEROSYNAPTIC PLASTICITY: Weaken inactive synapses
-                # =========================================================
-                # Synapses to inactive postsynaptic neurons get weakened when
-                # nearby neurons fire strongly. This prevents winner-take-all
-                # dynamics from permanently dominating.
-                #
-                # Implementation: For each active presynaptic neuron, weaken
-                # its connections to inactive postsynaptic neurons.
-                if self.tri_config.heterosynaptic_ratio > 0:
-                    inactive_post = (ca3_activity < 0.5).float()  # Inactive neurons
-                    active_pre = ca3_activity  # Active neurons
-                    # Weaken: pre active but post inactive
-                    hetero_ltd = self.tri_config.heterosynaptic_ratio * effective_lr
-                    hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
-                    dW = dW + hetero_dW
+            # =========================================================
+            # HETEROSYNAPTIC PLASTICITY: Weaken inactive synapses
+            # =========================================================
+            # Synapses to inactive postsynaptic neurons get weakened when
+            # nearby neurons fire strongly. This prevents winner-take-all
+            # dynamics from permanently dominating.
+            #
+            # Implementation: For each active presynaptic neuron, weaken
+            # its connections to inactive postsynaptic neurons.
+            if self.tri_config.heterosynaptic_ratio > 0:
+                inactive_post = (ca3_activity < 0.5).float()  # Inactive neurons
+                active_pre = ca3_activity  # Active neurons
+                # Weaken: pre active but post inactive
+                hetero_ltd = self.tri_config.heterosynaptic_ratio * effective_lr
+                hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
+                dW = dW + hetero_dW
 
-                with torch.no_grad():
-                    self.w_ca3_ca3.data += dW
-                    self.w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
-                    clamp_weights(self.w_ca3_ca3.data, self.tri_config.w_min, self.tri_config.w_max)
+            with torch.no_grad():
+                self.w_ca3_ca3.data += dW
+                self.w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
+                clamp_weights(self.w_ca3_ca3.data, self.tri_config.w_min, self.tri_config.w_max)
 
         # =====================================================================
         # 3. CA1: Coincidence Detection with Plastic EC→CA1 Pathway
@@ -1127,149 +1099,85 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         ca1_from_ec = ca1_from_ec * ffi_factor
         ca1_from_ca3 = ca1_from_ca3 * ffi_factor
 
-        if phase == TrialPhase.DELAY:
-            # -------------------------------------------------------------
-            # DELAY PHASE: CA3 maintains memory, CA1 idles
-            # -------------------------------------------------------------
-            # During the delay period between sample and test:
-            # - CA3 activity is maintained by recurrence (handled above)
-            # - CA1 receives minimal input and just lets membrane decay
-            # - No learning happens
-            # - This simulates the biological delay where no comparison occurs
+        # CA1 processing varies continuously with theta modulation
+        # - High encoding_mod: CA3-driven, learn EC→CA1
+        # - High retrieval_mod: NMDA-gated coincidence detection
+        # - Neutral: moderate activity
 
-            # Minimal CA1 input: just enough to keep neurons "warm"
-            ca1_input = ca1_from_ca3 * 0.1  # Very weak CA3→CA1 drive
+        # NMDA trace update (for retrieval gating)
+        # Tracks CA3-induced depolarization for Mg²⁺ block removal
+        if self.state.nmda_trace is not None:
+            nmda_decay = torch.exp(torch.tensor(-dt / cfg.nmda_tau))
+            self.state.nmda_trace = self.state.nmda_trace * nmda_decay + ca1_from_ca3 * (1.0 - nmda_decay)
+        else:
+            self.state.nmda_trace = ca1_from_ca3.clone()
 
-            # Lateral inhibition (keeps activity sparse)
-            if self.state.ca1_spikes is not None:
-                ca1_inhib = torch.matmul(
-                    self.w_ca1_inhib,
-                    self.state.ca1_spikes.float()
-                )
-                ca1_input = ca1_input - ca1_inhib
+        # NMDA gating: Mg²⁺ block removal based on CA3 depolarization
+        # Stronger during retrieval (theta peak)
+        mg_block_removal = torch.sigmoid(
+            (self.state.nmda_trace - cfg.nmda_threshold) * cfg.nmda_steepness
+        ) * retrieval_mod
+        nmda_current = ca1_from_ec * mg_block_removal
 
-            # Run through CA1 neurons - membrane will naturally decay
-            ca1_spikes, _ = self.ca1_neurons(F.relu(ca1_input))
+        # AMPA current: fast baseline transmission
+        ampa_current = ca1_from_ec * cfg.ampa_ratio
 
-            # Light sparsity during delay
-            ca1_spikes = self._apply_wta_sparsity(
-                ca1_spikes,
-                cfg.ca1_sparsity * 0.5,  # Allow even sparser activity
-                self.ca1_neurons.membrane if hasattr(self.ca1_neurons, 'membrane') else None,
+        # CA3 contribution: stronger during encoding
+        ca3_contribution = ca1_from_ca3 * (0.5 + 0.5 * encoding_mod)
+
+        # Total CA1 input
+        ca1_input = ca3_contribution + ampa_current + nmda_current
+
+        # Lateral inhibition
+        if self.state.ca1_spikes is not None:
+            ca1_inhib = torch.matmul(
+                self.state.ca1_spikes.float(),
+                self.w_ca1_inhib.t()
             )
+            ca1_input = ca1_input - ca1_inhib
 
-        elif phase == TrialPhase.ENCODE:
-            # -------------------------------------------------------------
-            # ENCODE PHASE: CA1 driven by CA3, EC→CA1 learns
-            # -------------------------------------------------------------
-            # During encoding, CA3 determines which CA1 neurons fire.
-            # We strengthen EC→CA1 connections for active EC→CA1 pairs.
+        # Run through CA1 neurons
+        ca1_spikes, _ = self.ca1_neurons(F.relu(ca1_input))
 
-            # CA1 input dominated by CA3 during sample (memory encoding)
-            ca1_input = ca1_from_ca3 + ca1_from_ec * cfg.ampa_ratio
+        # Apply sparsity (more lenient during retrieval to allow mismatch detection)
+        ca1_membrane_v = getattr(self.ca1_neurons, 'v', None)
+        sparsity_factor = 1.0 + 0.5 * retrieval_mod  # Higher threshold during retrieval
+        ca1_spikes = self._apply_wta_sparsity(
+            ca1_spikes,
+            cfg.ca1_sparsity * sparsity_factor,
+            ca1_membrane_v if isinstance(ca1_membrane_v, torch.Tensor) else None,
+        )
 
-            # Lateral inhibition
-            if self.state.ca1_spikes is not None:
-                ca1_inhib = torch.matmul(
-                    self.state.ca1_spikes.float(),
-                    self.w_ca1_inhib.t()
-                )
-                ca1_input = ca1_input - ca1_inhib
+        # ---------------------------------------------------------
+        # HEBBIAN LEARNING: EC→CA1 plasticity (during encoding)
+        # ---------------------------------------------------------
+        # Strengthen connections: active EC neurons → active CA1 neurons
+        # This aligns the direct pathway with the indirect pathway
+        # Learning modulated by theta encoding strength (continuous)
+        ec_activity = ec_input_for_ca1.float()
+        ca1_activity = ca1_spikes.float()
 
-            # Run through CA1 neurons
-            ca1_spikes, _ = self.ca1_neurons(F.relu(ca1_input))
+        if ec_activity.sum() > 0 and ca1_activity.sum() > 0:
+            # Hebbian outer product: w_ij += lr * post_j * pre_i
+            # Learning rate automatically weak when encoding_mod is low
+            base_lr = cfg.ec_ca1_learning_rate * encoding_mod
 
-            # Apply sparsity
-            ca1_membrane_v = getattr(self.ca1_neurons, 'v', None)
-            ca1_spikes = self._apply_wta_sparsity(
-                ca1_spikes,
-                cfg.ca1_sparsity,
-                ca1_membrane_v if isinstance(ca1_membrane_v, torch.Tensor) else None,
-            )
-
-            # ---------------------------------------------------------
-            # HEBBIAN LEARNING: EC→CA1 plasticity (modulated by theta + gamma)
-            # ---------------------------------------------------------
-            # Strengthen connections: active EC neurons → active CA1 neurons
-            # This aligns the direct pathway with the indirect pathway
-            # Learning modulated by both theta phase and gamma amplitude
-            ec_activity = ec_input_for_ca1.float()  # Already 1D, no squeeze needed
-            ca1_activity = ca1_spikes.float()  # Already 1D, no squeeze needed
-
-            if ec_activity.sum() > 0 and ca1_activity.sum() > 0:
-                # Hebbian outer product: w_ij += lr * post_j * pre_i
-                base_lr = cfg.ec_ca1_learning_rate * encoding_mod
-
-                # Apply automatic gamma amplitude modulation
-                # Gamma modulated by ALL slower oscillators (emergent multi-order coupling)
-                if self.tri_config.theta_gamma_enabled:
-                    gamma_mod = self._gamma_amplitude_effective
-                    effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)
-                else:
-                    effective_lr = base_lr
-
-                dW = effective_lr * torch.outer(ca1_activity, ec_activity)
-                with torch.no_grad():
-                    # Update the appropriate weight matrix
-                    if ec_direct_input is not None and self.w_ec_l3_ca1 is not None:
-                        self.w_ec_l3_ca1.data += dW
-                        clamp_weights(self.w_ec_l3_ca1.data, cfg.w_min, cfg.w_max)
-                    else:
-                        self.w_ec_ca1.data += dW
-                        clamp_weights(self.w_ec_ca1.data, cfg.w_min, cfg.w_max)
-
-        else:  # phase == TrialPhase.RETRIEVE
-            # -------------------------------------------------------------
-            # RETRIEVE PHASE: NMDA coincidence detection
-            # -------------------------------------------------------------
-            # Now EC→CA1 is aligned (from sample phase learning).
-            # NMDA gating detects if current EC input matches recalled CA3.
-            # NMDA effectiveness modulated by theta retrieval strength!
-
-            # Mg²⁺ block removal based on INSTANTANEOUS CA3-induced depolarization
-            # The trace provides some temporal smoothing but shouldn't accumulate
-            # indefinitely. We use a bounded leaky integrator that approaches
-            # equilibrium at the current input level.
-            if self.state.nmda_trace is not None:
-                # Decay toward 0, then add current input (bounded integration)
-                nmda_decay = torch.exp(torch.tensor(-dt / cfg.nmda_tau))
-                # Use weighted average instead of pure accumulation
-                self.state.nmda_trace = self.state.nmda_trace * nmda_decay + ca1_from_ca3 * (1.0 - nmda_decay)
+            # Apply automatic gamma amplitude modulation
+            if self.tri_config.theta_gamma_enabled:
+                gamma_mod = self._gamma_amplitude_effective
+                effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)
             else:
-                self.state.nmda_trace = ca1_from_ca3.clone()
+                effective_lr = base_lr
 
-            # Per-neuron Mg²⁺ block removal based on CA3-induced depolarization
-            # Modulated by theta retrieval strength
-            mg_block_removal = torch.sigmoid(
-                (self.state.nmda_trace - cfg.nmda_threshold) * cfg.nmda_steepness
-            ) * retrieval_mod
-
-            # NMDA current: EC→CA1 gated by CA3-induced depolarization
-            # High when BOTH pathways target the same CA1 neurons
-            nmda_current = ca1_from_ec * mg_block_removal
-
-            # AMPA current: fast, ungated baseline
-            ampa_current = ca1_from_ec * cfg.ampa_ratio
-
-            # Total CA1 input
-            ca1_input = ampa_current + nmda_current
-
-            # Lateral inhibition
-            if self.state.ca1_spikes is not None:
-                ca1_inhib = torch.matmul(
-                    self.state.ca1_spikes.float(),
-                    self.w_ca1_inhib.t()
-                )
-                ca1_input = ca1_input - ca1_inhib
-
-            # Run through CA1 neurons
-            ca1_spikes, _ = self.ca1_neurons(F.relu(ca1_input))
-
-            # In test phase, DON'T apply WTA sparsity!
-            # The actual spike count should reflect NMDA gating strength.
-            # Match: high NMDA → many neurons above threshold → many spikes
-            # Mismatch: low NMDA → few neurons above threshold → few spikes
-            # This is the key discrimination signal!
+            dW = effective_lr * torch.outer(ca1_activity, ec_activity)
+            with torch.no_grad():
+                # Update the appropriate weight matrix
+                if ec_direct_input is not None and self.w_ec_l3_ca1 is not None:
+                    self.w_ec_l3_ca1.data += dW
+                    clamp_weights(self.w_ec_l3_ca1.data, cfg.w_min, cfg.w_max)
+                else:
+                    self.w_ec_ca1.data += dW
+                    clamp_weights(self.w_ec_ca1.data, cfg.w_min, cfg.w_max)
 
         self.state.ca1_spikes = ca1_spikes
 
@@ -1617,8 +1525,9 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         self.tri_config.gamma_slot_mode = "time"
 
         # Pattern processor: forward through CA3 for pattern completion
+        # Theta modulation computed internally from self._theta_phase
         def process_pattern(pattern: torch.Tensor) -> torch.Tensor:
-            return self.forward(pattern, phase=TrialPhase.DELAY)
+            return self.forward(pattern)
 
         # Gating function: apply gamma gating to patterns
         def get_gating(slot: int) -> float:
@@ -1849,7 +1758,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         region_state = {
             "neuron_state": neuron_state,
             "ca3_activity_trace": self._ca3_activity_trace.detach().clone() if self._ca3_activity_trace is not None else None,
-            "last_phase": self._last_phase.value if self._last_phase is not None else None,
             "pending_theta_reset": self._pending_theta_reset,
             "sequence_position": self._sequence_position,
             "ca3_threshold_offset": self._ca3_threshold_offset.detach().clone() if self._ca3_threshold_offset is not None else None,
@@ -1964,8 +1872,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
         # Restore other region state
         if region_state["ca3_activity_trace"] is not None:
             self._ca3_activity_trace = region_state["ca3_activity_trace"].to(self.device)
-        if region_state["last_phase"] is not None:
-            self._last_phase = TrialPhase(region_state["last_phase"])
         self._pending_theta_reset = region_state["pending_theta_reset"]
         self._sequence_position = region_state["sequence_position"]
         if region_state["ca3_threshold_offset"] is not None:

@@ -418,8 +418,6 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         self,
         input_spikes: torch.Tensor,
         dt: float = 1.0,
-        encoding_mod: float = 1.0,
-        retrieval_mod: float = 1.0,
         top_down: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -429,14 +427,15 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         Args:
             input_spikes: Input spike pattern [n_input] (1D)
             dt: Time step in ms (for compatibility)
-            encoding_mod: Encoding strength modulation (for compatibility)
-            retrieval_mod: Retrieval strength modulation (for compatibility)
             top_down: Optional top-down modulation from higher areas [l23_size] (1D)
                       NOTE: This is for L2/3 modulation, NOT L4 prediction!
             **kwargs: Additional arguments for compatibility
 
         Returns:
             output: Output spikes (L2/3 + L5) [l23_size + l5_size] (1D)
+        
+        Note:
+            Theta modulation computed internally from self._theta_phase (set by Brain)
         """
         # ADR-005: Expect 1D tensors
         assert input_spikes.dim() == 1, (
@@ -463,12 +462,10 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         # =====================================================================
         # STEP 1: Standard feedforward through cortex
         # =====================================================================
-        # Pass through to the base LayeredCortex with modulation parameters
+        # Pass through to the base LayeredCortex (computes theta modulation internally)
         cortex_output = self.cortex.forward(
             input_spikes,
             dt=dt,
-            encoding_mod=encoding_mod,
-            retrieval_mod=retrieval_mod,
             top_down=top_down,
         )
 

@@ -92,20 +92,8 @@ class SpikePayload:
 
 
 # =============================================================================
-# Trial Phase Enum (moved from theta_dynamics.py)
+# (TrialPhase removed - replaced by continuous theta modulation)
 # =============================================================================
-
-class TrialPhase(Enum):
-    """Phase of a memory task trial.
-
-    These phases map to different theta-modulated computations:
-    - ENCODE: Sample presentation, Hebbian learning enabled (theta trough)
-    - DELAY: No stimulus, CA3 maintains via recurrence (theta continues)
-    - RETRIEVE: Test presentation, NMDA comparison (theta peak)
-    """
-    ENCODE = "encode"
-    DELAY = "delay"
-    RETRIEVE = "retrieve"
 
 
 @dataclass

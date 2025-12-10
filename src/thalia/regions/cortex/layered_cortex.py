@@ -605,8 +605,6 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self,
         input_spikes: torch.Tensor,
         dt: float = 1.0,
-        encoding_mod: float = 1.0,
-        retrieval_mod: float = 1.0,
         top_down: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
@@ -620,12 +618,13 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         Args:
             input_spikes: Input spike tensor [n_input] (1D per ADR-005)
             dt: Timestep in ms
-            encoding_mod: Theta modulation for encoding
-            retrieval_mod: Theta modulation for retrieval
             top_down: Optional top-down modulation [l23_size] (1D)
 
         Returns:
             Output spikes [l23_size + l5_size] if dual_output else [n_output] (1D)
+        
+        Note:
+            Theta modulation computed internally from self._theta_phase (set by Brain)
         """
         # ADR-005: Expect 1D tensors (no batch dimension)
         assert input_spikes.dim() == 1, (

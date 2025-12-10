@@ -30,7 +30,6 @@ Date: December 2025
 from .base import (
     EventRegionConfig,
     EventDrivenRegionBase,
-    SimpleLIFRegion,
 )
 from .cortex import EventDrivenCortex
 from .hippocampus import EventDrivenHippocampus

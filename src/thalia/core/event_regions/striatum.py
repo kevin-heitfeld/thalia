@@ -162,12 +162,10 @@ class EventDrivenStriatum(EventDrivenRegionBase):
         # Store for learning
         self._recent_input = combined_input.clone()
 
-        # Forward through striatum
+        # Forward through striatum (theta modulation computed internally)
         output = self.impl.forward(
             combined_input,
             dt=1.0,
-            encoding_mod=self._encoding_strength,
-            retrieval_mod=self._retrieval_strength,
             explore=True,  # Enable exploration in event-driven mode
         )
 

@@ -263,6 +263,7 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
             Do not call this manually.
         """
         # Store oscillator phases for motor timing
+        self._theta_phase = phases.get('theta', 0.0)
         self._beta_phase = phases.get('beta', 0.0)
         self._gamma_phase = phases.get('gamma', 0.0)
         
@@ -376,8 +377,6 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         self,
         input_spikes: torch.Tensor,
         dt: float = 1.0,
-        encoding_mod: float = 1.0,
-        retrieval_mod: float = 1.0,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input through cerebellar circuit.
@@ -385,11 +384,12 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         Args:
             input_spikes: Input spike pattern [n_input] (1D bool tensor, ADR-005)
             dt: Time step in ms
-            encoding_mod: Theta modulation for encoding (scales input gain)
-            retrieval_mod: Theta modulation for retrieval (scales output correction)
 
         Returns:
             Output spikes [n_output] (1D bool tensor, ADR-004/005)
+        
+        Note:
+            Theta modulation computed internally from self._theta_phase (set by Brain)
         """
         # Assert 1D input
         assert input_spikes.dim() == 1, (
@@ -407,8 +407,12 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         cfg = self.cerebellum_config
 
         # ======================================================================
-        # THETA MODULATION
+        # COMPUTE THETA MODULATION (from oscillator phase set by Brain)
         # ======================================================================
+        import math
+        encoding_mod = 0.5 * (1.0 + math.cos(self._theta_phase))
+        retrieval_mod = 1.0 - encoding_mod
+
         # Encoding phase: stronger input drive for error detection
         # Retrieval phase: stronger output for motor correction
         input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
