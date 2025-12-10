@@ -56,11 +56,10 @@ Date: December 2025
 from __future__ import annotations
 
 import heapq
-import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Any, Callable, Tuple
+from typing import Dict, List, Optional, Any
 import torch
 
 
@@ -110,7 +109,7 @@ class ThetaPayload:
 
 class TrialPhase(Enum):
     """Phase of a memory task trial.
-    
+
     These phases map to different theta-modulated computations:
     - ENCODE: Sample presentation, Hebbian learning enabled (theta trough)
     - DELAY: No stimulus, CA3 maintains via recurrence (theta continues)
@@ -323,156 +322,3 @@ class RegionInterface(ABC):
     def reset_state(self) -> None:
         """Reset region to initial state."""
         pass
-
-
-class EventDrivenSimulation:
-    """Main simulation controller for event-driven brain simulation.
-
-    Orchestrates:
-    - Event scheduling and dispatch
-    - Theta rhythm generation
-    - Region coordination
-    - Monitoring and logging
-    """
-
-    def __init__(
-        self,
-        regions: Dict[str, RegionInterface],
-    ):
-        self.regions = regions
-        self.scheduler = EventScheduler()
-
-        # Monitoring
-        self._event_history: List[Tuple[float, Event]] = []
-        self._spike_counts: Dict[str, int] = {name: 0 for name in regions}
-
-    def inject_sensory_input(
-        self,
-        pattern: torch.Tensor,
-        target: str = "cortex",
-        time: Optional[float] = None,
-    ) -> None:
-        """Inject sensory input as an event.
-
-        Args:
-            pattern: Input pattern (will be converted to spikes)
-            target: Target region (default: cortex)
-            time: When to deliver (default: now)
-        """
-        event_time = time if time is not None else self.scheduler.current_time
-        delay = get_axonal_delay("sensory", target)
-
-        event = Event(
-            time=event_time + delay,
-            event_type=EventType.SENSORY,
-            source="sensory_input",
-            target=target,
-            payload=SpikePayload(spikes=pattern),
-        )
-        self.scheduler.schedule(event)
-
-    def inject_reward(
-        self,
-        reward: float,
-        time: Optional[float] = None,
-    ) -> None:
-        """Inject a reward signal (converted to dopamine).
-
-        Args:
-            reward: Reward value (positive = burst, negative = dip)
-            time: When to deliver (default: now)
-        """
-        event_time = time if time is not None else self.scheduler.current_time
-
-        # Dopamine goes to all regions that need it
-        for target in ["striatum", "pfc", "hippocampus"]:
-            if target in self.regions:
-                delay = get_axonal_delay("vta", target)  # VTA → target
-
-                event = Event(
-                    time=event_time + delay,
-                    event_type=EventType.DOPAMINE,
-                    source="reward_system",
-                    target=target,
-                    payload=DopaminePayload(
-                        level=reward,
-                        is_burst=reward > 0.5,
-                        is_dip=reward < -0.5,
-                    ),
-                )
-                self.scheduler.schedule(event)
-
-    def run_until(self, end_time: float) -> Dict[str, Any]:
-        """Run simulation until specified time.
-
-        Processes all events in order, advancing time as needed.
-
-        Args:
-            end_time: Stop when simulation time reaches this value
-
-        Returns:
-            Dict with simulation statistics
-        """
-        events_processed = 0
-
-        while not self.scheduler.is_empty:
-            # Check if next event is past end time
-            next_time = self.scheduler.peek_time()
-            if next_time is None or next_time > end_time:
-                break
-
-            # Get next event
-            event = self.scheduler.pop_next()
-
-            # Process the event
-            if event.target in self.regions:
-                region = self.regions[event.target]
-                output_events = region.process_event(event)
-
-                # Schedule output events
-                self.scheduler.schedule_many(output_events)
-
-                # Track spike counts
-                if event.event_type == EventType.SPIKE:
-                    payload = event.payload
-                    if isinstance(payload, SpikePayload):
-                        self._spike_counts[event.target] += int(payload.spikes.sum().item())
-
-            events_processed += 1
-
-            # Optional: store event history for debugging
-            # self._event_history.append((event.time, event))
-
-        return {
-            "events_processed": events_processed,
-            "final_time": self.scheduler.current_time,
-            "spike_counts": self._spike_counts.copy(),
-        }
-
-    def step(self) -> Optional[Event]:
-        """Process a single event.
-
-        Returns the processed event, or None if queue is empty.
-        """
-        event = self.scheduler.pop_next()
-        if event is None:
-            return None
-
-        if event.target in self.regions:
-            region = self.regions[event.target]
-            output_events = region.process_event(event)
-            self.scheduler.schedule_many(output_events)
-
-        return event
-
-    def get_region_states(self) -> Dict[str, Dict[str, Any]]:
-        """Get current state of all regions."""
-        return {name: region.get_state() for name, region in self.regions.items()}
-
-    def reset_state(self) -> None:
-        """Reset simulation to initial state."""
-        self.scheduler.clear()
-        for region in self.regions.values():
-            region.reset_state()
-        self._spike_counts = {name: 0 for name in self.regions}
-        self._event_history.clear()
