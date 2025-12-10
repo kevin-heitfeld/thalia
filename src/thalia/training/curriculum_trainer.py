@@ -157,6 +157,7 @@ from thalia.memory.consolidation import (
     ConsolidationMetrics,
 )
 from thalia.io.checkpoint import BrainCheckpoint
+from thalia.training.live_diagnostics import LiveDiagnostics
 
 
 # ============================================================================
@@ -609,6 +610,8 @@ class CurriculumTrainer:
         checkpoint_dir: Optional[str] = None,
         device: str = 'cpu',
         verbose: bool = True,
+        enable_live_diagnostics: bool = False,
+        diagnostics_interval: int = 100,
     ):
         """Initialize curriculum trainer.
 
@@ -618,6 +621,8 @@ class CurriculumTrainer:
             checkpoint_dir: Directory for checkpoints (creates if needed)
             device: Device for training
             verbose: Whether to print progress
+            enable_live_diagnostics: Whether to enable real-time visualization
+            diagnostics_interval: Steps between diagnostic updates (if enabled)
         """
         self.brain = brain
         self.device = device
@@ -637,6 +642,11 @@ class CurriculumTrainer:
         self.transition_protocol = StageTransitionProtocol()
         self.memory_pressure = MemoryPressureDetector()
         self.sleep_controller = SleepStageController()
+
+        # Live diagnostics (optional)
+        self.enable_live_diagnostics = enable_live_diagnostics
+        self.diagnostics_interval = diagnostics_interval
+        self.live_diagnostics = LiveDiagnostics() if enable_live_diagnostics else None
 
         # State tracking
         self.current_stage: Optional[CurriculumStage] = None
@@ -752,6 +762,13 @@ class CurriculumTrainer:
 
                     for callback in self.callbacks:
                         callback(self.global_step, metrics)
+
+                # 9. Live diagnostics (if enabled)
+                if self.enable_live_diagnostics and step % self.diagnostics_interval == 0:
+                    metrics = self._collect_metrics()
+                    self.live_diagnostics.update(step, self.brain, metrics)
+                    if step % (self.diagnostics_interval * 10) == 0:  # Show every 10 updates
+                        self.live_diagnostics.show()
 
                 self.global_step += 1
 

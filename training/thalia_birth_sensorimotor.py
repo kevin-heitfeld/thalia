@@ -179,6 +179,7 @@ def create_curriculum_trainer(
     checkpoint_dir: Path,
     log_file: Path,
     device: str,
+    enable_live_diagnostics: bool = True,
 ) -> CurriculumTrainer:
     """Create the curriculum training system.
 
@@ -187,6 +188,7 @@ def create_curriculum_trainer(
         checkpoint_dir: Where to save checkpoints
         log_file: Where to save training logs
         device: Device (cuda or cpu)
+        enable_live_diagnostics: Whether to show real-time visualization
 
     Returns:
         Initialized CurriculumTrainer
@@ -198,12 +200,15 @@ def create_curriculum_trainer(
         growth_config=get_curriculum_growth_config(),
         checkpoint_dir=str(checkpoint_dir),
         verbose=True,
+        enable_live_diagnostics=enable_live_diagnostics,
+        diagnostics_interval=100,  # Update every 100 steps
     )
 
     print("  ✓ Trainer ready")
     print(f"    - Checkpoints: {checkpoint_dir}")
     print(f"    - Log file: {log_file}")
-    print(f"    - Checkpoints: {checkpoint_dir}")
+    if enable_live_diagnostics:
+        print(f"    - Live diagnostics: enabled (every 100 steps)")
 
     return trainer
 
@@ -439,19 +444,17 @@ def main():
     print()
 
     # Monitoring tip
-    print("💡 TIP: Monitor training progress:")
+    print("💡 TIP: Live diagnostics are enabled by default!")
     print()
-    print("   # Post-training analysis:")
+    print("   Watch real-time spike rasters, health metrics, and performance curves")
+    print("   Updates every 100 steps, visualization every 1000 steps")
+    print()
+    print("   To disable: Pass enable_live_diagnostics=False to create_curriculum_trainer()")
+    print()
+    print("   For post-training analysis:")
     print(f"   from thalia.training import TrainingMonitor")
     print(f"   monitor = TrainingMonitor('{checkpoint_dir}')")
     print(f"   monitor.show_all()  # Shows progress, metrics, growth")
-    print()
-    print("   # Live diagnostics (during training):")
-    print("   from thalia.training import LiveDiagnostics")
-    print("   diag = LiveDiagnostics()")
-    print("   # ... in training loop:")
-    print("   diag.update(step, brain, metrics)")
-    print("   diag.show()")
     print()
 
     start_time = datetime.now()
