@@ -750,7 +750,8 @@ class EventDrivenBrain(nn.Module):
 
         n_timesteps = n_timesteps or self.config.encoding_timesteps
 
-        # Set trial phase
+        # Set trial phase for diagnostics/monitoring
+        # (Actual phase used by hippocampus is determined from oscillator states)
         self._trial_phase = TrialPhase.ENCODE
 
         # Note: No new_trial()/clear() calls here - continuous processing
@@ -762,7 +763,6 @@ class EventDrivenBrain(nn.Module):
         results = self._run_timesteps(
             sensory_input=sample_pattern,
             n_timesteps=n_timesteps,
-            trial_phase=TrialPhase.ENCODE,
         )
 
         # Capture PFC output for decoder (language model uses this)
@@ -791,12 +791,14 @@ class EventDrivenBrain(nn.Module):
             Dict with region activities
         """
         n_timesteps = n_timesteps or self.config.delay_timesteps
+        
+        # Set trial phase for diagnostics/monitoring
+        # (Actual phase used by hippocampus is determined from oscillator states)
         self._trial_phase = TrialPhase.DELAY
 
         results = self._run_timesteps(
             sensory_input=None,
             n_timesteps=n_timesteps,
-            trial_phase=TrialPhase.DELAY,
             dopamine=dopamine,
         )
 
@@ -828,13 +830,13 @@ class EventDrivenBrain(nn.Module):
 
         n_timesteps = n_timesteps or self.config.test_timesteps
 
-        # Set trial phase
+        # Set trial phase for diagnostics/monitoring
+        # (Actual phase used by hippocampus is determined from oscillator states)
         self._trial_phase = TrialPhase.RETRIEVE
 
         results = self._run_timesteps(
             sensory_input=test_pattern,
             n_timesteps=n_timesteps,
-            trial_phase=TrialPhase.RETRIEVE,
         )
 
         return results
@@ -1642,27 +1644,29 @@ class EventDrivenBrain(nn.Module):
         self,
         sensory_input: Optional[torch.Tensor],
         n_timesteps: int,
-        trial_phase: TrialPhase,
         dopamine: float = 0.0,
     ) -> Dict[str, Any]:
         """Run simulation for specified timesteps.
 
         Delegates to parallel executor if parallel mode is enabled,
         otherwise runs sequentially in the main process.
+        
+        Note: Trial phase for hippocampus is determined automatically
+        from oscillator states (theta encoding/retrieval strength),
+        not from self._trial_phase which is only for diagnostics.
         """
         if self._parallel_executor is not None:
             return self._run_timesteps_parallel(
-                sensory_input, n_timesteps, trial_phase, dopamine
+                sensory_input, n_timesteps, dopamine
             )
         return self._run_timesteps_sequential(
-            sensory_input, n_timesteps, trial_phase, dopamine
+            sensory_input, n_timesteps, dopamine
         )
 
     def _run_timesteps_parallel(
         self,
         sensory_input: Optional[torch.Tensor],
         n_timesteps: int,
-        trial_phase: TrialPhase,
         dopamine: float = 0.0,
     ) -> Dict[str, Any]:
         """Run simulation using parallel executor."""
@@ -1705,7 +1709,6 @@ class EventDrivenBrain(nn.Module):
         self,
         sensory_input: Optional[torch.Tensor],
         n_timesteps: int,
-        trial_phase: TrialPhase,
         dopamine: float = 0.0,
     ) -> Dict[str, Any]:
         """Run simulation sequentially in main process."""
