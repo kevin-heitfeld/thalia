@@ -40,7 +40,8 @@ from datetime import datetime
 
 import torch
 
-from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+from thalia.core.brain import EventDrivenBrain
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes, print_config
 from thalia.config.curriculum_growth import (
     CurriculumStage,
     get_curriculum_growth_config,
@@ -77,7 +78,7 @@ def print_birth_banner():
     print()
 
 
-def create_thalia_brain(device: str = "cpu") -> EventDrivenBrain:
+def create_thalia_brain(device: str = "cpu") -> tuple[EventDrivenBrain, ThaliaConfig]:
     """Create Thalia's initial brain configuration.
 
     This is the moment of creation. The neural substrate exists,
@@ -87,35 +88,31 @@ def create_thalia_brain(device: str = "cpu") -> EventDrivenBrain:
         device: PyTorch device ('cpu' or 'cuda')
 
     Returns:
-        Freshly initialized EventDrivenBrain
+        Tuple of (EventDrivenBrain, ThaliaConfig)
     """
     print("[1/4] Creating neural substrate...")
 
-    config = EventDrivenBrainConfig(
-        # Input/output dimensions
-        input_size=128,  # Sensory input (visual + proprioceptive)
-        cortex_size=128,  # Cortex output size
-        hippocampus_size=64,  # Episodic memory
-        pfc_size=32,  # Working memory
-        n_actions=7,  # Movement directions (L/R/U/D/F/B/STOP)
-
-        # Temporal parameters (biologically realistic)
-        dt_ms=1.0,  # 1ms timestep
-        theta_frequency_hz=8.0,  # Theta rhythm for coordination
-
-        # Trial phase durations
-        encoding_timesteps=10,
-        delay_timesteps=5,
-        test_timesteps=10,
-
-        # Striatum configuration
-        neurons_per_action=10,  # Population coding
-
-        # Device
-        device=device,
+    config = ThaliaConfig(
+        global_=GlobalConfig(
+            device=device,
+            dt_ms=1.0,
+            theta_frequency_hz=8.0,
+        ),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=128,  # Sensory input (visual + proprioceptive)
+                cortex_size=128,  # Cortex output size
+                hippocampus_size=64,  # Episodic memory
+                pfc_size=32,  # Working memory
+                n_actions=7,  # Movement directions (L/R/U/D/F/B/STOP)
+            ),
+            encoding_timesteps=10,
+            delay_timesteps=5,
+            test_timesteps=10,
+        ),
     )
 
-    brain = EventDrivenBrain(config)
+    brain = EventDrivenBrain.from_thalia_config(config)
 
     # Move to GPU if available
     if device == "cuda":
@@ -126,13 +123,13 @@ def create_thalia_brain(device: str = "cpu") -> EventDrivenBrain:
     else:
         print("  ✓ Neural substrate created on CPU")
 
-    print(f"    - Input: {config.input_size} dimensions")
-    print(f"    - Cortex: {config.cortex_size} neurons")
-    print(f"    - Hippocampus: {config.hippocampus_size} neurons")
-    print(f"    - PFC: {config.pfc_size} neurons")
-    print(f"    - Actions: {config.n_actions}")
+    print(f"    - Input: {config.brain.sizes.input_size} dimensions")
+    print(f"    - Cortex: {config.brain.sizes.cortex_size} neurons")
+    print(f"    - Hippocampus: {config.brain.sizes.hippocampus_size} neurons")
+    print(f"    - PFC: {config.brain.sizes.pfc_size} neurons")
+    print(f"    - Actions: {config.brain.sizes.n_actions}")
 
-    return brain
+    return brain, config
 
 
 def create_sensorimotor_environment(device: str = "cpu") -> SensorimotorTaskLoader:
@@ -416,7 +413,7 @@ def main():
     print()
 
     # Initialize components
-    brain = create_thalia_brain(device=device)
+    brain, thalia_config = create_thalia_brain(device=device)
     task_loader = create_sensorimotor_environment(device=device)
     trainer = create_curriculum_trainer(brain, checkpoint_dir, log_file, device)
     stage_config = configure_stage_sensorimotor()
@@ -427,6 +424,41 @@ def main():
     print("\nThalia exists but has no experience yet.")
     print("She has the capacity to learn, but nothing learned.")
     print("Let's give her her first experiences...")
+    print()
+
+    # Print full configuration using the unified config system
+    print_config(
+        thalia_config,
+        title="THALIA BIRTH CONFIGURATION",
+        extra={
+            "stage": "Stage -0.5 (Sensorimotor)",
+            "duration_steps": stage_config.duration_steps,
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+    )
+    
+    print("\n--- STAGE CONFIGURATION ---")
+    print(f"  Duration: {stage_config.duration_steps:,} steps")
+    print(f"  Interleaved practice: {stage_config.interleaved_practice}")
+    print(f"  Spaced repetition: {stage_config.spaced_repetition}")
+    print(f"  Testing frequency: {stage_config.testing_frequency}")
+    print(f"  Productive failure steps: {stage_config.productive_failure_steps:,}")
+    print(f"  Growth enabled: {stage_config.enable_growth}")
+    print(f"  Growth check interval: {stage_config.growth_check_interval:,}")
+    print(f"  Consolidation interval: {stage_config.consolidation_interval:,}")
+    print(f"  Checkpoint interval: {stage_config.checkpoint_interval:,}")
+    print()
+    print("--- TASK CONFIGURATION ---")
+    for task_name, task_cfg in stage_config.task_configs.items():
+        print(f"  {task_name}:")
+        print(f"    - Weight: {task_cfg.weight}")
+        print(f"    - Difficulty: {task_cfg.difficulty}")
+        print(f"    - Enabled: {task_cfg.enabled}")
+    print()
+    print("--- SUCCESS CRITERIA ---")
+    for criterion, threshold in stage_config.success_criteria.items():
+        print(f"  {criterion}: {threshold}")
+    print("="*80)
     print()
 
     # Begin training
