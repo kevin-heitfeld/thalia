@@ -439,10 +439,19 @@ def main():
     print()
 
     # Monitoring tip
-    print("💡 TIP: Monitor training progress (in notebook/script):")
+    print("💡 TIP: Monitor training progress:")
+    print()
+    print("   # Post-training analysis:")
     print(f"   from thalia.training import TrainingMonitor")
     print(f"   monitor = TrainingMonitor('{checkpoint_dir}')")
-    print(f"   monitor.show_all()  # Shows all visualizations")
+    print(f"   monitor.show_all()  # Shows progress, metrics, growth")
+    print()
+    print("   # Live diagnostics (during training):")
+    print("   from thalia.training import LiveDiagnostics")
+    print("   diag = LiveDiagnostics()")
+    print("   # ... in training loop:")
+    print("   diag.update(step, brain, metrics)")
+    print("   diag.show()")
     print()
 
     start_time = datetime.now()

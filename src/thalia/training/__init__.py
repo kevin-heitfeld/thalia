@@ -88,6 +88,10 @@ from thalia.training.monitor import (
     TrainingMonitor,
     quick_monitor,
 )
+from thalia.training.live_diagnostics import (
+    LiveDiagnostics,
+    quick_diagnostics,
+)
 
 # Re-export from canonical location for backwards compatibility
 from thalia.config import TrainingConfig
@@ -152,5 +156,7 @@ __all__ = [
     # Monitoring
     "TrainingMonitor",
     "quick_monitor",
+    "LiveDiagnostics",
+    "quick_diagnostics",
 ]
 
