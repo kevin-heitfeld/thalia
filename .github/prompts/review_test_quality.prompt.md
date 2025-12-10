@@ -1,5 +1,5 @@
 ---
-mode: agent
+agent: agent
 ---
 # Test Quality Improvement Prompt
 
@@ -7,20 +7,20 @@ mode: agent
 Analyze the test suite to identify **weak tests** (implementation detail testing), categorize test quality issues, and create an actionable plan to improve test effectiveness and reduce brittleness.
 
 ## Context
-- Test framework: **Vitest**
+- Test framework: **pytest**
 - Test location: `tests/` directory
-- Previous issue: Tests failed to catch a real bug in `BranchService.ts` (message ID generation)
-- Root cause: Tests validated **implementation details**, not **behavioral contracts**
+- Focus: Biological plausibility, learning rule correctness, pathway routing, state management
+- Goal: Tests should validate **neural behavior and learning contracts**, not **implementation details**
 
 ## Criteria for Good vs Bad Tests
 
 ### ❌ **Bad Test Characteristics** (Brittle, Low Value)
 
 1. **Tests Hardcoded Implementation Details**
-   - Asserts exact default values: `expect(title).toBe('New Conversation')`
-   - Problem: Breaking change when you update defaults
-   - Example: Mocking `Date.now()` to expect exact timestamp value `3000`
-   - **Fix**: Test that value exists and has correct type, not the exact value
+   - Asserts exact default values: `assert region.n_neurons == 1000`
+   - Problem: Breaking change when you update neurogenesis or config defaults
+   - Example: Hardcoding exact spike counts instead of testing spike rate ranges
+   - **Fix**: Test that value exists and is within biologically plausible range, not exact value
 
 2. **Tests Trivial Behavior**
    - Asserts things so obvious they add zero confidence
@@ -30,21 +30,21 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 
 3. **Tests Only Happy Path (No Edge Cases)**
    - Never tests with empty inputs, null values, boundary conditions
-   - Example: Only tests `getMessages()` with populated message arrays
-   - Never tests: Empty arrays, undefined conversation, invalid message IDs
-   - **Fix**: Add edge case tests (empty, null, boundary, malformed data)
+   - Example: Only tests `forward()` with normal spike patterns
+   - Never tests: Silent neurons (0 spikes), saturated neurons (all spikes), invalid dimensions
+   - **Fix**: Add edge case tests (empty spikes, dimension mismatches, extreme neuromodulator values)
 
 4. **Tests Implementation Instead of Contract**
    - Tests how something is done, not what it does
-   - Example: Asserting `querySelector('.specific-class')` found 3 elements
-   - Problem: Refactoring CSS class names breaks tests (but code still works)
-   - **Fix**: Test behavior (`deleteButton exists and is clickable`), not selectors
+   - Example: Asserting exact weight matrix values after initialization
+   - Problem: Refactoring weight initialization method breaks tests (but learning still works)
+   - **Fix**: Test behavior (weights in valid range, correct shape, sparsity), not exact values
 
-5. **No Referential Integrity or Graph Validation**
-   - Related to the `BranchService.ts` bug that slipped through
-   - Tests create data but don't validate consistency
-   - Example: Tests create messages with `parentMessageId` refs but never verify those IDs exist
-   - **Fix**: Add contract validation tests (all references resolve, no orphans, graph is valid)
+5. **No Network Integrity or Connectivity Validation**
+   - Tests create pathways but don't validate connectivity
+   - Example: Tests create pathways between regions but never verify dimensions match
+   - Example: Tests don't validate that pathway input_size == source region output_size
+   - **Fix**: Add contract validation tests (dimensions compatible, no disconnected components)
 
 6. **Tests That Are Duplicates or Highly Redundant**
    - Multiple tests asserting the same contract
@@ -66,11 +66,11 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
    - Example: `expect(() => fn()).toThrow()` (too vague)
    - **Fix**: `expect(() => fn()).toThrow(ValidationError)` and check message
 
-10. **Tests Coupled to UI Implementation Details**
-    - Asserts DOM structure, CSS classes, element IDs instead of user-facing behavior
-    - Example: `expect(document.querySelector('.modal__overlay')).toExist()`
-    - Problem: Refactoring HTML/CSS breaks tests (but UI still works)
-    - **Fix**: Test behavior (modal is displayed, user can close it) not DOM structure
+10. **Tests Coupled to Internal Implementation Details**
+    - Asserts internal state variables instead of observable behavior
+    - Example: `assert region._internal_buffer.shape == (100,)` (private attribute)
+    - Problem: Refactoring internal implementation breaks tests (but learning still works)
+    - **Fix**: Test behavior (region produces expected spikes, learns correctly) not internals
 
 ### ✅ **Good Test Characteristics** (Robust, High Value)
 
@@ -83,19 +83,19 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 2. **Tests Edge Cases and Boundaries**
    - Empty inputs, null values, maximum sizes, boundary conditions
    - Error conditions and exception paths
-   - Slow/fast variations, concurrency issues
-   - Example: `createConversation()` with empty title, null tags, duplicate IDs
+   - Silent neurons, saturated neurons, extreme parameter values
+   - Example: `region.forward()` with all-zero spikes, invalid dopamine levels, mismatched dimensions
 
-3. **Tests Property Invariants (Graph Consistency)**
-   - Validates that data structures maintain consistency
-   - Example: All `parentMessageId` references resolve to actual messages
-   - Example: No circular references in message trees
-   - Example: Parent messages always appear before children in arrays
+3. **Tests Property Invariants (Network Consistency)**
+   - Validates that neural architectures maintain consistency
+   - Example: All pathway connections have compatible dimensions
+   - Example: Weights stay within bounds after learning
+   - Example: Neuron states are valid (no NaN, no negative firing rates)
 
 4. **Tests State Transitions and Side Effects**
    - Not just final result, but how we got there
-   - Example: Does update trigger subscriber notification? Does localStorage persist?
-   - Example: After delete, is state cleaned up? Are listeners removed?
+   - Example: Does learning update weights? Does neuromodulator affect plasticity?
+   - Example: After reset, is state properly initialized? Are traces cleared?
 
 5. **Tests Meaningful Assertions Only**
    - Every assertion either:
@@ -110,15 +110,15 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
    - Example: `expect(() => service.deleteConversation('invalid-id')).toThrow('Conversation not found')`
 
 7. **Uses Real Objects When Possible**
-   - Stateless services are created with real implementations
-   - Mocks only used for external dependencies (API calls, storage)
-   - Reduces brittleness and increases confidence
+   - Neural components are created with real implementations
+   - Mocks only used for external dependencies (data loaders, visualization)
+   - Reduces brittleness and increases confidence in biological accuracy
 
 8. **Tests Are Independent and Deterministic**
    - Don't depend on test execution order
-   - Don't have flaky timing dependencies
-   - Properly mock Date.now(), Math.random() consistently
-   - Clean up after themselves (destroy, remove listeners)
+   - Don't have flaky random seed dependencies
+   - Properly seed torch.manual_seed(), np.random.seed() consistently
+   - Clean up after themselves (reset states, clear buffers)
 
 ## Test Quality Analysis Workflow
 
@@ -127,39 +127,39 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
    - Exact default value assertions
    - Trivial assertions
    - Only happy-path tests
-   - DOM selector assertions
+   - Internal state assertions (private attributes)
    - Over-mocking without validation
 
 2. Create inventory of issues by file
 
 3. Categorize by severity:
-   - **P0**: Tests that failed to catch real bugs (like BranchService)
+   - **P0**: Tests that failed to catch real bugs (biological implausibility, dimension mismatches)
    - **P1**: Tests coupling to implementation details (brittle)
-   - **P2**: Tests missing edge cases
+   - **P2**: Tests missing edge cases (silent/saturated neurons, extreme parameters)
    - **P3**: Tests with redundant assertions
 
 ### Phase 2: Audit Specific Test Files
 Priority order:
-1. `tests/services/ConversationService.test.ts` - Core service, most critical
-2. `tests/services/BranchService.test.ts` - Had bug that tests missed
-3. `tests/utils/state.test.ts` - Core state management
-4. All component tests (`tests/components/**`) - Often brittle due to DOM coupling
-5. All modal tests - Often test implementation details, not user interaction
+1. `tests/unit/test_brain_regions.py` - Core brain regions, most critical
+2. `tests/unit/test_learning_rules.py` - Learning correctness is essential
+3. `tests/unit/test_pathways.py` - Connectivity and routing
+4. `tests/integration/test_brain_integration.py` - End-to-end behavior
+5. All region-specific tests - Often test implementation, not learning contracts
 
 ### Phase 3: Create Improvement Plan
 For each test file:
 1. Remove trivial/duplicate tests
 2. Replace hardcoded assertions with contract assertions
-3. Add edge case tests
-4. Add referential integrity/invariant tests
-5. Replace DOM selector assertions with behavioral assertions
+3. Add edge case tests (silent/saturated neurons, extreme parameters)
+4. Add network integrity/invariant tests (dimension compatibility, weight bounds)
+5. Replace internal state assertions with behavioral assertions (spike patterns, learning)
 6. Reduce mock depth where possible
 
 ### Phase 4: Implement Improvements
 1. Start with highest priority/impact files
 2. Update one test at a time, verify passing
 3. Add new tests incrementally
-4. Document patterns in `docs/Developer-Guides/TESTING.md`
+4. Document patterns in `tests/WRITING_TESTS.md`
 
 ## Search Strategy
 
@@ -178,11 +178,11 @@ expect\(.*(toBeUndefined|toBeNull|toBeDefined|toBeTruthy)\(\)
 ```
 Remove assertions that are tautologies
 
-### 3. Search for UI/DOM Coupling
+### 3. Search for Internal State Coupling
 ```
-querySelector|querySelectorAll|getElementById|getElementsBy|\.css|\.html|innerHTML
+\._[a-z_]+|assert.*\._|region\.state\.[a-z_]+(?!spikes|dopamine)
 ```
-Replace with behavioral assertions
+Replace with behavioral assertions (test spikes, learning, not internals)
 
 ### 4. Search for Incomplete Error Testing
 ```
@@ -192,9 +192,9 @@ Find error tests that don't validate error type
 
 ### 5. Search for Mock Over-Use
 ```
-vi\.mock|vi\.spyOn.*mockReturnValue|mockImplementation
+@patch|Mock\(|MagicMock\(|mocker\.
 ```
-Review if real services could be used instead
+Review if real neural components could be used instead
 
 ### 6. Search for Missing Edge Case Tests
 ```
@@ -222,25 +222,25 @@ Verify each positive test has corresponding edge case test
 - Document contract-based assertion patterns
 
 ### 4. **Updated Testing Guidelines**
-- Add to `docs/Developer-Guides/TESTING.md`
+- Add to `tests/WRITING_TESTS.md`
 - Include examples of good vs bad tests
 - Include patterns for:
-  - Contract validation
-  - Edge case testing
-  - Referential integrity testing
-  - State transition testing
+  - Contract validation (learning rules, spike generation)
+  - Edge case testing (silent/saturated neurons, extreme parameters)
+  - Network integrity testing (dimension compatibility, weight bounds)
+  - State transition testing (reset, learning, neuromodulation)
 
 ## Success Criteria
 
 1. ✅ All weak test patterns identified and documented
 2. ✅ Improvement plan created with priority order
 3. ✅ At least 20% reduction in trivial/hardcoded assertions
-4. ✅ All core service tests include edge case coverage
-5. ✅ All data structure tests include referential integrity checks
-6. ✅ No DOM selector assertions in component tests
-7. ✅ Tests remain at ~1359 count or increase (from adding edge case tests)
+4. ✅ All core region/pathway tests include edge case coverage
+5. ✅ All network architecture tests include connectivity validation
+6. ✅ No internal state assertions (testing private attributes)
+7. ✅ Tests maintain current coverage or increase (from adding edge case tests)
 8. ✅ All tests continue to pass
-9. ✅ Build succeeds with zero TypeScript errors
+9. ✅ Type checking (Pyright) succeeds with no critical errors
 
 ## Instructions to AI
 

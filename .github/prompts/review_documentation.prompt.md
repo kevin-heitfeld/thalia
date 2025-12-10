@@ -1,5 +1,5 @@
 ---
-mode: agent
+agent: agent
 ---
 # Documentation Cleanup and Consolidation
 
@@ -20,8 +20,8 @@ For overlapping topics, apply this decision matrix:
 
 | Action | Apply When | Example |
 |--------|-----------|---------|
-| **Merge** | Multiple complementary files on one topic | Multiple audit reports → single findings doc |
-| **Archive** | Historically relevant but inactive | PHASE3 completion, session summaries |
+| **Merge** | Multiple complementary files on one topic | Multiple implementation summaries → single findings doc |
+| **Archive** | Historically relevant but inactive | Completed implementation phases, session summaries |
 | **Delete** | Unreferenced + no historical value | Duplicate drafts, intermediate notes |
 | **Preserve** | Serves distinct purpose (quick ref vs. guide) | Keep separate if each is independently useful |
 
@@ -29,7 +29,7 @@ For overlapping topics, apply this decision matrix:
 1. Create mapping of files → actions (merge/archive/delete/preserve)
 2. Find all doc references in codebase (PowerShell):
    ```powershell
-   Get-ChildItem -Recurse -Include *.ts,*.md src,tests,.github | Select-String -Pattern "docs/"
+   Get-ChildItem -Recurse -Include *.py,*.md src,tests,.github | Select-String -Pattern "docs/"
    ```
 3. Preserve all referenced files; update paths if moved
 4. Verify links in copilot-instructions.md point to final locations
