@@ -85,7 +85,7 @@ import torch.nn as nn
 
 from .event_system import (
     Event, EventType, EventScheduler, TrialPhase,
-    SpikePayload, DopaminePayload,
+    SpikePayload,
     get_axonal_delay,
 )
 from .event_regions import (
@@ -777,7 +777,6 @@ class EventDrivenBrain(nn.Module):
     def delay(
         self,
         n_timesteps: Optional[int] = None,
-        dopamine: float = 0.0,
     ) -> Dict[str, Any]:
         """Delay period (maintenance phase).
 
@@ -785,7 +784,6 @@ class EventDrivenBrain(nn.Module):
 
         Args:
             n_timesteps: Number of delay timesteps
-            dopamine: Tonic dopamine level during delay
 
         Returns:
             Dict with region activities
@@ -799,7 +797,6 @@ class EventDrivenBrain(nn.Module):
         results = self._run_timesteps(
             sensory_input=None,
             n_timesteps=n_timesteps,
-            dopamine=dopamine,
         )
 
         return results
@@ -1624,7 +1621,6 @@ class EventDrivenBrain(nn.Module):
         self,
         sensory_input: Optional[torch.Tensor],
         n_timesteps: int,
-        dopamine: float = 0.0,
     ) -> Dict[str, Any]:
         """Run simulation for specified timesteps.
 
@@ -1637,17 +1633,16 @@ class EventDrivenBrain(nn.Module):
         """
         if self._parallel_executor is not None:
             return self._run_timesteps_parallel(
-                sensory_input, n_timesteps, dopamine
+                sensory_input, n_timesteps
             )
         return self._run_timesteps_sequential(
-            sensory_input, n_timesteps, dopamine
+            sensory_input, n_timesteps
         )
 
     def _run_timesteps_parallel(
         self,
         sensory_input: Optional[torch.Tensor],
         n_timesteps: int,
-        dopamine: float = 0.0,
     ) -> Dict[str, Any]:
         """Run simulation using parallel executor."""
         assert self._parallel_executor is not None
@@ -1685,7 +1680,6 @@ class EventDrivenBrain(nn.Module):
         self,
         sensory_input: Optional[torch.Tensor],
         n_timesteps: int,
-        dopamine: float = 0.0,
     ) -> Dict[str, Any]:
         """Run simulation sequentially in main process."""
 
