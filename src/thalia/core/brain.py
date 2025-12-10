@@ -669,7 +669,7 @@ class EventDrivenBrain(nn.Module):
 
             # Create mental simulation coordinator
             self.mental_simulation = MentalSimulationCoordinator(
-                pfc=self.prefrontal,
+                pfc=self.pfc.impl,
                 hippocampus=self.hippocampus,
                 striatum=self.striatum.impl,
                 cortex=self.cortex,
@@ -892,7 +892,7 @@ class EventDrivenBrain(nn.Module):
                 pass
             else:
                 # Get goal context from PFC
-                goal_context = self.prefrontal.get_goal_context() if hasattr(self.prefrontal, 'get_goal_context') else None
+                goal_context = self.pfc.impl.get_goal_context() if hasattr(self.pfc.impl, 'get_goal_context') else None
 
                 # Plan best action using mental simulation
                 available_actions = list(range(self.config.n_actions))
@@ -1000,16 +1000,35 @@ class EventDrivenBrain(nn.Module):
             self.striatum.impl.update_value_estimate(self._last_action, reward_for_striatum)
 
         # =====================================================================
-        # STEP 9: Trigger background planning (Phase 2)
+        # STEP 9: Store experience for replay (AUTOMATIC)
+        # =====================================================================
+        # Automatically store experience in hippocampus for:
+        # - Prioritized experience replay during consolidation
+        # - HER (Hindsight Experience Replay) if enabled
+        # - Mental simulation state transitions
+        #
+        # The brain automatically tracks everything needed:
+        # - State (from last forward pass)
+        # - Action (from _last_action)
+        # - Reward (just received)
+        # - Correctness (reward > threshold)
+        if self._last_action is not None:
+            self._store_experience_automatically(
+                action=self._last_action,
+                reward=reward_for_striatum,
+            )
+
+        # =====================================================================
+        # STEP 10: Trigger background planning (Phase 2)
         # =====================================================================
         # After processing real experience, do simulated planning
         if self.dyna_planner is not None and self._last_action is not None:
             # Get state, action, reward, next_state for Dyna
             current_state = self._last_pfc_output
-            next_state = self.prefrontal.state.spikes  # Current PFC state is "next" after action
+            next_state = self.pfc.impl.state.spikes  # Current PFC state is "next" after action
 
             if current_state is not None:
-                goal_context = self.prefrontal.get_goal_context() if hasattr(self.prefrontal, 'get_goal_context') else None
+                goal_context = self.pfc.impl.get_goal_context() if hasattr(self.pfc.impl, 'get_goal_context') else None
 
                 # Trigger background planning
                 self.dyna_planner.process_real_experience(
@@ -1235,9 +1254,9 @@ class EventDrivenBrain(nn.Module):
         # =====================================================================
         # Automatically update cognitive load based on PFC working memory usage
         # This modulates temporal discounting (high load → more impulsive)
-        if hasattr(self.prefrontal, 'discounter') and self.prefrontal.discounter is not None:
+        if hasattr(self.pfc.impl, 'discounter') and self.pfc.impl.discounter is not None:
             cognitive_load = self._compute_cognitive_load()
-            self.prefrontal.update_cognitive_load(cognitive_load)
+            self.pfc.impl.update_cognitive_load(cognitive_load)
 
         # =====================================================================
         # 6. BROADCAST OSCILLATOR PHASES
@@ -1246,30 +1265,30 @@ class EventDrivenBrain(nn.Module):
 
     def _compute_cognitive_load(self) -> float:
         """Compute current cognitive load from PFC working memory usage.
-        
+
         Phase 3 functionality: Cognitive load drives temporal discounting.
         High working memory usage → high load → more impulsive choices.
-        
+
         Returns:
             Cognitive load (0-1), where 1 = maximum capacity
         """
-        if self.prefrontal.state.working_memory is None:
+        if self.pfc.impl.state.working_memory is None:
             return 0.0
-        
+
         # Measure working memory activity
-        wm_activity = self.prefrontal.state.working_memory.abs().mean().item()
-        
+        wm_activity = self.pfc.impl.state.working_memory.abs().mean().item()
+
         # Also consider number of active goals (if hierarchical goals enabled)
         goal_load = 0.0
-        if (hasattr(self.prefrontal, 'goal_manager') and 
-            self.prefrontal.goal_manager is not None):
-            n_active = len(self.prefrontal.goal_manager.active_goals)
-            max_goals = self.prefrontal.goal_manager.config.max_active_goals
+        if (hasattr(self.pfc.impl, 'goal_manager') and
+            self.pfc.impl.goal_manager is not None):
+            n_active = len(self.pfc.impl.goal_manager.active_goals)
+            max_goals = self.pfc.impl.goal_manager.config.max_active_goals
             goal_load = n_active / max(max_goals, 1)
-        
+
         # Combine WM activity and goal count (weighted average)
         cognitive_load = 0.7 * wm_activity + 0.3 * goal_load
-        
+
         # Clamp to [0, 1]
         return max(0.0, min(1.0, cognitive_load))
 
@@ -1328,52 +1347,41 @@ class EventDrivenBrain(nn.Module):
                 phases, signals, theta_slot, effective_amplitudes
             )
 
-    def store_experience(
+    def _store_experience_automatically(
         self,
-        is_match: bool,
-        selected_action: int,
-        correct: bool,
+        action: int,
         reward: float,
-        sample_pattern: Optional[torch.Tensor] = None,
-        test_pattern: Optional[torch.Tensor] = None,
     ) -> None:
-        """Store experience for later replay.
+        """Automatically store experience from current brain state.
 
-        Delegates to hippocampus with priority boosting for
-        rare/important experiences. This should be called after
-        deliver_reward() to store the completed trial.
+        This is called automatically by deliver_reward(). No manual calls needed.
+
+        Extracts all needed information from brain's current state:
+        - State: Combined cortex L5 + hippocampus + PFC activity
+        - Action: From parameter (already tracked)
+        - Reward: From parameter (just delivered)
+        - Correctness: Inferred from reward (positive = correct)
+        - Goal context: From PFC (for HER)
 
         Args:
-            is_match: Whether trial was a match
-            selected_action: Action that was taken (0=MATCH, 1=NO-MATCH)
-            correct: Whether action was correct
-            reward: Reward received
-            sample_pattern: Original sample (optional)
-            test_pattern: Test pattern (optional)
+            action: Action that was taken
+            reward: Reward that was received
         """
-        priority_boost = 0.0
-
-        # Boost correct NOMATCH selections (rare!)
-        if correct and selected_action == 1:
-            priority_boost += 3.0
-
-        # Boost NO-MATCH trials generally (minority class)
-        if not is_match:
-            priority_boost += 1.5
+        # Infer correctness from reward
+        correct = reward > 0.0
 
         # Construct state from current brain activity
-        # Combine cortex L5 + hippocampus + PFC as the state
         cortex_L5 = self.cortex.impl.state.l5_spikes
         if cortex_L5 is None:
-            cortex_L5 = torch.zeros(1, self._cortex_l5_size)
+            cortex_L5 = torch.zeros(1, self._cortex_l5_size, device=self.config.device)
 
         hippo_out = self.hippocampus.impl.state.ca1_spikes
         if hippo_out is None:
-            hippo_out = torch.zeros(1, self.config.hippocampus_size)
+            hippo_out = torch.zeros(1, self.config.hippocampus_size, device=self.config.device)
 
         pfc_out = self.pfc.impl.state.spikes
         if pfc_out is None:
-            pfc_out = torch.zeros(1, self.config.pfc_size)
+            pfc_out = torch.zeros(1, self.config.pfc_size, device=self.config.device)
 
         combined_state = torch.cat([
             cortex_L5.view(-1),
@@ -1381,40 +1389,82 @@ class EventDrivenBrain(nn.Module):
             pfc_out.view(-1),
         ])
 
-        # =====================================================================
-        # GOAL-CONDITIONED EPISODIC MEMORY WITH HER
-        # =====================================================================
-        # If HER is enabled, we need to pass goal information.
-        # Goal = what PFC wanted (working memory content)
-        # Achieved goal = what actually happened (CA1 output represents achieved state)
-        #
-        # The hippocampus will store BOTH:
-        # 1. Normal episode (for prioritized replay)
-        # 2. HER experience (goal + achieved_goal for hindsight relabeling)
-        #
-        # This makes HER completely automatic - no manual calls needed!
-        # =====================================================================
+        # Priority boost for rare/important experiences
+        priority_boost = 0.0
+        if correct and action == 1:  # Correct NOMATCH (rare)
+            priority_boost += 3.0
+
+        # Goal-conditioned storage for HER
         goal_for_her = None
-        if self.hippocampus.impl.her_integration is not None:  # Check if HER enabled
-            # Goal = PFC working memory content (what we were trying to achieve)
+        if self.hippocampus.impl.her_integration is not None:
             goal_for_her = pfc_out.clone()
 
+        # Store in hippocampus
         self.hippocampus.impl.store_episode(
             state=combined_state,
-            action=selected_action,
+            action=action,
             reward=reward,
             correct=correct,
-            context=sample_pattern,
-            metadata={
-                "is_match": is_match,
-                "test_pattern": test_pattern.clone() if test_pattern is not None else None,
-            },
+            context=None,  # Could store last sensory input if needed
+            metadata={},
             priority_boost=priority_boost,
-            # HER parameters (automatically handled if use_her=True)
             goal=goal_for_her,
-            achieved_goal=hippo_out.clone(),  # What was actually achieved
-            done=correct,  # Episode ends on correct trial
+            achieved_goal=hippo_out.clone(),
+            done=correct,
         )
+
+    def consolidate(self, n_cycles: int = 5, batch_size: int = 32, verbose: bool = False) -> Dict[str, Any]:
+        """Perform memory consolidation (replay) automatically.
+
+        This simulates sleep/offline replay where hippocampus replays stored
+        episodes to strengthen cortical representations. HER automatically
+        participates if enabled.
+
+        Args:
+            n_cycles: Number of replay cycles to run
+            batch_size: Number of experiences per cycle
+            verbose: Whether to print progress
+
+        Returns:
+            Dict with consolidation statistics
+        """
+        stats = {
+            'cycles_completed': 0,
+            'total_replayed': 0,
+            'her_enabled': self.hippocampus.impl.her_integration is not None,
+        }
+
+        # Enter consolidation mode if HER enabled
+        if self.hippocampus.impl.her_integration is not None:
+            self.hippocampus.impl.enter_consolidation_mode()
+            if verbose:
+                her_diag = self.hippocampus.impl.get_her_diagnostics()
+                print(f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions")
+
+        # Run replay cycles
+        for cycle in range(n_cycles):
+            if self.hippocampus.impl.her_integration is not None:
+                # Sample mix of real + hindsight experiences
+                batch = self.hippocampus.impl.sample_her_replay_batch(batch_size=batch_size)
+                if batch:
+                    stats['total_replayed'] += len(batch)
+                    if verbose:
+                        print(f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(batch)} experiences")
+            else:
+                # Sample normal episodic replay
+                episodes = self.hippocampus.impl.sample_episodes_prioritized(n=batch_size)
+                if episodes:
+                    stats['total_replayed'] += len(episodes)
+                    if verbose:
+                        print(f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(episodes)} episodes")
+
+            stats['cycles_completed'] += 1
+
+        # Exit consolidation mode
+        if self.hippocampus.impl.her_integration is not None:
+            self.hippocampus.impl.exit_consolidation_mode()
+
+        return stats
 
     def reset_state(self) -> None:
         """Reset brain state for new episode.
@@ -2194,71 +2244,3 @@ class EventDrivenBrain(nn.Module):
             striatum=self._collect_striatum_diagnostics(),
             hippocampus=self._collect_hippocampus_diagnostics(),
         )
-
-
-# =============================================================================
-# SIMPLE TEST
-# =============================================================================
-
-def test_event_driven_brain():
-    """Basic test of EventDrivenBrain."""
-    print("\n=== Test: EventDrivenBrain ===")
-
-    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
-
-    config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu"),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=100,
-                cortex_size=64,
-                hippocampus_size=40,
-                pfc_size=20,
-                n_actions=2,
-            ),
-        ),
-    )
-
-    brain = EventDrivenBrain.from_thalia_config(config)
-    print(f"  Created brain with {len(brain.adapters)} adapters")
-
-    # Create sample pattern
-    sample = (torch.rand(100) > 0.5).float()
-    print(f"  Sample pattern: {sample.sum().item():.0f}/100 active")
-
-    # Process sample
-    print("\n  Processing sample (encoding)...")
-    result = brain.process_sample(sample, n_timesteps=10)
-    print(f"    Events processed: {result['events_processed']}")
-    print(f"    Spike counts: {result['spike_counts']}")
-
-    # Delay
-    print("\n  Delay period...")
-    result = brain.delay(n_timesteps=5)
-    print(f"    Events processed: {result['events_processed']}")
-
-    # Process test (same pattern = match)
-    print("\n  Processing test (retrieval)...")
-    result = brain.process_test(sample, n_timesteps=10)
-    print(f"    Events processed: {result['events_processed']}")
-
-    # Select action
-    action, confidence = brain.select_action()
-    print(f"\n  Selected action: {action} (confidence: {confidence:.2f})")
-
-    # Deliver external reward (intrinsic rewards flow continuously)
-    print("  Delivering external reward...")
-    brain.deliver_reward(external_reward=1.0)
-
-    # Diagnostics
-    diag = brain.get_diagnostics()
-    print(f"\n  Final state:")
-    print(f"    Time: {diag['current_time']:.1f}ms")
-    print(f"    Phase: {diag['trial_phase']}")
-    print(f"    Total events: {diag['events_processed']}")
-
-    print("\n  PASSED: EventDrivenBrain works correctly")
-
-
-if __name__ == "__main__":
-    test_event_driven_brain()

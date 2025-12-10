@@ -1064,37 +1064,20 @@ class CurriculumTrainer:
         if self.verbose:
             print("\n🌙 Entering consolidation (sleep)...")
         
-        # Enter HER consolidation mode if enabled
-        if self.brain.hippocampus.impl.her_integration is not None:
-            self.brain.hippocampus.impl.enter_consolidation_mode()
-            if self.verbose:
-                her_diag = self.brain.hippocampus.impl.get_her_diagnostics()
-                print(f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions")
-        
-        # Run replay cycles (NREM/REM alternation)
-        for cycle in range(config.consolidation_cycles):
-            # Sample experiences for replay
-            if self.brain.hippocampus.impl.her_integration is not None:
-                # Sample mix of real + hindsight experiences
-                batch = self.brain.hippocampus.impl.sample_her_replay_batch(batch_size=32)
-                if batch and self.verbose:
-                    print(f"  Cycle {cycle+1}/{config.consolidation_cycles}: Replaying {len(batch)} experiences (real + hindsight)")
-            else:
-                # Sample normal episodic replay
-                episodes = self.brain.hippocampus.impl.sample_episodes_prioritized(n=32)
-                if episodes and self.verbose:
-                    print(f"  Cycle {cycle+1}/{config.consolidation_cycles}: Replaying {len(episodes)} episodes")
-        
-        # Exit HER consolidation mode
-        if self.brain.hippocampus.impl.her_integration is not None:
-            self.brain.hippocampus.impl.exit_consolidation_mode()
+        # Run consolidation automatically (handles HER, replay, mode switching)
+        stats = self.brain.consolidate(
+            n_cycles=config.consolidation_cycles,
+            batch_size=32,
+            verbose=self.verbose
+        )
         
         # Record consolidation event
         result.consolidation_events.append({
             'step': self.global_step,
             'stage': stage.name,
-            'cycles': config.consolidation_cycles,
-            'her_enabled': self.brain.hippocampus.impl.her_integration is not None,
+            'cycles': stats['cycles_completed'],
+            'total_replayed': stats['total_replayed'],
+            'her_enabled': stats['her_enabled'],
         })
         
         if self.verbose:
@@ -1109,24 +1092,15 @@ class CurriculumTrainer:
         if self.verbose:
             print(f"  Extended consolidation: {cycles} cycles")
         
-        # Enter HER consolidation mode if enabled
-        if self.brain.hippocampus.impl.her_integration is not None:
-            self.brain.hippocampus.impl.enter_consolidation_mode()
+        # Run extended consolidation automatically
+        stats = self.brain.consolidate(
+            n_cycles=cycles,
+            batch_size=64,
+            verbose=self.verbose
+        )
         
-        # Run extended replay
-        for cycle in range(cycles):
-            if self.brain.hippocampus.impl.her_integration is not None:
-                batch = self.brain.hippocampus.impl.sample_her_replay_batch(batch_size=64)
-                if self.verbose and cycle % 2 == 0:
-                    print(f"    Cycle {cycle+1}/{cycles}: {len(batch)} experiences")
-            else:
-                episodes = self.brain.hippocampus.impl.sample_episodes_prioritized(n=64)
-                if self.verbose and cycle % 2 == 0:
-                    print(f"    Cycle {cycle+1}/{cycles}: {len(episodes)} episodes")
-        
-        # Exit HER consolidation mode
-        if self.brain.hippocampus.impl.her_integration is not None:
-            self.brain.hippocampus.impl.exit_consolidation_mode()
+        if self.verbose:
+            print(f"  Replayed {stats['total_replayed']} total experiences")
 
     def _save_checkpoint(
         self,
