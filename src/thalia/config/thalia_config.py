@@ -302,26 +302,6 @@ class ThaliaConfig:
         print(self.summary(show_all))
 
     # =========================================================================
-    # LEGACY CONFIG CREATION
-    # =========================================================================
-
-    def to_language_interface_config(self) -> Any:
-        """Create LanguageInterfaceConfig for legacy API."""
-        import warnings
-        from thalia.language.model import LanguageInterfaceConfig
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            return LanguageInterfaceConfig(
-                vocab_size=self.global_.vocab_size,
-                n_timesteps=self.language.encoding.n_timesteps,
-                sparsity=self.language.encoding.get_sparsity(self.global_),
-                max_seq_len=self.language.position.max_positions,
-                brain_input_size=self.brain.sizes.input_size,
-                device=self.global_.device,
-            )
-
-    # =========================================================================
     # SERIALIZATION
     # =========================================================================
 
@@ -397,6 +377,27 @@ class ThaliaConfig:
         return cls(
             global_=global_config,
             brain=brain,
+        )
+
+    # =========================================================================
+    # INTERNAL CONFIG CONVERSION
+    # =========================================================================
+
+    def to_language_interface_config(self) -> Any:
+        """Create LanguageInterfaceConfig for LanguageBrainInterface internal use.
+
+        This is not a deprecated API - LanguageInterfaceConfig is the internal
+        configuration format used by LanguageBrainInterface. Users should continue
+        to use ThaliaConfig for all configuration.
+        """
+        from thalia.language.model import LanguageInterfaceConfig
+        return LanguageInterfaceConfig(
+            vocab_size=self.global_.vocab_size,
+            n_timesteps=self.language.encoding.n_timesteps,
+            sparsity=self.language.encoding.get_sparsity(self.global_),
+            max_seq_len=self.language.position.max_positions,
+            brain_input_size=self.brain.sizes.input_size,
+            device=self.global_.device,
         )
 
     # =========================================================================

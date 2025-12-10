@@ -84,10 +84,14 @@ if TYPE_CHECKING:
 
 @dataclass
 class LanguageInterfaceConfig:
-    """Configuration for language-brain interface.
+    """Internal configuration for LanguageBrainInterface.
 
-    This config is typically created from ThaliaConfig via
-    ``LanguageBrainInterface.from_thalia_config(brain, config)``.
+    This is NOT a user-facing API. Users should use ThaliaConfig for all configuration.
+    This class is an internal, flattened representation of language-related parameters
+    extracted from ThaliaConfig for convenience within LanguageBrainInterface.
+    
+    Typically created automatically via:
+    ``LanguageBrainInterface.from_thalia_config(brain, config)``
 
     Attributes:
         vocab_size: Size of token vocabulary

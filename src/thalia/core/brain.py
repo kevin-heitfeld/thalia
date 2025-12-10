@@ -79,12 +79,12 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any
 import torch
 import torch.nn as nn
 
 from .event_system import (
-    Event, EventType, EventScheduler, ThetaGenerator, TrialPhase,
+    Event, EventType, EventScheduler, TrialPhase,
     SpikePayload, DopaminePayload,
     get_axonal_delay,
 )
@@ -99,7 +99,6 @@ from .homeostatic_regulation import NeuromodulatorCoordination
 from .parallel_executor import _ParallelExecutor
 from .diagnostics import (
     DiagnosticsManager,
-    DiagnosticLevel,
     StriatumDiagnostics,
     HippocampusDiagnostics,
     BrainSystemDiagnostics,
@@ -190,9 +189,9 @@ class EventDrivenBrain(nn.Module):
             Prefer using EventDrivenBrain.from_thalia_config(config) for clarity.
         """
         from thalia.config import ThaliaConfig
-        
+
         super().__init__()
-        
+
         # Store ThaliaConfig directly
         self.thalia_config = config
         # Create a simple namespace for backwards compatibility with code that accesses self.config
@@ -404,15 +403,6 @@ class EventDrivenBrain(nn.Module):
             threshold=0.5,
             gain=2.0,
             device=torch.device(config.device),
-        )
-
-        # =====================================================================
-        # THETA RHYTHM
-        # =====================================================================
-
-        self.theta = ThetaGenerator(
-            frequency_hz=config.theta_frequency_hz,
-            connected_regions=list(self.adapters.keys()),
         )
 
         # =====================================================================
@@ -762,7 +752,6 @@ class EventDrivenBrain(nn.Module):
 
         # Set trial phase
         self._trial_phase = TrialPhase.ENCODE
-        self.theta.align_to_encoding()
 
         # Note: No new_trial()/clear() calls here - continuous processing
         # State transitions happen via natural dynamics (decay, FFI)
@@ -841,7 +830,6 @@ class EventDrivenBrain(nn.Module):
 
         # Set trial phase
         self._trial_phase = TrialPhase.RETRIEVE
-        self.theta.align_to_retrieval()
 
         results = self._run_timesteps(
             sensory_input=test_pattern,
@@ -1151,12 +1139,12 @@ class EventDrivenBrain(nn.Module):
         acetylcholine = self.neuromodulator_coordination.coordinate_ne_ach(
             norepinephrine, acetylcholine
         )
-        
+
         # 2. DA-ACh: High reward without novelty suppresses encoding
         acetylcholine = self.neuromodulator_coordination.coordinate_da_ach(
             dopamine, acetylcholine
         )
-        
+
         # 3. DA-NE: High uncertainty + reward enhances both
         dopamine, norepinephrine = self.neuromodulator_coordination.coordinate_da_ne(
             dopamine, norepinephrine, prediction_error
@@ -1317,7 +1305,6 @@ class EventDrivenBrain(nn.Module):
         """
         self._current_time = 0.0
         self._trial_phase = TrialPhase.ENCODE
-        self.theta.reset_state()
         self.scheduler = EventScheduler()
 
         # Reset regions (full state reset)
@@ -1366,9 +1353,9 @@ class EventDrivenBrain(nn.Module):
                 "cerebellum": self.cerebellum.impl.get_full_state(),
             },
             "pathways": {},
-            "theta": {
-                "frequency_hz": self.theta.frequency,
-                "phase": self.theta.phase,
+            "oscillators": {
+                "theta_frequency_hz": self.oscillators.theta_freq,
+                "phases": self.oscillators.get_phases(),
             },
             "scheduler": {
                 "current_time": self._current_time,
@@ -1436,10 +1423,14 @@ class EventDrivenBrain(nn.Module):
         self.striatum.impl.load_full_state(regions["striatum"])
         self.cerebellum.impl.load_full_state(regions["cerebellum"])
 
-        # Restore theta state
-        theta_state = state_dict["theta"]
-        self.theta.phase = theta_state["phase"]
-        # Note: frequency_hz is fixed at construction, not restored
+        # Restore oscillator phases
+        if "oscillators" in state_dict:
+            osc_state = state_dict["oscillators"]
+            phases = osc_state.get("phases", {})
+            # Set phases directly on oscillators
+            for freq_name, phase in phases.items():
+                if hasattr(self.oscillators, f"{freq_name}_phase"):
+                    setattr(self.oscillators, f"{freq_name}_phase", phase)
 
         # Restore scheduler state
         scheduler_state = state_dict["scheduler"]
@@ -1726,10 +1717,6 @@ class EventDrivenBrain(nn.Module):
 
         for t in range(n_timesteps):
             step_time = self._current_time + t * self.config.dt_ms
-
-            # Advance theta and schedule theta events
-            theta_events = self.theta.advance_to(step_time)
-            self.scheduler.schedule_many(theta_events)
 
             # Advance oscillators (once per timestep, like dopamine)
             self.oscillators.advance(self.config.dt_ms)
@@ -2025,9 +2012,8 @@ class EventDrivenBrain(nn.Module):
             # Brain state
             "current_time": self._current_time,
             "trial_phase": self._trial_phase.value,
-            "theta_phase": self.theta.phase,
-            "encoding_strength": self.theta.encoding_strength,
-            "retrieval_strength": self.theta.retrieval_strength,
+            "theta_phase": self.oscillators.get_phases().get('theta', 0.0),
+            "theta_frequency": self.oscillators.theta_freq,
             "spike_counts": self._spike_counts.copy(),
             "events_processed": self._events_processed,
             "last_action": self._last_action,
