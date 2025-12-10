@@ -655,7 +655,7 @@ class CurriculumTrainer:
 
         # Callbacks
         self.callbacks: List[Callable[[int, Dict[str, float]], None]] = []
-        
+
         # Goal hierarchy cache (for Stages 3+)
         self._goal_hierarchies: Dict[str, Goal] = {}
 
@@ -688,7 +688,7 @@ class CurriculumTrainer:
         self.current_stage = stage
         self.stage_start_step = self.global_step
         start_time = time.time()
-        
+
         # Setup goal hierarchies for stages that need them (3+)
         if stage in [CurriculumStage.READING, CurriculumStage.ABSTRACT]:
             self._setup_stage_goal_hierarchies(stage)
@@ -785,7 +785,7 @@ class CurriculumTrainer:
             if self.verbose:
                 print(f"\n{'='*80}")
                 print(f"Stage {stage.name} training complete")
-                print(f"Evaluating milestones...")
+                print("Evaluating milestones...")
                 print(f"{'='*80}\n")
 
             # Evaluate milestones
@@ -1050,7 +1050,7 @@ class CurriculumTrainer:
         result: TrainingResult,
     ) -> None:
         """Check memory pressure and trigger consolidation if needed.
-        
+
         During consolidation (sleep):
         1. Hippocampus enters consolidation mode
         2. HER (if enabled) relabels experiences with hindsight goals
@@ -1060,17 +1060,17 @@ class CurriculumTrainer:
         # Calculate memory pressure
         # For now, trigger on schedule (every consolidation_interval steps)
         # Future: Use MemoryPressureDetector for adaptive triggering
-        
+
         if self.verbose:
             print("\n🌙 Entering consolidation (sleep)...")
-        
+
         # Run consolidation automatically (handles HER, replay, mode switching)
         stats = self.brain.consolidate(
             n_cycles=config.consolidation_cycles,
             batch_size=32,
             verbose=self.verbose
         )
-        
+
         # Record consolidation event
         result.consolidation_events.append({
             'step': self.global_step,
@@ -1079,26 +1079,26 @@ class CurriculumTrainer:
             'total_replayed': stats['total_replayed'],
             'her_enabled': stats['her_enabled'],
         })
-        
+
         if self.verbose:
             print("  ✅ Consolidation complete")
 
     def _extended_consolidation(self, cycles: int = 10) -> None:
         """Perform extended consolidation before stage transition.
-        
+
         Runs more replay cycles than normal to strengthen memory consolidation
         before introducing new tasks. HER automatically participates if enabled.
         """
         if self.verbose:
             print(f"  Extended consolidation: {cycles} cycles")
-        
+
         # Run extended consolidation automatically
         stats = self.brain.consolidate(
             n_cycles=cycles,
             batch_size=64,
             verbose=self.verbose
         )
-        
+
         if self.verbose:
             print(f"  Replayed {stats['total_replayed']} total experiences")
 
@@ -1168,28 +1168,28 @@ class CurriculumTrainer:
         print(f"Checkpoints: {len(result.checkpoints)}")
 
         if result.milestone_results:
-            print(f"\nMilestone Results:")
+            print("\nMilestone Results:")
             for criterion, passed in result.milestone_results.items():
                 status = "✅" if passed else "❌"
                 print(f"  {status} {criterion}")
 
         if result.failure_reasons:
-            print(f"\nFailure Reasons:")
+            print("\nFailure Reasons:")
             for reason in result.failure_reasons:
                 print(f"  ❌ {reason}")
 
         print(f"{'='*80}\n")
-    
+
     # ========================================================================
     # Goal Hierarchy Setup (Stages 3+)
     # ========================================================================
-    
+
     def _setup_stage_goal_hierarchies(self, stage: CurriculumStage) -> None:
         """Setup goal hierarchies for stages that use hierarchical planning.
-        
+
         Stage 3 (READING): Planning tasks (Tower of Hanoi, essay writing)
         Stage 4 (ABSTRACT): Abstract reasoning (hypothesis testing, matrix reasoning)
-        
+
         Args:
             stage: Current curriculum stage
         """
@@ -1199,23 +1199,23 @@ class CurriculumTrainer:
             if self.verbose:
                 print("⚠️  Goal manager not available - skipping goal hierarchy setup")
             return
-        
+
         if self.verbose:
             print(f"\n🎯 Setting up goal hierarchies for Stage {stage.name}...")
-        
+
         if stage == CurriculumStage.READING:
             # Stage 3: Planning and text generation
             self._setup_stage3_goals()
         elif stage == CurriculumStage.ABSTRACT:
             # Stage 4: Abstract reasoning and hypothesis testing
             self._setup_stage4_goals()
-        
+
         if self.verbose:
             print("  ✅ Goal hierarchies configured\n")
-    
+
     def _setup_stage3_goals(self) -> None:
         """Setup goal hierarchies for Stage 3 (Reading/Planning).
-        
+
         Tasks requiring hierarchical goals:
         - Tower of Hanoi (3-4 disks, multi-step planning)
         - Essay writing (intro/body/conclusion structure)
@@ -1224,27 +1224,27 @@ class CurriculumTrainer:
         # 1. Tower of Hanoi goal hierarchy
         tower_hanoi = self._create_tower_hanoi_goal()
         self._goal_hierarchies['tower_hanoi'] = tower_hanoi
-        
+
         # 2. Essay writing goal hierarchy
         essay = self._create_essay_goal()
         self._goal_hierarchies['essay_writing'] = essay
-        
+
         # 3. Maze solving goal hierarchy
         maze = self._create_maze_goal()
         self._goal_hierarchies['maze_solving'] = maze
-        
+
         # Set default goal hierarchy (essay is most general)
         self.brain.prefrontal.set_goal_hierarchy(essay)
-        
+
         if self.verbose:
             print("    - Tower of Hanoi: 3-level hierarchy (move_disk → move_stack → solve)")
             print("    - Essay writing: 3-level hierarchy (intro/body/conclusion)")
             print("    - Maze solving: 2-level hierarchy (waypoints → goal)")
-            print(f"    - Default hierarchy: essay_writing")
-    
+            print("    - Default hierarchy: essay_writing")
+
     def _setup_stage4_goals(self) -> None:
         """Setup goal hierarchies for Stage 4 (Abstract Reasoning).
-        
+
         Tasks requiring hierarchical goals:
         - Raven's matrices (pattern analysis → rule induction → prediction)
         - Hypothesis testing (generate → test → revise)
@@ -1253,69 +1253,69 @@ class CurriculumTrainer:
         # 1. Raven's matrices goal hierarchy
         ravens = self._create_ravens_goal()
         self._goal_hierarchies['ravens_matrices'] = ravens
-        
+
         # 2. Hypothesis testing goal hierarchy
         hypothesis = self._create_hypothesis_testing_goal()
         self._goal_hierarchies['hypothesis_testing'] = hypothesis
-        
+
         # 3. Multi-premise reasoning goal hierarchy
         reasoning = self._create_reasoning_goal()
         self._goal_hierarchies['multi_premise_reasoning'] = reasoning
-        
+
         # Set default goal hierarchy (hypothesis testing is most general)
         self.brain.prefrontal.set_goal_hierarchy(hypothesis)
-        
+
         if self.verbose:
             print("    - Raven's matrices: 3-level hierarchy (analyze → induce → predict)")
             print("    - Hypothesis testing: 3-level hierarchy (generate → test → revise)")
             print("    - Multi-premise reasoning: 3-level hierarchy (gather → integrate → conclude)")
             print(f"    - Default hierarchy: hypothesis_testing")
-    
+
     def _create_tower_hanoi_goal(self) -> Goal:
         """Create Tower of Hanoi goal hierarchy.
-        
+
         Level 3 (root): solve_puzzle
         Level 2: move_stack(n) for each stack size
         Level 1: move_disk(i) for each individual disk
         """
         # Root goal
         root = Goal(goal_id=0, name="solve_tower_hanoi", level=3)
-        
+
         # Level 2: Move stacks of different sizes
         move_3 = Goal(goal_id=1, name="move_stack_3", level=2)
         move_2 = Goal(goal_id=2, name="move_stack_2", level=2)
         move_1 = Goal(goal_id=3, name="move_stack_1", level=2)
-        
+
         root.add_subgoal(move_3)
         root.add_subgoal(move_2)
         root.add_subgoal(move_1)
-        
+
         # Level 1: Individual disk movements (primitives)
         for i in range(3):
             disk_goal = Goal(goal_id=4+i, name=f"move_disk_{i}", level=1)
             move_1.add_subgoal(disk_goal)
-        
+
         return root
-    
+
     def _create_essay_goal(self) -> Goal:
         """Create essay writing goal hierarchy.
-        
+
         Level 3 (root): write_essay
         Level 2: intro, body, conclusion
         Level 1: sentences within each section
         """
         # Root goal
         root = Goal(goal_id=10, name="write_essay", level=3)
-        
+
         # Level 2: Essay sections
         intro = Goal(goal_id=11, name="write_intro", level=2)
         body = Goal(goal_id=12, name="write_body", level=2)
         conclusion = Goal(goal_id=13, name="write_conclusion", level=2)
-        
+
         root.add_subgoal(intro)
         root.add_subgoal(body)
         root.add_subgoal(conclusion)
-        
+
         # Level 1: Sentences (3-4 per section)
         for section_id, section in [(11, intro), (12, body), (13, conclusion)]:
             for i in range(3):
@@ -1325,142 +1325,142 @@ class CurriculumTrainer:
                     level=1
                 )
                 section.add_subgoal(sentence_goal)
-        
+
         return root
-    
+
     def _create_maze_goal(self) -> Goal:
         """Create maze solving goal hierarchy.
-        
+
         Level 2 (root): reach_goal
         Level 1: reach_waypoint(i) for intermediate points
         """
         # Root goal
         root = Goal(goal_id=20, name="reach_goal", level=2)
-        
+
         # Level 1: Waypoints (decompose path)
         for i in range(4):  # 4 waypoints typical for maze
             waypoint = Goal(goal_id=21+i, name=f"reach_waypoint_{i}", level=1)
             root.add_subgoal(waypoint)
-        
+
         return root
-    
+
     def _create_ravens_goal(self) -> Goal:
         """Create Raven's matrices goal hierarchy.
-        
+
         Level 3 (root): solve_matrix
         Level 2: analyze_patterns, induce_rule
         Level 1: compare_rows, compare_cols, find_relation
         """
         # Root goal
         root = Goal(goal_id=30, name="solve_ravens_matrix", level=3)
-        
+
         # Level 2: High-level reasoning steps
         analyze = Goal(goal_id=31, name="analyze_patterns", level=2)
         induce = Goal(goal_id=32, name="induce_rule", level=2)
         predict = Goal(goal_id=33, name="predict_missing", level=2)
-        
+
         root.add_subgoal(analyze)
         root.add_subgoal(induce)
         root.add_subgoal(predict)
-        
+
         # Level 1: Low-level analysis operations
         compare_rows = Goal(goal_id=311, name="compare_rows", level=1)
         compare_cols = Goal(goal_id=312, name="compare_cols", level=1)
         find_relation = Goal(goal_id=313, name="find_relation", level=1)
-        
+
         analyze.add_subgoal(compare_rows)
         analyze.add_subgoal(compare_cols)
         analyze.add_subgoal(find_relation)
-        
+
         return root
-    
+
     def _create_hypothesis_testing_goal(self) -> Goal:
         """Create hypothesis testing goal hierarchy.
-        
+
         Level 3 (root): scientific_reasoning
         Level 2: generate_hypotheses, test_hypothesis, revise_hypothesis
         Level 1: design_experiment, collect_data, analyze_results
         """
         # Root goal
         root = Goal(goal_id=40, name="scientific_reasoning", level=3)
-        
+
         # Level 2: Hypothesis testing phases
         generate = Goal(goal_id=41, name="generate_hypotheses", level=2)
         test = Goal(goal_id=42, name="test_hypothesis", level=2)
         revise = Goal(goal_id=43, name="revise_hypothesis", level=2)
-        
+
         root.add_subgoal(generate)
         root.add_subgoal(test)
         root.add_subgoal(revise)
-        
+
         # Level 1: Testing operations
         design = Goal(goal_id=421, name="design_experiment", level=1)
         collect = Goal(goal_id=422, name="collect_data", level=1)
         analyze = Goal(goal_id=423, name="analyze_results", level=1)
-        
+
         test.add_subgoal(design)
         test.add_subgoal(collect)
         test.add_subgoal(analyze)
-        
+
         return root
-    
+
     def _create_reasoning_goal(self) -> Goal:
         """Create multi-premise reasoning goal hierarchy.
-        
+
         Level 3 (root): logical_inference
         Level 2: gather_premises, integrate_premises, draw_conclusion
         Level 1: parse_premise, check_consistency, apply_rule
         """
         # Root goal
         root = Goal(goal_id=50, name="logical_inference", level=3)
-        
+
         # Level 2: Reasoning phases
         gather = Goal(goal_id=51, name="gather_premises", level=2)
         integrate = Goal(goal_id=52, name="integrate_premises", level=2)
         conclude = Goal(goal_id=53, name="draw_conclusion", level=2)
-        
+
         root.add_subgoal(gather)
         root.add_subgoal(integrate)
         root.add_subgoal(conclude)
-        
+
         # Level 1: Logical operations
         parse = Goal(goal_id=511, name="parse_premise", level=1)
         check = Goal(goal_id=512, name="check_consistency", level=1)
         apply = Goal(goal_id=513, name="apply_rule", level=1)
-        
+
         integrate.add_subgoal(parse)
         integrate.add_subgoal(check)
         integrate.add_subgoal(apply)
-        
+
         return root
-    
+
     def get_goal_hierarchy(self, task_name: str) -> Optional[Goal]:
         """Get a specific goal hierarchy for a task.
-        
+
         Args:
             task_name: Name of the task (e.g., 'tower_hanoi', 'essay_writing')
-        
+
         Returns:
             Goal hierarchy root, or None if not found
         """
         return self._goal_hierarchies.get(task_name)
-    
+
     def set_active_goal_hierarchy(self, task_name: str) -> bool:
         """Switch to a specific goal hierarchy.
-        
+
         Args:
             task_name: Name of the task
-        
+
         Returns:
             True if successful, False if task not found
         """
         goal = self.get_goal_hierarchy(task_name)
         if goal is None:
             return False
-        
+
         if hasattr(self.brain, 'prefrontal') and \
            hasattr(self.brain.prefrontal, 'set_goal_hierarchy'):
             self.brain.prefrontal.set_goal_hierarchy(goal)
             return True
-        
+
         return False

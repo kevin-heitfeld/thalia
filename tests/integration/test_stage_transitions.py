@@ -134,18 +134,18 @@ def test_smooth_transition_with_difficulty_ramps(
     )
 
     pbar_stage0 = tqdm(total=stage_config.duration_steps, desc="Stage -0.5", unit="step")
-    
+
     def update_progress_stage0(step, metrics):
         pbar_stage0.update(1)
-    
+
     curriculum_trainer.add_callback(update_progress_stage0)
-    
+
     result_stage0 = curriculum_trainer.train_stage(
         stage=CurriculumStage.SENSORIMOTOR,
         config=stage_config,
         task_loader=sensorimotor_loader,
     )
-    
+
     pbar_stage0.close()
     curriculum_trainer.callbacks.clear()
 
@@ -192,18 +192,18 @@ def test_smooth_transition_with_difficulty_ramps(
     )
 
     pbar_stage1 = tqdm(total=stage1_config.duration_steps, desc="Stage 0", unit="step")
-    
+
     def update_progress_stage1(step, metrics):
         pbar_stage1.update(1)
-    
+
     curriculum_trainer.add_callback(update_progress_stage1)
-    
+
     result_stage1 = curriculum_trainer.train_stage(
         stage=CurriculumStage.PHONOLOGY,
         config=stage1_config,
         task_loader=phonology_loader,
     )
-    
+
     pbar_stage1.close()
     curriculum_trainer.callbacks.clear()
 

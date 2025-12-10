@@ -40,6 +40,7 @@ Date: December 2025
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from typing import Optional, Dict, Any
 
 import torch
@@ -214,7 +215,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
     def _init_layers(self) -> None:
         """Initialize conductance-based LIF neurons for each layer.
-        
+
         Uses ConductanceLIF for biologically realistic gain control:
         - Separate excitatory and inhibitory conductances
         - Shunting inhibition (divisive effect)
@@ -231,7 +232,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             E_E=3.0,     # Excitatory reversal (well above threshold)
             E_I=-0.5,    # Inhibitory reversal (hyperpolarizing)
         )
-        
+
         # L2/3: Recurrent processing with adaptation
         l23_config = ConductanceLIFConfig(
             tau_E=5.0,
@@ -242,7 +243,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             E_E=3.0,
             E_I=-0.5,
         )
-        
+
         # L5: Output layer, slightly lower threshold
         l5_config = ConductanceLIFConfig(
             tau_E=5.0,
@@ -550,11 +551,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        from thalia.core.weight_init import WeightInitializer
-        from dataclasses import replace
-
         # Calculate proportional growth for all layers
-        from thalia.regions.cortex.config import calculate_layer_sizes
         l4_growth, l23_growth, l5_growth = calculate_layer_sizes(
             n_new, self.layer_config.l4_ratio, self.layer_config.l23_ratio, self.layer_config.l5_ratio
         )
@@ -903,10 +900,10 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             torch.matmul(self.w_l23_l5, l23_spikes.float())
             * cfg.l23_to_l5_strength
         )
-        
+
         # L5 inhibition: ~25% of excitation (4:1 E/I ratio)
         l5_g_inh = l5_g_exc * 0.25
-        
+
         l5_spikes, _ = self.l5_neurons(l5_g_exc, l5_g_inh)
         l5_spikes = self._apply_sparsity_1d(l5_spikes, cfg.l5_sparsity)
         self.state.l5_spikes = l5_spikes

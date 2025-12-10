@@ -35,11 +35,11 @@ class TestCortexWithRobustness:
 
         # Reset once, then let it run - no adaptation mechanisms to track
         cortex.reset_state()
-        
+
         # Run for a while
         spike_counts = []
         for t in range(100):
-            output = cortex.forward(test_inputs[t])
+            cortex.forward(test_inputs[t])
             spike_counts.append(cortex.state.l5_spikes.sum().item())
 
         # Without robustness, may show instability
@@ -48,7 +48,7 @@ class TestCortexWithRobustness:
         variance = torch.tensor(spike_counts, dtype=torch.float32).var().item()
 
         print(f"Without robustness: avg {avg_spikes:.1f} ± {variance**0.5:.1f} spikes/step")
-        
+
         # Document behavior without strict assertions (for baseline comparison)
         # Main purpose is to show what happens WITHOUT robustness
 
@@ -56,7 +56,7 @@ class TestCortexWithRobustness:
         """Test that robustness mechanisms maintain healthy activity levels."""
         # Use deterministic seed for reproducibility
         torch.manual_seed(42)
-        
+
         # Create cortex WITH robustness
         config = LayeredCortexConfig(
             n_input=32,
@@ -73,12 +73,12 @@ class TestCortexWithRobustness:
 
         # CRITICAL: Reset once, then let robustness mechanisms adapt over time
         cortex.reset_state()
-        
+
         spike_counts = []
         for t in range(150):  # Longer to allow adaptation
             output = cortex.forward(test_inputs[t])
             spike_counts.append(cortex.state.l5_spikes.sum().item())
-            
+
         # Check health after adaptation period
         diagnostics = cortex.get_diagnostics()
         report = health_monitor.check_health(diagnostics)
@@ -89,7 +89,7 @@ class TestCortexWithRobustness:
         adapted_spikes = spike_counts[warmup:]
         avg_spikes = sum(adapted_spikes) / len(adapted_spikes)
         variance = torch.tensor(adapted_spikes, dtype=torch.float32).var().item()
-        
+
         print(f"With robustness: avg {avg_spikes:.1f} ± {variance**0.5:.1f} spikes/step (after {warmup}-step warmup)")
         print(f"Health: {report.summary}")
         print(f"Health severity: {report.overall_severity:.1f}/100")
@@ -99,7 +99,7 @@ class TestCortexWithRobustness:
         MIN_HEALTHY_ACTIVITY = 0.3  # Network is stable even with modest activity
         assert avg_spikes > MIN_HEALTHY_ACTIVITY, \
             f"Activity collapsed: {avg_spikes:.1f} < {MIN_HEALTHY_ACTIVITY} (robustness failed)"
-        
+
         # Note: We don't check CV here because low baseline activity makes variance appear high
         # The key is that activity doesn't collapse to zero
 
@@ -107,7 +107,7 @@ class TestCortexWithRobustness:
         """Test that E/I balance prevents runaway excitation."""
         # Use deterministic seed for reproducibility
         torch.manual_seed(43)
-        
+
         # Create cortex with E/I balance enabled
         config = LayeredCortexConfig(
             n_input=32,
@@ -130,7 +130,7 @@ class TestCortexWithRobustness:
 
         # CRITICAL: Reset once, let E/I balance adapt over time
         cortex.reset_state()
-        
+
         spike_history = []
         for t in range(200):
             output = cortex.forward(test_inputs[t])
@@ -227,11 +227,11 @@ class TestCortexWithRobustness:
 
         # CRITICAL: Reset once, let IP adapt over time
         cortex.reset_state()
-        
+
         # Track firing rates over time
         firing_rates = []
         for t in range(150):
-            output = cortex.forward(test_inputs[t])
+            cortex.forward(test_inputs[t])
 
             # Compute L2/3 firing rate (where IP is applied)
             l23_spikes = cortex.state.l23_spikes
@@ -239,7 +239,7 @@ class TestCortexWithRobustness:
                 firing_rates.append(l23_spikes.float().mean().item())
             else:
                 firing_rates.append(0.0)
-                
+
         # Check adaptation
         early_rate = sum(firing_rates[:30]) / 30
         late_rate = sum(firing_rates[120:]) / 30
@@ -279,7 +279,7 @@ class TestCortexRobustnessInteractions:
                     threshold = 0.2 + torch.rand(1).item() * 1.0
                     test_input = (torch.randn(32) > threshold).float()
 
-                output = cortex.forward(test_input)            # Check health after each phase
+                cortex.forward(test_input)            # Check health after each phase
             diagnostics = cortex.get_diagnostics()
             report = health_monitor.check_health(diagnostics)
 
@@ -293,7 +293,7 @@ class TestCortexRobustnessInteractions:
 
             # With weak input, activity_collapse is expected - just verify it doesn't crash
             # The robustness mechanisms keep the network stable enough to run
-            print(f"  (Activity collapse warnings expected for weak input)")
+            print("  (Activity collapse warnings expected for weak input)")
     def test_robustness_preset_comparison(self, health_monitor):
         """Compare different robustness presets."""
         presets = {

@@ -119,12 +119,12 @@ class SpikingAttentionPathway(SpikingPathway):
 
     def _compute_beta_phase(self) -> torch.Tensor:
         """Compute current beta oscillation phase.
-        
+
         Note:
             Timestep obtained from self.config.dt_ms
         """
-        dt = self.config.dt_ms
-        self.beta_phase = (self.beta_phase + dt) % self.beta_period
+        # Update phase (dt_ms from config)
+        self.beta_phase = (self.beta_phase + self.config.dt_ms) % self.beta_period
         return 2 * torch.pi * self.beta_phase / self.beta_period
 
     def compute_attention(
@@ -139,12 +139,10 @@ class SpikingAttentionPathway(SpikingPathway):
 
         Returns:
             attention: Attention weights [target_size] (1D)
-            
+
         Note:
             Timestep (dt_ms) obtained from self.config
         """
-        # Get timestep from config
-        dt = self.config.dt_ms
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
@@ -152,10 +150,10 @@ class SpikingAttentionPathway(SpikingPathway):
             f"SpikingAttentionPathway.compute_attention: pfc_activity must be 1D [size], "
             f"got shape {pfc_activity.shape}. No batch dimension in 1D architecture."
         )
-        
+
         # Update beta phase
         beta_phase = self._compute_beta_phase()
-        
+
         # Process through spiking pathway
         # First pad to source size if needed
         if pfc_activity.shape[0] != self.config.source_size:

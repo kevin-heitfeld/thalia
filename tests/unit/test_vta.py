@@ -11,7 +11,6 @@ Tests cover:
 """
 
 import pytest
-import torch
 
 from thalia.core.vta import VTADopamineSystem, VTAConfig
 

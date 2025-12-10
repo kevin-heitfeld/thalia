@@ -12,7 +12,6 @@ Tests cover:
 """
 
 import pytest
-import torch
 
 from thalia.core.nucleus_basalis import NucleusBasalisSystem, NucleusBasalisConfig
 
@@ -324,7 +323,7 @@ class TestNucleusBasalisSystem:
         # Need extended period of low PE to decay phasic and let baseline adapt down
         for i in range(20, 0, -1):
             nb.update(dt_ms=1.0, prediction_error=0.05 * i)
-        
+
         # Continue with zero PE to ensure return to baseline
         for _ in range(100):
             nb.update(dt_ms=1.0, prediction_error=0.0)

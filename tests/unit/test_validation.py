@@ -11,13 +11,12 @@ import numpy as np
 
 from thalia.core.neuron import LIFNeuron, LIFConfig, ConductanceLIF, ConductanceLIFConfig
 from thalia.core.dendritic import DendriticNeuron, DendriticNeuronConfig
-from thalia.learning.ei_balance import EIBalanceRegulator, EIBalanceConfig
+from thalia.learning.ei_balance import EIBalanceRegulator
 from thalia.regions import LayeredCortex, LayeredCortexConfig
 
 from tests.test_utils import (
     assert_spike_train_valid,
     assert_weights_healthy,
-    assert_membrane_potential_valid,
 )
 
 
@@ -203,7 +202,7 @@ class TestLayeredCortexValidation:
         cortex.reset_state()
         output1 = cortex.forward(torch.randn(32))
         # assert output1.shape[0] == 1  # REMOVED: ADR-005 uses 1D tensors
-        
+
         # Using batch_size=1 consistently should work
         output2 = cortex.forward(torch.randn(32))
         # assert output2.shape[0] == 1  # REMOVED: ADR-005 uses 1D tensors
@@ -332,4 +331,3 @@ class TestNumericalStability:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

@@ -221,7 +221,7 @@ def create_curriculum_trainer(
     print(f"    - Checkpoints: {checkpoint_dir}")
     print(f"    - Log file: {log_file}")
     if enable_live_diagnostics:
-        print(f"    - Live diagnostics: enabled (every 100 steps)")
+        print("    - Live diagnostics: enabled (every 100 steps)")
 
     return trainer
 
@@ -273,7 +273,7 @@ def configure_stage_sensorimotor() -> StageConfig:
 
     print("  ✓ Stage configured")
     print(f"    - Duration: {config.duration_steps:,} steps")
-    print(f"    - Interleaved practice with spaced repetition")
+    print("    - Interleaved practice with spaced repetition")
     print(f"    - Productive failure: first {config.productive_failure_steps:,} steps")
     print(f"    - Growth checks every {config.growth_check_interval:,} steps")
 
@@ -384,7 +384,7 @@ def evaluate_stage_sensorimotor(
         print("   Thalia is ready for Stage 0 (Sensory Foundations)")
     else:
         failed = [k for k, v in results.items() if not v]
-        print(f"\n❌ STAGE -0.5 INCOMPLETE")
+        print("\n❌ STAGE -0.5 INCOMPLETE")
         print(f"   Failed: {', '.join(failed)}")
 
     return results
@@ -521,9 +521,9 @@ def main():
     print("   To disable: Pass enable_live_diagnostics=False to create_curriculum_trainer()")
     print()
     print("   For post-training analysis:")
-    print(f"   from thalia.training import TrainingMonitor")
+    print("   from thalia.training import TrainingMonitor")
     print(f"   monitor = TrainingMonitor('{checkpoint_dir}')")
-    print(f"   monitor.show_all()  # Shows progress, metrics, growth")
+    print("   monitor.show_all()  # Shows progress, metrics, growth")
     print()
 
     start_time = datetime.now()

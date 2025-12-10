@@ -43,6 +43,7 @@ When to Use:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
@@ -292,7 +293,6 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         Returns:
             Gate value [0, 1] - peak at beta trough (phase = π), modulated by coupling
         """
-        import math
         # Peak learning at β = π (beta trough = movement initiation)
         phase_diff = abs(self._beta_phase - math.pi)
         width = math.pi / 4  # ±45° learning window
@@ -406,7 +406,6 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         # ======================================================================
         # COMPUTE THETA MODULATION (from oscillator phase set by Brain)
         # ======================================================================
-        import math
         encoding_mod = 0.5 * (1.0 + math.cos(self._theta_phase))
         _ = 1.0 - encoding_mod  # retrieval_mod - reserved for future output gain modulation
 

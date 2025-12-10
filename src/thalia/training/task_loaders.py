@@ -29,7 +29,7 @@ Date: December 9, 2025
 
 from __future__ import annotations
 
-from typing import Protocol, Dict, Any, Optional, List, Tuple
+from typing import Protocol, Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
 import torch
@@ -96,15 +96,15 @@ class SensorimotorConfig:
     """Configuration for sensorimotor task loader."""
     # Output size (must match brain.input_size)
     output_size: int = 256
-    
+
     # Task mixing
     task_probabilities: Dict[str, float] = None
-    
+
     # Episode settings
     max_episode_steps: int = 1000
-    
+
     device: str = 'cpu'
-    
+
     def __post_init__(self):
         if self.task_probabilities is None:
             # Equal probability for all tasks
@@ -163,7 +163,7 @@ class SensorimotorTaskLoader:
         """
         self.wrapper = wrapper
         self.config = config or SensorimotorConfig()
-        
+
         # Override output_size if provided
         if output_size is not None:
             self.config.output_size = output_size
@@ -178,10 +178,10 @@ class SensorimotorTaskLoader:
         self.current_episode_step = 0
         self.last_obs = None
         self.last_action = None
-        
+
         # Initialize wrapper with first observation
         self.current_obs = self.wrapper.reset()
-        
+
         # Sensory projection: wrapper output → fixed size
         # Biologically: Proprioceptive neurons project to cortical columns
         wrapper_output_size = wrapper.n_sensory_neurons
@@ -193,32 +193,32 @@ class SensorimotorTaskLoader:
         # Initialize with sparse random connectivity
         nn.init.sparse_(self.sensory_projection.weight, sparsity=0.7)
         self.sensory_projection.to(self.config.device)
-        
+
         print(f"[OK] SensorimotorTaskLoader: {wrapper_output_size} -> {self.config.output_size} neurons")
-    
+
     def _encode_sensory(self, raw_spikes: torch.Tensor) -> torch.Tensor:
         """Project raw sensorimotor spikes to fixed output size.
-        
+
         Args:
             raw_spikes: Raw spikes from wrapper [wrapper_output_size]
-            
+
         Returns:
             projected_spikes: Fixed-size spikes [output_size]
         """
         # Ensure correct device
         raw_spikes = raw_spikes.to(self.config.device)
-        
+
         # Convert to float for linear projection
         raw_float = raw_spikes.float()
-        
+
         # Project: [wrapper_size] → [output_size]
         projected = self.sensory_projection(raw_float)
-        
+
         # Apply threshold to maintain sparsity
         # Use sigmoid to get probabilities, then stochastic spiking
         probabilities = torch.sigmoid(projected)
         projected_spikes = torch.rand_like(probabilities) < probabilities
-        
+
         return projected_spikes
 
     def get_task(self, task_name: str) -> Dict[str, Any]:
@@ -235,7 +235,7 @@ class SensorimotorTaskLoader:
 
         # Use current observation (updated by previous step)
         raw_obs_spikes = self.current_obs
-        
+
         # Project to fixed size
         obs_spikes = self._encode_sensory(raw_obs_spikes)
 
@@ -268,7 +268,7 @@ class SensorimotorTaskLoader:
 
         # Execute action in environment
         next_obs, reward, terminated, truncated = self.wrapper.step(motor_spikes)
-        
+
         # Update current observation for next call
         self.current_obs = next_obs
 
@@ -325,7 +325,7 @@ class SensorimotorTaskLoader:
         motor_spikes = torch.rand(self.wrapper.n_motor_neurons) < 0.2
 
         # Execute action
-        next_obs, reward, terminated, truncated = self.wrapper.step(motor_spikes)
+        next_obs, reward, _, _ = self.wrapper.step(motor_spikes)
 
         # Update current observation for next call
         self.current_obs = next_obs
@@ -422,17 +422,17 @@ class PhonologyConfig:
     """Configuration for phonology task loader (Stage 0)."""
     # Output size (must match brain.input_size)
     output_size: int = 256
-    
+
     # Task mixing
     task_probabilities: Dict[str, float] = None
-    
+
     # Encoding parameters
     n_timesteps: int = 10
     mnist_spike_rate: float = 0.3
     temporal_sequence_length: int = 5
-    
+
     device: str = 'cpu'
-    
+
     def __post_init__(self):
         if self.task_probabilities is None:
             # Default task distribution (per curriculum strategy)
@@ -453,11 +453,11 @@ class PhonologyTaskLoader:
     ARCHITECTURE:
     =============
     Uses sensory pathways to encode raw inputs to fixed-size spike patterns:
-    
+
     - MNIST (784 pixels) → RetinalEncoder → Fixed spikes (256)
     - Temporal sequences (variable) → Projection → Fixed spikes (256)
     - Phonemes (40 features) → Audio encoding → Fixed spikes (256)
-    
+
     This matches biological sensory encoding: retina/cochlea perform
     dimensionality reduction before cortical processing.
 
@@ -491,7 +491,7 @@ class PhonologyTaskLoader:
         """
         self.config = config or PhonologyConfig(device=device)
         self.device = device
-        
+
         # Override output_size if provided
         if output_size is not None:
             self.config.output_size = output_size
@@ -511,12 +511,12 @@ class PhonologyTaskLoader:
         self._mnist_iter = None
         self._temporal_iter = None
         self._phonology_iter = None
-        
+
         # Sensory encoders (lazy initialization)
         self._visual_encoder = None
         self._temporal_projection = None
         self._phonology_projection = None
-    
+
     @property
     def visual_encoder(self):
         """Lazy initialize visual encoder (RetinalEncoder)."""
@@ -533,9 +533,9 @@ class PhonologyTaskLoader:
             self._visual_encoder = RetinalEncoder(visual_config)
             self._visual_encoder.to(self.device)
             print(f"[OK] Initialized RetinalEncoder: 784 -> {self.config.output_size}")
-        
+
         return self._visual_encoder
-    
+
     @property
     def mnist_dataset(self):
         """Lazy load MNIST dataset."""
@@ -601,7 +601,7 @@ class PhonologyTaskLoader:
                 self._phonology_dataset = None
 
         return self._phonology_dataset
-    
+
     @property
     def temporal_projection(self):
         """Lazy initialize temporal projection layer."""
@@ -611,13 +611,13 @@ class PhonologyTaskLoader:
                 input_size = self.temporal_dataset.config.n_symbols
             else:
                 input_size = 20  # Fallback
-                
+
             self._temporal_projection = nn.Linear(input_size, self.config.output_size, bias=False)
             nn.init.sparse_(self._temporal_projection.weight, sparsity=0.8)
             self._temporal_projection.to(self.device)
             print(f"[OK] Initialized temporal projection: {input_size} -> {self.config.output_size}")
         return self._temporal_projection
-    
+
     @property
     def phonology_projection(self):
         """Lazy initialize phonology projection layer."""
@@ -625,11 +625,11 @@ class PhonologyTaskLoader:
             # Get actual spectrogram dimensions from dataset if available
             if self.phonology_dataset is not None:
                 # Spectrogram is (n_freq_channels × n_time_steps)
-                input_size = (self.phonology_dataset.config.n_freq_channels * 
+                input_size = (self.phonology_dataset.config.n_freq_channels *
                              self.phonology_dataset.config.n_time_steps)
             else:
                 input_size = 40  # Fallback for feature-based encoding
-                
+
             self._phonology_projection = nn.Linear(input_size, self.config.output_size, bias=False)
             nn.init.sparse_(self._phonology_projection.weight, sparsity=0.7)
             self._phonology_projection.to(self.device)
@@ -694,13 +694,13 @@ class PhonologyTaskLoader:
             # Encode through RetinalEncoder
             # image shape: [1, 1, 28, 28] → squeeze to [28, 28]
             image = image.squeeze().to(self.device)  # [28, 28]
-            
+
             # RetinalEncoder expects [C, H, W] or [H, W]
             spikes, metadata = self.visual_encoder(image)  # Returns [n_timesteps, output_size]
-            
+
             # Take first timestep (or could use all timesteps for temporal coding)
             spikes = spikes[0, :]  # [output_size]
-            
+
             label = label.item()
 
         return {
@@ -712,7 +712,7 @@ class PhonologyTaskLoader:
 
     def _temporal_task(self) -> Dict[str, Any]:
         """Temporal sequence prediction task.
-        
+
         Returns A-B-C pattern for next-item prediction.
         """
         if self.temporal_dataset is None:
@@ -724,27 +724,27 @@ class PhonologyTaskLoader:
         else:
             # Generate sequence from dataset
             sequence, targets, pattern_type = self.temporal_dataset.generate_sequence()
-            
+
             # sequence shape: (sequence_length, n_symbols)
             spikes_raw = sequence[0].to(self.device)  # Take first item [n_symbols]
-            
+
             # Convert first target from one-hot to index
             target = torch.argmax(targets[0]).item()
-        
+
         # Project to output size
         spikes = self.temporal_projection(spikes_raw)
         spikes = torch.sigmoid(spikes) > 0.5  # Threshold to binary spikes
-        
+
         return {
             'input': spikes,
             'n_timesteps': self.config.n_timesteps,
             'target': target,
             'task_type': 'temporal',
         }
-    
+
     def _phonology_task(self) -> Dict[str, Any]:
         """Phonological discrimination task.
-        
+
         Returns phoneme pair for categorical perception.
         """
         if self.phonology_dataset is None:
@@ -755,19 +755,19 @@ class PhonologyTaskLoader:
         else:
             # Generate sample from dataset
             from thalia.datasets import PhonemeCategory
-            
+
             # Use simple voiced/voiceless contrast
             contrast = (PhonemeCategory.P, PhonemeCategory.B)
             same = torch.randint(0, 2, (1,), device=self.device).item() == 1
             phoneme1, phoneme2, is_same = self.phonology_dataset.generate_discrimination_pair(contrast, same)
-            
+
             # Use first phoneme features (flatten spectrogram)
             spikes_raw = phoneme1.flatten()
-        
+
         # Project to output size
         spikes = self.phonology_projection(spikes_raw)
         spikes = torch.sigmoid(spikes) > 0.5  # Threshold to binary spikes
-        
+
         return {
             'input': spikes,
             'n_timesteps': self.config.n_timesteps,
@@ -777,23 +777,23 @@ class PhonologyTaskLoader:
 
     def _gaze_following_task(self) -> Dict[str, Any]:
         """Gaze following task (social attention).
-        
+
         Returns: Visual scene with gaze direction cue.
         """
         # Simple implementation: Random visual pattern with attention cue
         # In full implementation, would use actual gaze following dataset
-        
+
         # Generate random "visual scene"
         scene = torch.rand(28, 28, device=self.device)
-        
+
         # Encode through visual pathway
         spikes, _ = self.visual_encoder(scene)
         spikes = spikes[0, :]  # Take first timestep
-        
+
         # Target is gaze-attended region (simplified: just a location)
         target_x = torch.randint(0, 28, (1,), device=self.device).item()
         target_y = torch.randint(0, 28, (1,), device=self.device).item()
-        
+
         return {
             'input': spikes,
             'n_timesteps': self.config.n_timesteps,
@@ -907,4 +907,3 @@ def create_phonology_loader(
         PhonologyTaskLoader instance
     """
     return PhonologyTaskLoader(config, device, output_size)
-

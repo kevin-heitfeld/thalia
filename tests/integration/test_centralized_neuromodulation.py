@@ -10,7 +10,6 @@ Tests the interaction of all three systems working together in Brain context:
 """
 
 import pytest
-import torch
 
 from thalia.core.vta import VTADopamineSystem, VTAConfig
 from thalia.core.locus_coeruleus import LocusCoeruleusSystem, LocusCoeruleusConfig
@@ -252,12 +251,12 @@ class TestCentralizedNeuromodulationIntegration:
         # Note: ACh response to PE is gradual, may need explicit trigger
         for _ in range(10):
             nb.update(dt_ms=1.0, prediction_error=1.5)  # Very high PE → encoding
-        
+
         # If not in encoding mode, use trigger_attention to force it
         if not nb.is_encoding_mode():
             nb.trigger_attention(magnitude=1.0)
             nb.update(dt_ms=1.0, prediction_error=1.5)
-        
+
         assert nb.is_encoding_mode()
 
         vta.deliver_reward(external_reward=1.0, expected_value=0.0)

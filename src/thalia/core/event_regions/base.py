@@ -158,7 +158,7 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
         Subclasses should implement exponential decay:
         membrane *= exp(-dt / tau)
         """
-        pass
+        ...
 
     def _process_spikes(
         self,
@@ -280,15 +280,15 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
 
     def _get_theta_modulation(self) -> tuple[float, float]:
         """Compute encoding/retrieval modulation from theta oscillator phase.
-        
+
         Brain broadcasts oscillator phases to all regions via set_oscillator_phases().
         This method retrieves the theta phase and computes modulation values.
-        
+
         Returns:
             (encoding_mod, retrieval_mod) where:
             - encoding_mod: high at theta trough (0°), low at peak (180°)
             - retrieval_mod: low at theta trough, high at theta peak
-        
+
         Biological rationale:
         - Theta trough: DG→CA3 strong (encoding), CA3 recurrence weak
         - Theta peak: DG→CA3 weak, CA3 recurrence strong (retrieval)
@@ -298,15 +298,15 @@ class EventDrivenRegionBase(RegionInterface, nn.Module):
             theta_phase = self.impl.state._oscillator_phases.get('theta', 0.0)
         else:
             theta_phase = 0.0
-        
+
         import math
         # Encoding: max at trough (phase=0), min at peak (phase=π)
         # Use cosine: (1 + cos(θ))/2 maps [0, 2π] → [0, 1] with max at θ=0
         encoding_mod = 0.5 * (1.0 + math.cos(theta_phase))
-        
+
         # Retrieval: inverse of encoding (max at peak)
         retrieval_mod = 1.0 - encoding_mod
-        
+
         return encoding_mod, retrieval_mod
 
     def get_state(self) -> Dict[str, Any]:

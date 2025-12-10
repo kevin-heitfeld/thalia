@@ -45,6 +45,7 @@ from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import BrainRegion, LearningRule
 from thalia.regions.theta_dynamics import FeedforwardInhibition
+from thalia.memory.replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, TrisynapticConfig, TrisynapticState
 
 
@@ -239,7 +240,6 @@ class TrisynapticHippocampus(DiagnosticsMixin, BrainRegion):
             # Replay engine for sequence replay (lazy import to avoid circular dependency)
             # NOTE: ReplayEngine receives timing via replay() parameters (gamma_phase, theta_slot)
             # from hippocampus, which gets them from brain's centralized OscillatorManager
-            from thalia.memory.replay_engine import ReplayEngine, ReplayConfig, ReplayMode
             replay_config = ReplayConfig(
                 compression_factor=5.0,
                 n_slots=config.gamma_n_slots,

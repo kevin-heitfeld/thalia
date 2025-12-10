@@ -14,15 +14,15 @@ from dataclasses import dataclass, field
 from typing import Optional, List, TYPE_CHECKING
 from enum import Enum
 
-if TYPE_CHECKING:
-    from thalia.core.oscillator import OscillatorCoupling
-
 # Import region configs from canonical locations
 from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
 from thalia.regions.hippocampus.config import TrisynapticConfig
 from thalia.regions.striatum.config import StriatumConfig
 from thalia.regions.prefrontal import PrefrontalConfig
 from thalia.regions.cerebellum import CerebellumConfig
+
+if TYPE_CHECKING:
+    from thalia.core.oscillator import OscillatorCoupling
 
 
 class RegionType(Enum):
@@ -197,11 +197,11 @@ class BrainConfig:
 
     # Execution mode
     parallel: bool = False
-    
+
     # Phase 2: Model-based planning
     use_model_based_planning: bool = True
     """Enable mental simulation for action selection (Phase 2).
-    
+
     When True:
         - select_action() uses MentalSimulationCoordinator for tree search
         - deliver_reward() triggers DynaPlanner background planning

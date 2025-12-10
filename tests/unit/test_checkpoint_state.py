@@ -57,11 +57,10 @@ class TestStriatumStateRoundtrip:
         # Run some forward passes to build up state (ADR-005: 1D tensors)
         input_spikes = (torch.rand(32) > 0.8).float()
         for _ in range(10):
-            output = striatum1.forward(input_spikes)
+            striatum1.forward(input_spikes)
 
         # Simulate action selection and reward
-        action_result = striatum1.finalize_action(explore=False)
-        selected_action = action_result["selected_action"]
+        striatum1.finalize_action(explore=False)
         striatum1.deliver_reward(reward=1.0)
 
         # Get state after activity

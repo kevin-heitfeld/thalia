@@ -47,7 +47,7 @@ class Goal:
     Goals can have subgoals (hierarchical decomposition).
     Goals can have policies (how to achieve them - options).
     Goals have value (how much they're worth).
-    
+
     This is a DATA STRUCTURE for coordination, not a learned model.
     No backpropagation involved.
     """
@@ -95,7 +95,7 @@ class Goal:
         Compute total value including subgoals.
 
         Value propagates up: Parent value = intrinsic + sum(subgoal values)
-        
+
         This is pure computation - no learning involved.
         """
         if len(self.subgoals) == 0:
@@ -159,7 +159,7 @@ class GoalHierarchyManager:
     3. Decompose goals into subgoals (goal elaboration)
     4. Track progress and completion
     5. Learn and reuse options (temporal abstraction)
-    
+
     This is a COORDINATION system - no backprop, no global learning.
     Uses existing region mechanisms (PFC working memory, striatum values).
     """
@@ -256,7 +256,7 @@ class GoalHierarchyManager:
 
         Returns:
             subgoals: List of subgoals to achieve
-            
+
         Note:
             This is task-specific and would be learned or programmed.
             For now, returns existing subgoals (set manually).
@@ -301,7 +301,7 @@ class GoalHierarchyManager:
                 if g.total_value < min_value:
                     min_value = g.total_value
                     min_idx = i
-            
+
             # Pause it
             paused = self.active_goals.pop(min_idx)
             paused.status = GoalStatus.PAUSED
@@ -334,7 +334,7 @@ class GoalHierarchyManager:
 
         If we've achieved a goal many times with same policy,
         cache it for fast reuse (Hebbian-like caching).
-        
+
         No backprop - just storing successful patterns.
 
         Args:
@@ -344,7 +344,7 @@ class GoalHierarchyManager:
         """
         if not self.config.enable_option_learning:
             return
-            
+
         if success_rate > self.config.option_discovery_threshold:
             option = Goal(
                 goal_id=self.next_goal_id,
@@ -358,17 +358,17 @@ class GoalHierarchyManager:
             )
             self.next_goal_id += 1
             self.options[option.name] = option
-            
+
     def record_option_attempt(self, option_name: str, success: bool):
         """Record success/failure of option execution."""
         if option_name not in self.option_attempt_counts:
             self.option_attempt_counts[option_name] = 0
             self.option_success_counts[option_name] = 0
-            
+
         self.option_attempt_counts[option_name] += 1
         if success:
             self.option_success_counts[option_name] += 1
-            
+
     def get_option_success_rate(self, option_name: str) -> float:
         """Get success rate for an option."""
         if option_name not in self.option_attempt_counts:
@@ -424,7 +424,7 @@ class HyperbolicDiscounter:
         - Marshmallow test failures under stress
         - PFC damage increases temporal discounting
         - Cognitive load reduces self-control
-        
+
     Biological Note:
         - No backprop - k adaptation uses simple delta rule (local learning)
         - Context modulation is pure computation (no learning)
@@ -505,7 +505,7 @@ class HyperbolicDiscounter:
         If chose delayed reward and it was good → decrease k (more patient)
         If chose immediate and regretted → decrease k
         If chose delayed and regretted → increase k (more impulsive)
-        
+
         Args:
             chose_delayed: Whether delayed option was chosen
             immediate_value: Value of immediate option

@@ -179,7 +179,7 @@ def test_sensorimotor_to_phonology_pipeline(
     pbar_sensorimotor.close()
     curriculum_trainer.callbacks.clear()  # Clear callbacks for next stage
 
-    print(f"[OK] Stage -0.5 completed")
+    print("[OK] Stage -0.5 completed")
     print(f"   Steps: {result_sensorimotor.total_steps}")
     print(f"   Success: {result_sensorimotor.success}")
 
@@ -286,7 +286,7 @@ def test_sensorimotor_to_phonology_pipeline(
     pbar_phonology.close()
     curriculum_trainer.callbacks.clear()  # Clear callbacks for next stage
 
-    print(f"[OK] Stage 0 completed")
+    print("[OK] Stage 0 completed")
     print(f"   Steps: {result_phonology.total_steps}")
     print(f"   Success: {result_phonology.success}")
 

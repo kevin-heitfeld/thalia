@@ -11,7 +11,6 @@ Tests cover:
 """
 
 import pytest
-import torch
 
 from thalia.core.locus_coeruleus import LocusCoeruleusSystem, LocusCoeruleusConfig
 

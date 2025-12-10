@@ -87,7 +87,7 @@ class PredictiveCortexConfig(LayeredCortexConfig):
     use_precision_weighting: bool = True
     initial_precision: float = 1.0
     precision_learning_rate: float = 0.001
-    
+
     # Note: Gamma attention inherited from LayeredCortex base class
     # Configure via use_gamma_attention, gamma_attention_freq_hz, gamma_attention_width
 
@@ -145,7 +145,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
     4. L5 weights update based on local error
 
     All learning is LOCAL to each layer!
-    
+
     Mixins Provide:
     ---------------
     From DiagnosticsMixin:
@@ -153,15 +153,15 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         - get_firing_rate(spikes) → float
         - check_weight_health(weights, name) → WeightHealth
         - detect_runaway_excitation(spikes) → bool
-    
+
     From BrainRegion (abstract base):
         - forward(input, **kwargs) → Tensor [delegates to cortex]
         - reset_state() → None [delegates to cortex]
         - get_diagnostics() → Dict
-    
+
     Note: PredictiveCortex uses composition (has-a LayeredCortex)
           rather than inheritance, so many methods delegate.
-    
+
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
         docs/patterns/state-management.md for composition pattern
@@ -290,7 +290,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
     def _initialize_weights(self) -> Optional[torch.Tensor]:
         """Weights are managed by internal LayeredCortex (initialized after super().__init__).
-        
+
         Returns None to signal lazy initialization - actual weights are set
         in __init__ after creating self.cortex.
         """
@@ -298,7 +298,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
     def _create_neurons(self) -> Optional[Any]:
         """Neurons are managed by internal LayeredCortex (initialized after super().__init__).
-        
+
         Returns None to signal lazy initialization - actual neurons are set
         in __init__ after creating self.cortex.
         """
@@ -312,7 +312,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             self.prediction_layer.reset_state()
 
         # Note: Gamma attention reset handled by base cortex.reset_state()
-        
+
         # Sync state from inner cortex (don't leave as None!)
         # The inner LayeredCortex initializes proper zero tensors
         self.state = PredictiveCortexState(
@@ -337,11 +337,11 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         coupled_amplitudes: Optional[Dict[str, float]] = None,
     ) -> None:
         """Set oscillator phases and pass through to inner LayeredCortex.
-        
+
         PredictiveCortex delegates oscillator handling to its inner LayeredCortex,
         which implements alpha-based attention gating. This ensures that alpha
         suppression works correctly in predictive mode.
-        
+
         Args:
             phases: Dict mapping oscillator name to phase [0, 2π)
             signals: Dict mapping oscillator name to signal [-1, 1]
@@ -350,7 +350,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         """
         # Pass through to inner cortex (where alpha gating is implemented)
         self.cortex.set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
-        
+
         # Also store in our own state for potential use
         # (though we delegate processing to inner cortex)
         if not hasattr(self.state, '_oscillator_phases'):
@@ -366,34 +366,34 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         sparsity: float = 0.1,
     ) -> None:
         """Add neurons to predictive cortex by delegating to internal LayeredCortex.
-        
+
         This expands all layers (L4, L2/3, L5) proportionally while also
         updating the prediction layer and attention modules.
-        
+
         Args:
             n_new: Number of neurons to add to total cortex size
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
         from dataclasses import replace
-        
+
         # Delegate to internal LayeredCortex (it handles all layer expansion)
         self.cortex.add_neurons(n_new, initialization, sparsity)
-        
+
         # Update our cached layer sizes
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
-        
+
         # Update output size (note: _output_size initialized in __init__)
         self._output_size = self.l23_size + self.l5_size
-        
+
         # Update parent config
         self.config = replace(
             self.config,
             n_output=self._output_size
         )
-        
+
         # Recreate prediction layer with new sizes
         if self.predictive_config.prediction_enabled:
             self.prediction_layer = PredictiveCodingLayer(
@@ -410,7 +410,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
                     device=self.predictive_config.device,
                 )
             )
-        
+
         # Note: Gamma attention resizing handled by base LayeredCortex.add_neurons()
 
     def forward(
@@ -430,7 +430,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
         Returns:
             output: Output spikes (L2/3 + L5) [l23_size + l5_size] (1D)
-        
+
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
@@ -512,22 +512,22 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         # =====================================================================
         # Note: Inner cortex applies gamma-phase gating to L2/3 if enabled
         # We can access the gating weights from cortex.state.gamma_attention_gate
-        
+
         # =====================================================================
         # STEP 4: Precision modulation (gamma-gate → prediction weights)
         # =====================================================================
-        if (self.precision_modulator is not None and 
+        if (self.precision_modulator is not None and
             hasattr(self.cortex.state, 'gamma_attention_gate') and
             self.cortex.state.gamma_attention_gate is not None):
             # Use gamma-phase gating from base cortex to modulate prediction trust
             avg_gate = float(self.cortex.state.gamma_attention_gate.mean().item())
-            
+
             # Modulate precision based on average gating strength
             if self.prediction_layer is not None:
                 precision_scale = avg_gate
                 with torch.no_grad():
                     self.prediction_layer.log_precision.data = (
-                        self.prediction_layer.log_precision.data + 
+                        self.prediction_layer.log_precision.data +
                         0.01 * torch.log(torch.tensor(precision_scale + 1e-6, device=self.prediction_layer.log_precision.device))
                     )
 
@@ -649,7 +649,7 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             state_dict["prediction_state"] = None
 
         # Note: Gamma attention state saved by base LayeredCortex
-        
+
         # Update config with PredictiveCortex-specific parameters
         state_dict["config"]["prediction_enabled"] = self.predictive_config.prediction_enabled
         # Note: use_gamma_attention is a LayeredCortex config parameter

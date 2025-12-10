@@ -154,12 +154,12 @@ class SensoryPathway(BaseNeuralPathway):
                     Brain processes sequentially: spikes[t] is 1D [output_size]
             metadata: Dictionary with encoding metadata
         """
-        pass
+        ...
 
     @abstractmethod
     def get_modality(self) -> Modality:
         """Return the modality type."""
-        pass
+        ...
 
     def reset_state(self) -> None:
         """
@@ -168,7 +168,7 @@ class SensoryPathway(BaseNeuralPathway):
         Default implementation does nothing. Override if pathway
         has temporal state (adaptation, traces, etc.).
         """
-        pass
+        pass  # Default does nothing - override in subclasses with temporal state
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """
@@ -328,7 +328,8 @@ class RetinalEncoder(nn.Module):
         # This is a legitimate exception to ADR-005 (PyTorch API requirement)
         image = image.unsqueeze(0)  # [C, H, W] → [1, C, H, W]
 
-        if reset_adaptation:
+        # Initialize adaptation state on first call
+        if not hasattr(self, 'adaptation_state') or reset_adaptation:
             self.adaptation_state = torch.zeros(
                 1, image.shape[1], image.shape[2], image.shape[3],
                 device=image.device
@@ -369,7 +370,7 @@ class RetinalEncoder(nn.Module):
         # nn.Linear requires [batch, features], so temporarily add batch dim
         combined = combined.unsqueeze(0)  # [2*features] → [1, 2*features]
         ganglion_activity = self.spatial_pool(combined).squeeze(0)  # [1, output_size] → [output_size]
-        
+
         # ADR-005: ganglion_activity is now 1D [output_size]
         assert ganglion_activity.dim() == 1, f"Expected 1D, got {ganglion_activity.shape}"
 
@@ -463,10 +464,10 @@ class VisualPathway(SensoryPathway):
         **kwargs,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """Encode image to temporal spike train (standard PyTorch, ADR-007).
-        
+
         Args:
             raw_input: Image tensor [C, H, W] or [H, W]
-            
+
         Returns:
             spikes: Temporal spike train [n_timesteps, output_size] (2D bool)
             metadata: Encoding metadata
@@ -606,7 +607,8 @@ class CochlearEncoder(nn.Module):
             f"got shape {audio.shape}"
         )
 
-        if reset_adaptation:
+        # Initialize adaptation state on first call
+        if not hasattr(self, 'adaptation_state') or reset_adaptation:
             self.adaptation_state = torch.zeros(self.config.n_filters, device=audio.device)
 
         # 1. Compute spectrogram (like basilar membrane frequency decomposition)
@@ -650,33 +652,33 @@ class CochlearEncoder(nn.Module):
     ) -> torch.Tensor:
         """
         Convert auditory activity to temporal spike train using latency coding.
-        
+
         Latency coding: Information encoded in spike timing
         - High activity → early spike (t=0)
         - Low activity → late spike (t=n_timesteps-1)
         """
         n_neurons = activity.shape[0] if activity.dim() == 1 else activity.shape[-1]
         n_timesteps = self.config.n_timesteps
-        
+
         # Flatten if needed
         if activity.dim() > 1:
             activity = activity.flatten()
-        
+
         spikes = torch.zeros(n_timesteps, n_neurons, dtype=torch.bool, device=activity.device)
-        
+
         # Normalize activity to [0, 1]
         activity_norm = (activity - activity.min()) / (activity.max() - activity.min() + 1e-6)
-        
+
         # Latency coding: map activity to spike time
         latencies = ((1.0 - activity_norm) * (n_timesteps - 1)).long()
-        
+
         # Generate spikes at computed latencies
         threshold = self.config.sparsity
         for n in range(n_neurons):
             if activity_norm[n].item() > threshold:
                 t = int(latencies[n].item())
                 spikes[t, n] = True
-        
+
         return spikes  # [n_timesteps, output_size]
 
 
@@ -702,10 +704,10 @@ class AuditoryPathway(SensoryPathway):
         **kwargs,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """Encode audio to temporal spike train.
-        
+
         Args:
             raw_input: Audio waveform [samples] or [1, samples]
-            
+
         Returns:
             spikes: Temporal spike train [n_timesteps, output_size] (2D bool)
             metadata: Encoding metadata
@@ -747,7 +749,7 @@ class LanguagePathway(SensoryPathway):
     1. Token embeddings encode semantic information
     2. Temporal spikes encode embedding dimensions via latency
     3. Optional position encoding can be added
-    
+
     Input: Single token ID (scalar or [1])
     Output: Temporal spike train [n_timesteps, output_size]
     """
@@ -761,7 +763,7 @@ class LanguagePathway(SensoryPathway):
             config.vocab_size,
             config.output_size,
         )
-        
+
         # Optional position encoding
         if config.use_position_encoding:
             # Store position embeddings
@@ -797,10 +799,10 @@ class LanguagePathway(SensoryPathway):
             token_id = raw_input[:1]  # Take first token if multiple provided
         else:
             token_id = raw_input.flatten()[:1]  # Flatten and take first
-        
+
         # Get token embedding [1, output_size] (nn.Embedding output)
         token_emb = self.embedding(token_id)  # [1, output_size]
-        
+
         # Add position encoding if enabled
         if self.position_embedding is not None:
             if position_ids is None:
@@ -811,19 +813,19 @@ class LanguagePathway(SensoryPathway):
                 position_ids = position_ids[:1]  # Take first position
             else:
                 position_ids = position_ids.flatten()[:1]
-            
+
             pos_emb = self.position_embedding(position_ids)  # [1, output_size]
             combined = token_emb + pos_emb
         else:
             combined = token_emb
-        
+
         # Extract activity [output_size] (ADR-005: 1D output)
         activity = combined.squeeze(0)  # [1, output_size] → [output_size]
         assert activity.dim() == 1, f"Expected 1D activity, got {activity.shape}"
-        
+
         # Generate temporal spikes via latency coding
         spikes = self._generate_temporal_spikes(activity)
-        
+
         metadata = {
             "modality": "language",
             "token_id": token_id.item(),
@@ -838,33 +840,33 @@ class LanguagePathway(SensoryPathway):
     ) -> torch.Tensor:
         """
         Convert token embedding to temporal spike train using latency coding.
-        
+
         Latency coding: Information encoded in spike timing
         - High embedding value → early spike (t=0)
         - Low embedding value → late spike (t=n_timesteps-1)
         """
         n_neurons = activity.shape[0] if activity.dim() == 1 else activity.shape[-1]
         n_timesteps = self.config.n_timesteps
-        
+
         # Flatten if needed
         if activity.dim() > 1:
             activity = activity.flatten()
-        
+
         spikes = torch.zeros(n_timesteps, n_neurons, dtype=torch.bool, device=activity.device)
-        
+
         # Normalize activity to [0, 1]
         activity_norm = (activity - activity.min()) / (activity.max() - activity.min() + 1e-6)
-        
+
         # Latency coding: map activity to spike time
         latencies = ((1.0 - activity_norm) * (n_timesteps - 1)).long()
-        
+
         # Generate spikes at computed latencies
         threshold = self.config.sparsity
         for n in range(n_neurons):
             if activity_norm[n].item() > threshold:
                 t = int(latencies[n].item())
                 spikes[t, n] = True
-        
+
         return spikes  # [n_timesteps, output_size]
 
     def get_modality(self) -> Modality:
@@ -1013,11 +1015,14 @@ def create_language_pathway(
 
 
 def create_multimodal_pathway(
-    modalities: List[str] = ["vision", "audition", "language"],
+    modalities: Optional[List[str]] = None,
     output_size: int = 256,
     device: str = "cpu",
 ) -> MultimodalPathway:
     """Create a multimodal pathway combining specified modalities."""
+    if modalities is None:
+        modalities = ["vision", "audition", "language"]
+
     pathways = {}
 
     if "vision" in modalities:

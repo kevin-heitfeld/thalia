@@ -174,10 +174,10 @@ def conductance_lif_config():
 @pytest.fixture
 def dendritic_config():
     """DendriticNeuron configuration for testing."""
-    from thalia.core.dendritic import DendriticNeuronConfig, DendriticBranchConfig
+    from thalia.core.dendritic import DendriticBranchConfig
     from thalia.core.neuron import ConductanceLIFConfig
     from dataclasses import dataclass, field
-    
+
     @dataclass
     class Config:
         n_branches: int = 5
