@@ -39,13 +39,14 @@ from .brain_config import (
     BrainConfig,
     RegionSizes,
     CortexType,
-    HippocampusConfig,
-    StriatumConfig,
-    PFCConfig,
-    CerebellumConfig,
 )
-# Re-export LayeredCortexConfig as the canonical cortex config
+# Re-export region configs from canonical locations
 from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
+from thalia.regions.hippocampus.config import TrisynapticConfig
+from thalia.regions.striatum.config import StriatumConfig
+from thalia.regions.prefrontal import PrefrontalConfig
+from thalia.regions.cerebellum import CerebellumConfig
 from .language_config import (
     LanguageConfig,
     EncodingConfig,
@@ -76,11 +77,13 @@ __all__ = [
     # Brain
     "BrainConfig",
     "RegionSizes",
-    "LayeredCortexConfig",  # Canonical cortex config (replaces CortexConfig)
     "CortexType",
-    "HippocampusConfig",
+    # Region configs (canonical locations)
+    "LayeredCortexConfig",
+    "PredictiveCortexConfig",
+    "TrisynapticConfig",
     "StriatumConfig",
-    "PFCConfig",
+    "PrefrontalConfig",
     "CerebellumConfig",
     # Language
     "LanguageConfig",

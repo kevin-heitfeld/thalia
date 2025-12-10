@@ -10,15 +10,19 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import Optional, List, TYPE_CHECKING
 from enum import Enum
 
 if TYPE_CHECKING:
-    from .global_config import GlobalConfig
+    from thalia.core.oscillator import OscillatorCoupling
 
-# Import cortex configs from the canonical location
-from thalia.regions.cortex.config import LayeredCortexConfig
+# Import region configs from canonical locations
+from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
+from thalia.regions.hippocampus.config import TrisynapticConfig
+from thalia.regions.striatum.config import StriatumConfig
+from thalia.regions.prefrontal import PrefrontalConfig
+from thalia.regions.cerebellum import CerebellumConfig
 
 
 class RegionType(Enum):
@@ -32,7 +36,7 @@ class RegionType(Enum):
 
 class CortexType(Enum):
     """Types of cortex implementation.
-    
+
     LAYERED: Standard feedforward layered cortex (L4 → L2/3 → L5)
     PREDICTIVE: Layered cortex with predictive coding (local error signals)
     """
@@ -117,117 +121,23 @@ class RegionSizes:
         return "\n".join(lines)
 
 
-# NOTE: CortexConfig has been removed - use LayeredCortexConfig from thalia.regions.cortex
-# for all cortex configuration. This is the single source of truth for cortex params.
+# NOTE: Region-specific configs are now imported from canonical locations.
+# Each region module (hippocampus, striatum, prefrontal, cerebellum) defines
+# its own complete configuration. This eliminates duplication and ensures
+# consistency between config definitions and actual usage.
 
 
-@dataclass
-class HippocampusConfig:
-    """Configuration specific to trisynaptic hippocampus."""
-
-    # DG sparsity (VERY sparse for pattern separation)
-    dg_sparsity: float = 0.02
-    dg_inhibition: float = 5.0
-
-    # CA3 recurrent dynamics
-    ca3_recurrent_strength: float = 0.4
-    ca3_sparsity: float = 0.10
-    ca3_learning_rate: float = 0.1
-
-    # CA1 output
-    ca1_sparsity: float = 0.15
-
-    # NMDA coincidence detection
-    nmda_tau: float = 50.0
-    nmda_threshold: float = 0.4
-    nmda_steepness: float = 12.0
-    ampa_ratio: float = 0.05
-
-    # Learning rates
-    learning_rate: float = 0.2
-    ec_ca1_learning_rate: float = 0.5
-    stdp_tau_plus: float = 20.0
-    stdp_tau_minus: float = 20.0
-
-    # Feedforward inhibition
-    ffi_threshold: float = 0.3
-    ffi_strength: float = 0.8
-    ffi_tau: float = 5.0
-
-
-@dataclass
-class StriatumConfig:
-    """Configuration specific to striatum (action selection)."""
-
-    # Population coding
-    population_coding: bool = True
-    neurons_per_action: int = 10
-
-    # D1/D2 pathways
-    d1_d2_enabled: bool = True
-    d1_fraction: float = 0.5
-    d1_lr_scale: float = 1.0
-    d2_lr_scale: float = 1.0
-
-    # Three-factor learning
-    eligibility_tau_ms: float = 1000.0
-    learning_rate: float = 0.005
-
-    # RPE normalization
-    normalize_rpe: bool = True
-    rpe_avg_tau: float = 0.9
-    rpe_clip: float = 2.0
-
-    # Lateral inhibition
-    lateral_inhibition: bool = True
-    inhibition_strength: float = 2.0
-
-    # Homeostasis
-    homeostatic_enabled: bool = True
-    homeostatic_rate: float = 0.1
-
-    # Action selection
-    softmax_temperature: float = 1.0
-
-
-@dataclass
-class PFCConfig:
-    """Configuration specific to prefrontal cortex."""
-
-    # Working memory
-    wm_decay: float = 0.95
-    wm_capacity: int = 7
-
-    # Attention
-    attention_gain: float = 2.0
-
-    # Sparsity
-    sparsity: float = 0.15
-
-
-@dataclass
-class CerebellumConfig:
-    """Configuration specific to cerebellum."""
-
-    # Granule cell expansion
-    gc_expansion: float = 10.0
-    gc_sparsity: float = 0.05
-
-    # Purkinje cell learning
-    purkinje_lr: float = 0.1
-
-    # Error signal
-    climbing_fiber_strength: float = 1.0
-
-
-def _default_cortex_config() -> LayeredCortexConfig:
+def _default_cortex_config() -> PredictiveCortexConfig:
     """Create default cortex config with placeholder sizes.
-    
+
     Note: n_input and n_output are set to 0 here because EventDrivenBrain
     will override them based on RegionSizes. The actual layer sizes are
     computed from RegionSizes.input_size and RegionSizes.cortex_size.
+
+    Uses PredictiveCortexConfig by default (enables local error-based learning).
+    For simpler feedforward processing, use LayeredCortexConfig explicitly.
     """
-    return LayeredCortexConfig(n_input=0, n_output=0)
+    return PredictiveCortexConfig(n_input=0, n_output=0)
 
 
 @dataclass
@@ -236,7 +146,7 @@ class BrainConfig:
 
     Combines region sizes with region-specific parameters.
     Global parameters come from GlobalConfig.
-    
+
     Note: cortex uses LayeredCortexConfig from thalia.regions.cortex.
     The n_input/n_output in cortex config are ignored - sizes come from
     RegionSizes.input_size and RegionSizes.cortex_size instead.
@@ -246,26 +156,26 @@ class BrainConfig:
     sizes: RegionSizes = field(default_factory=RegionSizes)
 
     # Region-specific configs
-    # Cortex: uses LayeredCortexConfig (or PredictiveCortexConfig for predictive mode)
+    # Cortex: uses PredictiveCortexConfig by default (local error-based learning)
     # n_input/n_output are placeholders - actual sizes come from RegionSizes
-    cortex: LayeredCortexConfig = field(default_factory=_default_cortex_config)
-    hippocampus: HippocampusConfig = field(default_factory=HippocampusConfig)
+    cortex: PredictiveCortexConfig = field(default_factory=_default_cortex_config)
+    hippocampus: TrisynapticConfig = field(default_factory=TrisynapticConfig)
     striatum: StriatumConfig = field(default_factory=StriatumConfig)
-    pfc: PFCConfig = field(default_factory=PFCConfig)
+    pfc: PrefrontalConfig = field(default_factory=PrefrontalConfig)
     cerebellum: CerebellumConfig = field(default_factory=CerebellumConfig)
 
     # Region type selection (allows swapping implementations)
-    cortex_type: CortexType = CortexType.LAYERED
-    """Which cortex implementation to use. PREDICTIVE enables local error learning."""
+    cortex_type: CortexType = CortexType.PREDICTIVE
+    """Which cortex implementation to use. PREDICTIVE (default) enables local error learning, LAYERED for simpler feedforward."""
 
     # Oscillator configuration
     oscillator_couplings: Optional[List[OscillatorCoupling]] = None
     """Custom cross-frequency couplings (e.g., delta-theta, alpha-gamma).
-    
+
     If None, uses default theta-gamma coupling (coupling_strength=0.8).
     If empty list [], disables all coupling.
     If provided, replaces defaults with custom couplings.
-    
+
     Example:
         ```python
         config = BrainConfig(
@@ -276,7 +186,7 @@ class BrainConfig:
             ]
         )
         ```
-    
+
     See thalia.core.oscillator.OscillatorCoupling for full parameters.
     """
 

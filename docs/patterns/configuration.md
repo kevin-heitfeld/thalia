@@ -1,7 +1,8 @@
 # Configuration Guide
 
-**Date**: December 7, 2025  
+**Date**: December 10, 2025
 **Purpose**: Understand Thalia's configuration system and hierarchy
+**Status**: ✅ Clean - Duplicates removed, canonical locations established
 
 ---
 
@@ -13,27 +14,51 @@ Thalia uses a hierarchical configuration system with specialized config classes 
 - How configs inherit and compose
 - Best practices
 
+**Key Principle**: Each region config is defined in its own module (single source of truth). The central config system imports and re-exports these canonical configs.
+
 ---
 
 ## Config Hierarchy
 
 ```
 ThaliaConfig (top-level)
-├─ BrainConfig
-│  ├─ RegionConfig (base for all regions)
-│  │  ├─ StriatumConfig
-│  │  ├─ PrefrontalConfig  
-│  │  ├─ LayeredCortexConfig
-│  │  │  └─ PredictiveCortexConfig
-│  │  ├─ TrisynapticConfig
-│  │  └─ CerebellumConfig
-│  │
-│  └─ PathwayConfig (base for pathways)
-│     └─ SpikingPathwayConfig
+├─ GlobalConfig (device, vocab_size, dt_ms, theta_frequency_hz)
+├─ BrainConfig (sizes, timing, oscillator couplings)
+│  ├─ RegionSizes (input_size, cortex_size, hippocampus_size, pfc_size, n_actions)
+│  └─ Region Configs (imported from canonical locations):
+│     ├─ LayeredCortexConfig           → thalia.regions.cortex.config
+│     ├─ TrisynapticConfig (Hippo)     → thalia.regions.hippocampus.config
+│     ├─ StriatumConfig                → thalia.regions.striatum.config
+│     ├─ PrefrontalConfig (PFC)        → thalia.regions.prefrontal
+│     └─ CerebellumConfig              → thalia.regions.cerebellum
 │
-├─ LanguageConfig
-├─ TrainingConfig
-└─ RobustnessConfig
+├─ LanguageConfig (encoding, decoding, position)
+├─ TrainingConfig (learning rates, checkpointing, logging)
+└─ RobustnessConfig (E/I balance, divisive norm, intrinsic plasticity)
+```
+
+**✅ No Duplication**: Region configs are defined once in their respective modules and imported by the central config system.
+
+---
+
+## Recent Cleanup (Dec 2025)
+
+### What Was Fixed
+1. **Removed Duplicate Configs**: `StriatumConfig`, `PFCConfig`, `CerebellumConfig`, `HippocampusConfig` were duplicated in `brain_config.py` with incomplete parameter sets
+2. **Established Canonical Locations**: Each region config is now defined only in its own module
+3. **Fixed Imports**: Central config system now imports from canonical locations
+4. **Removed Unused Parameters**: VTA-related params (`rpe_avg_tau`, `rpe_clip`) removed from `StriatumConfig` (they belong in `VTAConfig`)
+
+### Migration Guide
+If you were importing region configs from `thalia.config`, nothing changes - they're still exported from the same place, just sourced from canonical locations:
+
+```python
+# Still works (recommended)
+from thalia.config import StriatumConfig, PrefrontalConfig
+
+# Also works (direct import from canonical location)
+from thalia.regions.striatum.config import StriatumConfig
+from thalia.regions.prefrontal import PrefrontalConfig
 ```
 
 ---
@@ -41,7 +66,7 @@ ThaliaConfig (top-level)
 ## Base Config Classes
 
 ### ThaliaConfig - Top Level
-**Purpose**: Global configuration for entire brain system  
+**Purpose**: Global configuration for entire brain system
 **File**: `src/thalia/config/thalia_config.py`
 
 **Key Parameters**:
@@ -52,7 +77,7 @@ class ThaliaConfig:
     device: str = "cpu"
     dt_ms: float = 1.0
     seed: Optional[int] = None
-    
+
     # Sub-configs
     brain: BrainConfig = field(default_factory=BrainConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
@@ -72,13 +97,71 @@ config = ThaliaConfig(
         enable_hippocampus=True,
     )
 )
-brain = Brain.from_thalia_config(config)
+---
+
+## Base Config Classes
+
+### GlobalConfig - Universal Parameters
+**Purpose**: Parameters that affect everything (device, timing, vocabulary)
+**File**: `src/thalia/config/global_config.py`
+
+**Key Parameters**:
+```python
+@dataclass
+class GlobalConfig(BaseConfig):
+    """Universal parameters shared across all modules."""
+    # Timing
+    dt_ms: float = 1.0                  # Simulation timestep
+    theta_frequency_hz: float = 8.0     # Theta oscillation (4-12 Hz)
+    gamma_frequency_hz: float = 40.0    # Gamma oscillation (30-100 Hz)
+
+    # Vocabulary
+    vocab_size: int = 50257             # Token vocabulary (GPT-2 default)
+
+    # Sparsity
+    default_sparsity: float = 0.05      # Default target sparsity
+
+    # Weight bounds
+    w_min: float = 0.0
+    w_max: float = 1.0
+```
+
+---
+
+### ThaliaConfig - Top Level
+**Purpose**: Global configuration for entire brain system
+**File**: `src/thalia/config/thalia_config.py`
+
+**Key Parameters**:
+```python
+@dataclass
+class ThaliaConfig:
+    """Top-level configuration for Thalia brain."""
+    # Sub-configs
+    global_: GlobalConfig = field(default_factory=GlobalConfig)
+    brain: BrainConfig = field(default_factory=BrainConfig)
+    language: LanguageConfig = field(default_factory=LanguageConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
+```
+
+**When to use**: Creating entire brain systems
+
+**Example**:
+```python
+config = ThaliaConfig(
+    global_=GlobalConfig(device="cuda", vocab_size=10000),
+    brain=BrainConfig(
+        sizes=RegionSizes(input_size=256, cortex_size=128),
+    )
+)
+brain = EventDrivenBrain.from_config(config)
 ```
 
 ---
 
 ### BrainConfig - Brain System Level
-**Purpose**: Configuration for multi-region brain architecture  
+**Purpose**: Configuration for multi-region brain architecture
 **File**: `src/thalia/config/brain_config.py`
 
 **Key Parameters**:
@@ -86,24 +169,31 @@ brain = Brain.from_thalia_config(config)
 @dataclass
 class BrainConfig:
     """Configuration for brain system with multiple regions."""
-    n_sensory: int = 256
-    n_motor: int = 64
-    
-    # Region toggles
-    enable_hippocampus: bool = True
-    enable_striatum: bool = True
-    enable_cerebellum: bool = False
-    
-    # Region-specific configs
-    striatum: StriatumConfig = field(default_factory=StriatumConfig)
+    # Region sizes
+    sizes: RegionSizes = field(default_factory=RegionSizes)
+
+    # Region-specific configs (imported from canonical locations)
+    cortex: LayeredCortexConfig = field(default_factory=LayeredCortexConfig)
     hippocampus: TrisynapticConfig = field(default_factory=TrisynapticConfig)
-    prefrontal: PrefrontalConfig = field(default_factory=PrefrontalConfig)
+    striatum: StriatumConfig = field(default_factory=StriatumConfig)
+    pfc: PrefrontalConfig = field(default_factory=PrefrontalConfig)
+    cerebellum: CerebellumConfig = field(default_factory=CerebellumConfig)
+
+    # Region type selection
+    cortex_type: CortexType = CortexType.LAYERED
+
+    # Timing (trial phases)
+    encoding_timesteps: int = 15
+    delay_timesteps: int = 10
+    test_timesteps: int = 15
 ```
+
+**Note**: All region configs are imported from their canonical locations, not defined here.
 
 ---
 
 ### RegionConfig - Base for All Regions
-**Purpose**: Minimal interface for all brain regions  
+**Purpose**: Minimal interface for all brain regions
 **File**: `src/thalia/regions/base.py`
 
 **Key Parameters**:
@@ -115,43 +205,62 @@ class RegionConfig:
     n_output: int = 64
     device: str = "cpu"
     dt_ms: float = 1.0
-    
+
     # Learning parameters
     learning_rate: float = 0.01
+    learning_rule: LearningRule = LearningRule.STDP
+
+    # Weight bounds
     w_min: float = 0.0
     w_max: float = 1.0
+
+    # Sparsity
+    sparsity: float = 0.1
 ```
 
 **All region configs inherit from this.**
 
 ---
 
-## Region-Specific Configs
+## Region-Specific Configs (Canonical Locations)
 
 ### StriatumConfig
-**Extends**: `RegionConfig`  
-**File**: `src/thalia/regions/striatum/config.py`
+**Extends**: `RegionConfig`
+**File**: `src/thalia/regions/striatum/config.py` ✅ (canonical)
 
-**Adds**:
+**Key Features**:
+- Three-factor learning (eligibility × dopamine)
+- D1/D2 opponent pathways (Go/No-Go)
+- Population coding (multiple neurons per action)
+- Adaptive exploration (UCB, uncertainty-driven)
+
+**Selected Parameters**:
 ```python
 @dataclass
 class StriatumConfig(RegionConfig):
     """Striatum-specific parameters."""
-    # D1/D2 pathway params
-    n_d1: Optional[int] = None
-    n_d2: Optional[int] = None
-    
-    # Dopamine modulation
-    dopamine_tau_ms: float = 100.0
-    dopamine_baseline: float = 0.2
-    
     # Eligibility traces
     eligibility_tau_ms: float = 1000.0
-    eligibility_decay: float = 0.95
-    
+
+    # Learning rates
+    learning_rate: float = 0.005
+    stdp_lr: float = 0.005
+
+    # Population coding
+    population_coding: bool = True
+    neurons_per_action: int = 10
+
+    # D1/D2 pathways
+    d1_lr_scale: float = 1.0
+    d2_lr_scale: float = 1.0
+
+    # Homeostasis
+    homeostatic_enabled: bool = True
+    homeostatic_rate: float = 0.1
+
     # Action selection
-    softmax_temperature: float = 1.0
-    exploration_noise: float = 0.1
+    softmax_temperature: float = 2.0
+    lateral_inhibition: bool = True
 ```
 
 **Usage**:
@@ -159,8 +268,8 @@ class StriatumConfig(RegionConfig):
 striatum_config = StriatumConfig(
     n_input=256,
     n_output=64,
-    dopamine_tau_ms=150.0,
     eligibility_tau_ms=800.0,
+    softmax_temperature=1.5,
 )
 striatum = Striatum(striatum_config)
 ```
@@ -168,35 +277,41 @@ striatum = Striatum(striatum_config)
 ---
 
 ### LayeredCortexConfig
-**Extends**: `RegionConfig`  
-**File**: `src/thalia/regions/cortex/layered_cortex.py`
+**Extends**: `RegionConfig`
+**File**: `src/thalia/regions/cortex/config.py` ✅ (canonical)
 
-**Adds**:
+**Key Features**:
+- L4→L2/3→L5 microcircuit
+- Feedforward inhibition (FFI)
+- STDP/BCM learning
+- Layer-specific sparsity
+
+**Selected Parameters**:
 ```python
 @dataclass
 class LayeredCortexConfig(RegionConfig):
     """Layered cortex with L4→L2/3→L5 microcircuit."""
-    # Layer sizes
-    l4_size: Optional[int] = None  # Auto: n_input
-    l23_size: Optional[int] = None  # Auto: n_output  
-    l5_size: Optional[int] = None  # Auto: n_output // 2
-    
     # Layer sparsity
     l4_sparsity: float = 0.1
     l23_sparsity: float = 0.15
     l5_sparsity: float = 0.1
-    
+
     # Plasticity
     stdp_lr: float = 0.01
-    stdp_a_plus: float = 0.01
-    stdp_a_minus: float = 0.012
+    bcm_lr: float = 0.001
+    stdp_tau_ms: float = 20.0
+    bcm_tau_theta_ms: float = 5000.0
+
+    # Inhibition
+    lateral_inhibition_enabled: bool = True
+    inhibition_strength: float = 2.0
 ```
 
 ---
 
 ### PredictiveCortexConfig
-**Extends**: `LayeredCortexConfig`  
-**File**: `src/thalia/regions/cortex/predictive_cortex.py`
+**Extends**: `LayeredCortexConfig`
+**File**: `src/thalia/regions/cortex/predictive_cortex.py` ✅ (canonical)
 
 **Adds**:
 ```python
@@ -208,46 +323,116 @@ class PredictiveCortexConfig(LayeredCortexConfig):
     prediction_tau_ms: float = 50.0
     error_tau_ms: float = 5.0
     prediction_learning_rate: float = 0.01
-    
+
     # Precision (attention)
     use_precision_weighting: bool = True
     initial_precision: float = 1.0
-    
-    # Attention
-    use_attention: bool = True
-    attention_type: AttentionType = AttentionType.WINNER_TAKE_ALL
-    n_attention_heads: int = 4
 ```
 
 **Inherits all LayeredCortexConfig parameters plus adds predictive coding.**
 
 ---
 
-### TrisynapticConfig
-**Extends**: `RegionConfig`  
-**File**: `src/thalia/regions/hippocampus/config.py`
+### TrisynapticConfig (Hippocampus)
+**Extends**: `RegionConfig`
+**File**: `src/thalia/regions/hippocampus/config.py` ✅ (canonical)
 
-**Adds**:
+**Key Features**:
+- DG→CA3→CA1 trisynaptic circuit
+- Pattern separation (DG expansion)
+- Pattern completion (CA3 recurrence)
+- NMDA-based coincidence detection
+
+**Selected Parameters**:
 ```python
 @dataclass
 class TrisynapticConfig(RegionConfig):
     """Hippocampus with DG→CA3→CA1 circuit."""
-    # Circuit sizes
-    dg_size: int = 200
-    ca3_size: int = 150
-    ca1_size: int = 128
-    
-    # Theta oscillation
-    theta_freq_hz: float = 7.0
-    theta_phase_offset: float = 0.0
-    
-    # Learning
-    ca3_learning_rate: float = 0.05
-    ca1_learning_rate: float = 0.02
-    
-    # Pattern separation
-    dg_sparsity: float = 0.05
+    # DG sparsity (VERY sparse for pattern separation)
+    dg_sparsity: float = 0.02
+    dg_inhibition: float = 5.0
+
+    # CA3 recurrent dynamics
+    ca3_recurrent_strength: float = 0.4
     ca3_sparsity: float = 0.10
+    ca3_learning_rate: float = 0.1
+
+    # CA1 output
+    ca1_sparsity: float = 0.15
+
+    # NMDA coincidence detection
+    nmda_tau: float = 50.0
+    nmda_threshold: float = 0.4
+
+    # Learning rates
+    learning_rate: float = 0.2
+    ec_ca1_learning_rate: float = 0.5
+```
+
+---
+
+### PrefrontalConfig (PFC)
+**Extends**: `RegionConfig`
+**File**: `src/thalia/regions/prefrontal.py` ✅ (canonical)
+
+**Key Features**:
+- Dopamine-gated STDP
+- Working memory maintenance
+- Rule learning
+- Top-down attention
+
+**Selected Parameters**:
+```python
+@dataclass
+class PrefrontalConfig(RegionConfig):
+    """Prefrontal cortex configuration."""
+    # Working memory
+    wm_decay_tau_ms: float = 500.0  # Slow decay
+    wm_noise_std: float = 0.01
+
+    # Gating
+    gate_threshold: float = 0.5  # DA level to open update gate
+    gate_strength: float = 2.0
+
+    # Dopamine
+    dopamine_tau_ms: float = 100.0
+    dopamine_baseline: float = 0.2
+
+    # Learning rates
+    wm_lr: float = 0.1
+    rule_lr: float = 0.01
+    stdp_lr: float = 0.02
+```
+
+---
+
+### CerebellumConfig
+**Extends**: `RegionConfig`
+**File**: `src/thalia/regions/cerebellum.py` ✅ (canonical)
+
+**Key Features**:
+- Error-corrective learning
+- Parallel fiber → Purkinje cell
+- Climbing fiber error signals
+- Eligibility traces for temporal credit
+
+**Selected Parameters**:
+```python
+@dataclass
+class CerebellumConfig(RegionConfig):
+    """Cerebellum configuration."""
+    # Learning rates
+    learning_rate_ltp: float = 0.02
+    learning_rate_ltd: float = 0.02
+    stdp_lr: float = 0.02
+
+    # Error signaling
+    error_threshold: float = 0.01
+    temporal_window_ms: float = 10.0
+
+    # Eligibility traces
+    eligibility_tau_ms: float = 500.0
+    heterosynaptic_ratio: float = 0.2
 ```
 
 ---
@@ -255,7 +440,7 @@ class TrisynapticConfig(RegionConfig):
 ## System-Level Configs
 
 ### LanguageConfig
-**Purpose**: Language-specific parameters  
+**Purpose**: Language-specific parameters
 **File**: `src/thalia/config/language_config.py`
 
 ```python
@@ -265,7 +450,7 @@ class LanguageConfig:
     vocab_size: int = 1000
     max_sequence_length: int = 20
     embedding_dim: int = 128
-    
+
     # Learning
     word_learning_rate: float = 0.1
     syntax_learning_rate: float = 0.05
@@ -274,7 +459,7 @@ class LanguageConfig:
 ---
 
 ### TrainingConfig
-**Purpose**: Training loop parameters  
+**Purpose**: Training loop parameters
 **File**: `src/thalia/config/training_config.py`
 
 ```python
@@ -283,11 +468,11 @@ class TrainingConfig:
     """Configuration for training."""
     n_episodes: int = 100
     n_trials_per_episode: int = 10
-    
+
     # Optimization
     batch_size: int = 1  # Currently must be 1
     learning_rate: float = 0.01
-    
+
     # Logging
     log_interval: int = 10
     save_checkpoints: bool = True
@@ -296,7 +481,7 @@ class TrainingConfig:
 ---
 
 ### RobustnessConfig
-**Purpose**: Noise and robustness parameters  
+**Purpose**: Noise and robustness parameters
 **File**: `src/thalia/config/robustness_config.py`
 
 ```python
@@ -306,11 +491,11 @@ class RobustnessConfig:
     # Homeostasis
     enable_homeostasis: bool = True
     homeostasis_tau_ms: float = 10000.0
-    
+
     # Divisive normalization
     enable_divisive_norm: bool = True
     norm_epsilon: float = 1e-6
-    
+
     # E/I balance
     enable_ei_balance: bool = True
     ei_target_ratio: float = 4.0
@@ -362,7 +547,7 @@ class RobustnessConfig:
 ## Config Patterns
 
 ### Pattern 1: Auto-Sizing
-**Problem**: User doesn't know optimal layer sizes  
+**Problem**: User doesn't know optimal layer sizes
 **Solution**: Auto-compute from other parameters
 
 ```python
@@ -370,7 +555,7 @@ class RobustnessConfig:
 class LayeredCortexConfig(RegionConfig):
     l4_size: Optional[int] = None
     l23_size: Optional[int] = None
-    
+
     def __post_init__(self):
         """Auto-size layers if not specified."""
         if self.l4_size is None:
@@ -382,7 +567,7 @@ class LayeredCortexConfig(RegionConfig):
 ---
 
 ### Pattern 2: Config Composition
-**Problem**: Complex systems need hierarchical configs  
+**Problem**: Complex systems need hierarchical configs
 **Solution**: Nest configs
 
 ```python
@@ -390,7 +575,7 @@ class LayeredCortexConfig(RegionConfig):
 class BrainConfig:
     striatum: StriatumConfig = field(default_factory=StriatumConfig)
     hippocampus: TrisynapticConfig = field(default_factory=TrisynapticConfig)
-    
+
     def __post_init__(self):
         """Propagate device to all sub-configs."""
         self.striatum.device = self.device
@@ -400,7 +585,7 @@ class BrainConfig:
 ---
 
 ### Pattern 3: Config Validation
-**Problem**: Invalid parameter combinations  
+**Problem**: Invalid parameter combinations
 **Solution**: Validate in `__post_init__`
 
 ```python
@@ -408,7 +593,7 @@ class BrainConfig:
 class MyConfig(RegionConfig):
     min_value: float = 0.0
     max_value: float = 1.0
-    
+
     def __post_init__(self):
         """Validate parameters."""
         if self.min_value >= self.max_value:
@@ -420,7 +605,7 @@ class MyConfig(RegionConfig):
 ---
 
 ### Pattern 4: Factory Method
-**Problem**: Creating regions from ThaliaConfig  
+**Problem**: Creating regions from ThaliaConfig
 **Solution**: `from_thalia_config()` class method
 
 ```python
@@ -474,11 +659,11 @@ class MyConfig(RegionConfig):
 @dataclass
 class StriatumConfig(RegionConfig):
     """Striatum configuration.
-    
+
     Parameters:
         eligibility_tau_ms: Time constant for eligibility trace decay.
             Biological range: 500-2000ms (Yagishita et al., 2014)
-        
+
         dopamine_baseline: Tonic dopamine level (0-1 range).
             ~0.2 represents normal baseline firing (~4 Hz)
     """
@@ -495,11 +680,11 @@ class MyConfig(RegionConfig):
     # Network architecture
     n_hidden: int = 128
     n_layers: int = 3
-    
+
     # Learning parameters
     learning_rate: float = 0.01
     momentum: float = 0.9
-    
+
     # Regularization
     dropout: float = 0.1
     weight_decay: float = 1e-4
@@ -595,19 +780,19 @@ striatum_config = StriatumConfig(
 
 ## FAQ
 
-**Q: Why so many config classes?**  
+**Q: Why so many config classes?**
 A: Each region has unique parameters. Separate configs prevent parameter pollution and enable type safety.
 
-**Q: Can I add parameters to RegionConfig?**  
+**Q: Can I add parameters to RegionConfig?**
 A: Only add truly universal parameters. Region-specific ones go in region configs.
 
-**Q: How do I see all available parameters?**  
+**Q: How do I see all available parameters?**
 A: Check the config class definition or use `dataclasses.fields(ConfigClass)`.
 
-**Q: Should configs be mutable?**  
+**Q: Should configs be mutable?**
 A: Generally no. Treat as immutable after initialization.
 
-**Q: Can I share configs between regions?**  
+**Q: Can I share configs between regions?**
 A: Yes, but be careful. They share the same object reference.
 
 ---
@@ -627,7 +812,7 @@ A: Yes, but be careful. They share the same object reference.
 
 ---
 
-**Last Updated**: December 7, 2025  
+**Last Updated**: December 7, 2025
 **See Also**:
 - `docs/patterns/state-management.md` - State patterns
 - `src/thalia/config/` - Config implementations

@@ -151,25 +151,26 @@ def print_config(
     print("\n--- STRIATUM ---")
     print(f"  Population coding: {striatum_cfg.population_coding}")
     print(f"  Neurons per action: {striatum_cfg.neurons_per_action}")
-    print(f"  D1/D2 pathways: {striatum_cfg.d1_d2_enabled}")
     print(f"  Learning rate: {striatum_cfg.learning_rate}")
     print(f"  Eligibility tau: {striatum_cfg.eligibility_tau_ms} ms")
+    print(f"  STDP LR: {striatum_cfg.stdp_lr}")
+    print(f"  Homeostatic: {striatum_cfg.homeostatic_enabled}")
 
     # PFC
     pfc_cfg = config.brain.pfc
     print("\n--- PFC ---")
-    print(f"  WM decay: {pfc_cfg.wm_decay}")
-    print(f"  WM capacity: {pfc_cfg.wm_capacity}")
-    print(f"  Attention gain: {pfc_cfg.attention_gain}")
+    print(f"  WM decay tau: {pfc_cfg.wm_decay_tau_ms} ms")
+    print(f"  Gate threshold: {pfc_cfg.gate_threshold}")
+    print(f"  Gate strength: {pfc_cfg.gate_strength}")
     print(f"  Sparsity: {pfc_cfg.sparsity}")
 
     # Cerebellum
     cereb_cfg = config.brain.cerebellum
     print("\n--- CEREBELLUM ---")
-    print(f"  Granule cell expansion: {cereb_cfg.gc_expansion}x")
-    print(f"  Granule cell sparsity: {cereb_cfg.gc_sparsity}")
-    print(f"  Purkinje LR: {cereb_cfg.purkinje_lr}")
-    print(f"  Climbing fiber strength: {cereb_cfg.climbing_fiber_strength}")
+    print(f"  LTP rate: {cereb_cfg.learning_rate_ltp}")
+    print(f"  LTD rate: {cereb_cfg.learning_rate_ltd}")
+    print(f"  STDP LR: {cereb_cfg.stdp_lr}")
+    print(f"  Eligibility tau: {cereb_cfg.eligibility_tau_ms} ms")
 
     print("=" * width + "\n")
 
