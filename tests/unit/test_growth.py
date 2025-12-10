@@ -177,14 +177,16 @@ class TestGrowthIntegration:
 
     def test_brain_check_growth_needs(self):
         """Test brain-level growth need detection."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Check growth needs
         growth_report = brain.check_growth_needs()
@@ -194,14 +196,16 @@ class TestGrowthIntegration:
 
     def test_checkpoint_preserves_growth_history(self, tmp_path):
         """Test that growth history survives checkpoint roundtrip."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Perform growth
         # brain.auto_grow(threshold=0.5)  # Would trigger if capacity high

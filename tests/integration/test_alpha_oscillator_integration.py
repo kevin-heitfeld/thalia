@@ -3,7 +3,8 @@ import pytest
 import torch
 import math
 
-from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+from thalia.core.brain import EventDrivenBrain
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 from thalia.regions.cortex import LayeredCortex
 
 
@@ -13,15 +14,19 @@ class TestAlphaOscillatorIntegration:
     def test_brain_broadcasts_alpha_to_cortex(self):
         """Test that Brain correctly broadcasts alpha signals to cortex."""
         # Create brain with cortex region
-        brain_config = EventDrivenBrainConfig(
-            input_size=32,
-            cortex_size=16,
-            hippocampus_size=16,
-            pfc_size=16,
-            n_actions=2,
-            device="cpu"
-        )
-        brain = EventDrivenBrain(brain_config)
+        brain_config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=32,
+                cortex_size=16,
+                hippocampus_size=16,
+                pfc_size=16,
+                n_actions=2,
+            ),
+        ),
+    )
+        brain = EventDrivenBrain.from_thalia_config(brain_config)
         
         # Access the cortex implementation
         cortex = brain.cortex.impl
@@ -39,15 +44,19 @@ class TestAlphaOscillatorIntegration:
     
     def test_alpha_suppression_varies_over_time(self):
         """Test that alpha suppression follows oscillator phase over multiple timesteps."""
-        brain_config = EventDrivenBrainConfig(
-            input_size=32,
-            cortex_size=16,
-            hippocampus_size=16,
-            pfc_size=16,
-            n_actions=2,
-            device="cpu"
-        )
-        brain = EventDrivenBrain(brain_config)
+        brain_config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=32,
+                cortex_size=16,
+                hippocampus_size=16,
+                pfc_size=16,
+                n_actions=2,
+            ),
+        ),
+    )
+        brain = EventDrivenBrain.from_thalia_config(brain_config)
         cortex = brain.cortex.impl
         
         # Create constant input
@@ -97,15 +106,19 @@ class TestAlphaOscillatorIntegration:
     
     def test_alpha_modulates_cortical_activity_over_time(self):
         """Test that alpha oscillations modulate cortical activity in realistic way."""
-        brain_config = EventDrivenBrainConfig(
-            input_size=32,
-            cortex_size=16,
-            hippocampus_size=16,
-            pfc_size=16,
-            n_actions=2,
-            device="cpu"
-        )
-        brain = EventDrivenBrain(brain_config)
+        brain_config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=32,
+                cortex_size=16,
+                hippocampus_size=16,
+                pfc_size=16,
+                n_actions=2,
+            ),
+        ),
+    )
+        brain = EventDrivenBrain.from_thalia_config(brain_config)
         cortex = brain.cortex.impl
         
         # Create constant strong input

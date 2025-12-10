@@ -209,15 +209,17 @@ class TestCheckpointAPI:
 
     def test_checkpoint_info_without_loading(self, temp_dir):
         """Test getting checkpoint info without loading full state."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
         # Create minimal brain
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu",
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Save checkpoint
         checkpoint_path = temp_dir / "test_info.thalia"
@@ -235,15 +237,17 @@ class TestCheckpointAPI:
 
     def test_checkpoint_validation(self, temp_dir):
         """Test checkpoint file validation."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
         # Create minimal brain
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu",
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Save checkpoint
         checkpoint_path = temp_dir / "test_validate.thalia"
@@ -257,15 +261,17 @@ class TestCheckpointAPI:
 
     def test_corrupted_checkpoint_detection(self, temp_dir):
         """Test detection of corrupted checkpoint."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
         # Create and save checkpoint
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu",
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         checkpoint_path = temp_dir / "test_corrupt.thalia"
         BrainCheckpoint.save(brain, checkpoint_path)
@@ -287,15 +293,17 @@ class TestCheckpointRoundtrip:
 
     def test_striatum_checkpoint_roundtrip(self, temp_dir):
         """Test striatum checkpoint save/load."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
         # Create brain with striatum
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu",
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain1 = EventDrivenBrain(config)
+        brain1 = EventDrivenBrain.from_thalia_config(config)
 
         # Process some input
         input_spikes = (torch.rand(64) > 0.8).float()
@@ -315,7 +323,7 @@ class TestCheckpointRoundtrip:
         # Load checkpoint into new brain
         state = BrainCheckpoint.load(checkpoint_path, device="cpu")
 
-        brain2 = EventDrivenBrain(config)
+        brain2 = EventDrivenBrain.from_thalia_config(config)
         brain2.load_full_state(state)
 
         # Verify state matches
@@ -332,19 +340,23 @@ class TestCheckpointRoundtrip:
 
     def test_full_brain_checkpoint_roundtrip(self, temp_dir):
         """Test full brain with multiple regions."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig, CortexType
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes, CortexType
 
         # Create brain with multiple regions
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            cortex_size=128,
-            hippocampus_size=64,
-            pfc_size=32,
-            n_actions=4,
-            cortex_type=CortexType.LAYERED,
-            device="cpu",
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+            brain=BrainConfig(
+                sizes=RegionSizes(
+                    input_size=64,
+                    cortex_size=128,
+                    hippocampus_size=64,
+                    pfc_size=32,
+                    n_actions=4,
+                ),
+            ),
         )
-        brain1 = EventDrivenBrain(config)
+        brain1 = EventDrivenBrain.from_thalia_config(config)
 
         # Process some steps
         for _ in range(5):
@@ -364,7 +376,7 @@ class TestCheckpointRoundtrip:
         # Load checkpoint
         state = BrainCheckpoint.load(checkpoint_path, device="cpu")
 
-        brain2 = EventDrivenBrain(config)
+        brain2 = EventDrivenBrain.from_thalia_config(config)
         brain2.load_full_state(state)
 
         # Verify metadata
@@ -377,7 +389,10 @@ class TestCheckpointRoundtrip:
 
         # Check that key regions have matching weights
         assert "striatum" in state1["regions"]
-        assert "striatum" in state2["regions"]# Fixtures
+        assert "striatum" in state2["regions"]
+
+
+# Fixtures
 
 @pytest.fixture
 def temp_dir():

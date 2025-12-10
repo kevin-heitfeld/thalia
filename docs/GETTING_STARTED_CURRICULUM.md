@@ -18,19 +18,25 @@ This demonstrates training a brain through:
 ### 2. Basic Usage Pattern
 
 ```python
-from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+from thalia.core.brain import EventDrivenBrain
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 from thalia.training import CurriculumTrainer, CurriculumStage, StageConfig
 from thalia.config.curriculum_growth import get_curriculum_growth_config
 
-# 1. Create brain
-brain_config = EventDrivenBrainConfig(
-    input_size=400,
-    cortex_size=10000,
-    hippocampus_size=2000,
-    pfc_size=5000,
-    n_actions=4,
+# 1. Create brain with ThaliaConfig
+config = ThaliaConfig(
+    global_=GlobalConfig(device="cpu"),
+    brain=BrainConfig(
+        sizes=RegionSizes(
+            input_size=400,
+            cortex_size=10000,
+            hippocampus_size=2000,
+            pfc_size=5000,
+            n_actions=4,
+        ),
+    ),
 )
-brain = EventDrivenBrain(brain_config)
+brain = EventDrivenBrain.from_thalia_config(config)
 
 # 2. Initialize trainer
 trainer = CurriculumTrainer(

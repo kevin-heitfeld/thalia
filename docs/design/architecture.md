@@ -325,7 +325,7 @@ Connect regions into a functioning brain with event-driven communication.
   - Oscillation generation (theta, gamma)
   - Sleep/wake cycles
 - **Use when**: Need full brain simulation
-- **Parameters**: `EventDrivenBrainConfig` or `ThaliaConfig`
+- **Parameters**: `ThaliaConfig` (unified configuration system)
 
 #### Pathways
 - **File**: `src/thalia/integration/pathways/`

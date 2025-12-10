@@ -748,14 +748,16 @@ class TestGrowthIntegration:
 
     def test_brain_check_growth_needs(self):
         """Test brain-level growth need detection."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Check growth needs
         growth_report = brain.check_growth_needs()
@@ -767,14 +769,16 @@ class TestGrowthIntegration:
 
     def test_brain_auto_grow_coordination(self):
         """Test that brain can coordinate growth across connected components."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Trigger auto-growth
         # This should detect which regions/pathways need growth
@@ -787,16 +791,18 @@ class TestGrowthIntegration:
 
     def test_checkpoint_preserves_growth_history(self):
         """Test that checkpoint metadata includes growth history."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
         import tempfile
         import os
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Perform some growth (manually for testing)
         # brain.striatum.add_neurons(n_new=1)
@@ -815,15 +821,16 @@ class TestGrowthIntegration:
 
     def test_pathway_grows_with_connected_region(self):
         """Test that pathways automatically track region growth."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            hippocampus_size=128,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4, hippocampus_size=128),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Get initial sizes
         # When hippocampus grows, replay pathway (hippo→cortex) should grow its source
@@ -848,14 +855,16 @@ class TestGrowthIntegration:
 
     def test_all_regions_in_brain_support_growth(self):
         """Test that all 5 major brain regions support growth."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Test each region
         regions_to_test = [
@@ -885,14 +894,16 @@ class TestGrowthIntegration:
 
     def test_growth_preserves_brain_functionality(self):
         """Test that brain remains functional after growth."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Process some input before growth
         input_pattern = torch.rand(64) > 0.5
@@ -911,14 +922,16 @@ class TestGrowthIntegration:
 
     def test_growth_history_tracks_all_changes(self):
         """Test that growth history captures all growth events."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # Manually grow multiple regions
         brain.striatum.impl.add_neurons(n_new=8)
@@ -948,14 +961,16 @@ class TestGrowthIntegration:
 
     def test_auto_grow_respects_threshold(self):
         """Test that auto_grow only grows when capacity exceeds threshold."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            n_actions=4,
-            device="cpu"
+        config = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, n_actions=4),
+            ),
         )
-        brain = EventDrivenBrain(config)
+        brain = EventDrivenBrain.from_thalia_config(config)
 
         # With high threshold, nothing should grow (regions are fresh)
         grown = brain.auto_grow(threshold=0.95)

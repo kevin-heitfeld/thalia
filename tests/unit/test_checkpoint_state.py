@@ -417,18 +417,23 @@ class TestBrainStateRoundtrip:
 
     def test_basic_brain_state_roundtrip(self):
         """Test basic state save/load for entire brain."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
         
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            cortex_size=128,
-            hippocampus_size=64,
-            pfc_size=32,
-            n_actions=4,
-            device="cpu",
-        )
+        config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=64,
+                cortex_size=128,
+                hippocampus_size=64,
+                pfc_size=32,
+                n_actions=4,
+            ),
+        ),
+    )
         
-        brain1 = EventDrivenBrain(config)
+        brain1 = EventDrivenBrain.from_thalia_config(config)
         
         # Get initial state
         state = brain1.get_full_state()
@@ -446,7 +451,7 @@ class TestBrainStateRoundtrip:
         assert "config" in state
         
         # Create new instance and load
-        brain2 = EventDrivenBrain(config)
+        brain2 = EventDrivenBrain.from_thalia_config(config)
         brain2.load_full_state(state)
         
         # Verify cortex weights match
@@ -469,18 +474,23 @@ class TestBrainStateRoundtrip:
 
     def test_brain_state_after_processing(self):
         """Test brain state save/load after processing input."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
         
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            cortex_size=128,
-            hippocampus_size=64,
-            pfc_size=32,
-            n_actions=4,
-            device="cpu",
-        )
+        config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=64,
+                cortex_size=128,
+                hippocampus_size=64,
+                pfc_size=32,
+                n_actions=4,
+            ),
+        ),
+    )
         
-        brain1 = EventDrivenBrain(config)
+        brain1 = EventDrivenBrain.from_thalia_config(config)
         
         # Process some input (convert bool to float)
         sample = (torch.rand(64) > 0.8).float()
@@ -490,7 +500,7 @@ class TestBrainStateRoundtrip:
         state = brain1.get_full_state()
         
         # Create new instance and load
-        brain2 = EventDrivenBrain(config)
+        brain2 = EventDrivenBrain.from_thalia_config(config)
         brain2.load_full_state(state)
         
         # Verify trial phase matches (access internal state for testing)
@@ -501,26 +511,27 @@ class TestBrainStateRoundtrip:
 
     def test_brain_dimension_mismatch_raises_error(self):
         """Test that loading incompatible brain state raises ValueError."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+        from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
         
-        config1 = EventDrivenBrainConfig(
-            input_size=64,
-            cortex_size=128,
-            n_actions=4,
-            device="cpu",
+        config1 = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, cortex_size=128, n_actions=4),
+            ),
         )
         
-        config2 = EventDrivenBrainConfig(
-            input_size=64,
-            cortex_size=256,  # Different size
-            n_actions=4,
-            device="cpu",
+        config2 = ThaliaConfig(
+            global_=GlobalConfig(device="cpu"),
+            brain=BrainConfig(
+                sizes=RegionSizes(input_size=64, cortex_size=256, n_actions=4),  # Different size
+            ),
         )
         
-        brain1 = EventDrivenBrain(config1)
+        brain1 = EventDrivenBrain.from_thalia_config(config1)
         state = brain1.get_full_state()
         
-        brain2 = EventDrivenBrain(config2)
+        brain2 = EventDrivenBrain.from_thalia_config(config2)
         
         with pytest.raises(ValueError, match="cortex_size"):
             brain2.load_full_state(state)
@@ -633,18 +644,23 @@ class TestPathwayStateRoundtrip:
     
     def test_brain_with_pathways(self):
         """Test brain state including pathway state."""
-        from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+        from thalia.core.brain import EventDrivenBrain
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
         
-        config = EventDrivenBrainConfig(
-            input_size=64,
-            cortex_size=128,
-            hippocampus_size=64,
-            pfc_size=32,
-            n_actions=4,
-            device="cpu",
-        )
+        config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=64,
+                cortex_size=128,
+                hippocampus_size=64,
+                pfc_size=32,
+                n_actions=4,
+            ),
+        ),
+    )
         
-        brain1 = EventDrivenBrain(config)
+        brain1 = EventDrivenBrain.from_thalia_config(config)
         
         # Process some input through pathways
         sample = torch.rand(64) > 0.8
@@ -663,7 +679,7 @@ class TestPathwayStateRoundtrip:
         assert "replay" in state["pathways"]
         
         # Create new brain and load state
-        brain2 = EventDrivenBrain(config)
+        brain2 = EventDrivenBrain.from_thalia_config(config)
         brain2.load_full_state(state)
         
         # Verify pathway weights match

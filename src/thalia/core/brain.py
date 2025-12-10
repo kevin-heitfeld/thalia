@@ -133,70 +133,6 @@ from ..integration.spiking_pathway import (
 
 
 @dataclass
-class EventDrivenBrainConfig:
-    """Configuration for the event-driven brain system.
-
-    .. deprecated:: 0.2.0
-        Use :class:`thalia.config.ThaliaConfig` instead for unified configuration.
-        Create brain with ``EventDrivenBrain.from_thalia_config(config)``.
-
-    This is a simplified configuration focusing on the key parameters.
-    For full control, create regions directly and pass them in.
-    """
-    # Region sizes
-    input_size: int = 256
-    cortex_size: int = 128
-    hippocampus_size: int = 64
-    pfc_size: int = 32
-    n_actions: int = 2
-
-    # Region type selection
-    cortex_type: CortexType = CortexType.LAYERED
-    """Which cortex implementation to use. PREDICTIVE enables local error learning."""
-
-    # Region-specific configs (optional - uses defaults if not provided)
-    # These are the full configs from thalia.regions.*
-    cortex_config: Optional[LayeredCortexConfig] = None
-    """Full cortex config. n_input/n_output will be overridden by sizes above."""
-
-    # Time settings
-    dt_ms: float = 1.0
-    theta_frequency_hz: float = 8.0
-
-    # Default timesteps for trial phases
-    encoding_timesteps: int = 15
-    delay_timesteps: int = 10
-    test_timesteps: int = 15
-
-    # Striatum settings
-    neurons_per_action: int = 10
-
-    # Oscillator configuration
-    oscillator_couplings: Optional[List] = None
-    """Cross-frequency couplings for oscillator system.
-    If None, uses default theta-gamma coupling. Pass empty list to disable coupling."""
-
-    # Execution mode
-    parallel: bool = False  # Use multiprocessing for regions
-
-    # Diagnostics
-    diagnostic_level: DiagnosticLevel = DiagnosticLevel.SUMMARY
-
-    device: str = "cpu"
-
-    def __post_init__(self):
-        """Emit deprecation warning."""
-        import warnings
-        warnings.warn(
-            "EventDrivenBrainConfig is deprecated. Use ThaliaConfig instead:\n"
-            "  from thalia.config import ThaliaConfig\n"
-            "  config = ThaliaConfig(...)\n"
-            "  brain = EventDrivenBrain.from_thalia_config(config)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-
 class EventDrivenBrain(nn.Module):
     """
     Event-driven brain system with biologically realistic timing.
@@ -211,7 +147,6 @@ class EventDrivenBrain(nn.Module):
     4. Can run in parallel mode for performance
 
     Example:
-        # Using unified config (recommended)
         from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
         config = ThaliaConfig(
@@ -219,13 +154,6 @@ class EventDrivenBrain(nn.Module):
             brain=BrainConfig(sizes=RegionSizes(cortex_size=256)),
         )
         brain = EventDrivenBrain.from_thalia_config(config)
-
-        # Or using legacy config
-        brain = EventDrivenBrain(EventDrivenBrainConfig(
-            input_size=256,
-            cortex_size=128,
-            n_actions=2,
-        ))
 
         # Process sample (encoding phase)
         sample_result = brain.process_sample(pattern, n_timesteps=15)
@@ -243,9 +171,31 @@ class EventDrivenBrain(nn.Module):
         brain.deliver_reward(external_reward=1.0)
     """
 
-    def __init__(self, config: EventDrivenBrainConfig):
+    def __init__(self, config: "ThaliaConfig"):
+        """Initialize EventDrivenBrain from ThaliaConfig.
+
+        Args:
+            config: ThaliaConfig with all settings
+
+        Example:
+            from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig
+
+            config = ThaliaConfig(
+                global_=GlobalConfig(device="cuda"),
+                brain=BrainConfig(sizes=RegionSizes(cortex_size=256)),
+            )
+            brain = EventDrivenBrain(config)
+
+        Note:
+            Prefer using EventDrivenBrain.from_thalia_config(config) for clarity.
+        """
+        from thalia.config import ThaliaConfig
+        
         super().__init__()
-        self.config = config
+        
+        # Convert to legacy config structure for now (internal implementation detail)
+        legacy_config = config.to_event_driven_brain_config()
+        self.config = legacy_config
 
         # Current simulation time
         self._current_time: float = 0.0
@@ -710,11 +660,8 @@ class EventDrivenBrain(nn.Module):
             )
             brain = EventDrivenBrain.from_thalia_config(config)
         """
-        # Import here to avoid circular imports
-        from thalia.config import ThaliaConfig
-
-        legacy_config = config.to_event_driven_brain_config()
-        brain = cls(legacy_config)
+        # Create brain via __init__
+        brain = cls(config)
 
         # Initialize CriticalityMonitor if robustness config enables it
         if config.robustness.enable_criticality:
@@ -2149,15 +2096,22 @@ def test_event_driven_brain():
     """Basic test of EventDrivenBrain."""
     print("\n=== Test: EventDrivenBrain ===")
 
-    config = EventDrivenBrainConfig(
-        input_size=100,
-        cortex_size=64,
-        hippocampus_size=40,
-        pfc_size=20,
-        n_actions=2,
+    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+
+    config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu"),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=100,
+                cortex_size=64,
+                hippocampus_size=40,
+                pfc_size=20,
+                n_actions=2,
+            ),
+        ),
     )
 
-    brain = EventDrivenBrain(config)
+    brain = EventDrivenBrain.from_thalia_config(config)
     print(f"  Created brain with {len(brain.adapters)} adapters")
 
     # Create sample pattern
