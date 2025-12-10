@@ -136,8 +136,6 @@ from pathlib import Path
 from enum import IntEnum
 import time
 
-import torch
-
 from thalia.config.curriculum_growth import (
     CurriculumGrowthConfig,
     CurriculumStage,
@@ -147,14 +145,11 @@ from thalia.training.curriculum import (
     InterleavedCurriculumSampler,
     SpacedRepetitionScheduler,
     TestingPhaseProtocol,
-    ProductiveFailurePhase,
-    CurriculumDifficultyCalibrator,
     StageTransitionProtocol,
 )
 from thalia.memory.consolidation import (
     MemoryPressureDetector,
     SleepStageController,
-    ConsolidationMetrics,
 )
 from thalia.io.checkpoint import BrainCheckpoint
 from thalia.training.live_diagnostics import LiveDiagnostics

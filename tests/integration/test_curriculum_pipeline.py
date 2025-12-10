@@ -15,13 +15,12 @@ Author: Thalia Project
 Date: December 9, 2025
 """
 
-import pytest
-import torch
 import tempfile
 import shutil
-from pathlib import Path
+import pytest
 
-from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+from thalia.core.brain import EventDrivenBrain
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 from thalia.environments import SensorimotorWrapper, SensorimotorConfig
 from thalia.config.curriculum_growth import (
     CurriculumStage,
@@ -53,13 +52,17 @@ def temp_checkpoint_dir():
 @pytest.fixture
 def small_brain_config():
     """Create small brain config for fast testing."""
-    return EventDrivenBrainConfig(
-        input_size=256,  # Fixed size for all sensory inputs (after pathway encoding)
-        cortex_size=500,
-        hippocampus_size=100,
-        pfc_size=200,
-        n_actions=4,
-        device="cpu",
+    return ThaliaConfig(
+        global_=GlobalConfig(device="cpu"),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=256,  # Fixed size for all sensory inputs (after pathway encoding)
+                cortex_size=500,
+                hippocampus_size=100,
+                pfc_size=200,
+                n_actions=4,
+            ),
+        ),
     )
 
 
@@ -83,7 +86,7 @@ def sensorimotor_wrapper():
 @pytest.fixture
 def curriculum_trainer(small_brain_config, temp_checkpoint_dir):
     """Create curriculum trainer for testing."""
-    brain = EventDrivenBrain(small_brain_config)
+    brain = EventDrivenBrain.from_thalia_config(small_brain_config)
 
     trainer = CurriculumTrainer(
         brain=brain,
@@ -219,7 +222,7 @@ def test_sensorimotor_to_phonology_pipeline(
     # Part 5: Train Stage 0 (Phonology)
     # ========================================================================
 
-    print("\n[5/6] Training Stage 0 (Phonology)...") 
+    print("\n[5/6] Training Stage 0 (Phonology)...")
 
     # Create task loader
     phonology_loader = create_phonology_loader(
@@ -451,7 +454,7 @@ def test_resume_from_checkpoint(
     print("\n[1/4] Training first 500 steps...")
 
     # Create first trainer
-    brain1 = EventDrivenBrain(small_brain_config)
+    brain1 = EventDrivenBrain.from_thalia_config(small_brain_config)
     trainer1 = CurriculumTrainer(
         brain=brain1,
         growth_config=get_curriculum_growth_config(),
@@ -496,7 +499,7 @@ def test_resume_from_checkpoint(
     print("\n[2/4] Loading checkpoint in new trainer...")
 
     # Create second trainer
-    brain2 = EventDrivenBrain(small_brain_config)
+    brain2 = EventDrivenBrain.from_thalia_config(small_brain_config)
     trainer2 = CurriculumTrainer(
         brain=brain2,
         growth_config=get_curriculum_growth_config(),
@@ -609,4 +612,3 @@ def test_extended_consolidation_before_transition(
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
-

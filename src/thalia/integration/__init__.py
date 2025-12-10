@@ -9,15 +9,23 @@ The key insight is that inter-region connections in the brain are not static -
 they are plastic and learn according to spike-timing dependent rules.
 
 Example usage:
-    from thalia.core.brain import EventDrivenBrain, EventDrivenBrainConfig
+    from thalia.core.brain import EventDrivenBrain
+    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
     
-    brain = EventDrivenBrain(EventDrivenBrainConfig(
-        input_size=256,
-        cortex_size=128,
-        hippocampus_size=64,
-        pfc_size=32,
-        n_actions=2,
-    ))
+    config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu"),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=256,
+                cortex_size=128,
+                hippocampus_size=64,
+                pfc_size=32,
+                n_actions=2,
+            ),
+        ),
+    )
+    
+    brain = EventDrivenBrain.from_thalia_config(config)
     
     result = brain.process_sample(sample_pattern)
     result = brain.delay(10)
