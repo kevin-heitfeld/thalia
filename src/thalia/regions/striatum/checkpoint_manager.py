@@ -59,9 +59,9 @@ class CheckpointManager:
         
         # 3. LEARNING STATE
         learning_state = {
-            # Trial accumulators
-            "d1_votes_accumulated": s._d1_votes_accumulated.detach().clone(),
-            "d2_votes_accumulated": s._d2_votes_accumulated.detach().clone(),
+            # Trial accumulators (now managed by state_tracker)
+            "d1_votes_accumulated": s.state_tracker._d1_votes_accumulated.detach().clone(),
+            "d2_votes_accumulated": s.state_tracker._d2_votes_accumulated.detach().clone(),
             
             # Homeostatic state
             "activity_ema": s._activity_ema,
@@ -77,9 +77,9 @@ class CheckpointManager:
         
         # 4. EXPLORATION STATE (delegate to ExplorationManager)
         exploration_state = {
-            "exploring": s.exploring,
-            "last_uncertainty": s._last_uncertainty,
-            "last_exploration_prob": s._last_exploration_prob,
+            "exploring": s.state_tracker.exploring,
+            "last_uncertainty": s.state_tracker._last_uncertainty,
+            "last_exploration_prob": s.state_tracker._last_exploration_prob,
             # Get exploration manager state (includes action_counts, recent_rewards, etc.)
             "manager_state": s.exploration_manager.get_state(),
         }
@@ -89,8 +89,8 @@ class CheckpointManager:
         if s.value_estimates is not None:
             rpe_state = {
                 "value_estimates": s.value_estimates.detach().clone(),
-                "last_rpe": s._last_rpe,
-                "last_expected": s._last_expected,
+                "last_rpe": s.state_tracker._last_rpe,
+                "last_expected": s.state_tracker._last_expected,
             }
         
         # 6. GOAL MODULATION STATE (if enabled)
@@ -103,8 +103,8 @@ class CheckpointManager:
         
         # 7. ACTION SELECTION STATE
         action_state = {
-            "last_action": s.last_action,
-            "recent_spikes": s.recent_spikes.detach().clone(),
+            "last_action": s.state_tracker.last_action,
+            "recent_spikes": s.state_tracker.recent_spikes.detach().clone(),
         }
         
         return {
@@ -138,9 +138,9 @@ class CheckpointManager:
         # 3. RESTORE LEARNING STATE
         learning_state = state["learning_state"]
         
-        # Trial accumulators
-        s._d1_votes_accumulated = learning_state["d1_votes_accumulated"].to(s.device)
-        s._d2_votes_accumulated = learning_state["d2_votes_accumulated"].to(s.device)
+        # Trial accumulators (now managed by state_tracker)
+        s.state_tracker._d1_votes_accumulated = learning_state["d1_votes_accumulated"].to(s.device)
+        s.state_tracker._d2_votes_accumulated = learning_state["d2_votes_accumulated"].to(s.device)
         
         # Homeostatic state
         s._activity_ema = learning_state["activity_ema"]
@@ -159,9 +159,9 @@ class CheckpointManager:
         
         # 4. RESTORE EXPLORATION STATE (delegate to ExplorationManager)
         exploration_state = state["exploration_state"]
-        s.exploring = exploration_state["exploring"]
-        s._last_uncertainty = exploration_state["last_uncertainty"]
-        s._last_exploration_prob = exploration_state["last_exploration_prob"]
+        s.state_tracker.exploring = exploration_state["exploring"]
+        s.state_tracker._last_uncertainty = exploration_state["last_uncertainty"]
+        s.state_tracker._last_exploration_prob = exploration_state["last_exploration_prob"]
         
         # Load exploration manager state if present (new format)
         if "manager_state" in exploration_state:
@@ -178,12 +178,12 @@ class CheckpointManager:
             }
             s.exploration_manager.load_state(old_state)
         
-        # 5. RESTORE RPE STATE (if present)
+        # 6. RESTORE RPE STATE (if present)
         if "rpe_state" in state and state["rpe_state"]:
             rpe_state = state["rpe_state"]
             s.value_estimates = rpe_state["value_estimates"].to(s.device)
-            s._last_rpe = rpe_state["last_rpe"]
-            s._last_expected = rpe_state["last_expected"]
+            s.state_tracker._last_rpe = rpe_state["last_rpe"]
+            s.state_tracker._last_expected = rpe_state["last_expected"]
         
         # 6. RESTORE GOAL MODULATION STATE (if present)
         if "goal_state" in state and state["goal_state"]:
@@ -192,7 +192,7 @@ class CheckpointManager:
                 s.pfc_modulation_d1.data = goal_state["pfc_modulation_d1"].to(s.device)
                 s.pfc_modulation_d2.data = goal_state["pfc_modulation_d2"].to(s.device)
         
-        # 7. RESTORE ACTION SELECTION STATE
+        # 8. RESTORE ACTION SELECTION STATE
         action_state = state["action_state"]
-        s.last_action = action_state["last_action"]
-        s.recent_spikes = action_state["recent_spikes"].to(s.device)
+        s.state_tracker.last_action = action_state["last_action"]
+        s.state_tracker.recent_spikes = action_state["recent_spikes"].to(s.device)

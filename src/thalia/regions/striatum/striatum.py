@@ -60,13 +60,6 @@ from thalia.core.neuron_constants import (
     E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
-    THETA_BASELINE_MIN,
-    THETA_BASELINE_RANGE,
-    THETA_CONTRAST_MIN,
-    THETA_CONTRAST_RANGE,
-    BASELINE_EXCITATION_SCALE,
-    TONIC_D1_GAIN_SCALE,
-    NE_GAIN_RANGE,
 )
 from thalia.regions.base import (
     NeuralComponent,
@@ -458,6 +451,22 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # =====================================================================
         # Handles state serialization/deserialization
         self.checkpoint_manager = CheckpointManager(self)
+
+        # =====================================================================
+        # FORWARD PASS COORDINATOR
+        # =====================================================================
+        # Handles D1/D2 pathway coordination and modulation during forward pass
+        self.forward_coordinator = ForwardPassCoordinator(
+            config=self.striatum_config,
+            d1_pathway=self.d1_pathway,
+            d2_pathway=self.d2_pathway,
+            d1_neurons=self.d1_neurons,
+            d2_neurons=self.d2_neurons,
+            homeostasis_manager=self.homeostasis_manager,
+            pfc_modulation_d1=self.pfc_modulation_d1,
+            pfc_modulation_d2=self.pfc_modulation_d2,
+            device=self.device,
+        )
 
         # =====================================================================
         # BETA OSCILLATOR TRACKING (Motor Control Modulation)
@@ -887,13 +896,13 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # =====================================================================
         # 5. UPDATE ACTION-RELATED TRACKING (1D per action, not per neuron)
         # =====================================================================
-        # Expand D1/D2 vote accumulators [n_actions]
-        self._d1_votes_accumulated = torch.cat([
-            self._d1_votes_accumulated,
+        # Expand D1/D2 vote accumulators [n_actions] via state_tracker
+        self.state_tracker._d1_votes_accumulated = torch.cat([
+            self.state_tracker._d1_votes_accumulated,
             torch.zeros(n_new, device=self.device)
         ], dim=0)
-        self._d2_votes_accumulated = torch.cat([
-            self._d2_votes_accumulated,
+        self.state_tracker._d2_votes_accumulated = torch.cat([
+            self.state_tracker._d2_votes_accumulated,
             torch.zeros(n_new, device=self.device)
         ], dim=0)
 
@@ -1125,6 +1134,17 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         else:
             self._beta_amplitude = 1.0
 
+        # Update forward coordinator with oscillator state
+        self.forward_coordinator.set_oscillator_phases(
+            theta_phase=self._theta_phase,
+            beta_phase=self._beta_phase,
+            beta_amplitude=self._beta_amplitude,
+        )
+
+        # Update forward coordinator with neuromodulator state
+        self.forward_coordinator.set_norepinephrine(self.state.norepinephrine)
+        self.forward_coordinator.set_tonic_dopamine(self.tonic_dopamine)
+
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize with small positive weights."""
         weights = WeightInitializer.uniform(
@@ -1263,179 +1283,20 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             "Thalia uses single-brain architecture with no batch dimension."
         )
 
-        # Reset D1 and D2 neuron states if needed
-        if self.d1_neurons.membrane is None:
-            self.d1_neurons.reset_state()
-        if self.d2_neurons.membrane is None:
-            self.d2_neurons.reset_state()
-
         # =====================================================================
-        # D1/D2 SEPARATE POPULATIONS - COMPUTE ACTIVATIONS
+        # FORWARD PASS COORDINATION - Delegate to ForwardPassCoordinator
         # =====================================================================
-        # D1 and D2 weights project to SEPARATE neuron populations
-        # Each population receives its weights as EXCITATORY input
-
-        # Convert bool spikes to float for matmul
-        input_spikes_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
-        d1_activation = torch.matmul(self.d1_weights, input_spikes_float)  # [n_d1]
-        d2_activation = torch.matmul(self.d2_weights, input_spikes_float)  # [n_d2]
-
-        # =====================================================================
-        # THETA MODULATION
-        # =====================================================================
-        # Compute theta modulation from current phase (set by Brain's OscillatorManager)
-        encoding_mod = (1 + torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
-        retrieval_mod = (1 - torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
-
-        theta_baseline_mod = THETA_BASELINE_MIN + THETA_BASELINE_RANGE * encoding_mod  # 0.7-1.0 range
-        theta_contrast_mod = THETA_CONTRAST_MIN + THETA_CONTRAST_RANGE * retrieval_mod  # 0.8-1.0 range
-
-        # Baseline excitation modulated by theta phase
-        baseline_exc = BASELINE_EXCITATION_SCALE * theta_baseline_mod  # 0.84-1.2 range
-
-        # =====================================================================
-        # TONIC DOPAMINE MODULATION OF D1 GAIN
-        # =====================================================================
-        # Tonic DA increases D1 pathway responsiveness (motivation, energy)
-        # This is separate from phasic DA which drives learning
-        d1_gain = 1.0
-        d2_gain = 1.0
-        if self.striatum_config.tonic_modulates_d1_gain:
-            # Higher tonic DA → stronger D1 response
-            tonic_factor = self.tonic_dopamine * TONIC_D1_GAIN_SCALE
-            d1_gain = 1.0 + tonic_factor  # e.g., tonic=0.3, scale=0.5 → gain=1.15
-
-        # =====================================================================
-        # BETA OSCILLATION MODULATION (Motor Control)
-        # =====================================================================
-        # Beta amplitude modulates D1/D2 balance for action maintenance vs switching:
-        # - High beta (e.g., 0.8-1.0): Action maintenance
-        #   * Boost D1 gain → stronger GO signals → maintain current action
-        #   * Reduce D2 gain → weaker NOGO signals → harder to switch
-        # - Low beta (e.g., 0.2-0.4): Action flexibility
-        #   * Reduce D1 gain → weaker GO signals → easier to interrupt
-        #   * Boost D2 gain → stronger NOGO signals → allow suppression
-        #
-        # Biology: Motor cortex shows high beta during postural maintenance,
-        # beta desynchronization (ERD) before action changes, and beta rebound
-        # (ERS) after new action selection.
-        beta_mod = self.striatum_config.beta_modulation_strength
-        d1_gain = d1_gain * (1.0 + beta_mod * (self._beta_amplitude - 0.5))
-        d2_gain = d2_gain * (1.0 - beta_mod * (self._beta_amplitude - 0.5))
-
-        # =====================================================================
-        # GOAL-CONDITIONED MODULATION (PFC → Striatum Gating)
-        # =====================================================================
-        # PFC goal context modulates D1/D2 pathways to implement goal-conditioned
-        # action selection. Different goals activate different striatal ensembles.
-        # Biology: PFC working memory → Striatum gating (Miller & Cohen 2001)
-        #
-        # Extract PFC component from concatenated input if goal conditioning is enabled.
-        # Input format: [cortex_l5 | hippocampus | pfc]
-        # PFC is at the end, size determined by pfc_size config.
-        pfc_goal_context = None
-        if (self.striatum_config.use_goal_conditioning and
-            self.pfc_modulation_d1 is not None):
-
-            # Extract PFC component from end of input
-            pfc_size = self.striatum_config.pfc_size
-            if input_spikes.shape[0] >= pfc_size:
-                pfc_goal_context = input_spikes[-pfc_size:]
-
-                # Convert bool to float if needed
-                if pfc_goal_context.dtype == torch.bool:
-                    pfc_goal_context = pfc_goal_context.float()
-
-                # Compute goal modulation via learned PFC → striatum weights
-                # Uses sigmoid to get modulation in [0, 1] range
-                goal_mod_d1 = torch.sigmoid(
-                    torch.matmul(self.pfc_modulation_d1, pfc_goal_context)
-                )  # [n_output]
-                goal_mod_d2 = torch.sigmoid(
-                    torch.matmul(self.pfc_modulation_d2, pfc_goal_context)
-                )  # [n_output]
-
-                # Modulate D1/D2 gains by goal context
-                # Strength parameter controls how much goals affect action selection
-                strength = self.striatum_config.goal_modulation_strength
-                d1_activation = d1_activation * (1.0 + strength * (goal_mod_d1 - 0.5))
-                d2_activation = d2_activation * (1.0 + strength * (goal_mod_d2 - 0.5))
-
-        # =====================================================================
-        # ACTIVITY-BASED EXCITABILITY MODULATION
-        # =====================================================================
-        # Intrinsic excitability based on recent activity history.
-        # Low activity neurons get higher gain, high activity get lower gain.
-        # This is a constraint-based approach (via HomeostasisManager) rather
-        # than a correction-based approach (former IntrinsicPlasticity).
-        if self.homeostasis_manager is not None:
-            d1_exc_gain, d2_exc_gain = self.homeostasis_manager.compute_excitability()
-            d1_gain = d1_gain * d1_exc_gain
-            d2_gain = d2_gain * d2_exc_gain
-
-        # =====================================================================
-        # D1 NEURON POPULATION (Direct Pathway / GO)
-        # =====================================================================
-        # D1 neurons receive d1_weights as excitatory input
-        # They don't receive D2 as inhibition - the populations are SEPARATE
-        # Apply tonic DA gain modulation to D1 pathway
-        d1_g_exc = (d1_activation * theta_contrast_mod * d1_gain + baseline_exc).clamp(min=0)
-        d1_g_inh = torch.zeros_like(d1_g_exc)  # No direct inhibition
-
-        # =====================================================================
-        # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
-        # =====================================================================
-        # High NE (arousal/uncertainty): Increase gain → more exploration
-        # Low NE (baseline): Normal gain
-        # Biological: NE modulates striatal excitability and action variability
-        ne_level = self.state.norepinephrine
-        # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
-        d1_g_exc = d1_g_exc * ne_gain
-
-        # Add lateral inhibition within D1 population if enabled
-        if self.striatum_config.lateral_inhibition:
-            d1_g_inh = d1_g_inh + self.recent_spikes * self.striatum_config.inhibition_strength * 0.5
-
-        d1_spikes, _ = self.d1_neurons(d1_g_exc, d1_g_inh)
-
-        # =====================================================================
-        # D2 NEURON POPULATION (Indirect Pathway / NOGO)
-        # =====================================================================
-        # D2 neurons receive d2_weights as excitatory input
-        # Their activity represents the NOGO signal for each action
-        # Apply d2_gain from activity-based excitability modulation
-        d2_g_exc = (d2_activation * theta_contrast_mod * d2_gain + baseline_exc).clamp(min=0)
-        d2_g_inh = torch.zeros_like(d2_g_exc)  # No direct inhibition
-
-        # Add lateral inhibition within D2 population if enabled
-        if self.striatum_config.lateral_inhibition:
-            d2_g_inh = d2_g_inh + self.recent_spikes * self.striatum_config.inhibition_strength * 0.5
-
-        d2_spikes, _ = self.d2_neurons(d2_g_exc, d2_g_inh)
-
-        # DEBUG: Check activation magnitudes (only on first call or after reset)
-        if hasattr(self, '_debug_trial_count'):
-            if self._debug_trial_count <= 1 or self._debug_trial_count % 50 == 0:
-                # Get input sparsity
-                n_active = input_spikes.sum().item()
-                d1_act_mean = d1_activation.mean().item()
-                d1_exc_mean = d1_g_exc.mean().item()
-                d1_spk_sum = d1_spikes.sum().item()
-                d2_spk_sum = d2_spikes.sum().item()
-                # Check membrane potential
-                d1_v_max = self.d1_neurons.membrane.max().item() if self.d1_neurons.membrane is not None else 0
-                print(f"    [ACT t={self._debug_trial_count}] input_active={n_active:.0f}, "
-                      f"d1_act_mean={d1_act_mean:.3f}, d1_g_exc={d1_exc_mean:.3f}, "
-                      f"d1_v_max={d1_v_max:.3f}, d1_spks={d1_spk_sum:.0f}, d2_spks={d2_spk_sum:.0f}")
-
-        # =====================================================================
-        # UPDATE ACTIVITY HISTORY FOR EXCITABILITY MODULATION
-        # =====================================================================
-        # Track D1/D2 firing rates for homeostatic excitability adjustment.
-        # This feeds into compute_excitability() for next timestep.
-        if self.homeostasis_manager is not None:
-            self.homeostasis_manager.update_activity(d1_spikes, d2_spikes)
+        # ForwardPassCoordinator handles all the complex modulation logic:
+        # - D1/D2 pathway activation computation
+        # - Theta/beta oscillator modulation
+        # - Tonic dopamine and norepinephrine gain modulation
+        # - Goal-conditioned modulation (PFC → Striatum)
+        # - Homeostatic excitability modulation
+        # - D1/D2 neuron population execution
+        d1_spikes, d2_spikes, pfc_goal_context = self.forward_coordinator.forward(
+            input_spikes=input_spikes,
+            recent_spikes=self.state_tracker.recent_spikes,
+        )
 
         # =====================================================================
         # ACTION SELECTION: D1 - D2 (GO - NOGO)
@@ -1483,6 +1344,9 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # TD(λ) traces accumulate with factor (γλ) instead of simple decay,
         # enabling credit assignment over longer delays (5-10 seconds)
         if self.td_lambda_d1 is not None:
+            # Convert bool spikes to float for gradient computation
+            input_spikes_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
+            
             # Update TD(λ) eligibility for D1 pathway
             # Note: We update for ALL neurons here; masking to chosen action
             # happens in deliver_reward() using last_action

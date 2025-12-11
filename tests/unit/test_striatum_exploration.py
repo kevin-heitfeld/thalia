@@ -78,10 +78,10 @@ class TestActionSelectionWithExploration:
     def test_finalize_action_ucb(self, striatum):
         """Test that finalize_action uses UCB bonus."""
         # Accumulate some votes
-        striatum._d1_votes_accumulated[0] = 10.0
-        striatum._d2_votes_accumulated[0] = 5.0
-        striatum._d1_votes_accumulated[1] = 8.0
-        striatum._d2_votes_accumulated[1] = 3.0
+        striatum.state_tracker._d1_votes_accumulated[0] = 10.0
+        striatum.state_tracker._d2_votes_accumulated[0] = 5.0
+        striatum.state_tracker._d1_votes_accumulated[1] = 8.0
+        striatum.state_tracker._d2_votes_accumulated[1] = 3.0
         
         # Take action 0 many times to bias UCB
         for _ in range(10):
@@ -99,8 +99,8 @@ class TestActionSelectionWithExploration:
         initial_trials = striatum._total_trials
         
         # Set up votes
-        striatum._d1_votes_accumulated[0] = 10.0
-        striatum._d2_votes_accumulated[0] = 2.0
+        striatum.state_tracker._d1_votes_accumulated[0] = 10.0
+        striatum.state_tracker._d2_votes_accumulated[0] = 2.0
         
         # Finalize action
         result = striatum.finalize_action(explore=False)
