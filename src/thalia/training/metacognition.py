@@ -78,7 +78,7 @@ import numpy as np
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from thalia.core.brain import EventDrivenBrain
+    pass
 
 
 # ============================================================================

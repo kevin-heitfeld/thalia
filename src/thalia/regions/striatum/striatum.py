@@ -52,6 +52,8 @@ from typing import Optional, Dict, Any, List, Generator
 import torch
 import torch.nn as nn
 
+from thalia.core.utils import clamp_weights
+
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.base_manager import ManagerContext
 from thalia.core.neuron_constants import (
@@ -976,7 +978,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # Scale by w_max and clamp to bounds
         weights = weights * self.config.w_max
 
-        return weights.clamp(self.config.w_min, self.config.w_max)
+        return clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
 
     def _update_d1_d2_eligibility(
         self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor,
@@ -1154,7 +1156,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             high=self.config.w_max * 0.2,
             device=self.device
         )
-        return weights.clamp(self.config.w_min, self.config.w_max)
+        return clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create MSN-like neurons (legacy - kept for parent class compatibility).

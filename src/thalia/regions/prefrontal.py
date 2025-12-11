@@ -52,16 +52,13 @@ from typing import TYPE_CHECKING, Optional, Dict, Any
 import torch
 import torch.nn as nn
 
-if TYPE_CHECKING:
-    from thalia.regions.prefrontal_hierarchy import Goal, GoalHierarchyManager, GoalHierarchyConfig
-    from thalia.regions.prefrontal_hierarchy import HyperbolicDiscounter, HyperbolicDiscountingConfig
-
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 
 from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
+from thalia.core.learning_constants import LEARNING_RATE_STDP
 from thalia.regions.base import (
     NeuralComponent,
     RegionConfig,
@@ -70,6 +67,10 @@ from thalia.regions.base import (
 )
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.neuron_constants import NE_GAIN_RANGE
+
+if TYPE_CHECKING:
+    from thalia.regions.prefrontal_hierarchy import Goal, GoalHierarchyManager, GoalHierarchyConfig
+    from thalia.regions.prefrontal_hierarchy import HyperbolicDiscounter, HyperbolicDiscountingConfig
 
 
 @dataclass
@@ -97,7 +98,7 @@ class PrefrontalConfig(RegionConfig):
 
     # Learning rates
     wm_lr: float = 0.1  # Learning rate for WM update weights
-    rule_lr: float = 0.01  # Learning rate for rule weights
+    rule_lr: float = LEARNING_RATE_STDP  # Learning rate for rule weights
     stdp_lr: float = 0.02  # STDP learning rate for spike-based version
 
     # STDP parameters

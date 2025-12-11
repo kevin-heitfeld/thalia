@@ -18,6 +18,11 @@ import torch
 from thalia.regions.base import RegionConfig, RegionState
 from thalia.learning.bcm import BCMConfig
 from thalia.config.robustness_config import RobustnessConfig
+from thalia.core.learning_constants import (
+    LEARNING_RATE_STDP,
+    TAU_STDP_PLUS,
+    TAU_STDP_MINUS,
+)
 
 
 def calculate_layer_sizes(n_output: int, l4_ratio: float, l23_ratio: float, l5_ratio: float) -> tuple[int, int, int]:
@@ -89,9 +94,9 @@ class LayeredCortexConfig(RegionConfig):
     l23_top_down_strength: float = 0.2  # Feedback to L2/3
 
     # STDP learning parameters
-    stdp_lr: float = 0.01
-    stdp_tau_plus: float = 20.0
-    stdp_tau_minus: float = 20.0
+    stdp_lr: float = LEARNING_RATE_STDP
+    stdp_tau_plus: float = TAU_STDP_PLUS
+    stdp_tau_minus: float = TAU_STDP_MINUS
 
     # Weight bounds for feedforward connections (positive-only, Dale's law)
     w_max: float = 1.0

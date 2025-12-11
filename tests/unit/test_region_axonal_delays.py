@@ -18,7 +18,7 @@ import torch
 
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
+from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 
@@ -119,14 +119,14 @@ def test_prefrontal_has_delay_buffer(device, dt):
 
 def test_hippocampus_has_delay_buffer(device, dt):
     """Verify Hippocampus initializes and uses delay buffer."""
-    config = TrisynapticConfig(
+    config = HippocampusConfig(
         n_input=30,
         n_output=25,  # CA1 output size
         axonal_delay_ms=2.5,
         dt_ms=dt,
         device=device,
     )
-    hippo = TrisynapticHippocampus(config)
+    hippo = Hippocampus(config)
 
     assert hasattr(hippo, 'axonal_delay_ms')
     assert hippo.axonal_delay_ms == 2.5

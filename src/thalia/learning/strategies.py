@@ -57,6 +57,7 @@ import torch
 import torch.nn as nn
 
 from thalia.config.base import LearningComponentConfig
+from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig as CoreSTDPConfig
 
 
@@ -206,7 +207,7 @@ class BaseStrategy(nn.Module, ABC):
             )
 
         # Apply update and clamp
-        new_weights = (weights + dw).clamp(cfg.w_min, cfg.w_max)
+        new_weights = clamp_weights(weights + dw, cfg.w_min, cfg.w_max, inplace=False)
         return new_weights
 
     def _compute_metrics(

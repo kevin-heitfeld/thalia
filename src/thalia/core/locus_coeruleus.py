@@ -39,7 +39,6 @@ Date: December 2025
 
 from dataclasses import dataclass
 from typing import Optional
-import math
 from .homeostatic_regulation import HomeostaticRegulator, HomeostaticConfig
 
 

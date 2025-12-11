@@ -4,8 +4,7 @@ Pathway Manager for EventDrivenBrain.
 Handles creation, tracking, and coordinated growth of all inter-region pathways.
 """
 
-from typing import Dict, List, Tuple, Optional, Any
-import torch
+from typing import Dict, List, Tuple, Any
 
 from thalia.integration.spiking_pathway import SpikingPathway, SpikingPathwayConfig
 from thalia.integration.spiking_pathway import SpikingLearningRule, TemporalCoding

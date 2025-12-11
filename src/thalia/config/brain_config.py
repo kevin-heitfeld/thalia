@@ -16,7 +16,7 @@ from enum import Enum
 
 # Import region configs from canonical locations
 from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
-from thalia.regions.hippocampus.config import TrisynapticConfig
+from thalia.regions.hippocampus.config import HippocampusConfig
 from thalia.regions.striatum.config import StriatumConfig
 from thalia.regions.prefrontal import PrefrontalConfig
 from thalia.regions.cerebellum import CerebellumConfig
@@ -159,7 +159,7 @@ class BrainConfig:
     # Cortex: uses PredictiveCortexConfig by default (local error-based learning)
     # n_input/n_output are placeholders - actual sizes come from RegionSizes
     cortex: PredictiveCortexConfig = field(default_factory=_default_cortex_config)
-    hippocampus: TrisynapticConfig = field(default_factory=TrisynapticConfig)
+    hippocampus: HippocampusConfig = field(default_factory=HippocampusConfig)
     striatum: StriatumConfig = field(default_factory=StriatumConfig)
     pfc: PrefrontalConfig = field(default_factory=PrefrontalConfig)
     cerebellum: CerebellumConfig = field(default_factory=CerebellumConfig)
@@ -197,25 +197,25 @@ class BrainConfig:
 
     # Execution mode
     parallel: bool = False
-    
+
     # Device (should inherit from GlobalConfig, but provided for convenience)
     device: str = "cpu"
-    
+
     # =========================================================================
     # Goal-conditioned behavior (PFC → Striatum modulation)
     # =========================================================================
     use_goal_conditioning: bool = False
     """Enable PFC goal context modulation of striatum (goal-directed behavior).
-    
+
     When True:
         - Striatum creates pfc_modulation_d1/d2 weights
         - PFC working memory modulates action selection
         - CRITICAL: striatum_pfc_size MUST match sizes.pfc_size
     """
-    
+
     use_population_coding: bool = True
     """Use population coding in striatum (multiple neurons per action)."""
-    
+
     neurons_per_action: int = 10
     """Number of neurons per action when use_population_coding=True."""
 
@@ -252,11 +252,11 @@ class BrainConfig:
         if self.use_population_coding:
             return self.sizes.n_actions * self.neurons_per_action
         return self.sizes.n_actions
-    
+
     @property
     def striatum_pfc_size(self) -> int:
         """PFC size that striatum should use for goal conditioning.
-        
+
         This MUST match sizes.pfc_size when use_goal_conditioning=True.
         Returns sizes.pfc_size by default for consistency.
         """

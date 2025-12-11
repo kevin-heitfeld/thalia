@@ -50,7 +50,14 @@ from typing import Optional, Dict, Any
 import torch
 
 from thalia.core.weight_init import WeightInitializer
+from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
+from thalia.core.learning_constants import (
+    LEARNING_RATE_ERROR_CORRECTIVE,
+    LEARNING_RATE_STDP,
+    TAU_STDP_PLUS,
+    TAU_ELIGIBILITY_STANDARD,
+)
 from thalia.core.neuron_constants import (
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
@@ -84,17 +91,17 @@ class CerebellumConfig(RegionConfig):
     """
 
     # Learning rates
-    learning_rate_ltp: float = 0.02   # Rate for strengthening correct
-    learning_rate_ltd: float = 0.02   # Rate for weakening incorrect
-    stdp_lr: float = 0.02  # STDP learning rate for spike-based version
+    learning_rate_ltp: float = LEARNING_RATE_ERROR_CORRECTIVE   # Rate for strengthening correct
+    learning_rate_ltd: float = LEARNING_RATE_ERROR_CORRECTIVE   # Rate for weakening incorrect
+    stdp_lr: float = LEARNING_RATE_STDP  # STDP learning rate for spike-based version
 
     # Error signaling
     error_threshold: float = 0.01     # Minimum error to trigger learning
     temporal_window_ms: float = 10.0  # Window for coincidence detection
 
     # Spike-based learning
-    stdp_tau_ms: float = 20.0  # STDP trace decay constant
-    eligibility_tau_ms: float = 500.0  # Eligibility trace decay (increased for delayed error)
+    stdp_tau_ms: float = TAU_STDP_PLUS  # STDP trace decay constant
+    eligibility_tau_ms: float = TAU_ELIGIBILITY_STANDARD  # Eligibility trace decay (increased for delayed error)
     heterosynaptic_ratio: float = 0.2  # LTD for non-active synapses
 
     # Weight bounds
@@ -264,13 +271,14 @@ class Cerebellum(NeuralComponent):
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize weights with small uniform values plus noise."""
         # Small initial weights (10% of max) with slight variation
-        return WeightInitializer.gaussian(
+        weights = WeightInitializer.gaussian(
             n_output=self.config.n_output,
             n_input=self.config.n_input,
             mean=self.config.w_max * 0.1,
             std=0.02,
             device=self.device
-        ).clamp(self.config.w_min, self.config.w_max)
+        )
+        return clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
 
     def set_oscillator_phases(
         self,
@@ -585,14 +593,14 @@ class Cerebellum(NeuralComponent):
             dw = torch.where(dw > 0, dw * ltp_factor, dw * ltd_factor)
 
         old_weights = self.weights.clone()
-        self.weights = (self.weights + dw).clamp(self.config.w_min, self.config.w_max)
+        self.weights = clamp_weights(self.weights + dw, self.config.w_min, self.config.w_max, inplace=False)
 
         # Synaptic scaling for homeostasis
         if cfg.synaptic_scaling_enabled:
             with torch.no_grad():
                 mean_weight = self.weights.mean()
                 scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
-                self.weights = (self.weights * scaling).clamp(self.config.w_min, self.config.w_max)
+                self.weights = clamp_weights(self.weights * scaling, self.config.w_min, self.config.w_max, inplace=False)
 
         actual_dw = self.weights - old_weights
         ltp = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
@@ -675,7 +683,7 @@ class Cerebellum(NeuralComponent):
             dw = torch.where(dw > 0, dw * headroom.clamp(0, 1), dw * footroom.clamp(0, 1))
 
         old_weights = self.weights.clone()
-        self.weights = (self.weights + dw).clamp(self.config.w_min, self.config.w_max)
+        self.weights = clamp_weights(self.weights + dw, self.config.w_min, self.config.w_max, inplace=False)
 
         actual_dw = self.weights - old_weights
         ltp = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
@@ -685,10 +693,10 @@ class Cerebellum(NeuralComponent):
 
     def reset_state(self) -> None:
         super().reset_state()
-        
+
         # Reset trace tensors
         self._reset_tensors('input_trace')
-        
+
         # Reset subsystems
         self._reset_subsystems('_trace_manager', 'climbing_fiber')
 

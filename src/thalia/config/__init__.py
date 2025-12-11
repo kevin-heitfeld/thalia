@@ -45,7 +45,7 @@ from .brain_config import (
 # Re-export region configs from canonical locations
 from thalia.regions.cortex.config import LayeredCortexConfig
 from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
-from thalia.regions.hippocampus.config import TrisynapticConfig
+from thalia.regions.hippocampus.config import HippocampusConfig
 from thalia.regions.striatum.config import StriatumConfig
 from thalia.regions.prefrontal import PrefrontalConfig
 from thalia.regions.cerebellum import CerebellumConfig
@@ -111,7 +111,7 @@ __all__ = [
     # Region configs (canonical locations)
     "LayeredCortexConfig",
     "PredictiveCortexConfig",
-    "TrisynapticConfig",
+    "HippocampusConfig",
     "StriatumConfig",
     "PrefrontalConfig",
     "CerebellumConfig",

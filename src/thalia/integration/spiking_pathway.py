@@ -33,6 +33,7 @@ import torch.nn as nn
 import numpy as np
 
 from thalia.config.base import NeuralComponentConfig
+from thalia.core.utils import clamp_weights
 from thalia.core.neuron_constants import (
     TAU_MEM_STANDARD,
     TAU_SYN_EXCITATORY,
@@ -44,7 +45,6 @@ from thalia.core.neuron_constants import (
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.regions.base import NeuralComponent, LearningRule
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
-from thalia.core.utils import clamp_weights
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.learning.bcm import BCMRule, BCMConfig
@@ -434,7 +434,7 @@ class SpikingPathway(NeuralComponent):
                 device=cfg.device
             )
 
-        return weights.clamp(cfg.w_min, cfg.w_max)
+        return clamp_weights(weights, cfg.w_min, cfg.w_max, inplace=False)
 
     def forward(
         self,
@@ -916,7 +916,7 @@ class SpikingPathway(NeuralComponent):
             )
 
         # Clamp to weight bounds
-        new_weights = new_weights.clamp(cfg.w_min, cfg.w_max)
+        new_weights = clamp_weights(new_weights, cfg.w_min, cfg.w_max, inplace=False)
 
         # Concatenate old and new weights
         expanded_weights = torch.cat([old_weights, new_weights], dim=0)

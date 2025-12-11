@@ -60,19 +60,6 @@ Each region has its own learning rule:
 
 ## Code Patterns
 
-### State Management
-```python
-# Mutable timestep state → RegionState dataclass
-self.state.spikes  # Current spikes
-self.state.dopamine  # Current neuromodulator level
-
-# Immutable/config → Direct attributes
-self.weights  # Learnable parameters
-self.config  # Configuration
-self.neurons  # Neuron objects
-```
-**See**: `docs/patterns/state-management.md`
-
 ### Weight Initialization
 ```python
 # Always use WeightInitializer registry
@@ -95,91 +82,15 @@ module.to(device)
 input_data = batch["input"].to(self.device)
 ```
 
-### Imports
-```python
-# External users (notebooks, experiments)
-from thalia import Brain, Striatum, WeightInitializer
-
-# Internal development (library code)
-from thalia.core.neuron import ConductanceLIF
-from thalia.regions.striatum import Striatum
-from thalia.learning.bcm import BCMRule
-```
-
-## Common Tasks
-
-### Adding a New Region
-1. Inherit from `BrainRegion` (+ mixins if needed)
-2. Create `RegionConfig` dataclass
-3. Implement `_initialize_weights()` using `WeightInitializer`
-4. Implement `forward()` - spike-based processing
-5. Implement `_get_learning_rule()` - return learning type
-6. Add to `regions/__init__.py` exports
-7. Register with `@register_region("name")`
-
-### Adding Learning Functionality
-- **Component Parity**: See `docs/patterns/component-parity.md` - implement for BOTH regions and pathways
-- **Diagnostics**: Use `DiagnosticsMixin`
-- **Action Selection**: Use `ActionSelectionMixin`
-- **Learning Strategies**: Use `LearningStrategyMixin`
-- **Growth**: Use `GrowthManager` for both regions and pathways
-
-### Adding Features (FOLLOW THIS CHECKLIST)
-1. ✅ Add method to `BrainComponent` protocol in `src/thalia/core/component_protocol.py`
-2. ✅ Implement for `BrainRegion` in `src/thalia/regions/base.py`
-3. ✅ Implement for `BaseNeuralPathway` in `src/thalia/core/pathway_protocol.py`
-4. ✅ Write tests for regions (e.g., `tests/unit/test_striatum_growth.py`)
-5. ✅ Write tests for pathways (e.g., `tests/unit/test_pathway_growth.py`)
-6. ✅ Update documentation mentioning both regions AND pathways
-7. ✅ Type checker passes (protocol enforces implementations)
-
-**If you forget pathways, the system breaks!**
-
-### Testing
-```bash
-# Run specific test file
-pytest tests/unit/test_brain_regions.py
-
-# Run with coverage
-pytest --cov=src/thalia tests/
-
-# Run integration tests
-pytest tests/integration/
-```
-
 ## Key Files
 
 ### Documentation
 - `docs/patterns/component-parity.md` - ⭐ **START HERE** - Regions and pathways parity
 - `docs/patterns/state-management.md` - When to use RegionState vs attributes
-- `docs/patterns/configuration.md` - Config hierarchy and parameters
 - `docs/patterns/mixins.md` - Available mixins and their methods
 - `docs/design/checkpoint_format.md` - Checkpoint format specification
 - `docs/design/curriculum_strategy.md` - Training curriculum stages
 - `docs/decisions/` - Architecture decision records (ADRs)
-- `docs/CODEBASE_IMPROVEMENTS.md` - Completed improvements roadmap
-
-### Core Components
-- `src/thalia/core/component_protocol.py` - ⭐ Unified protocol for regions AND pathways
-- `src/thalia/core/neuron.py` - LIF and ConductanceLIF neurons
-- `src/thalia/core/weight_init.py` - Weight initialization registry
-- `src/thalia/regions/base.py` - BrainRegion abstract base (implements BrainComponent)
-- `src/thalia/core/pathway_protocol.py` - BaseNeuralPathway base (implements BrainComponent)
-- `src/thalia/core/brain.py` - Full brain system
-- `src/thalia/core/growth.py` - Growth manager for both regions and pathways
-
-### Regions
-- `src/thalia/regions/striatum/` - Reinforcement learning (3-factor rule)
-- `src/thalia/regions/hippocampus/` - Episodic memory (trisynaptic circuit)
-- `src/thalia/regions/cortex/` - Feature learning (layered cortex)
-- `src/thalia/regions/prefrontal.py` - Working memory (gated STDP)
-- `src/thalia/regions/cerebellum.py` - Supervised learning (error-corrective)
-
-### Pathways (Just as important as regions!)
-- `src/thalia/sensory/pathways.py` - Sensory encoding (VisualPathway, AuditoryPathway, LanguagePathway)
-- `src/thalia/integration/spiking_pathway.py` - Base inter-region pathway with STDP learning
-- `src/thalia/integration/pathways/spiking_attention.py` - PFC→Cortex top-down modulation
-- `src/thalia/integration/pathways/spiking_replay.py` - Hippocampus→Cortex consolidation during sleep
 
 ## Biological Accuracy Constraints
 
@@ -197,37 +108,6 @@ pytest tests/integration/
 - Use negative firing rates
 - Access future timesteps in current computation
 
-## Performance Considerations
-
-- Batch size is typically 1 (single trial processing)
-- Use `device=device` at tensor creation (not `.to(device)`)
-- Sparse connectivity where biologically appropriate
-- Short-term plasticity adds overhead (enable when needed)
-
-## Debugging Tips
-
-### Check Health
-```python
-health = region.check_health()
-if not health.is_healthy:
-    print(health.issues)
-```
-
-### Monitor Spikes
-```python
-firing_rate = region.get_firing_rate(spikes)
-if firing_rate > 0.9:  # Runaway excitation
-    # Check inhibition, thresholds
-if firing_rate < 0.01:  # Silence
-    # Check input strength, weights
-```
-
-### Visualize Learning
-```python
-metrics = region.learn(...)
-print(f"LTP: {metrics['ltp']}, LTD: {metrics['ltd']}")
-```
-
 ## Questions to Ask
 
 When uncertain about implementation:
@@ -236,16 +116,10 @@ When uncertain about implementation:
 3. **Are spikes binary?** (No analog firing rates in processing)
 4. **Is device handling correct?** (Pattern 1 for new tensors)
 5. **Does it match existing patterns?** (Check similar regions)
-6. **⭐ Did I implement for BOTH regions AND pathways?** (Check component-parity.md)
+6. **Did I implement for BOTH regions AND pathways?** (Check component-parity.md)
 
 ## References
 
-- **⭐ Component Parity**: `docs/patterns/component-parity.md` (READ THIS FIRST)
+- **Component Parity**: `docs/patterns/component-parity.md`
 - **State Management**: `docs/patterns/state-management.md`
-- **Config System**: `docs/patterns/configuration.md`
 - **Mixins**: `docs/patterns/mixins.md`
-- **Improvements**: `docs/CODEBASE_IMPROVEMENTS.md`
-
----
-
-**Last Updated**: December 7, 2025

@@ -1,7 +1,7 @@
 """
 Event-Driven Hippocampus Adapter.
 
-Wraps TrisynapticHippocampus for event-driven simulation.
+Wraps Hippocampus for event-driven simulation.
 
 Author: Thalia Project
 Date: December 2025
@@ -19,7 +19,7 @@ from .base import EventDrivenRegionBase, EventRegionConfig
 
 
 class EventDrivenHippocampus(EventDrivenRegionBase):
-    """Event-driven wrapper for TrisynapticHippocampus.
+    """Event-driven wrapper for Hippocampus.
 
     Adapts the hippocampus for event-driven simulation. Handles:
     - Phase determination from theta (ENCODE/DELAY/RETRIEVE)
@@ -35,7 +35,7 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
     def __init__(
         self,
         config: EventRegionConfig,
-        hippocampus: Any,  # TrisynapticHippocampus instance
+        hippocampus: Any,  # Hippocampus instance
     ):
         super().__init__(config)
         self.impl_module = hippocampus  # Register as public attribute for nn.Module
@@ -119,7 +119,7 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
         )
 
         # Forward through hippocampus (already expects 1D after ADR-005 update)
-        # Theta modulation computed internally by TrisynapticHippocampus
+        # Theta modulation computed internally by Hippocampus
         output = self.impl.forward(input_spikes, ec_direct_input=self._ec_direct_input)
 
         return output

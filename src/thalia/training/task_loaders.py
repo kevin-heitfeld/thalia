@@ -264,10 +264,10 @@ class SensorimotorTaskLoader:
         # Random motor babbling or directed movement
         if np.random.rand() < 0.5:
             # Random exploration
-            motor_spikes = torch.rand(self.wrapper.n_motor_neurons) < SPIKE_PROBABILITY_LOW
+            motor_spikes = torch.rand(self.wrapper.n_motor_neurons, device=self.config.device) < SPIKE_PROBABILITY_LOW
         else:
             # Directed command (simple policy)
-            motor_spikes = torch.zeros(self.wrapper.n_motor_neurons, dtype=torch.bool)
+            motor_spikes = torch.zeros(self.wrapper.n_motor_neurons, dtype=torch.bool, device=self.config.device)
             if self.wrapper.n_motor_neurons > 0:
                 motor_spikes[0] = True
 
@@ -296,7 +296,7 @@ class SensorimotorTaskLoader:
     def _reaching_task(self, obs_spikes: torch.Tensor) -> Dict[str, Any]:
         """Reaching task: Move effector toward visual target."""
         # Simple heuristic policy
-        motor_spikes = torch.rand(self.wrapper.n_motor_neurons) < SPIKE_PROBABILITY_MEDIUM
+        motor_spikes = torch.rand(self.wrapper.n_motor_neurons, device=self.config.device) < SPIKE_PROBABILITY_MEDIUM
 
         # Execute action
         next_obs, reward, terminated, truncated = self.wrapper.step(motor_spikes)
@@ -327,7 +327,7 @@ class SensorimotorTaskLoader:
     def _manipulation_task(self, obs_spikes: torch.Tensor) -> Dict[str, Any]:
         """Manipulation task: Push/pull objects."""
         # Generate motor command
-        motor_spikes = torch.rand(self.wrapper.n_motor_neurons) < SPIKE_PROBABILITY_HIGH
+        motor_spikes = torch.rand(self.wrapper.n_motor_neurons, device=self.config.device) < SPIKE_PROBABILITY_HIGH
 
         # Execute action
         next_obs, reward, _, _ = self.wrapper.step(motor_spikes)
@@ -358,7 +358,7 @@ class SensorimotorTaskLoader:
     def _prediction_task(self, obs_spikes: torch.Tensor) -> Dict[str, Any]:
         """Prediction task: Learn forward/inverse models."""
         # Generate motor command
-        motor_spikes = torch.rand(self.wrapper.n_motor_neurons) < SPIKE_PROBABILITY_LOW
+        motor_spikes = torch.rand(self.wrapper.n_motor_neurons, device=self.config.device) < SPIKE_PROBABILITY_LOW
 
         # Execute action
         next_obs, reward, terminated, truncated = self.wrapper.step(motor_spikes)

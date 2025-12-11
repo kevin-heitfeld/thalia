@@ -71,7 +71,7 @@ class MentalSimulationCoordinator:
     def __init__(
         self,
         pfc,  # Prefrontal instance
-        hippocampus,  # TrisynapticHippocampus instance
+        hippocampus,  # Hippocampus instance
         striatum,  # Striatum instance
         cortex=None,  # Optional Cortex instance
         config: Optional[SimulationConfig] = None

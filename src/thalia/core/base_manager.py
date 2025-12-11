@@ -40,7 +40,7 @@ Usage Example:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 from typing import Generic, TypeVar, Optional, Dict, Any
 

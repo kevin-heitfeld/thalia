@@ -13,7 +13,7 @@ Key features:
 """
 
 from dataclasses import dataclass
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional, List, Dict, Any
 import torch
 import torch.nn as nn
 from ..spiking_pathway import SpikingPathway, SpikingPathwayConfig, TemporalCoding

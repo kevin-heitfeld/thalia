@@ -67,7 +67,7 @@ Date: December 2025
 from __future__ import annotations
 
 from enum import Enum, auto
-from typing import Optional, Callable, Dict, Any
+from typing import Callable, Dict
 import math
 
 import torch

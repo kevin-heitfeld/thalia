@@ -14,6 +14,7 @@ from typing import Dict, Any
 
 import torch
 
+from thalia.core.utils import clamp_weights
 from .pathway_base import StriatumPathway, StriatumPathwayConfig
 
 
@@ -92,7 +93,7 @@ class D2Pathway(StriatumPathway):
             # Apply to weights with clipping
             old_weights = self.weights.data.clone()
             self.weights.data = self.weights.data + total_plasticity
-            self.weights.data.clamp_(self.config.w_min, self.config.w_max)
+            clamp_weights(self.weights.data, self.config.w_min, self.config.w_max, inplace=True)
             
             # Compute metrics
             actual_change = self.weights.data - old_weights

@@ -76,7 +76,11 @@ from thalia.regions.cortex.predictive_cortex import PredictiveCortex, Predictive
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
+from thalia.regions.hippocampus import (
+    Hippocampus,
+    HippocampusConfig,
+    HippocampusState,
+)
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 
 # Register all regions with the factory
@@ -85,7 +89,7 @@ register_region("predictive_cortex")(PredictiveCortex)
 register_region("cerebellum")(Cerebellum)
 register_region("striatum")(Striatum)
 register_region("prefrontal", aliases=["pfc"])(Prefrontal)
-register_region("hippocampus", aliases=["trisynaptic"])(TrisynapticHippocampus)
+register_region("hippocampus", aliases=["trisynaptic"])(Hippocampus)
 
 __all__ = [
     # Base classes
@@ -112,9 +116,10 @@ __all__ = [
     # Prefrontal
     "Prefrontal",
     "PrefrontalConfig",
-    # Hippocampus (Trisynaptic: DG→CA3→CA1)
-    "TrisynapticHippocampus",
-    "TrisynapticConfig",
+    # Hippocampus (trisynaptic circuit: DG→CA3→CA1)
+    "Hippocampus",
+    "HippocampusConfig",
+    "HippocampusState",
     # Theta dynamics
     "FeedforwardInhibition",
 ]

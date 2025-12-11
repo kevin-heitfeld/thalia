@@ -7,6 +7,7 @@ Centralizes management of VTA dopamine, LC norepinephrine, and NB acetylcholine 
 from typing import Dict, Any
 import torch
 
+from thalia.core.spike_utils import compute_firing_rate
 from thalia.core.vta import VTADopamineSystem, VTAConfig
 from thalia.core.locus_coeruleus import LocusCoeruleusSystem, LocusCoeruleusConfig
 from thalia.core.nucleus_basalis import NucleusBasalisSystem, NucleusBasalisConfig
@@ -95,7 +96,7 @@ class NeuromodulatorManager:
         
         # 1. PFC conflict/uncertainty (when multiple goals compete)
         if pfc_spikes is not None:
-            pfc_activity = pfc_spikes.float().mean().item()
+            pfc_activity = compute_firing_rate(pfc_spikes)
             # High diffuse activity = uncertainty about what to remember
             if 0.3 < pfc_activity < 0.7:
                 uncertainty += 0.3
@@ -134,7 +135,7 @@ class NeuromodulatorManager:
         intrinsic_reward = 0.0
         
         if ca1_spikes is not None:
-            ca1_activity = ca1_spikes.float().mean().item()
+            ca1_activity = compute_firing_rate(ca1_spikes)
             
             # MATCH: High CA1 activity when stored pattern exists
             if stored_pattern_exists and ca1_activity > 0.5:

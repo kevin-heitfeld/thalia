@@ -7,7 +7,7 @@ Separates the complexity of state management from core Striatum logic.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Any, List
+from typing import TYPE_CHECKING, Dict, Any
 
 import torch
 

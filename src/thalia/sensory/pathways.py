@@ -35,8 +35,8 @@ How the Real Brain Does It:
 Key Insight:
 ============
 Once information is converted to SPIKES, the brain processes all modalities
-the same way. The magic is in the encoding - after that, it's all spikes
-flowing through the same neural circuits.
+similarly using the same circuitry. The magic is in the encoding - after that,
+it's all spikes flowing through the same neural circuits.
 
 Our Design:
 ===========
@@ -77,6 +77,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from thalia.core.spike_utils import compute_firing_rate
 from thalia.regions.base import NeuralComponent
 from thalia.core.component_registry import register_pathway
 
@@ -384,7 +385,7 @@ class RetinalEncoder(nn.Module):
             "modality": "vision",
             "on_activity": on_flat.mean().item(),
             "off_activity": off_flat.mean().item(),
-            "sparsity": spikes.float().mean().item(),
+            "sparsity": compute_firing_rate(spikes),
             "mean_latency": self._compute_mean_latency(spikes),
         }
 

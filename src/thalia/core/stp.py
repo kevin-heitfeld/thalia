@@ -47,6 +47,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from thalia.core.utils import clamp_weights
+
 
 class STPType(Enum):
     """Predefined synapse types based on Markram et al. (1998) classification."""
@@ -381,7 +383,7 @@ class STPSynapse(nn.Module):
 
         # Initialize weights
         weights = torch.randn(n_pre, n_post) * w_init_std + w_init_mean
-        weights = torch.clamp(weights, w_min, w_max)
+        weights = clamp_weights(weights, w_min, w_max, inplace=False)
         self.weight = nn.Parameter(weights)
 
         # STP module
@@ -410,7 +412,7 @@ class STPSynapse(nn.Module):
         efficacy = self.stp(pre_spikes)
 
         # Clamp weights
-        w = torch.clamp(self.weight, self.w_min, self.w_max)
+        w = clamp_weights(self.weight, self.w_min, self.w_max, inplace=False)
 
         if self.per_synapse_stp:
             # efficacy is (batch, n_pre, n_post)
@@ -429,7 +431,7 @@ class STPSynapse(nn.Module):
 
     def get_effective_weights(self) -> torch.Tensor:
         """Get current effective weights (static × STP)."""
-        w = torch.clamp(self.weight, self.w_min, self.w_max)
+        w = clamp_weights(self.weight, self.w_min, self.w_max, inplace=False)
         efficacy = self.stp.get_efficacy()
 
         if self.per_synapse_stp:

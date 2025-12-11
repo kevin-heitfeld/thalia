@@ -116,8 +116,7 @@ class BrainCheckpoint:
             >>> policy = PrecisionPolicy(weights='fp16', biases='fp32', membrane='fp32')
             >>> BrainCheckpoint.save(brain, "checkpoint.thalia", precision_policy=policy)
         """
-        from .compression import detect_compression, compress_data, CompressedFile
-        import io
+        from .compression import detect_compression, compress_data
         
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,4 @@
-"""
+"""  
 Intrinsic Plasticity: Activity-Dependent Threshold Adaptation.
 
 Intrinsic plasticity adjusts neuron excitability based on activity history.
@@ -323,7 +323,7 @@ class PopulationIntrinsicPlasticity(nn.Module):
         cfg = self.config
         
         # Compute population rate
-        pop_rate = spikes.float().mean().item()
+        pop_rate = compute_firing_rate(spikes)
         
         # Update running average
         decay = cfg.rate_decay

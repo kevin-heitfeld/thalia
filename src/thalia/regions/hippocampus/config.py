@@ -14,6 +14,11 @@ import torch
 
 from thalia.regions.base import RegionConfig, RegionState
 from thalia.core.stp import STPType
+from thalia.core.learning_constants import (
+    LEARNING_RATE_ONE_SHOT,
+    TAU_STDP_PLUS,
+    TAU_STDP_MINUS,
+)
 
 
 @dataclass
@@ -43,8 +48,8 @@ class Episode:
 
 
 @dataclass
-class TrisynapticConfig(RegionConfig):
-    """Configuration for trisynaptic hippocampus.
+class HippocampusConfig(RegionConfig):
+    """Configuration for hippocampus (trisynaptic circuit).
 
     The hippocampus has ~5x expansion from EC to DG, then compression back.
     """
@@ -81,10 +86,10 @@ class TrisynapticConfig(RegionConfig):
     ampa_ratio: float = 0.05         # Minimal ungated response (discrimination comes from NMDA)
 
     # Learning rates
-    learning_rate: float = 0.2       # Fast one-shot learning for CA3 recurrent
+    learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
     ec_ca1_learning_rate: float = 0.5  # Strong learning for EC→CA1 alignment
-    stdp_tau_plus: float = 20.0      # ms
-    stdp_tau_minus: float = 20.0     # ms
+    stdp_tau_plus: float = TAU_STDP_PLUS      # ms
+    stdp_tau_minus: float = TAU_STDP_MINUS     # ms
 
     # Weight bounds
     w_max: float = 2.0
@@ -226,8 +231,8 @@ class TrisynapticConfig(RegionConfig):
 
 
 @dataclass
-class TrisynapticState(RegionState):
-    """State for trisynaptic hippocampus.
+class HippocampusState(RegionState):
+    """State for hippocampus (trisynaptic circuit).
 
     The CA1 spikes ARE the output - no interpretation needed!
     Different CA1 spike patterns naturally emerge for match vs mismatch
@@ -262,3 +267,20 @@ class TrisynapticState(RegionState):
 
     # Current feedforward inhibition strength
     ffi_strength: float = 0.0
+
+
+# ============================================================================
+# DEPRECATED ALIASES (for backward compatibility)
+# ============================================================================
+# These will be removed in v0.4.0
+
+import warnings
+
+def _deprecated_alias(old_name: str, new_name: str):
+    """Helper to create deprecation warning."""
+    warnings.warn(
+        f"{old_name} is deprecated and will be removed in v0.4.0. "
+        f"Use {new_name} instead.",
+        DeprecationWarning,
+        stacklevel=3
+    )

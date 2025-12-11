@@ -1,4 +1,4 @@
-"""
+"""  
 E/I Balance Regulation: Maintaining Excitation/Inhibition Balance.
 
 Real neural circuits maintain a careful balance between excitation and
@@ -43,6 +43,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+
+from thalia.core.spike_utils import compute_firing_rate
 
 from thalia.diagnostics import auto_diagnostics
 
@@ -157,8 +159,8 @@ class EIBalanceRegulator(nn.Module):
         Returns:
             E/I ratio (excitatory activity / inhibitory activity)
         """
-        exc_rate = exc_spikes.float().mean().item()
-        inh_rate = inh_spikes.float().mean().item()
+        exc_rate = compute_firing_rate(exc_spikes)
+        inh_rate = compute_firing_rate(inh_spikes)
         
         return exc_rate / (inh_rate + eps)
     
@@ -182,8 +184,8 @@ class EIBalanceRegulator(nn.Module):
         cfg = self.config
         
         # Compute instantaneous rates
-        exc_rate = exc_spikes.float().mean().item()
-        inh_rate = inh_spikes.float().mean().item()
+        exc_rate = compute_firing_rate(exc_spikes)
+        inh_rate = compute_firing_rate(inh_spikes)
         
         # Update running averages with exponential decay
         decay = cfg.decay

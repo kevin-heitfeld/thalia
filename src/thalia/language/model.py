@@ -65,7 +65,6 @@ from thalia.core.mixins import ConfigurableMixin
 from thalia.language.encoder import (
     SpikeEncoder,
     SpikeEncoderConfig,
-    CodingStrategy,
 )
 from thalia.language.decoder import (
     SpikeDecoder,

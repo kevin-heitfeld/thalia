@@ -10,31 +10,36 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from thalia.regions.base import RegionConfig, LearningRule
+from thalia.core.learning_constants import (
+    TAU_ELIGIBILITY_STANDARD,
+    LEARNING_RATE_STDP,
+    TAU_STDP_PLUS,
+)
 
 
 @dataclass
 class StriatumConfig(RegionConfig):
     """Configuration specific to striatal regions.
-    
+
     Key Features:
     =============
     1. THREE-FACTOR LEARNING: Δw = eligibility × dopamine
     2. D1/D2 OPPONENT PATHWAYS: Go/No-Go balance
     3. POPULATION CODING: Multiple neurons per action
     4. ADAPTIVE EXPLORATION: UCB + uncertainty-driven
-    
+
     Note: Dopamine/RPE computation has been centralized at the Brain level
     (Brain acts as VTA). Striatum receives dopamine via set_dopamine().
     """
 
     # Eligibility trace parameters (biological: 500-2000ms)
-    eligibility_tau_ms: float = 1000.0
+    eligibility_tau_ms: float = TAU_ELIGIBILITY_STANDARD
 
     # Learning rate for homeostatic normalization
-    learning_rate: float = 0.005
+    learning_rate: float = 0.005  # Region-specific value
 
     # STDP learning rate for weight updates
-    stdp_lr: float = 0.005
+    stdp_lr: float = LEARNING_RATE_STDP
 
     # Action selection
     lateral_inhibition: bool = True
@@ -45,7 +50,7 @@ class StriatumConfig(RegionConfig):
     # Δw_d1 = d1_eligibility × dopamine (standard)
     # Δw_d2 = d2_eligibility × (-dopamine) (inverted)
     learning_rule: LearningRule = LearningRule.REWARD_MODULATED_STDP
-    stdp_tau_ms: float = 20.0
+    stdp_tau_ms: float = TAU_STDP_PLUS
     heterosynaptic_ratio: float = 0.3
 
     # =========================================================================

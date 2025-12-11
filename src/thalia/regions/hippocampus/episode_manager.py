@@ -10,29 +10,29 @@ import torch
 
 from thalia.core.base_manager import BaseManager, ManagerContext
 from thalia.core.utils import cosine_similarity_safe
-from thalia.regions.hippocampus.config import Episode, TrisynapticConfig
+from thalia.regions.hippocampus.config import Episode, HippocampusConfig
 
 
-class EpisodeManager(BaseManager[TrisynapticConfig]):
+class EpisodeManager(BaseManager[HippocampusConfig]):
     """Manages episodic memory buffer for experience replay.
-    
+
     Responsibilities:
     - Store episodes with priority
     - Sample prioritized episodes
     - Retrieve similar experiences (pattern completion)
     - Buffer management (capacity limits)
     """
-    
-    def __init__(self, config: TrisynapticConfig, context: ManagerContext):
+
+    def __init__(self, config: HippocampusConfig, context: ManagerContext):
         """Initialize episode manager.
-        
+
         Args:
             config: Hippocampus configuration
             context: Manager context (device, dimensions, etc.)
         """
         super().__init__(config, context)
         self.episode_buffer: List[Episode] = []
-        
+
     def store_episode(
         self,
         state: torch.Tensor,
@@ -93,13 +93,13 @@ class EpisodeManager(BaseManager[TrisynapticConfig]):
             self.episode_buffer.pop(min_idx)
 
         self.episode_buffer.append(episode)
-        
+
     def sample_episodes_prioritized(self, n: int) -> List[Episode]:
         """Sample episodes with probability proportional to priority.
-        
+
         Args:
             n: Number of episodes to sample
-            
+
         Returns:
             Sampled episodes (up to n, or fewer if buffer is small)
         """
@@ -112,7 +112,7 @@ class EpisodeManager(BaseManager[TrisynapticConfig]):
 
         indices = torch.multinomial(probs, n, replacement=False)
         return [self.episode_buffer[i] for i in indices]
-        
+
     def retrieve_similar(
         self,
         query_state: torch.Tensor,
@@ -195,22 +195,22 @@ class EpisodeManager(BaseManager[TrisynapticConfig]):
                 })
 
         return similar
-        
+
     def clear_buffer(self) -> None:
         """Clear all episodes from buffer."""
         self.episode_buffer.clear()
-    
+
     def reset_state(self) -> None:
         """Reset episode manager state (trial boundaries)."""
         # Episode buffer persists across trials (long-term memory)
         pass
-    
+
     def to(self, device: torch.device) -> "EpisodeManager":
         """Move all tensors to specified device.
-        
+
         Args:
             device: Target device
-            
+
         Returns:
             Self for chaining
         """
@@ -223,7 +223,7 @@ class EpisodeManager(BaseManager[TrisynapticConfig]):
             if episode.sequence is not None:
                 episode.sequence = [s.to(device) for s in episode.sequence]
         return self
-        
+
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get episode buffer diagnostics."""
         if not self.episode_buffer:
@@ -232,7 +232,7 @@ class EpisodeManager(BaseManager[TrisynapticConfig]):
                 "total_rewards": 0.0,
                 "correct_ratio": 0.0,
             }
-            
+
         return {
             "buffer_size": len(self.episode_buffer),
             "total_rewards": sum(ep.reward for ep in self.episode_buffer),

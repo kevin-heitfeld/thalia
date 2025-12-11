@@ -37,7 +37,7 @@ def create_event_driven_brain(
         Dict mapping region names to EventDrivenRegion instances
     """
     from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
-    from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
+    from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
     from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
     from thalia.regions.striatum import Striatum, StriatumConfig
 
@@ -51,12 +51,12 @@ def create_event_driven_brain(
     )
     cortex = LayeredCortex(cortex_config)
 
-    hippo_config = TrisynapticConfig(
+    hippo_config = HippocampusConfig(
         n_input=hidden_size,  # Receives from cortex
         n_output=hidden_size,
         device=device,
     )
-    hippocampus = TrisynapticHippocampus(hippo_config)
+    hippocampus = Hippocampus(hippo_config)
 
     pfc_config = PrefrontalConfig(
         n_input=hidden_size,

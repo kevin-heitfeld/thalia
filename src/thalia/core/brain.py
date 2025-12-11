@@ -95,6 +95,7 @@ from thalia.events.parallel import ParallelExecutor
 from .pathway_manager import PathwayManager
 from .neuromodulator_manager import NeuromodulatorManager
 from .neuron_constants import INTRINSIC_LEARNING_THRESHOLD
+from .spike_utils import compute_firing_rate
 from .diagnostics import (
     DiagnosticsManager,
     StriatumDiagnostics,
@@ -111,7 +112,7 @@ from ..io import CheckpointManager
 # Import actual region implementations
 from ..regions.cortex import LayeredCortex, LayeredCortexConfig
 from ..regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
-from ..regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
+from ..regions.hippocampus import Hippocampus, HippocampusConfig
 from ..regions.prefrontal import Prefrontal, PrefrontalConfig
 from ..regions.striatum import Striatum, StriatumConfig
 from ..regions.cerebellum import Cerebellum, CerebellumConfig
@@ -275,7 +276,7 @@ class EventDrivenBrain(nn.Module):
         cortex_to_hippo_size = self._cortex_l23_size
 
         # 2. HIPPOCAMPUS: Episodic memory
-        _hippocampus_impl = TrisynapticHippocampus(TrisynapticConfig(
+        _hippocampus_impl = Hippocampus(HippocampusConfig(
             dt_ms=self.config.dt_ms,
             device=self.config.device,
             n_input=cortex_to_hippo_size,
@@ -724,7 +725,7 @@ class EventDrivenBrain(nn.Module):
         from thalia.core.component_registry import ComponentRegistry
         from thalia.config import (
             ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes,
-            LayeredCortexConfig, TrisynapticConfig, PrefrontalConfig,
+            LayeredCortexConfig, PrefrontalConfig,
             StriatumConfig, CerebellumConfig
         )
 
@@ -757,7 +758,7 @@ class EventDrivenBrain(nn.Module):
             if region_type == "cortex" or region_type == "layered_cortex":
                 config_obj = LayeredCortexConfig(**region_config)
             elif region_type == "hippocampus" or region_type == "trisynaptic":
-                config_obj = TrisynapticConfig(**region_config)
+                config_obj = HippocampusConfig(**region_config)
             elif region_type == "prefrontal" or region_type == "pfc":
                 config_obj = PrefrontalConfig(**region_config)
             elif region_type == "striatum":
@@ -849,7 +850,7 @@ class EventDrivenBrain(nn.Module):
         uses the existing module-level creator functions from parallel.py
         for now. For full config customization in parallel mode, consider using
         the sequential mode (parallel=False).
-        
+
         TODO: These creator functions need to be implemented in thalia.events.parallel
         """
         # TODO: Implement _create_real_* functions in thalia.events.parallel
@@ -1117,7 +1118,7 @@ class EventDrivenBrain(nn.Module):
 
             # CA1 firing rate as proxy for retrieval quality
             # High rate = strong recall, low rate = weak/no recall
-            ca1_activity = self.hippocampus.impl.state.ca1_spikes.float().mean().item()
+            ca1_activity = compute_firing_rate(self.hippocampus.impl.state.ca1_spikes)
 
             # Map CA1 activity [0, 1] to reward [-1, 1]
             # 0.5 activity = neutral (0 reward), >0.5 = positive, <0.5 = negative
@@ -1297,7 +1298,7 @@ class EventDrivenBrain(nn.Module):
             return 0.0
 
         # Measure working memory load from sustained spike activity
-        wm_activity = self.pfc.impl.state.spikes.float().mean().item()
+        wm_activity = compute_firing_rate(self.pfc.impl.state.spikes)
 
         # Also consider number of active goals (if hierarchical goals enabled)
         goal_load = 0.0

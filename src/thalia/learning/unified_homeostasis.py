@@ -61,6 +61,7 @@ import torch
 import torch.nn as nn
 
 from thalia.config.base import BaseConfig
+from thalia.core.utils import clamp_weights
 
 
 @dataclass
@@ -153,7 +154,7 @@ class UnifiedHomeostasis(nn.Module):
             weights = weights / current_sum * cfg.weight_budget
         
         # Always enforce hard bounds
-        weights = weights.clamp(cfg.w_min, cfg.w_max)
+        weights = clamp_weights(weights, cfg.w_min, cfg.w_max, inplace=False)
         
         return weights
     
@@ -200,8 +201,8 @@ class UnifiedHomeostasis(nn.Module):
             weights_b = weights_b * scale
         
         # Enforce bounds
-        weights_a = weights_a.clamp(cfg.w_min, cfg.w_max)
-        weights_b = weights_b.clamp(cfg.w_min, cfg.w_max)
+        weights_a = clamp_weights(weights_a, cfg.w_min, cfg.w_max, inplace=False)
+        weights_b = clamp_weights(weights_b, cfg.w_min, cfg.w_max, inplace=False)
         
         return weights_a, weights_b
     
@@ -347,7 +348,6 @@ class UnifiedHomeostasis(nn.Module):
         # Diversity metric: how different are the weight patterns?
         # High diversity = good specialization
         if weights.dim() == 2 and weights.shape[0] > 1:
-            from thalia.core.utils import cosine_similarity_safe
             
             # Normalize each row
             normed = weights / weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
@@ -515,8 +515,8 @@ class StriatumHomeostasis(UnifiedHomeostasis):
                 d2_out[start:end] = d2_action * scale
             
             # Enforce bounds
-            d1_out = d1_out.clamp(self.config.w_min, self.config.w_max)
-            d2_out = d2_out.clamp(self.config.w_min, self.config.w_max)
+            d1_out = clamp_weights(d1_out, self.config.w_min, self.config.w_max, inplace=False)
+            d2_out = clamp_weights(d2_out, self.config.w_min, self.config.w_max, inplace=False)
             
             return d1_out, d2_out
         else:

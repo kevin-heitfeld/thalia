@@ -10,8 +10,8 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from dataclasses import dataclass
+from typing import Dict, Any
 import torch
 
 from .base import BaseConfig

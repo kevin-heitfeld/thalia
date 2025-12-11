@@ -87,7 +87,7 @@ from typing import TYPE_CHECKING, Any, Dict, Protocol, Tuple, Union, runtime_che
 import torch
 
 if TYPE_CHECKING:
-    from thalia.regions.base import NeuralComponent
+    pass
 
 
 @runtime_checkable

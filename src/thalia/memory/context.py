@@ -40,12 +40,11 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, Dict, Any
 from collections import deque
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 @dataclass

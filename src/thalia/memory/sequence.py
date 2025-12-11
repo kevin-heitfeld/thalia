@@ -53,7 +53,7 @@ from collections import deque
 import torch
 import torch.nn as nn
 
-from thalia.regions.hippocampus import TrisynapticHippocampus, TrisynapticConfig
+from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
 from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
 from thalia.core.spike_coding import CodingStrategy
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
@@ -141,14 +141,14 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
         self.position_encoder = OscillatoryPositionEncoder(position_config)
 
         # Hippocampus for sequence storage
-        hippo_config = TrisynapticConfig(
+        hippo_config = HippocampusConfig(
             n_input=config.n_neurons,
             n_output=config.n_neurons,
             learning_rate=config.learning_rate,
             ca3_learning_rate=config.learning_rate,
             device=config.device,
         )
-        self.hippocampus = TrisynapticHippocampus(hippo_config)
+        self.hippocampus = Hippocampus(hippo_config)
 
         # Get CA3 size for association weights
         self.ca3_size = self.hippocampus.ca3_size

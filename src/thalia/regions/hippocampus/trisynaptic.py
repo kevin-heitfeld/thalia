@@ -53,7 +53,7 @@ from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import NeuralComponent, LearningRule
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
-from .config import Episode, TrisynapticConfig, TrisynapticState
+from .config import Episode, HippocampusConfig, HippocampusState
 from .plasticity_manager import PlasticityManager
 from .episode_manager import EpisodeManager
 
@@ -121,7 +121,7 @@ class TrisynapticHippocampus(NeuralComponent):
         docs/patterns/mixins.md for detailed mixin patterns
     """
 
-    def __init__(self, config: TrisynapticConfig):
+    def __init__(self, config: HippocampusConfig):
         """Initialize trisynaptic hippocampus."""
         self.tri_config = config
 
@@ -326,7 +326,7 @@ class TrisynapticHippocampus(NeuralComponent):
             self.her_integration = None
 
         # State
-        self.state = TrisynapticState()
+        self.state = HippocampusState()
 
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.THETA_PHASE
@@ -496,7 +496,7 @@ class TrisynapticHippocampus(NeuralComponent):
         """
         super().reset_state()
         self._init_state()
-        
+
         # Reset managers using helper
         self._reset_subsystems('plasticity_manager')
 
@@ -544,7 +544,7 @@ class TrisynapticHippocampus(NeuralComponent):
         self._ca3_activity_trace = torch.zeros(1, device=device)
 
         # 1D architecture - no batch dimension
-        self.state = TrisynapticState(
+        self.state = HippocampusState(
             dg_spikes=torch.zeros(self.dg_size, device=device),
             ca3_spikes=torch.zeros(self.ca3_size, device=device),
             ca1_spikes=torch.zeros(self.ca1_size, device=device),
@@ -1468,7 +1468,7 @@ class TrisynapticHippocampus(NeuralComponent):
         if cfg.intrinsic_plasticity_enabled and self.state.ca3_spikes is not None:
             self.plasticity_manager.apply_intrinsic_plasticity(self.state.ca3_spikes)
 
-    def get_state(self) -> TrisynapticState:
+    def get_state(self) -> HippocampusState:
         """Get current state."""
         return self.state
 
@@ -1854,7 +1854,7 @@ class TrisynapticHippocampus(NeuralComponent):
         ffi_state = {
             "current_strength": state.ffi_strength,
         }
-        
+
         # Custom metrics for hippocampus
         custom = {
             "layer_sizes": {
@@ -1881,7 +1881,7 @@ class TrisynapticHippocampus(NeuralComponent):
             # HER diagnostics
             "her": self.get_her_diagnostics(),
         }
-        
+
         # Use collect_standard_diagnostics for weight statistics
         return self.collect_standard_diagnostics(
             region_name="hippocampus",
@@ -2109,7 +2109,7 @@ class TrisynapticHippocampus(NeuralComponent):
         if region_state["ca3_slot_assignment"] is not None:
             self._ca3_slot_assignment = region_state["ca3_slot_assignment"].to(self.device)
 
-        # Restore TrisynapticState
+        # Restore HippocampusState
         tri_state = region_state["trisynaptic_state"]
         self.state.dg_spikes = tri_state["dg_spikes"].to(self.device) if tri_state["dg_spikes"] is not None else None
         self.state.ca3_spikes = tri_state["ca3_spikes"].to(self.device) if tri_state["ca3_spikes"] is not None else None

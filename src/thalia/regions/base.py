@@ -19,6 +19,13 @@ from thalia.config.base import RegionConfigBase
 from thalia.core.neuromodulator_mixin import NeuromodulatorMixin
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
+from thalia.core.learning_constants import LEARNING_RATE_DEFAULT
+from thalia.core.homeostasis_constants import (
+    TARGET_FIRING_RATE_STANDARD,
+    HOMEOSTATIC_TAU_STANDARD,
+)
+from thalia.core.spike_utils import compute_firing_rate
+from thalia.core.utils import clamp_weights
 
 
 class LearningRule(Enum):
@@ -59,13 +66,13 @@ class RegionConfig(RegionConfigBase):
     neuron_type: str = "lif"  # "lif", "conductance", "dendritic"
 
     # Learning parameters
-    learning_rate: float = 0.01
+    learning_rate: float = LEARNING_RATE_DEFAULT
     w_max: float = 1.0
     w_min: float = 0.0
 
     # Homeostasis
-    target_firing_rate_hz: float = 5.0
-    homeostatic_tau_ms: float = 1000.0
+    target_firing_rate_hz: float = TARGET_FIRING_RATE_STANDARD
+    homeostatic_tau_ms: float = HOMEOSTATIC_TAU_STANDARD
 
     # Additional region-specific parameters
     extra: Dict[str, Any] = field(default_factory=dict)
@@ -200,7 +207,7 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         # =================================================================
         self.plasticity_enabled: bool = True       # Can be disabled for eval
         self.base_learning_rate: float = config.learning_rate
-        
+
         # =================================================================
         # AXONAL DELAY BUFFER (ALL neural components have conduction delays)
         # =================================================================
@@ -280,10 +287,10 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
 
     def _reset_tensors(self, *tensor_names: str) -> None:
         """Helper to zero multiple tensors by name.
-        
+
         Args:
             *tensor_names: Names of tensor attributes to zero
-            
+
         Example:
             self._reset_tensors('eligibility', 'input_trace', 'output_trace')
         """
@@ -292,13 +299,13 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
                 tensor = getattr(self, name)
                 if tensor is not None and isinstance(tensor, torch.Tensor):
                     tensor.zero_()
-    
+
     def _reset_subsystems(self, *subsystem_names: str) -> None:
         """Helper to reset multiple subsystems that have reset_state() methods.
-        
+
         Args:
             *subsystem_names: Names of subsystem attributes to reset
-            
+
         Example:
             self._reset_subsystems('neurons', 'd1_neurons', 'd2_neurons', 'eligibility')
         """
@@ -307,13 +314,13 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
                 subsystem = getattr(self, name)
                 if subsystem is not None and hasattr(subsystem, 'reset_state'):
                     subsystem.reset_state()
-    
+
     def _reset_scalars(self, **scalar_values: Any) -> None:
         """Helper to reset scalar attributes to specified values.
-        
+
         Args:
             **scalar_values: Mapping of attribute name to reset value
-            
+
         Example:
             self._reset_scalars(last_action=None, exploring=False, timestep=0)
         """
@@ -339,10 +346,10 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         spike history) while preserving learned weights.
         """
         self.state = RegionState()
-        
+
         # Reset common subsystems using helper
         self._reset_subsystems('neurons')
-        
+
         # Reset delay buffer tensors and scalars using helpers
         self._reset_tensors('delay_buffer')
         self._reset_scalars(delay_buffer_idx=0)
@@ -405,10 +412,10 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
 
     def _initialize_delay_buffer(self, n_neurons: int) -> None:
         """Initialize the axonal delay buffer.
-        
+
         This should be called after n_output is known (typically in subclass __init__
         after weights are created).
-        
+
         Args:
             n_neurons: Number of output neurons (size of delay buffer)
         """
@@ -428,18 +435,18 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         dt: float,
     ) -> torch.Tensor:
         """Apply axonal delay to output spikes using circular buffer.
-        
+
         This implements the biological reality that ALL neural connections
         have conduction delays. Regions and pathways use the same mechanism,
         differing only in delay_ms configuration.
-        
+
         Args:
             output_spikes: Immediate output from neurons [n_output]
             dt: Timestep in milliseconds
-            
+
         Returns:
             delayed_spikes: Spikes from delay_ms ago [n_output]
-            
+
         Usage in forward():
             immediate_spikes = self.neurons(synaptic_input)
             delayed_spikes = self._apply_axonal_delay(immediate_spikes, dt)
@@ -448,17 +455,17 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         # Initialize buffer if needed (only if not already initialized by subclass)
         if not hasattr(self, 'delay_buffer') or self.delay_buffer is None:
             self._initialize_delay_buffer(output_spikes.shape[0])
-        
+
         # Store current output in delay buffer
         self.delay_buffer[self.delay_buffer_idx] = output_spikes
-        
+
         # Retrieve delayed spikes
         delayed_idx = (self.delay_buffer_idx - self.avg_delay_steps) % self.delay_buffer.shape[0]
         delayed_spikes = self.delay_buffer[delayed_idx]
-        
+
         # Advance buffer index
         self.delay_buffer_idx = (self.delay_buffer_idx + 1) % self.delay_buffer.shape[0]
-        
+
         return delayed_spikes
 
     @property
@@ -523,7 +530,7 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         if self.state.spikes is not None:
             spikes = self.state.spikes
             diagnostics['spike_count'] = int(spikes.sum().item())
-            diagnostics['firing_rate'] = float(spikes.float().mean().item())
+            diagnostics['firing_rate'] = float(compute_firing_rate(spikes))
         else:
             diagnostics['spike_count'] = 0
             diagnostics['firing_rate'] = 0.0
@@ -561,7 +568,7 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
 
         # Check firing rate
         if self.state.spikes is not None:
-            firing_rate = float(self.state.spikes.float().mean().item())
+            firing_rate = float(compute_firing_rate(self.state.spikes))
 
             if firing_rate < 0.01:  # Less than 1%
                 issues.append(IssueReport(
@@ -708,20 +715,20 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         scale: Optional[float] = None,
     ) -> nn.Parameter:
         """Expand weight matrix by adding n_new output neurons.
-        
+
         This helper consolidates weight expansion logic that was duplicated
         across 6+ regions. Handles initialization strategies and clamping.
-        
+
         Args:
             current_weights: Existing weight matrix [n_output, n_input]
             n_new: Number of new output neurons to add
             initialization: Strategy ('xavier', 'sparse_random', 'uniform')
             sparsity: Connection sparsity for sparse_random (0.0-1.0)
             scale: Optional scale factor for new weights (defaults to w_max * 0.2)
-            
+
         Returns:
             Expanded weight matrix [n_output + n_new, n_input]
-            
+
         Example:
             >>> # In a region's add_neurons() method:
             >>> self.weights = self._expand_weights(
@@ -729,14 +736,14 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
             ... )
         """
         from thalia.core.weight_init import WeightInitializer
-        
+
         n_input = current_weights.shape[1]
         device = current_weights.device
-        
+
         # Default scale: 20% of w_max (common across regions)
         if scale is None:
             scale = self.config.w_max * 0.2
-        
+
         # Initialize new weights using specified strategy
         if initialization == 'xavier':
             new_weights = WeightInitializer.xavier(
@@ -761,32 +768,32 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
                 high=scale,
                 device=device,
             )
-        
+
         # Clamp to config bounds
-        new_weights = new_weights.clamp(self.config.w_min, self.config.w_max)
-        
+        new_weights = clamp_weights(new_weights, self.config.w_min, self.config.w_max, inplace=False)
+
         # Concatenate with existing weights
         expanded = torch.cat([current_weights.data, new_weights], dim=0)
         return nn.Parameter(expanded)
-    
+
     def _expand_state_tensors(
         self,
         state_dict: Dict[str, torch.Tensor],
         n_new: int,
     ) -> Dict[str, torch.Tensor]:
         """Expand 1D state tensors (membrane, traces, etc.) by n_new neurons.
-        
+
         This helper consolidates state expansion logic that was duplicated
         across regions. Handles any 1D tensor (membrane, eligibility, traces).
-        
+
         Args:
             state_dict: Dict of tensors to expand {name: tensor[n_neurons]}
             n_new: Number of new neurons to add
-            
+
         Returns:
             Dict with expanded tensors {name: tensor[n_neurons + n_new]}
             New neuron entries are initialized to zero.
-            
+
         Example:
             >>> # In a region's add_neurons() method:
             >>> expanded = self._expand_state_tensors({
@@ -801,9 +808,9 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
             if tensor is None:
                 expanded[name] = None
                 continue
-                
+
             device = tensor.device
-            
+
             # Handle 1D tensors [n_neurons]
             if tensor.dim() == 1:
                 new_values = torch.zeros(n_new, device=device, dtype=tensor.dtype)
@@ -814,26 +821,26 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
                 expanded[name] = torch.cat([tensor, new_values], dim=0)
             else:
                 raise ValueError(f"Cannot expand tensor '{name}' with {tensor.dim()} dimensions")
-        
+
         return expanded
-    
+
     def _recreate_neurons_with_state(
         self,
         neuron_factory,
         old_n_output: int,
     ) -> Any:
         """Recreate neuron population with larger size, preserving old state.
-        
+
         This helper consolidates neuron recreation logic that was duplicated
         across regions. Handles state preservation for ConductanceLIF neurons.
-        
+
         Args:
             neuron_factory: Callable that creates new neurons (e.g., self._create_neurons)
             old_n_output: Number of neurons before growth
-            
+
         Returns:
             New neuron population with old state preserved in first old_n_output neurons
-            
+
         Example:
             >>> # In a region's add_neurons() method:
             >>> self.neurons = self._recreate_neurons_with_state(
@@ -854,16 +861,16 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
                 old_state['refractory'] = self.neurons.refractory[:old_n_output].clone()
             if hasattr(self.neurons, 'adaptation') and self.neurons.adaptation is not None:
                 old_state['adaptation'] = self.neurons.adaptation[:old_n_output].clone()
-        
+
         # Create new neurons with larger size
         new_neurons = neuron_factory()
         new_neurons.reset_state()
-        
+
         # Restore old state in first old_n_output positions
         for key, value in old_state.items():
             if hasattr(new_neurons, key):
                 getattr(new_neurons, key)[:old_n_output] = value
-        
+
         return new_neurons
 
     @abstractmethod

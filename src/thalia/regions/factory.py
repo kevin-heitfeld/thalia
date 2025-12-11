@@ -232,7 +232,7 @@ class RegionFactory:
         Example:
             regions = RegionFactory.create_batch({
                 "cortex": LayeredCortexConfig(n_input=256, n_output=128),
-                "hippocampus": TrisynapticConfig(n_input=128, n_output=64),
+                "hippocampus": HippocampusConfig(n_input=128, n_output=64),
                 "striatum": StriatumConfig(n_input=192, n_output=4),
             })
         """

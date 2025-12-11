@@ -9,10 +9,10 @@ Quick Start (External Users):
     from thalia import ThaliaConfig, Brain
     from thalia import Striatum, Hippocampus, LayeredCortex
     from thalia import ConductanceLIF, WeightInitializer
-    
+
     # Create regions directly
     striatum = Striatum(StriatumConfig(n_input=256, n_output=64))
-    
+
     # Or use full brain system
     config = ThaliaConfig(...)
     brain = Brain.from_thalia_config(config)
@@ -21,11 +21,11 @@ Internal Development:
 ====================
 
 Internal code should use explicit imports for clarity:
-    
+
     from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
     from thalia.regions.striatum import Striatum, StriatumConfig
     from thalia.learning.bcm import BCMRule, BCMConfig
-    
+
 This helps with IDE navigation and makes dependencies explicit.
 """
 
@@ -43,7 +43,6 @@ from thalia.core.brain import EventDrivenBrain as Brain
 
 # Brain Regions (most commonly used)
 from thalia.regions import (
-    NeuralComponent,  # Replaces BrainRegion (see ADR-008)
     RegionConfig,
     Striatum,
     StriatumConfig,
@@ -55,8 +54,8 @@ from thalia.regions import (
     CerebellumConfig,
     Prefrontal,
     PrefrontalConfig,
-    TrisynapticHippocampus as Hippocampus,
-    TrisynapticConfig as HippocampusConfig,
+    Hippocampus,
+    HippocampusConfig,
 )
 
 # Core Components (frequently needed)
@@ -127,7 +126,7 @@ except ImportError:
 
 # Namespaces for topic-level imports (advanced users)
 from thalia import regions  # noqa: F401
-from thalia import core  # noqa: F401  
+from thalia import core  # noqa: F401
 from thalia import learning  # noqa: F401
 
 __all__ = [
@@ -141,7 +140,6 @@ __all__ = [
     # Brain System
     "Brain",
     # Brain Regions
-    "BrainRegion",
     "RegionConfig",
     "Striatum",
     "StriatumConfig",
@@ -163,6 +161,9 @@ __all__ = [
     "ShortTermPlasticity",
     "STPConfig",
     "STPType",
+    "STP_PRESETS",
+    "STPPreset",
+    "get_stp_config",
     "ensure_batch_dim",
     "clamp_weights",
     # Learning

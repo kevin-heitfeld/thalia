@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from thalia.core.spike_utils import compute_firing_rate
+
 
 @dataclass
 class GrowthEvent:
@@ -218,7 +220,7 @@ class GrowthManager:
         firing_rate = 0.0
         if hasattr(component, 'state') and hasattr(component.state, 'spikes'):
             if component.state.spikes is not None:
-                firing_rate = component.state.spikes.float().mean().item()
+                firing_rate = compute_firing_rate(component.state.spikes)
 
         # Count active neurons (those with spikes in current state)
         active_neurons = 0

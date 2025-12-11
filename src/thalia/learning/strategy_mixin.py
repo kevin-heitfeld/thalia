@@ -55,15 +55,8 @@ import torch
 
 from thalia.learning.strategies import (
     BaseStrategy,
-    HebbianStrategy,
-    STDPStrategy,
-    BCMStrategy,
-    ThreeFactorStrategy,
-    ErrorCorrectiveStrategy,
-    CompositeStrategy,
     create_strategy,
 )
-from thalia.core.utils import clamp_weights
 
 
 class LearningStrategyMixin:

@@ -56,6 +56,11 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from thalia.core.learning_constants import (
+    LEARNING_RATE_BCM,
+    TAU_BCM_THRESHOLD,
+)
+
 
 @dataclass
 class BCMConfig:
@@ -82,13 +87,13 @@ class BCMConfig:
 
         dt: Simulation timestep (ms)
     """
-    tau_theta: float = 5000.0       # Slow adaptation (5 seconds)
-    theta_init: float = 0.01        # Initial threshold
-    theta_min: float = 1e-6         # Minimum threshold
-    theta_max: float = 1.0          # Maximum threshold
-    learning_rate: float = 0.01     # Base learning rate
-    p: float = 2.0                  # Power for threshold (c^p)
-    dt: float = 1.0                 # Timestep
+    tau_theta: float = TAU_BCM_THRESHOLD    # Slow adaptation (5 seconds)
+    theta_init: float = 0.01                # Initial threshold
+    theta_min: float = 1e-6                 # Minimum threshold
+    theta_max: float = 1.0                  # Maximum threshold
+    learning_rate: float = LEARNING_RATE_BCM  # Base learning rate
+    p: float = 2.0                          # Power for threshold (c^p)
+    dt: float = 1.0                         # Timestep
 
     @property
     def decay_theta(self) -> float:

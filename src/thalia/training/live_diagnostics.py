@@ -23,6 +23,8 @@ Date: December 10, 2025
 """
 
 from typing import Dict, Any, Optional
+
+from thalia.core.spike_utils import compute_firing_rate
 from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
@@ -106,7 +108,7 @@ class LiveDiagnostics:
             ('striatum', getattr(brain, 'striatum', None)),
         ]:
             if region and hasattr(region, 'state') and region.state.spikes is not None:
-                firing_rate = region.state.spikes.float().mean().item()
+                firing_rate = compute_firing_rate(region.state.spikes)
                 self.firing_rate_history[region_name].append(firing_rate)
             else:
                 self.firing_rate_history[region_name].append(0.0)
