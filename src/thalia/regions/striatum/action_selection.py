@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 
 class ActionSelectionMixin:
     """Mixin providing action selection methods for Striatum.
-    
+
     Handles population coding, UCB exploration, softmax selection,
     and vote accumulation across timesteps.
-    
+
     Expects the following attributes on the mixed-in class:
     - striatum_config: StriatumConfig
     - n_actions: int
@@ -33,7 +33,7 @@ class ActionSelectionMixin:
     - state_tracker: StriatumStateTracker (provides votes, last_action, exploring)
     - exploration_manager: ExplorationManager
     """
-    
+
     # Type hints for mixin - these are provided by Striatum
     striatum_config: "StriatumConfig"
     n_actions: int
@@ -60,7 +60,7 @@ class ActionSelectionMixin:
 
         Args:
             spikes: Spike tensor [n_output] (1D)
-            
+
         Returns the action whose population has the most spikes.
         """
         # Ensure 1D
@@ -95,7 +95,7 @@ class ActionSelectionMixin:
         # Ensure 1D
         if spikes.dim() != 1:
             spikes = spikes.squeeze()
-            
+
         votes = torch.zeros(self.n_actions, device=self.device)
 
         for action in range(self.n_actions):

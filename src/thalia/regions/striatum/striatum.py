@@ -253,11 +253,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             stdp_tau_ms=self.striatum_config.stdp_tau_ms,
             device=self.device,
         )
-        
+
         # Create D1 and D2 pathways
         self.d1_pathway = D1Pathway(pathway_config)
         self.d2_pathway = D2Pathway(pathway_config)
-        
+
         # Create manager context for learning
         learning_context = ManagerContext(
             device=self.device,
@@ -265,7 +265,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             n_output=config.n_output,
             dt_ms=config.dt_ms,
         )
-        
+
         # Create learning manager
         self.learning_manager = LearningManager(
             config=self.striatum_config,
@@ -273,11 +273,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             d1_pathway=self.d1_pathway,
             d2_pathway=self.d2_pathway,
         )
-        
+
         # Property delegation for backward compatibility
         # Old code accesses self.d1_weights, self.d2_weights, etc.
         # These now delegate to pathway objects
-        
+
         # =====================================================================
         # BACKWARD COMPATIBILITY PROPERTIES (DEPRECATED - use pathways directly)
         # =====================================================================
@@ -517,82 +517,82 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     # =========================================================================
     # These properties delegate to D1/D2 pathway objects for backward compatibility.
     # Old code accesses self.d1_weights, self.d2_weights, etc.
-    
+
     @property
     def d1_weights(self) -> nn.Parameter:
         """D1 pathway weights (delegates to d1_pathway)."""
         return self.d1_pathway.weights
-    
+
     @property
     def d2_weights(self) -> nn.Parameter:
         """D2 pathway weights (delegates to d2_pathway)."""
         return self.d2_pathway.weights
-    
+
     @property
     def d1_eligibility(self) -> torch.Tensor:
         """D1 eligibility traces (delegates to d1_pathway)."""
         return self.d1_pathway.eligibility
-    
+
     @d1_eligibility.setter
     def d1_eligibility(self, value: torch.Tensor) -> None:
         """Set D1 eligibility traces."""
         self.d1_pathway.eligibility = value
-    
+
     @property
     def d2_eligibility(self) -> torch.Tensor:
         """D2 eligibility traces (delegates to d2_pathway)."""
         return self.d2_pathway.eligibility
-    
+
     @d2_eligibility.setter
     def d2_eligibility(self, value: torch.Tensor) -> None:
         """Set D2 eligibility traces."""
         self.d2_pathway.eligibility = value
-    
+
     @property
     def d1_neurons(self) -> ConductanceLIF:
         """D1 neuron population (delegates to d1_pathway)."""
         return self.d1_pathway.neurons
-    
+
     @property
     def d2_neurons(self) -> ConductanceLIF:
         """D2 neuron population (delegates to d2_pathway)."""
         return self.d2_pathway.neurons
-    
+
     @property
     def d1_input_trace(self) -> torch.Tensor:
         """D1 input STDP trace (delegates to d1_pathway)."""
         return self.d1_pathway.input_trace
-    
+
     @d1_input_trace.setter
     def d1_input_trace(self, value: torch.Tensor) -> None:
         """Set D1 input STDP trace."""
         self.d1_pathway.input_trace = value
-    
+
     @property
     def d2_input_trace(self) -> torch.Tensor:
         """D2 input STDP trace (delegates to d2_pathway)."""
         return self.d2_pathway.input_trace
-    
+
     @d2_input_trace.setter
     def d2_input_trace(self, value: torch.Tensor) -> None:
         """Set D2 input STDP trace."""
         self.d2_pathway.input_trace = value
-    
+
     @property
     def d1_output_trace(self) -> torch.Tensor:
         """D1 output STDP trace (delegates to d1_pathway)."""
         return self.d1_pathway.output_trace
-    
+
     @d1_output_trace.setter
     def d1_output_trace(self, value: torch.Tensor) -> None:
         """Set D1 output STDP trace."""
         self.d1_pathway.output_trace = value
-    
+
     @property
     def d2_output_trace(self) -> torch.Tensor:
         """D2 output STDP trace (delegates to d2_pathway)."""
         return self.d2_pathway.output_trace
-    
+
     @d2_output_trace.setter
     def d2_output_trace(self, value: torch.Tensor) -> None:
         """Set D2 output STDP trace."""
@@ -1028,7 +1028,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # Note: D1 and D2 pathways have separate trace managers
         self.d1_pathway._trace_manager.update_traces(input_1d, d1_output_1d, dt)
         self.d2_pathway._trace_manager.update_traces(input_1d, d2_output_1d, dt)
-        
+
         # Compute STDP eligibility with pathway-specific learning rate scaling
         d1_eligibility_update = self.d1_pathway._trace_manager.compute_stdp_eligibility_separate_ltd(
             input_spikes=input_1d,
@@ -1036,14 +1036,14 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             weights=self.d1_weights,
             lr_scale=cfg.d1_lr_scale,
         )
-        
+
         d2_eligibility_update = self.d2_pathway._trace_manager.compute_stdp_eligibility_separate_ltd(
             input_spikes=input_1d,
             output_spikes=d2_output_1d,
             weights=self.d2_weights,
             lr_scale=cfg.d2_lr_scale,
         )
-        
+
         # Accumulate into eligibility traces with decay
         self.d1_pathway._trace_manager.accumulate_eligibility(d1_eligibility_update, dt)
         self.d2_pathway._trace_manager.accumulate_eligibility(d2_eligibility_update, dt)
@@ -1638,7 +1638,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         # Delegate to learning manager
         goal_context = self._last_pfc_goal_context if hasattr(self, '_last_pfc_goal_context') else None
-        
+
         # Skip learning if plasticity frozen
         if self._plasticity_frozen:
             return {
@@ -1650,7 +1650,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
                 "net_change": 0.0,
                 "frozen": True,
             }
-        
+
         return self.learning_manager.apply_dopamine_learning(da_level, goal_context)
 
 
@@ -1675,7 +1675,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         """
         # Compute expected value for counterfactual action
         expected_cf = self.get_expected_value(action)
-        
+
         # Update value estimate for counterfactual action
         if self.value_estimates is not None and 0 <= action < self.n_actions:
             cf_lr = self.striatum_config.rpe_learning_rate * counterfactual_scale
@@ -1683,7 +1683,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
                 self.value_estimates[action]
                 + cf_lr * (reward - self.value_estimates[action])
             )
-        
+
         # Delegate to learning manager
         return self.learning_manager.apply_counterfactual_learning(
             reward, action, expected_cf, counterfactual_scale
@@ -1709,19 +1709,19 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
     def reset_state(self) -> None:
         super().reset_state()
-        
+
         # Reset state tracker (votes, recent spikes, trial stats, last action)
         self.state_tracker.reset_state()
-        
+
         # Reset managers and subsystems
         self._reset_subsystems('eligibility', 'd1_neurons', 'd2_neurons')
-        
+
         # Reset trace tensors (eligibility traces delegated to pathways)
         self._reset_tensors(
             'd1_input_trace', 'd2_input_trace',
             'd1_output_trace', 'd2_output_trace'
         )
-        
+
         # Reset TD(λ) traces if enabled
         if self.td_lambda_d1 is not None:
             self.td_lambda_d1.reset_episode()
@@ -1761,7 +1761,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # Accumulated votes (current trial) - from state_tracker
         d1_votes, d2_votes = self.state_tracker.get_accumulated_votes()
         net_votes = self.state_tracker.get_net_votes()
-        
+
         d1_votes_list = d1_votes.tolist()
         d2_votes_list = d2_votes.tolist()
         net_votes_list = net_votes.tolist()
@@ -1815,7 +1815,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             }
         else:
             td_lambda_state = {"td_lambda_enabled": False}
-        
+
         # Custom metrics for striatum (per-action analysis, votes, etc.)
         custom = {
             "n_actions": self.n_actions,
@@ -1843,7 +1843,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             # TD(λ) state
             "td_lambda": td_lambda_state,
         }
-        
+
         # Use collect_standard_diagnostics for trace statistics
         return self.collect_standard_diagnostics(
             region_name="striatum",
@@ -1869,7 +1869,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         """
         # Delegate to checkpoint manager
         checkpoint_state = self.checkpoint_manager.get_full_state()
-        
+
         # Add additional metadata for backward compatibility
         checkpoint_state.update({
             "config": self.striatum_config,
@@ -1877,10 +1877,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             "neuromodulator_state": self.get_neuromodulator_state(),
             "oscillator_state": {},  # Empty for striatum
         })
-        
+
         # Add tonic dopamine to neuromodulator state
         checkpoint_state["neuromodulator_state"]["tonic_dopamine"] = self.tonic_dopamine
-        
+
         return checkpoint_state
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
@@ -1894,7 +1894,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         """
         # Delegate to checkpoint manager
         self.checkpoint_manager.load_full_state(state)
-        
+
         # Restore tonic dopamine if present in neuromodulator state
         if "neuromodulator_state" in state:
             if "tonic_dopamine" in state["neuromodulator_state"]:
