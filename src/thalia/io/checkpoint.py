@@ -255,24 +255,9 @@ class BrainCheckpoint:
             f.seek(header_pos)
             header_bytes = header.to_bytes()
             f.write(header_bytes)
-
-            # Now compute checksum over entire file in order
-            # Seek to start and hash all data written so far
-            f.seek(0)
-            import hashlib
-            hasher = hashlib.sha256()
-            while True:
-                chunk = f.read(65536)  # Read in 64KB chunks
-                if not chunk:
-                    break
-                hasher.update(chunk)
-            
-            checksum = hasher.digest()
-            
-            # Write checksum at end
-            f.write(checksum)
         
-        # Apply compression if requested
+        # Apply compression if requested (BEFORE checksum)
+        import hashlib
         if compression is not None:
             # Read uncompressed file
             with open(path, 'rb') as f:
@@ -284,6 +269,25 @@ class BrainCheckpoint:
             # Overwrite with compressed version
             with open(path, 'wb') as f:
                 f.write(compressed_data)
+            
+            # Compute checksum on compressed data
+            hasher = hashlib.sha256()
+            hasher.update(compressed_data)
+            checksum = hasher.digest()
+        else:
+            # Compute checksum on uncompressed data
+            with open(path, 'rb') as f:
+                hasher = hashlib.sha256()
+                while True:
+                    chunk = f.read(65536)  # Read in 64KB chunks
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+                checksum = hasher.digest()
+        
+        # Append checksum at end of file (works for both compressed and uncompressed)
+        with open(path, 'ab') as f:
+            f.write(checksum)
         
         file_size = path.stat().st_size
 
@@ -342,12 +346,28 @@ class BrainCheckpoint:
         # Check for compression
         compression = detect_compression(path)
         
-        # Read file (decompress if needed)
+        # Read file
         with open(path, 'rb') as f:
-            file_data = f.read()
+            raw_file_data = f.read()
         
+        # Validate checksum FIRST (on compressed or uncompressed data)
+        # Checksum is always the last 32 bytes
+        import hashlib
+        if len(raw_file_data) < 32:
+            raise ValueError("File too small to contain checksum")
+        
+        data_to_validate = raw_file_data[:-32]
+        stored_checksum = raw_file_data[-32:]
+        computed_checksum = hashlib.sha256(data_to_validate).digest()
+        
+        if computed_checksum != stored_checksum:
+            raise ValueError("Checksum validation failed - file may be corrupted")
+        
+        # Now decompress if needed (excluding checksum bytes)
         if compression is not None:
-            file_data = decompress_data(file_data, compression)
+            file_data = decompress_data(data_to_validate, compression)
+        else:
+            file_data = data_to_validate
         
         # Check if this is a delta checkpoint AFTER decompression (magic is 5 bytes: \xCE\x94THL)
         if file_data[:5] == DELTA_MAGIC:
@@ -357,30 +377,11 @@ class BrainCheckpoint:
             # The load_delta_checkpoint function will re-read and decompress, so pass the original path
             return load_delta_checkpoint(path, device=device)
         
-        # Now parse the decompressed data
+        # Now parse the decompressed data (checksum already validated)
         f = io.BytesIO(file_data)
-        
-        # Validate checksum FIRST (read entire file except checksum, hash it)
-        import hashlib
-        f.seek(0, 2)  # Seek to end
-        file_size = f.tell()
-        f.seek(0)  # Back to start
-
-        # Read everything except the 32-byte checksum at the end
-        data_to_hash = f.read(file_size - 32)
-        computed_hash = hashlib.sha256(data_to_hash).digest()
-
-        # Read stored checksum
-        stored_checksum = f.read(32)
-
-        if computed_hash != stored_checksum:
-            raise ValueError("Checksum validation failed - file may be corrupted")
-
-        # Now parse the data (seek back to start)
-        f.seek(0)
         reader = BinaryReader(f)
 
-        # Read header (don't hash - already validated)
+        # Read header
         header = reader.read_header()
 
         # Read metadata

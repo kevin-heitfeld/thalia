@@ -151,7 +151,7 @@ from thalia.memory.consolidation import (
     MemoryPressureDetector,
     SleepStageController,
 )
-from thalia.io.checkpoint import BrainCheckpoint
+from thalia.io import CheckpointManager
 from thalia.training.live_diagnostics import LiveDiagnostics
 from thalia.regions.prefrontal_hierarchy import Goal
 
@@ -624,6 +624,13 @@ class CurriculumTrainer:
         self.device = device
         self.verbose = verbose
 
+        # Checkpoint manager (Tier 3.2 - unified checkpoint management)
+        self.checkpoint_manager = CheckpointManager(
+            brain=brain,
+            default_compression='zstd',
+            default_precision='fp32',
+        )
+
         # Growth configuration
         self.growth_config = growth_config or get_curriculum_growth_config()
 
@@ -982,10 +989,15 @@ class CurriculumTrainer:
         if metadata:
             full_metadata.update(metadata)
 
-        BrainCheckpoint.save(self.brain, str(checkpoint_path), metadata=full_metadata)
+        # Use CheckpointManager for unified checkpoint handling (Tier 3.2)
+        save_info = self.checkpoint_manager.save(
+            str(checkpoint_path),
+            metadata=full_metadata,
+        )
 
         if self.verbose:
             print(f"💾 Checkpoint saved: {checkpoint_path}")
+            print(f"   Size: {save_info.get('size_mb', 0):.2f} MB, Time: {save_info.get('time_s', 0):.2f}s")
 
         return str(checkpoint_path)
 
@@ -1000,12 +1012,16 @@ class CurriculumTrainer:
             path: Path to checkpoint file
             restore_trainer_state: Whether to restore step counters, etc.
         """
-        # Load brain state
-        state = BrainCheckpoint.load(path, device=self.device)
-        self.brain.load_full_state(state)
+        # Load brain state using CheckpointManager (Tier 3.2)
+        load_info = self.checkpoint_manager.load(path, device=self.device, strict=True)
 
-        if restore_trainer_state and 'metadata' in state:
-            metadata = state['metadata']
+        if self.verbose:
+            print(f"📥 Checkpoint loaded: {path}")
+            print(f"   Components: {load_info.get('components_loaded', {})}")
+            print(f"   Time: {load_info.get('time_s', 0):.2f}s")
+
+        if restore_trainer_state:
+            metadata = load_info.get('metadata', {})
             self.global_step = metadata.get('global_step', 0)
             self.stage_start_step = metadata.get('stage_start_step', 0)
 

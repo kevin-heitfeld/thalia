@@ -83,15 +83,15 @@ from typing import TYPE_CHECKING, Dict, Optional, Any
 import torch
 import torch.nn as nn
 
-from .event_system import (
+from thalia.events import (
     EventType, EventScheduler,
     SpikePayload,
 )
-from .event_regions import (
+from thalia.events.adapters import (
     EventDrivenCortex, EventDrivenHippocampus, EventDrivenPFC, EventDrivenStriatum,
     EventDrivenCerebellum, EventRegionConfig,
 )
-from .parallel_executor import ParallelExecutor
+from thalia.events.parallel import ParallelExecutor
 from .pathway_manager import PathwayManager
 from .neuromodulator_manager import NeuromodulatorManager
 from .neuron_constants import INTRINSIC_LEARNING_THRESHOLD
@@ -104,6 +104,9 @@ from .diagnostics import (
 
 # Robustness mechanisms
 from ..diagnostics.criticality import CriticalityMonitor
+
+# IO utilities
+from ..io import CheckpointManager
 
 # Import actual region implementations
 from ..regions.cortex import LayeredCortex, LayeredCortexConfig
@@ -601,6 +604,15 @@ class EventDrivenBrain(nn.Module):
         # Set cortex L5 size (needed for state reconstruction)
         self.consolidation_manager.set_cortex_l5_size(self._cortex_l5_size)
 
+        # =====================================================================
+        # CHECKPOINT MANAGER
+        # =====================================================================
+        # Initialize checkpoint manager for convenient save/load operations
+        self.checkpoint_manager = CheckpointManager(
+            brain=self,
+            default_compression='zstd'
+        )
+
     @classmethod
     def from_thalia_config(cls, config: "ThaliaConfig") -> "EventDrivenBrain":
         """Create EventDrivenBrain from unified ThaliaConfig.
@@ -834,14 +846,17 @@ class EventDrivenBrain(nn.Module):
 
         Note: Parallel mode is experimental. On Windows, multiprocessing uses
         "spawn" which requires pickleable region creators. This implementation
-        uses the existing module-level creator functions from parallel_executor.py
+        uses the existing module-level creator functions from parallel.py
         for now. For full config customization in parallel mode, consider using
         the sequential mode (parallel=False).
+        
+        TODO: These creator functions need to be implemented in thalia.events.parallel
         """
-        from .parallel_executor import (
-            _create_real_cortex, _create_real_hippocampus,
-            _create_real_pfc, _create_real_striatum,
-        )
+        # TODO: Implement _create_real_* functions in thalia.events.parallel
+        # from thalia.events.parallel import (
+        #     _create_real_cortex, _create_real_hippocampus,
+        #     _create_real_pfc, _create_real_striatum,
+        # )
 
         # Create parallel executor with module-level creators
         # These are pickle-able because they're defined at module level
@@ -2018,4 +2033,79 @@ class EventDrivenBrain(nn.Module):
             correct=getattr(self, '_last_correct', False),
             striatum=self._collect_striatum_diagnostics(),
             hippocampus=self._collect_hippocampus_diagnostics(),
+        )
+
+    # =====================================================================
+    # CHECKPOINT METHODS
+    # =====================================================================
+
+    def save_checkpoint(
+        self,
+        path: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        compression: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Save brain checkpoint with metadata.
+
+        This is a convenience method that delegates to CheckpointManager.
+        Provides unified save/load interface with validation and logging.
+
+        Args:
+            path: Path to save checkpoint file (.pt or .pth)
+            metadata: Optional metadata to store (e.g., training info)
+            compression: Compression algorithm ('zstd', 'gzip', or None)
+
+        Returns:
+            Dict with save info:
+                - path: Saved file path
+                - size_mb: File size in megabytes
+                - components: List of saved component names
+                - save_time_s: Time taken to save
+
+        Example:
+            info = brain.save_checkpoint(
+                "checkpoint_epoch10.pt",
+                metadata={"epoch": 10, "accuracy": 0.95},
+                compression='zstd'
+            )
+            print(f"Saved {info['size_mb']:.2f}MB in {info['save_time_s']:.2f}s")
+        """
+        return self.checkpoint_manager.save(
+            path=path,
+            metadata=metadata,
+            compression=compression,
+        )
+
+    def load_checkpoint(
+        self,
+        path: str,
+        strict: bool = True,
+    ) -> Dict[str, Any]:
+        """Load brain checkpoint from file.
+
+        This is a convenience method that delegates to CheckpointManager.
+        Validates config compatibility and loads all components.
+
+        Args:
+            path: Path to checkpoint file
+            strict: If True, enforce config compatibility checks
+
+        Returns:
+            Dict with checkpoint info:
+                - metadata: Stored metadata dict
+                - components: List of loaded component names
+                - config_compatible: Whether configs match
+
+        Raises:
+            FileNotFoundError: If checkpoint file doesn't exist
+            ValueError: If config incompatible and strict=True
+
+        Example:
+            info = brain.load_checkpoint("checkpoint_epoch10.pt")
+            print(f"Loaded {len(info['components'])} components")
+            print(f"Metadata: {info['metadata']}")
+        """
+        return self.checkpoint_manager.load(
+            path=path,
+            strict=strict,
         )

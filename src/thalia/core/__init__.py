@@ -39,14 +39,6 @@ from thalia.core.stp_presets import (
     get_stp_config,
     list_presets,
 )
-from thalia.core.oscillator import (
-    SinusoidalOscillator,
-    OscillatorManager,
-    OscillatorCoupling,
-)
-from thalia.core.oscillator_coupling import (
-    OscillatorCouplingManager,
-)
 from thalia.core.component_registry import (
     ComponentRegistry,
     register_region,
@@ -84,17 +76,12 @@ from thalia.core.diagnostics import (
     HippocampusDiagnostics,
     BrainSystemDiagnostics,
 )
-from thalia.core.event_system import (
-    # Event types
-    Event,
-    EventType,
-    SpikePayload,
-    # Event scheduling
-    EventScheduler,
-    Connection,
-    get_axonal_delay,
-    AXONAL_DELAYS,
-)
+# Event system moved to thalia.events package (see thalia.events for imports)
+# from thalia.events import (
+#     Event, EventType, SpikePayload, EventScheduler,
+#     Connection, get_axonal_delay, AXONAL_DELAYS,
+#     ParallelExecutor, EventDrivenCortex, etc.
+# )
 from thalia.core.predictive_coding import (
     PredictiveCodingLayer,
     PredictiveCodingConfig,
@@ -208,15 +195,8 @@ __all__ = [
     "StriatumDiagnostics",
     "HippocampusDiagnostics",
     "BrainSystemDiagnostics",
-    # Event system
-    "Event",
-    "EventType",
-    "SpikePayload",
-    # Event scheduling
-    "EventScheduler",
-    "Connection",
-    "get_axonal_delay",
-    "AXONAL_DELAYS",
+    # Event system moved to thalia.events package
+    # (Event, EventType, SpikePayload, EventScheduler, Connection, etc.)
     # Predictive Coding
     "PredictiveCodingLayer",
     "PredictiveCodingConfig",
@@ -273,3 +253,6 @@ __all__ = [
     "InitStrategy",
     "WeightInitializer",
 ]
+
+# Note: EventDrivenBrain has circular import issues and should be imported directly:
+# from thalia.core.brain import EventDrivenBrain

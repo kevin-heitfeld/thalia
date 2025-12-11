@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Any
 
 import torch
 
-from ..event_system import Event, EventType, SpikePayload
+from ..system import Event, EventType, SpikePayload
 from .base import EventDrivenRegionBase, EventRegionConfig
 
 

@@ -226,7 +226,6 @@ class Cerebellum(NeuralComponent):
             a_minus=self.cerebellum_config.heterosynaptic_ratio,
             w_min=config.w_min,
             w_max=config.w_max,
-            soft_bounds=self.cerebellum_config.soft_bounds,
             heterosynaptic_ratio=self.cerebellum_config.heterosynaptic_ratio,
         )
         self._trace_manager = EligibilityTraceManager(

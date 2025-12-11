@@ -69,13 +69,14 @@ Date: December 2025
 
 from __future__ import annotations
 
-from multiprocessing import Process, Queue, Event as MPEvent
+from multiprocessing import Process, Queue
+from multiprocessing.synchronize import Event as MPEvent
 from queue import Empty
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 import torch
 
-from .event_system import (
+from thalia.events.system import (
     Event, EventType, EventScheduler,
     SpikePayload, RegionInterface, get_axonal_delay,
 )

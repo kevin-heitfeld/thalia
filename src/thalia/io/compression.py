@@ -39,22 +39,43 @@ class CompressionError(Exception):
 
 
 def detect_compression(path: Union[str, Path]) -> CompressionType:
-    """Detect compression type from file extension.
+    """Detect compression type from file extension or magic bytes.
+    
+    First checks file extension (.zst, .lz4), then checks magic bytes
+    at the start of the file if extension doesn't indicate compression.
     
     Args:
         path: File path
         
     Returns:
-        'zstd' if .zst extension, 'lz4' if .lz4 extension, None otherwise
+        'zstd' if .zst extension or zstd magic bytes (28 b5 2f fd)
+        'lz4' if .lz4 extension or lz4 magic bytes (04 22 4d 18)
+        None otherwise
     """
     path = Path(path)
     
+    # Check extension first (fast)
     if path.suffix == '.zst':
         return 'zstd'
     elif path.suffix == '.lz4':
         return 'lz4'
-    else:
-        return None
+    
+    # If no extension indicator, check magic bytes
+    if path.exists():
+        try:
+            with open(path, 'rb') as f:
+                magic = f.read(4)
+            
+            # zstd magic: 28 b5 2f fd (little-endian 0xFD2FB528)
+            if magic == b'\x28\xb5\x2f\xfd':
+                return 'zstd'
+            # lz4 magic: 04 22 4d 18
+            elif magic == b'\x04\x22\x4d\x18':
+                return 'lz4'
+        except (IOError, OSError):
+            pass
+    
+    return None
 
 
 def compress_data(

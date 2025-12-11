@@ -197,16 +197,16 @@ class CheckpointManager:
 
         # Use brain's device if not specified
         if device is None:
-            device = self.brain.device
+            device = self.brain.config.device
 
         # Load checkpoint using BrainCheckpoint API
         start_time = time.time()
         checkpoint_data = BrainCheckpoint.load(path, device)
         end_time = time.time()
 
-        # Extract metadata
+        # checkpoint_data IS the state dict (has regions, metadata, config, etc.)
+        state = checkpoint_data
         metadata = checkpoint_data.get("metadata", {})
-        state = checkpoint_data.get("state", {})
 
         # Validate config if strict mode
         if strict:
@@ -320,7 +320,7 @@ class CheckpointManager:
         """
         return {
             "regions": len(self.brain.adapters),
-            "pathways": len(self.brain.pathway_manager.pathways),
+            "pathways": len(self.brain.pathways),  # Brain has .pathways dict
             "neuromodulators": 3,  # VTA, LC, NB
             "oscillators": 5,  # delta, theta, alpha, beta, gamma
         }

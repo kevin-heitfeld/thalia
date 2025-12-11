@@ -12,12 +12,12 @@ from typing import Dict, Optional, Any, TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
-    from .event_system import EventScheduler
+    from thalia.events import EventScheduler
     from .pathway_manager import PathwayManager
     from .neuromodulator_manager import NeuromodulatorManager
     from .oscillator import OscillatorManager
 
-from .event_system import Event, EventType, SpikePayload, get_axonal_delay
+from thalia.events import Event, EventType, SpikePayload, get_axonal_delay
 
 
 class TrialCoordinator:

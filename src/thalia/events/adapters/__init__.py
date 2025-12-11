@@ -13,7 +13,7 @@ The adapters allow gradual migration from the sequential BrainSystem
 to the parallel event-driven architecture.
 
 Usage:
-    from thalia.core.event_regions import (
+    from thalia.events.adapters import (
         EventDrivenCortex,
         EventDrivenHippocampus,
         EventDrivenPFC,

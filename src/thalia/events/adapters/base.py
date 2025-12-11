@@ -23,7 +23,7 @@ from typing import Dict, List, Optional, Any
 import torch
 import torch.nn as nn
 
-from ..event_system import (
+from ..system import (
     Event,
     EventType,
     SpikePayload,

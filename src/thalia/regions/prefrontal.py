@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from thalia.regions.prefrontal_hierarchy import Goal, GoalHierarchyManager, GoalHierarchyConfig
     from thalia.regions.prefrontal_hierarchy import HyperbolicDiscounter, HyperbolicDiscountingConfig
 
-from thalia.learning import create_learning_strategy
+from thalia.learning import LearningStrategyRegistry, STDPConfig
 
 from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
@@ -332,18 +332,20 @@ class Prefrontal(NeuralComponent):
         )
 
         # Initialize learning strategy (STDP with dopamine gating)
-        # Using factory for cleaner configuration
-        self.learning_strategy = create_learning_strategy(
+        # Using LearningStrategyRegistry for pluggable learning strategies
+        self.learning_strategy = LearningStrategyRegistry.create(
             "stdp",
-            learning_rate=config.stdp_lr,
-            a_plus=config.stdp_a_plus,
-            a_minus=config.stdp_a_minus,
-            tau_plus=config.stdp_tau_ms,
-            tau_minus=config.stdp_tau_ms,
-            dt_ms=config.dt_ms,
-            w_min=config.w_min,
-            w_max=config.w_max,
-            soft_bounds=config.soft_bounds,
+            STDPConfig(
+                learning_rate=config.stdp_lr,
+                a_plus=config.stdp_a_plus,
+                a_minus=config.stdp_a_minus,
+                tau_plus=config.stdp_tau_ms,
+                tau_minus=config.stdp_tau_ms,
+                dt_ms=config.dt_ms,
+                w_min=config.w_min,
+                w_max=config.w_max,
+                soft_bounds=config.soft_bounds,
+            )
         )
 
         # Initialize working memory state (1D tensors, ADR-005)

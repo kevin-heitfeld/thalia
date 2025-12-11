@@ -132,7 +132,7 @@ class SpikingAttentionPathway(SpikingPathway):
         """
         if hasattr(self, '_oscillator_phases') and 'beta' in self._oscillator_phases:
             return self._oscillator_phases['beta']
-        return 0.0  # No fallback - must be connected to Brain
+        return 0.0
 
     def compute_attention(
         self,
@@ -249,12 +249,9 @@ class SpikingAttentionPathway(SpikingPathway):
         - input_projection: Weights and biases
         - attention_encoder: Weights and biases for attention computation
         - gain_output: Weights and biases for gain modulation
-        - beta_phase: Beta oscillation phase
         """
-        # Get base pathway state
         state = super().get_state()
 
-        # Add attention-specific state
         state["attention_state"] = {
             "input_projection": {
                 "weight": self.input_projection.weight.data.clone(),
@@ -270,7 +267,6 @@ class SpikingAttentionPathway(SpikingPathway):
                 "weight": self.gain_output.weight.data.clone(),
                 "bias": self.gain_output.bias.data.clone(),
             },
-            "beta_phase": self.beta_phase.clone(),
         }
 
         return state
@@ -284,30 +280,22 @@ class SpikingAttentionPathway(SpikingPathway):
         Note:
             Restores base pathway state plus attention-specific components.
         """
-        # Load base pathway state
         super().load_state(state)
 
-        # Load attention-specific state
         if "attention_state" in state:
             device = self.weights.device
             attention_state = state["attention_state"]
 
-            # Restore input projection
             input_proj = attention_state["input_projection"]
             self.input_projection.weight.data.copy_(input_proj["weight"].to(device))
             self.input_projection.bias.data.copy_(input_proj["bias"].to(device))
 
-            # Restore attention encoder
             encoder = attention_state["attention_encoder"]
             self.attention_encoder[0].weight.data.copy_(encoder["0.weight"].to(device))
             self.attention_encoder[0].bias.data.copy_(encoder["0.bias"].to(device))
             self.attention_encoder[1].weight.data.copy_(encoder["1.weight"].to(device))
             self.attention_encoder[1].bias.data.copy_(encoder["1.bias"].to(device))
 
-            # Restore gain output
             gain = attention_state["gain_output"]
             self.gain_output.weight.data.copy_(gain["weight"].to(device))
             self.gain_output.bias.data.copy_(gain["bias"].to(device))
-
-            # Restore beta phase
-            self.beta_phase.copy_(attention_state["beta_phase"].to(device))
