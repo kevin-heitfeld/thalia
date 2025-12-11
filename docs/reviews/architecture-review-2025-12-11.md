@@ -361,72 +361,59 @@ proprioception = torch.randn(...)
 
 ### 2.1 Unify Manager Pattern Across Regions
 
-**Current State**: 7+ manager classes with similar responsibilities:
+**Status**: ✅ **IMPLEMENTED** (December 11, 2025)
 
-```
-striatum/
-  ├── learning_manager.py      # Manages D1/D2 pathway learning
-  ├── homeostasis_manager.py   # Manages synaptic scaling
-  ├── checkpoint_manager.py    # Manages state serialization
-  ├── exploration.py            # Manages UCB exploration (called ExplorationManager)
-  └── forward_coordinator.py   # Coordinates forward pass
+**Implementation Summary**:
 
-hippocampus/
-  ├── plasticity_manager.py     # Manages STDP/one-shot learning
-  ├── episode_manager.py        # Manages episodic buffer
-  └── replay_engine.py          # Manages memory replay (not called "manager")
-```
+Created standardized component pattern with base classes and region-specific implementations:
 
-**Antipattern**: **Proliferation of similar manager classes without clear boundaries.**
+**Base Component Classes** (`src/thalia/core/region_components.py`):
+- `LearningComponent`: Unified learning interface (apply_learning, reset_state, diagnostics)
+- `HomeostasisComponent`: Unified homeostasis interface (apply_homeostasis, diagnostics)
+- `MemoryComponent`: Unified memory interface (store_memory, retrieve_memories)
+- `ExplorationComponent`: Unified exploration interface (compute_exploration_bonus)
 
-**Common Responsibilities**:
-1. Hold region-specific config
-2. Maintain state (weights, traces, counters)
-3. Implement learning logic
-4. Provide diagnostics
-5. Support checkpointing
+**Striatum Components**:
+- `StriatumLearningComponent` (was `LearningManager`): Three-factor learning
+- `StriatumHomeostasisComponent` (was `HomeostasisManager`): D1/D2 balance
+- `StriatumExplorationComponent` (was `ExplorationManager`): UCB exploration
 
-**Proposed Consolidation**:
+**Hippocampus Components**:
+- `HippocampusLearningComponent` (was `PlasticityManager`): STDP + synaptic scaling
+- `HippocampusMemoryComponent` (was `EpisodeManager`): Episodic buffer management
 
-**Option A: Functional Decomposition** (Recommended)
-```python
-# src/thalia/core/region_components.py
-class LearningComponent(BaseManager):
-    """Manages plasticity rules for a region."""
-    
-class HomeostasisComponent(BaseManager):
-    """Manages homeostatic regulation."""
-    
-class MemoryComponent(BaseManager):
-    """Manages episodic/working memory."""
-```
+**Backwards Compatibility**:
+- Module-level aliases: `LearningManager = StriatumLearningComponent`
+- Instance properties: `@property learning_manager → self.learning`
+- Zero breaking changes for existing code
 
-Then:
-- `StriatumLearningComponent` replaces `LearningManager` + `EligibilityTraces`
-- `StriatumHomeostasisComponent` replaces `HomeostasisManager`
-- `HippocampusLearningComponent` replaces `PlasticityManager`
-- `HippocampusMemoryComponent` replaces `EpisodeManager` + `ReplayEngine`
+**Region Updates**:
+- `striatum.py`: self.learning_manager → self.learning (+ backwards compat property)
+- `trisynaptic.py`: self.plasticity_manager → self.learning (+ backwards compat property)
 
-**Option B: Absorb Managers Into Regions** (Simpler)
-```python
-# Move manager logic directly into region classes
-# Eliminate intermediate manager layer
-# Use private methods: _update_eligibility(), _apply_homeostasis()
-```
+**Documentation**:
+- Created `docs/patterns/component-standardization.md` with comprehensive pattern guide
+- Guidelines for when to create components vs utilities
+- Migration checklist for future regions
 
-**Rationale**: 
-- Reduces indirection (3 levels: Region → Manager → Logic)
-- Clarifies ownership (who owns what state?)
-- Easier to understand control flow
-- Option B better aligns with neuroscience (region = functional unit)
+**Non-Components** (kept as utilities):
+- `CheckpointManager`: Pure I/O operations
+- `ReplayEngine`: Complex reusable algorithm (used by sleep system)
+- `ForwardPassCoordinator`: Simple orchestration (future: absorb into region)
+- `StateTracker`: Simple state storage (future: absorb into region)
 
-**Impact**: High (requires refactoring region internals)  
-**Files Affected**: 
-- Striatum: 5 manager files → absorb into `striatum.py`
-- Hippocampus: 3 manager files → absorb into `trisynaptic.py`
-- ~20 test files
+**Benefits Achieved**:
+- ✅ Consistent naming across regions (Component pattern)
+- ✅ Clear separation of concerns
+- ✅ Unified interfaces for cross-region functionality
+- ✅ Improved discoverability (region.learning, region.memory)
+- ✅ Zero breaking changes via compatibility layer
 
-**Recommendation**: Start with Option B (simpler), revisit Option A if manager pattern proves necessary.
+**Decision**: Implemented Option A (Functional Decomposition) with standardized naming.
+
+**Related Documentation**:
+- Pattern: `docs/patterns/component-standardization.md`
+- Commits: 7e34373, 5646783
 
 ---
 
