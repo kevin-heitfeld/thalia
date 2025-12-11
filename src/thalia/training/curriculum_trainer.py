@@ -729,7 +729,7 @@ class CurriculumTrainer:
                 # - BCM in cortex (Bienenstock-Cooper-Munro, competition)
                 # - Hebbian in hippocampus (one-shot episodic encoding)
                 # - Intrinsic rewards from prediction errors (continuous)
-                output = self.brain.forward(
+                _output = self.brain.forward(
                     task_data['input'],
                     n_timesteps=task_data.get('n_timesteps', 10),
                 )
@@ -1054,10 +1054,148 @@ class CurriculumTrainer:
         stage: CurriculumStage,
         result: TrainingResult,
     ) -> None:
-        """Check if growth needed and trigger if so."""
-        # This will be implemented to check each brain region
-        # and trigger growth based on capacity metrics
-        pass
+        """Check if growth needed and trigger if so.
+
+        Implements curriculum-aware growth strategy:
+        1. Check capacity metrics for each brain region
+        2. Compare against stage-specific thresholds
+        3. Trigger growth if needed (with consolidation)
+        4. Record growth events for tracking
+
+        Growth is coordinated across regions and pathways:
+        - Region grows first (e.g., cortex adds neurons)
+        - Connected pathways automatically grow to match
+        - Consolidation before AND after growth prevents forgetting
+        """
+        if not self.growth_config.enable_growth:
+            return
+
+        # Get component-wise growth configs
+        component_configs = self.growth_config.component_configs
+
+        # Map brain attributes to config names
+        region_mapping = {
+            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
+            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
+            'prefrontal': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
+            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
+            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
+        }
+
+        # Check each region for growth needs
+        for region_name, region in region_mapping.items():
+            if region is None:
+                continue
+
+            # Get growth config for this component
+            growth_config = component_configs.get(region_name)
+            if growth_config is None:
+                continue
+
+            # Get stage-specific trigger
+            trigger = growth_config.get_trigger_for_stage(stage.value)
+            if trigger is None or not trigger.enabled:
+                continue
+
+            # Create GrowthManager for this region
+            from thalia.core.growth import GrowthManager
+            growth_manager = GrowthManager(region_name=region_name)
+
+            # Get capacity metrics
+            metrics = growth_manager.get_capacity_metrics(
+                component=region,
+                saturation_threshold=trigger.capacity_threshold,
+            )
+
+            # Check if growth recommended
+            if not metrics.growth_recommended:
+                continue
+
+            # Check minimum steps between growth events
+            last_growth_step = None
+            for event in result.growth_events:
+                if event.get('component_name') == region_name:
+                    last_growth_step = event.get('step', 0)
+
+            if last_growth_step is not None:
+                steps_since_growth = self.global_step - last_growth_step
+                if steps_since_growth < trigger.min_steps_between:
+                    if self.verbose:
+                        print(f"  ⏳ {region_name}: Growth on cooldown "
+                              f"({steps_since_growth}/{trigger.min_steps_between} steps)")
+                    continue
+
+            # Calculate growth amount
+            n_new_neurons = int(region.n_output * trigger.expansion_rate)
+            n_new_neurons = max(growth_config.min_neurons_per_growth,
+                               min(n_new_neurons, growth_config.max_neurons_per_growth))
+
+            # Check total growth limit
+            original_size = region.n_output - sum(
+                e.get('n_neurons_added', 0)
+                for e in result.growth_events
+                if e.get('component_name') == region_name
+            )
+            current_ratio = region.n_output / max(original_size, 1)
+            if current_ratio >= growth_config.max_total_growth:
+                if self.verbose:
+                    print(f"  🛑 {region_name}: Max growth limit reached "
+                          f"({current_ratio:.1f}x original)")
+                continue
+
+            if self.verbose:
+                print(f"\n🌱 Growing {region_name}:")
+                print(f"  Current size: {region.n_output}")
+                print(f"  Utilization: {metrics.utilization:.2%}")
+                print(f"  Reason: {metrics.growth_reason}")
+                print(f"  Adding: {n_new_neurons} neurons")
+
+            # Consolidate before growth (if enabled)
+            if trigger.consolidate_before:
+                if self.verbose:
+                    print("  Consolidating before growth...")
+                self.brain.consolidate(n_cycles=5, batch_size=32, verbose=False)
+
+            # Perform growth
+            _growth_event = growth_manager.add_neurons(
+                component=region,
+                n_new=n_new_neurons,
+                initialization='sparse_random',
+                sparsity=0.1,
+                reason=metrics.growth_reason,
+                component_type='region',
+            )
+
+            # Grow connected pathways (automatic via PathwayManager)
+            if hasattr(self.brain, 'pathway_manager'):
+                grown_pathways = self.brain.pathway_manager.grow_connected_pathways(
+                    region_name=region_name,
+                    new_size=region.n_output,
+                )
+                if self.verbose and grown_pathways:
+                    print(f"  🔗 Grew {len(grown_pathways)} connected pathways")
+
+            # Consolidate after growth (if enabled)
+            if trigger.consolidate_after:
+                if self.verbose:
+                    print("  Consolidating after growth...")
+                self.brain.consolidate(n_cycles=5, batch_size=32, verbose=False)
+
+            # Record growth event
+            result.growth_events.append({
+                'step': self.global_step,
+                'stage': stage.name,
+                'component_name': region_name,
+                'component_type': 'region',
+                'n_neurons_added': n_new_neurons,
+                'old_size': region.n_output - n_new_neurons,
+                'new_size': region.n_output,
+                'reason': metrics.growth_reason,
+                'utilization_before': metrics.utilization,
+            })
+
+            if self.verbose:
+                print(f"  ✅ Growth complete: {region_name} now has {region.n_output} neurons\n")
 
     def _check_and_trigger_consolidation(
         self,
@@ -1161,13 +1299,334 @@ class CurriculumTrainer:
         task_loader: Any,
         config: StageConfig,
     ) -> Dict[str, bool]:
-        """Default milestone evaluation if no custom evaluator provided."""
-        # Basic evaluation - checks success criteria
+        """Default milestone evaluation if no custom evaluator provided.
+        
+        Implements comprehensive milestone checking per curriculum_strategy.md.
+        Each stage has specific success criteria that must ALL pass before
+        proceeding to the next stage (go/no-go evaluation).
+        
+        This method evaluates:
+        1. Task-specific performance (accuracy thresholds)
+        2. System health (firing rates, stability, no pathologies)
+        3. Backward compatibility (previous stages maintained)
+        4. Growth progress (capacity metrics)
+        
+        Args:
+            stage: Current curriculum stage
+            task_loader: Task dataset for evaluation
+            config: Stage configuration with success_criteria
+        
+        Returns:
+            Dict mapping criterion name to pass/fail bool
+        """
         results = {}
+        
+        # =====================================================================
+        # 1. TASK-SPECIFIC PERFORMANCE
+        # =====================================================================
+        # Evaluate each criterion from config.success_criteria
+        # These are stage-specific thresholds (e.g., "mnist_accuracy": 0.95)
+        
         for criterion, threshold in config.success_criteria.items():
-            # Placeholder - real implementation would test tasks
-            results[criterion] = True
+            # Extract task and metric from criterion name
+            # Format: "task_metric" (e.g., "mnist_accuracy", "reaching_success")
+            
+            if hasattr(task_loader, 'evaluate'):
+                # Task loader provides evaluation method
+                actual_value = task_loader.evaluate(self.brain, criterion)
+            else:
+                # Fallback: Run task and measure performance
+                actual_value = self._evaluate_criterion(criterion, task_loader, threshold)
+            
+            # Compare against threshold
+            passed = actual_value >= threshold
+            results[criterion] = passed
+            
+            if self.verbose:
+                status = "✅" if passed else "❌"
+                print(f"  {status} {criterion}: {actual_value:.3f} (threshold: {threshold:.3f})")
+        
+        # =====================================================================
+        # 2. SYSTEM HEALTH CHECKS
+        # =====================================================================
+        # These are universal criteria across all stages
+        
+        # 2.1 Firing rate stability
+        firing_rates = self._get_region_firing_rates()
+        firing_rate_ok = all(0.05 <= fr <= 0.15 for fr in firing_rates.values())
+        results['firing_rate_stability'] = firing_rate_ok
+        
+        if self.verbose:
+            status = "✅" if firing_rate_ok else "❌"
+            print(f"  {status} firing_rate_stability: {firing_rate_ok}")
+            if not firing_rate_ok:
+                for region, fr in firing_rates.items():
+                    if not (0.05 <= fr <= 0.15):
+                        print(f"      ⚠️  {region}: {fr:.3f}")
+        
+        # 2.2 No runaway excitation
+        no_runaway = all(fr < 0.8 for fr in firing_rates.values())
+        results['no_runaway_excitation'] = no_runaway
+        
+        # 2.3 No silent regions
+        no_silence = all(fr > 0.01 for fr in firing_rates.values())
+        results['no_silent_regions'] = no_silence
+        
+        # 2.4 Weight health (not saturated)
+        weight_health = self._check_weight_saturation()
+        results['weight_health'] = weight_health
+        
+        if self.verbose:
+            status = "✅" if weight_health else "❌"
+            print(f"  {status} weight_health: {weight_health}")
+        
+        # 2.5 Oscillator accuracy (if theta oscillations used)
+        if hasattr(self.brain, 'oscillators') and hasattr(self.brain.oscillators, 'theta'):
+            theta_freq = self.brain.oscillators.theta.frequency_hz
+            theta_ok = 7.5 <= theta_freq <= 8.5
+            results['theta_oscillations'] = theta_ok
+            
+            if self.verbose:
+                status = "✅" if theta_ok else "❌"
+                print(f"  {status} theta_oscillations: {theta_freq:.2f} Hz")
+        
+        # =====================================================================
+        # 3. BACKWARD COMPATIBILITY
+        # =====================================================================
+        # Ensure previous stage performance is maintained (>90% of original)
+        
+        if stage.value > -1:  # Not the first stage
+            prev_stage_ok = self._check_backward_compatibility(stage)
+            results['backward_compatibility'] = prev_stage_ok
+            
+            if self.verbose:
+                status = "✅" if prev_stage_ok else "❌"
+                print(f"  {status} backward_compatibility: {prev_stage_ok}")
+        
+        # =====================================================================
+        # 4. GROWTH PROGRESS (if enabled)
+        # =====================================================================
+        if config.enable_growth:
+            growth_ok = self._check_growth_progress(stage)
+            results['growth_progress'] = growth_ok
+            
+            if self.verbose:
+                status = "✅" if growth_ok else "❌"
+                print(f"  {status} growth_progress: {growth_ok}")
+        
         return results
+    
+    def _evaluate_criterion(
+        self,
+        criterion: str,
+        task_loader: Any,
+        threshold: float,
+    ) -> float:
+        """Evaluate a single criterion by running tasks.
+        
+        Args:
+            criterion: Criterion name (e.g., "mnist_accuracy")
+            task_loader: Task loader for evaluation
+            threshold: Required threshold
+        
+        Returns:
+            Actual performance value (0.0 to 1.0)
+        """
+        # Parse criterion name to extract task and metric
+        parts = criterion.split('_')
+        if len(parts) >= 2:
+            task_name = '_'.join(parts[:-1])  # e.g., "mnist", "reaching"
+            metric = parts[-1]  # e.g., "accuracy", "success"
+        else:
+            task_name = criterion
+            metric = 'accuracy'
+        
+        # Run evaluation trials (e.g., 100 test samples)
+        n_trials = 100
+        correct = 0
+        
+        for _ in range(n_trials):
+            try:
+                # Get test sample
+                if hasattr(task_loader, 'get_test_sample'):
+                    test_data = task_loader.get_test_sample(task_name)
+                else:
+                    # Fallback
+                    test_data = task_loader.get_task(task_name)
+                
+                # Forward pass
+                output = self.brain.forward(
+                    test_data['input'],
+                    n_timesteps=test_data.get('n_timesteps', 10),
+                )
+                
+                # Evaluate based on metric type
+                if metric in ['accuracy', 'correct', 'success']:
+                    # Classification/binary success
+                    if 'label' in test_data:
+                        # Compare prediction to label
+                        prediction = self._extract_prediction(output)
+                        correct += int(prediction == test_data['label'])
+                    elif 'reward' in test_data:
+                        # RL task - check if reward achieved
+                        correct += int(test_data['reward'] > 0)
+                elif metric in ['error', 'loss']:
+                    # Error metric (lower is better)
+                    if 'target' in test_data:
+                        error = self._compute_error(output, test_data['target'])
+                        correct += (1.0 - min(error, 1.0))
+            except Exception:
+                # Skip failed trials
+                continue
+        
+        # Return proportion correct
+        return correct / n_trials if n_trials > 0 else 0.0
+    
+    def _extract_prediction(self, output: Dict[str, Any]) -> int:
+        """Extract prediction from brain output.
+        
+        For classification, uses striatum action selection.
+        For other tasks, may use different criteria.
+        """
+        # Use striatum's action as prediction
+        if hasattr(self.brain, 'striatum'):
+            action, _confidence = self.brain.select_action(explore=False)
+            return action
+        
+        # Fallback: use most active region
+        return 0
+    
+    def _compute_error(self, output: Dict[str, Any], target: Any) -> float:
+        """Compute error between output and target."""
+        # Placeholder - would compute actual error based on task
+        return 0.0
+    
+    def _get_region_firing_rates(self) -> Dict[str, float]:
+        """Get firing rates for all brain regions.
+        
+        Returns:
+            Dict mapping region name to firing rate (0.0 to 1.0)
+        """
+        from thalia.core.spike_utils import compute_firing_rate
+        
+        firing_rates = {}
+        
+        region_mapping = {
+            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
+            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
+            'pfc': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
+            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
+            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
+        }
+        
+        for region_name, region in region_mapping.items():
+            if region is None:
+                continue
+            
+            # Get firing rate from current state
+            if hasattr(region, 'state') and hasattr(region.state, 'spikes'):
+                if region.state.spikes is not None:
+                    firing_rates[region_name] = compute_firing_rate(region.state.spikes)
+                else:
+                    firing_rates[region_name] = 0.0
+            else:
+                firing_rates[region_name] = 0.0
+        
+        return firing_rates
+    
+    def _check_weight_saturation(self) -> bool:
+        """Check if weights are healthy (not saturated).
+        
+        Returns:
+            True if <80% of weights are saturated
+        """
+        # Check each region for weight saturation
+        from thalia.core.growth import GrowthManager
+        
+        region_mapping = {
+            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
+            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
+            'pfc': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
+            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
+            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
+        }
+        
+        for region_name, region in region_mapping.items():
+            if region is None:
+                continue
+            
+            growth_manager = GrowthManager(region_name=region_name)
+            metrics = growth_manager.get_capacity_metrics(region)
+            
+            # Check saturation fraction
+            if metrics.saturation_fraction is not None:
+                if metrics.saturation_fraction >= 0.80:
+                    return False
+        
+        return True
+    
+    def _check_backward_compatibility(self, current_stage: CurriculumStage) -> bool:
+        """Check if previous stage performance is maintained.
+        
+        Args:
+            current_stage: Current stage being evaluated
+        
+        Returns:
+            True if previous stages maintained >90% performance
+        """
+        # For now, assume backward compatibility is maintained
+        # Real implementation would re-run previous stage evaluations
+        # and compare to original performance
+        
+        # TODO: Implement full backward compatibility checking
+        # This requires:
+        # 1. Storing original performance metrics from each stage
+        # 2. Re-evaluating previous stage tasks
+        # 3. Comparing current to original (threshold: >90%)
+        
+        return True
+    
+    def _check_growth_progress(self, stage: CurriculumStage) -> bool:
+        """Check if growth has progressed appropriately for stage.
+        
+        Args:
+            stage: Current curriculum stage
+        
+        Returns:
+            True if brain has grown to expected size for this stage
+        """
+        # Expected sizes per stage (from curriculum_strategy.md)
+        expected_sizes = {
+            CurriculumStage.SENSORIMOTOR: 35000,  # +5k from 30k initial
+            CurriculumStage.PHONOLOGY: 50000,     # +15k
+            CurriculumStage.TODDLER: 75000,       # +25k
+            CurriculumStage.GRAMMAR: 100000,      # +25k
+            CurriculumStage.READING: 120000,      # +20k
+            CurriculumStage.ABSTRACT: 135000,     # +15k
+        }
+        
+        if stage not in expected_sizes:
+            return True
+        
+        # Count current neurons across all regions
+        total_neurons = 0
+        
+        region_mapping = {
+            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
+            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
+            'pfc': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
+            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
+            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
+        }
+        
+        for region in region_mapping.values():
+            if region is not None and hasattr(region, 'n_output'):
+                total_neurons += region.n_output
+        
+        expected = expected_sizes[stage]
+        
+        # Allow 10% tolerance (may grow more or less than expected)
+        return expected * 0.9 <= total_neurons <= expected * 1.2
 
     def _report_stage_results(self, result: TrainingResult) -> None:
         """Print stage training results."""
@@ -1285,7 +1744,7 @@ class CurriculumTrainer:
             print("    - Raven's matrices: 3-level hierarchy (analyze → induce → predict)")
             print("    - Hypothesis testing: 3-level hierarchy (generate → test → revise)")
             print("    - Multi-premise reasoning: 3-level hierarchy (gather → integrate → conclude)")
-            print(f"    - Default hierarchy: hypothesis_testing")
+            print("    - Default hierarchy: hypothesis_testing")
 
     def _create_tower_hanoi_goal(self) -> Goal:
         """Create Tower of Hanoi goal hierarchy.

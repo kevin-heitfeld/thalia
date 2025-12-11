@@ -751,9 +751,6 @@ class EventDrivenBrain(nn.Module):
             if region_class is None:
                 raise ValueError(f"Region type '{region_type}' not registered")
 
-            # Determine config class (assume it's ClassNameConfig)
-            config_class_name = f"{region_class.__name__}Config"
-
             # Try to find the config class
             if region_type == "cortex" or region_type == "layered_cortex":
                 config_obj = LayeredCortexConfig(**region_config)
@@ -786,18 +783,51 @@ class EventDrivenBrain(nn.Module):
             pathway_config["device"] = device
             pathway_config["dt_ms"] = dt_ms
 
-            # Pathway configs are uniform - they all inherit from PathwayConfig
-            # For now, we'll create a simple config dict and let the pathway handle it
-            # This is a simplified approach; full implementation would map to proper config classes
-
+            # Get pathway class from registry
             pathway_class = ComponentRegistry.get("pathway", pathway_type)
             if pathway_class is None:
                 raise ValueError(f"Pathway type '{pathway_type}' not registered")
 
-            # Note: This is a simplified implementation
-            # Full version would need proper config class mapping like regions
-            # For now, skip pathway creation as it requires more complex config handling
-            pass
+            # Determine config class based on pathway type
+            # Most pathways use PathwayConfig or specialized subclasses
+            if pathway_type in ["spiking", "spiking_stdp"]:
+                # Base spiking pathway
+                from thalia.config.base import PathwayConfig
+                config_obj = PathwayConfig(**pathway_config)
+            elif pathway_type == "attention" or pathway_type == "spiking_attention":
+                # Attention pathway with specialized config
+                from thalia.integration.pathways.spiking_attention import SpikingAttentionPathwayConfig
+                config_obj = SpikingAttentionPathwayConfig(**pathway_config)
+            elif pathway_type == "replay" or pathway_type == "spiking_replay":
+                # Replay pathway with specialized config
+                from thalia.integration.pathways.spiking_replay import SpikingReplayPathwayConfig
+                config_obj = SpikingReplayPathwayConfig(**pathway_config)
+            elif pathway_type == "visual":
+                # Visual sensory pathway
+                from thalia.sensory.pathways import VisualConfig
+                config_obj = VisualConfig(**pathway_config)
+            elif pathway_type == "auditory":
+                # Auditory sensory pathway
+                from thalia.sensory.pathways import AuditoryConfig
+                config_obj = AuditoryConfig(**pathway_config)
+            elif pathway_type == "language":
+                # Language sensory pathway
+                from thalia.sensory.pathways import LanguageConfig
+                config_obj = LanguageConfig(**pathway_config)
+            else:
+                # Generic fallback - try PathwayConfig
+                from thalia.config.base import PathwayConfig
+                try:
+                    config_obj = PathwayConfig(**pathway_config)
+                except Exception as e:
+                    raise ValueError(
+                        f"Unknown pathway type '{pathway_type}' and failed to create "
+                        f"with PathwayConfig: {e}"
+                    ) from e
+
+            # Create pathway instance via direct instantiation
+            # (ComponentRegistry.create would work too, but this is more explicit)
+            pathways[pathway_name] = pathway_class(config_obj)
 
         # For now, create a minimal ThaliaConfig and standard brain
         # Full dynamic construction would require more infrastructure
@@ -836,10 +866,6 @@ class EventDrivenBrain(nn.Module):
         # In future, this could be extended to use the dynamically created regions
         brain = cls.from_thalia_config(thalia_config)
 
-        # Store the dynamically created regions for introspection
-        brain._dynamic_regions = regions
-        brain._dynamic_pathways = pathways
-
         return brain
 
     def _init_parallel_executor(self) -> None:
@@ -863,10 +889,10 @@ class EventDrivenBrain(nn.Module):
         # These are pickle-able because they're defined at module level
         self._parallel_executor = ParallelExecutor(
             region_creators={
-                "cortex": _create_real_cortex,
-                "hippocampus": _create_real_hippocampus,
-                "pfc": _create_real_pfc,
-                "striatum": _create_real_striatum,
+                # "cortex": _create_real_cortex,
+                # "hippocampus": _create_real_hippocampus,
+                # "pfc": _create_real_pfc,
+                # "striatum": _create_real_striatum,
             },
         )
         self._parallel_executor.start()
@@ -1375,7 +1401,7 @@ class EventDrivenBrain(nn.Module):
         # - Attention modulation (beta/alpha coupling)
         # - State-dependent plasticity (sleep/wake)
         # - Temporal coordination (align inter-region communication)
-        for pathway_name, pathway in self.pathways.items():
+        for _pathway_name, pathway in self.pathways.items():
             if hasattr(pathway, 'set_oscillator_phases'):
                 pathway.set_oscillator_phases(
                     phases, signals, theta_slot, effective_amplitudes
