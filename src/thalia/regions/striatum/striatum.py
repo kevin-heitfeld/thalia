@@ -78,8 +78,9 @@ from .action_selection import ActionSelectionMixin
 from .pathway_base import StriatumPathwayConfig
 from .d1_pathway import D1Pathway
 from .d2_pathway import D2Pathway
-from .homeostasis_manager import HomeostasisManager, HomeostasisManagerConfig
-from .learning_manager import LearningManager
+from .homeostasis_component import StriatumHomeostasisComponent, HomeostasisManagerConfig
+from .learning_component import StriatumLearningComponent
+from .exploration_component import StriatumExplorationComponent
 from .checkpoint_manager import CheckpointManager
 from .state_tracker import StriatumStateTracker
 from .forward_coordinator import ForwardPassCoordinator
@@ -190,10 +191,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # =====================================================================
         # Centralized exploration management with UCB tracking and adaptive
         # tonic dopamine adjustment based on performance.
-        from thalia.regions.striatum.exploration import (
-            ExplorationManager,
-            ExplorationConfig,
-        )
+        from thalia.regions.striatum.exploration import ExplorationConfig
 
         exploration_config = ExplorationConfig(
             ucb_exploration=self.striatum_config.ucb_exploration,
@@ -211,7 +209,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             n_output=self.n_actions,
             dt_ms=config.dt_ms,
         )
-        self.exploration_manager = ExplorationManager(
+        self.exploration = StriatumExplorationComponent(
             config=exploration_config,
             context=exploration_context,
             initial_tonic_dopamine=self.striatum_config.tonic_dopamine,
@@ -262,7 +260,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         )
 
         # Create learning manager
-        self.learning_manager = LearningManager(
+        self.learning = StriatumLearningComponent(
             config=self.striatum_config,
             context=learning_context,
             d1_pathway=self.d1_pathway,
@@ -337,12 +335,12 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
                 dt_ms=config.dt_ms,
                 metadata={"neurons_per_action": self.neurons_per_action},
             )
-            self.homeostasis_manager = HomeostasisManager(
+            self.homeostasis = StriatumHomeostasisComponent(
                 config=homeostasis_config,
                 context=homeostasis_context,
             )
         else:
-            self.homeostasis_manager = None
+            self.homeostasis = None
 
         # =====================================================================
         # TD(λ) - MULTI-STEP CREDIT ASSIGNMENT (Phase 1 Enhancement)
@@ -494,34 +492,49 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     # External code may access _action_counts, tonic_dopamine, etc. directly.
 
     @property
+    def exploration_manager(self):
+        """Backwards compatibility alias for exploration component."""
+        return self.exploration
+
+    @property
+    def learning_manager(self):
+        """Backwards compatibility alias for learning component."""
+        return self.learning
+
+    @property
+    def homeostasis_manager(self):
+        """Backwards compatibility alias for homeostasis component."""
+        return self.homeostasis
+
+    @property
     def _action_counts(self) -> torch.Tensor:
-        """UCB action counts (delegates to exploration_manager)."""
-        return self.exploration_manager._action_counts
+        """UCB action counts (delegates to exploration)."""
+        return self.exploration._action_counts
 
     @property
     def _total_trials(self) -> int:
-        """Total trial count (delegates to exploration_manager)."""
-        return self.exploration_manager._total_trials
+        """Total trial count (delegates to exploration)."""
+        return self.exploration._total_trials
 
     @property
     def _recent_rewards(self) -> List[float]:
-        """Recent reward history (delegates to exploration_manager)."""
-        return self.exploration_manager._recent_rewards
+        """Recent reward history (delegates to exploration)."""
+        return self.exploration._recent_rewards
 
     @property
     def _recent_accuracy(self) -> float:
-        """Running accuracy estimate (delegates to exploration_manager)."""
-        return self.exploration_manager._recent_accuracy
+        """Running accuracy estimate (delegates to exploration)."""
+        return self.exploration._recent_accuracy
 
     @property
     def tonic_dopamine(self) -> float:
-        """Current tonic dopamine level (delegates to exploration_manager)."""
-        return self.exploration_manager.tonic_dopamine
+        """Current tonic dopamine level (delegates to exploration)."""
+        return self.exploration.tonic_dopamine
 
     @tonic_dopamine.setter
     def tonic_dopamine(self, value: float) -> None:
-        """Set tonic dopamine level (delegates to exploration_manager)."""
-        self.exploration_manager.tonic_dopamine = value
+        """Set tonic dopamine level (delegates to exploration)."""
+        self.exploration.tonic_dopamine = value
 
     # =========================================================================
     # PATHWAY DELEGATION PROPERTIES

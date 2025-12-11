@@ -54,8 +54,8 @@ from thalia.regions.base import NeuralComponent, LearningRule
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
-from .plasticity_manager import PlasticityManager
-from .episode_manager import EpisodeManager
+from .learning_component import HippocampusLearningComponent
+from .memory_component import HippocampusMemoryComponent
 
 
 @register_region(
@@ -245,13 +245,13 @@ class TrisynapticHippocampus(NeuralComponent):
         )
 
         # Plasticity manager: handles learning, synaptic scaling, intrinsic plasticity
-        self.plasticity_manager = PlasticityManager(
+        self.learning = HippocampusLearningComponent(
             config=config,
             context=manager_context,
         )
 
         # Episode manager: handles episodic memory storage and retrieval
-        self.episode_manager = EpisodeManager(
+        self.memory = HippocampusMemoryComponent(
             config=config,
             context=manager_context,
         )
@@ -671,6 +671,20 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # 6. Update config
         self.config = replace(self.config, n_output=new_ca1_size)
+
+    # =========================================================================
+    # BACKWARDS COMPATIBILITY PROPERTIES
+    # =========================================================================
+    
+    @property
+    def plasticity_manager(self):
+        """Backwards compatibility alias for learning component."""
+        return self.learning
+
+    @property
+    def episode_manager(self):
+        """Backwards compatibility alias for memory component."""
+        return self.memory
 
     def forward(
         self,
@@ -1522,7 +1536,7 @@ class TrisynapticHippocampus(NeuralComponent):
         )
 
         # Keep episode_buffer in sync for backward compatibility
-        self.episode_buffer = self.episode_manager.episode_buffer
+        self.episode_buffer = self.memory.episode_buffer
 
         # =====================================================================
         # AUTOMATIC HER INTEGRATION
