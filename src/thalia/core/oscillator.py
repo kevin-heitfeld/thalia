@@ -336,6 +336,7 @@ OSCILLATOR_DEFAULTS = {
     'alpha': 10.0,  # 8-13 Hz: Attention gating, inhibitory control
     'beta': 20.0,   # 13-30 Hz: Motor control, active thinking
     'gamma': 40.0,  # 30-100 Hz: Feature binding, local processing
+    'ripple': 150.0,  # 100-200 Hz: Sharp-wave ripples, memory replay
 }
 
 
@@ -468,7 +469,7 @@ class OscillatorManager:
     """
 
     # Oscillator hierarchy (low to high frequency)
-    OSCILLATOR_HIERARCHY = ['delta', 'theta', 'alpha', 'beta', 'gamma']
+    OSCILLATOR_HIERARCHY = ['delta', 'theta', 'alpha', 'beta', 'gamma', 'ripple']
 
     def __init__(
         self,
@@ -479,6 +480,7 @@ class OscillatorManager:
         alpha_freq: float = OSCILLATOR_DEFAULTS['alpha'],
         beta_freq: float = OSCILLATOR_DEFAULTS['beta'],
         gamma_freq: float = OSCILLATOR_DEFAULTS['gamma'],
+        ripple_freq: float = OSCILLATOR_DEFAULTS['ripple'],
         couplings: Optional[List[OscillatorCoupling]] = None,
     ):
         """Initialize oscillator manager with all brain rhythms.
@@ -502,6 +504,7 @@ class OscillatorManager:
         self.alpha = SinusoidalOscillator(frequency_hz=alpha_freq, dt_ms=dt_ms)
         self.beta = SinusoidalOscillator(frequency_hz=beta_freq, dt_ms=dt_ms)
         self.gamma = SinusoidalOscillator(frequency_hz=gamma_freq, dt_ms=dt_ms)
+        self.ripple = SinusoidalOscillator(frequency_hz=ripple_freq, dt_ms=dt_ms)
 
         # Cross-frequency couplings (simplified configuration)
         # Only specify the FAST oscillator - slow oscillators inferred from hierarchy
@@ -558,6 +561,22 @@ class OscillatorManager:
                         'beta': 0.6,   # Medium: motor timing
                     }
                 ),
+                # Ripple: Sharp-wave ripples modulated by ALL slower oscillators
+                # Memory consolidation during slow-wave sleep (delta) and offline periods (theta)
+                # Suppressed during active processing (alpha/beta/gamma high)
+                OscillatorCoupling(
+                    oscillator='ripple',
+                    coupling_strength=0.8,  # Base strength
+                    min_amplitude=0.1,  # Can be strongly suppressed during waking
+                    modulation_type='cosine',  # Max at specific phase
+                    per_oscillator_strength={
+                        'delta': 0.9,   # Very strong: ripples during slow-wave sleep
+                        'theta': 0.6,   # Medium: ripples at theta trough (offline)
+                        'alpha': -0.4,  # Negative: suppress during attention
+                        'beta': -0.5,   # Negative: suppress during active cognition
+                        'gamma': -0.3,  # Negative: suppress during sensory processing
+                    }
+                ),
             ]
         else:
             self.couplings = couplings
@@ -575,6 +594,7 @@ class OscillatorManager:
             'alpha': True,
             'beta': True,
             'gamma': True,
+            'ripple': True,
         }
 
     def advance(self, dt_ms: Optional[float] = None) -> None:

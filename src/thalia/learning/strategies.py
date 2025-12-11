@@ -57,6 +57,7 @@ import torch
 import torch.nn as nn
 
 from thalia.config.base import LearningComponentConfig
+from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig as CoreSTDPConfig
 
 
 # =============================================================================
@@ -316,32 +317,20 @@ class STDPStrategy(BaseStrategy):
         super().__init__(config or STDPConfig())
         self.stdp_config: STDPConfig = self.config  # type: ignore
         
-        # Compute decay factors
-        dt = self.stdp_config.dt_ms
-        self.register_buffer(
-            "decay_pre",
-            torch.tensor(1.0 - dt / self.stdp_config.tau_plus, dtype=torch.float32),
-        )
-        self.register_buffer(
-            "decay_post",
-            torch.tensor(1.0 - dt / self.stdp_config.tau_minus, dtype=torch.float32),
-        )
-        
-        # Traces (initialized lazily)
-        self.pre_trace: Optional[torch.Tensor] = None
-        self.post_trace: Optional[torch.Tensor] = None
+        # Trace manager (initialized lazily when we know dimensions)
+        self._trace_manager: Optional[EligibilityTraceManager] = None
     
     def reset_state(self) -> None:
         """Reset traces."""
-        self.pre_trace = None
-        self.post_trace = None
+        if self._trace_manager is not None:
+            self._trace_manager.reset_traces()
     
-    def _update_traces(
+    def _ensure_trace_manager(
         self,
         pre: torch.Tensor,
         post: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Update and return eligibility traces.
+    ) -> None:
+        """Initialize trace manager if needed.
         
         Args:
             pre: Presynaptic spikes [n_pre] (1D)
@@ -351,21 +340,20 @@ class STDPStrategy(BaseStrategy):
         n_post = post.shape[0]
         device = pre.device
         
-        # Initialize traces if needed
-        if self.pre_trace is None or self.pre_trace.shape[0] != n_pre:
-            self.pre_trace = torch.zeros(n_pre, device=device)
-        if self.post_trace is None or self.post_trace.shape[0] != n_post:
-            self.post_trace = torch.zeros(n_post, device=device)
-        
-        # Decay traces
-        self.pre_trace = self.decay_pre * self.pre_trace
-        self.post_trace = self.decay_post * self.post_trace
-        
-        # Add new spikes
-        self.pre_trace = self.pre_trace + pre.float()
-        self.post_trace = self.post_trace + post.float()
-        
-        return self.pre_trace, self.post_trace
+        if self._trace_manager is None:
+            cfg = self.stdp_config
+            self._trace_manager = EligibilityTraceManager(
+                n_input=n_pre,
+                n_output=n_post,
+                config=CoreSTDPConfig(
+                    stdp_tau_ms=cfg.tau_plus,  # Use tau_plus for trace decay
+                    eligibility_tau_ms=1000.0,  # Not used in this context
+                    a_plus=cfg.a_plus,
+                    a_minus=cfg.a_minus,
+                    stdp_lr=1.0,  # We handle learning rate separately
+                ),
+                device=device,
+            )
     
     def compute_update(
         self,
@@ -394,26 +382,24 @@ class STDPStrategy(BaseStrategy):
         
         assert pre.dim() == 1 and post.dim() == 1, "STDPStrategy expects 1D inputs"
         
-        # Update traces
-        pre_trace, post_trace = self._update_traces(pre, post)
+        # Initialize trace manager if needed
+        self._ensure_trace_manager(pre, post)
         
-        # LTP: pre was active before post fired now
-        # dw_ltp[j,i] = A+ × pre_trace[i] × post[j]
-        ltp = cfg.a_plus * torch.outer(post.float(), pre_trace)
+        # Update traces and compute LTP/LTD
+        self._trace_manager.update_traces(pre, post, cfg.dt_ms)
+        ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(pre, post)
         
-        # LTD: post was active before pre fired now
-        # dw_ltd[j,i] = -A- × post_trace[j] × pre[i]
-        ltd = cfg.a_minus * torch.outer(post_trace, pre.float())
-        
-        dw = ltp - ltd
+        # Compute weight change
+        dw = ltp - ltd if isinstance(ltp, torch.Tensor) or isinstance(ltd, torch.Tensor) else 0
         
         # Apply bounds
         old_weights = weights.clone()
-        new_weights = self._apply_bounds(weights, dw)
+        new_weights = self._apply_bounds(weights, dw) if isinstance(dw, torch.Tensor) else weights
         
-        metrics = self._compute_metrics(old_weights, new_weights, dw)
-        metrics["pre_trace_mean"] = pre_trace.mean().item()
-        metrics["post_trace_mean"] = post_trace.mean().item()
+        metrics = self._compute_metrics(old_weights, new_weights, dw if isinstance(dw, torch.Tensor) else torch.zeros_like(weights))
+        if self._trace_manager is not None:
+            metrics["pre_trace_mean"] = self._trace_manager.input_trace.mean().item()
+            metrics["post_trace_mean"] = self._trace_manager.output_trace.mean().item()
         
         return new_weights, metrics
 

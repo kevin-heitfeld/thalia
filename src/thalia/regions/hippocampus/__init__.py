@@ -16,6 +16,7 @@ Usage:
 """
 
 from .config import Episode, TrisynapticConfig, TrisynapticState
+from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 
 # Import main class from package
 from .trisynaptic import TrisynapticHippocampus
@@ -24,4 +25,7 @@ __all__ = [
     "TrisynapticConfig", 
     "TrisynapticState",
     "Episode",
+    "ReplayEngine",
+    "ReplayConfig", 
+    "ReplayMode",
 ]

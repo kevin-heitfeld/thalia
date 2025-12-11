@@ -47,17 +47,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.regions.base import BrainRegion, RegionConfig, LearningRule
+from thalia.regions.base import NeuralComponent, RegionConfig, LearningRule
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
+from thalia.core.component_registry import register_region
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.theta_dynamics import FeedforwardInhibition
 from thalia.learning.bcm import BCMRule, BCMConfig
-from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
+from thalia.learning import create_cortex_strategy
 from thalia.core.utils import ensure_1d, clamp_weights
 from thalia.core.traces import update_trace
-from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.ei_balance import LayerEIBalance
 from thalia.core.normalization import DivisiveNormalization
 from thalia.learning.intrinsic_plasticity import PopulationIntrinsicPlasticity
@@ -65,7 +65,14 @@ from thalia.learning.intrinsic_plasticity import PopulationIntrinsicPlasticity
 from .config import LayeredCortexConfig, LayeredCortexState
 
 
-class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
+@register_region(
+    "cortex",
+    aliases=["layered_cortex"],
+    description="Multi-layer cortical microcircuit with L4/L2/3/L5 structure",
+    version="2.0",
+    author="Thalia Project"
+)
+class LayeredCortex(NeuralComponent):
     """
     Multi-layer cortical microcircuit with proper layer separation.
 
@@ -122,19 +129,15 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             config.n_output, config.l4_ratio, config.l23_ratio, config.l5_ratio
         )
 
-        # Actual output size depends on dual_output setting
-        if config.dual_output:
-            actual_output = self.l23_size + self.l5_size
-        elif config.output_layer == "L5":
-            actual_output = self.l5_size
-        else:
-            actual_output = self.l23_size
+        # Output is always both L2/3 and L5 (biological cortex has both pathways)
+        actual_output = self.l23_size + self.l5_size
 
         # Create modified config for parent
         parent_config = RegionConfig(
             n_input=config.n_input,
             n_output=actual_output,
             dt_ms=config.dt_ms,
+            axonal_delay_ms=config.axonal_delay_ms,  # Preserve axonal delay
             device=config.device,
         )
 
@@ -150,15 +153,12 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Initialize inter-layer weights
         self._init_weights()
 
-        # Initialize feedforward inhibition (FFI)
-        if config.ffi_enabled:
-            self.feedforward_inhibition = FeedforwardInhibition(
-                threshold=config.ffi_threshold,
-                max_inhibition=config.ffi_strength * 10.0,
-                decay_rate=1.0 - (1.0 / config.ffi_tau),
-            )
-        else:
-            self.feedforward_inhibition = None
+        # Initialize feedforward inhibition (FFI) - always enabled
+        self.feedforward_inhibition = FeedforwardInhibition(
+            threshold=config.ffi_threshold,
+            max_inhibition=config.ffi_strength * 10.0,
+            decay_rate=1.0 - (1.0 / config.ffi_tau),
+        )
 
         # BCM for each layer
         if config.bcm_enabled:
@@ -262,17 +262,15 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # =====================================================================
         # L2/3 recurrent connections show SHORT-TERM DEPRESSION, preventing
         # frozen attractors. Without STD, the same neurons fire every timestep.
-        if cfg.stp_l23_recurrent_enabled:
-            device = torch.device(cfg.device)
-            self.stp_l23_recurrent = ShortTermPlasticity(
-                n_pre=self.l23_size,
-                n_post=self.l23_size,
-                config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt_ms),
-                per_synapse=True,
-            )
-            self.stp_l23_recurrent.to(device)
-        else:
-            self.stp_l23_recurrent = None
+        # Always enabled (critical for preventing frozen attractors)
+        device = torch.device(cfg.device)
+        self.stp_l23_recurrent = ShortTermPlasticity(
+            n_pre=self.l23_size,
+            n_post=self.l23_size,
+            config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt_ms),
+            per_synapse=True,
+        )
+        self.stp_l23_recurrent.to(device)
 
     def _init_robustness_mechanisms(self) -> None:
         """Initialize robustness mechanisms from RobustnessConfig.
@@ -323,19 +321,16 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
 
         Uses centralized gamma oscillator from Brain (via set_oscillator_phases).
         Regions don't create their own oscillators - they receive phases from Brain.
+        Always enabled for spike-native attention.
         """
         cfg = self.layer_config
         device = torch.device(cfg.device)
 
-        if cfg.use_gamma_attention:
-            # Learnable phase preferences for each L2/3 neuron
-            self.l23_phase_prefs = nn.Parameter(
-                torch.rand(self.l23_size, device=device) * 2 * torch.pi
-            )
-            self.gamma_attention_width = cfg.gamma_attention_width
-            self.use_gamma_attention = True
-        else:
-            self.use_gamma_attention = False
+        # Learnable phase preferences for each L2/3 neuron
+        self.l23_phase_prefs = nn.Parameter(
+            torch.rand(self.l23_size, device=device) * 2 * torch.pi
+        )
+        self.gamma_attention_width = cfg.gamma_attention_width
 
     def _init_weights(self) -> None:
         """Initialize inter-layer weight matrices.
@@ -435,18 +430,16 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Initialize learning strategy (STDP for cortical learning)
         # We use a single STDP strategy instance that we'll apply to different
         # weight matrices (input->L4, L4->L2/3, L2/3->L5, L2/3 recurrent)
-        self.learning_strategy = STDPStrategy(
-            STDPConfig(
-                learning_rate=cfg.stdp_lr,
-                a_plus=0.01,
-                a_minus=0.012,
-                tau_plus=20.0,
-                tau_minus=20.0,
-                dt_ms=cfg.dt_ms,
-                w_min=cfg.w_min,
-                w_max=cfg.w_max,
-                soft_bounds=cfg.soft_bounds,
-            )
+        self.learning_strategy = create_cortex_strategy(
+            learning_rate=cfg.stdp_lr,
+            a_plus=0.01,
+            a_minus=0.012,
+            tau_plus=20.0,
+            tau_minus=20.0,
+            dt_ms=cfg.dt_ms,
+            w_min=cfg.w_min,
+            w_max=cfg.w_max,
+            soft_bounds=cfg.soft_bounds,
         )
 
     def reset_state(self) -> None:
@@ -460,9 +453,8 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.l23_neurons.reset_state()
         self.l5_neurons.reset_state()
 
-        # Reset STP state for L2/3 recurrent
-        if self.stp_l23_recurrent is not None:
-            self.stp_l23_recurrent.reset_state()
+        # Reset STP state for L2/3 recurrent (always enabled)
+        self.stp_l23_recurrent.reset_state()
 
         # Note: No local oscillators to reset - phases come from Brain
 
@@ -628,9 +620,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         self.l5_neurons = ConductanceLIF(self.l5_size, l5_config)
 
         # 6. Update configs
-        new_total_output = new_l5_size if self.layer_config.output_layer == "L5" else new_l23_size
-        if self.layer_config.dual_output:
-            new_total_output = new_l23_size + new_l5_size
+        new_total_output = new_l23_size + new_l5_size
 
         self.config = replace(self.config, n_output=new_total_output)
         self.layer_config = replace(self.layer_config, n_output=new_total_output)
@@ -653,7 +643,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             top_down: Optional top-down modulation [l23_size] (1D)
 
         Returns:
-            Output spikes [l23_size + l5_size] if dual_output else [n_output] (1D)
+            Output spikes [l23_size + l5_size] - concatenated L2/3 and L5 outputs (1D)
 
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
@@ -766,15 +756,13 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
             * cfg.l4_to_l23_strength
         )
 
-        # Feedforward inhibition
-        ffi_suppression = 1.0
-        if self.feedforward_inhibition is not None:
-            ffi = self.feedforward_inhibition.compute(input_spikes, return_tensor=False)
-            raw_ffi = ffi.item() if hasattr(ffi, "item") else float(ffi)
-            self.state.ffi_strength = min(
-                1.0, raw_ffi / self.feedforward_inhibition.max_inhibition
-            )
-            ffi_suppression = 1.0 - self.state.ffi_strength * cfg.ffi_strength
+        # Feedforward inhibition (always enabled)
+        ffi = self.feedforward_inhibition.compute(input_spikes, return_tensor=False)
+        raw_ffi = ffi.item() if hasattr(ffi, "item") else float(ffi)
+        self.state.ffi_strength = min(
+            1.0, raw_ffi / self.feedforward_inhibition.max_inhibition
+        )
+        ffi_suppression = 1.0 - self.state.ffi_strength * cfg.ffi_strength
 
         # =====================================================================
         # RECURRENT L2/3 WITH STP (prevents frozen attractors)
@@ -801,26 +789,17 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         if self.state.l23_recurrent_activity is not None:
             recurrent_scale = 0.5 + 0.5 * retrieval_mod
 
-            if self.stp_l23_recurrent is not None:
-                # Apply STP to recurrent connections (1D)
-                stp_efficacy = self.stp_l23_recurrent(self.state.l23_recurrent_activity.float())  # [l23_size, l23_size]
+            # Apply STP to recurrent connections (always enabled)
+            stp_efficacy = self.stp_l23_recurrent(self.state.l23_recurrent_activity.float())  # [l23_size, l23_size]
 
-                effective_w_rec = self.w_l23_recurrent * stp_efficacy
-                l23_rec = (
-                    torch.matmul(effective_w_rec, self.state.l23_recurrent_activity.float())
-                    * cfg.l23_recurrent_strength
-                    * recurrent_scale
-                    * ffi_suppression
-                    * ach_recurrent_modulation  # ACh suppression
-                )
-            else:
-                l23_rec = (
-                    torch.matmul(self.w_l23_recurrent, self.state.l23_recurrent_activity.float())
-                    * cfg.l23_recurrent_strength
-                    * recurrent_scale
-                    * ffi_suppression
-                    * ach_recurrent_modulation  # ACh suppression
-                )
+            effective_w_rec = self.w_l23_recurrent * stp_efficacy
+            l23_rec = (
+                torch.matmul(effective_w_rec, self.state.l23_recurrent_activity.float())
+                * cfg.l23_recurrent_strength
+                * recurrent_scale
+                * ffi_suppression
+                * ach_recurrent_modulation  # ACh suppression
+            )
         else:
             l23_rec = torch.zeros_like(l23_ff)
 
@@ -869,7 +848,8 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         )
 
         # Gamma-phase attention: Modulate L2/3 spikes by gamma phase from Brain
-        if self.use_gamma_attention and hasattr(self.state, '_oscillator_phases'):
+        # Always enabled for spike-native attention
+        if hasattr(self.state, '_oscillator_phases'):
             gamma_phase = self.state._oscillator_phases.get('gamma', 0.0)
 
             # Compute phase-based gating for each L2/3 neuron
@@ -936,16 +916,14 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity()
 
-        # Construct output
-        if cfg.dual_output:
-            output = torch.cat([l23_spikes, l5_spikes], dim=-1)
-        elif cfg.output_layer == "L5":
-            output = l5_spikes
-        else:
-            output = l23_spikes
+        # Construct output: always concatenate L2/3 and L5 (biological cortex has both pathways)
+        output = torch.cat([l23_spikes, l5_spikes], dim=-1)
+
+        # Apply axonal delay (biological reality: ALL neural connections have delays)
+        delayed_output = self._apply_axonal_delay(output.bool(), dt)
 
         # ADR-005: Return 1D tensor as bool spikes
-        return output.bool()
+        return delayed_output
 
     def _apply_sparsity_1d(
         self,
@@ -1064,18 +1042,7 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                 l23_activity, l23_activity
             )
 
-            # =========================================================
-            # HETEROSYNAPTIC PLASTICITY: Weaken inactive synapses
-            # =========================================================
-            # Synapses to inactive postsynaptic neurons get weakened when
-            # nearby neurons fire strongly. This prevents winner-take-all
-            # dynamics from permanently dominating.
-            if cfg.heterosynaptic_ratio > 0:
-                inactive_post = (l23_activity < 0.5).float()  # Inactive neurons
-                active_pre = l23_activity  # Active neurons
-                hetero_ltd = cfg.heterosynaptic_ratio * effective_lr
-                hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
-                dw = dw + hetero_dW
+            # Heterosynaptic plasticity handled by UnifiedHomeostasis
 
             with torch.no_grad():
                 self.w_l23_recurrent.data += dw
@@ -1086,20 +1053,8 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
                     cfg.l23_recurrent_w_max,
                 )
 
-                # =============================================================
-                # SYNAPTIC SCALING (Homeostatic)
-                # =============================================================
-                # Multiplicatively adjust weights towards target mean.
-                if cfg.synaptic_scaling_enabled:
-                    mean_weight = self.w_l23_recurrent.data.abs().mean()
-                    scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
-                    self.w_l23_recurrent.data *= scaling
-                    self.w_l23_recurrent.data.fill_diagonal_(0.0)
-                    clamp_weights(
-                        self.w_l23_recurrent.data,
-                        cfg.l23_recurrent_w_min,
-                        cfg.l23_recurrent_w_max,
-                    )
+                # Synaptic scaling handled by UnifiedHomeostasis
+
             total_change += dw.abs().mean().item()
 
             # =================================================================
@@ -1268,9 +1223,8 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         if self.bcm_l5 is not None and hasattr(self.bcm_l5, 'theta') and self.bcm_l5.theta is not None:
             state_dict["learning_state"]["bcm_l5_theta"] = self.bcm_l5.theta.clone()
 
-        # STP state
-        if self.stp_l23_recurrent is not None:
-            state_dict["learning_state"]["stp_l23_recurrent"] = self.stp_l23_recurrent.get_state()
+        # STP state (always present)
+        state_dict["learning_state"]["stp_l23_recurrent"] = self.stp_l23_recurrent.get_state()
 
         return state_dict
 
@@ -1335,8 +1289,8 @@ class LayeredCortex(LearningStrategyMixin, DiagnosticsMixin, BrainRegion):
         if "bcm_l5_theta" in learning_state and self.bcm_l5 is not None:
             self.bcm_l5.theta.copy_(learning_state["bcm_l5_theta"].to(self.device))
 
-        # Restore STP state
-        if "stp_l23_recurrent" in learning_state and self.stp_l23_recurrent is not None:
+        # Restore STP state (always present)
+        if "stp_l23_recurrent" in learning_state:
             self.stp_l23_recurrent.load_state(learning_state["stp_l23_recurrent"])
 
         # Restore neuromodulators

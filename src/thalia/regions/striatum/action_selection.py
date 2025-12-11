@@ -28,28 +28,31 @@ class ActionSelectionMixin:
     - n_actions: int
     - neurons_per_action: int
     - device: torch.device
-    - d1_weights, d2_weights: torch.Tensor
+    - d1_weights, d2_weights: nn.Parameter (properties delegating to pathways)
     - state: with .spikes attribute
     - _d1_votes_accumulated, _d2_votes_accumulated: torch.Tensor
-    - _action_counts: torch.Tensor
-    - _total_trials: int
-    - tonic_dopamine: float
+    - _action_counts: torch.Tensor (property delegating to exploration_manager)
+    - _total_trials: int (property delegating to exploration_manager)
+    - tonic_dopamine: float (property delegating to exploration_manager)
     - last_action: Optional[int]
     - exploring: bool
+    - exploration_manager: ExplorationManager
     """
     
     # Type hints for mixin - these are provided by Striatum
+    # Note: Properties are not typed here (would conflict with property definitions in Striatum)
+    # Properties in Striatum: d1_weights, d2_weights, _action_counts, _total_trials, tonic_dopamine
     striatum_config: "StriatumConfig"
     n_actions: int
     neurons_per_action: int
     device: torch.device
-    d1_weights: torch.Tensor
-    d2_weights: torch.Tensor
+    # d1_weights: property → pathway.weights (not typed here to avoid override conflict)
+    # d2_weights: property → pathway.weights (not typed here to avoid override conflict)
     _d1_votes_accumulated: torch.Tensor
     _d2_votes_accumulated: torch.Tensor
-    _action_counts: torch.Tensor
-    _total_trials: int
-    tonic_dopamine: float
+    # _action_counts: property (not typed here)
+    # _total_trials: property (not typed here)
+    # tonic_dopamine: property (not typed here)
     last_action: Optional[int]
     exploring: bool
     state: Any
@@ -163,6 +166,8 @@ class ActionSelectionMixin:
     def update_action_counts(self, action: int) -> None:
         """Update UCB action counts after a trial completes.
 
+        Delegates to ExplorationManager for centralized tracking.
+
         This should be called ONCE per trial by the brain_system after
         action selection is finalized. Not called inside forward() because
         forward() runs multiple times per timestep.
@@ -170,8 +175,13 @@ class ActionSelectionMixin:
         Args:
             action: The action that was selected (0 to n_actions-1)
         """
-        self._action_counts[action] += 1
-        self._total_trials += 1
+        # Delegate to exploration_manager if available, otherwise update local state
+        if hasattr(self, 'exploration_manager'):
+            self.exploration_manager.update_action_counts(action)
+        else:
+            # Fallback for backward compatibility (if exploration_manager not yet initialized)
+            self._action_counts[action] += 1
+            self._total_trials += 1
 
     def finalize_action(self, explore: bool = True) -> Dict[str, Any]:
         """Finalize action selection at the end of a trial.
@@ -189,9 +199,12 @@ class ActionSelectionMixin:
         """
         net_votes = self.get_accumulated_net_votes()
 
-        # UCB bonus
+        # UCB bonus - delegate to exploration_manager if available
         ucb_bonus = torch.zeros_like(net_votes)
-        if self.striatum_config.ucb_exploration and self._total_trials > 0:
+        if hasattr(self, 'exploration_manager'):
+            ucb_bonus = self.exploration_manager.compute_ucb_bonus()
+        elif self.striatum_config.ucb_exploration and self._total_trials > 0:
+            # Fallback: compute UCB locally if exploration_manager not available
             c = self.striatum_config.ucb_coefficient
             log_t = math.log(self._total_trials + 1)
             for a in range(self.n_actions):

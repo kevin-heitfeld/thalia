@@ -71,6 +71,10 @@ from thalia.learning.strategies import (
     # Factory
     create_strategy,
 )
+from thalia.learning.strategy_factory import (
+    create_learning_strategy,
+    create_cortex_strategy,
+)
 from thalia.learning.strategy_mixin import (
     LearningStrategyMixin,
 )
@@ -120,6 +124,9 @@ __all__ = [
     "ErrorCorrectiveStrategy",
     "CompositeStrategy",
     "create_strategy",
+    # Strategy Factory (Tier 2 - minimal, used only)
+    "create_learning_strategy",
+    "create_cortex_strategy",
     # Strategy Mixin for Regions
     "LearningStrategyMixin",
 ]

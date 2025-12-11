@@ -16,7 +16,7 @@ Date: December 7, 2025
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -55,26 +55,84 @@ class GrowthEvent:
 
 @dataclass
 class CapacityMetrics:
-    """Metrics for determining if region needs growth."""
+    """Standardized capacity metrics for growth decisions.
+    
+    This dataclass provides a consistent interface for all brain components
+    (regions and pathways) to report their capacity utilization. The growth
+    manager uses these metrics to make informed decisions about when and how
+    much to grow.
+    
+    Core Metrics (always present):
+        utilization: Overall capacity utilization (0.0 to 1.0)
+            Combines firing rate, weight saturation, and synapse usage
+        total_neurons: Current number of neurons in the component
+        active_neurons: Number of neurons that were recently active
+        growth_recommended: Whether growth is advised
+        growth_amount: Suggested number of neurons to add (if growing)
+    
+    Optional Detailed Metrics:
+        firing_rate: Average firing rate (0.0 to 1.0)
+        silence_fraction: Fraction of neurons that never fire (0.0 to 1.0)
+        saturation_fraction: Fraction of weights near max value (0.0 to 1.0)
+        synapse_usage: Fraction of synapses actively used (0.0 to 1.0)
+        synapse_count: Total number of synapses
+        growth_reason: Human-readable explanation for growth recommendation
+    
+    Usage:
+        >>> metrics = region.get_capacity_metrics()
+        >>> if metrics.growth_recommended:
+        ...     region.add_neurons(n_new=metrics.growth_amount)
+    """
 
-    firing_rate: float  # Average firing rate (0-1)
-    weight_saturation: float  # Fraction of weights near max (0-1)
-    synapse_usage: float  # Fraction of synapses actively used (0-1)
-    neuron_count: int
-    synapse_count: int
-    growth_recommended: bool = False
-    growth_reason: str = ""
+    # Core metrics (required)
+    utilization: float  # Overall capacity utilization (0.0 to 1.0)
+    total_neurons: int  # Current neuron count
+    active_neurons: int  # Recently active neurons
+    growth_recommended: bool = False  # Should we grow?
+    growth_amount: int = 0  # Suggested neurons to add
+    
+    # Optional detailed metrics (for diagnostics)
+    firing_rate: Optional[float] = None  # Average firing rate
+    silence_fraction: Optional[float] = None  # Fraction never firing
+    saturation_fraction: Optional[float] = None  # Weights near max
+    synapse_usage: Optional[float] = None  # Active synapses fraction
+    synapse_count: Optional[int] = None  # Total synapses
+    growth_reason: str = ""  # Why growth is recommended
+    
+    # Legacy aliases for backward compatibility
+    @property
+    def neuron_count(self) -> int:
+        """Alias for total_neurons (backward compatibility)."""
+        return self.total_neurons
+    
+    @property
+    def weight_saturation(self) -> float:
+        """Alias for saturation_fraction (backward compatibility)."""
+        return self.saturation_fraction if self.saturation_fraction is not None else 0.0
 
     def to_dict(self) -> Dict[str, float]:
         """Convert to dict for logging."""
-        return {
-            "firing_rate": self.firing_rate,
-            "weight_saturation": self.weight_saturation,
-            "synapse_usage": self.synapse_usage,
-            "neuron_count": float(self.neuron_count),
-            "synapse_count": float(self.synapse_count),
+        result = {
+            "utilization": self.utilization,
+            "total_neurons": float(self.total_neurons),
+            "active_neurons": float(self.active_neurons),
             "growth_recommended": float(self.growth_recommended),
+            "growth_amount": float(self.growth_amount),
         }
+        
+        # Add optional metrics if present
+        if self.firing_rate is not None:
+            result["firing_rate"] = self.firing_rate
+        if self.silence_fraction is not None:
+            result["silence_fraction"] = self.silence_fraction
+        if self.saturation_fraction is not None:
+            result["saturation_fraction"] = self.saturation_fraction
+        if self.synapse_usage is not None:
+            result["synapse_usage"] = self.synapse_usage
+        if self.synapse_count is not None:
+            result["synapse_count"] = float(self.synapse_count)
+        
+        return result
 
 
 class GrowthManager:
@@ -162,28 +220,51 @@ class GrowthManager:
             if component.state.spikes is not None:
                 firing_rate = component.state.spikes.float().mean().item()
 
+        # Count active neurons (those with spikes in current state)
+        active_neurons = 0
+        if hasattr(component, 'state') and hasattr(component.state, 'spikes'):
+            if component.state.spikes is not None:
+                active_neurons = (component.state.spikes > 0).sum().item()
+        
+        # Compute overall utilization (weighted combination)
+        # Weight: 40% firing rate, 40% weight saturation, 20% synapse usage
+        utilization = (
+            0.4 * firing_rate +
+            0.4 * weight_saturation +
+            0.2 * synapse_usage
+        )
+        
         # Determine if growth is recommended
         growth_recommended = False
         growth_reason = ""
+        growth_amount = 0
 
         # Growth triggers (conservative thresholds)
         if weight_saturation > 0.85:
             growth_recommended = True
             growth_reason = f"Weight saturation high ({weight_saturation:.2f})"
+            # Suggest 20% capacity increase
+            growth_amount = max(10, int(n_neurons * 0.2))
         elif firing_rate > 0.9:
             growth_recommended = True
             growth_reason = f"Firing rate very high ({firing_rate:.2f})"
+            growth_amount = max(10, int(n_neurons * 0.15))
         elif synapse_usage > 0.95:
             growth_recommended = True
             growth_reason = f"Synapse usage very high ({synapse_usage:.2f})"
+            growth_amount = max(10, int(n_neurons * 0.15))
 
         return CapacityMetrics(
-            firing_rate=firing_rate,
-            weight_saturation=weight_saturation,
-            synapse_usage=synapse_usage,
-            neuron_count=n_neurons,
-            synapse_count=n_synapses,
+            utilization=utilization,
+            total_neurons=n_neurons,
+            active_neurons=active_neurons,
             growth_recommended=growth_recommended,
+            growth_amount=growth_amount,
+            # Optional detailed metrics
+            firing_rate=firing_rate,
+            saturation_fraction=weight_saturation,
+            synapse_usage=synapse_usage,
+            synapse_count=n_synapses,
             growth_reason=growth_reason,
         )
 

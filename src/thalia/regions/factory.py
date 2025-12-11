@@ -22,7 +22,7 @@ Usage Example:
     # Register a region (done once in region module)
     @register_region("cortex")
     @register_region("layered_cortex")  # Alias
-    class LayeredCortex(BrainRegion):
+    class LayeredCortex(NeuralComponent):
         ...
     
     # Create region by name
@@ -43,7 +43,7 @@ from __future__ import annotations
 from typing import Dict, Type, Optional, List, Callable, Any
 import inspect
 
-from thalia.regions.base import BrainRegion, RegionConfig
+from thalia.regions.base import NeuralComponent, RegionConfig
 
 
 class RegionRegistry:
@@ -53,14 +53,14 @@ class RegionRegistry:
     supporting multiple names per region (aliases).
     """
     
-    _registry: Dict[str, Type[BrainRegion]] = {}
+    _registry: Dict[str, Type[NeuralComponent]] = {}
     _aliases: Dict[str, str] = {}  # alias -> canonical_name
     
     @classmethod
     def register(
         cls,
         name: str,
-        region_class: Type[BrainRegion],
+        region_class: Type[NeuralComponent],
         *,
         aliases: Optional[List[str]] = None,
     ) -> None:
@@ -68,7 +68,7 @@ class RegionRegistry:
         
         Args:
             name: Primary name for the region
-            region_class: Region class to register
+            region_class: Region class to register (NeuralComponent subclass)
             aliases: Optional list of alternative names
         
         Raises:
@@ -82,15 +82,15 @@ class RegionRegistry:
                 )
             return  # Same class, already registered
         
-        # Validate region_class is a BrainRegion subclass
+        # Validate region_class is a NeuralComponent subclass
         if not inspect.isclass(region_class):
             raise ValueError(
                 f"Region class must be a class, got {region_class}"
             )
         
-        if not issubclass(region_class, BrainRegion):
+        if not issubclass(region_class, NeuralComponent):
             raise ValueError(
-                f"Region class must be a BrainRegion subclass, got {region_class}"
+                f"Region class must be a NeuralComponent subclass, got {region_class}"
             )
         
         # Register primary name

@@ -56,13 +56,14 @@ if TYPE_CHECKING:
     from thalia.regions.prefrontal_hierarchy import Goal, GoalHierarchyManager, GoalHierarchyConfig
     from thalia.regions.prefrontal_hierarchy import HyperbolicDiscounter, HyperbolicDiscountingConfig
 
-from thalia.learning import LearningStrategyMixin, STDPStrategy, STDPConfig
+from thalia.learning import create_learning_strategy
 
 from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
+from thalia.core.component_registry import register_region
 from thalia.regions.base import (
-    BrainRegion,
+    NeuralComponent,
     RegionConfig,
     RegionState,
     LearningRule,
@@ -250,7 +251,14 @@ class DopamineGatingSystem:
         self.level = state["level"]
 
 
-class Prefrontal(LearningStrategyMixin, BrainRegion):
+@register_region(
+    "prefrontal",
+    aliases=["pfc"],
+    description="Working memory and executive control with dopamine-gated updates and rule learning",
+    version="2.0",
+    author="Thalia Project"
+)
+class Prefrontal(NeuralComponent):
     """Prefrontal cortex with dopamine-gated working memory.
 
     Implements:
@@ -259,14 +267,14 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
     - Rule learning and context-dependent behavior
     - Slow integration for temporal abstraction
 
-    Mixins Provide:
-    ---------------
-    From LearningStrategyMixin:
+    Inherited from NeuralComponent:
+    -------------------------------
+    From LearningStrategyMixin (via NeuralComponent):
         - add_strategy(strategy) → None
-        - apply_learning(pre, post, **kwargs) → Dict
+        - apply_strategy_learning(pre, post, **kwargs) → Dict
         - Pluggable learning rules (STDP with dopamine modulation)
 
-    From BrainRegion (abstract base):
+    From base class:
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
@@ -323,18 +331,18 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         )
 
         # Initialize learning strategy (STDP with dopamine gating)
-        self.learning_strategy = STDPStrategy(
-            STDPConfig(
-                learning_rate=config.stdp_lr,
-                a_plus=config.stdp_a_plus,
-                a_minus=config.stdp_a_minus,
-                tau_plus=config.stdp_tau_ms,
-                tau_minus=config.stdp_tau_ms,
-                dt_ms=config.dt_ms,
-                w_min=config.w_min,
-                w_max=config.w_max,
-                soft_bounds=config.soft_bounds,
-            )
+        # Using factory for cleaner configuration
+        self.learning_strategy = create_learning_strategy(
+            "stdp",
+            learning_rate=config.stdp_lr,
+            a_plus=config.stdp_a_plus,
+            a_minus=config.stdp_a_minus,
+            tau_plus=config.stdp_tau_ms,
+            tau_minus=config.stdp_tau_ms,
+            dt_ms=config.dt_ms,
+            w_min=config.w_min,
+            w_max=config.w_max,
+            soft_bounds=config.soft_bounds,
         )
 
         # Initialize working memory state (1D tensors, ADR-005)
@@ -458,46 +466,35 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         old_n_output = self.config.n_output
         new_n_output = old_n_output + n_new
 
-        # Expand weights
-        if initialization == 'xavier':
-            new_weights = WeightInitializer.xavier(
-                n_output=n_new,
-                n_input=self.config.n_input,
-                device=self.device,
-            )
-        elif initialization == 'sparse_random':
-            new_weights = WeightInitializer.sparse_random(
-                n_output=n_new,
-                n_input=self.config.n_input,
-                sparsity=sparsity,
-                device=self.device,
-            )
-        else:
-            new_weights = WeightInitializer.uniform(
-                n_output=n_new,
-                n_input=self.config.n_input,
-                device=self.device,
-            )
-
-        # Update weights
-        self.weights = nn.Parameter(torch.cat([self.weights, new_weights], dim=0))
-
-        # Expand neurons (must match _create_neurons() - ConductanceLIF with SFA)
-        cfg = self.pfc_config
-        neuron_config = ConductanceLIFConfig(
-            g_L=0.02,  # Slower leak (τ_m ≈ 50ms)
-            tau_E=10.0,  # Slower excitatory
-            tau_I=15.0,  # Slower inhibitory
-            adapt_increment=cfg.pfc_adapt_increment,
-            tau_adapt=cfg.pfc_adapt_tau,
+        # =====================================================================
+        # 1. EXPAND WEIGHTS using base helper
+        # =====================================================================
+        self.weights = self._expand_weights(
+            current_weights=self.weights,
+            n_new=n_new,
+            initialization=initialization,
+            sparsity=sparsity,
+            scale=1.0,  # Default scale for PFC
         )
-        self.neurons = ConductanceLIF(new_n_output, neuron_config)
 
-        # Update config
+        # =====================================================================
+        # 2. UPDATE CONFIG
+        # =====================================================================
         self.config = replace(self.config, n_output=new_n_output)
         if hasattr(self, 'pfc_config'):
             self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
 
+        # =====================================================================
+        # 3. EXPAND NEURON POPULATION using base helper
+        # =====================================================================
+        self.neurons = self._recreate_neurons_with_state(
+            neuron_factory=self._create_neurons,
+            old_n_output=old_n_output,
+        )
+
+        # =====================================================================
+        # 4. RESET STATE AND LEARNING
+        # =====================================================================
         # Reset learning strategy state (traces, eligibility)
         if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
             self.learning_strategy.reset_state()
@@ -659,7 +656,10 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity(input_spikes, output_spikes)
 
-        return output_spikes
+        # Apply axonal delay (biological reality: ALL neural connections have delays)
+        delayed_spikes = self._apply_axonal_delay(output_spikes, dt)
+
+        return delayed_spikes
 
     def _apply_plasticity(
         self,
@@ -728,23 +728,22 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
         self.state.working_memory = context.to(self.device).float()
         self.state.active_rule = context.to(self.device).float()
 
-    def get_working_memory(self) -> torch.Tensor:
-        """Get current working memory contents (1D tensor, ADR-005)."""
-        if self.state.working_memory is None:
-            return torch.zeros(self.config.n_output, device=self.device)
-        return self.state.working_memory
+    def debug_get_working_memory(self) -> torch.Tensor:
+        """Get current working memory contents for debugging/testing (1D tensor, ADR-005).
 
-    def get_goal_context(self) -> torch.Tensor:
-        """Get goal context for striatum modulation.
+        ⚠️ DEBUG/TEST ONLY: Do not call this from other brain regions!
 
-        Returns working memory as goal representation. This provides
-        goal-conditioned context for striatal value learning via gating.
+        Working memory IS the goal context. In biology, PFC → Striatum
+        projections carry goal information via spike patterns through the
+        pfc_to_striatum pathway, not as a separate signal.
 
-        Biology: PFC → Striatum projections modulate action values based
-        on current goal context (Miller & Cohen 2001).
+        The working memory spikes flow through the pathway with proper
+        axonal delays and are extracted by striatum from its concatenated input.
 
-        Returns:
-            goal_context: [n_output] tensor representing current goal (1D, ADR-005)
+        This method is only for:
+        - Unit tests that need to inspect WM state
+        - Task evaluation (external to brain)
+        - Debugging and diagnostics
         """
         if self.state.working_memory is None:
             return torch.zeros(self.config.n_output, device=self.device)
@@ -889,9 +888,11 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             raise ValueError("Hierarchical goals not enabled. Set use_hierarchical_goals=True in config.")
         self.goal_manager.set_root_goal(root_goal)
 
-    def get_current_goal(self) -> Optional["Goal"]:
+    def debug_get_current_goal(self) -> Optional["Goal"]:
         """
-        Get currently active goal from hierarchy.
+        Get currently active goal from hierarchy (for debugging/inspection).
+
+        ⚠️ DEBUG/TEST ONLY: For inspection and diagnostics.
 
         Phase 3 functionality: Returns the goal at the top of the active stack.
 
@@ -899,7 +900,7 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             Current goal or None if no active goals
 
         Example:
-            goal = pfc.get_current_goal()
+            goal = pfc.debug_get_current_goal()
             if goal is not None:
                 print(f"Working on: {goal.name}")
         """
@@ -961,22 +962,26 @@ class Prefrontal(LearningStrategyMixin, BrainRegion):
             gamma = 0.99
             return reward * (gamma ** delay)
 
-    def get_goal_manager(self) -> Optional["GoalHierarchyManager"]:
+    def debug_get_goal_manager(self) -> Optional["GoalHierarchyManager"]:
         """
-        Get goal hierarchy manager for direct access.
+        Get goal hierarchy manager for debugging/inspection.
 
-        Phase 3 functionality: Allows external systems to manipulate goals.
+        ⚠️ DEBUG/TEST ONLY: For inspection and diagnostics.
+
+        Phase 3 functionality: Provides access to goal manager internals.
 
         Returns:
             GoalHierarchyManager or None if not enabled
         """
         return self.goal_manager
 
-    def get_discounter(self) -> Optional["HyperbolicDiscounter"]:
+    def debug_get_discounter(self) -> Optional["HyperbolicDiscounter"]:
         """
-        Get hyperbolic discounter for direct access.
+        Get hyperbolic discounter for debugging/inspection.
 
-        Phase 3 functionality: Allows external systems to access discounting.
+        ⚠️ DEBUG/TEST ONLY: For inspection and diagnostics.
+
+        Phase 3 functionality: Provides access to discounter internals.
 
         Returns:
             HyperbolicDiscounter or None if not enabled

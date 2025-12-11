@@ -159,6 +159,62 @@ class BrainComponent(Protocol):
         ...
 
     # =========================================================================
+    # Neuromodulation & Oscillators
+    # =========================================================================
+
+    @abstractmethod
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float] | None = None,
+        theta_slot: int = 0,
+        coupled_amplitudes: Dict[str, float] | None = None,
+    ) -> None:
+        """
+        Receive oscillator phases and amplitudes from brain broadcast.
+
+        Brain oscillations coordinate activity across regions and pathways:
+        - **Delta (0.5-4 Hz)**: Deep sleep, attention
+        - **Theta (4-10 Hz)**: Memory encoding, spatial navigation
+        - **Alpha (8-13 Hz)**: Attention, inhibitory control
+        - **Beta (13-30 Hz)**: Motor control, cognitive processing
+        - **Gamma (30-100 Hz)**: Binding, local processing
+
+        Components use oscillators for:
+        - **Phase-dependent gating**: Theta encoding vs retrieval
+        - **Attention modulation**: Alpha suppression
+        - **Motor preparation**: Beta synchrony
+        - **Feature binding**: Gamma synchrony
+        - **Transmission efficiency**: Pathways can gate by oscillatory state
+
+        Called every timestep by Brain (similar to dopamine broadcast).
+        Default implementation stores phases but doesn't require usage.
+        Components can override to implement oscillator-dependent behavior.
+
+        Args:
+            phases: Oscillator phases in radians [0, 2π)
+                   {'delta': 1.2, 'theta': 3.4, 'alpha': 0.5, ...}
+            signals: Oscillator signal values [-1, 1] (sin/cos waveforms)
+                    {'delta': 0.8, 'theta': -0.3, ...}
+            theta_slot: Current theta slot [0, n_slots-1] for sequence encoding
+            coupled_amplitudes: Effective amplitudes per oscillator (pre-computed)
+                               {'delta': 1.0, 'theta': 0.73, 'gamma': 0.48}
+                               Values reflect automatic multiplicative coupling.
+
+        Example (regions):
+            >>> # Hippocampus uses theta for encoding/retrieval
+            >>> theta_phase = phases['theta']
+            >>> is_encoding = 0 <= theta_phase < np.pi
+            >>> learning_rate = gamma_amplitude * base_lr
+
+        Example (pathways):
+            >>> # Attention pathway uses beta for gain modulation
+            >>> beta_amp = coupled_amplitudes.get('beta', 1.0)
+            >>> transmission_gain = 1.0 + (beta_amp - 1.0) * attention_strength
+        """
+        ...
+
+    # =========================================================================
     # Growth (Curriculum Learning)
     # =========================================================================
 
@@ -365,3 +421,23 @@ class BrainComponentMixin:
             issues=[],
             warnings=[],
         )
+
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float] | None = None,
+        theta_slot: int = 0,
+        coupled_amplitudes: Dict[str, float] | None = None,
+    ) -> None:
+        """Default: store oscillator info but don't require usage."""
+        # Store in a standard location that subclasses can access
+        if not hasattr(self, '_oscillator_phases'):
+            self._oscillator_phases: Dict[str, float] = {}
+            self._oscillator_signals: Dict[str, float] = {}
+            self._oscillator_theta_slot: int = 0
+            self._coupled_amplitudes: Dict[str, float] = {}
+        
+        self._oscillator_phases = phases
+        self._oscillator_signals = signals or {}
+        self._oscillator_theta_slot = theta_slot
+        self._coupled_amplitudes = coupled_amplitudes or {}

@@ -20,7 +20,7 @@ This consolidates:
 
 Usage Example:
 ==============
-    class MyRegion(LearningStrategyMixin, BrainRegion):
+    class MyRegion(LearningStrategyMixin, NeuralComponent):
         def __init__(self, config):
             super().__init__(config)
             # Choose strategy based on learning rule

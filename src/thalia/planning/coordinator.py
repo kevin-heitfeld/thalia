@@ -108,7 +108,7 @@ class MentalSimulationCoordinator:
         # Load current state into PFC working memory
         simulated_state = current_state.clone()
 
-        for step, action in enumerate(action_sequence):
+        for _, action in enumerate(action_sequence):
             # 1. Retrieve similar past experiences from hippocampus
             similar_episodes = self.hippocampus.retrieve_similar(
                 query_state=simulated_state,

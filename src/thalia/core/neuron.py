@@ -22,30 +22,21 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.config.neuron_config import BaseNeuronConfig
 
 
 # =============================================================================
 # CURRENT-BASED LIF NEURON
 # =============================================================================
 
-
 @dataclass
-class LIFConfig(NeuralComponentConfig):
+class LIFConfig(BaseNeuronConfig):
     """Configuration for LIF neuron parameters.
 
-    Inherits n_neurons, dt, device, dtype, seed from NeuralComponentConfig.
+    Inherits device, dtype, seed, dt_ms from BaseConfig via BaseNeuronConfig.
+    Inherits tau_mem, v_rest, v_reset, v_threshold, tau_ref from BaseNeuronConfig.
 
     Attributes:
-        tau_mem: Membrane time constant in ms (default: 20.0)
-            Controls how quickly the membrane potential decays toward rest.
-            Larger values = slower decay = longer memory of inputs.
-        v_rest: Resting membrane potential (default: 0.0)
-        v_reset: Reset potential after spike (default: 0.0)
-        v_threshold: Spike threshold (default: 1.0)
-        tau_ref: Refractory period in ms (default: 2.0)
-            Absolute refractory period during which neuron cannot fire.
-
         # Adaptation parameters (spike-frequency adaptation)
         tau_adapt: Adaptation time constant in ms (default: 100.0)
             Controls how quickly adaptation current decays.
@@ -65,11 +56,6 @@ class LIFConfig(NeuralComponentConfig):
             by ion channel reversal potentials (e.g., GABA_A reversal ~ -70mV).
             Prevents runaway hyperpolarization from inhibitory currents.
     """
-    tau_mem: float = 20.0
-    v_rest: float = 0.0
-    v_reset: float = 0.0
-    v_threshold: float = 1.0
-    tau_ref: float = 2.0
     v_min: Optional[float] = None  # Minimum membrane potential (reversal limit)
 
     # Adaptation (spike-frequency adaptation)
@@ -99,7 +85,6 @@ class LIFNeuron(nn.Module):
     """Leaky Integrate-and-Fire neuron layer.
 
     Implements a population of LIF neurons with shared parameters.
-    Supports batch processing and GPU acceleration.
 
     Features:
         - Membrane potential with exponential leak
@@ -346,12 +331,12 @@ class LIFNeuron(nn.Module):
 # CONDUCTANCE-BASED LIF NEURON
 # =============================================================================
 
-
 @dataclass
-class ConductanceLIFConfig(NeuralComponentConfig):
+class ConductanceLIFConfig(BaseNeuronConfig):
     """Configuration for conductance-based LIF neuron.
 
-    Inherits n_neurons, dt, device, dtype, seed from NeuralComponentConfig.
+    Inherits device, dtype, seed, dt_ms from BaseConfig via BaseNeuronConfig.
+    Inherits tau_mem, v_rest, v_reset, v_threshold, tau_ref from BaseNeuronConfig.
 
     This implements biologically realistic membrane dynamics where currents
     depend on the difference between membrane potential and reversal potentials.
@@ -390,11 +375,6 @@ class ConductanceLIFConfig(NeuralComponentConfig):
         tau_I: Inhibitory conductance decay (ms) (default: 10.0)
             GABA_A is ~5-10ms.
 
-        # Spike parameters
-        v_threshold: Spike threshold (default: 1.0)
-        v_reset: Reset potential after spike (default: 0.0)
-        tau_ref: Absolute refractory period in ms (default: 2.0)
-
         # Adaptation
         tau_adapt: Adaptation time constant in ms (default: 100.0)
         adapt_increment: Adaptation conductance increment per spike (default: 0.0)
@@ -417,11 +397,6 @@ class ConductanceLIFConfig(NeuralComponentConfig):
     # Synaptic time constants
     tau_E: float = 5.0   # Excitatory (AMPA-like)
     tau_I: float = 10.0  # Inhibitory (GABA_A-like)
-
-    # Spike parameters
-    v_threshold: float = 1.0
-    v_reset: float = 0.0
-    tau_ref: float = 2.0
 
     # Adaptation (conductance-based)
     tau_adapt: float = 100.0

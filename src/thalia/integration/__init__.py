@@ -27,14 +27,17 @@ Example usage:
     
     brain = EventDrivenBrain.from_thalia_config(config)
     
-    result = brain.process_sample(sample_pattern)
-    result = brain.delay(10)
-    result = brain.process_test(test_pattern)
+    # Process input (encoding, maintenance, or retrieval)
+    result = brain.forward(sample_pattern, n_timesteps=15)
+    result = brain.forward(None, n_timesteps=10)  # Maintenance period
+    result = brain.forward(test_pattern, n_timesteps=15)
+    
+    # Action selection and learning
     action, confidence = brain.select_action()
-    brain.deliver_reward(external_reward=1.0)  # Intrinsic rewards flow continuously
+    brain.deliver_reward(external_reward=1.0)  # Combines with intrinsic rewards
     
     # Sleep consolidation
-    brain.sleep_epoch(n_cycles=5)
+    brain.consolidate(n_cycles=5)
 """
 
 from .spiking_pathway import SpikingPathway, SpikingPathwayConfig

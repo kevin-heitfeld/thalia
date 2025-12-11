@@ -62,9 +62,8 @@ from typing import Optional, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 
-from thalia.regions.base import BrainRegion, RegionConfig, RegionState, LearningRule
+from thalia.regions.base import NeuralComponent, RegionConfig, RegionState, LearningRule
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
-from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.predictive_coding import (
     PredictiveCodingLayer,
     PredictiveCodingConfig,
@@ -88,8 +87,8 @@ class PredictiveCortexConfig(LayeredCortexConfig):
     initial_precision: float = 1.0
     precision_learning_rate: float = 0.001
 
-    # Note: Gamma attention inherited from LayeredCortex base class
-    # Configure via use_gamma_attention, gamma_attention_freq_hz, gamma_attention_width
+    # Note: Gamma attention inherited from LayeredCortex base class (always enabled)
+    # Configure width via gamma_attention_width
 
 
 @dataclass
@@ -122,7 +121,7 @@ class PredictiveCortexState(RegionState):
     _oscillator_signals: Optional[Dict[str, float]] = None
 
 
-class PredictiveCortex(DiagnosticsMixin, BrainRegion):
+class PredictiveCortex(NeuralComponent):
     """
     Layered cortex with integrated predictive coding.
 
@@ -377,9 +376,14 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
         """
         from dataclasses import replace
 
-        # Delegate to internal LayeredCortex (it handles all layer expansion)
+        # =====================================================================
+        # 1. DELEGATE TO LAYERED CORTEX (handles all weight/neuron expansion)
+        # =====================================================================
         self.cortex.add_neurons(n_new, initialization, sparsity)
 
+        # =====================================================================
+        # 2. UPDATE SIZES AND CONFIG
+        # =====================================================================
         # Update our cached layer sizes
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
@@ -394,7 +398,9 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
             n_output=self._output_size
         )
 
-        # Recreate prediction layer with new sizes
+        # =====================================================================
+        # 3. RECREATE PREDICTION LAYER with new sizes
+        # =====================================================================
         if self.predictive_config.prediction_enabled:
             self.prediction_layer = PredictiveCodingLayer(
                 PredictiveCodingConfig(
@@ -652,7 +658,6 @@ class PredictiveCortex(DiagnosticsMixin, BrainRegion):
 
         # Update config with PredictiveCortex-specific parameters
         state_dict["config"]["prediction_enabled"] = self.predictive_config.prediction_enabled
-        # Note: use_gamma_attention is a LayeredCortex config parameter
 
         return state_dict
 
@@ -736,7 +741,7 @@ class PredictiveHierarchy(nn.Module):
                 n_input=area_sizes[i],
                 n_output=area_sizes[i + 1],
                 prediction_enabled=True,
-                # Attention controlled by use_gamma_attention (inherited from LayeredCortexConfig)
+                # Gamma attention always enabled (inherited from LayeredCortexConfig)
                 device=base_config.device,
             )
             self.areas.append(PredictiveCortex(area_config))

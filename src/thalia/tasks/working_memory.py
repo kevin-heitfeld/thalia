@@ -305,6 +305,10 @@ class NBackTask:
         **Note**: Caller must ensure encoder has current oscillator phases
         via set_oscillator_phases() before calling this method.
         
+        Retrieval happens by observing PFC's SPIKE OUTPUT, not by directly
+        accessing internal state. The task observes what PFC broadcasts,
+        just like any downstream region would.
+        
         Args:
             current_index: Current position in sequence
             n_back: How many items back to retrieve
@@ -320,10 +324,12 @@ class NBackTask:
             # Can't retrieve before sequence start
             return None, {"error": "Target before sequence start"}
         
-        # Retrieve from working memory
-        # In this simplified version, we use the working memory contents
-        # In full version, phase would index into different slots
-        retrieved = self.prefrontal.get_working_memory()
+        # Retrieve by observing PFC's spike output (what it broadcasts to other regions)
+        # This is the biologically plausible way: observe the output, not internal state
+        if self.prefrontal.state.spikes is None:
+            return None, {"error": "PFC has not produced output yet"}
+        
+        retrieved = self.prefrontal.state.spikes.float()  # Convert bool spikes to float for comparison
         
         # Note: Oscillators are advanced by brain, not here
         
@@ -409,7 +415,7 @@ class NBackTask:
         responses = []
         metrics_list = []
         
-        for t, stimulus in enumerate(stimulus_sequence):
+        for stimulus in stimulus_sequence:
             is_match, metrics = self.present_stimulus(stimulus)
             responses.append(is_match)
             metrics_list.append(metrics)

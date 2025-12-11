@@ -52,25 +52,42 @@ from typing import Optional, Dict, Any, List, Generator
 import torch
 import torch.nn as nn
 
-from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
+from thalia.core.base_manager import ManagerContext
+from thalia.core.neuron_constants import (
+    V_THRESHOLD_STANDARD,
+    V_RESET_STANDARD,
+    E_LEAK,
+    E_EXCITATORY,
+    E_INHIBITORY,
+)
 from thalia.regions.base import (
-    BrainRegion,
+    NeuralComponent,
     RegionConfig,
     LearningRule,
 )
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.learning.unified_homeostasis import (
-    StriatumHomeostasis,
-    UnifiedHomeostasisConfig,
-)
+
+from thalia.core.component_registry import register_region
 
 from .config import StriatumConfig
 from .eligibility import EligibilityTraces
 from .action_selection import ActionSelectionMixin
+from .pathway_base import StriatumPathwayConfig
+from .d1_pathway import D1Pathway
+from .d2_pathway import D2Pathway
+from .homeostasis_manager import HomeostasisManager, HomeostasisManagerConfig
+from .learning_manager import LearningManager
+from .checkpoint_manager import CheckpointManager
 
 
-class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
+@register_region(
+    "striatum",
+    description="Reinforcement learning via dopamine-modulated three-factor rule with D1/D2 opponent pathways",
+    version="2.0",
+    author="Thalia Project"
+)
+class Striatum(NeuralComponent, ActionSelectionMixin):
     """Striatal region with three-factor reinforcement learning.
 
     Implements dopamine-modulated learning:
@@ -177,22 +194,36 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self._d2_votes_accumulated = torch.zeros(self.n_actions, device=self.device)
 
         # =====================================================================
-        # UCB EXPLORATION TRACKING (action counts)
+        # EXPLORATION MANAGER (UCB + Adaptive Exploration)
         # =====================================================================
-        # Track how many times each action has been chosen for UCB bonus.
-        # UCB bonus = c * sqrt(log(total_trials) / N_action)
-        # This guarantees exploration of rarely-chosen actions.
-        self._action_counts = torch.zeros(self.n_actions, device=self.device)
-        self._total_trials = 0
+        # Centralized exploration management with UCB tracking and adaptive
+        # tonic dopamine adjustment based on performance.
+        from thalia.regions.striatum.exploration import (
+            ExplorationManager,
+            ExplorationConfig,
+        )
 
-        # =====================================================================
-        # ADAPTIVE EXPLORATION TRACKING (performance history)
-        # =====================================================================
-        # Track recent reward history to adapt exploration based on performance.
-        # Poor performance → increase exploration (boost tonic DA)
-        # Good performance → decrease exploration (reduce tonic DA)
-        self._recent_rewards: List[float] = []
-        self._recent_accuracy: float = 0.5  # Running estimate of accuracy
+        exploration_config = ExplorationConfig(
+            ucb_exploration=self.striatum_config.ucb_exploration,
+            ucb_coefficient=self.striatum_config.ucb_coefficient,
+            adaptive_exploration=self.striatum_config.adaptive_exploration,
+            performance_window=self.striatum_config.performance_window,
+            min_tonic_dopamine=self.striatum_config.min_tonic_dopamine,
+            max_tonic_dopamine=self.striatum_config.max_tonic_dopamine,
+            tonic_modulates_exploration=self.striatum_config.tonic_modulates_exploration,
+            tonic_exploration_scale=self.striatum_config.tonic_exploration_scale,
+        )
+        # Create manager context for exploration
+        exploration_context = ManagerContext(
+            device=self.device,
+            n_output=self.n_actions,
+            dt_ms=config.dt_ms,
+        )
+        self.exploration_manager = ExplorationManager(
+            config=exploration_config,
+            context=exploration_context,
+            initial_tonic_dopamine=self.striatum_config.tonic_dopamine,
+        )
 
         # =====================================================================
         # D1/D2 OPPONENT PROCESS (Direct/Indirect Pathways) - ALWAYS ENABLED
@@ -211,24 +242,49 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # - This builds up NOGO signal, making the action less likely
         # - Meanwhile, correct action's D1 weights strengthen when rewarded
 
-        # D1 pathway weights (direct/GO) - same shape as main weights
-        self.d1_weights = self._initialize_pathway_weights()
-        # D2 pathway weights (indirect/NOGO) - same shape as main weights
-        self.d2_weights = self._initialize_pathway_weights()
-
-        # Separate eligibility traces for D1 and D2
-        self.d1_eligibility = torch.zeros(
-            config.n_output, config.n_input, device=self.device
+        # =====================================================================
+        # D1/D2 PATHWAYS - Separate MSN Populations
+        # =====================================================================
+        # Create pathway-specific configuration
+        pathway_config = StriatumPathwayConfig(
+            n_input=config.n_input,
+            n_output=config.n_output,
+            w_min=config.w_min,
+            w_max=config.w_max,
+            eligibility_tau_ms=self.striatum_config.eligibility_tau_ms,
+            stdp_lr=self.striatum_config.stdp_lr,
+            stdp_tau_ms=self.striatum_config.stdp_tau_ms,
+            device=self.device,
         )
-        self.d2_eligibility = torch.zeros(
-            config.n_output, config.n_input, device=self.device
+        
+        # Create D1 and D2 pathways
+        self.d1_pathway = D1Pathway(pathway_config)
+        self.d2_pathway = D2Pathway(pathway_config)
+        
+        # Create manager context for learning
+        learning_context = ManagerContext(
+            device=self.device,
+            n_input=config.n_input,
+            n_output=config.n_output,
+            dt_ms=config.dt_ms,
         )
-
-        # D1/D2 spike traces for STDP
-        self.d1_input_trace = torch.zeros(config.n_input, device=self.device)
-        self.d2_input_trace = torch.zeros(config.n_input, device=self.device)
-        self.d1_output_trace = torch.zeros(config.n_output, device=self.device)
-        self.d2_output_trace = torch.zeros(config.n_output, device=self.device)
+        
+        # Create learning manager
+        self.learning_manager = LearningManager(
+            config=self.striatum_config,
+            context=learning_context,
+            d1_pathway=self.d1_pathway,
+            d2_pathway=self.d2_pathway,
+        )
+        
+        # Property delegation for backward compatibility
+        # Old code accesses self.d1_weights, self.d2_weights, etc.
+        # These now delegate to pathway objects
+        
+        # =====================================================================
+        # BACKWARD COMPATIBILITY PROPERTIES (DEPRECATED - use pathways directly)
+        # =====================================================================
+        # These properties maintain compatibility with old checkpoints and code
 
         # =====================================================================
         # HOMEOSTATIC PLASTICITY STATE
@@ -245,7 +301,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # =====================================================================
         # Baseline dopamine level that modulates D1 gain and exploration.
         # Updated slowly based on overall reward history (motivational state).
-        self.tonic_dopamine = self.striatum_config.tonic_dopamine
+        # Now managed by exploration_manager (set during initialization above)
 
         # =====================================================================
         # UNIFIED HOMEOSTASIS (Constraint-Based Stability)
@@ -272,20 +328,29 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 d1_d2_sum = self.d1_weights.sum() + self.d2_weights.sum()
                 dynamic_budget = (d1_d2_sum / self.n_actions).item()
 
-            unified_config = UnifiedHomeostasisConfig(
+            homeostasis_config = HomeostasisManagerConfig(
                 weight_budget=dynamic_budget,
-                soft_normalization=self.striatum_config.homeostatic_soft,
                 normalization_rate=self.striatum_config.homeostatic_rate,
+                baseline_pressure_enabled=self.striatum_config.baseline_pressure_enabled,
+                baseline_pressure_rate=self.striatum_config.baseline_pressure_rate,
+                baseline_target_net=self.striatum_config.baseline_target_net,
                 w_min=self.config.w_min,
                 w_max=self.config.w_max,
+                device=self.device,
             )
-            self.unified_homeostasis = StriatumHomeostasis(
-                n_actions=self.n_actions,
-                neurons_per_action=self.neurons_per_action,
-                config=unified_config,
+            # Create manager context for homeostasis
+            homeostasis_context = ManagerContext(
+                device=self.device,
+                n_output=self.n_actions,
+                dt_ms=config.dt_ms,
+                metadata={"neurons_per_action": self.neurons_per_action},
+            )
+            self.homeostasis_manager = HomeostasisManager(
+                config=homeostasis_config,
+                context=homeostasis_context,
             )
         else:
-            self.unified_homeostasis = None
+            self.homeostasis_manager = None
 
         # =====================================================================
         # TD(λ) - MULTI-STEP CREDIT ASSIGNMENT (Phase 1 Enhancement)
@@ -360,15 +425,11 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # - D1-MSNs express D1 receptors: DA+ → LTP
         # - D2-MSNs express D2 receptors: DA+ → LTD (inverted!)
         #
-        # Previous implementation was WRONG: D1/D2 were weight matrices on the
-        # SAME neurons. This meant D1/D2 were fighting over the same neural activity.
+        # Previous implementation: D1/D2 were weight matrices on the same neurons
+        # Current implementation: D1/D2 are separate pathway objects with their own neurons
         #
-        # Correct implementation:
-        # - D1-MSNs: Separate population, excited by d1_weights
-        # - D2-MSNs: Separate population, excited by d2_weights
-        # - Action selection: argmax(D1_activity - D2_activity) per action
-        self.d1_neurons = self._create_d1_neurons()
-        self.d2_neurons = self._create_d2_neurons()
+        # Neurons are now managed by pathway objects (d1_pathway.neurons, d2_pathway.neurons)
+        # For backward compatibility, we expose them as properties
 
         # =====================================================================
         # REWARD PREDICTION ERROR (RPE) - Value Estimates
@@ -396,6 +457,12 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self._last_pfc_goal_context = None  # For goal-conditioned learning
 
         # =====================================================================
+        # CHECKPOINT MANAGER
+        # =====================================================================
+        # Handles state serialization/deserialization
+        self.checkpoint_manager = CheckpointManager(self)
+
+        # =====================================================================
         # BETA OSCILLATOR TRACKING (Motor Control Modulation)
         # =====================================================================
         # Beta oscillations (13-30 Hz, typically 20 Hz) modulate action selection:
@@ -411,6 +478,128 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     # =========================================================================
     # PLASTICITY CONTROL (for debugging only)
     # =========================================================================
+
+    # =========================================================================
+    # EXPLORATION STATE PROPERTIES (Backward Compatibility)
+    # =========================================================================
+    # These properties delegate to ExplorationManager for backward compatibility.
+    # External code may access _action_counts, tonic_dopamine, etc. directly.
+
+    @property
+    def _action_counts(self) -> torch.Tensor:
+        """UCB action counts (delegates to exploration_manager)."""
+        return self.exploration_manager._action_counts
+
+    @property
+    def _total_trials(self) -> int:
+        """Total trial count (delegates to exploration_manager)."""
+        return self.exploration_manager._total_trials
+
+    @property
+    def _recent_rewards(self) -> List[float]:
+        """Recent reward history (delegates to exploration_manager)."""
+        return self.exploration_manager._recent_rewards
+
+    @property
+    def _recent_accuracy(self) -> float:
+        """Running accuracy estimate (delegates to exploration_manager)."""
+        return self.exploration_manager._recent_accuracy
+
+    @property
+    def tonic_dopamine(self) -> float:
+        """Current tonic dopamine level (delegates to exploration_manager)."""
+        return self.exploration_manager.tonic_dopamine
+
+    @tonic_dopamine.setter
+    def tonic_dopamine(self, value: float) -> None:
+        """Set tonic dopamine level (delegates to exploration_manager)."""
+        self.exploration_manager.tonic_dopamine = value
+
+    # =========================================================================
+    # PATHWAY DELEGATION PROPERTIES
+    # =========================================================================
+    # These properties delegate to D1/D2 pathway objects for backward compatibility.
+    # Old code accesses self.d1_weights, self.d2_weights, etc.
+    
+    @property
+    def d1_weights(self) -> nn.Parameter:
+        """D1 pathway weights (delegates to d1_pathway)."""
+        return self.d1_pathway.weights
+    
+    @property
+    def d2_weights(self) -> nn.Parameter:
+        """D2 pathway weights (delegates to d2_pathway)."""
+        return self.d2_pathway.weights
+    
+    @property
+    def d1_eligibility(self) -> torch.Tensor:
+        """D1 eligibility traces (delegates to d1_pathway)."""
+        return self.d1_pathway.eligibility
+    
+    @d1_eligibility.setter
+    def d1_eligibility(self, value: torch.Tensor) -> None:
+        """Set D1 eligibility traces."""
+        self.d1_pathway.eligibility = value
+    
+    @property
+    def d2_eligibility(self) -> torch.Tensor:
+        """D2 eligibility traces (delegates to d2_pathway)."""
+        return self.d2_pathway.eligibility
+    
+    @d2_eligibility.setter
+    def d2_eligibility(self, value: torch.Tensor) -> None:
+        """Set D2 eligibility traces."""
+        self.d2_pathway.eligibility = value
+    
+    @property
+    def d1_neurons(self) -> ConductanceLIF:
+        """D1 neuron population (delegates to d1_pathway)."""
+        return self.d1_pathway.neurons
+    
+    @property
+    def d2_neurons(self) -> ConductanceLIF:
+        """D2 neuron population (delegates to d2_pathway)."""
+        return self.d2_pathway.neurons
+    
+    @property
+    def d1_input_trace(self) -> torch.Tensor:
+        """D1 input STDP trace (delegates to d1_pathway)."""
+        return self.d1_pathway.input_trace
+    
+    @d1_input_trace.setter
+    def d1_input_trace(self, value: torch.Tensor) -> None:
+        """Set D1 input STDP trace."""
+        self.d1_pathway.input_trace = value
+    
+    @property
+    def d2_input_trace(self) -> torch.Tensor:
+        """D2 input STDP trace (delegates to d2_pathway)."""
+        return self.d2_pathway.input_trace
+    
+    @d2_input_trace.setter
+    def d2_input_trace(self, value: torch.Tensor) -> None:
+        """Set D2 input STDP trace."""
+        self.d2_pathway.input_trace = value
+    
+    @property
+    def d1_output_trace(self) -> torch.Tensor:
+        """D1 output STDP trace (delegates to d1_pathway)."""
+        return self.d1_pathway.output_trace
+    
+    @d1_output_trace.setter
+    def d1_output_trace(self, value: torch.Tensor) -> None:
+        """Set D1 output STDP trace."""
+        self.d1_pathway.output_trace = value
+    
+    @property
+    def d2_output_trace(self) -> torch.Tensor:
+        """D2 output STDP trace (delegates to d2_pathway)."""
+        return self.d2_pathway.output_trace
+    
+    @d2_output_trace.setter
+    def d2_output_trace(self, value: torch.Tensor) -> None:
+        """Set D2 output STDP trace."""
+        self.d2_pathway.output_trace = value
 
     @contextmanager
     def freeze_plasticity(self) -> Generator[None, None, None]:
@@ -491,7 +680,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     def evaluate_state(
         self,
         state: torch.Tensor,
-        pfc_goal_context: Optional[torch.Tensor] = None
     ) -> float:
         """
         Evaluate state quality using learned action values.
@@ -500,7 +688,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         by computing the maximum Q-value (best action value) from that state.
 
         Uses existing value estimates to evaluate states during mental simulation.
-        If goal-conditioning is enabled, modulates values based on goal context.
+        If goal-conditioning is enabled, modulates values based on PFC component of state.
 
         Biology: Striatum represents action values (Q-values) learned through
         dopaminergic reinforcement. During planning, these values can evaluate
@@ -508,7 +696,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
         Args:
             state: State to evaluate [n_input] (1D, ADR-005)
-            pfc_goal_context: Optional goal context from PFC [n_pfc]
+                   Format: [cortex_l5 | hippocampus | pfc] (concatenated)
 
         Returns:
             state_value: Maximum action value (best Q-value) from this state
@@ -525,11 +713,23 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # Get all action values
         action_values = self.value_estimates.clone()
 
-        # If goal conditioning enabled and goal context provided, modulate values
+        # If goal conditioning enabled, extract PFC component from state and modulate values
         if (self.striatum_config.use_goal_conditioning and
-            pfc_goal_context is not None and
             hasattr(self, 'pfc_modulation_d1') and
             self.pfc_modulation_d1 is not None):
+
+            # Extract PFC component from concatenated state tensor
+            # Format: [cortex_l5 | hippocampus | pfc]
+            pfc_size = self.striatum_config.pfc_size
+            pfc_goal_context = state[-pfc_size:]
+
+            # Shape assertion: PFC goal context must match modulation matrix columns
+            expected_pfc_size = self.pfc_modulation_d1.shape[1]
+            actual_pfc_size = pfc_goal_context.shape[0] if pfc_goal_context.dim() == 1 else pfc_goal_context.shape[-1]
+            assert actual_pfc_size == expected_pfc_size, \
+                f"PFC goal context size mismatch: got {actual_pfc_size}, expected {expected_pfc_size}. " \
+                f"pfc_modulation_d1 shape: {self.pfc_modulation_d1.shape}, pfc_goal_context shape: {pfc_goal_context.shape}. " \
+                f"Check that striatum_config.pfc_size matches actual PFC output size in brain config."
 
             # Compute goal modulation for D1 (Go pathway)
             goal_mod_d1 = torch.sigmoid(
@@ -589,60 +789,23 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         new_n_output = old_n_output + n_new_neurons
 
         # =====================================================================
-        # 1. EXPAND D1 AND D2 WEIGHT MATRICES
+        # 1. EXPAND D1 AND D2 WEIGHT MATRICES using base helper
         # =====================================================================
-        # Initialize new weights using specified strategy
-        if initialization == 'xavier':
-            new_d1_weights = WeightInitializer.xavier(
-                n_output=n_new_neurons,
-                n_input=self.config.n_input,
-                gain=0.2,  # Match _initialize_pathway_weights
-                device=self.device,
-            ) * self.config.w_max
-            new_d2_weights = WeightInitializer.xavier(
-                n_output=n_new_neurons,
-                n_input=self.config.n_input,
-                gain=0.2,
-                device=self.device,
-            ) * self.config.w_max
-        elif initialization == 'sparse_random':
-            new_d1_weights = WeightInitializer.sparse_random(
-                n_output=n_new_neurons,
-                n_input=self.config.n_input,
-                sparsity=sparsity,
-                scale=self.config.w_max * 0.2,
-                device=self.device,
-            )
-            new_d2_weights = WeightInitializer.sparse_random(
-                n_output=n_new_neurons,
-                n_input=self.config.n_input,
-                sparsity=sparsity,
-                scale=self.config.w_max * 0.2,
-                device=self.device,
-            )
-        else:  # uniform
-            new_d1_weights = WeightInitializer.uniform(
-                n_output=n_new_neurons,
-                n_input=self.config.n_input,
-                low=0.0,
-                high=self.config.w_max * 0.2,
-                device=self.device,
-            )
-            new_d2_weights = WeightInitializer.uniform(
-                n_output=n_new_neurons,
-                n_input=self.config.n_input,
-                low=0.0,
-                high=self.config.w_max * 0.2,
-                device=self.device,
-            )
-
-        # Clamp to bounds
-        new_d1_weights = new_d1_weights.clamp(self.config.w_min, self.config.w_max)
-        new_d2_weights = new_d2_weights.clamp(self.config.w_min, self.config.w_max)
-
-        # Concatenate with existing weights
-        self.d1_weights = torch.cat([self.d1_weights, new_d1_weights], dim=0)
-        self.d2_weights = torch.cat([self.d2_weights, new_d2_weights], dim=0)
+        # Use base class helper with striatum-specific scale (w_max * 0.2)
+        self.d1_pathway.weights = self._expand_weights(
+            current_weights=self.d1_pathway.weights,
+            n_new=n_new_neurons,
+            initialization=initialization,
+            sparsity=sparsity,
+            scale=self.config.w_max * 0.2,
+        )
+        self.d2_pathway.weights = self._expand_weights(
+            current_weights=self.d2_pathway.weights,
+            n_new=n_new_neurons,
+            initialization=initialization,
+            sparsity=sparsity,
+            scale=self.config.w_max * 0.2,
+        )
 
         # Update generic weights reference (use d1_weights for compatibility)
         self.weights = self.d1_weights
@@ -658,84 +821,76 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self.striatum_config = replace(self.striatum_config, n_output=new_n_output)
 
         # =====================================================================
-        # 3. EXPAND ELIGIBILITY TRACES
+        # 3. EXPAND STATE TENSORS using base helper
         # =====================================================================
-        new_d1_elig = torch.zeros(n_new_neurons, self.config.n_input, device=self.device)
-        new_d2_elig = torch.zeros(n_new_neurons, self.config.n_input, device=self.device)
-        self.d1_eligibility = torch.cat([self.d1_eligibility, new_d1_elig], dim=0)
-        self.d2_eligibility = torch.cat([self.d2_eligibility, new_d2_elig], dim=0)
-
-        # Expand eligibility traces object
+        # Build state dict for all 2D tensors [n_neurons, dim]
+        state_2d = {
+            'd1_eligibility': self.d1_eligibility,
+            'd2_eligibility': self.d2_eligibility,
+        }
+        # Add eligibility object traces if present
         if hasattr(self, 'eligibility'):
+            state_2d['eligibility_traces'] = self.eligibility.traces
+
+        # Add TD-lambda traces if present
+        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
+            state_2d['td_lambda_d1_traces'] = self.td_lambda_d1.traces.traces
+        if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
+            state_2d['td_lambda_d2_traces'] = self.td_lambda_d2.traces.traces
+
+        # Expand all 2D state tensors at once
+        expanded_2d = self._expand_state_tensors(state_2d, n_new_neurons)
+        self.d1_eligibility = expanded_2d['d1_eligibility']
+        self.d2_eligibility = expanded_2d['d2_eligibility']
+        if hasattr(self, 'eligibility'):
+            self.eligibility.traces = expanded_2d['eligibility_traces']
             self.eligibility.n_post = new_n_output
-            self.eligibility.traces = torch.cat([
-                self.eligibility.traces,
-                torch.zeros(n_new_neurons, self.config.n_input, device=self.device)
-            ], dim=0)
+        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
+            self.td_lambda_d1.traces.traces = expanded_2d['td_lambda_d1_traces']
+            self.td_lambda_d1.traces.n_output = new_n_output
+            self.td_lambda_d1.n_actions = self.n_actions
+        if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
+            self.td_lambda_d2.traces.traces = expanded_2d['td_lambda_d2_traces']
+            self.td_lambda_d2.traces.n_output = new_n_output
+            self.td_lambda_d2.n_actions = self.n_actions
 
-        # =====================================================================
-        # 3. EXPAND SPIKE TRACES
-        # =====================================================================
-        new_d1_trace = torch.zeros(n_new_neurons, device=self.device)
-        new_d2_trace = torch.zeros(n_new_neurons, device=self.device)
-        self.d1_output_trace = torch.cat([self.d1_output_trace, new_d1_trace], dim=0)
-        self.d2_output_trace = torch.cat([self.d2_output_trace, new_d2_trace], dim=0)
-
+        # Build state dict for all 1D tensors [n_neurons]
+        state_1d = {
+            'd1_output_trace': self.d1_output_trace,
+            'd2_output_trace': self.d2_output_trace,
+        }
         if hasattr(self, 'recent_spikes'):
-            self.recent_spikes = torch.cat([
-                self.recent_spikes,
-                torch.zeros(n_new_neurons, device=self.device)
-            ], dim=0)
+            state_1d['recent_spikes'] = self.recent_spikes
+
+        # Expand all 1D state tensors at once
+        expanded_1d = self._expand_state_tensors(state_1d, n_new_neurons)
+        self.d1_output_trace = expanded_1d['d1_output_trace']
+        self.d2_output_trace = expanded_1d['d2_output_trace']
+        if hasattr(self, 'recent_spikes'):
+            self.recent_spikes = expanded_1d['recent_spikes']
         else:
             # Initialize if it doesn't exist
             self.recent_spikes = torch.zeros(new_n_output, device=self.device)
 
         # =====================================================================
-        # 4. EXPAND NEURON POPULATIONS
+        # 4. EXPAND NEURON POPULATIONS using base helper
         # =====================================================================
         # Expand D1-MSN and D2-MSN neuron populations
         if hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
-            old_d1_membrane = self.d1_neurons.membrane.clone() if self.d1_neurons.membrane is not None else None
-            old_d1_g_E = self.d1_neurons.g_E.clone() if self.d1_neurons.g_E is not None else None
-            old_d1_g_I = self.d1_neurons.g_I.clone() if self.d1_neurons.g_I is not None else None
-            old_d1_refractory = self.d1_neurons.refractory.clone() if self.d1_neurons.refractory is not None else None
-
-            self.d1_neurons = self._create_d1_neurons()
-            self.d1_neurons.reset_state()
-
-            # ADR-005: Neuron state tensors are 1D [n_neurons], not 2D
-            if old_d1_membrane is not None:
-                self.d1_neurons.membrane[:old_n_output] = old_d1_membrane
-            if old_d1_g_E is not None:
-                self.d1_neurons.g_E[:old_n_output] = old_d1_g_E
-            if old_d1_g_I is not None:
-                self.d1_neurons.g_I[:old_n_output] = old_d1_g_I
-            if old_d1_refractory is not None:
-                self.d1_neurons.refractory[:old_n_output] = old_d1_refractory
-
+            self.d1_neurons = self._recreate_neurons_with_state(
+                neuron_factory=self._create_d1_neurons,
+                old_n_output=old_n_output,
+            )
         if hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
-            old_d2_membrane = self.d2_neurons.membrane.clone() if self.d2_neurons.membrane is not None else None
-            old_d2_g_E = self.d2_neurons.g_E.clone() if self.d2_neurons.g_E is not None else None
-            old_d2_g_I = self.d2_neurons.g_I.clone() if self.d2_neurons.g_I is not None else None
-            old_d2_refractory = self.d2_neurons.refractory.clone() if self.d2_neurons.refractory is not None else None
-
-            self.d2_neurons = self._create_d2_neurons()
-            self.d2_neurons.reset_state()
-
-            # ADR-005: Neuron state tensors are 1D [n_neurons], not 2D
-            if old_d2_membrane is not None:
-                self.d2_neurons.membrane[:old_n_output] = old_d2_membrane
-            if old_d2_g_E is not None:
-                self.d2_neurons.g_E[:old_n_output] = old_d2_g_E
-            if old_d2_g_I is not None:
-                self.d2_neurons.g_I[:old_n_output] = old_d2_g_I
-            if old_d2_refractory is not None:
-                self.d2_neurons.refractory[:old_n_output] = old_d2_refractory
+            self.d2_neurons = self._recreate_neurons_with_state(
+                neuron_factory=self._create_d2_neurons,
+                old_n_output=old_n_output,
+            )
 
         # =====================================================================
-        # 5. UPDATE ACTION-RELATED TRACKING
+        # 5. UPDATE ACTION-RELATED TRACKING (1D per action, not per neuron)
         # =====================================================================
-        # Expand D1/D2 vote accumulators
+        # Expand D1/D2 vote accumulators [n_actions]
         self._d1_votes_accumulated = torch.cat([
             self._d1_votes_accumulated,
             torch.zeros(n_new, device=self.device)
@@ -745,47 +900,12 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             torch.zeros(n_new, device=self.device)
         ], dim=0)
 
-        # Expand action counts for UCB
-        self._action_counts = torch.cat([
-            self._action_counts,
-            torch.zeros(n_new, device=self.device)
-        ], dim=0)
+        # Expand exploration manager (handles action_counts and other exploration state)
+        self.exploration_manager.grow(self.n_actions)
 
-        # Expand unified homeostasis if it exists
-        if self.unified_homeostasis is not None:
-            # Expand activity tracking buffers
-            old_size = self.unified_homeostasis.n_neurons
-            new_size = old_size + n_new_neurons
-
-            # Expand D1 and D2 activity tracking
-            self.unified_homeostasis.d1_activity_avg = torch.cat([
-                self.unified_homeostasis.d1_activity_avg,
-                torch.zeros(n_new_neurons, device=self.device)
-            ], dim=0)
-            self.unified_homeostasis.d2_activity_avg = torch.cat([
-                self.unified_homeostasis.d2_activity_avg,
-                torch.zeros(n_new_neurons, device=self.device)
-            ], dim=0)
-
-            # Expand excitability modulation factors
-            self.unified_homeostasis.d1_excitability = torch.cat([
-                self.unified_homeostasis.d1_excitability,
-                torch.ones(n_new_neurons, device=self.device)
-            ], dim=0)
-            self.unified_homeostasis.d2_excitability = torch.cat([
-                self.unified_homeostasis.d2_excitability,
-                torch.ones(n_new_neurons, device=self.device)
-            ], dim=0)
-
-            # Update size tracking
-            self.unified_homeostasis.n_actions = self.n_actions
-            self.unified_homeostasis.n_neurons = new_size
-
-            # Expand action_budgets
-            self.unified_homeostasis.action_budgets = torch.cat([
-                self.unified_homeostasis.action_budgets,
-                torch.ones(n_new, device=self.device) * self.unified_homeostasis.config.weight_budget
-            ], dim=0)
+        # Expand homeostasis manager if it exists
+        if self.homeostasis_manager is not None:
+            self.homeostasis_manager.grow(n_new_neurons)
 
         # Value estimates for new actions (start at 0)
         if hasattr(self, 'value_estimates'):
@@ -800,6 +920,28 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 self.rpe_trace,
                 torch.zeros(n_new, device=self.device)
             ], dim=0)
+
+        # =====================================================================
+        # 6. EXPAND PFC MODULATION WEIGHTS (using base helper)
+        # =====================================================================
+        # PFC modulation weights [n_output, pfc_size] need to expand for new neurons
+        if hasattr(self, 'pfc_modulation_d1') and self.pfc_modulation_d1 is not None:
+            self.pfc_modulation_d1 = self._expand_weights(
+                current_weights=self.pfc_modulation_d1,
+                n_new=n_new_neurons,
+                initialization='sparse_random',
+                sparsity=0.3,
+                scale=1.0,  # Default scale for PFC modulation
+            )
+
+        if hasattr(self, 'pfc_modulation_d2') and self.pfc_modulation_d2 is not None:
+            self.pfc_modulation_d2 = self._expand_weights(
+                current_weights=self.pfc_modulation_d2,
+                n_new=n_new_neurons,
+                initialization='sparse_random',
+                sparsity=0.3,
+                scale=1.0,  # Default scale for PFC modulation
+            )
 
     def _initialize_pathway_weights(self) -> torch.Tensor:
         """Initialize weights for D1 or D2 pathway with balanced, principled scaling.
@@ -885,51 +1027,29 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             d1_output_1d = d1_output_1d * action_mask
             d2_output_1d = d2_output_1d * action_mask
 
-        # Decay and update spike traces - SEPARATE for D1 and D2
-        trace_decay = 1.0 - dt / cfg.stdp_tau_ms
-        self.d1_input_trace = self.d1_input_trace * trace_decay + input_1d
-        self.d1_output_trace = self.d1_output_trace * trace_decay + d1_output_1d
-        self.d2_input_trace = self.d2_input_trace * trace_decay + input_1d
-        self.d2_output_trace = self.d2_output_trace * trace_decay + d2_output_1d
-
-        # STDP rule for D1 pathway (using D1 neuron spikes)
-        d1_ltp = torch.outer(d1_output_1d, self.d1_input_trace)
-        d1_ltd = torch.outer(self.d1_output_trace, input_1d)
-
-        # Soft bounds for D1
-        d1_w_normalized = (self.d1_weights - self.config.w_min) / (self.config.w_max - self.config.w_min)
-        d1_ltp_factor = 1.0 - d1_w_normalized
-        d1_ltd_factor = d1_w_normalized
-
-        d1_soft_ltp = d1_ltp * d1_ltp_factor
-        d1_soft_ltd = d1_ltd * d1_ltd_factor
-
-        # D1 eligibility (standard STDP direction)
-        d1_stdp_dw = cfg.stdp_lr * cfg.d1_lr_scale * (
-            d1_soft_ltp - cfg.heterosynaptic_ratio * d1_soft_ltd
+        # Update traces and eligibility using pathway managers
+        # Note: D1 and D2 pathways have separate trace managers
+        self.d1_pathway._trace_manager.update_traces(input_1d, d1_output_1d, dt)
+        self.d2_pathway._trace_manager.update_traces(input_1d, d2_output_1d, dt)
+        
+        # Compute STDP eligibility with pathway-specific learning rate scaling
+        d1_eligibility_update = self.d1_pathway._trace_manager.compute_stdp_eligibility_separate_ltd(
+            input_spikes=input_1d,
+            output_spikes=d1_output_1d,
+            weights=self.d1_weights,
+            lr_scale=cfg.d1_lr_scale,
         )
-
-        # STDP rule for D2 pathway (using D2 neuron spikes)
-        d2_ltp = torch.outer(d2_output_1d, self.d2_input_trace)
-        d2_ltd = torch.outer(self.d2_output_trace, input_1d)
-
-        # Soft bounds for D2
-        d2_w_normalized = (self.d2_weights - self.config.w_min) / (self.config.w_max - self.config.w_min)
-        d2_ltp_factor = 1.0 - d2_w_normalized
-        d2_ltd_factor = d2_w_normalized
-
-        d2_soft_ltp = d2_ltp * d2_ltp_factor
-        d2_soft_ltd = d2_ltd * d2_ltd_factor
-
-        # D2 eligibility (standard STDP direction - inversion happens at reward delivery)
-        d2_stdp_dw = cfg.stdp_lr * cfg.d2_lr_scale * (
-            d2_soft_ltp - cfg.heterosynaptic_ratio * d2_soft_ltd
+        
+        d2_eligibility_update = self.d2_pathway._trace_manager.compute_stdp_eligibility_separate_ltd(
+            input_spikes=input_1d,
+            output_spikes=d2_output_1d,
+            weights=self.d2_weights,
+            lr_scale=cfg.d2_lr_scale,
         )
-
-        # Accumulate into eligibility traces
-        eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
-        self.d1_eligibility = self.d1_eligibility * eligibility_decay + d1_stdp_dw
-        self.d2_eligibility = self.d2_eligibility * eligibility_decay + d2_stdp_dw
+        
+        # Accumulate into eligibility traces with decay
+        self.d1_pathway._trace_manager.accumulate_eligibility(d1_eligibility_update, dt)
+        self.d2_pathway._trace_manager.accumulate_eligibility(d2_eligibility_update, dt)
 
     def _update_d1_d2_eligibility_all(
         self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor
@@ -1027,8 +1147,13 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         _create_d2_neurons() which are called in __init__.
         """
         neuron_config = ConductanceLIFConfig(
-            v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
-            tau_E=5.0, tau_I=5.0,
+            v_threshold=V_THRESHOLD_STANDARD,
+            v_reset=V_RESET_STANDARD,
+            E_L=E_LEAK,
+            E_E=E_EXCITATORY,
+            E_I=E_INHIBITORY,
+            tau_E=5.0,
+            tau_I=5.0,
             dt_ms=1.0,
             tau_ref=2.0,
         )
@@ -1050,8 +1175,13 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         provide more stable, differentiated action selection signals.
         """
         neuron_config = ConductanceLIFConfig(
-            v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
-            tau_E=5.0, tau_I=5.0,
+            v_threshold=V_THRESHOLD_STANDARD,
+            v_reset=V_RESET_STANDARD,
+            E_L=E_LEAK,
+            E_E=E_EXCITATORY,
+            E_I=E_INHIBITORY,
+            tau_E=5.0,
+            tau_I=5.0,
             dt_ms=self.config.dt_ms,
             tau_ref=2.0,
             tau_adapt=100.0,        # Adaptation time constant
@@ -1079,8 +1209,13 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         provide more stable, differentiated action selection signals.
         """
         neuron_config = ConductanceLIFConfig(
-            v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
-            tau_E=5.0, tau_I=5.0,
+            v_threshold=V_THRESHOLD_STANDARD,
+            v_reset=V_RESET_STANDARD,
+            E_L=E_LEAK,
+            E_E=E_EXCITATORY,
+            E_I=E_INHIBITORY,
+            tau_E=5.0,
+            tau_I=5.0,
             dt_ms=self.config.dt_ms,
             tau_ref=2.0,
             tau_adapt=100.0,        # Adaptation time constant
@@ -1093,7 +1228,6 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     def forward(
         self,
         input_spikes: torch.Tensor,
-        pfc_goal_context: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input and select action using SEPARATE D1/D2 populations.
@@ -1108,10 +1242,13 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
 
         Args:
             input_spikes: Input spike tensor [n_input] (1D)
-            pfc_goal_context: Optional goal context from PFC [pfc_size] (1D)
+                         Format: [cortex_l5 | hippocampus | pfc] (concatenated)
+                         PFC component is extracted automatically for goal modulation.
 
         NOTE: Exploration is handled by finalize_action() at trial end, not per-timestep.
         NOTE: Theta modulation computed internally from self._theta_phase (set by Brain)
+        NOTE: In event-driven mode, pfc_goal_context is extracted from the input_spikes
+              (the PFC component of the concatenated pathway input)
 
         With population coding:
         - Each action has N neurons per pathway (neurons_per_action)
@@ -1195,42 +1332,47 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # PFC goal context modulates D1/D2 pathways to implement goal-conditioned
         # action selection. Different goals activate different striatal ensembles.
         # Biology: PFC working memory → Striatum gating (Miller & Cohen 2001)
+        #
+        # Extract PFC component from concatenated input if goal conditioning is enabled.
+        # Input format: [cortex_l5 | hippocampus | pfc]
+        # PFC is at the end, size determined by pfc_size config.
+        pfc_goal_context = None
         if (self.striatum_config.use_goal_conditioning and
-            pfc_goal_context is not None and
             self.pfc_modulation_d1 is not None):
 
-            # Ensure goal context is 1D
-            if pfc_goal_context.dim() != 1:
-                pfc_goal_context = pfc_goal_context.squeeze()
+            # Extract PFC component from end of input
+            pfc_size = self.striatum_config.pfc_size
+            if input_spikes.shape[0] >= pfc_size:
+                pfc_goal_context = input_spikes[-pfc_size:]
 
-            # Convert bool to float if needed
-            if pfc_goal_context.dtype == torch.bool:
-                pfc_goal_context = pfc_goal_context.float()
+                # Convert bool to float if needed
+                if pfc_goal_context.dtype == torch.bool:
+                    pfc_goal_context = pfc_goal_context.float()
 
-            # Compute goal modulation via learned PFC → striatum weights
-            # Uses sigmoid to get modulation in [0, 1] range
-            goal_mod_d1 = torch.sigmoid(
-                torch.matmul(self.pfc_modulation_d1, pfc_goal_context)
-            )  # [n_output]
-            goal_mod_d2 = torch.sigmoid(
-                torch.matmul(self.pfc_modulation_d2, pfc_goal_context)
-            )  # [n_output]
+                # Compute goal modulation via learned PFC → striatum weights
+                # Uses sigmoid to get modulation in [0, 1] range
+                goal_mod_d1 = torch.sigmoid(
+                    torch.matmul(self.pfc_modulation_d1, pfc_goal_context)
+                )  # [n_output]
+                goal_mod_d2 = torch.sigmoid(
+                    torch.matmul(self.pfc_modulation_d2, pfc_goal_context)
+                )  # [n_output]
 
-            # Modulate D1/D2 gains by goal context
-            # Strength parameter controls how much goals affect action selection
-            strength = self.striatum_config.goal_modulation_strength
-            d1_activation = d1_activation * (1.0 + strength * (goal_mod_d1 - 0.5))
-            d2_activation = d2_activation * (1.0 + strength * (goal_mod_d2 - 0.5))
+                # Modulate D1/D2 gains by goal context
+                # Strength parameter controls how much goals affect action selection
+                strength = self.striatum_config.goal_modulation_strength
+                d1_activation = d1_activation * (1.0 + strength * (goal_mod_d1 - 0.5))
+                d2_activation = d2_activation * (1.0 + strength * (goal_mod_d2 - 0.5))
 
         # =====================================================================
         # ACTIVITY-BASED EXCITABILITY MODULATION
         # =====================================================================
         # Intrinsic excitability based on recent activity history.
         # Low activity neurons get higher gain, high activity get lower gain.
-        # This is a constraint-based approach (via UnifiedHomeostasis) rather
+        # This is a constraint-based approach (via HomeostasisManager) rather
         # than a correction-based approach (former IntrinsicPlasticity).
-        if self.unified_homeostasis is not None:
-            d1_exc_gain, d2_exc_gain = self.unified_homeostasis.compute_excitability()
+        if self.homeostasis_manager is not None:
+            d1_exc_gain, d2_exc_gain = self.homeostasis_manager.compute_excitability()
             d1_gain = d1_gain * d1_exc_gain
             d2_gain = d2_gain * d2_exc_gain
 
@@ -1295,8 +1437,8 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # =====================================================================
         # Track D1/D2 firing rates for homeostatic excitability adjustment.
         # This feeds into compute_excitability() for next timestep.
-        if self.unified_homeostasis is not None:
-            self.unified_homeostasis.update_activity(d1_spikes, d2_spikes)
+        if self.homeostasis_manager is not None:
+            self.homeostasis_manager.update_activity(d1_spikes, d2_spikes)
 
         # =====================================================================
         # ACTION SELECTION: D1 - D2 (GO - NOGO)
@@ -1325,7 +1467,8 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # =====================================================================
         # Store PFC goal context and D1/D2 spikes for goal-conditioned learning
         # These will be used in deliver_reward() to modulate weight updates
-        if self.striatum_config.use_goal_conditioning and pfc_goal_context is not None:
+        # pfc_goal_context was extracted above if goal conditioning is enabled
+        if pfc_goal_context is not None:
             self._last_pfc_goal_context = pfc_goal_context.clone()
         else:
             self._last_pfc_goal_context = None
@@ -1378,7 +1521,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         self._trial_spike_count += d1_spikes.sum().item() + d2_spikes.sum().item()
         self._trial_timesteps += 1
 
-        # Store D1 and D2 spikes for later use (debugging, eligibility)
+        # Store D1 and D2 spikes for learning manager
+        self.learning_manager.store_spikes(d1_spikes, d2_spikes)
+        # Also store locally for debugging
         self._last_d1_spikes = d1_spikes
         self._last_d2_spikes = d2_spikes
 
@@ -1386,7 +1531,10 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         # self.state.dopamine is set by Brain via set_dopamine(), no need to update here
         self.state.t += 1
 
-        return output_spikes
+        # Apply axonal delay (biological reality: ALL neural connections have delays)
+        delayed_spikes = self._apply_axonal_delay(output_spikes, dt)
+
+        return delayed_spikes
 
     def debug_state(self, label: str = "") -> Dict[str, float]:
         """Print and return current D1/D2 weight state per action.
@@ -1474,78 +1622,9 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
             "note": "unified homeostasis now applied during reward delivery",
         }
 
-    def _apply_baseline_pressure(self) -> Dict[str, Any]:
-        """Apply homeostatic pressure towards balanced D1/D2.
-
-        Unlike budget normalization (which preserves D1:D2 ratios), baseline
-        pressure actively drifts NET (D1-D2) towards a target value for each
-        action. This prevents runaway biases where one action becomes dominant.
-
-        Biological basis:
-        - Synaptic scaling adjusts weights towards a setpoint
-        - Homeostatic plasticity maintains balanced excitation/inhibition
-        - Without active use, synapses drift towards baseline
-
-        The mechanism:
-        1. Calculate current NET (D1-D2) for each action
-        2. Compute error from target (default: 0 = balanced)
-        3. Adjust D1 down and D2 up (or vice versa) to reduce error
-
-        Returns:
-            Dict with diagnostic information about the adjustment.
-        """
-        cfg = self.striatum_config
-
-        if not cfg.baseline_pressure_enabled:
-            return {"baseline_pressure_applied": False}
-
-        rate = cfg.baseline_pressure_rate
-        target = cfg.baseline_target_net
-
-        # Track adjustments for diagnostics
-        net_before = []
-        net_after = []
-
-        for action in range(self.n_actions):
-            start = action * self.neurons_per_action
-            end = start + self.neurons_per_action
-
-            # Current mean weights for this action
-            d1_action = self.d1_weights[start:end]
-            d2_action = self.d2_weights[start:end]
-
-            d1_mean = d1_action.mean()
-            d2_mean = d2_action.mean()
-            current_net = d1_mean - d2_mean
-            net_before.append(current_net.item())
-
-            # Error from target
-            error = current_net - target
-
-            # Adjustment: reduce D1 and increase D2 (or vice versa)
-            # to move NET towards target
-            # Split the correction between both pathways
-            adjustment = rate * error * 0.5
-
-            # Apply adjustments (proportionally to current values to avoid negatives)
-            self.d1_weights[start:end] = (d1_action - adjustment).clamp(
-                self.config.w_min, self.config.w_max
-            )
-            self.d2_weights[start:end] = (d2_action + adjustment).clamp(
-                self.config.w_min, self.config.w_max
-            )
-
-            # Record new NET
-            new_net = self.d1_weights[start:end].mean() - self.d2_weights[start:end].mean()
-            net_after.append(new_net.item())
-
-        return {
-            "baseline_pressure_applied": True,
-            "net_before": net_before,
-            "net_after": net_after,
-            "pressure_rate": rate,
-            "target_net": target,
-        }
+    # NOTE: The _apply_baseline_pressure() method has been moved to HomeostasisManager
+    # to consolidate homeostatic regulation logic. The method is now accessed via
+    # self.homeostasis_manager.apply_baseline_pressure()
 
     # NOTE: The learn() method and _three_factor_learn/_reward_modulated_stdp_learn
     # have been removed. With the continuous learning paradigm:
@@ -1557,24 +1636,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     def deliver_reward(self, reward: float) -> Dict[str, Any]:
         """Deliver reward signal and trigger D1/D2 learning.
 
-        The brain ALWAYS LEARNS — there is no "evaluation mode" in biology.
-        Every experience shapes plasticity.
-
-        IMPORTANT: The Brain (acting as VTA) has already computed the reward
-        prediction error and set our dopamine level via set_dopamine(). This
-        method just applies D1/D2 learning using that pre-computed dopamine.
-
-        For D1/D2 opponent process, applies OPPOSITE learning rules:
-        - D1 pathway: DA+ → LTP, DA- → LTD (standard)
-        - D2 pathway: DA+ → LTD, DA- → LTP (inverted!)
-
-        This naturally solves credit assignment:
-        - When wrong action is punished (DA-):
-          - D1 weakens (less GO signal for this action)
-          - D2 strengthens (more NOGO signal = inhibit this action next time)
-        - When correct action is rewarded (DA+):
-          - D1 strengthens (more GO signal)
-          - D2 weakens (less NOGO signal)
+        Delegates to LearningManager for dopamine-gated three-factor learning.
 
         Args:
             reward: Raw reward signal (for adaptive exploration tracking only)
@@ -1582,99 +1644,20 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         Returns:
             Metrics dict with dopamine level and weight changes.
         """
-        cfg = self.striatum_config
-
-        # =====================================================================
-        # USE DOPAMINE FROM BRAIN (VTA)
-        # =====================================================================
-        # The Brain has already computed RPE and set our dopamine via set_dopamine().
-        # We just use that value for learning.
+        # Use dopamine from Brain (VTA) - already computed and set via set_dopamine()
         da_level = self.state.dopamine
 
-        # Store for diagnostics (RPE now computed in Brain, but we track locally too)
-        self._last_rpe = da_level  # Dopamine IS the normalized RPE
-        self._last_expected = 0.0  # No longer tracked here
+        # Store for diagnostics
+        self._last_rpe = da_level
+        self._last_expected = 0.0
 
-        # =====================================================================
-        # ADAPTIVE EXPLORATION: Adjust tonic DA based on recent performance
-        # =====================================================================
-        # Poor performance → increase tonic DA → more exploration
-        # Good performance → decrease tonic DA → more exploitation
-        #
-        # Biological basis: Locus coeruleus releases norepinephrine during
-        # uncertainty/stress, and tonic DA levels influence exploration
-        if cfg.adaptive_exploration:
-            # Track this trial's outcome (reward > 0 = correct)
-            was_correct = 1.0 if reward > 0 else 0.0
-            self._recent_rewards.append(was_correct)
+        # Adjust exploration based on performance
+        self.exploration_manager.adjust_tonic_dopamine(reward)
 
-            # Keep only the most recent trials
-            window = cfg.performance_window
-            if len(self._recent_rewards) > window:
-                self._recent_rewards = self._recent_rewards[-window:]
-
-            # Update running accuracy estimate
-            if len(self._recent_rewards) > 0:
-                self._recent_accuracy = sum(self._recent_rewards) / len(self._recent_rewards)
-
-            # Adjust tonic DA: lower accuracy → higher tonic DA → more exploration
-            # Linear interpolation between min and max tonic DA
-            # At 0% accuracy: use max_tonic_dopamine
-            # At 100% accuracy: use min_tonic_dopamine
-            old_tonic = self.tonic_dopamine
-            accuracy = self._recent_accuracy
-            min_tonic = cfg.min_tonic_dopamine
-            max_tonic = cfg.max_tonic_dopamine
-
-            # Smooth update: blend new estimate with old (momentum)
-            target_tonic = max_tonic - accuracy * (max_tonic - min_tonic)
-            momentum = 0.9  # Keep most of old value for stability
-            self.tonic_dopamine = momentum * old_tonic + (1 - momentum) * target_tonic
-
-            # Clamp to valid range
-            self.tonic_dopamine = max(min_tonic, min(max_tonic, self.tonic_dopamine))
-
-        # =====================================================================
-        # D1/D2 OPPONENT PROCESS LEARNING (Always Enabled)
-        # =====================================================================
-        return self._deliver_reward_d1_d2(da_level)
-
-    def _deliver_reward_d1_d2(self, da_level: float) -> Dict[str, Any]:
-        """Apply D1/D2 opponent process learning.
-
-        The brain ALWAYS LEARNS — even from exploratory actions.
-        Every experience shapes plasticity.
-
-        The key biological insight:
-        - D1 (direct pathway, GO): Uses D1 dopamine receptors
-          - DA burst (positive) → LTP (strengthen GO signal)
-          - DA dip (negative) → LTD (weaken GO signal)
-
-        - D2 (indirect pathway, NOGO): Uses D2 dopamine receptors
-          - DA burst (positive) → LTD (weaken NOGO signal)
-          - DA dip (negative) → LTP (strengthen NOGO signal)
-
-        This OPPOSITE dopamine response in D2 is crucial:
-        - When an action is punished (DA dip):
-          - D1 weakens → less GO
-          - D2 strengthens → more NOGO (learn to inhibit this action!)
-        - When an action is rewarded (DA burst):
-          - D1 strengthens → more GO
-          - D2 weakens → less NOGO
-
-        This naturally solves the credit assignment problem because even when
-        we take the WRONG action and get punished, we're building up NOGO
-        signal that will inhibit that action next time.
-
-        Args:
-            da_level: Dopamine level (already computed from reward)
-
-        Returns:
-            Metrics dict with dopamine level and weight changes.
-        """
-        cfg = self.striatum_config
-
-        # Skip learning if plasticity is frozen (debugging escape hatch)
+        # Delegate to learning manager
+        goal_context = self._last_pfc_goal_context if hasattr(self, '_last_pfc_goal_context') else None
+        
+        # Skip learning if plasticity frozen
         if self._plasticity_frozen:
             return {
                 "dopamine": da_level,
@@ -1683,249 +1666,12 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
                 "d2_ltp": 0.0,
                 "d2_ltd": 0.0,
                 "net_change": 0.0,
-                "d1_eligibility_max": self.d1_eligibility.abs().max().item(),
-                "d2_eligibility_max": self.d2_eligibility.abs().max().item(),
                 "frozen": True,
             }
+        
+        return self.learning_manager.apply_dopamine_learning(da_level, goal_context)
 
-        if abs(da_level) < 0.01:
-            return {
-                "dopamine": da_level,
-                "d1_ltp": 0.0,
-                "d1_ltd": 0.0,
-                "d2_ltp": 0.0,
-                "d2_ltd": 0.0,
-                "net_change": 0.0,
-                "d1_eligibility_max": self.d1_eligibility.abs().max().item(),
-                "d2_eligibility_max": self.d2_eligibility.abs().max().item(),
-            }
 
-        # Create action mask for selected action
-        action_mask = torch.zeros(self.config.n_output, device=self.device)
-        if self.last_action is not None:
-            if self.striatum_config.population_coding:
-                pop_slice = self._get_action_population_indices(self.last_action)
-                action_mask[pop_slice] = 1.0
-            else:
-                action_mask[self.last_action] = 1.0
-        else:
-            # No action selected, apply to all
-            action_mask = torch.ones(self.config.n_output, device=self.device)
-
-        # =====================================================================
-        # D1 PATHWAY LEARNING (standard dopamine response)
-        # =====================================================================
-        # DA+ → LTP (strengthen GO for rewarded actions)
-        # DA- → LTD (weaken GO for punished actions)
-        #
-        # IMPORTANT: Use ABSOLUTE VALUE of eligibility trace!
-        # The eligibility trace marks synapses that were active (magnitude).
-        # Dopamine alone determines direction (strengthen vs weaken).
-        # If we don't use abs(), negative eligibility × negative DA = positive dw,
-        # which would INCREASE weights on punishment - completely backwards!
-
-        # Choose eligibility source: TD(λ) if enabled, otherwise basic STDP traces
-        if self.td_lambda_d1 is not None:
-            # TD(λ) MODE: Use multi-step returns for extended credit assignment
-            # Mask TD(λ) traces to chosen action
-            d1_traces = self.td_lambda_d1.traces.get().abs()
-            d1_masked_elig = d1_traces * action_mask.unsqueeze(1)
-        else:
-            # BASIC MODE: Use STDP eligibility traces
-            d1_masked_elig = self.d1_eligibility.abs() * action_mask.unsqueeze(1)
-
-        d1_da = da_level * cfg.d1_da_sensitivity
-        d1_dw = d1_masked_elig * d1_da
-
-        # =====================================================================
-        # D2 PATHWAY LEARNING (INVERTED dopamine response!)
-        # =====================================================================
-        # DA+ → LTD (weaken NOGO for rewarded actions)
-        # DA- → LTP (strengthen NOGO for punished actions)
-        # The NEGATIVE sign here is the key biological insight!
-        #
-        # CRITICAL: D2 learning should be ASYMMETRIC!
-        # Punishment (DA-) should train D2 MORE than reward weakens it.
-        # This prevents D2 collapse during successful learning.
-        # Biologically: D2-MSNs are more resistant to LTD than D1-MSNs.
-        #
-        # We implement this by scaling down LTD (positive DA, decreasing D2):
-        d2_ltd_scale = 0.3  # D2 decreases 3x slower than D1 increases
-        if da_level > 0:
-            d2_da = -da_level * cfg.d2_da_sensitivity * d2_ltd_scale
-        else:
-            d2_da = -da_level * cfg.d2_da_sensitivity  # Full strength for LTP
-
-        # Choose eligibility source for D2
-        if self.td_lambda_d2 is not None:
-            # TD(λ) MODE: Use multi-step returns for extended credit assignment
-            d2_traces = self.td_lambda_d2.traces.get().abs()
-            d2_masked_elig = d2_traces * action_mask.unsqueeze(1)
-        else:
-            # BASIC MODE: Use STDP eligibility traces
-            d2_masked_elig = self.d2_eligibility.abs() * action_mask.unsqueeze(1)
-
-        d2_dw = d2_masked_elig * d2_da
-
-        # =====================================================================
-        # HETEROSYNAPTIC COMPETITION: Other actions get opposite update
-        # =====================================================================
-        # When chosen action is rewarded (+DA), other actions are slightly penalized.
-        # When chosen action is punished (-DA), other actions are slightly boosted.
-        #
-        # This creates RELATIVE value: "A worked, so B is relatively less valuable"
-        # Key: We use the OTHER actions' eligibility, not the chosen action's.
-        #
-        # Biological basis: Heterosynaptic LTD - competition for synaptic resources
-        if cfg.heterosynaptic_competition and self.last_action is not None:
-            # Create inverse mask (1 for non-chosen, 0 for chosen)
-            other_mask = 1.0 - action_mask
-
-            # Competitive update: OPPOSITE direction, scaled down
-            # If +DA → chosen gets LTP → others get small LTD
-            # If -DA → chosen gets LTD → others get small LTP
-            competition_scale = cfg.competition_strength
-
-            # D1: Others get opposite of chosen
-            d1_other_elig = self.d1_eligibility.abs() * other_mask.unsqueeze(1)
-            d1_dw_competition = d1_other_elig * (-d1_da) * competition_scale
-            d1_dw = d1_dw + d1_dw_competition
-
-            # D2: Others get opposite of chosen (remember D2 already inverted)
-            d2_other_elig = self.d2_eligibility.abs() * other_mask.unsqueeze(1)
-            d2_dw_competition = d2_other_elig * (-d2_da) * competition_scale
-            d2_dw = d2_dw + d2_dw_competition
-
-        # =====================================================================
-        # GOAL-CONDITIONED LEARNING: Modulate weight updates by goal context
-        # =====================================================================
-        # Extended three-factor rule: Δw = eligibility × dopamine × goal_context
-        # Only synapses active during current goal context receive full updates
-        # Biology: PFC → Striatum modulation gates which synapses learn
-        if (self.striatum_config.use_goal_conditioning and
-            hasattr(self, '_last_pfc_goal_context') and
-            self._last_pfc_goal_context is not None):
-
-            # Get goal context from last forward pass
-            goal_context = self._last_pfc_goal_context  # [pfc_size]
-
-            # Compute goal-based modulation (which striatal neurons are active for this goal)
-            # This comes from the learned PFC → striatum weights
-            goal_weight_d1 = torch.sigmoid(
-                torch.matmul(self.pfc_modulation_d1, goal_context)
-            )  # [n_output] - which D1 neurons participate in this goal
-            goal_weight_d2 = torch.sigmoid(
-                torch.matmul(self.pfc_modulation_d2, goal_context)
-            )  # [n_output] - which D2 neurons participate in this goal
-
-            # Modulate weight updates: only goal-relevant neurons learn fully
-            # Shape: d1_dw is [n_output, n_input], goal_weight_d1 is [n_output]
-            d1_dw = d1_dw * goal_weight_d1.unsqueeze(1)
-            d2_dw = d2_dw * goal_weight_d2.unsqueeze(1)
-
-            # Also update PFC modulation weights via Hebbian learning
-            # When goal active + neuron active + reward → strengthen PFC → striatum connection
-            # This is local learning (no backprop!)
-            if abs(da_level) > 0.01:
-                # Hebbian update: outer product of post-synaptic (striatal) and pre-synaptic (PFC)
-                # Modulated by dopamine to only learn during success/failure
-                pfc_lr = self.striatum_config.goal_modulation_lr
-
-                # D1 modulation learning
-                if self._last_d1_spikes is not None:
-                    d1_hebbian = torch.outer(
-                        self._last_d1_spikes.float(),
-                        goal_context
-                    ) * da_level * pfc_lr
-                    self.pfc_modulation_d1.data += d1_hebbian
-                    self.pfc_modulation_d1.data.clamp_(self.config.w_min, self.config.w_max)
-
-                # D2 modulation learning (inverted DA response like main D2 pathway)
-                if self._last_d2_spikes is not None:
-                    d2_hebbian = torch.outer(
-                        self._last_d2_spikes.float(),
-                        goal_context
-                    ) * (-da_level) * pfc_lr  # Inverted for D2
-                    self.pfc_modulation_d2.data += d2_hebbian
-                    self.pfc_modulation_d2.data.clamp_(self.config.w_min, self.config.w_max)
-
-        old_d1 = self.d1_weights.clone()
-        self.d1_weights = (self.d1_weights + d1_dw).clamp(
-            self.config.w_min, self.config.w_max
-        )
-        d1_actual = self.d1_weights - old_d1
-        d1_ltp = d1_actual[d1_actual > 0].sum().item() if (d1_actual > 0).any() else 0.0
-        d1_ltd = d1_actual[d1_actual < 0].sum().item() if (d1_actual < 0).any() else 0.0
-
-        old_d2 = self.d2_weights.clone()
-        self.d2_weights = (self.d2_weights + d2_dw).clamp(
-            self.config.w_min, self.config.w_max
-        )
-        d2_actual = self.d2_weights - old_d2
-        d2_ltp = d2_actual[d2_actual > 0].sum().item() if (d2_actual > 0).any() else 0.0
-        d2_ltd = d2_actual[d2_actual < 0].sum().item() if (d2_actual < 0).any() else 0.0
-
-        # =====================================================================
-        # UNIFIED HOMEOSTASIS: Apply D1/D2 constraint
-        # =====================================================================
-        # This is the KEY to stability. Instead of many overlapping corrections
-        # (BCM, synaptic scaling, etc.), we use a single mathematical constraint:
-        #
-        # D1 + D2 per action MUST sum to a fixed budget.
-        #
-        # This GUARANTEES:
-        # - Neither pathway can completely dominate
-        # - If D1 grows, D2 must shrink (and vice versa)
-        # - Stable equilibrium is enforced mathematically
-        #
-        # Unlike corrections (which might not work with wrong parameters),
-        # constraints always work because they're mathematical invariants.
-        d1_before_norm = self.d1_weights.mean().item()
-        d2_before_norm = self.d2_weights.mean().item()
-
-        if self.unified_homeostasis is not None:
-            self.d1_weights, self.d2_weights = self.unified_homeostasis.normalize_d1_d2(
-                self.d1_weights, self.d2_weights, per_action=True
-            )
-
-        d1_after_norm = self.d1_weights.mean().item()
-        d2_after_norm = self.d2_weights.mean().item()
-
-        # DEBUG: Print learning per trial (first few and every 50)
-        if hasattr(self, '_debug_trial_count') and (self._debug_trial_count <= 2 or self._debug_trial_count % 50 == 0):
-            action_name = "M" if self.last_action == 0 else "NM"
-            print(f"    [LRN t={self._debug_trial_count}] action={action_name}, DA={da_level:.3f}, "
-                  f"d1_dw={d1_ltp+d1_ltd:.4f}, d2_dw={d2_ltp+d2_ltd:.4f}, "
-                  f"elig_max=(d1:{self.d1_eligibility.abs().max().item():.4f}, d2:{self.d2_eligibility.abs().max().item():.4f})")
-
-        # =====================================================================
-        # BASELINE PRESSURE: Drift D1/D2 towards balance
-        # =====================================================================
-        # Unlike normalization (which preserves ratios), baseline pressure
-        # actively pushes NET (D1-D2) towards the target for each action.
-        # This prevents runaway biases - all actions stay viable options.
-        baseline_applied = self._apply_baseline_pressure()
-
-        # NOTE: Eligibility reset is now EXPLICIT via reset_eligibility()
-        # This allows counterfactual learning to use the same traces before reset.
-        # The caller (e.g., BrainSystem.deliver_reward_with_counterfactual) is
-        # responsible for calling reset_eligibility() when all learning is done.
-
-        return {
-            "dopamine": da_level,
-            "d1_ltp": d1_ltp,
-            "d1_ltd": d1_ltd,
-            "d2_ltp": d2_ltp,
-            "d2_ltd": d2_ltd,
-            "net_change": d1_ltp + d1_ltd + d2_ltp + d2_ltd,
-            "d1_eligibility_max": self.d1_eligibility.abs().max().item(),
-            "d2_eligibility_max": self.d2_eligibility.abs().max().item(),
-            "d1_before_norm": d1_before_norm,
-            "d2_before_norm": d2_before_norm,
-            "d1_after_norm": d1_after_norm,
-            "d2_after_norm": d2_after_norm,
-            "baseline_applied": baseline_applied,
-        }
 
     def deliver_counterfactual_reward(
         self,
@@ -1935,23 +1681,7 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
     ) -> Dict[str, Any]:
         """Apply learning for a counterfactual (imagined) action outcome.
 
-        This implements model-based RL: the brain can simulate "what if I had
-        taken a different action?" and learn from the imagined outcome without
-        actually taking the action.
-
-        Key insight: We use the SAME eligibility traces (which reflect current
-        input-output associations) but apply them to a DIFFERENT action's weights.
-        This is like asking "if I had activated the NOMATCH population instead,
-        would I have gotten reward?"
-
-        Counterfactual learning is scaled down because:
-        1. We're less certain about imagined outcomes than real ones
-        2. We want real experience to dominate over simulation
-        3. The brain uses this for exploration guidance, not primary learning
-
-        NOTE: For counterfactual learning, we compute dopamine locally since
-        the Brain's VTA doesn't handle counterfactuals. This is a local
-        simulation within the striatum's "model" of outcomes.
+        Delegates to LearningManager for model-based "what if" learning.
 
         Args:
             reward: The counterfactual reward (what WOULD have happened)
@@ -1961,137 +1691,31 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         Returns:
             Metrics dict with weight changes
         """
-        cfg = self.striatum_config
-
-        # =====================================================================
-        # COMPUTE COUNTERFACTUAL RPE
-        # =====================================================================
-        # Use proper reward prediction error instead of raw reward.
-        # If we imagined taking action X and it would have been rewarded,
-        # but we expected X to be bad (low value), this is a POSITIVE surprise.
-        # If we expected X to be good and it would have been rewarded, small surprise.
+        # Compute expected value for counterfactual action
         expected_cf = self.get_expected_value(action)
-        raw_rpe = reward - expected_cf
-
-        # Scale down because this is imagined, not real experience.
-        # We don't normalize like Brain does - just use scaled raw RPE.
-        da_level = raw_rpe * counterfactual_scale
-
-        # Clip to reasonable range
-        da_level = max(-2.0, min(2.0, da_level))
-
-        # =====================================================================
-        # PARTIAL VALUE ESTIMATE UPDATE
-        # =====================================================================
-        # Update our expectation for the counterfactual action, but with reduced
-        # learning rate since we didn't actually experience this outcome.
-        # This prevents value estimates from becoming stale for unexplored actions.
+        
+        # Update value estimate for counterfactual action
         if self.value_estimates is not None and 0 <= action < self.n_actions:
-            cf_lr = cfg.rpe_learning_rate * counterfactual_scale
+            cf_lr = self.striatum_config.rpe_learning_rate * counterfactual_scale
             self.value_estimates[action] = (
                 self.value_estimates[action]
                 + cf_lr * (reward - self.value_estimates[action])
             )
-
-        if abs(da_level) < 0.01:
-            return {
-                "dopamine": da_level,
-                "raw_rpe": raw_rpe,
-                "expected_value": expected_cf,
-                "net_change": 0.0,
-                "counterfactual": True,
-                "action": action,
-            }
-
-        # Create action mask for the COUNTERFACTUAL action (not the one we took)
-        action_mask = torch.zeros(self.config.n_output, device=self.device)
-        if self.striatum_config.population_coding:
-            pop_slice = self._get_action_population_indices(action)
-            action_mask[pop_slice] = 1.0
-        else:
-            action_mask[action] = 1.0
-
-        # D1 pathway: DA+ → strengthen GO, DA- → weaken GO
-        d1_da = da_level * cfg.d1_da_sensitivity
-        d1_masked_elig = self.d1_eligibility.abs() * action_mask.unsqueeze(1)
-        d1_dw = d1_masked_elig * d1_da
-
-        old_d1 = self.d1_weights.clone()
-        self.d1_weights = (self.d1_weights + d1_dw).clamp(
-            self.config.w_min, self.config.w_max
+        
+        # Delegate to learning manager
+        return self.learning_manager.apply_counterfactual_learning(
+            reward, action, expected_cf, counterfactual_scale
         )
-        d1_actual = self.d1_weights - old_d1
-        d1_change = d1_actual.sum().item()
-
-        # D2 pathway: INVERTED response (DA+ → weaken NOGO, DA- → strengthen NOGO)
-        d2_da = -da_level * cfg.d2_da_sensitivity
-        d2_masked_elig = self.d2_eligibility.abs() * action_mask.unsqueeze(1)
-        d2_dw = d2_masked_elig * d2_da
-
-        old_d2 = self.d2_weights.clone()
-        self.d2_weights = (self.d2_weights + d2_dw).clamp(
-            self.config.w_min, self.config.w_max
-        )
-        d2_actual = self.d2_weights - old_d2
-        d2_change = d2_actual.sum().item()
-
-        return {
-            "dopamine": da_level,
-            "raw_rpe": raw_rpe,
-            "expected_value": expected_cf,
-            "d1_change": d1_change,
-            "d2_change": d2_change,
-            "net_change": d1_change + d2_change,
-            "counterfactual": True,
-            "action": action,
-        }
 
     def reset_eligibility(self, action_only: bool = True) -> None:
         """Reset eligibility traces after learning is complete.
 
-        With action_only=True (default, Option 4 biologically realistic):
-        - Only reset the CHOSEN action's eligibility
-        - Non-chosen actions keep their eligibility, which decays naturally
-        - This allows exploration to eventually "use" accumulated eligibility
-
-        With action_only=False (full reset):
-        - Reset ALL eligibility traces
-        - Use this for counterfactual learning where all actions learn
+        Delegates to LearningManager for eligibility trace management.
 
         Args:
             action_only: If True, only reset chosen action. If False, reset all.
         """
-        if action_only and self.last_action is not None:
-            # Only reset the chosen action's eligibility
-            if self.striatum_config.population_coding:
-                start = self.last_action * self.neurons_per_action
-                end = start + self.neurons_per_action
-                self.d1_eligibility[start:end].zero_()
-                self.d2_eligibility[start:end].zero_()
-
-                # Reset TD(λ) traces if enabled
-                if self.td_lambda_d1 is not None:
-                    self.td_lambda_d1.traces.traces[start:end].zero_()
-                    self.td_lambda_d2.traces.traces[start:end].zero_()
-            else:
-                self.d1_eligibility[self.last_action].zero_()
-                self.d2_eligibility[self.last_action].zero_()
-
-                # Reset TD(λ) traces if enabled
-                if self.td_lambda_d1 is not None:
-                    self.td_lambda_d1.traces.traces[self.last_action].zero_()
-                    self.td_lambda_d2.traces.traces[self.last_action].zero_()
-            # Input traces are shared, so we do decay them but don't zero
-            # (they'll decay naturally via the eligibility_decay factor)
-        else:
-            # Full reset (original behavior)
-            self.d1_eligibility.zero_()
-            self.d2_eligibility.zero_()
-
-            # Reset TD(λ) traces if enabled
-            if self.td_lambda_d1 is not None:
-                self.td_lambda_d1.traces.reset_state()
-                self.td_lambda_d2.traces.reset_state()
+        self.learning_manager.reset_eligibility(self.last_action, action_only)
 
         # Always reset the spike traces (these are per-timestep, not per-action)
         self.d1_input_trace.zero_()
@@ -2272,101 +1896,21 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         Returns:
             Dictionary with complete region state
         """
-        # 1. LEARNABLE PARAMETERS (weights)
-        weights = {
-            "weights": self.weights.detach().clone(),
-            "d1_weights": self.d1_weights.detach().clone(),
-            "d2_weights": self.d2_weights.detach().clone(),
-        }
-
-        # 2. REGION STATE (dynamic state)
-        # Get neuron state from all populations
-        neuron_state = {}
-        if self.neurons is not None:
-            neuron_state["main"] = self.neurons.get_state()
-        if hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
-            neuron_state["d1"] = self.d1_neurons.get_state()
-        if hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
-            neuron_state["d2"] = self.d2_neurons.get_state()
-
-        region_state = {
-            "recent_spikes": self.recent_spikes.detach().clone(),
-            "last_action": self.last_action,
-            "neuron_state": neuron_state,
-            "base_region_state": {
-                "membrane": self.state.membrane.detach().clone() if self.state.membrane is not None else None,
-                "spikes": self.state.spikes.detach().clone() if self.state.spikes is not None else None,
-                "t": self.state.t,
-            }
-        }
-
-        # 3. LEARNING STATE (eligibility traces, STDP traces, etc.)
-        learning_state = {
-            # Eligibility traces
-            "eligibility_traces": self.eligibility.get().detach().clone(),
-            "d1_eligibility": self.d1_eligibility.detach().clone(),
-            "d2_eligibility": self.d2_eligibility.detach().clone(),
-
-            # D1/D2 spike traces
-            "d1_input_trace": self.d1_input_trace.detach().clone(),
-            "d2_input_trace": self.d2_input_trace.detach().clone(),
-            "d1_output_trace": self.d1_output_trace.detach().clone(),
-            "d2_output_trace": self.d2_output_trace.detach().clone(),
-
-            # Trial accumulators
-            "d1_votes_accumulated": self._d1_votes_accumulated.detach().clone(),
-            "d2_votes_accumulated": self._d2_votes_accumulated.detach().clone(),
-
-            # Homeostatic state
-            "activity_ema": self._activity_ema,
-            "trial_spike_count": self._trial_spike_count,
-            "trial_timesteps": self._trial_timesteps,
-            "homeostatic_scaling_applied": self._homeostatic_scaling_applied,
-
-            # Unified homeostasis state (if enabled)
-            "unified_homeostasis_state": self.unified_homeostasis.get_state() if self.unified_homeostasis is not None else None,
-        }
-
-        # 4. EXPLORATION STATE
-        exploration_state = {
-            "exploring": self.exploring,
-            "last_uncertainty": self._last_uncertainty,
-            "last_exploration_prob": self._last_exploration_prob,
-            "action_counts": self._action_counts.detach().clone(),
-            "total_trials": self._total_trials,
-            "recent_rewards": list(self._recent_rewards),
-            "recent_accuracy": self._recent_accuracy,
-        }
-
-        # 5. VALUE ESTIMATION STATE (if RPE enabled)
-        rpe_state = {}
-        if self.value_estimates is not None:
-            rpe_state = {
-                "value_estimates": self.value_estimates.detach().clone(),
-                "last_rpe": self._last_rpe,
-                "last_expected": self._last_expected,
-            }
-
-        # 6. NEUROMODULATOR STATE (from NeuromodulatorMixin)
-        neuromodulator_state = self.get_neuromodulator_state()
-
-        # Add tonic dopamine (striatum-specific)
-        neuromodulator_state["tonic_dopamine"] = self.tonic_dopamine
-
-        # 7. OSCILLATOR STATE (striatum doesn't have oscillators, but include for consistency)
-        oscillator_state = {}
-
-        return {
-            "weights": weights,
-            "region_state": region_state,
-            "learning_state": learning_state,
-            "exploration_state": exploration_state,
-            "rpe_state": rpe_state,
-            "neuromodulator_state": neuromodulator_state,
-            "oscillator_state": oscillator_state,
+        # Delegate to checkpoint manager
+        checkpoint_state = self.checkpoint_manager.get_full_state()
+        
+        # Add additional metadata for backward compatibility
+        checkpoint_state.update({
             "config": self.striatum_config,
-            "n_actions": self.n_actions,  # Store explicitly for validation
-        }
+            "n_actions": self.n_actions,
+            "neuromodulator_state": self.get_neuromodulator_state(),
+            "oscillator_state": {},  # Empty for striatum
+        })
+        
+        # Add tonic dopamine to neuromodulator state
+        checkpoint_state["neuromodulator_state"]["tonic_dopamine"] = self.tonic_dopamine
+        
+        return checkpoint_state
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Restore complete state from checkpoint.
@@ -2377,112 +1921,10 @@ class Striatum(DiagnosticsMixin, ActionSelectionMixin, BrainRegion):
         Raises:
             ValueError: If state is incompatible with current configuration
         """
-        # Validate configuration compatibility
-        saved_config = state["config"]
-
-        # Always validate input dimension
-        if saved_config.n_input != self.config.n_input:
-            raise ValueError(
-                f"Input dimension mismatch: saved={saved_config.n_input}, "
-                f"current={self.config.n_input}"
-            )
-
-        # Validate n_actions (number of actions, not total neurons)
-        saved_n_actions = state.get("n_actions", saved_config.n_output)  # Fallback for old checkpoints
-        if saved_n_actions != self.n_actions:
-            raise ValueError(
-                f"Action count mismatch: saved={saved_n_actions}, "
-                f"current={self.n_actions}"
-            )
-
-        # Validate total neuron count (n_actions × neurons_per_action)
-        if saved_config.n_output != self.config.n_output:
-            raise ValueError(
-                f"Output dimension mismatch: saved={saved_config.n_output}, "
-                f"current={self.config.n_output}. "
-                f"This usually means population coding settings differ "
-                f"(saved: {saved_n_actions} actions, current: {self.n_actions} actions)"
-            )
-
-        # 1. RESTORE WEIGHTS
-        weights = state["weights"]
-        self.weights = weights["weights"].to(self.device)
-        self.d1_weights = weights["d1_weights"].to(self.device)
-        self.d2_weights = weights["d2_weights"].to(self.device)
-
-        # 2. RESTORE REGION STATE
-        region_state = state["region_state"]
-        self.recent_spikes = region_state["recent_spikes"].to(self.device)
-        self.last_action = region_state["last_action"]
-
-        # Restore neuron state for all populations
-        neuron_state = region_state["neuron_state"]
-        if "main" in neuron_state and self.neurons is not None:
-            self.neurons.load_state(neuron_state["main"])
-        if "d1" in neuron_state and hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
-            self.d1_neurons.load_state(neuron_state["d1"])
-        if "d2" in neuron_state and hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
-            self.d2_neurons.load_state(neuron_state["d2"])
-
-        # Restore base RegionState
-        base_state = region_state["base_region_state"]
-        if base_state["membrane"] is not None:
-            self.state.membrane = base_state["membrane"].to(self.device)
-        if base_state["spikes"] is not None:
-            self.state.spikes = base_state["spikes"].to(self.device)
-        self.state.t = base_state["t"]
-
-        # 3. RESTORE LEARNING STATE
-        learning_state = state["learning_state"]
-
-        # Eligibility traces
-        self.eligibility.traces = learning_state["eligibility_traces"].to(self.device)
-        self.d1_eligibility = learning_state["d1_eligibility"].to(self.device)
-        self.d2_eligibility = learning_state["d2_eligibility"].to(self.device)
-
-        # D1/D2 spike traces
-        self.d1_input_trace = learning_state["d1_input_trace"].to(self.device)
-        self.d2_input_trace = learning_state["d2_input_trace"].to(self.device)
-        self.d1_output_trace = learning_state["d1_output_trace"].to(self.device)
-        self.d2_output_trace = learning_state["d2_output_trace"].to(self.device)
-
-        # Trial accumulators
-        self._d1_votes_accumulated = learning_state["d1_votes_accumulated"].to(self.device)
-        self._d2_votes_accumulated = learning_state["d2_votes_accumulated"].to(self.device)
-
-        # Homeostatic state
-        self._activity_ema = learning_state["activity_ema"]
-        self._trial_spike_count = learning_state["trial_spike_count"]
-        self._trial_timesteps = learning_state["trial_timesteps"]
-        self._homeostatic_scaling_applied = learning_state["homeostatic_scaling_applied"]
-
-        # Unified homeostasis
-        if learning_state["unified_homeostasis_state"] is not None and self.unified_homeostasis is not None:
-            self.unified_homeostasis.load_state(learning_state["unified_homeostasis_state"])
-
-        # 4. RESTORE EXPLORATION STATE
-        exploration_state = state["exploration_state"]
-        self.exploring = exploration_state["exploring"]
-        self._last_uncertainty = exploration_state["last_uncertainty"]
-        self._last_exploration_prob = exploration_state["last_exploration_prob"]
-        self._action_counts = exploration_state["action_counts"].to(self.device)
-        self._total_trials = exploration_state["total_trials"]
-        self._recent_rewards = list(exploration_state["recent_rewards"])
-        self._recent_accuracy = exploration_state["recent_accuracy"]
-
-        # 5. RESTORE RPE STATE
-        rpe_state = state["rpe_state"]
-        if rpe_state and self.value_estimates is not None:
-            self.value_estimates = rpe_state["value_estimates"].to(self.device)
-            self._last_rpe = rpe_state["last_rpe"]
-            self._last_expected = rpe_state["last_expected"]
-
-        # 6. RESTORE NEUROMODULATOR STATE
-        neuromodulator_state = state["neuromodulator_state"]
-        self.state.dopamine = neuromodulator_state["dopamine"]
-        self.state.acetylcholine = neuromodulator_state["acetylcholine"]
-        self.state.norepinephrine = neuromodulator_state["norepinephrine"]
-        self.tonic_dopamine = neuromodulator_state["tonic_dopamine"]
-
-        # 7. OSCILLATOR STATE (none for striatum, but included for consistency)
-        # oscillator_state = state["oscillator_state"]  # Empty for striatum
+        # Delegate to checkpoint manager
+        self.checkpoint_manager.load_full_state(state)
+        
+        # Restore tonic dopamine if present in neuromodulator state
+        if "neuromodulator_state" in state:
+            if "tonic_dopamine" in state["neuromodulator_state"]:
+                self.tonic_dopamine = state["neuromodulator_state"]["tonic_dopamine"]

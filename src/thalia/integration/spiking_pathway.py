@@ -33,11 +33,22 @@ import torch.nn as nn
 import numpy as np
 
 from thalia.config.base import NeuralComponentConfig
-from thalia.core.pathway_protocol import BaseNeuralPathway
+from thalia.core.neuron_constants import (
+    TAU_MEM_STANDARD,
+    TAU_SYN_EXCITATORY,
+    V_THRESHOLD_STANDARD,
+    V_RESET_STANDARD,
+    V_REST_STANDARD,
+    TAU_REF_STANDARD,
+)
+from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.regions.base import NeuralComponent, LearningRule
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.utils import clamp_weights
 from thalia.core.weight_init import WeightInitializer
+from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.learning.bcm import BCMRule, BCMConfig
+from thalia.core.component_registry import register_pathway
 
 
 class TemporalCoding(Enum):
@@ -125,13 +136,18 @@ class SpikingPathwayConfig(NeuralComponentConfig):
         else:
             self.target_size = self.n_neurons
 
+        # Synchronize learning_rate with stdp_lr for compatibility with NeuralComponent
+        # If stdp_lr was explicitly set, it takes precedence
+        if not hasattr(self, 'learning_rate'):
+            self.learning_rate = self.stdp_lr
+
     # Neuron model
-    tau_mem_ms: float = 20.0
-    tau_syn_ms: float = 5.0
-    v_thresh: float = 1.0
-    v_reset: float = 0.0
-    v_rest: float = 0.0
-    refractory_ms: float = 2.0
+    tau_mem_ms: float = TAU_MEM_STANDARD
+    tau_syn_ms: float = TAU_SYN_EXCITATORY
+    v_thresh: float = V_THRESHOLD_STANDARD
+    v_reset: float = V_RESET_STANDARD
+    v_rest: float = V_REST_STANDARD
+    refractory_ms: float = TAU_REF_STANDARD
 
     # STDP
     learning_rule: SpikingLearningRule = SpikingLearningRule.STDP
@@ -140,6 +156,7 @@ class SpikingPathwayConfig(NeuralComponentConfig):
     tau_minus_ms: float = 20.0
     a_plus: float = 1.0
     a_minus: float = 1.0
+    max_trace: float = 10.0  # Maximum trace value to prevent runaway accumulation
 
     # Weights
     w_min: float = 0.0
@@ -174,11 +191,17 @@ class SpikingPathwayConfig(NeuralComponentConfig):
     bcm_config: Optional[BCMConfig] = None  # Custom BCM parameters
 
 
-class SpikingPathway(BaseNeuralPathway):
+@register_pathway(
+    "spiking",
+    description="Fully spiking inter-region pathway with LIF neurons, STDP learning, and temporal coding",
+    version="2.0",
+    author="Thalia Project"
+)
+class SpikingPathway(NeuralComponent):
     """
     Fully spiking inter-region pathway with temporal dynamics.
 
-    Inherits from BaseNeuralPathway, implementing the NeuralPathway protocol
+    Inherits from NeuralComponent, implementing the NeuralPathway protocol
     interface with a standardized API for inter-region connections.
 
     Unlike rate-based pathways, this implements actual spiking neurons with:
@@ -218,7 +241,7 @@ class SpikingPathway(BaseNeuralPathway):
     """
 
     def __init__(self, config: SpikingPathwayConfig):
-        super().__init__()
+        super().__init__(config)
         self.config = config
 
         # =====================================================================
@@ -252,40 +275,41 @@ class SpikingPathway(BaseNeuralPathway):
             self.connectivity_mask = None
 
         # =====================================================================
-        # NEURON STATE (for target neurons in this pathway)
+        # NEURON STATE (handled by ConductanceLIF)
         # =====================================================================
-        # Membrane potential
-        self.register_buffer(
-            "membrane",
-            torch.zeros(config.target_size, device=config.device) + config.v_rest,
-        )
+        self.neurons = self._create_neurons()
 
-        # Synaptic current (filtered input)
+        # Synaptic current (filtered input - still needed for temporal filtering)
         self.register_buffer(
             "synaptic_current",
             torch.zeros(config.target_size, device=config.device),
         )
 
-        # Refractory counter
-        self.register_buffer(
-            "refractory",
-            torch.zeros(config.target_size, device=config.device),
+        # =====================================================================
+        # ELIGIBILITY TRACE MANAGER for STDP
+        # =====================================================================
+        # Consolidated trace management using EligibilityTraceManager
+        stdp_config = STDPConfig(
+            stdp_tau_ms=config.tau_plus_ms,  # Use tau_plus for trace decay
+            eligibility_tau_ms=1000.0,        # Long eligibility trace (not used in pathways)
+            stdp_lr=config.stdp_lr,
+            a_plus=config.a_plus,
+            a_minus=config.a_minus,
+            w_min=config.w_min,
+            w_max=config.w_max,
+            heterosynaptic_ratio=getattr(config, 'heterosynaptic_ratio', 0.3),
+        )
+        self._trace_manager = EligibilityTraceManager(
+            n_input=config.source_size,
+            n_output=config.target_size,
+            config=stdp_config,
+            device=config.device,
         )
 
         # =====================================================================
-        # SPIKE TRACES for STDP
+        # BACKWARD COMPATIBILITY PROPERTIES
         # =====================================================================
-        # Pre-synaptic traces (one per source neuron)
-        self.register_buffer(
-            "pre_trace",
-            torch.zeros(config.source_size, device=config.device),
-        )
-
-        # Post-synaptic traces (one per target neuron)
-        self.register_buffer(
-            "post_trace",
-            torch.zeros(config.target_size, device=config.device),
-        )
+        # Provide access to traces for external code
 
         # =====================================================================
         # DELAY BUFFER for axonal delays
@@ -306,6 +330,8 @@ class SpikingPathway(BaseNeuralPathway):
         # LEARNING STATE
         # =====================================================================
         self.dopamine_level = 0.0
+        self.norepinephrine_level = 0.0
+        self.acetylcholine_level = 0.0
         self.replay_active = False
         self.total_ltp = 0.0
         self.total_ltd = 0.0
@@ -347,6 +373,43 @@ class SpikingPathway(BaseNeuralPathway):
         else:
             self.bcm = None
 
+    @property
+    def pre_trace(self) -> torch.Tensor:
+        """Pre-synaptic trace (backward compatibility)."""
+        return self._trace_manager.input_trace
+
+    @property
+    def post_trace(self) -> torch.Tensor:
+        """Post-synaptic trace (backward compatibility)."""
+        return self._trace_manager.output_trace
+
+    def _create_neurons(self) -> ConductanceLIF:
+        """Create neuron model for pathway.
+
+        Returns ConductanceLIF with parameters matching pathway config.
+        Pathways use the same neuron models as regions for consistency.
+        """
+        cfg = self.config
+        neuron_config = ConductanceLIFConfig(
+            tau_mem=cfg.tau_mem_ms,
+            v_rest=cfg.v_rest,
+            v_reset=cfg.v_reset,
+            v_threshold=cfg.v_thresh,
+            tau_ref=cfg.refractory_ms,
+            dt_ms=cfg.dt_ms,
+            device=cfg.device,
+        )
+        neurons = ConductanceLIF(n_neurons=cfg.target_size, config=neuron_config)
+        return neurons
+
+    def _get_learning_rule(self) -> LearningRule:
+        """Return the primary learning rule for this pathway.
+
+        SpikingPathway uses STDP (spike-timing dependent plasticity)
+        as its primary learning mechanism.
+        """
+        return LearningRule.STDP
+
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize weights with optional topographic structure."""
         cfg = self.config
@@ -375,14 +438,16 @@ class SpikingPathway(BaseNeuralPathway):
 
     def forward(
         self,
-        source_spikes: torch.Tensor,
+        input_spikes: torch.Tensor,
         time_ms: float = 0.0,
+        **kwargs,
     ) -> torch.Tensor:
         """Process source spikes and generate target spikes.
 
         Args:
-            source_spikes: Binary spike tensor from source (source_size,)
+            input_spikes: Binary spike tensor from source (source_size,)
             time_ms: Current time in ms (for phase coding)
+            **kwargs: Additional arguments (ignored)
 
         Returns:
             Binary spike tensor for target (target_size,)
@@ -398,7 +463,7 @@ class SpikingPathway(BaseNeuralPathway):
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
         # Ensure 1D
-        source_spikes = source_spikes.squeeze()
+        source_spikes = input_spikes.squeeze()
         assert source_spikes.shape[-1] == cfg.source_size, (
             f"SpikingPathway.forward: source_spikes has shape {source_spikes.shape} "
             f"but source_size={cfg.source_size}. Check pathway input dimensions."
@@ -408,9 +473,12 @@ class SpikingPathway(BaseNeuralPathway):
         # 1. UPDATE OSCILLATION PHASE (for phase coding)
         # =====================================================================
         if cfg.temporal_coding == TemporalCoding.PHASE:
-            self.oscillation_phase = (
-                2 * np.pi * cfg.oscillation_freq_hz * time_ms / 1000.0
-            ) % (2 * np.pi)
+            # Use brain-wide gamma oscillator (no fallback - must be provided by Brain)
+            if hasattr(self, '_oscillator_phases') and 'gamma' in self._oscillator_phases:
+                self.oscillation_phase = self._oscillator_phases['gamma']
+            else:
+                # No fallback - pathways must receive brain oscillators
+                self.oscillation_phase = 0.0
 
         # =====================================================================
         # 2. HANDLE AXONAL DELAYS
@@ -452,51 +520,28 @@ class SpikingPathway(BaseNeuralPathway):
         self.synaptic_current = self.synaptic_current * syn_decay + synaptic_input
 
         # =====================================================================
-        # 5. UPDATE MEMBRANE POTENTIAL
+        # 5. GENERATE SPIKES using ConductanceLIF
         # =====================================================================
-        # Decay membrane toward rest
-        mem_decay = np.exp(-dt / cfg.tau_mem_ms)
-        self.membrane = (
-            cfg.v_rest +
-            (self.membrane - cfg.v_rest) * mem_decay +
-            self.synaptic_current * (1 - mem_decay)
-        )
-
-        # =====================================================================
-        # 6. GENERATE SPIKES
-        # =====================================================================
-        # Decrease refractory counters
-        self.refractory = (self.refractory - dt).clamp(min=0)
-
-        # Check for threshold crossing (only if not refractory)
-        can_spike = self.refractory <= 0
-
-        # Apply phase modulation for phase coding
+        # Apply phase modulation for phase coding by temporarily adjusting threshold
         if cfg.temporal_coding == TemporalCoding.PHASE:
             # Threshold is lower at preferred phase (phase=0)
             phase_modulation = 1.0 - cfg.phase_precision * np.cos(self.oscillation_phase)
-            effective_thresh = cfg.v_thresh * phase_modulation
+            original_thresh = self.neurons.config.v_threshold
+            self.neurons.config.v_threshold = original_thresh * phase_modulation
+            target_spikes, _ = self.neurons(self.synaptic_current)
+            self.neurons.config.v_threshold = original_thresh  # Restore
         else:
-            effective_thresh = cfg.v_thresh
-
-        # Generate spikes
-        target_spikes = ((self.membrane >= effective_thresh) & can_spike).float()
-
-        # Reset spiking neurons
-        spike_mask = target_spikes > 0
-        self.membrane[spike_mask] = cfg.v_reset
-        self.refractory[spike_mask] = cfg.refractory_ms
+            target_spikes, _ = self.neurons(self.synaptic_current)
 
         # =====================================================================
         # 7. UPDATE STDP TRACES
         # =====================================================================
-        # Pre-synaptic trace
-        pre_decay = np.exp(-dt / cfg.tau_plus_ms)
-        self.pre_trace = self.pre_trace * pre_decay + source_spikes
-
-        # Post-synaptic trace
-        post_decay = np.exp(-dt / cfg.tau_minus_ms)
-        self.post_trace = self.post_trace * post_decay + target_spikes
+        # Use trace manager for consolidated trace updates
+        self._trace_manager.update_traces(
+            input_spikes=source_spikes,
+            output_spikes=target_spikes,
+            dt_ms=dt,
+        )
 
         # =====================================================================
         # 8. APPLY STDP LEARNING
@@ -529,7 +574,6 @@ class SpikingPathway(BaseNeuralPathway):
         Note:
             Timestep (dt_ms) obtained from self.config
         """
-        dt = self.config.dt_ms
         cfg = self.config
 
         # =====================================================================
@@ -546,61 +590,67 @@ class SpikingPathway(BaseNeuralPathway):
             # Update the sliding threshold based on recent activity
             self.bcm.update_threshold(post_activity)
 
-        # LTP: post spike with pre trace → strengthen
-        # For each post-synaptic spike, potentiate synapses from neurons with recent pre-spikes
-        if post_spikes.sum() > 0:
-            ltp = cfg.a_plus * torch.outer(post_spikes, self.pre_trace)
+        # Use trace manager to compute raw LTP/LTD (without combining or soft bounds)
+        ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(
+            input_spikes=pre_spikes,
+            output_spikes=post_spikes,
+        )
 
-            # Modulate by dopamine for dopamine-STDP
-            if cfg.learning_rule == SpikingLearningRule.DOPAMINE_STDP:
-                ltp = ltp * (1 + self.dopamine_level)
+        # Apply neuromodulator and phase modulations to LTP
+        # Modulate by dopamine for dopamine-STDP
+        if cfg.learning_rule == SpikingLearningRule.DOPAMINE_STDP:
+            ltp = ltp * (1 + self.dopamine_level)
 
-            # Modulate by phase for phase-STDP
-            if cfg.learning_rule == SpikingLearningRule.PHASE_STDP:
-                # LTP is stronger at preferred phase
-                phase_mod = 0.5 + 0.5 * np.cos(self.oscillation_phase)
-                ltp = ltp * phase_mod
+        # Modulate by acetylcholine (high ACh = favor LTP/encoding)
+        # Biologically: ACh from nucleus basalis enhances encoding
+        ach_modulation = 0.5 + 0.5 * self.acetylcholine_level  # Range: [0.5, 1.5]
+        ltp = ltp * ach_modulation
 
-            # Apply BCM modulation
-            if isinstance(bcm_modulation, torch.Tensor):
-                ltp = ltp * bcm_modulation.unsqueeze(1)
-            else:
-                ltp = ltp * bcm_modulation
+        # Modulate by norepinephrine (inverted-U: moderate NE optimal)
+        # Biologically: NE from locus coeruleus affects learning rate
+        # Too low = weak learning, optimal (~0.5) = strong, too high = noisy
+        ne_modulation = 1.0 - 0.5 * abs(self.norepinephrine_level - 0.5)  # Peak at 0.5
+        ltp = ltp * ne_modulation
 
+        # Modulate by phase for phase-STDP
+        if cfg.learning_rule == SpikingLearningRule.PHASE_STDP:
+            # LTP is stronger at preferred phase
+            phase_mod = 0.5 + 0.5 * np.cos(self.oscillation_phase)
+            ltp = ltp * phase_mod
+
+        # Apply BCM modulation
+        if isinstance(bcm_modulation, torch.Tensor):
+            ltp = ltp * bcm_modulation.unsqueeze(1)
+        else:
+            ltp = ltp * bcm_modulation
+
+        # Apply neuromodulator and phase modulations to LTD
+        if cfg.learning_rule == SpikingLearningRule.DOPAMINE_STDP:
+            # LTD is reduced by dopamine (protects good synapses)
+            ltd = ltd * (1 - 0.5 * max(0, self.dopamine_level))
+
+        # Modulate by acetylcholine (high ACh = reduce LTD/favor encoding)
+        # Biologically: ACh shifts LTP/LTD balance toward LTP
+        ach_ltd_suppression = 1.0 - 0.3 * self.acetylcholine_level  # Range: [0.7, 1.0]
+        ltd = ltd * ach_ltd_suppression
+
+        # Norepinephrine also affects LTD with inverted-U
+        ne_modulation = 1.0 - 0.5 * abs(self.norepinephrine_level - 0.5)
+        ltd = ltd * ne_modulation
+
+        if cfg.learning_rule == SpikingLearningRule.PHASE_STDP:
+            # LTD is stronger at anti-phase
+            phase_mod = 0.5 - 0.5 * np.cos(self.oscillation_phase)
+            ltd = ltd * phase_mod
+
+        # Track LTP/LTD for diagnostics (only if tensors, not scalar 0)
+        if isinstance(ltp, torch.Tensor):
             self.total_ltp += ltp.sum().item()
-        else:
-            ltp = 0
-
-        # LTD: pre spike with post trace → weaken
-        if pre_spikes.sum() > 0:
-            ltd = cfg.a_minus * torch.outer(self.post_trace, pre_spikes)
-
-            if cfg.learning_rule == SpikingLearningRule.DOPAMINE_STDP:
-                # LTD is reduced by dopamine (protects good synapses)
-                ltd = ltd * (1 - 0.5 * max(0, self.dopamine_level))
-
-            if cfg.learning_rule == SpikingLearningRule.PHASE_STDP:
-                # LTD is stronger at anti-phase
-                phase_mod = 0.5 - 0.5 * np.cos(self.oscillation_phase)
-                ltd = ltd * phase_mod
-
+        if isinstance(ltd, torch.Tensor):
             self.total_ltd += ltd.sum().item()
-        else:
-            ltd = 0
 
         # Compute weight change
-        dw = cfg.stdp_lr * (ltp - ltd)
-
-        # Apply soft bounds
-        if cfg.soft_bounds and isinstance(dw, torch.Tensor):
-            w_norm = (self.weights.data - cfg.w_min) / (cfg.w_max - cfg.w_min)
-            ltp_factor = 1.0 - w_norm
-            ltd_factor = w_norm
-            dw_pos = dw.clamp(min=0) * ltp_factor
-            dw_neg = dw.clamp(max=0) * ltd_factor
-            dw = dw_pos + dw_neg
-
-        # Apply connectivity mask
+        dw = cfg.stdp_lr * (ltp - ltd)        # Apply connectivity mask
         if self.connectivity_mask is not None and isinstance(dw, torch.Tensor):
             dw = dw * self.connectivity_mask
 
@@ -615,7 +665,6 @@ class SpikingPathway(BaseNeuralPathway):
         Note:
             Timestep (dt_ms) obtained from self.config
         """
-        dt = self.config.dt_ms
         cfg = self.config
 
         # Compute scaling factor per neuron
@@ -631,13 +680,9 @@ class SpikingPathway(BaseNeuralPathway):
 
     def reset_state(self) -> None:
         """Reset all state (call between trials)."""
-        cfg = self.config
-
-        self.membrane.fill_(cfg.v_rest)
+        self.neurons.reset_state()
         self.synaptic_current.zero_()
-        self.refractory.zero_()
-        self.pre_trace.zero_()
-        self.post_trace.zero_()
+        self._trace_manager.reset_traces()
         self.delay_buffer.zero_()
         self.delay_buffer_idx = 0
         self.oscillation_phase = 0.0
@@ -716,13 +761,69 @@ class SpikingPathway(BaseNeuralPathway):
 
         return self.get_learning_metrics()
 
-    def set_dopamine(self, level: float) -> None:
-        """Set dopamine level for modulated learning."""
-        self.dopamine_level = level
+    def set_neuromodulators(self, dopamine: float, norepinephrine: float, acetylcholine: float) -> None:
+        """Set all neuromodulator levels for modulated learning.
+
+        This consolidated method sets all three neuromodulators at once,
+        which is more efficient than three separate calls.
+
+        Args:
+            dopamine: DA level - modulates STDP learning rate, eligibility traces, reward-gating
+            norepinephrine: NE level - modulates neural gain, learning rate (inverted-U)
+            acetylcholine: ACh level - modulates LTP/LTD balance, encoding vs retrieval
+
+        Biological effects:
+        - Dopamine: Higher DA = stronger plasticity, reward-gated learning
+        - Norepinephrine: Inverted-U (moderate NE optimal), affects gain and SNR
+        - Acetylcholine: High ACh = favor LTP/encoding, low ACh = favor retrieval
+        """
+        self.dopamine_level = dopamine
+        self.norepinephrine_level = norepinephrine
+        self.acetylcholine_level = acetylcholine
 
     def set_replay_mode(self, active: bool) -> None:
         """Enable/disable replay mode for replay-gated STDP."""
         self.replay_active = active
+
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Optional[Dict[str, float]] = None,
+        theta_slot: int = 0,
+        coupled_amplitudes: Optional[Dict[str, float]] = None,
+    ) -> None:
+        """Receive oscillator phases from brain broadcast.
+
+        Pathways use brain-wide oscillators for synchronized processing:
+        - **Phase coding**: Uses gamma oscillator for temporal coding
+        - **Attention modulation**: Beta/alpha coupling affects gain
+        - **Replay gating**: Ripple oscillator triggers memory consolidation
+        - **State-dependent plasticity**: Different learning in different brain states
+
+        All pathways are synchronized to the same brain-wide rhythms for
+        coordinated inter-region communication and state-dependent processing.
+
+        Args:
+            phases: Oscillator phases in radians {'theta': ..., 'gamma': ..., 'ripple': ..., etc}
+            signals: Oscillator signal values {'theta': ..., 'gamma': ..., etc}
+            theta_slot: Current theta slot [0, n_slots-1] for sequence encoding
+            coupled_amplitudes: Effective amplitudes per oscillator (pre-computed by coupling)
+
+        Example:
+            # Pathways automatically use brain oscillators:
+            gamma_phase = self._oscillator_phases['gamma']  # For phase coding
+            beta_amp = self._coupled_amplitudes['beta']     # For attention gain
+            ripple_phase = self._oscillator_phases['ripple']  # For replay
+
+        Note:
+            Called automatically by Brain before each forward() call.
+            Pathways MUST receive oscillators from Brain - no local fallbacks.
+        """
+        # Store for use by all pathways (required for synchronized processing)
+        self._oscillator_phases = phases
+        self._oscillator_signals = signals or {}
+        self._oscillator_theta_slot = theta_slot
+        self._coupled_amplitudes = coupled_amplitudes or {}
 
     def get_learning_metrics(self) -> Dict[str, float]:
         """Get learning metrics since last reset."""
@@ -747,8 +848,8 @@ class SpikingPathway(BaseNeuralPathway):
             "weight_std": self.weights.data.std().item(),
             "weight_min": self.weights.data.min().item(),
             "weight_max": self.weights.data.max().item(),
-            "membrane_mean": self.membrane.mean().item(),
-            "membrane_std": self.membrane.std().item(),
+            "membrane_mean": self.neurons.membrane.mean().item(),
+            "membrane_std": self.neurons.membrane.std().item(),
             "firing_rate_mean": self.firing_rate_estimate.mean().item(),
             "pre_trace_norm": self.pre_trace.norm().item(),
             "post_trace_norm": self.post_trace.norm().item(),
@@ -843,26 +944,40 @@ class SpikingPathway(BaseNeuralPathway):
             expanded_mask = torch.cat([self.connectivity_mask, new_mask], dim=0)
             self.register_buffer("connectivity_mask", expanded_mask)
 
-        # 4. Expand all target-side state tensors
-        # Membrane potential
-        new_membrane = torch.zeros(n_new, device=device) + cfg.v_rest
-        expanded_membrane = torch.cat([self.membrane, new_membrane], dim=0)
-        self.register_buffer("membrane", expanded_membrane)
+        # 4. Expand neuron object (preserve old state)
+        old_neuron_state = self.neurons.get_state()
+
+        neuron_config = ConductanceLIFConfig(
+            tau_mem=cfg.tau_mem_ms,
+            v_rest=cfg.v_rest,
+            v_reset=cfg.v_reset,
+            v_threshold=cfg.v_thresh,
+            tau_ref=cfg.refractory_ms,
+            dt_ms=cfg.dt_ms,
+            device=device,
+        )
+        self.neurons = ConductanceLIF(n_neurons=new_target_size, config=neuron_config)
+
+        # Restore old state + initialize new neurons to rest
+        self.neurons.reset_state()  # Initialize all to rest
+        if old_neuron_state.get("membrane") is not None:
+            self.neurons.membrane[:old_target_size] = old_neuron_state["membrane"].to(device)
+        if old_neuron_state.get("refractory") is not None:
+            self.neurons.refractory[:old_target_size] = old_neuron_state["refractory"].to(device)
+        if old_neuron_state.get("g_E") is not None:
+            self.neurons.g_E[:old_target_size] = old_neuron_state["g_E"].to(device)
+        if old_neuron_state.get("g_I") is not None:
+            self.neurons.g_I[:old_target_size] = old_neuron_state["g_I"].to(device)
+        if old_neuron_state.get("g_adapt") is not None:
+            self.neurons.g_adapt[:old_target_size] = old_neuron_state["g_adapt"].to(device)
 
         # Synaptic current
         new_current = torch.zeros(n_new, device=device)
         expanded_current = torch.cat([self.synaptic_current, new_current], dim=0)
         self.register_buffer("synaptic_current", expanded_current)
 
-        # Refractory counter
-        new_refractory = torch.zeros(n_new, device=device)
-        expanded_refractory = torch.cat([self.refractory, new_refractory], dim=0)
-        self.register_buffer("refractory", expanded_refractory)
-
-        # Post-synaptic trace (target-side)
-        new_post_trace = torch.zeros(n_new, device=device)
-        expanded_post_trace = torch.cat([self.post_trace, new_post_trace], dim=0)
-        self.register_buffer("post_trace", expanded_post_trace)
+        # Grow trace manager to match new target size
+        self._trace_manager = self._trace_manager.add_neurons(n_new)
 
         # Firing rate estimate
         new_firing_rate = torch.zeros(n_new, device=device) + cfg.target_rate
@@ -910,9 +1025,8 @@ class SpikingPathway(BaseNeuralPathway):
         state = {
             "weights": self.weights.data.clone(),
             "neuron_state": {
-                "membrane": self.membrane.clone(),
+                "neurons": self.neurons.get_state(),
                 "synaptic_current": self.synaptic_current.clone(),
-                "refractory": self.refractory.clone(),
             },
             "stdp_traces": {
                 "pre_trace": self.pre_trace.clone(),
@@ -963,9 +1077,8 @@ class SpikingPathway(BaseNeuralPathway):
 
         # Restore neuron state
         neuron_state = state["neuron_state"]
-        self.membrane.copy_(neuron_state["membrane"].to(device))
+        self.neurons.load_state(neuron_state["neurons"])
         self.synaptic_current.copy_(neuron_state["synaptic_current"].to(device))
-        self.refractory.copy_(neuron_state["refractory"].to(device))
 
         # Restore STDP traces
         stdp_traces = state["stdp_traces"]

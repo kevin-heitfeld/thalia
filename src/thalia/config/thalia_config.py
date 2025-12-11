@@ -22,7 +22,6 @@ from pathlib import Path
 from .global_config import GlobalConfig
 from .brain_config import BrainConfig, RegionSizes
 from .language_config import LanguageConfig
-from .training_config import TrainingConfig
 from .robustness_config import RobustnessConfig
 
 
@@ -215,7 +214,6 @@ class ThaliaConfig:
     # Module-specific configurations
     brain: BrainConfig = field(default_factory=BrainConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
-    training: TrainingConfig = field(default_factory=TrainingConfig)
     robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
 
     def __post_init__(self):
@@ -424,5 +422,4 @@ class ThaliaConfig:
                 delay_timesteps=3,
                 test_timesteps=5,
             ),
-            training=TrainingConfig(n_epochs=1),
         )

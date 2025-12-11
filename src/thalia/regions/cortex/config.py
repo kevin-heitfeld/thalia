@@ -22,16 +22,16 @@ from thalia.config.robustness_config import RobustnessConfig
 
 def calculate_layer_sizes(n_output: int, l4_ratio: float, l23_ratio: float, l5_ratio: float) -> tuple[int, int, int]:
     """Calculate layer sizes from output size and ratios.
-    
+
     Args:
         n_output: Desired output size (typically n_output from config)
         l4_ratio: L4 size as ratio of n_output (typically 1.0)
         l23_ratio: L2/3 size as ratio of n_output (typically 1.5)
         l5_ratio: L5 size as ratio of n_output (typically 1.0)
-        
+
     Returns:
         Tuple of (l4_size, l23_size, l5_size)
-        
+
     Note:
         This is the canonical calculation used throughout the codebase.
         All layer size computations should use this function to ensure consistency.
@@ -119,25 +119,14 @@ class LayeredCortexConfig(RegionConfig):
     # =========================================================================
     # L2/3 recurrent connections show SHORT-TERM DEPRESSION, preventing
     # frozen attractors. Without STD, the same neurons fire every timestep.
-    stp_l23_recurrent_enabled: bool = True
+    # Always enabled (critical for pattern transitions).
     # DEPRESSING_FAST: High U (0.8), fast depression, quick recovery
     # This allows pattern transitions rather than frozen attractors.
 
     # =========================================================================
-    # HETEROSYNAPTIC PLASTICITY
+    # HETEROSYNAPTIC PLASTICITY & SYNAPTIC SCALING
     # =========================================================================
-    # When active neurons strengthen their connections (LTP), inactive
-    # synapses to the same postsynaptic neurons weaken (heterosynaptic LTD).
-    # This maintains homeostasis and enables competition between inputs.
-    heterosynaptic_ratio: float = 0.1  # LTD for inactive synapses
-
-    # =========================================================================
-    # SYNAPTIC SCALING (Homeostatic)
-    # =========================================================================
-    # Multiplicatively adjust all weights to maintain stable firing rates.
-    synaptic_scaling_enabled: bool = True
-    synaptic_scaling_target: float = 0.3  # Target mean weight
-    synaptic_scaling_rate: float = 0.001  # Slow adaptation rate
+    # These are handled by UnifiedHomeostasis (see learning/unified_homeostasis.py)
 
     # =========================================================================
     # INTRINSIC PLASTICITY
@@ -149,23 +138,16 @@ class LayeredCortexConfig(RegionConfig):
     intrinsic_target_rate: float = 0.1    # Target firing rate
     intrinsic_adaptation_rate: float = 0.01  # How fast threshold adapts
 
-    # Which layer to use as output to next region
-    output_layer: str = "L5"  # "L2/3" for cortical, "L5" for subcortical
-
-    # Whether to output both layers (for different pathways)
-    dual_output: bool = True  # Output both L2/3 and L5
-
     # Feedforward Inhibition (FFI) parameters
     # FFI detects stimulus changes and transiently suppresses recurrent activity
     # This is how the cortex naturally "clears" old representations when new input arrives
-    ffi_enabled: bool = True  # Enable FFI mechanism
+    # Always enabled (fundamental cortical mechanism)
     ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
     ffi_strength: float = 0.8  # How much FFI suppresses L2/3 recurrent activity
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
-    
+
     # Gamma-based attention (spike-native phase gating for L2/3)
-    use_gamma_attention: bool = True
-    gamma_attention_freq_hz: float = 40.0  # Gamma frequency for attention
+    # Always enabled for spike-native attention
     gamma_attention_width: float = 0.3     # Phase window width
 
     # =========================================================================
@@ -226,7 +208,7 @@ class LayeredCortexState(RegionState):
 
     # Alpha oscillation suppression (0-1, 1 = no suppression, 0.5 = max suppression)
     alpha_suppression: float = 1.0
-    
+
     # Gamma attention state (spike-native phase gating)
     gamma_attention_phase: Optional[float] = None  # Current gamma phase
     gamma_attention_gate: Optional[torch.Tensor] = None  # Per-neuron gating [l23_size]

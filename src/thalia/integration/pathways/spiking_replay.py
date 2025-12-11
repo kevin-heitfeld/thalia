@@ -17,6 +17,7 @@ from typing import Optional, List, Tuple, Dict, Any
 import torch
 import torch.nn as nn
 from ..spiking_pathway import SpikingPathway, SpikingPathwayConfig, TemporalCoding
+from thalia.core.component_registry import register_pathway
 
 
 @dataclass
@@ -42,58 +43,13 @@ class SpikingReplayPathwayConfig(SpikingPathwayConfig):
     sws_replay_boost: float = 2.0  # Boost during slow-wave sleep
 
 
-class RippleGenerator(nn.Module):
-    """
-    Generates sharp-wave ripple oscillations.
-
-    Ripples are high-frequency (150-200 Hz) oscillations that occur
-    during hippocampal replay.
-    """
-
-    def __init__(self, frequency: float = 150.0, duration: float = 80.0):
-        super().__init__()
-        self.frequency = frequency
-        self.duration = duration
-        self.register_buffer("phase", torch.tensor(0.0))
-        self.register_buffer("time_in_ripple", torch.tensor(0.0))
-        self.active = False
-
-    def start_ripple(self):
-        """Start a new ripple event."""
-        self.active = True
-        self.time_in_ripple.zero_()
-        self.phase.zero_()
-
-    def step(self, dt: float) -> Tuple[bool, float]:
-        """
-        Step the ripple generator.
-
-        Returns:
-            (is_active, ripple_phase): Whether ripple is active and current phase
-        """
-        if not self.active:
-            return False, 0.0
-
-        # Update time and phase
-        self.time_in_ripple += dt
-        self.phase = 2 * torch.pi * self.frequency * self.time_in_ripple / 1000  # Convert to radians
-
-        # Check if ripple should end
-        if self.time_in_ripple >= self.duration:
-            self.active = False
-            return False, 0.0
-
-        # Ripple envelope (gaussian)
-        t_center = self.duration / 2
-        sigma = self.duration / 4
-        envelope = torch.exp(-0.5 * ((self.time_in_ripple - t_center) / sigma) ** 2)
-
-        # Ripple oscillation
-        ripple_value = envelope * torch.cos(self.phase)
-
-        return True, ripple_value.item()
-
-
+@register_pathway(
+    "replay",
+    aliases=["spiking_replay", "consolidation"],
+    description="Spiking Hippocampus → Cortex replay pathway with sharp-wave ripples and time compression",
+    version="1.0",
+    author="Thalia Project"
+)
 class SpikingReplayPathway(SpikingPathway):
     """
     Spiking pathway for Hippocampus → Cortex memory consolidation.
@@ -108,7 +64,6 @@ class SpikingReplayPathway(SpikingPathway):
     def __init__(self, config: SpikingReplayPathwayConfig):
         """Initialize spiking replay pathway."""
         # Store replay-specific config
-        self.ripple_freq = config.ripple_frequency
         self.ripple_duration = config.ripple_duration
         self.ripple_threshold = config.ripple_threshold
         self.compression_factor = config.compression_factor
@@ -120,8 +75,10 @@ class SpikingReplayPathway(SpikingPathway):
         # Initialize base spiking pathway
         super().__init__(config)
 
-        # Ripple generator
-        self.ripple_gen = RippleGenerator(config.ripple_frequency, config.ripple_duration)
+        # Sharp-wave ripple tracking (now from brain oscillator)
+        self.ripple_active_local = False  # Track if in ripple event
+        self.ripple_start_time = 0.0
+        self.current_time = 0.0
 
         # Replay buffer (stores hippocampal patterns)
         self.replay_buffer: List[torch.Tensor] = []
@@ -212,6 +169,8 @@ class SpikingReplayPathway(SpikingPathway):
     def trigger_ripple(self) -> bool:
         """
         Trigger a sharp-wave ripple event.
+        
+        Uses brain-wide ripple oscillator for synchronization.
 
         Returns:
             success: Whether ripple was triggered
@@ -219,7 +178,9 @@ class SpikingReplayPathway(SpikingPathway):
         if not self.replay_active or len(self.replay_buffer) == 0:
             return False
 
-        self.ripple_gen.start_ripple()
+        # Mark ripple start (will be detected via brain ripple oscillator)
+        self.ripple_active_local = True
+        self.ripple_start_time = self.current_time
         self.replay_count += 1
 
         # Select pattern to replay (prioritized sampling)
@@ -233,6 +194,8 @@ class SpikingReplayPathway(SpikingPathway):
     def replay_step(self, dt: float) -> Optional[torch.Tensor]:
         """
         Perform one step of replay during a ripple.
+        
+        Uses brain-wide ripple oscillator for synchronized replay.
 
         Args:
             dt: Time step in ms
@@ -240,10 +203,40 @@ class SpikingReplayPathway(SpikingPathway):
         Returns:
             replay_signal: Cortical reactivation signal, or None if no ripple
         """
-        # Check ripple state
-        ripple_active, ripple_value = self.ripple_gen.step(dt)
-
-        if not ripple_active or self.current_replay_idx >= len(self.replay_buffer):
+        # Update current time
+        self.current_time += dt
+        
+        # Check if we're in a ripple event
+        if not self.ripple_active_local:
+            return None
+            
+        # Check ripple duration (end after configured duration)
+        ripple_elapsed = self.current_time - self.ripple_start_time
+        if ripple_elapsed >= self.ripple_duration:
+            self.ripple_active_local = False
+            return None
+        
+        # Get ripple phase and amplitude from brain oscillator
+        # No fallback - must be provided by Brain for synchronized replay
+        if hasattr(self, '_oscillator_phases') and 'ripple' in self._oscillator_phases:
+            ripple_phase = self._oscillator_phases['ripple']
+        else:
+            ripple_phase = 0.0  # No fallback - must be connected to Brain
+        
+        # Get ripple amplitude (modulated by other oscillators)
+        ripple_amp = 1.0
+        if hasattr(self, '_coupled_amplitudes') and 'ripple' in self._coupled_amplitudes:
+            ripple_amp = self._coupled_amplitudes['ripple']
+        
+        # Compute ripple envelope (gaussian)
+        t_center = self.ripple_duration / 2
+        sigma = self.ripple_duration / 4
+        envelope = torch.exp(torch.tensor(-0.5 * ((ripple_elapsed - t_center) / sigma) ** 2))
+        
+        # Ripple value with envelope and oscillation
+        ripple_value = envelope * torch.cos(torch.tensor(ripple_phase)) * ripple_amp
+        
+        if self.current_replay_idx >= len(self.replay_buffer):
             return None
 
         # Get pattern to replay
@@ -265,7 +258,7 @@ class SpikingReplayPathway(SpikingPathway):
         output_spikes = self.forward(pattern.squeeze())
 
         # Modulate by ripple phase
-        ripple_modulation = 0.5 * (1 + ripple_value)
+        ripple_modulation = 0.5 * (1 + ripple_value.item())
         modulated_spikes = output_spikes * ripple_modulation
 
         # Apply replay gain
@@ -339,7 +332,7 @@ class SpikingReplayPathway(SpikingPathway):
             "replay_count": self.replay_count,
             "sleep_stage": self.sleep_stage,
             "replay_active": self.replay_active,
-            "ripple_active": self.ripple_gen.active,
+            "ripple_active": self.ripple_active_local,  # Now from brain oscillator
         })
 
         if len(self.replay_buffer) > 0:
@@ -384,10 +377,10 @@ class SpikingReplayPathway(SpikingPathway):
                 }
                 for entry in self.replay_buffer
             ],
-            "ripple_gen": {
-                "phase": self.ripple_gen.phase.clone(),
-                "time_in_ripple": self.ripple_gen.time_in_ripple.clone(),
-                "active": self.ripple_gen.active,
+            "ripple_tracking": {
+                "ripple_active_local": self.ripple_active_local,
+                "ripple_start_time": self.ripple_start_time,
+                "current_time": self.current_time,
             },
             "replay_active": self.replay_active,
             "current_replay_idx": self.current_replay_idx,
@@ -439,11 +432,11 @@ class SpikingReplayPathway(SpikingPathway):
                 for entry in replay_state["replay_buffer"]
             ]
 
-            # Restore ripple generator
-            ripple_gen = replay_state["ripple_gen"]
-            self.ripple_gen.phase.copy_(ripple_gen["phase"].to(device))
-            self.ripple_gen.time_in_ripple.copy_(ripple_gen["time_in_ripple"].to(device))
-            self.ripple_gen.active = ripple_gen["active"]
+            # Restore ripple tracking (now from brain oscillator)
+            ripple_tracking = replay_state["ripple_tracking"]
+            self.ripple_active_local = ripple_tracking["ripple_active_local"]
+            self.ripple_start_time = ripple_tracking["ripple_start_time"]
+            self.current_time = ripple_tracking["current_time"]
 
             # Restore replay state
             self.replay_active = replay_state["replay_active"]

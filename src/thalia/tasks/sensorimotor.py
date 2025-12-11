@@ -27,6 +27,8 @@ import random
 import torch
 import numpy as np
 
+from thalia.core.neuron_constants import PROPRIOCEPTION_NOISE_SCALE
+
 
 # ============================================================================
 # Task Types
@@ -380,7 +382,7 @@ class ReachingTask:
         # Direct encoding of position + some noise
         proprio = torch.cat([
             position,
-            torch.randn(self.config.proprioceptive_size - 2, device=self.device) * 0.05
+            torch.randn(self.config.proprioceptive_size - 2, device=self.device) * PROPRIOCEPTION_NOISE_SCALE
         ])
         return proprio
     

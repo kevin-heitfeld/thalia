@@ -77,7 +77,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.core.pathway_protocol import BaseNeuralPathway
+from thalia.regions.base import NeuralComponent
+from thalia.core.component_registry import register_pathway
 
 
 class Modality(Enum):
@@ -90,7 +91,7 @@ class Modality(Enum):
 
 
 @dataclass
-class SensoryConfig:
+class SensoryPathwayConfig:
     """Base configuration for sensory pathways.
 
     All sensory pathways share these parameters to ensure
@@ -109,11 +110,11 @@ class SensoryConfig:
     device: str = "cpu"
 
 
-class SensoryPathway(BaseNeuralPathway):
+class SensoryPathway(NeuralComponent):
     """
     Abstract base class for sensory pathways.
 
-    Inherits from BaseNeuralPathway, implementing the NeuralPathway protocol
+    Inherits from NeuralComponent, implementing the NeuralPathway protocol
     to provide a standardized way to encode raw sensory input into spike patterns.
 
     All modalities must implement:
@@ -126,7 +127,7 @@ class SensoryPathway(BaseNeuralPathway):
     process any modality uniformly.
     """
 
-    def __init__(self, config: SensoryConfig):
+    def __init__(self, config: SensoryPathwayConfig):
         super().__init__()
         self.config = config
         self.device = torch.device(config.device)
@@ -210,7 +211,7 @@ class SensoryPathway(BaseNeuralPathway):
 # =============================================================================
 
 @dataclass
-class VisualConfig(SensoryConfig):
+class VisualConfig(SensoryPathwayConfig):
     """Configuration for visual pathway.
 
     Models retinal processing:
@@ -441,6 +442,12 @@ class RetinalEncoder(nn.Module):
         return float(sum(spike_times)) / len(spike_times) if spike_times else n_timesteps / 2.0
 
 
+@register_pathway(
+    "visual",
+    description="Visual pathway from retinal encoding to cortical spikes",
+    version="1.0",
+    author="Thalia Project"
+)
 class VisualPathway(SensoryPathway):
     """Complete visual pathway from image to cortical input."""
 
@@ -492,7 +499,7 @@ class VisualPathway(SensoryPathway):
 # =============================================================================
 
 @dataclass
-class AuditoryConfig(SensoryConfig):
+class AuditoryConfig(SensoryPathwayConfig):
     """Configuration for auditory pathway.
 
     Models cochlear processing:
@@ -682,6 +689,12 @@ class CochlearEncoder(nn.Module):
         return spikes  # [n_timesteps, output_size]
 
 
+@register_pathway(
+    "auditory",
+    description="Auditory pathway from cochlear encoding to cortical spikes",
+    version="1.0",
+    author="Thalia Project"
+)
 class AuditoryPathway(SensoryPathway):
     """Complete auditory pathway from audio to cortical input."""
 
@@ -733,7 +746,7 @@ class AuditoryPathway(SensoryPathway):
 # =============================================================================
 
 @dataclass
-class LanguageConfig(SensoryConfig):
+class LanguageConfig(SensoryPathwayConfig):
     """Configuration for language pathway."""
     vocab_size: int = 50257
     embedding_dim: int = 256
@@ -741,6 +754,12 @@ class LanguageConfig(SensoryConfig):
     max_seq_len: int = 1024
 
 
+@register_pathway(
+    "language",
+    description="Language pathway from token encoding to cortical spikes",
+    version="1.0",
+    author="Thalia Project"
+)
 class LanguagePathway(SensoryPathway):
     """
     Language pathway for text/token input using temporal/latency coding.

@@ -717,12 +717,12 @@ class CurriculumTrainer:
                 task_data = task_loader.get_task(task_name)
 
                 # 3. Forward pass
-                # Learning happens AUTOMATICALLY during process_sample via:
+                # Learning happens AUTOMATICALLY during forward via:
                 # - STDP in pathways (spike-timing dependent plasticity)
                 # - BCM in cortex (Bienenstock-Cooper-Munro, competition)
                 # - Hebbian in hippocampus (one-shot episodic encoding)
                 # - Intrinsic rewards from prediction errors (continuous)
-                output = self.brain.process_sample(
+                output = self.brain.forward(
                     task_data['input'],
                     n_timesteps=task_data.get('n_timesteps', 10),
                 )

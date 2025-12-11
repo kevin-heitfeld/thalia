@@ -43,7 +43,7 @@ from thalia.core.brain import EventDrivenBrain as Brain
 
 # Brain Regions (most commonly used)
 from thalia.regions import (
-    BrainRegion,
+    NeuralComponent,  # Replaces BrainRegion (see ADR-008)
     RegionConfig,
     Striatum,
     StriatumConfig,
@@ -71,6 +71,10 @@ from thalia.core import (
     ShortTermPlasticity,
     STPConfig,
     STPType,
+    # STP Presets (new in Tier 2)
+    STP_PRESETS,
+    STPPreset,
+    get_stp_config,
     # Utilities
     ensure_batch_dim,
     clamp_weights,

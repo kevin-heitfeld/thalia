@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
+from thalia.core.component_registry import register_pathway
 from ..spiking_pathway import SpikingPathway, SpikingPathwayConfig, TemporalCoding
 
 
@@ -41,6 +42,13 @@ class SpikingAttentionPathwayConfig(SpikingPathwayConfig):
     cortex_size: int = 128  # Cortex dimension (PFC output size)
 
 
+@register_pathway(
+    "attention",
+    aliases=["spiking_attention"],
+    description="Spiking PFC → Cortex attention pathway with phase-coded gain modulation",
+    version="1.0",
+    author="Thalia Project"
+)
 class SpikingAttentionPathway(SpikingPathway):
     """
     Spiking pathway for PFC → Cortex attention modulation.
@@ -63,7 +71,6 @@ class SpikingAttentionPathway(SpikingPathway):
         self.input_size = config.input_size
         self.attention_gain = config.attention_gain
         self.attention_threshold = config.attention_threshold
-        self.beta_freq = config.beta_oscillation_freq
         self.multiplicative_gain = config.multiplicative_gain
         self.gain_nonlinearity = config.gain_nonlinearity
 
@@ -87,9 +94,6 @@ class SpikingAttentionPathway(SpikingPathway):
         nn.init.zeros_(self.gain_output.weight)  # Start with no modulation
         nn.init.ones_(self.gain_output.bias)  # Bias = 1 for multiplicative
 
-        # Beta phase tracking
-        self.register_buffer("beta_phase", torch.tensor(0.0))
-        self.register_buffer("beta_period", torch.tensor(1.0 / config.beta_oscillation_freq))
         # Attention strength tracking
         self.current_attention: Optional[torch.Tensor] = None
 
@@ -98,7 +102,7 @@ class SpikingAttentionPathway(SpikingPathway):
         base_state = super().get_full_state()
         # Add attention-specific state
         base_state['pathway_state']['attention'] = {
-            'beta_phase': self.beta_phase.item(),
+            'beta_phase': self._get_beta_phase(),  # From brain oscillator
             'current_attention': self.current_attention.clone() if self.current_attention is not None else None,
             'input_projection_weight': self.input_projection.weight.detach().clone(),
             'input_projection_bias': self.input_projection.bias.detach().clone(),
@@ -111,21 +115,24 @@ class SpikingAttentionPathway(SpikingPathway):
         # Restore attention-specific state
         if 'attention' in state['pathway_state']:
             attn_state = state['pathway_state']['attention']
-            self.beta_phase.fill_(attn_state['beta_phase'])
+            # Beta phase now comes from brain oscillator (no restoration needed)
             self.current_attention = attn_state['current_attention']
             if 'input_projection_weight' in attn_state:
                 self.input_projection.weight.data.copy_(attn_state['input_projection_weight'])
                 self.input_projection.bias.data.copy_(attn_state['input_projection_bias'])
 
-    def _compute_beta_phase(self) -> torch.Tensor:
-        """Compute current beta oscillation phase.
+    def _get_beta_phase(self) -> float:
+        """Get current beta oscillation phase from brain-wide oscillator.
 
-        Note:
-            Timestep obtained from self.config.dt_ms
+        Uses brain-wide beta oscillator for synchronization across regions.
+        No fallback - pathways must receive brain oscillators.
+
+        Returns:
+            Beta phase in radians [0, 2π)
         """
-        # Update phase (dt_ms from config)
-        self.beta_phase = (self.beta_phase + self.config.dt_ms) % self.beta_period
-        return 2 * torch.pi * self.beta_phase / self.beta_period
+        if hasattr(self, '_oscillator_phases') and 'beta' in self._oscillator_phases:
+            return self._oscillator_phases['beta']
+        return 0.0  # No fallback - must be connected to Brain
 
     def compute_attention(
         self,
@@ -151,8 +158,13 @@ class SpikingAttentionPathway(SpikingPathway):
             f"got shape {pfc_activity.shape}. No batch dimension in 1D architecture."
         )
 
-        # Update beta phase
-        beta_phase = self._compute_beta_phase()
+        # Get beta phase from brain-wide oscillator
+        beta_phase = self._get_beta_phase()
+
+        # Get beta amplitude from coupled oscillators (attention gain modulation)
+        beta_amp = 1.0
+        if hasattr(self, '_coupled_amplitudes') and 'beta' in self._coupled_amplitudes:
+            beta_amp = self._coupled_amplitudes['beta']
 
         # Process through spiking pathway
         # First pad to source size if needed
@@ -170,7 +182,8 @@ class SpikingAttentionPathway(SpikingPathway):
         attention_raw = self.attention_encoder(output_spikes)
 
         # Phase modulation - attention peaks at specific beta phase
-        phase_modulation = 0.5 * (1 + torch.cos(beta_phase))
+        # Beta amplitude modulates overall attention gain (brain state effect)
+        phase_modulation = beta_amp * 0.5 * (1 + torch.cos(torch.tensor(beta_phase)))
         attention = attention_raw * phase_modulation
 
         # Store for diagnostics

@@ -69,7 +69,7 @@ Biological References:
 - Hippocampus: O'Keefe & Nadel (1978), Buzsáki (2002) - Theta and memory
 """
 
-from thalia.regions.base import BrainRegion, LearningRule, RegionConfig, RegionState
+from thalia.regions.base import NeuralComponent, LearningRule, RegionConfig, RegionState
 from thalia.regions.factory import RegionFactory, RegionRegistry, register_region
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
@@ -89,7 +89,7 @@ register_region("hippocampus", aliases=["trisynaptic"])(TrisynapticHippocampus)
 
 __all__ = [
     # Base classes
-    "BrainRegion",
+    "NeuralComponent",  # Unified base for ALL neural populations (regions, pathways, etc.)
     "LearningRule",
     "RegionConfig",
     "RegionState",

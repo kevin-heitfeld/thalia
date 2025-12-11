@@ -3,6 +3,21 @@ Core components: neurons, synapses, layers, and networks.
 """
 
 from thalia.core.neuron import LIFNeuron, LIFConfig, ConductanceLIF, ConductanceLIFConfig
+# Note: BaseNeuronConfig is in thalia.config.neuron_config, not imported here to avoid circular import
+from thalia.core.neuron_constants import (
+    # Membrane time constants
+    TAU_MEM_STANDARD, TAU_MEM_FAST, TAU_MEM_SLOW,
+    # Synaptic time constants
+    TAU_SYN_EXCITATORY, TAU_SYN_INHIBITORY, TAU_SYN_NMDA,
+    # Voltage parameters
+    V_THRESHOLD_STANDARD, V_RESET_STANDARD, V_REST_STANDARD,
+    # Reversal potentials
+    E_LEAK, E_EXCITATORY, E_INHIBITORY,
+    # Conductances
+    G_LEAK_STANDARD, G_LEAK_FAST, G_LEAK_SLOW,
+    # Presets
+    STANDARD_PYRAMIDAL, FAST_SPIKING_INTERNEURON,
+)
 from thalia.core.dendritic import (
     DendriticBranch,
     DendriticBranchConfig,
@@ -18,6 +33,26 @@ from thalia.core.stp import (
     STPType,
     STPSynapse,
 )
+from thalia.core.stp_presets import (
+    STP_PRESETS,
+    STPPreset,
+    get_stp_config,
+    list_presets,
+)
+from thalia.core.oscillator import (
+    SinusoidalOscillator,
+    OscillatorManager,
+    OscillatorCoupling,
+)
+from thalia.core.oscillator_coupling import (
+    OscillatorCouplingManager,
+)
+from thalia.core.component_registry import (
+    ComponentRegistry,
+    register_region,
+    register_pathway,
+    register_module,
+)
 from thalia.core.mixins import (
     DeviceMixin,
     ResettableMixin,
@@ -32,6 +67,14 @@ from thalia.core.spike_coding import (
     RateEncoder,
     RateDecoder,
     compute_spike_similarity,
+)
+from thalia.core.eligibility_utils import (
+    EligibilityTraceManager,
+    STDPConfig,
+)
+from thalia.core.base_manager import (
+    BaseManager,
+    ManagerContext,
 )
 from thalia.core.diagnostics import (
     DiagnosticLevel,
@@ -84,7 +127,6 @@ from thalia.core.protocols import (
 )
 from thalia.core.pathway_protocol import (
     NeuralPathway,
-    BaseNeuralPathway,
     Pathway,
 )
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
@@ -103,7 +145,31 @@ from thalia.core.weight_init import (
 )
 
 __all__ = [
+    # Neuron models
     "LIFNeuron",
+    "LIFConfig",
+    "ConductanceLIF",
+    "ConductanceLIFConfig",
+    # Note: BaseNeuronConfig not exported to avoid circular import
+    # Neuron constants
+    "TAU_MEM_STANDARD",
+    "TAU_MEM_FAST",
+    "TAU_MEM_SLOW",
+    "TAU_SYN_EXCITATORY",
+    "TAU_SYN_INHIBITORY",
+    "TAU_SYN_NMDA",
+    "V_THRESHOLD_STANDARD",
+    "V_RESET_STANDARD",
+    "V_REST_STANDARD",
+    "E_LEAK",
+    "E_EXCITATORY",
+    "E_INHIBITORY",
+    "G_LEAK_STANDARD",
+    "G_LEAK_FAST",
+    "G_LEAK_SLOW",
+    "STANDARD_PYRAMIDAL",
+    "FAST_SPIKING_INTERNEURON",
+    # Dendritic processing
     "LIFConfig",
     "ConductanceLIF",
     "ConductanceLIFConfig",
@@ -125,6 +191,16 @@ __all__ = [
     "STPConfig",
     "STPType",
     "STPSynapse",
+    # STP presets
+    "STP_PRESETS",
+    "STPPreset",
+    "get_stp_config",
+    "list_presets",
+    # Component Registry
+    "ComponentRegistry",
+    "register_region",
+    "register_pathway",
+    "register_module",
     # Diagnostics
     "DiagnosticLevel",
     "DiagnosticsConfig",
@@ -167,7 +243,7 @@ __all__ = [
     "BrainRegionProtocol",
     # Pathway protocols
     "NeuralPathway",
-    "BaseNeuralPathway",
+    # Note: BaseNeuralPathway was consolidated into NeuralComponent (ADR-008)
     "Pathway",
     # Diagnostic mixin
     "DiagnosticsMixin",
@@ -179,6 +255,12 @@ __all__ = [
     "RateEncoder",
     "RateDecoder",
     "compute_spike_similarity",
+    # Eligibility Traces
+    "EligibilityTraceManager",
+    "STDPConfig",
+    # Manager Base Classes
+    "BaseManager",
+    "ManagerContext",
     # Spike Traces
     "SpikeTrace",
     "PairedTraces",

@@ -10,23 +10,14 @@ rather than backpropagation. All learning is biologically inspired:
 - Hebbian: Activity correlation-based learning
 
 Components:
-- LocalTrainer: Main training loop with local rules
 - DataPipeline: Text data loading and batching
 - Metrics: Learning progress tracking
 - Curriculum: Advanced curriculum strategies (interleaving, spaced repetition, etc.)
 - CurriculumTrainer: Multi-stage developmental training orchestration
 - StageEvaluation: Milestone checking for stage transitions
 - TrainingMonitor: Interactive matplotlib-based monitoring (works in notebooks & locally)
-
-Configuration:
-- Use ``thalia.config.TrainingConfig`` for new code
-- Legacy ``TrainingConfig`` here is deprecated
 """
 
-from thalia.training.local_trainer import (
-    LocalTrainer,
-    TrainingMetrics,
-)
 from thalia.training.data_pipeline import (
     TextDataPipeline,
     DataConfig,
@@ -93,15 +84,8 @@ from thalia.training.live_diagnostics import (
     quick_diagnostics,
 )
 
-# Re-export from canonical location for backwards compatibility
-from thalia.config import TrainingConfig
-from thalia.config.curriculum_growth import CurriculumStage
-
 __all__ = [
     # Core training
-    "LocalTrainer",
-    "TrainingConfig",
-    "TrainingMetrics",
     "TextDataPipeline",
     "DataConfig",
     # Curriculum mechanics
@@ -120,7 +104,6 @@ __all__ = [
     "TransitionWeekConfig",
     # Curriculum trainer
     "CurriculumTrainer",
-    "CurriculumStage",
     "StageConfig",
     "TaskConfig",
     "TrainingResult",
@@ -159,4 +142,3 @@ __all__ = [
     "LiveDiagnostics",
     "quick_diagnostics",
 ]
-

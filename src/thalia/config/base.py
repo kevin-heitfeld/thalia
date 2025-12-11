@@ -64,6 +64,7 @@ class NeuralComponentConfig(BaseConfig):
     Extends BaseConfig with neural-specific parameters:
     - n_neurons: Number of neurons
     - dt_ms: Simulation timestep (should match GlobalConfig.dt_ms)
+    - axonal_delay_ms: Axonal conduction delay (realistic for ALL neural pathways)
     """
     
     n_neurons: int = 100
@@ -71,6 +72,20 @@ class NeuralComponentConfig(BaseConfig):
     
     dt_ms: float = 1.0
     """Simulation timestep in milliseconds. Set from GlobalConfig.dt_ms by Brain."""
+    
+    axonal_delay_ms: float = 1.0
+    """Axonal conduction delay in milliseconds.
+    
+    Biological ranges:
+    - Within-region (local): 0.5-2ms
+    - Inter-region (long-range): 1-10ms
+    - Thalamo-cortical: 8-15ms
+    - Striato-cortical: 10-20ms
+    
+    ALL neural connections have conduction delays - this is not optional.
+    Regions and pathways differ only in typical delay values (configuration),
+    not in whether delays exist (architectural difference).
+    """
 
 
 @dataclass

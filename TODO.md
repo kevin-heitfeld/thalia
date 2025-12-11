@@ -2,8 +2,7 @@
 
 ## Architecture & Infrastructure
 
-- Review public brain API (`temp\brain_api.md`)
-- Implement all functions of the `CurriculumTrainer` (e.g. `_check_and_trigger_growth()`)
+- Review public brain API (`new_trial()`, etc. necessary?)
 
 - [ ] Sleep/Wake System 🟢 **LOW PRIORITY**
   - Already partially handled by oscillator frequency modulation

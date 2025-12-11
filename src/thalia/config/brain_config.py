@@ -197,6 +197,27 @@ class BrainConfig:
 
     # Execution mode
     parallel: bool = False
+    
+    # Device (should inherit from GlobalConfig, but provided for convenience)
+    device: str = "cpu"
+    
+    # =========================================================================
+    # Goal-conditioned behavior (PFC → Striatum modulation)
+    # =========================================================================
+    use_goal_conditioning: bool = False
+    """Enable PFC goal context modulation of striatum (goal-directed behavior).
+    
+    When True:
+        - Striatum creates pfc_modulation_d1/d2 weights
+        - PFC working memory modulates action selection
+        - CRITICAL: striatum_pfc_size MUST match sizes.pfc_size
+    """
+    
+    use_population_coding: bool = True
+    """Use population coding in striatum (multiple neurons per action)."""
+    
+    neurons_per_action: int = 10
+    """Number of neurons per action when use_population_coding=True."""
 
     # Phase 2: Model-based planning
     use_model_based_planning: bool = True
@@ -228,6 +249,15 @@ class BrainConfig:
     @property
     def total_striatum_neurons(self) -> int:
         """Total neurons in striatum with population coding."""
-        if self.striatum.population_coding:
-            return self.sizes.n_actions * self.striatum.neurons_per_action
+        if self.use_population_coding:
+            return self.sizes.n_actions * self.neurons_per_action
         return self.sizes.n_actions
+    
+    @property
+    def striatum_pfc_size(self) -> int:
+        """PFC size that striatum should use for goal conditioning.
+        
+        This MUST match sizes.pfc_size when use_goal_conditioning=True.
+        Returns sizes.pfc_size by default for consistency.
+        """
+        return self.sizes.pfc_size

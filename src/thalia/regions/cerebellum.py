@@ -50,13 +50,24 @@ from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 
-from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.core.weight_init import WeightInitializer
+from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
+from thalia.core.neuron_constants import (
+    V_THRESHOLD_STANDARD,
+    V_RESET_STANDARD,
+    E_LEAK,
+    E_EXCITATORY,
+    E_INHIBITORY,
+)
 from thalia.regions.base import (
-    BrainRegion,
+    NeuralComponent,
     RegionConfig,
     LearningRule,
 )
+import torch.nn as nn
+import torch.nn.functional as F
+
+from thalia.core.component_registry import register_region
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 
 
@@ -152,7 +163,13 @@ class ClimbingFiberSystem:
         self.error = state["error"].to(self.device)
 
 
-class Cerebellum(DiagnosticsMixin, BrainRegion):
+@register_region(
+    "cerebellum",
+    description="Supervised error-corrective learning via climbing fiber error signals",
+    version="2.0",
+    author="Thalia Project"
+)
+class Cerebellum(NeuralComponent):
     """Cerebellar region with supervised error-corrective learning.
 
     Implements the cerebellar learning rule:
@@ -201,17 +218,31 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
             device=config.device,
         )
 
+        # =====================================================================
+        # ELIGIBILITY TRACE MANAGER for STDP
+        # =====================================================================
+        stdp_config = STDPConfig(
+            stdp_tau_ms=self.cerebellum_config.stdp_tau_ms,
+            eligibility_tau_ms=self.cerebellum_config.eligibility_tau_ms,
+            stdp_lr=self.cerebellum_config.stdp_lr,
+            a_plus=1.0,
+            a_minus=self.cerebellum_config.heterosynaptic_ratio,
+            w_min=config.w_min,
+            w_max=config.w_max,
+            soft_bounds=self.cerebellum_config.soft_bounds,
+            heterosynaptic_ratio=self.cerebellum_config.heterosynaptic_ratio,
+        )
+        self._trace_manager = EligibilityTraceManager(
+            n_input=config.n_input,
+            n_output=config.n_output,
+            config=stdp_config,
+            device=self.device,
+        )
+        
+        # Legacy input trace (for input gain modulation)
+        # TODO: Migrate this to trace manager if needed
         self.input_trace = torch.zeros(config.n_input, device=self.device)
         self.input_trace_tau = self.cerebellum_config.input_trace_tau_ms
-
-        # STDP traces for spike-based learning
-        self.output_trace = torch.zeros(config.n_output, device=self.device)
-
-        # Eligibility trace for temporal credit assignment
-        # Stores pending weight changes until error signal arrives
-        self.stdp_eligibility = torch.zeros(
-            config.n_output, config.n_input, device=self.device
-        )
 
         # Beta oscillator phase tracking for motor timing
         self._beta_phase: float = 0.0
@@ -220,6 +251,16 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         self._beta_amplitude: float = 1.0
         self._gamma_amplitude: float = 1.0
         self._coupled_amplitudes: Dict[str, float] = {}
+    
+    @property
+    def output_trace(self) -> torch.Tensor:
+        """Output trace (backward compatibility)."""
+        return self._trace_manager.output_trace
+    
+    @property
+    def stdp_eligibility(self) -> torch.Tensor:
+        """STDP eligibility (backward compatibility)."""
+        return self._trace_manager.eligibility
 
     def _get_learning_rule(self) -> LearningRule:
         return LearningRule.ERROR_CORRECTIVE
@@ -305,10 +346,15 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         return gate
 
     def _create_neurons(self) -> ConductanceLIF:
-        """Create Purkinje-like neurons."""
+        """Create Purkinje-like neurons with constants from neuron_constants.py."""
         neuron_config = ConductanceLIFConfig(
-            v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
-            tau_E=3.0, tau_I=8.0,  # Faster dynamics for precise timing
+            v_threshold=V_THRESHOLD_STANDARD,
+            v_reset=V_RESET_STANDARD,
+            E_L=E_LEAK,
+            E_E=E_EXCITATORY,
+            E_I=E_INHIBITORY,
+            tau_E=3.0,  # Faster excitatory for precise timing
+            tau_I=8.0,  # Faster inhibitory for precise timing
         )
         neurons = ConductanceLIF(n_neurons=self.config.n_output, config=neuron_config)
         neurons.to(self.device)
@@ -333,44 +379,35 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
 
         old_n_output = self.config.n_output
         new_n_output = old_n_output + n_new
-        n_granule = self.config.n_input  # Granule layer is input layer
 
-        # Expand granule→Purkinje weights
-        if initialization == 'xavier':
-            new_weights = WeightInitializer.xavier(
-                n_output=n_new,
-                n_input=n_granule,
-                device=self.device,
-            )
-        elif initialization == 'sparse_random':
-            new_weights = WeightInitializer.sparse_random(
-                n_output=n_new,
-                n_input=n_granule,
-                sparsity=sparsity,
-                device=self.device,
-            )
-        else:
-            new_weights = WeightInitializer.uniform(
-                n_output=n_new,
-                n_input=n_granule,
-                device=self.device,
-            )
-
-        # Update weights (Cerebellum uses self.weights directly, not w_granule_purkinje)
-        self.weights = nn.Parameter(
-            torch.cat([self.weights.data, new_weights], dim=0)
+        # =====================================================================
+        # 1. EXPAND WEIGHTS using base helper
+        # =====================================================================
+        self.weights = self._expand_weights(
+            current_weights=self.weights,
+            n_new=n_new,
+            initialization=initialization,
+            sparsity=sparsity,
+            scale=1.0,  # Default scale for cerebellum
         )
 
-        # Expand Purkinje neurons
-        neuron_config = ConductanceLIFConfig(
-            v_threshold=1.0, v_reset=0.0, E_L=0.0, E_E=3.0, E_I=-0.5,
-            tau_E=3.0, tau_I=8.0,
-        )
-        self.neurons = ConductanceLIF(n_neurons=new_n_output, config=neuron_config)
-        self.neurons.to(self.device)
-
-        # Update config
+        # =====================================================================
+        # 2. UPDATE CONFIG
+        # =====================================================================
         self.config = replace(self.config, n_output=new_n_output)
+
+        # =====================================================================
+        # 3. EXPAND NEURON POPULATION using base helper
+        # =====================================================================
+        self.neurons = self._recreate_neurons_with_state(
+            neuron_factory=self._create_neurons,
+            old_n_output=old_n_output,
+        )
+
+        # =====================================================================
+        # 4. GROW TRACE MANAGER
+        # =====================================================================
+        self._trace_manager = self._trace_manager.add_neurons(n_new, dimension='output')
 
     def forward(
         self,
@@ -414,11 +451,10 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
         # Note: retrieval_mod could be used for output gain if needed for motor commands
 
-        # Update STDP traces (already 1D)
+        # Update STDP traces (input trace still manual for gain modulation)
         dt = self.config.dt_ms
         trace_decay = 1.0 - dt / cfg.stdp_tau_ms
         self.input_trace = self.input_trace * trace_decay + input_spikes.float()
-        self.output_trace = self.output_trace * trace_decay
 
         # Compute synaptic input - modulated by encoding phase
         # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
@@ -438,34 +474,41 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
         # Forward through neurons (returns 1D bool spikes)
         output_spikes, _ = self.neurons(g_exc, None)
 
-        # Update output trace after spiking
-        self.output_trace = self.output_trace + output_spikes.float()
-
         # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
         # VTA updates dopamine, LC updates NE, NB updates ACh.
         # Brain broadcasts to all regions every timestep via _update_neuromodulators().
         # No local decay needed.
 
         # ======================================================================
-        # Update STDP eligibility (spike-timing based)
+        # Update STDP eligibility using trace manager
         # ======================================================================
-        # LTP: post spike with pre trace → strengthen (for target neurons)
-        # LTD: pre spike with post trace → weaken (for wrong neurons)
-        # Traces are 1D, outer product creates [n_output, n_input] eligibility
-        ltp = torch.outer(output_spikes.float(), self.input_trace)
-        ltd = torch.outer(self.output_trace, input_spikes.float())
-
-        # Compute STDP weight change direction
+        # Use trace manager for consolidated STDP computation
+        self._trace_manager.update_traces(
+            input_spikes=input_spikes,
+            output_spikes=output_spikes,
+            dt_ms=dt,
+        )
+        
+        # Compute STDP weight change direction (raw LTP/LTD without combining)
+        ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(
+            input_spikes=input_spikes,
+            output_spikes=output_spikes,
+        )
+        
+        # Combine LTP and LTD with learning rate and heterosynaptic ratio
         stdp_dw = cfg.stdp_lr * (ltp - cfg.heterosynaptic_ratio * ltd)
-
-        # Accumulate into eligibility trace
-        eligibility_decay = 1.0 - dt / cfg.eligibility_tau_ms
-        self.stdp_eligibility = self.stdp_eligibility * eligibility_decay + stdp_dw
+        
+        # Accumulate into eligibility trace (with decay)
+        if isinstance(stdp_dw, torch.Tensor):
+            self._trace_manager.accumulate_eligibility(stdp_dw, dt_ms=dt)
 
         self.state.spikes = output_spikes
         self.state.t += 1
 
-        return output_spikes
+        # Apply axonal delay (biological reality: ALL neural connections have delays)
+        delayed_spikes = self._apply_axonal_delay(output_spikes, dt)
+
+        return delayed_spikes
 
     def _apply_error_learning(
         self,
@@ -647,8 +690,7 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
     def reset_state(self) -> None:
         super().reset_state()
         self.input_trace.zero_()
-        self.output_trace.zero_()
-        self.stdp_eligibility.zero_()
+        self._trace_manager.reset_traces()
         self.climbing_fiber.reset_state()
         if self.neurons is not None:
             self.neurons.reset_state()
@@ -710,9 +752,9 @@ class Cerebellum(DiagnosticsMixin, BrainRegion):
 
         # Restore traces
         self.input_trace.copy_(region_state["input_trace"].to(self.device))
-        self.output_trace.copy_(region_state["output_trace"].to(self.device))
+        self._trace_manager.output_trace.copy_(region_state["output_trace"].to(self.device))
 
         # Restore learning state
         learning_state = state["learning_state"]
-        self.stdp_eligibility.copy_(learning_state["stdp_eligibility"].to(self.device))
+        self._trace_manager.eligibility.copy_(learning_state["stdp_eligibility"].to(self.device))
         self.climbing_fiber.load_state(learning_state["climbing_fiber"])

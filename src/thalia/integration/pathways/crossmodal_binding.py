@@ -49,12 +49,16 @@ Usage:
         gamma_freq_hz=40.0,
     )
 
-    # Process multimodal input
+    # Process multimodal input (concatenated)
     visual_spikes = torch.rand(256) > 0.8  # Binary spikes
     auditory_spikes = torch.rand(256) > 0.8
+    combined_input = torch.cat([visual_spikes, auditory_spikes])
 
-    bound_output, coherence = binder(visual_spikes, auditory_spikes)
-
+    bound_output = binder(combined_input)
+    
+    # Check binding quality via diagnostics
+    diagnostics = binder.get_diagnostics()
+    coherence = diagnostics['last_coherence']
     # High coherence (> 0.7) = good binding
     # Low coherence (< 0.3) = weak binding
     ```
@@ -66,16 +70,16 @@ Date: December 8, 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Dict, Any
 import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.core.pathway_protocol import BaseNeuralPathway
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.oscillator import SinusoidalOscillator
+from thalia.regions.base import NeuralComponent
 
 
 @dataclass
@@ -105,12 +109,15 @@ class CrossModalBindingConfig:
     device: str = "cpu"
 
 
-class CrossModalGammaBinding(BaseNeuralPathway):
+class CrossModalGammaBinding(NeuralComponent):
     """
     Cross-modal binding through gamma-band synchronization.
 
     Implements the biological mechanism where different sensory modalities
     are bound together via synchronized gamma oscillations.
+    
+    Accepts concatenated input: [visual_spikes | auditory_spikes]
+    The pathway internally splits this to process each modality separately.
 
     Key Features:
     - Separate gamma oscillators for each modality
@@ -160,8 +167,16 @@ class CrossModalGammaBinding(BaseNeuralPathway):
         if device is not None:
             config.device = device
 
-        super().__init__()
-        self.config = config
+        # Create RegionConfig for NeuralComponent base class
+        from thalia.regions.base import RegionConfig
+        region_config = RegionConfig(
+            n_input=config.visual_size + config.auditory_size,
+            n_output=config.output_size,
+            device=torch.device(config.device),
+        )
+        
+        super().__init__(region_config)
+        self.config = config  # Store pathway-specific config
         self.device = torch.device(config.device)
 
         # Separate gamma oscillators for each modality
@@ -176,6 +191,9 @@ class CrossModalGammaBinding(BaseNeuralPathway):
 
         # Initialize weights (modality-specific projections)
         self._initialize_weights()
+        
+        # Track last coherence for diagnostics
+        self._last_coherence = 0.0
 
         # Move to device
         self.to(self.device)
@@ -208,20 +226,24 @@ class CrossModalGammaBinding(BaseNeuralPathway):
 
     def forward(
         self,
-        visual_spikes: torch.Tensor,
-        auditory_spikes: torch.Tensor,
-    ) -> Tuple[torch.Tensor, float]:
+        input_spikes: torch.Tensor,
+        **kwargs,
+    ) -> torch.Tensor:
         """
         Bind visual and auditory inputs via gamma synchrony.
 
         Args:
-            visual_spikes: Visual spike train [visual_size] (binary)
-            auditory_spikes: Auditory spike train [auditory_size] (binary)
+            input_spikes: Concatenated spikes [visual_size + auditory_size]
+                         Format: [visual_spikes | auditory_spikes]
+            **kwargs: Additional arguments (e.g., return_coherence=True for diagnostics)
 
         Returns:
             bound_output: Bound multimodal representation [output_size]
-            coherence: Phase coherence score [0, 1] (1 = perfect sync)
         """
+        # Split concatenated input into visual and auditory
+        visual_spikes = input_spikes[:self.config.visual_size]
+        auditory_spikes = input_spikes[self.config.visual_size:]
+        
         # Ensure correct device
         visual_spikes = visual_spikes.to(self.device)
         auditory_spikes = auditory_spikes.to(self.device)
@@ -255,7 +277,10 @@ class CrossModalGammaBinding(BaseNeuralPathway):
         coherence_gate = self._coherence_to_gate(coherence)
         bound_output = (visual_output + auditory_output) * coherence_gate
 
-        return bound_output, coherence
+        # Store coherence for diagnostics
+        self._last_coherence = coherence
+        
+        return bound_output
 
     def _compute_gamma_gate(self, gamma_phase: float, width: float = 0.3) -> float:
         """
@@ -435,19 +460,21 @@ class CrossModalGammaBinding(BaseNeuralPathway):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """
-        Get pathway diagnostics (required by BaseNeuralPathway).
+        Get pathway diagnostics (required by NeuralComponent).
 
         Returns:
             Dictionary containing:
             - Phase information for both modalities
             - Weight statistics
             - Oscillator frequencies
+            - Last coherence measurement
         """
         # Weight statistics
         visual_weights_flat = self.visual_weights.detach().flatten()
         auditory_weights_flat = self.auditory_weights.detach().flatten()
 
         return {
+            "last_coherence": self._last_coherence,
             "visual_gamma_phase": self.visual_gamma.phase,
             "auditory_gamma_phase": self.auditory_gamma.phase,
             "visual_gamma_freq": self.visual_gamma.frequency_hz,

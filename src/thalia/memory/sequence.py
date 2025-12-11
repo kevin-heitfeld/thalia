@@ -46,8 +46,8 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple
+from dataclasses import dataclass
+from typing import Optional, List, Dict, Any
 from collections import deque
 
 import torch
@@ -59,7 +59,7 @@ from thalia.core.spike_coding import CodingStrategy
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.core.utils import cosine_similarity_safe
 from thalia.core.mixins import ConfigurableMixin, DiagnosticCollectorMixin
-from thalia.core.mixins import DiagnosticCollectorMixin
+from thalia.config import SequenceMemoryConfig
 
 
 @dataclass
@@ -110,7 +110,7 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
         >>> query = torch.tensor([[1, 5, 3]])
         >>> predicted = memory.predict_next(query)  # Should activate pattern for 7
     """
-    
+
     # For ConfigurableMixin - specifies how to extract config from ThaliaConfig
     CONFIG_CONVERTER_METHOD = "to_sequence_memory_config"
 

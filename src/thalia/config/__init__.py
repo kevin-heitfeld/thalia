@@ -34,6 +34,8 @@ from .base import (
     LearningComponentConfig,
     RegionConfigBase,
 )
+# Note: BaseNeuronConfig not exported here to avoid circular import
+# Import directly: from thalia.config.neuron_config import BaseNeuronConfig
 from .global_config import GlobalConfig
 from .brain_config import (
     BrainConfig,
@@ -54,19 +56,47 @@ from .language_config import (
     PositionConfig,
     SequenceMemoryConfig,
 )
-from .training_config import (
-    TrainingConfig,
-    LearningRatesConfig,
-    CheckpointConfig,
-    LoggingConfig,
-)
 from .robustness_config import RobustnessConfig
 from .thalia_config import ThaliaConfig, print_config
+from .validation import (
+    validate_thalia_config,
+    validate_brain_config,
+    validate_global_consistency,
+    validate_region_sizes,
+    check_config_and_warn,
+    ConfigValidationError,
+)
+from .region_sizes import (
+    # Hippocampus ratios
+    DG_TO_EC_EXPANSION,
+    CA3_TO_DG_RATIO,
+    CA1_TO_CA3_RATIO,
+    # Cortex ratios
+    L4_TO_INPUT_RATIO,
+    L23_TO_L4_RATIO,
+    L5_TO_L23_RATIO,
+    # Default sizes
+    DEFAULT_CORTEX_SIZE,
+    DEFAULT_HIPPOCAMPUS_SIZE,
+    DEFAULT_PFC_SIZE,
+    DEFAULT_N_ACTIONS,
+    # Utility functions
+    compute_hippocampus_sizes,
+    compute_cortex_layer_sizes,
+    compute_striatum_size,
+)
 
 __all__ = [
     # Main config
     "ThaliaConfig",
     "print_config",
+    # Validation
+    "validate_thalia_config",
+    "validate_brain_config",
+    "validate_global_consistency",
+    "validate_region_sizes",
+    "check_config_and_warn",
+    "ConfigValidationError",
     # Base configs
     "BaseConfig",
     "NeuralComponentConfig",
@@ -91,11 +121,20 @@ __all__ = [
     "DecodingConfig",
     "PositionConfig",
     "SequenceMemoryConfig",
-    # Training
-    "TrainingConfig",
-    "LearningRatesConfig",
-    "CheckpointConfig",
-    "LoggingConfig",
     # Robustness
     "RobustnessConfig",
+    # Region size constants
+    "DG_TO_EC_EXPANSION",
+    "CA3_TO_DG_RATIO",
+    "CA1_TO_CA3_RATIO",
+    "L4_TO_INPUT_RATIO",
+    "L23_TO_L4_RATIO",
+    "L5_TO_L23_RATIO",
+    "DEFAULT_CORTEX_SIZE",
+    "DEFAULT_HIPPOCAMPUS_SIZE",
+    "DEFAULT_PFC_SIZE",
+    "DEFAULT_N_ACTIONS",
+    "compute_hippocampus_sizes",
+    "compute_cortex_layer_sizes",
+    "compute_striatum_size",
 ]

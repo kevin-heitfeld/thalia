@@ -90,7 +90,7 @@ Neuromodulators gate synaptic plasticity and influence neural dynamics:
 
 Usage Example:
 ==============
-    class MyRegion(NeuromodulatorMixin, BrainRegion):
+    class MyRegion(NeuromodulatorMixin, NeuralComponent):
         def forward(self, input, dt=1.0):
             output = self._compute_output(input)
             
@@ -138,6 +138,10 @@ class NeuromodulatorMixin:
     def set_dopamine(self, level: float) -> None:
         """Set dopamine level (modulates plasticity rate).
         
+        .. deprecated::
+            Use :meth:`set_neuromodulators` instead for atomic updates.
+            Individual setters are kept for backward compatibility only.
+        
         Args:
             level: Dopamine level, typically in [-1, 1].
                    Positive = reward, consolidate current patterns
@@ -149,6 +153,10 @@ class NeuromodulatorMixin:
     def set_acetylcholine(self, level: float) -> None:
         """Set acetylcholine level (modulates attention/encoding).
         
+        .. deprecated::
+            Use :meth:`set_neuromodulators` instead for atomic updates.
+            Individual setters are kept for backward compatibility only.
+        
         Args:
             level: ACh level, typically in [0, 1].
                    High = encoding mode, enhance sensory processing
@@ -159,12 +167,49 @@ class NeuromodulatorMixin:
     def set_norepinephrine(self, level: float) -> None:
         """Set norepinephrine level (modulates arousal/gain).
         
+        .. deprecated::
+            Use :meth:`set_neuromodulators` instead for atomic updates.
+            Individual setters are kept for backward compatibility only.
+        
         Args:
             level: NE level, typically in [0, 1].
                    High = arousal, increase neural gain
                    Low = baseline gain
         """
         self.state.norepinephrine = level
+    
+    def set_neuromodulators(
+        self,
+        dopamine: float,
+        norepinephrine: float,
+        acetylcholine: float
+    ) -> None:
+        """Set all neuromodulator levels atomically (efficient broadcast).
+        
+        This consolidated method is more efficient than calling individual setters
+        when updating multiple neuromodulators simultaneously (3x reduction in
+        function calls and hasattr checks).
+        
+        Args:
+            dopamine: DA level, typically in [-1, 1].
+                      Positive = reward, consolidate current patterns
+                      Negative = punishment, reduce current patterns  
+                      Zero = baseline learning rate
+            norepinephrine: NE level, typically in [0, 1].
+                           High = arousal, increase neural gain
+                           Low = baseline gain
+            acetylcholine: ACh level, typically in [0, 1].
+                          High = encoding mode, enhance sensory processing
+                          Low = retrieval mode, suppress interference
+        
+        Note:
+            For biological plausibility, all three neuromodulator systems
+            should be updated together to maintain consistent brain state.
+            This method ensures atomic updates without partial state.
+        """
+        self.state.dopamine = dopamine
+        self.state.norepinephrine = norepinephrine
+        self.state.acetylcholine = acetylcholine
     
     def set_neuromodulator(self, name: str, level: float) -> None:
         """Generic setter for any neuromodulator.

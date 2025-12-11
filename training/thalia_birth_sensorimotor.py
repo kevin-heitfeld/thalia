@@ -313,7 +313,7 @@ def evaluate_stage_sensorimotor(
     motor_rewards = []
     for _ in range(n_trials):
         task_data = task_loader.get_task('motor_control')
-        output = brain.process_sample(
+        output = brain.forward(
             task_data['input'],
             n_timesteps=task_data['n_timesteps']
         )
@@ -329,7 +329,7 @@ def evaluate_stage_sensorimotor(
     reaching_rewards = []
     for _ in range(n_trials):
         task_data = task_loader.get_task('reaching')
-        output = brain.process_sample(
+        output = brain.forward(
             task_data['input'],
             n_timesteps=task_data['n_timesteps']
         )
@@ -345,7 +345,7 @@ def evaluate_stage_sensorimotor(
     manipulation_rewards = []
     for _ in range(n_trials):
         task_data = task_loader.get_task('manipulation')
-        output = brain.process_sample(
+        output = brain.forward(
             task_data['input'],
             n_timesteps=task_data['n_timesteps']
         )
