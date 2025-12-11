@@ -934,8 +934,135 @@ self.learning_strategy = LearningStrategyRegistry.create(
 
 ### 3.2 Consolidate Checkpoint Management
 
+**Status: ✅ COMPLETE (December 11, 2025)**
+
+**Implementation Summary:**
+
+Created a unified `CheckpointManager` class that provides centralized checkpoint management for the complete brain state, ensuring consistency and completeness across all components.
+
+**Changes Made:**
+
+1. **Created `src/thalia/io/checkpoint_manager.py`** (~400 lines)
+   - `CheckpointManager` class with save/load/validate/get_metadata methods
+   - Wraps existing `BrainCheckpoint` API with unified interface
+   - Component counting and validation
+   - Config dimension checking
+   - Convenience functions: `save_checkpoint()`, `load_checkpoint()`
+
+2. **Updated `src/thalia/io/__init__.py`**
+   - Exported `CheckpointManager`, `save_checkpoint`, `load_checkpoint`
+
+**Architecture:**
+
+```python
+# Create checkpoint manager for brain
+manager = CheckpointManager(brain)
+
+# Save with metadata
+info = manager.save(
+    "checkpoints/epoch_100.ckpt",
+    metadata={"epoch": 100, "loss": 0.42, "accuracy": 0.85},
+    compression="zstd",
+    precision_policy="mixed"
+)
+print(f"Saved {info['size_mb']:.2f} MB in {info['time_s']:.2f}s")
+
+# Load with validation
+info = manager.load("checkpoints/epoch_100.ckpt", strict=True)
+print(f"Loaded checkpoint from epoch {info['metadata']['epoch']}")
+
+# Validate without loading
+is_valid, error = manager.validate("checkpoints/epoch_100.ckpt")
+if not is_valid:
+    print(f"Checkpoint invalid: {error}")
+
+# Get metadata only (fast)
+meta = manager.get_metadata("checkpoints/epoch_100.ckpt")
+print(f"Checkpoint from {meta['saved_at']}, loss={meta['loss']}")
+
+# List managed components
+components = manager.list_components()
+print(f"Regions: {components['regions']}")
+print(f"Pathways: {len(components['pathways'])} pathways")
+```
+
+**Benefits Achieved:**
+
+✅ **Single Entry Point** - One class for all checkpoint operations  
+✅ **Completeness Guaranteed** - Ensures all components (regions, pathways, neuromodulators, oscillators) are saved  
+✅ **Validation** - Check checkpoint integrity before loading  
+✅ **Metadata Extraction** - Inspect checkpoint contents without full load  
+✅ **Config Checking** - Validates dimensions match brain configuration  
+✅ **Component Tracking** - Reports what components were saved/loaded  
+✅ **Backward Compatible** - Works with existing BrainCheckpoint API
+
+**Features:**
+- Automatic directory creation
+- Default precision and compression policies
+- Timing information for save/load operations
+- Strict vs lenient config validation modes
+- Component counting (regions, pathways, neuromodulators, oscillators)
+
+**Files Modified:**
+- `src/thalia/io/checkpoint_manager.py` (NEW - 400 lines)
+- `src/thalia/io/__init__.py` (updated exports)
+
+**Impact:**
+- Files affected: 2 (1 new + 1 modified)
+- Breaking change: **None** - Additive feature
+- Improved: Checkpoint reliability and debugging
+- Foundation for: Versioning, migration, delta checkpoints
+
+---
+
+### 3.3 Extract Event System to Separate Package
+
+**Status: 🚧 IN PROGRESS (December 11, 2025)**
+
+**Planned Changes:**
+
+1. Create `src/thalia/events/` package structure:
+   ```
+   src/thalia/events/
+       __init__.py
+       system.py           # Event, EventType, EventScheduler (from event_system.py)
+       parallel.py         # ParallelExecutor (from parallel_executor.py)
+       protocols.py        # EventDrivenRegion protocol
+       adapters/
+           __init__.py
+           base.py         # Base adapter class
+           region.py       # Region-specific adapters
+           pathway.py      # Pathway-specific adapters
+   ```
+
+2. Move files from `src/thalia/core/`:
+   - `event_system.py` → `events/system.py`
+   - `parallel_executor.py` → `events/parallel.py`
+   - `event_regions/` → `events/adapters/`
+
+3. Update imports throughout codebase:
+   - `from thalia.core.event_system import` → `from thalia.events import`
+   - `from thalia.core.parallel_executor import` → `from thalia.events import`
+
+**Rationale:**
+- Event system is a complete subsystem (700+ lines)
+- Could be separated as standalone package
+- Reduces cognitive load in core/
+- Clearer boundaries and documentation
+- Easier to understand event-driven architecture
+
+**Impact:**
+- Files affected: 15+ (move + import updates)
+- Breaking change: **High** - Import path changes
+- Benefits: Better organization, clearer boundaries
+
+**Deferred:**
+Due to high impact and extensive import path changes, this refactoring is deferred for careful planning and staged implementation in a future session.
+
+---
+
 **Current State:**
-Checkpoint logic scattered:
+Event system is core functionality but lives in `src/thalia/core/`:
 - `src/thalia/io/checkpoint.py` - Core checkpoint functionality
 - Each region has `get_full_state()` / `load_full_state()`
 - `StriatumCheckpointManager` exists but pattern not universal
