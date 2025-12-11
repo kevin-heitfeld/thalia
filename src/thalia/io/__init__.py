@@ -42,12 +42,16 @@ Example:
 """
 
 from .checkpoint import BrainCheckpoint
+from .checkpoint_manager import CheckpointManager, save_checkpoint, load_checkpoint
 from .compression import compress_file, decompress_file, CompressionError
 from .delta import save_delta_checkpoint, load_delta_checkpoint
 from .precision import PrecisionPolicy, PRECISION_POLICIES, get_precision_statistics
 
 __all__ = [
     "BrainCheckpoint",
+    "CheckpointManager",
+    "save_checkpoint",
+    "load_checkpoint",
     "compress_file",
     "decompress_file",
     "CompressionError",

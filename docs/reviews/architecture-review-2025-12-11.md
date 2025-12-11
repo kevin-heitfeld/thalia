@@ -753,6 +753,131 @@ def _update_neuromodulators(self):
 
 ### 3.1 Introduce Learning Strategy Registry
 
+**Status: ✅ COMPLETE (December 11, 2025)**
+
+**Implementation Summary:**
+
+Successfully created a decorator-based learning strategy registry following the same pattern as `ComponentRegistry`, enabling pluggable learning rules and easier experimentation.
+
+**Changes Made:**
+
+1. **Created `src/thalia/learning/strategy_registry.py`** (~400 lines)
+   - `LearningStrategyRegistry` class with decorator-based registration
+   - Registration API: `@LearningStrategyRegistry.register("name", config_class=...)`
+   - Creation API: `LearningStrategyRegistry.create("name", config)`
+   - Discovery API: `list_strategies()`, `get_metadata()`, `is_registered()`
+   - Supports aliases (e.g., "rl" → "three_factor", "spike_timing" → "stdp")
+   - Metadata tracking (description, version, author, config_class)
+
+2. **Updated `src/thalia/learning/strategies.py`**
+   - Added `_register_builtin_strategies()` function
+   - Auto-registers all 6 built-in strategies at module import:
+     * `hebbian` (HebbianStrategy + HebbianConfig)
+     * `stdp` (STDPStrategy + STDPConfig, alias: "spike_timing")
+     * `bcm` (BCMStrategy + BCMConfig)
+     * `three_factor` (ThreeFactorStrategy + ThreeFactorConfig, aliases: "rl", "dopamine", "threefactor")
+     * `error_corrective` (ErrorCorrectiveStrategy + ErrorCorrectiveConfig, aliases: "delta", "supervised", "error")
+     * `composite` (CompositeStrategy)
+
+3. **Updated `src/thalia/learning/strategy_factory.py`**
+   - Marked as **DEPRECATED** (backward compatibility only)
+   - `create_learning_strategy()` now delegates to registry
+   - Updated docstrings to recommend `LearningStrategyRegistry` for new code
+
+4. **Updated `src/thalia/learning/__init__.py`**
+   - Exported `LearningStrategyRegistry`
+   - Added to `__all__` list
+
+**Architecture:**
+
+```python
+# Old pattern (still works but deprecated)
+stdp = create_learning_strategy(
+    "stdp",
+    learning_rate=0.02,
+    a_plus=0.01,
+    a_minus=0.012,
+)
+
+# New pattern (preferred - Tier 3.1)
+from thalia.learning import LearningStrategyRegistry, STDPConfig
+
+stdp = LearningStrategyRegistry.create(
+    "stdp",
+    STDPConfig(learning_rate=0.02, a_plus=0.01, a_minus=0.012)
+)
+
+# Discovery
+available = LearningStrategyRegistry.list_strategies()
+# ['bcm', 'composite', 'error_corrective', 'hebbian', 'stdp', 'three_factor']
+
+with_aliases = LearningStrategyRegistry.list_strategies(include_aliases=True)
+# ['bcm', 'composite', 'delta', 'dopamine', 'error', 'error_corrective', 
+#  'hebbian', 'rl', 'spike_timing', 'stdp', 'supervised', 'three_factor', 'threefactor']
+
+# Custom strategy registration
+@LearningStrategyRegistry.register("my_custom_rule", config_class=MyConfig)
+class MyCustomStrategy(LearningStrategy):
+    """My custom learning rule."""
+    def compute_update(self, weights, pre, post, **kwargs):
+        # Custom learning logic
+        ...
+```
+
+**Benefits Achieved:**
+
+✅ **Pluggable Learning Rules** - Easy to add custom strategies without modifying core code  
+✅ **Discovery API** - Programmatically list and inspect available strategies  
+✅ **Type Safety** - Config validation ensures correct configuration types  
+✅ **Plugin Support** - External packages can register strategies  
+✅ **Consistent Pattern** - Matches ComponentRegistry architecture  
+✅ **Metadata System** - Track description, version, author for each strategy  
+✅ **Backward Compatible** - Old factory functions still work  
+✅ **Alias Support** - Multiple names for same strategy ("rl" = "three_factor")
+
+**Usage in Regions:**
+
+Regions can now use the registry pattern for flexible learning:
+
+```python
+# In region __init__
+from thalia.learning import LearningStrategyRegistry, ThreeFactorConfig
+
+self.learning_strategy = LearningStrategyRegistry.create(
+    "three_factor",
+    ThreeFactorConfig(
+        learning_rate=0.02,
+        dopamine_sensitivity=0.5,
+        eligibility_decay=0.95
+    )
+)
+
+# In region learn() method
+def learn(self, input_spikes, output_spikes, dopamine):
+    new_weights, metrics = self.learning_strategy.compute_update(
+        self.weights,
+        input_spikes,
+        output_spikes,
+        neuromodulator=dopamine
+    )
+    self.weights.data = new_weights
+    return metrics
+```
+
+**Files Modified:**
+- `src/thalia/learning/strategy_registry.py` (NEW - 400 lines)
+- `src/thalia/learning/strategies.py` (added registration code)
+- `src/thalia/learning/strategy_factory.py` (delegated to registry)
+- `src/thalia/learning/__init__.py` (exported registry)
+
+**Impact:**
+- Files affected: 4 (1 new + 3 modified)
+- Breaking change: **None** - Fully backward compatible
+- New capability: Plugin system for learning strategies
+- Foundation for: Easier experimentation and ablation studies
+
+---
+
 **Current State:**
 Learning strategies exist but aren't discoverable:
 - `src/thalia/learning/strategies.py` defines strategies
