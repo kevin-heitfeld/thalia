@@ -86,6 +86,8 @@ from .d2_pathway import D2Pathway
 from .homeostasis_manager import HomeostasisManager, HomeostasisManagerConfig
 from .learning_manager import LearningManager
 from .checkpoint_manager import CheckpointManager
+from .state_tracker import StriatumStateTracker
+from .forward_coordinator import ForwardPassCoordinator
 
 
 @register_region(
@@ -178,27 +180,15 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # The Brain computes RPE and broadcasts normalized dopamine via set_dopamine().
         # We no longer have a local DopamineSystem here.
 
-        # Recent spikes for lateral inhibition
-        self.recent_spikes = torch.zeros(config.n_output, device=self.device)
-
-        # Track last action for credit assignment
-        self.last_action: Optional[int] = None
-
-        # Exploration state (uncertainty-driven, no epsilon-greedy)
-        self.exploring = False  # Track if current action was exploratory
-        self._last_uncertainty = 0.0
-        self._last_exploration_prob = 0.0
-
         # =====================================================================
-        # D1/D2 TRIAL ACCUMULATORS (for robust action selection)
+        # STATE TRACKER - Temporal State Management
         # =====================================================================
-        # Accumulate D1 and D2 votes across all timesteps of a trial.
-        # Final action selection uses accumulated NET = D1_total - D2_total.
-        # This is more robust than per-timestep decisions because:
-        # - Sparse spiking input means many timesteps have no activity
-        # - Integrating over time builds reliable evidence
-        self._d1_votes_accumulated = torch.zeros(self.n_actions, device=self.device)
-        self._d2_votes_accumulated = torch.zeros(self.n_actions, device=self.device)
+        # Consolidates all temporal state: votes, spikes, trials, actions
+        self.state_tracker = StriatumStateTracker(
+            n_actions=self.n_actions,
+            n_output=config.n_output,
+            device=self.device,
+        )
 
         # =====================================================================
         # EXPLORATION MANAGER (UCB + Adaptive Exploration)
@@ -1458,8 +1448,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         # ACCUMULATE D1/D2 votes across timesteps for trial-level decision
         # This integrates sparse spiking evidence over time
-        self._d1_votes_accumulated += d1_votes
-        self._d2_votes_accumulated += d2_votes
+        self.state_tracker.accumulate_votes(d1_votes, d2_votes)
 
         # =====================================================================
         # OUTPUT SPIKES: Return D1 activity (action selection happens in finalize_action)
@@ -1474,15 +1463,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # =====================================================================
         # Store PFC goal context and D1/D2 spikes for goal-conditioned learning
         # These will be used in deliver_reward() to modulate weight updates
-        # pfc_goal_context was extracted above if goal conditioning is enabled
-        if pfc_goal_context is not None:
-            self._last_pfc_goal_context = pfc_goal_context.clone()
-        else:
-            self._last_pfc_goal_context = None
-
-        # Store D1/D2 spikes for PFC modulation weight learning
-        self._last_d1_spikes = d1_spikes.clone()
-        self._last_d2_spikes = d2_spikes.clone()
+        self.state_tracker.store_spikes_for_learning(d1_spikes, d2_spikes, pfc_goal_context)
 
         # =====================================================================
         # UPDATE ELIGIBILITY TRACES (for all active neurons)
@@ -1521,18 +1502,12 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # Brain broadcasts to all regions every timestep via _update_neuromodulators().
         # No local decay needed.
 
-        # Update recent spikes (based on D1 output) - already 1D
-        self.recent_spikes = self.recent_spikes.float() * 0.9 + d1_spikes.float()
-
-        # Track activity for homeostatic scaling
-        self._trial_spike_count += d1_spikes.sum().item() + d2_spikes.sum().item()
-        self._trial_timesteps += 1
+        # Update recent spikes and trial activity via state_tracker
+        self.state_tracker.update_recent_spikes(d1_spikes, decay=0.9)
+        self.state_tracker.update_trial_activity(d1_spikes, d2_spikes)
 
         # Store D1 and D2 spikes for learning manager
         self.learning_manager.store_spikes(d1_spikes, d2_spikes)
-        # Also store locally for debugging
-        self._last_d1_spikes = d1_spikes
-        self._last_d2_spikes = d2_spikes
 
         self.state.spikes = output_spikes
         # self.state.dopamine is set by Brain via set_dopamine(), no need to update here
@@ -1735,13 +1710,14 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     def reset_state(self) -> None:
         super().reset_state()
         
+        # Reset state tracker (votes, recent spikes, trial stats, last action)
+        self.state_tracker.reset_state()
+        
         # Reset managers and subsystems
         self._reset_subsystems('eligibility', 'd1_neurons', 'd2_neurons')
         
-        # Reset trace tensors
+        # Reset trace tensors (eligibility traces delegated to pathways)
         self._reset_tensors(
-            'recent_spikes',
-            'd1_eligibility', 'd2_eligibility',
             'd1_input_trace', 'd2_input_trace',
             'd1_output_trace', 'd2_output_trace'
         )
@@ -1750,18 +1726,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         if self.td_lambda_d1 is not None:
             self.td_lambda_d1.reset_episode()
             self.td_lambda_d2.reset_episode()
-        
-        # Reset scalars
-        self._reset_scalars(
-            last_action=None,
-            exploring=False,
-            _trial_spike_count=0.0,
-            _trial_timesteps=0,
-            _last_rpe=0.0,
-            _last_expected=0.0,
-            _last_d1_spikes=None
-        )
-        self._last_d2_spikes = None
 
     # =========================================================================
     # DIAGNOSTIC METHODS
@@ -1794,10 +1758,13 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             d2_per_action.append(d2_mean)
             net_per_action.append(d1_mean - d2_mean)
 
-        # Accumulated votes (current trial)
-        d1_votes = self._d1_votes_accumulated.tolist()
-        d2_votes = self._d2_votes_accumulated.tolist()
-        net_votes = self.get_accumulated_net_votes().tolist()
+        # Accumulated votes (current trial) - from state_tracker
+        d1_votes, d2_votes = self.state_tracker.get_accumulated_votes()
+        net_votes = self.state_tracker.get_net_votes()
+        
+        d1_votes_list = d1_votes.tolist()
+        d2_votes_list = d2_votes.tolist()
+        net_votes_list = net_votes.tolist()
 
         # Use mixin helpers for weight statistics
         d1_weight_stats = self.weight_diagnostics(self.d1_weights, "d1")
@@ -1816,11 +1783,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             "tonic_dopamine": self.tonic_dopamine,
         }
 
-        # Exploration state
+        # Exploration state - from state_tracker
         exploration_state = {
-            "exploring": self.exploring,
-            "last_uncertainty": self._last_uncertainty,
-            "last_exploration_prob": self._last_exploration_prob,
+            "exploring": self.state_tracker.exploring,
+            "last_uncertainty": self.state_tracker._last_uncertainty,
+            "last_exploration_prob": self.state_tracker._last_exploration_prob,
             "recent_accuracy": self._recent_accuracy,
         }
 
@@ -1853,15 +1820,15 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         custom = {
             "n_actions": self.n_actions,
             "neurons_per_action": self.neurons_per_action,
-            "last_action": self.last_action,
+            "last_action": self.state_tracker.last_action,
             # Per-action state
             "d1_weight_means": d1_per_action,
             "d2_weight_means": d2_per_action,
             "net_weight_means": net_per_action,
             # Current trial votes
-            "d1_votes": d1_votes,
-            "d2_votes": d2_votes,
-            "net_votes": net_votes,
+            "d1_votes": d1_votes_list,
+            "d2_votes": d2_votes_list,
+            "net_votes": net_votes_list,
             # Weight statistics (manual due to NET computation)
             **d1_weight_stats,
             **d2_weight_stats,

@@ -30,31 +30,17 @@ class ActionSelectionMixin:
     - device: torch.device
     - d1_weights, d2_weights: nn.Parameter (properties delegating to pathways)
     - state: with .spikes attribute
-    - _d1_votes_accumulated, _d2_votes_accumulated: torch.Tensor
-    - _action_counts: torch.Tensor (property delegating to exploration_manager)
-    - _total_trials: int (property delegating to exploration_manager)
-    - tonic_dopamine: float (property delegating to exploration_manager)
-    - last_action: Optional[int]
-    - exploring: bool
+    - state_tracker: StriatumStateTracker (provides votes, last_action, exploring)
     - exploration_manager: ExplorationManager
     """
     
     # Type hints for mixin - these are provided by Striatum
-    # Note: Properties are not typed here (would conflict with property definitions in Striatum)
-    # Properties in Striatum: d1_weights, d2_weights, _action_counts, _total_trials, tonic_dopamine
     striatum_config: "StriatumConfig"
     n_actions: int
     neurons_per_action: int
     device: torch.device
-    # d1_weights: property → pathway.weights (not typed here to avoid override conflict)
-    # d2_weights: property → pathway.weights (not typed here to avoid override conflict)
-    _d1_votes_accumulated: torch.Tensor
-    _d2_votes_accumulated: torch.Tensor
-    # _action_counts: property (not typed here)
-    # _total_trials: property (not typed here)
-    # tonic_dopamine: property (not typed here)
-    last_action: Optional[int]
-    exploring: bool
+    state_tracker: Any  # StriatumStateTracker
+    exploration_manager: Any  # ExplorationManager
     state: Any
 
     def _get_action_population_indices(self, action: int) -> slice:
@@ -144,7 +130,7 @@ class ActionSelectionMixin:
         Returns:
             Action index (0 to n_actions-1), or None if no action taken.
         """
-        return self.last_action
+        return self.state_tracker.last_action
 
     def get_accumulated_net_votes(self) -> torch.Tensor:
         """Get accumulated D1-D2 (NET) votes across all timesteps.
@@ -156,12 +142,11 @@ class ActionSelectionMixin:
         Returns:
             Tensor of shape (n_actions,) with NET = D1_total - D2_total per action.
         """
-        return self._d1_votes_accumulated - self._d2_votes_accumulated
+        return self.state_tracker.get_net_votes()
 
     def reset_accumulated_votes(self) -> None:
         """Reset D1/D2 vote accumulators for a new trial."""
-        self._d1_votes_accumulated.zero_()
-        self._d2_votes_accumulated.zero_()
+        self.state_tracker.reset_trial_votes()
 
     def update_action_counts(self, action: int) -> None:
         """Update UCB action counts after a trial completes.
@@ -230,13 +215,13 @@ class ActionSelectionMixin:
                 tonic_boost = self.tonic_dopamine * self.striatum_config.tonic_exploration_scale
                 exploration_prob = min(0.6, exploration_prob + tonic_boost)
 
-        self.exploring = False
+        self.state_tracker.exploring = False
         probs = None
         selected_action = 0
 
         if explore and torch.rand(1).item() < exploration_prob:
             # Random exploration
-            self.exploring = True
+            self.state_tracker.exploring = True
             selected_action = int(torch.randint(0, self.n_actions, (1,)).item())
         else:
             if self.striatum_config.softmax_action_selection:
@@ -254,7 +239,8 @@ class ActionSelectionMixin:
                     selected_action = int(max_indices[0].item())
 
         # Update bookkeeping ONCE per trial
-        self.last_action = selected_action
+        self.state_tracker.set_last_action(selected_action, self.state_tracker.exploring)
+        self.state_tracker.update_exploration_stats(uncertainty=0.0, exploration_prob=exploration_prob)
         self.update_action_counts(selected_action)
 
         return {
@@ -262,7 +248,7 @@ class ActionSelectionMixin:
             "probs": probs,
             "ucb_bonus": ucb_bonus,
             "net_votes": net_votes,
-            "exploring": self.exploring,
+            "exploring": self.state_tracker.exploring,
             "exploration_prob": exploration_prob,
         }
 
