@@ -7,10 +7,12 @@ Standardized component following the region_components pattern.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, Any, TYPE_CHECKING
 
 import torch.nn as nn
 
+from thalia.config.base import BaseConfig
 from thalia.core.region_components import HomeostasisComponent
 from thalia.core.base_manager import ManagerContext
 from thalia.learning.unified_homeostasis import (
@@ -20,6 +22,22 @@ from thalia.learning.unified_homeostasis import (
 
 if TYPE_CHECKING:
     from thalia.regions.striatum.config import StriatumConfig
+
+
+@dataclass
+class HomeostasisManagerConfig(BaseConfig):
+    """Configuration for striatum homeostasis management.
+    
+    Extends UnifiedHomeostasisConfig with striatum-specific parameters.
+    """
+    weight_budget: float = 1.0
+    normalization_rate: float = 0.1
+    baseline_pressure_enabled: bool = True
+    baseline_pressure_rate: float = 0.001
+    baseline_target_net: float = 0.0
+    w_min: float = 0.0
+    w_max: float = 1.0
+
 
 
 class StriatumHomeostasisComponent(HomeostasisComponent):
@@ -114,3 +132,5 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
 
 # Backwards compatibility alias
 HomeostasisManager = StriatumHomeostasisComponent
+
+__all__ = ["StriatumHomeostasisComponent", "HomeostasisManagerConfig", "HomeostasisManager"]
