@@ -71,6 +71,9 @@ from thalia.learning.strategies import (
     # Factory
     create_strategy,
 )
+from thalia.learning.strategy_registry import (
+    LearningStrategyRegistry,
+)
 from thalia.learning.strategy_factory import (
     create_learning_strategy,
     create_cortex_strategy,
@@ -124,6 +127,8 @@ __all__ = [
     "ErrorCorrectiveStrategy",
     "CompositeStrategy",
     "create_strategy",
+    # Strategy Registry (new Tier 3 feature)
+    "LearningStrategyRegistry",
     # Strategy Factory (Tier 2 - minimal, used only)
     "create_learning_strategy",
     "create_cortex_strategy",

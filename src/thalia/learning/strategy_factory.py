@@ -4,6 +4,9 @@ Learning Strategy Factory.
 Provides factory functions for creating learning strategies used by
 regions with simple, standard learning rules.
 
+**DEPRECATED**: This module provides backward compatibility with the old
+factory pattern. New code should use LearningStrategyRegistry directly.
+
 Used By:
 ========
 - Prefrontal: STDP with dopamine gating
@@ -37,10 +40,13 @@ from thalia.learning.strategies import (
     ThreeFactorConfig,
     ErrorCorrectiveConfig,
 )
+from thalia.learning.strategy_registry import (
+    create_learning_strategy as registry_create_learning_strategy,
+)
 
 
 # =============================================================================
-# Strategy Registry
+# Strategy Registry (DEPRECATED - use LearningStrategyRegistry)
 # =============================================================================
 
 STRATEGY_REGISTRY: Dict[str, type] = {
@@ -71,6 +77,9 @@ def create_learning_strategy(
 ) -> LearningStrategy:
     """Create a learning strategy with configuration.
 
+    **DEPRECATED**: Use LearningStrategyRegistry.create() or the
+    registry_create_learning_strategy function for new code.
+
     Used by: Prefrontal (creates STDP strategy)
 
     Args:
@@ -81,7 +90,7 @@ def create_learning_strategy(
         Configured learning strategy instance
 
     Example:
-        >>> # Prefrontal uses this for dopamine-gated STDP
+        >>> # Old pattern (still works but deprecated)
         >>> stdp = create_learning_strategy(
         ...     "stdp",
         ...     learning_rate=0.02,
@@ -90,25 +99,15 @@ def create_learning_strategy(
         ...     tau_plus=20.0,
         ...     tau_minus=20.0,
         ... )
+
+        >>> # New pattern (preferred)
+        >>> stdp = LearningStrategyRegistry.create(
+        ...     "stdp",
+        ...     STDPConfig(learning_rate=0.02, a_plus=0.01, ...)
+        ... )
     """
-    if strategy_type not in STRATEGY_REGISTRY:
-        available = ", ".join(STRATEGY_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown strategy type: {strategy_type}. "
-            f"Available: {available}"
-        )
-
-    # Get config class
-    config_class = CONFIG_REGISTRY.get(strategy_type)
-    if config_class is None:
-        raise ValueError(f"No config class for strategy: {strategy_type}")
-
-    # Create config
-    config = config_class(**config_kwargs)
-
-    # Create strategy
-    strategy_class = STRATEGY_REGISTRY[strategy_type]
-    return strategy_class(config)
+    # Delegate to registry-based implementation
+    return registry_create_learning_strategy(strategy_type, **config_kwargs)
 
 
 def create_cortex_strategy(
