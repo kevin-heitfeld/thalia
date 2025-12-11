@@ -1,946 +1,1002 @@
-# Architecture Review – December 11, 2025
+# Architecture Review – 2025-12-11
 
 ## Executive Summary
 
-This comprehensive architectural review analyzes the Thalia codebase (`src/thalia/`) across core modules, brain regions, learning rules, and neural pathways. The codebase demonstrates strong adherence to biological plausibility principles and consistent application of architectural patterns.
+This architectural analysis of the Thalia codebase reveals a **mature, well-structured neuroscience-inspired framework** with excellent adherence to biological plausibility and software engineering best practices. The codebase demonstrates strong patterns including:
 
-### Current Status (December 11, 2025)
+- ✅ **Unified component protocol** ensuring regions and pathways have feature parity
+- ✅ **Centralized neuromodulator management** (VTA, LC, NB) with proper broadcast architecture
+- ✅ **Weight initialization registry** eliminating scattered initialization logic
+- ✅ **Manager pattern** for complex subsystems (learning, homeostasis, exploration)
+- ✅ **Consistent use of constants** for neuron parameters via `neuron_constants.py`
 
-**Tier 1 - Quick Wins**: ✅ **COMPLETE (5/5)**
-- All foundational improvements implemented
-- Neuron constants registry, BaseNeuronConfig, region sizes, standardized diagnostics
+**Key Strengths:**
+- Excellent documentation and ADR (Architecture Decision Records) system
+- Strong separation of concerns (regions, pathways, learning rules)
+- Component parity between regions and pathways actively enforced
+- Biologically-plausible constraints maintained throughout
 
-**Tier 2 - Moderate Refactoring**: ✅ **COMPLETE (7/7)**
-- ✅ 2.1a Striatum split: -906 lines (34% reduction)
-- ✅ 2.1b Hippocampus split: -379 lines (16.9% reduction)
-- ✅ 2.1c Brain split: -510 lines (22.2% reduction)
-- ✅ 2.2 Learning rules: Infrastructure complete, selective adoption working (Prefrontal example)
-- ✅ 2.3 Oscillator coupling: OscillatorCouplingManager implemented (258 lines)
-- ✅ 2.4 Capacity metrics: Already standardized, all regions return CapacityMetrics dataclass
-- ✅ 2.5 STP presets: 11 pathway types documented (317 lines)**Tier 3 - Major Restructuring**: ✅ **STARTED (1/4)**
-- ✅ 3.1 Component registry: ComponentRegistry implemented (605 lines) with 31 passing tests
-- 🔮 3.2 Config hierarchy: Strict dataclass validation (planned)
-- 🔮 3.3 Pathway type hierarchy: Feedforward/recurrent/modulatory bases (planned)
-
-### Key Achievements
-
-✅ **God Object Mitigation**: -1795 total lines across 3 files (28% avg reduction)
-- Striatum: 2676 → 1770 lines
-- Hippocampus: 2239 → 1860 lines
-- Brain: 2297 → 1787 lines
-
-✅ **Manager Pattern Success**: All extractions maintain backward compatibility
-- 13/13 striatum tests passing
-- Manager integration tests passing
-- Zero breaking changes to public API
-
-✅ **Learning Strategy Pattern**: Infrastructure complete, selective adoption working
-- Prefrontal demonstrates pattern with STDPStrategy (via create_learning_strategy)
-- Striatum keeps specialized opponent logic (D1/D2 pathways)
-- Cortex uses dedicated BCMRule module
-- Pattern proven viable, forced migration unnecessary
-
-✅ **Infrastructure Improvements**:
-- PathwayManager (284 lines) - manages all 9 inter-region pathways
-- NeuromodulatorManager (241 lines) - coordinates VTA/LC/NB systems
-- OscillatorCouplingManager (258 lines) - broadcasts phases to regions
-- STP_PRESETS module (317 lines) - 11 biologically-validated pathway configs
-- Learning strategies (813 lines) - HebbianStrategy, STDPStrategy, BCMStrategy, ThreeFactorStrategy, ErrorCorrectiveStrategy
-
-✅ **Strong patterns**: BrainComponent protocol, WeightInitializer registry, mixin composition, spike-based processing
-✅ **Biological plausibility**: Local learning rules, neuromodulation, spike timing dynamics maintained throughout
-✅ **Component parity**: Regions and pathways properly implement BrainComponent protocol---
-
-## Tier 1 – High Impact, Low Disruption (Quick Wins) ✅ **COMPLETE**
-
-### 1.1 Extract Neuron Constants to Named Registry ✅ **DONE**
-
-**Implementation**: Created `src/thalia/core/neuron_constants.py` with 30+ documented constants
-- `TAU_MEM_STANDARD`, `TAU_SYN_EXCITATORY`, `TAU_SYN_INHIBITORY`
-- `V_THRESHOLD_STANDARD`, `V_RESET_STANDARD`, `V_REST_STANDARD`
-- `E_EXCITATORY`, `E_INHIBITORY`, `G_LEAK_STANDARD`
-- Updated: cerebellum.py, striatum.py, hippocampus/trisynaptic.py, spiking_pathway.py
-- Exported in public API: `thalia.core.__init__.py`
-
-**Result**: Eliminated 50+ magic numbers, added biological documentation with neuroscience references
-
-### 1.2 Create BaseNeuronConfig Dataclass ✅ **DONE**
-
-**Implementation**: Created `src/thalia/config/neuron_config.py`
-```python
-@dataclass
-class BaseNeuronConfig(BaseConfig):
-    """Shared neuron parameters across all neuron types."""
-    tau_mem: float = TAU_MEM_STANDARD
-    v_rest: float = V_REST_STANDARD
-    v_reset: float = V_RESET_STANDARD
-    v_threshold: float = V_THRESHOLD_STANDARD
-    tau_ref: float = TAU_REF_STANDARD
-    dt_ms: float = 1.0  # For decay calculations
-
-@dataclass
-class LIFConfig(BaseNeuronConfig):
-    """LIF-specific parameters (no n_neurons - that's a constructor arg)."""
-    tau_adapt: float = 100.0
-    adapt_increment: float = 0.0
-    noise_std: float = 0.0
-    v_min: Optional[float] = None
-```
-
-**Key Design Decision**:
-- `BaseNeuronConfig` inherits from `BaseConfig` (NOT `NeuralComponentConfig`)
-- Neuron configs describe **biophysics**, not **component structure**
-- `n_neurons` is a constructor parameter of `LIFNeuron`, not a config field
-- Configs only include: neuron model parameters + device/dtype/seed + dt_ms
-
-**Result**: Reduced config duplication by 30+ lines, proper semantic separation
-
-### 1.3 Consolidate Diagnostics Helper Functions ✅ **DONE**
-
-**Verification Result**: All major regions already use `DiagnosticsMixin` helpers
-- **Striatum**: Uses `weight_diagnostics()`, `spike_diagnostics()`, `trace_diagnostics()`
-- **Hippocampus**: Uses all three mixin helpers consistently
-- **Cortex**: Uses mixin helpers for all layer diagnostics
-
-**Remaining manual stats**: Only for specialized metrics (not duplicated weight stats)
-
-### 1.4 Move Pathway Protocol Documentation ✅ **DONE**
-
-Updated `src/thalia/core/pathway_protocol.py` to reflect unified NeuralComponent architecture (ADR-008)
-
-### 1.5 Add Region Size Constants ✅ **DONE**
-
-**Implementation**: Created `src/thalia/config/region_sizes.py`
-- `DG_TO_EC_EXPANSION = 4.0`, `CA3_TO_DG_RATIO = 0.5`, `CA1_TO_CA3_RATIO = 1.0`
-- `L4_TO_INPUT_RATIO = 1.5`, `L23_TO_L4_RATIO = 2.0`, `L5_TO_L23_RATIO = 0.5`
-- Utility functions: `compute_hippocampus_sizes()`, `compute_cortex_layer_sizes()`
-- Exported in public API: `thalia.config.__init__.py`
+**Areas for Improvement:**
+- Some **god object** tendencies in `Striatum` (1931 lines) and `EventDrivenBrain` (2339 lines)
+- Minor **code duplication** in weight expansion logic across regions
+- Opportunity to extract **manager base classes** to reduce boilerplate
+- Some **magic numbers** remain in activation/gain computations
 
 ---
 
-## Tier 2 – Moderate Refactoring (Strategic Improvements) ✅ **COMPLETE (7/7)**
+## Tier 1 - High Impact, Low Disruption
 
-These changes require more careful coordination but yield significant architectural benefits.
+### 1.1 Extract Shared Weight Growth Logic
 
-### 2.1 Split Large Region Files (God Object Mitigation)
+**Status: ✅ Already Implemented**
 
-**Detected God Objects**:
+The weight expansion logic has already been consolidated into `src/thalia/regions/base.py:_expand_weights()` (lines 665-725). This helper method provides a unified weight expansion strategy for region growth.
 
-1. **`src/thalia/regions/striatum/striatum.py` (1770 lines)** ✅ **IMPROVED (-906 lines)**
-   - Contains: Striatum class, action selection, value estimation
-   - Complexity: Moderate (down from Very High)
-   - **Recent Extractions**:
-     - ✅ D1/D2 pathways → `d1_pathway.py`, `d2_pathway.py` (13/13 tests passing)
-     - ✅ Homeostasis → `homeostasis.py` (13/13 tests passing)
-     - ✅ Learning logic → `learning_manager.py` (~278 lines)
-     - ✅ Checkpointing → `checkpoint_manager.py` (~198 lines)
-   - **Remaining opportunities**: Diagnostics (~150 lines), value estimation (~100 lines)
+**Remaining pathway-specific implementations:**
+- `src/thalia/regions/striatum/pathway_base.py:add_neurons()` - Handles D1/D2 pathway-specific logic
+- `src/thalia/integration/spiking_pathway.py:add_neurons()` - Includes axonal delays and connectivity masks
 
-2. **`src/thalia/regions/hippocampus/trisynaptic.py` (1860 lines)** ✅ **IMPROVED (-379 lines)**
-   - Contains: Three sub-regions (DG, CA3, CA1), theta dynamics, STP, feedforward inhibition, episode management
-   - Complexity: High (trisynaptic circuit logic + oscillations)
-   - **Recent Extractions**:
-     - ✅ PlasticityManager → `plasticity_manager.py` (~148 lines)
-     - ✅ EpisodeManager → `episode_manager.py` (~215 lines)
-   - **Result**: Reduced from 2239→1860 lines (-379 lines, -16.9%)
-   - **Pattern**: Manager classes instantiated in `__init__`, methods delegate to managers
-   - **Remaining opportunities**: Could extract theta/gamma coupling (~200 lines), diagnostics (~150 lines)
+These remaining implementations have legitimate pathway-specific requirements (delays, masks) that make complete consolidation less beneficial. The core consolidation goal has been achieved.
 
-3. **`src/thalia/core/brain.py` (1787 lines)** ✅ **IMPROVED (-510 lines, -22.2%)**
-   - Contains: Brain initialization, pathways, event system, neuromodulation, trial management
-   - Complexity: Very high → High
-   - **Recent Extractions**:
-     - ✅ Pathway management → `pathway_manager.py` (284 lines) - INTEGRATED
-     - ✅ Neuromodulator systems → `neuromodulator_manager.py` (241 lines) - INTEGRATED
-   - **Integration Status**: ✅ Managers fully instantiated and operational in brain.py
-     - PathwayManager: Creates and tracks all 9 inter-region pathways
-     - NeuromodulatorManager: Coordinates VTA/LC/NB systems with biological interactions
-   - **Remaining opportunities**: Event scheduling (~150 lines), diagnostics collection (~100 lines)
+---
 
-**Proposed Decomposition**:
+### 1.2 Extract Magic Numbers to Named Constants
 
-#### 2.1a: Split Striatum ✅ **LARGELY COMPLETE**
-```
-src/thalia/regions/striatum/
-├── striatum.py              (main class, ~1770 lines) ✅ Reduced from 2676
-├── d1_pathway.py            (D1 direct pathway, ~350 lines) ✅ DONE
-├── d2_pathway.py            (D2 indirect pathway, ~350 lines) ✅ DONE
-├── learning_manager.py      (three-factor learning, ~278 lines) ✅ DONE
-├── checkpoint_manager.py    (state management, ~198 lines) ✅ DONE
-├── homeostasis.py           (unified homeostasis, ~300 lines) ✅ DONE
-├── exploration.py           (UCB, adaptive exploration, ~300 lines) ✅ DONE
-├── action_selection.py      (already exists) ✅
-├── eligibility.py           (already exists) ✅
-├── td_lambda.py             (already exists) ✅
-└── config.py                (already exists) ✅
-```
+**Status: ✅ Implemented (December 11, 2025)**
 
-**Status**:
-- **Total reduction**: 906 lines extracted from striatum.py (34% reduction)
-- **Tests**: All 13 exploration tests passing
-- **Pattern**: Manager classes instantiated in `__init__`, methods delegate to managers
-- **Further opportunities**: Can extract diagnostics (~150 lines) and value estimation (~100 lines) if needed
+**Changes Made:**
 
-#### 2.1b: Split Hippocampus ✅ **COMPLETE**
-```
-src/thalia/regions/hippocampus/
-├── trisynaptic.py        (main class + coordination, ~2144 lines) ✅ Reduced from 2239
-├── plasticity_manager.py (STDP, synaptic scaling, intrinsic, ~148 lines) ✅ DONE
-├── episode_manager.py    (episodic memory, retrieval, ~215 lines) ✅ DONE
-├── replay_engine.py      (already exists, good!)
-├── config.py             (already exists, good!)
-└── hindsight_relabeling.py (HER integration, already exists)
-```
+1. **Added to `src/thalia/core/neuron_constants.py`:**
+   - Neuromodulator parameters: `NE_MAX_GAIN`, `NE_GAIN_RANGE`, `TONIC_D1_GAIN_SCALE`
+   - Theta modulation: `THETA_BASELINE_MIN`, `THETA_BASELINE_RANGE`, `THETA_CONTRAST_MIN`, `THETA_CONTRAST_RANGE`, `BASELINE_EXCITATION_SCALE`
+   - Learning thresholds: `INTRINSIC_LEARNING_THRESHOLD`, `MATCH_THRESHOLD`
 
-**Status**:
-- **Total reduction**: 379 lines extracted from trisynaptic.py (16.9% reduction)
-- **Tests**: Manager integration test passing
-- **Pattern**: Manager classes instantiated in `__init__`, methods delegate to managers
-- **Further opportunities**: Can extract theta/gamma coupling (~200 lines) and diagnostics (~150 lines) if needed
+2. **Updated Files to Use Constants:**
+   - `src/thalia/regions/striatum/striatum.py` - Theta modulation, tonic D1 gain, NE gain
+   - `src/thalia/core/brain.py` - Intrinsic learning threshold
+   - `src/thalia/regions/prefrontal.py` - NE gain modulation
+   - `src/thalia/regions/hippocampus/trisynaptic.py` - NE gain modulation
+   - `src/thalia/regions/cortex/layered_cortex.py` - NE gain modulation
+   - `src/thalia/regions/cerebellum.py` - NE gain modulation
 
-#### 2.1c: Split Brain ✅ **COMPLETE**
-```
-src/thalia/core/
-├── brain.py              (initialization + high-level API, 1787 lines) ✅ Reduced from 2297
-├── pathway_manager.py    (manages all 9 pathways, 284 lines) ✅ INTEGRATED
-├── neuromodulator_manager.py (VTA/LC/NB coordination, 241 lines) ✅ INTEGRATED
-└── oscillator_coupling.py (broadcasts oscillator phases, 258 lines) ✅ INTEGRATED
-```
-
-**Rationale**:
-- Improves maintainability and testability
-- Reduces cognitive load when working on specific subsystems
-- Follows Single Responsibility Principle
-- Easier code review and debugging
-
-**Actual Impact Achieved**:
-- **Files affected**: 3 large files → 20+ focused files (god objects + managers)
-- **Line reduction**: -1795 lines total (28% average reduction across 3 files)
-- **Breaking changes**: None - public API preserved, backward compatible
-- **Test status**: All existing tests passing
-- **Benefits realized**:
-  - Reduced cognitive load - subsystems independently understandable
-  - Improved testability - managers testable in isolation
-  - Better maintainability - changes localized to specific managers
-  - Easier onboarding - clearer separation of concerns
-
-### 2.2 Standardize Learning Rule Application Pattern ✅ **INFRASTRUCTURE COMPLETE, SELECTIVE ADOPTION**
-
-**Audit Results (December 11, 2025)**:
-
-Infrastructure Status: ✅ **COMPLETE AND WORKING**
-- `src/thalia/learning/strategies.py`: 813 lines with 5 strategy types
-- `src/thalia/learning/strategy_factory.py`: Factory and registry for easy instantiation
-- `src/thalia/learning/strategy_mixin.py`: LearningStrategyMixin for uniform application
-- Strategies available: HebbianStrategy, STDPStrategy, BCMStrategy, ThreeFactorStrategy, ErrorCorrectiveStrategy
-
-**Per-Region Learning Implementation Status**:
-
-1. **Prefrontal Cortex** ✅ **USES STRATEGIES**
-   - Implementation: `create_learning_strategy("stdp", ...)` (line 327)
-   - Pattern: LearningStrategyMixin via NeuralComponent base
-   - Status: **Best practice example** - demonstrates pattern works well
-   - Code: Clean, maintainable, testable in isolation
-
-2. **Cortex (Layered)** ✅ **DEDICATED MODULE (BCMRule)**
-   - Implementation: `thalia.learning.bcm.BCMRule` (dedicated module)
-   - Pattern: Specialized module for BCM with sliding threshold
-   - Status: **Well-abstracted** - BCMRule is already a clean abstraction
-   - Recommendation: Keep as-is, BCMRule module serves same purpose as strategy
-
-3. **Hippocampus** ⏭️ **INLINE STDP (Low Priority Migration)**
-   - Implementation: PlasticityManager lines 53-70 (inline LTP/LTD)
-   - Pattern: Simple STDP: `ltp = outer(post, trace)`, `ltd = outer(trace, post)`
-   - Status: **Could use STDPStrategy** but current code is ~20 lines, clear, working
-   - Recommendation: Low priority - migration would save ~10 lines but add indirection
-
-4. **Striatum** ✅ **SPECIALIZED OPPONENT LOGIC (Intentional)**
-   - Implementation: D1Pathway/D2Pathway with OPPOSITE dopamine responses
-   - Pattern: D1 (DA+ → LTP, DA- → LTD), D2 (DA+ → LTD, DA- → LTP)
-   - Status: **Generic ThreeFactorStrategy can't handle opponent pathways**
-   - Recommendation: **Keep specialized** - biological accuracy requires custom logic
-
-5. **Cerebellum** ✅ **ERROR-CORRECTIVE (Specialized)**
-   - Implementation: Climbing fiber error signals (supervised learning)
-   - Pattern: Δw = pre × error (Purkinje cells learn from inferior olive)
-   - Status: **Domain-specific** - cerebellar learning is unique
-   - Recommendation: Keep specialized (could use ErrorCorrectiveStrategy but minimal benefit)
-
-**Conclusion**: ✅ **ARCHITECTURE GOAL ACHIEVED**
-
-The strategy pattern infrastructure exists and works well (proven by Prefrontal).
-Selective adoption is **appropriate** because:
-- ✅ Simple regions (Prefrontal) benefit from standard strategies
-- ✅ Specialized regions (Striatum opponent pathways) need custom logic for biological accuracy
-- ✅ Dedicated modules (BCMRule) serve the same abstraction purpose
-- ✅ Inline code (Hippocampus ~20 lines) doesn't justify migration overhead
-
-**Recommendation**: Mark as COMPLETE
-- Infrastructure is production-ready
-- Prefrontal demonstrates successful adoption
-- Other regions have valid architectural reasons for current approach
-- No forced migration needed - selective adoption is the right pattern
-
-**Impact Assessment**:
-- **Code quality**: High - infrastructure well-designed and tested
-- **Adoption**: Appropriate - used where beneficial, skipped where specialized logic needed
-- **Duplication reduction**: Achieved for standard learning (Prefrontal)
-- **Biological accuracy**: Maintained via specialized implementations (Striatum, Cerebellum)
-
-### 2.3 Create Unified Oscillator Coupling Manager ✅ **DONE**
-
-**Implementation**: Created `src/thalia/core/oscillator_coupling.py` (258 lines)
-- `OscillatorCouplingManager` class centralizes oscillator-region coupling
-- Configurable coupling strengths per region-oscillator pair
-- Broadcasts phases, signals, and theta slots to capable regions
-- Integrated into EventDrivenBrain initialization
-
-**Original Pattern** (replaced):
+**Before:**
 ```python
-# Old: Manual broadcasting in brain.py
-theta_phase = self.theta_oscillator.get_phase()
-self.cortex.set_theta_phase(theta_phase)
-self.hippocampus.set_theta_phase(theta_phase)
-# ... repeated for each region and each oscillator
+theta_baseline_mod = 0.7 + 0.3 * encoding_mod
+ne_gain = 1.0 + 0.5 * ne_level
+if abs(intrinsic_reward) > 0.3:
 ```
 
-**New Pattern**:
+**After:**
 ```python
-class OscillatorCouplingManager:
-    """Manages oscillator-region coupling with configurable strength."""
+theta_baseline_mod = THETA_BASELINE_MIN + THETA_BASELINE_RANGE * encoding_mod
+ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
+if abs(intrinsic_reward) > INTRINSIC_LEARNING_THRESHOLD:
+```
 
-    def __init__(self, oscillators: Dict[str, Oscillator],
-                 regions: Dict[str, BrainRegion],
-                 couplings: Dict[str, float]):
-        """
-        Args:
-            oscillators: {"theta": theta_osc, "gamma": gamma_osc}
-            regions: {"cortex": cortex, "hippocampus": hippo}
-            couplings: {"cortex:theta": 1.0, "hippocampus:gamma": 0.5}
-        """
+**Impact:** 
+- Constants added: 11 new named constants
+- Files modified: 7 files
+- Magic numbers eliminated: ~30 occurrences
+- Improved readability and biological documentation
+
+---
+
+### 1.3 Consolidate Diagnostics Collection Methods
+
+**Status: ✅ Implemented and Adopted (December 11, 2025)**
+
+**Changes Made:**
+
+1. **Added `collect_standard_diagnostics()` helper to `DiagnosticsMixin`** in `src/thalia/core/diagnostics_mixin.py`
+2. **Updated 3 region implementations to use the helper:**
+   - `src/thalia/regions/cortex/layered_cortex.py`
+   - `src/thalia/regions/hippocampus/trisynaptic.py`
+   - `src/thalia/regions/striatum/striatum.py`
+
+**Implementation:**
+```python
+def collect_standard_diagnostics(
+    self,
+    region_name: str,
+    weight_matrices: Optional[Dict[str, torch.Tensor]] = None,
+    spike_tensors: Optional[Dict[str, torch.Tensor]] = None,
+    trace_tensors: Optional[Dict[str, torch.Tensor]] = None,
+    custom_metrics: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Collect diagnostics using standard region pattern."""
+    diag: Dict[str, Any] = {"region": region_name}
+    
+    # Auto-collect weight, spike, and trace stats
+    if weight_matrices:
+        for name, weights in weight_matrices.items():
+            if weights is not None:
+                diag.update(self.weight_diagnostics(weights, name))
+    
+    # ... (similar for spikes and traces)
+    
+    if custom_metrics:
+        diag.update(custom_metrics)
+    
+    return diag
+```
+
+**Adoption Examples:**
+
+**Cortex (Before: 45 lines → After: 35 lines)**
+```python
+# Before
+def get_diagnostics(self) -> Dict[str, Any]:
+    diag = {...}  # Initialize dict
+    if self.state.l4_spikes is not None:
+        diag.update(self.spike_diagnostics(self.state.l4_spikes, "l4"))
+    # ... repeat for l23, l5
+    diag.update(self.weight_diagnostics(self.w_input_l4.data, "input_l4"))
+    # ... repeat for 4 weight matrices
+    return diag
+
+# After
+def get_diagnostics(self) -> Dict[str, Any]:
+    return self.collect_standard_diagnostics(
+        region_name="cortex",
+        weight_matrices={"input_l4": self.w_input_l4.data, ...},
+        spike_tensors={"l4": self.state.l4_spikes, ...},
+        custom_metrics={...}
+    )
+```
+
+**Hippocampus (Before: 48 lines → After: 42 lines)**
+- Simplified weight collection from 5 separate calls to single dict
+- Maintains complex layer activity and pattern comparison logic in custom metrics
+
+**Striatum (Partial adoption)**
+- Complex per-action analysis kept manual
+- Used helper for trace diagnostics only
+- Demonstrates flexibility: helper used where beneficial, manual where needed
+
+**Impact:**
+- Files modified: 4 (diagnostics_mixin.py + 3 regions)
+- Lines saved: ~35 lines of boilerplate eliminated
+- Code clarity: Improved - clear separation of standard vs custom metrics
+- Backward compatible: ✅ No breaking changes
+- Adoption rate: 3/5 regions updated (60%)
+  - Prefrontal and Cerebellum don't yet have get_diagnostics() implementations
+
+**Benefits Realized:**
+- Reduced duplication in weight/spike/trace collection
+- Easier to maintain - changes to diagnostic format happen in one place
+- Clear pattern for future regions to follow
+- Flexible - regions can mix helper usage with custom logic
+
+---
+
+### 1.4 Standardize State Reset Patterns
+
+**Status: ✅ Implemented (December 11, 2025)**
+
+**Changes Made:**
+
+1. **Added helper methods to `NeuralComponent` base class** in `src/thalia/regions/base.py`:
+   - `_reset_tensors(*tensor_names)` - Zero multiple tensors by name
+   - `_reset_subsystems(*subsystem_names)` - Reset objects with `reset_state()` methods
+   - `_reset_scalars(**scalar_values)` - Set scalar attributes to specified values
+
+2. **Updated 5 region implementations to use helpers:**
+   - `src/thalia/regions/striatum/striatum.py`
+   - `src/thalia/regions/cerebellum.py`
+   - `src/thalia/regions/hippocampus/trisynaptic.py`
+   - `src/thalia/regions/cortex/layered_cortex.py`
+   - `src/thalia/regions/prefrontal.py`
+
+**Implementation:**
+
+**Base class helpers (base.py):**
+```python
+def _reset_tensors(self, *tensor_names: str) -> None:
+    """Helper to zero multiple tensors by name."""
+    for name in tensor_names:
+        if hasattr(self, name):
+            tensor = getattr(self, name)
+            if tensor is not None and isinstance(tensor, torch.Tensor):
+                tensor.zero_()
+
+def _reset_subsystems(self, *subsystem_names: str) -> None:
+    """Helper to reset multiple subsystems that have reset_state() methods."""
+    for name in subsystem_names:
+        if hasattr(self, name):
+            subsystem = getattr(self, name)
+            if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                subsystem.reset_state()
+
+def _reset_scalars(self, **scalar_values: Any) -> None:
+    """Helper to reset scalar attributes to specified values."""
+    for name, value in scalar_values.items():
+        if hasattr(self, name):
+            setattr(self, name, value)
+```
+
+**Example usage (Striatum):**
+
+**Before:**
+```python
+def reset_state(self) -> None:
+    super().reset_state()
+    self.eligibility.reset_state()
+    self.recent_spikes.zero_()
+    self.last_action = None
+    self.exploring = False
+    self.d1_eligibility.zero_()
+    self.d2_eligibility.zero_()
+    # ... 20+ more lines of similar patterns
+    if self.neurons is not None:
+        self.neurons.reset_state()
+    if hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
+        self.d1_neurons.reset_state()
+    # ... etc
+```
+
+**After:**
+```python
+def reset_state(self) -> None:
+    super().reset_state()
+    
+    # Reset managers and subsystems
+    self._reset_subsystems('eligibility', 'd1_neurons', 'd2_neurons')
+    
+    # Reset trace tensors
+    self._reset_tensors(
+        'recent_spikes',
+        'd1_eligibility', 'd2_eligibility',
+        'd1_input_trace', 'd2_input_trace',
+        'd1_output_trace', 'd2_output_trace'
+    )
+    
+    # Reset scalars
+    self._reset_scalars(
+        last_action=None,
+        exploring=False,
+        _trial_spike_count=0.0,
+        _trial_timesteps=0
+    )
+```
+
+**Impact:**
+- Files modified: 6 (base.py + 5 regions)
+- Lines saved: ~40 lines of repetitive boilerplate
+- Code clarity: ✅ Intent is explicit ("reset these tensors", "reset these subsystems")
+- Safety: ✅ Helpers check for existence and proper type before resetting
+- Consistency: ✅ All regions now use same pattern
+
+**Benefits Realized:**
+- **Reduced duplication** - No more copy-paste of `if hasattr/if not None` checks
+- **Clearer intent** - Method names document what's being reset and why
+- **Fewer errors** - Centralized logic prevents forgetting checks or using wrong reset method
+- **Easier maintenance** - Future regions can use same helpers
+- **Backward compatible** - No breaking changes to external API
+
+---
+
+## Tier 2 - Moderate Refactoring
+
+### 2.1 Decompose Striatum God Object (1931 lines)
+
+**Current State:**
+`src/thalia/regions/striatum/striatum.py` is a **god object** with excessive responsibilities:
+
+**Lines breakdown:**
+- Initialization: 127-408 (281 lines - 14.5%)
+- Forward pass: 650-910 (260 lines - 13.5%)
+- Learning: 1100-1400 (300 lines - 15.5%)
+- Properties (delegation): 420-550 (130 lines - 6.7%)
+- Diagnostics: 1728-1850 (122 lines - 6.3%)
+- Checkpointing: 1850-1931 (81 lines - 4.2%)
+
+**Antipattern:** **God Object** - Single class with 1931 lines handling multiple concerns
+
+**Proposed Change:**
+Split into focused classes using composition:
+
+```python
+# Core class becomes coordinator
+class Striatum(NeuralComponent):
+    """Striatal coordinator - delegates to specialized managers."""
+    
+    def __init__(self, config: StriatumConfig):
+        # Managers handle complexity
+        self.pathways = StriatumPathways(d1, d2)  # D1/D2 pathway management
+        self.action_selector = ActionSelector(...)  # UCB, softmax, votes
+        self.state_tracker = StriatumState(...)  # Membrane, spikes, traces
+        
+    def forward(self, input_spikes):
+        # Coordinate managers
+        d1_spikes, d2_spikes = self.pathways.compute_activations(input_spikes)
+        votes = self.action_selector.accumulate_votes(d1_spikes, d2_spikes)
+        return d1_spikes  # Simplified coordination logic
+
+# New focused classes (200-300 lines each)
+class StriatumPathways:  # D1/D2 pathway management
+class ActionSelector:  # Vote accumulation, UCB, softmax
+class StriatumState:  # Membrane, traces, recent_spikes tracking
+```
+
+**Rationale:**
+- **Single Responsibility Principle** - Each class has one clear purpose
+- Improves testability - Can unit test managers independently
+- Reduces cognitive load - Easier to understand smaller classes
+- Maintains backward compatibility via delegation
+
+**Impact:**
+- Files affected: 1 (striatum.py) → 5 files (striatum.py + 4 new manager files)
+- Breaking change: **Medium** - Internal architecture change, external API unchanged
+- Lines per file: 1931 → ~400 (main) + 4×250 (managers) = more maintainable
+
+---
+
+### 2.2 Decompose EventDrivenBrain God Object (2339 lines)
+
+**Status: ✅ COMPLETE (December 11, 2025)**
+
+**Implementation Summary:**
+
+Successfully extracted `TrialCoordinator` from EventDrivenBrain, following the existing manager pattern (PathwayManager, NeuromodulatorManager, OscillatorManager).
+
+**Changes Made:**
+
+1. **Created `src/thalia/core/trial_coordinator.py`** (~400 lines)
+   - Handles forward passes (encoding, maintenance, retrieval)
+   - Manages action selection (model-free and model-based planning)
+   - Coordinates reward delivery and learning
+   - Tracks trial state (_last_action, _last_pfc_output, _last_cortex_output)
+
+2. **Updated `src/thalia/core/brain.py`** (2339 → ~2150 lines, -189 lines)
+   - Added TrialCoordinator initialization in `__init__`
+   - Delegated `forward()`, `select_action()`, `deliver_reward()` to coordinator
+   - Updated `deliver_reward_with_counterfactual()` to use coordinator
+   - Shared time state via mutable container (`_time_container`)
+   - Updated references to `_last_action` to use `coordinator.get_last_action()`
+
+3. **Maintained Backward Compatibility**
+   - External API unchanged (same method signatures)
+   - All trial execution flows preserved
+   - Mental simulation and Dyna planning integration maintained
+   - Experience storage and background planning still work
+
+**Architecture:**
+
+```python
+class EventDrivenBrain(nn.Module):
+    """High-level brain orchestrator (reduced from 2339 to ~2150 lines)."""
+    
+    def __init__(self, config: ThaliaConfig):
+        super().__init__()
+        
+        # Create regions (~200 lines)
+        self._init_regions()
+        
+        # Create managers (existing pattern)
+        self.pathways = PathwayManager(...)
+        self.neuromodulators = NeuromodulatorManager(...)
+        self.oscillators = OscillatorManager(...)
+        
+        # Create trial coordinator (NEW)
+        self.trial_coordinator = TrialCoordinator(
+            regions=self.adapters,
+            pathways=self.pathways,
+            neuromodulators=self.neuromodulators,
+            oscillators=self.oscillators,
+            config=self.config,
+            spike_counts=self._spike_counts,
+            vta=self.vta,
+            brain_time=self._time_container,
+            mental_simulation=self.mental_simulation,
+            dyna_planner=self.dyna_planner,
+        )
+    
+    # Delegate to coordinator
+    def forward(self, input, n_timesteps):
+        result = self.trial_coordinator.forward(...)
+        self._current_time = self._time_container[0]  # Sync time
+        return result
+    
+    def select_action(self):
+        return self.trial_coordinator.select_action()
+    
+    def deliver_reward(self, reward):
+        self.trial_coordinator.deliver_reward(...)
+        # Handle experience storage and background planning
+```
+
+**Benefits Achieved:**
+
+✅ **Reduced Brain complexity** - Extracted ~400 lines of trial execution logic  
+✅ **Follows existing pattern** - Matches PathwayManager/NeuromodulatorManager architecture  
+✅ **Clear separation** - Trial execution isolated from region management  
+✅ **Easier testing** - Can unit test coordinator independently  
+✅ **Backward compatible** - External API unchanged  
+✅ **Maintained features** - Mental simulation, Dyna planning, experience storage all preserved
+
+**Remaining Brain Responsibilities:**
+- Region lifecycle (~200 lines) - Creating and configuring regions  
+- Event processing (~150 lines) - Event scheduling and dispatch  
+- Consolidation (~200 lines) - Memory replay  
+- Growth coordination (~150 lines) - Adding neurons to all components  
+- Diagnostics integration (~139 lines) - Collecting from all components  
+- Helper methods (~200 lines) - Intrinsic reward, uncertainty, etc.
+
+**Deferred:**
+- ~~ConsolidationManager extraction~~ ✅ **COMPLETE (December 11, 2025)** - See below
+- Further decomposition - Remaining complexity is inherent to the coordinator role
+
+**ConsolidationManager Extraction (December 11, 2025):**
+
+Following the successful TrialCoordinator extraction, also extracted `ConsolidationManager` to further reduce EventDrivenBrain complexity.
+
+**Changes Made:**
+
+1. **Created `src/thalia/core/consolidation_manager.py`** (~240 lines)
+   - Handles experience storage from trial state
+   - Manages consolidation cycles (replay)
+   - Coordinates HER (Hindsight Experience Replay) integration
+   - Reactivates patterns and triggers learning during replay
+
+2. **Updated `src/thalia/core/brain.py`** (~2088 lines, -68 lines from previous)
+   - Added ConsolidationManager initialization
+   - Delegated `consolidate()` to manager
+   - Updated `deliver_reward()` to use manager for experience storage
+   - Removed `_store_experience_automatically()` method (moved to manager)
+   - Shared last_action state via mutable container
+
+3. **Maintained Backward Compatibility**
+   - `consolidate()` API unchanged
+   - Experience storage still automatic
+   - HER integration preserved
+
+**Architecture:**
+
+```python
+class EventDrivenBrain(nn.Module):
+    """High-level brain orchestrator (further reduced to ~2088 lines)."""
+    
+    def __init__(self, config: ThaliaConfig):
+        # ... regions, managers ...
+        
+        # Trial coordinator (from previous extraction)
+        self.trial_coordinator = TrialCoordinator(...)
+        
+        # Consolidation manager (NEW)
+        self.consolidation_manager = ConsolidationManager(
+            hippocampus=self.hippocampus,
+            striatum=self.striatum,
+            cortex=self.cortex,
+            pfc=self.pfc,
+            config=self.config,
+            deliver_reward_fn=self.deliver_reward,
+        )
+    
+    def deliver_reward(self, reward):
+        self.trial_coordinator.deliver_reward(...)
+        
+        # Delegate experience storage to consolidation manager
+        self.consolidation_manager.store_experience(...)
+    
+    def consolidate(self, n_cycles, batch_size, verbose):
+        # Delegate to consolidation manager
+        return self.consolidation_manager.consolidate(...)
+```
+
+**Benefits:**
+✅ Further reduced Brain complexity (-68 additional lines)  
+✅ Isolated consolidation/replay logic  
+✅ Cleaner separation of concerns  
+✅ Backward compatible  
+✅ Easier to test consolidation independently
+
+**Total Reduction:**
+- Original: 2339 lines
+- After TrialCoordinator: ~2150 lines (-189)
+- After ConsolidationManager: ~2088 lines (-68)
+- **Total reduction: 251 lines (10.7%)**
+- **Extracted: ~640 lines to 2 focused coordinators**
+
+**Impact:**
+- Files affected: 2 (brain.py + new trial_coordinator.py)
+- Breaking change: **None** - External API preserved via delegation
+- Lines reduced: 2339 → ~2150 (main) + 400 (coordinator) = ~2550 total (separated concerns)
+- Test coverage: Existing tests pass without modification
+
+---
+
+### 2.3 Unify Manager Base Classes
+
+**Current State:**
+Multiple manager classes implement similar patterns:
+
+**Managers:**
+- `src/thalia/regions/striatum/learning_manager.py` (BaseManager)
+- `src/thalia/regions/striatum/homeostasis_manager.py` (BaseManager)
+- `src/thalia/regions/striatum/exploration.py` (BaseManager)
+- `src/thalia/regions/hippocampus/episode_manager.py` (BaseManager)
+- `src/thalia/regions/hippocampus/plasticity_manager.py` (BaseManager)
+- `src/thalia/core/pathway_manager.py` (no base)
+- `src/thalia/core/neuromodulator_manager.py` (no base)
+
+**Pattern observed:**
+```python
+# Each manager implements:
+class SomeManager(BaseManager[ConfigType]):
+    def __init__(self, config, context):
+        self.config = config
+        self.context = context  # Device, dimensions, dt_ms
+        
+    def reset_state(self): ...
+    def get_diagnostics(self): ...
+    def grow(self, n_new): ...  # Sometimes
+```
+
+**Proposed Change:**
+Strengthen `BaseManager` in `src/thalia/core/base_manager.py`:
+
+```python
+class BaseManager(ABC, Generic[ConfigT]):
+    """Base class for all manager components.
+    
+    Provides:
+    - Config and context storage
+    - Standard diagnostics interface
+    - Optional growth support
+    - Reset functionality
+    """
+    
+    def __init__(self, config: ConfigT, context: ManagerContext):
+        self.config = config
+        self.context = context
+        
+    @abstractmethod
+    def reset_state(self) -> None:
+        """Reset manager state for new episode."""
+        
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get manager diagnostics (default implementation)."""
+        return {
+            "config": self.config.__class__.__name__,
+            "context": {
+                "device": str(self.context.device),
+                "dt_ms": self.context.dt_ms,
+            }
+        }
+        
+    def supports_growth(self) -> bool:
+        """Whether this manager supports dynamic growth."""
+        return hasattr(self, 'grow')
+```
+
+**Rationale:**
+- Establishes clear manager contract
+- Reduces boilerplate in manager implementations
+- Makes manager pattern explicit and discoverable
+- Enables polymorphic manager handling
+
+**Impact:**
+- Files affected: 8 (base_manager.py + 7 manager implementations)
+- Breaking change: **Low** - Strengthens existing pattern
+- Lines reduced: ~80 lines of boilerplate
+
+---
+
+### 2.4 Extract Oscillator Phase Broadcasting
+
+**Current State:**
+Oscillator broadcasting duplicated in brain classes:
+
+**Location 1: `src/thalia/core/brain.py:_broadcast_oscillator_phases()`**
+```python
+def _broadcast_oscillator_phases(self) -> None:
+    phases = self.oscillators.get_phases()
+    signals = self.oscillators.get_signals()
+    effective_amplitudes = self.oscillators.get_effective_amplitudes()
+    
+    # Repeat for each region
+    if hasattr(self.cortex.impl, 'set_oscillator_phases'):
+        self.cortex.impl.set_oscillator_phases(...)
+    if hasattr(self.hippocampus.impl, 'set_oscillator_phases'):
+        self.hippocampus.impl.set_oscillator_phases(...)
+    # ... 5 regions + pathways
+```
+
+**Antipattern:** **Shotgun Surgery** - Adding new regions requires touching broadcast logic
+
+**Proposed Change:**
+Add to `OscillatorManager`:
+```python
+class OscillatorManager:
+    """Centralized oscillator management and broadcasting."""
+    
+    def broadcast_to_components(
+        self,
+        components: Dict[str, Any],  # Regions and pathways
+    ) -> None:
+        """Broadcast phases to all components that accept them."""
+        phases = self.get_phases()
+        signals = self.get_signals()
+        effective_amplitudes = self.get_effective_amplitudes()
+        theta_slot = self.get_theta_slot(n_slots=7)
+        
+        for name, component in components.items():
+            if hasattr(component, 'set_oscillator_phases'):
+                component.set_oscillator_phases(
+                    phases, signals, theta_slot, effective_amplitudes
+                )
+```
+
+Usage in Brain:
+```python
+def _update_neuromodulators(self):
+    # ... existing logic ...
+    
+    # Broadcast oscillators (single call)
+    all_components = {**self.regions, **self.pathways}
+    self.oscillators.broadcast_to_components(all_components)
+```
+
+**Rationale:**
+- Centralized broadcasting matches neuromodulator pattern
+- Easier to add new regions/pathways
+- Consistent with biological reality (global oscillations)
+
+**Impact:**
+- Files affected: 2 (oscillator.py, brain.py)
+- Breaking change: **Low** - Internal refactor
+- Lines reduced: ~40 lines in brain.py
+
+---
+
+## Tier 3 - Major Restructuring
+
+### 3.1 Introduce Learning Strategy Registry
+
+**Current State:**
+Learning strategies exist but aren't discoverable:
+- `src/thalia/learning/strategies.py` defines strategies
+- `src/thalia/learning/strategy_factory.py` has factory
+- But regions still implement learning inline
+
+**Proposed Change:**
+Create learning strategy registry (like ComponentRegistry):
+
+```python
+# In src/thalia/learning/strategy_registry.py
+class LearningStrategyRegistry:
+    """Registry for learning strategies."""
+    
+    _registry: Dict[str, Type[BaseStrategy]] = {}
+    
+    @classmethod
+    def register(cls, name: str):
+        def decorator(strategy_class):
+            cls._registry[name] = strategy_class
+            return strategy_class
+        return decorator
+    
+    @classmethod
+    def create(cls, name: str, config) -> BaseStrategy:
+        if name not in cls._registry:
+            raise ValueError(f"Unknown strategy: {name}")
+        return cls._registry[name](config)
+
+# Usage in regions
+@register_learning_strategy("three_factor")
+class ThreeFactorStrategy(BaseStrategy):
+    ...
+
+# In Striatum
+self.learning_strategy = LearningStrategyRegistry.create(
+    "three_factor",
+    ThreeFactorConfig(...)
+)
+```
+
+**Rationale:**
+- Consistent with ComponentRegistry pattern
+- Makes learning strategies pluggable
+- Easier to experiment with new rules
+- Better separation of learning from region logic
+
+**Impact:**
+- Files affected: 6 (new registry + 5 regions)
+- Breaking change: **High** - Changes learning architecture
+- Benefits: More flexible, testable learning system
+
+---
+
+### 3.2 Consolidate Checkpoint Management
+
+**Current State:**
+Checkpoint logic scattered:
+- `src/thalia/io/checkpoint.py` - Core checkpoint functionality
+- Each region has `get_full_state()` / `load_full_state()`
+- `StriatumCheckpointManager` exists but pattern not universal
+
+**Proposed Change:**
+Create unified checkpoint system:
+
+```python
+# In src/thalia/io/checkpoint_manager.py
+class CheckpointManager:
+    """Manages checkpointing for all components."""
+    
+    def __init__(self, brain: EventDrivenBrain):
+        self.brain = brain
+        
+    def save(self, path: Path) -> None:
+        """Save complete brain state."""
+        state = {
+            "regions": {
+                name: region.get_full_state()
+                for name, region in self.brain.regions.items()
+            },
+            "pathways": self.brain.pathways.get_state(),
+            "neuromodulators": self.brain.neuromodulators.get_state(),
+            "oscillators": self.brain.oscillators.get_state(),
+            "config": self.brain.thalia_config,
+        }
+        BrainCheckpoint.save(path, state)
+        
+    def load(self, path: Path) -> None:
+        """Load complete brain state."""
+        state = BrainCheckpoint.load(path)
+        # Restore all components
         ...
-
-    def update(self, t: float) -> None:
-        """Broadcast oscillator phases to all coupled regions."""
-        for osc_name, osc in self.oscillators.items():
-            phase = osc.get_phase(t)
-            for region_name, region in self.regions.items():
-                coupling_key = f"{region_name}:{osc_name}"
-                strength = self.couplings.get(coupling_key, 0.0)
-                if strength > 0:
-                    region.set_oscillator_phase(osc_name, phase, strength)
 ```
 
-```python
-# In brain.py __init__:
-self.oscillator_coupling = OscillatorCouplingManager(
-    oscillators=self.oscillators,
-    regions={"cortex": self.cortex.impl, "hippocampus": self.hippocampus.impl},
-    couplings={"cortex:theta": 1.0, "hippocampus:gamma": 0.5}
-)
+**Rationale:**
+- Single entry point for checkpointing
+- Ensures complete state capture
+- Easier to add versioning/migration
+- Consistent checkpoint format
 
-# Each timestep:
-self.oscillator_coupling.broadcast()
-```
-
-**Result**:
-- Reduced brain.py boilerplate by ~50 lines
-- Explicit coupling configuration in one place
-- Consistent with dopamine broadcast pattern
-- Easier debugging and experimentation
-
-### 2.4 Standardize Capacity Metrics Across Components ✅ **DONE**
-
-**Status**: Already implemented and working correctly
-
-**Implementation**:
-- `CapacityMetrics` dataclass: `src/thalia/core/growth.py` (lines 57-135)
-- Base implementation: `src/thalia/regions/base.py` (line 481)
-- All regions inherit from `NeuralComponent` base class → uniform returns
-- `GrowthManager.get_capacity_metrics()` computes and returns `CapacityMetrics`
-
-**Verification** (December 11, 2025):
-```bash
-# Searched all regions/pathways for get_capacity_metrics()
-grep -r "def get_capacity_metrics" src/thalia/regions/**/*.py
-grep -r "def get_capacity_metrics" src/thalia/integration/**/*.py
-grep -r "def get_capacity_metrics" src/thalia/sensory/**/*.py
-
-# Result: Only base.py implements it (line 481)
-# All regions inherit → uniform CapacityMetrics returns ✅
-```
-
-**Backward Compatibility**:
-- Legacy aliases for smooth migration: `neuron_count` → `total_neurons`, `weight_saturation` → `saturation_fraction`
-- `Brain.check_growth_needs()` uses legacy aliases correctly (line 1887)
-
-**Outcome**:
-- ✅ Consistent return type across all components
-- ✅ Protocol enforcement working
-- ✅ GrowthManager consumes metrics uniformly
-- ✅ Tests passing (13/13 in test_striatum_exploration.py)
-
-### 2.5 Extract Common STP Configuration Patterns ✅ **DONE**
-
-**Implementation**: Created `src/thalia/core/stp_presets.py` (317 lines)
-- Biologically-documented presets for 11 pathway types
-- Hippocampal: MOSSY_FIBER, SCHAFFER_COLLATERAL, EC_CA1, CA1_SUB
-- Cortical: CORTICAL_FF, CORTICAL_L4_L23, CORTICAL_L23_L5, CORTICAL_RECURRENT
-- Striatal: CORTICOSTRIATAL, THALAMOSTRIATAL
-- Other: THALAMOCORTICAL
-- Each preset includes biological references and descriptions
-
-**Original Pattern** (replaced):
-```python
-# Old: Inline configs with magic numbers
-self.stp_mossy = ShortTermPlasticity(
-    n_pre=self.dg_size, n_post=self.ca3_size,
-    config=STPConfig.from_type("mossy_fiber", dt=1.0),
-    per_synapse=True,
-)
-```
-
-**New Pattern**:
-```python
-"""Standard STP configurations for common pathway types."""
-
-from thalia.core.stp import STPConfig
-
-# Preset configurations (based on literature)
-STP_PRESETS = {
-    "mossy_fiber": STPConfig(U=0.03, tau_u=800.0, tau_x=200.0),  # Strong facilitation
-    "schaffer_collateral": STPConfig(U=0.5, tau_u=400.0, tau_x=500.0),  # Depression
-    "cortical_ff": STPConfig(U=0.2, tau_u=200.0, tau_x=300.0),  # Mild depression
-    "recurrent": STPConfig(U=0.6, tau_u=100.0, tau_x=200.0),  # Fast depression
-}
-
-def get_stp_config(pathway_type: str, dt: float = 1.0) -> STPConfig:
-    """Get standard STP config for pathway type."""
-    return STPConfig.from_type(pathway_type, dt=dt)
-```
-
-```python
-from thalia.core.stp_presets import STP_PRESETS, get_stp_config
-
-# Use preset directly
-config = STP_PRESETS["mossy_fiber"].configure(dt=1.0)
-
-# Or use helper function
-config = get_stp_config("mossy_fiber", dt=1.0)
-```
-
-**Result**:
-- Eliminated magic numbers for STP parameters
-- Added neuroscience references for all presets
-- Consistent pathway modeling across regions
-- Easy experimentation with different pathway types
+**Impact:**
+- Files affected: 10 (new manager + 9 component files)
+- Breaking change: **High** - Changes checkpoint API
+- Benefits: Reliable checkpointing, easier debugging
 
 ---
 
-## Tier 3 – Major Restructuring (Long-Term Vision)
+### 3.3 Extract Event System to Separate Package
 
-These are architectural improvements that require significant effort but provide foundational benefits.
+**Current State:**
+Event system is core functionality but lives in `src/thalia/core/`:
+- `event_system.py` - Event definitions
+- `event_regions/` - Event-driven adapters
+- `parallel_executor.py` - Parallel execution
 
-### 3.1 Implement Unified Component Registry ✅ **DONE**
-
-**Implementation**: Created `src/thalia/core/component_registry.py` (605 lines)
-- `ComponentRegistry` class with unified registration for regions, pathways, modules
-- Separate namespaces: `_registry["region"]`, `_registry["pathway"]`, `_registry["module"]`
-- Registration decorator: `@ComponentRegistry.register(name, component_type, aliases=...)`
-- Factory method: `ComponentRegistry.create(component_type, name, config)`
-- Introspection: `list_components()`, `get_component_info()`, `validate_component()`
-- Convenience decorators: `@register_region()`, `@register_pathway()`, `@register_module()`
-
-**Test Coverage**: `tests/unit/test_component_registry.py` (620 lines, 31 passing tests)
-- Registration: 7 tests (basic, aliases, duplicates, idempotent)
-- Creation: 5 tests (region, pathway, via alias, with kwargs, errors)
-- Discovery: 7 tests (list, aliases, metadata, validation)
-- Management: 3 tests (clear, registration status)
-- Namespace isolation: 2 tests (same name different types)
-- Backward compatibility: 2 tests (shorthand decorators)
-- Error handling: 5 tests (invalid types, unregistered, validation)
-
-**Status**: ✅ **PRODUCTION READY**
-
-**Usage Example**:
-```python
-# Register components
-@ComponentRegistry.register("cortex", "region", aliases=["layered_cortex"])
-class LayeredCortex(NeuralComponent):
-    """Multi-layer cortical microcircuit."""
-    ...
-
-@ComponentRegistry.register("spiking_stdp", "pathway")
-class SpikingPathway(NeuralComponent):
-    """STDP-learning spiking pathway."""
-    ...
-
-# Create components dynamically
-cortex = ComponentRegistry.create("region", "cortex", config)
-pathway = ComponentRegistry.create("pathway", "spiking_stdp", config)
-
-# Discover components
-regions = ComponentRegistry.list_components("region")
-# ['cerebellum', 'cortex', 'hippocampus', 'prefrontal', 'striatum']
-
-pathways = ComponentRegistry.list_components("pathway")
-# ['attention', 'replay', 'spiking_stdp']
-
-# Get component metadata
-info = ComponentRegistry.get_component_info("region", "cortex")
-print(f"{info['description']} (v{info['version']})")
+**Proposed Change:**
+Move to `src/thalia/events/`:
+```
+src/thalia/events/
+    __init__.py
+    system.py  # Event, EventType, EventScheduler
+    adapters/  # Event-driven region wrappers
+    parallel.py  # ParallelExecutor
+    protocols.py  # EventDrivenRegion protocol
 ```
 
-**Benefits Realized**:
-- ✅ Uniform treatment: Regions and pathways use same registration pattern
-- ✅ Dynamic creation: Instantiate any component from config/name
-- ✅ Plugin support: External packages can register components (add to registry)
-- ✅ Discovery: List/inspect all available components
-- ✅ Validation: Type checking and config validation
-- ✅ Backward compatible: Works alongside existing RegionFactory
-- ✅ Metadata: Stores description, version, author for each component
+**Rationale:**
+- Events are a complete subsystem
+- Easier to document and understand
+- Could be separated as standalone package
+- Reduces cognitive load in core/
 
-**Exported in Public API**:
-```python
-from thalia.core import (
-    ComponentRegistry,
-    register_region,
-    register_pathway,
-    register_module,
-)
-```
-
-**Future Opportunities**:
-- Migrate existing regions to use ComponentRegistry (currently using RegionFactory)
-- Enable pathways to self-register via decorator
-- Use in Brain.create_from_config() for dynamic architecture construction
-- Plugin system: External components can register themselves
-
-### 3.2 Migrate to Dataclass-Based Configuration Hierarchy
-
-**Current State**: Mix of dataclass configs and dict-based configs
-- Regions use dataclass configs (good!)
-- Some modules still use dicts
-- Config validation scattered
-
-**Proposed Change**: Strict dataclass hierarchy with validation
-```python
-# All configs inherit from validated base
-@dataclass
-class ThaliaComponentConfig:
-    """Base for all Thalia configs with validation."""
-
-    def __post_init__(self):
-        self.validate()
-
-    def validate(self):
-        """Validate config constraints."""
-        # Override in subclasses
-        pass
-
-# Example usage
-@dataclass
-class StriatumConfig(RegionConfig):
-    eligibility_tau_ms: float = 100.0
-
-    def validate(self):
-        super().validate()
-        if self.eligibility_tau_ms <= 0:
-            raise ValueError("eligibility_tau_ms must be positive")
-```
-
-**Rationale**:
-- Type safety at config creation time
-- Better IDE support and autocomplete
-- Centralized validation logic
-- Easier serialization for checkpoints
-
-**Impact**:
-- **Files affected**: All config files, Brain initialization
-- **Breaking change severity**: High (requires config migration)
-- **Benefit**: Eliminates 90% of runtime config errors
-
-### 3.3 Create Abstract Pathway Base Classes by Type
-
-**Current State**: All pathways inherit from base, implement forward()
-
-**Proposed Enhancement**: Type-specific base classes
-```python
-# src/thalia/integration/pathway_types.py
-
-class FeedforwardPathway(NeuralComponent):
-    """Base for simple feedforward pathways (A→B)."""
-    @abstractmethod
-    def transform(self, spikes: Tensor) -> Tensor:
-        """Transform spikes from source to target."""
-        pass
-
-class RecurrentPathway(NeuralComponent):
-    """Base for pathways with recurrent connections (A↔A)."""
-    @abstractmethod
-    def update_recurrent(self, spikes: Tensor) -> Tensor:
-        """Update recurrent state."""
-        pass
-
-class ModulatoryPathway(NeuralComponent):
-    """Base for top-down modulation (PFC→Cortex attention)."""
-    @abstractmethod
-    def compute_modulation(self, source: Tensor, target: Tensor) -> Tensor:
-        """Compute modulatory signal."""
-        pass
-```
-
-**Rationale**:
-- Documents pathway function clearly
-- Enables type-specific optimizations
-- Better matches biological taxonomy
-
-**Impact**:
-- **Files affected**: All pathway implementations
-- **Breaking change severity**: Medium (additive, backward compatible)
+**Impact:**
+- Files affected: 15+ (move + import updates)
+- Breaking change: **High** - Import path changes
+- Benefits: Better organization, clearer boundaries
 
 ---
 
-## Risk Assessment and Sequencing
+## Risk Assessment & Sequencing
 
-### Recommended Implementation Order (Updated)
+### Tier 1: Low Risk, High Value
+Execute in order 1.1 → 1.2 → 1.3 → 1.4
 
-**Phase 1 (1-2 weeks)**: Tier 1 Quick Wins ✅ **COMPLETE**
-1. ✅ Extract neuron constants (1.1)
-2. ✅ Create BaseNeuronConfig (1.2)
-3. ✅ Consolidate diagnostics usage (1.3)
-4. ✅ Update pathway docs (1.4)
-5. ✅ Add region size constants (1.5)
+**Timeline:** 1-2 weeks
+**Confidence:** High - No API changes, internal refactoring only
 
-**Phase 2 (3-4 weeks)**: Tier 2 Moderate Refactoring ✅ **COMPLETE (6/7)**
-1. ✅ Split Striatum (2.1a) - COMPLETE (-906 lines)
-2. ✅ Split Hippocampus (2.1b) - COMPLETE (-379 lines)
-3. ✅ Split Brain (2.1c) - COMPLETE (-510 lines)
-4. ✅ Standardize learning rules (2.2) - INFRASTRUCTURE COMPLETE (selective adoption working)
-5. ✅ Create oscillator coupling manager (2.3) - COMPLETE (258 lines)
-6. ⏭️ Standardize capacity metrics (2.4) - Dataclass exists, enforcement pending
-7. ✅ Extract STP presets (2.5) - COMPLETE (317 lines)
+### Tier 2: Medium Risk, Strategic Value
+Execute after Tier 1 complete. Order: 2.3 → 2.4 → 2.1 → 2.2
 
-**Phase 3 (2-3 months)**: Tier 3 Major Restructuring 🔮 **FUTURE WORK**
-1. Implement component registry (3.1) - Foundation for plugin system
-2. Dataclass config hierarchy (3.2) - Strict validation
-3. Pathway type hierarchy (3.3) - Feedforward/recurrent/modulatory bases
+**Timeline:** 3-4 weeks
+**Confidence:** Medium - Requires careful decomposition and testing
+**Recommendation:** 
+- Start with 2.3 (manager base) - foundation for 2.1/2.2
+- Then 2.4 (oscillator broadcasting) - isolated change
+- Finally 2.1 (Striatum decomposition) - most complex
 
-### Risk Mitigation (Lessons Learned)
+### Tier 3: High Risk, Long-term Investment
+Plan carefully, execute after Tier 1+2 proven successful
 
-**For God Object Splits** (2.1a, 2.1b, 2.1c): ✅ **SUCCESSFULLY APPLIED**
-- ✅ Created comprehensive integration tests before splitting
-- ✅ Split incrementally (extracted one manager at a time)
-- ✅ Maintained backward compatibility during transition
-- ✅ Used manager delegation pattern (instantiate in `__init__`, delegate methods)
-- **Result**: All 3 god objects reduced by 1795 lines with zero breaking changes
-
-**For Registry Changes** (3.1): 🔮 **FUTURE GUIDANCE**
-- ✅ Implement alongside existing factory, deprecate gradually
-- ✅ Ensure all tests pass with both old and new systems
-- ✅ Document migration path for external users
-
-**For Config Changes** (3.2): 🔮 **FUTURE GUIDANCE**
-- ✅ Add validation warnings before making breaking changes
-- ✅ Provide automatic migration tools
-- ✅ Version configs explicitly
+**Timeline:** 6-8 weeks
+**Confidence:** Lower - Requires extensive testing and migration
+**Recommendation:**
+- 3.1 (Learning registry) - Start here, builds on 2.3
+- 3.2 (Checkpoint manager) - After 3.1, enables better testing
+- 3.3 (Event system extraction) - Last, most disruptive
 
 ---
 
-## Appendix A: Affected Files and Paths
+## Appendix A: Affected Files
 
-### Core Module Files (Updated December 11, 2025)
-- `src/thalia/core/brain.py` (1787 lines - reduced from 2297)
-- `src/thalia/core/pathway_manager.py` (284 lines - manages 9 pathways) ✅
-- `src/thalia/core/neuromodulator_manager.py` (241 lines - VTA/LC/NB) ✅
-- `src/thalia/core/oscillator_coupling.py` (258 lines - phase broadcast) ✅
-- `src/thalia/core/component_protocol.py` (Protocol definitions)
-- `src/thalia/core/pathway_protocol.py` (Updated pathway docs)
-- `src/thalia/core/neuron.py` (LIF/ConductanceLIF neurons)
-- `src/thalia/core/neuron_constants.py` (Named constants registry) ✅
-- `src/thalia/core/weight_init.py` (Excellent registry pattern)
-- `src/thalia/core/stp.py` (Short-term plasticity)
-- `src/thalia/core/stp_presets.py` (317 lines - 11 pathway presets) ✅
-- `src/thalia/core/mixins.py` (Mixin composition)
-- `src/thalia/core/diagnostics_mixin.py` (Diagnostic helpers)
-- `src/thalia/core/growth.py` (Growth logic)
-- `src/thalia/core/oscillator.py` (Theta/gamma/alpha oscillators)
-- `src/thalia/core/vta.py` (Dopamine system)
-- `src/thalia/core/locus_coeruleus.py` (Norepinephrine system)
-- `src/thalia/core/nucleus_basalis.py` (Acetylcholine system)
-- `src/thalia/core/homeostatic_regulation.py` (Neuromod coordination)
+### Tier 1 Files
+- `src/thalia/core/growth_utils.py` (NEW)
+- `src/thalia/core/neuron_constants.py` (MODIFY - add constants)
+- `src/thalia/core/diagnostics_mixin.py` (MODIFY - add helpers)
+- `src/thalia/regions/base.py` (MODIFY - use helpers)
+- `src/thalia/regions/striatum/pathway_base.py` (MODIFY - use growth_utils)
+- `src/thalia/integration/spiking_pathway.py` (MODIFY - use growth_utils)
+- `src/thalia/regions/striatum/striatum.py` (MODIFY - use constants)
+- `src/thalia/core/brain.py` (MODIFY - use constants)
+- `src/thalia/regions/hippocampus/trisynaptic.py` (MODIFY - diagnostics)
+- `src/thalia/regions/cortex/layered_cortex.py` (MODIFY - diagnostics)
+- `src/thalia/regions/prefrontal.py` (MODIFY - diagnostics)
+- `src/thalia/regions/cerebellum.py` (MODIFY - diagnostics)
 
-### Region Files (Updated December 11, 2025)
-- `src/thalia/regions/base.py` (BrainRegion base class)
-- `src/thalia/regions/striatum/` (Well-decomposed)
-  - `striatum.py` (1770 lines - reduced from 2676)
-  - `d1_pathway.py` (D1 direct pathway)
-  - `d2_pathway.py` (D2 indirect pathway)
-  - `learning_manager.py` (three-factor learning)
-  - `checkpoint_manager.py` (state management)
-  - `homeostasis_manager.py` (unified homeostasis)
-  - `exploration.py` (UCB, adaptive exploration)
-  - `action_selection.py` (softmax, epsilon-greedy)
-  - `eligibility.py` (eligibility traces)
-  - `td_lambda.py` (TD(λ) value learning)
-- `src/thalia/regions/hippocampus/` (Well-decomposed)
-  - `trisynaptic.py` (1860 lines - reduced from 2239)
-  - `plasticity_manager.py` (STDP, synaptic scaling, intrinsic)
-  - `episode_manager.py` (episodic memory, retrieval)
-  - `replay_engine.py` (memory consolidation)
-  - `hindsight_relabeling.py` (HER integration)
-  - `config.py` (configuration)
-- `src/thalia/regions/cortex/`
-  - `layered_cortex.py`
-  - `predictive_cortex.py`
-- `src/thalia/regions/prefrontal.py`
-- `src/thalia/regions/prefrontal_hierarchy.py`
-- `src/thalia/regions/cerebellum.py`
-- `src/thalia/regions/theta_dynamics.py`
+### Tier 2 Files
+- `src/thalia/core/base_manager.py` (MODIFY - strengthen base)
+- `src/thalia/core/oscillator.py` (MODIFY - add broadcasting)
+- `src/thalia/regions/striatum/pathways.py` (NEW - D1/D2 manager)
+- `src/thalia/regions/striatum/action_selector.py` (NEW - UCB/softmax)
+- `src/thalia/regions/striatum/state_tracker.py` (NEW - membrane/traces)
+- `src/thalia/core/trial_coordinator.py` (NEW)
+- `src/thalia/core/consolidation_manager.py` (NEW)
 
-### Learning Module Files
-- `src/thalia/learning/strategies.py` (Excellent strategy pattern)
-- `src/thalia/learning/bcm.py` (Clean implementation)
-- `src/thalia/learning/unified_homeostasis.py`
-
-### Integration Module Files
-- `src/thalia/integration/spiking_pathway.py` (Clean pathway base)
-- `src/thalia/integration/pathways/spiking_attention.py`
-- `src/thalia/integration/pathways/spiking_replay.py`
-
-### Sensory Module Files
-- `src/thalia/sensory/pathways.py` (Good sensory abstractions)
+### Tier 3 Files
+- `src/thalia/learning/strategy_registry.py` (NEW)
+- `src/thalia/io/checkpoint_manager.py` (NEW)
+- `src/thalia/events/` (NEW PACKAGE - move from core/)
 
 ---
 
-## Appendix B: Detected Code Duplications
+## Appendix B: Detected Duplications
 
-### B.1 Neuron Parameter Duplications
+### B.1 Weight Expansion Logic
 
-**Pattern**: Identical neuron configs repeated
+**Locations:**
+1. `src/thalia/regions/base.py:_expand_weights()` (lines 685-725)
+2. `src/thalia/regions/striatum/pathway_base.py:add_neurons()` (lines 296-310)
+3. `src/thalia/integration/spiking_pathway.py:add_neurons()` (lines 890-940)
+
+**Duplicated pattern:**
 ```python
-# Appears in 5+ locations
-ConductanceLIFConfig(
-    g_L=0.05,
-    tau_E=5.0,
-    tau_I=10.0,
-    v_threshold=1.0,
-    v_reset=0.0,
-    E_L=0.0,
-    E_E=3.0,
-    E_I=-0.5,
-)
+# Pattern 1: Xavier initialization
+if initialization == 'xavier':
+    new_weights = WeightInitializer.xavier(
+        n_output=n_new,
+        n_input=n_input,
+        gain=1.0,
+        device=self.device
+    )
+
+# Pattern 2: Sparse initialization  
+elif initialization == 'sparse_random':
+    new_weights = WeightInitializer.sparse_random(
+        n_output=n_new,
+        n_input=n_input,
+        sparsity=sparsity,
+        device=self.device
+    )
+    
+# Pattern 3: Uniform initialization
+elif initialization == 'uniform':
+    new_weights = WeightInitializer.uniform(
+        n_output=n_new,
+        n_input=n_input,
+        low=0.0,
+        high=scale,
+        device=self.device
+    )
 ```
 
-**Locations**:
-1. `src/thalia/regions/striatum/striatum.py:1146` (D1 neurons)
-2. `src/thalia/regions/striatum/striatum.py:1169` (D2 neurons)
-3. `src/thalia/regions/striatum/striatum.py:1198` (action neurons)
-4. `src/thalia/regions/cerebellum.py:309` (granule cells)
-5. `src/thalia/regions/cerebellum.py:365` (Purkinje cells)
-
-**Consolidation**: Use constants from proposed `neuron_constants.py`
-
-### B.2 Weight Statistics Computation
-
-**Pattern**: Manual weight statistics in `get_diagnostics()`
-```python
-# Repeated pattern in 8+ regions
-stats = {
-    "weight_mean": weights.mean().item(),
-    "weight_std": weights.std().item(),
-    "weight_min": weights.min().item(),
-    "weight_max": weights.max().item(),
-    "weight_sparsity": (weights.abs() < 1e-6).float().mean().item(),
-}
-```
-
-**Locations**:
-1. `src/thalia/regions/striatum/striatum.py` (multiple times)
-2. `src/thalia/regions/hippocampus/trisynaptic.py`
-3. `src/thalia/regions/cortex/layered_cortex.py`
-4. `src/thalia/regions/prefrontal.py`
-5. `src/thalia/regions/cerebellum.py`
-6. `src/thalia/integration/spiking_pathway.py`
-
-**Consolidation**: Use `DiagnosticsMixin.weight_diagnostics()` consistently
-
-### B.3 Reset State Patterns
-
-**Pattern**: Similar state initialization
-```python
-# Common pattern across all regions
-def reset_state(self):
-    self.membrane = torch.zeros(self.n_neurons, device=self.device)
-    self.spikes = torch.zeros(self.n_neurons, dtype=torch.bool, device=self.device)
-    self.trace = torch.zeros(self.n_neurons, device=self.device)
-```
-
-**Consolidation**: Could extract to `ResettableMixin` helper methods
-
-### B.4 Device Handling Patterns
-
-**Pattern**: Manual device checks
-```python
-# Repeated in pathways
-if input_spikes.device != self.device:
-    input_spikes = input_spikes.to(self.device)
-```
-
-**Consolidation**: Use `DeviceMixin.to_device()` consistently
+**Consolidation target:** `src/thalia/core/growth_utils.py:expand_weight_matrix()`
 
 ---
 
-## Appendix C: Pattern Adherence Assessment
+### B.2 Diagnostics Collection Pattern
 
-### ✅ Successfully Applied Patterns
+**Locations:**
+1. `src/thalia/regions/striatum/striatum.py:get_diagnostics()` (lines 1768-1850)
+2. `src/thalia/regions/hippocampus/trisynaptic.py:get_diagnostics()` (lines 1788-1880)
+3. `src/thalia/regions/cortex/layered_cortex.py:get_diagnostics()` (lines 1114-1200)
+4. `src/thalia/regions/prefrontal.py:get_diagnostics()` (lines 650-720)
+5. `src/thalia/regions/cerebellum.py:get_diagnostics()` (lines 690-750)
 
-1. **BrainComponent Protocol**: All regions and pathways correctly implement the unified protocol
-2. **WeightInitializer Registry**: Consistently used across codebase (excellent!)
-3. **Mixin Composition**: DiagnosticsMixin, NeuromodulatorMixin properly composed
-4. **Spike-based Processing**: No rate accumulation, binary spikes maintained
-5. **Local Learning Rules**: No backpropagation, all learning is local
-6. **RegionState Pattern**: Proper separation of mutable/immutable state
+**Duplicated pattern:**
+```python
+def get_diagnostics(self) -> Dict[str, Any]:
+    # Step 1: Weight statistics
+    weight_stats = self.weight_diagnostics(self.weights, "main")
+    
+    # Step 2: Trace statistics
+    trace_stats = self.trace_diagnostics(self.eligibility, "eligibility")
+    
+    # Step 3: Assemble dict
+    return {
+        "region": "...",
+        **weight_stats,
+        **trace_stats,
+        # Custom metrics
+    }
+```
 
-### ⚠️ Inconsistently Applied Patterns
-
-1. **LearningStrategy Usage**: Available but not used in all regions
-2. **DiagnosticsMixin Methods**: Defined but manual stats still computed
-3. **DeviceMixin**: Not consistently used for device handling
-4. **Config Validation**: Some configs validate, others don't
-
-### ❌ Missing Patterns
-
-1. **Constant Registry**: No centralized neuron/time constants
-2. **Component Registry**: Regions registered, pathways created manually
-3. **Pathway Type Hierarchy**: All pathways inherit from generic base
+**Consolidation target:** `src/thalia/core/diagnostics_mixin.py:collect_standard_diagnostics()`
 
 ---
 
-## Appendix D: Biological Plausibility Compliance
+### B.3 State Reset Pattern
 
-### ✅ Correctly Maintained Constraints
+**Locations:**
+1. `src/thalia/regions/striatum/striatum.py:reset_state()` (lines 1728-1768)
+2. `src/thalia/regions/hippocampus/trisynaptic.py:reset_state()` (lines 490-530)
+3. `src/thalia/regions/cortex/layered_cortex.py:reset_state()` (lines 445-485)
+4. `src/thalia/regions/prefrontal.py:reset_state()` (lines 431-460)
+5. `src/thalia/regions/cerebellum.py:reset_state()` (lines 690-710)
 
-1. **Spike-based Processing**: All computations use binary spikes (0 or 1)
-2. **Local Learning Rules**:
-   - Striatum: Three-factor (eligibility × dopamine)
-   - Hippocampus: One-shot Hebbian
-   - Cortex: STDP/BCM
-   - No global error signals or backpropagation
-3. **Neuromodulation**: Dopamine, acetylcholine, norepinephrine properly gated
-4. **Temporal Dynamics**:
-   - Membrane time constants realistic (10-30ms)
-   - Synaptic time constants (5-100ms)
-   - Eligibility traces (100-2000ms)
-5. **Causality**: No future information used in learning
+**Duplicated pattern:**
+```python
+def reset_state(self) -> None:
+    super().reset_state()
+    
+    # Zero tensors
+    self.eligibility.zero_()
+    self.traces.zero_()
+    self.membrane.zero_() if self.membrane is not None else None
+    
+    # Reset subsystems
+    if hasattr(self, 'neurons') and self.neurons is not None:
+        self.neurons.reset_state()
+    if hasattr(self, 'manager') and self.manager is not None:
+        self.manager.reset_state()
+        
+    # Reset scalars
+    self.last_action = None
+    self._timestep = 0
+```
 
-### ⚠️ Areas Requiring Attention
+**Consolidation target:** `src/thalia/regions/base.py:_reset_tensors()` + `_reset_subsystems()`
 
-1. **Oscillation Coupling**: Currently simplified, could be more biologically detailed
-2. **Delay Modeling**: Axonal delays implemented but could be more granular
-3. **Homeostatic Time Constants**: Some fast homeostasis may be unrealistic
+---
 
-### No Violations Detected
+### B.4 Oscillator Broadcasting
 
-All code reviewed maintains biological plausibility principles. No backpropagation, no non-local learning, no analog rates in processing.
+**Locations:**
+1. `src/thalia/core/brain.py:_broadcast_oscillator_phases()` (lines 950-1000)
+
+**Duplicated pattern within method:**
+```python
+# Repeated 5 times for regions
+if hasattr(self.cortex.impl, 'set_oscillator_phases'):
+    self.cortex.impl.set_oscillator_phases(phases, signals, theta_slot, effective_amplitudes)
+
+if hasattr(self.hippocampus.impl, 'set_oscillator_phases'):
+    self.hippocampus.impl.set_oscillator_phases(phases, signals, theta_slot, effective_amplitudes)
+
+# ... 3 more regions ...
+
+# Then repeated for pathways
+for pathway_name, pathway in self.pathways.items():
+    if hasattr(pathway, 'set_oscillator_phases'):
+        pathway.set_oscillator_phases(phases, signals, theta_slot, effective_amplitudes)
+```
+
+**Consolidation target:** `src/thalia/core/oscillator.py:broadcast_to_components()`
 
 ---
 
 ## Conclusion
 
-The Thalia codebase demonstrates strong architectural foundations with excellent adherence to biological plausibility and consistent application of core patterns (BrainComponent protocol, WeightInitializer registry, mixin composition).
+The Thalia codebase demonstrates **exceptional software engineering** for a neuroscience-inspired ML framework. The architecture is mature, well-documented, and consistently applies biological constraints. The identified improvements are refinements rather than fundamental flaws.
 
-### Summary of Progress
+**Recommended Action Plan:**
+1. **Week 1-2:** Execute Tier 1 improvements (low risk, high value)
+2. **Week 3-4:** Strengthen manager pattern (Tier 2.3)
+3. **Week 5-8:** Decompose god objects (Tier 2.1, 2.2) with careful testing
+4. **Future:** Consider Tier 3 for long-term maintainability
 
-**Phase 1 (Tier 1) - Quick Wins**: ✅ **COMPLETE**
-- All 5 foundational improvements successfully implemented
-- Neuron constants registry with biological documentation
-- BaseNeuronConfig eliminates parameter duplication
-- Region size constants with neuroscience references
-- Standardized diagnostics usage across regions
-
-**Phase 2 (Tier 2) - Moderate Refactoring**: ✅ **COMPLETE (6/7)**
-
-God Object Mitigation (2.1): ✅ **COMPLETE**
-- Striatum: 2676 → 1770 lines (-906, -34%)
-  - Managers: D1/D2 pathways, homeostasis, learning, checkpoint, exploration
-- Hippocampus: 2239 → 1860 lines (-379, -16.9%)
-  - Managers: plasticity, episode
-- Brain: 2297 → 1787 lines (-510, -22.2%)
-  - Managers: pathway, neuromodulator
-- **Total**: -1795 lines across 3 files (28% average reduction)
-- **Pattern**: Manager delegation - instantiate in `__init__`, delegate methods
-- **Result**: Zero breaking changes, all tests passing
-
-Infrastructure Improvements: ✅ **COMPLETE**
-- (2.2) Learning strategies: Infrastructure complete, selective adoption demonstrated (Prefrontal uses STDPStrategy)
-- (2.3) OscillatorCouplingManager: 258 lines, integrated
-- (2.5) STP_PRESETS: 317 lines, 11 pathway types documented
-
-Remaining Items: ⏭️ **ONE PENDING**
-- (2.4) Capacity metrics standardization: Dataclass exists, enforcement needed across all regions
-
-**Phase 3 (Tier 3) - Major Restructuring**: 🔮 **FUTURE WORK**
-- Component registry for dynamic creation
-- Strict dataclass config hierarchy
-- Pathway type hierarchy (feedforward/recurrent/modulatory)
-
-### What's Next?
-
-**Immediate Priorities** (If continuing Tier 2):
-1. **Learning rule migration** (2.2): Refactor inline learning logic to use existing LearningStrategy pattern
-   - Impact: ~30% reduction in learning code duplication
-   - Effort: Medium (infrastructure ready, needs per-region migration)
-
-2. **Capacity metrics enforcement** (2.4): Ensure all regions return CapacityMetrics dataclass
-   - Impact: Enables generic growth logic
-   - Effort: Low (dataclass exists, just needs consistent usage)
-
-**Long-term Vision** (Tier 3):
-- Unified component registry for plugin architecture
-- Type-specific pathway bases for clearer semantics
-
-### Key Lessons
-
-**What Worked Well**:
-- ✅ Manager extraction pattern: Clean delegation, backward compatible
-- ✅ Incremental refactoring: One manager at a time, test at each step
-- ✅ Biological documentation: Neuron constants and STP presets reference literature
-- ✅ Infrastructure-first: Build patterns (WeightInitializer, mixins, strategies) before using them
-- ✅ Selective adoption: Use patterns where beneficial, keep specialized code where needed (Striatum opponent pathways)
-
-**Best Practices Established**:
-- Extract subsystem → Create manager → Instantiate in `__init__` → Delegate methods
-- Maintain backward compatibility (old tests must pass)
-- Document biological basis (constants, ratios, time scales)
-- Use dataclasses for configs, protocols for interfaces
-- Build reusable infrastructure (strategies, mixins) but allow selective adoption
-- Keep specialized logic where biological accuracy requires it (opponent pathways, domain-specific learning)
-
-### No Violations Detected
-
-All code reviewed maintains biological plausibility principles:
-- ✅ Spike-based processing (binary spikes)
-- ✅ Local learning rules (no backpropagation)
-- ✅ Temporal dynamics (realistic time constants)
-- ✅ Neuromodulation (dopamine, ACh, NE properly gated)
-- ✅ Causality (no future information)
-
-The codebase is in excellent shape for continued development.
-
----
-
-**Review conducted by**: GitHub Copilot
-**Date**: December 11, 2025
-**Last updated**: December 11, 2025 (post-Brain/Hippocampus/Oscillator/STP completion)
-**Codebase version**: Current `main` branch
-**Total files reviewed**: 50+ files across core, regions, learning, integration, and sensory modules
-
-**Tier 2 Progress Summary**:
-- ✅ 2.1a Striatum split: COMPLETE (-906 lines)
-- ✅ 2.1b Hippocampus split: COMPLETE (-379 lines)
-- ✅ 2.1c Brain split: COMPLETE (-510 lines)
-- ✅ 2.2 Learning rules: COMPLETE (infrastructure + selective adoption via Prefrontal example)
-- ✅ 2.3 Oscillator coupling: COMPLETE (258 lines, integrated)
-- ⏭️ 2.4 Capacity metrics: PENDING (dataclass exists, enforcement needed)
-- ✅ 2.5 STP presets: COMPLETE (317 lines, 11 pathway types)
+The codebase is in excellent shape for continued development and research.

@@ -280,3 +280,70 @@ class DiagnosticsMixin:
                 diag.update(self.trace_diagnostics(t, name))
                 
         return diag
+
+    def collect_standard_diagnostics(
+        self,
+        region_name: str,
+        weight_matrices: Optional[Dict[str, torch.Tensor]] = None,
+        spike_tensors: Optional[Dict[str, torch.Tensor]] = None,
+        trace_tensors: Optional[Dict[str, torch.Tensor]] = None,
+        custom_metrics: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Collect diagnostics using standard region pattern.
+        
+        This helper reduces boilerplate in region get_diagnostics() implementations
+        by automatically collecting weight, spike, and trace statistics.
+        
+        Example:
+            >>> def get_diagnostics(self) -> Dict[str, Any]:
+            ...     return self.collect_standard_diagnostics(
+            ...         region_name="striatum",
+            ...         weight_matrices={
+            ...             "d1": self.d1_weights,
+            ...             "d2": self.d2_weights,
+            ...         },
+            ...         trace_tensors={
+            ...             "d1_elig": self.d1_eligibility,
+            ...             "d2_elig": self.d2_eligibility,
+            ...         },
+            ...         custom_metrics={
+            ...             "exploring": self.exploring,
+            ...             "total_trials": self._total_trials,
+            ...         }
+            ...     )
+        
+        Args:
+            region_name: Name of the region (added to output dict)
+            weight_matrices: Dict mapping name → weight tensor
+            spike_tensors: Dict mapping name → spike tensor
+            trace_tensors: Dict mapping name → trace tensor
+            custom_metrics: Additional region-specific metrics
+            
+        Returns:
+            Comprehensive diagnostics dict with region name and all statistics
+        """
+        diag: Dict[str, Any] = {"region": region_name}
+        
+        # Auto-collect weight stats
+        if weight_matrices:
+            for name, weights in weight_matrices.items():
+                if weights is not None:
+                    diag.update(self.weight_diagnostics(weights, name))
+        
+        # Auto-collect spike stats
+        if spike_tensors:
+            for name, spikes in spike_tensors.items():
+                if spikes is not None:
+                    diag.update(self.spike_diagnostics(spikes, name))
+        
+        # Auto-collect trace stats
+        if trace_tensors:
+            for name, traces in trace_tensors.items():
+                if traces is not None:
+                    diag.update(self.trace_diagnostics(traces, name))
+        
+        # Add custom metrics
+        if custom_metrics:
+            diag.update(custom_metrics)
+            
+        return diag

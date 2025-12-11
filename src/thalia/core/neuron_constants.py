@@ -335,6 +335,94 @@ Used for salient or superthreshold stimuli.
 """
 
 # =============================================================================
+# NEUROMODULATOR GAIN PARAMETERS
+# =============================================================================
+
+NE_MAX_GAIN = 1.5
+"""Maximum norepinephrine gain multiplier.
+
+NE modulates excitability from baseline (1.0) to high arousal (1.5).
+Applied across striatum, PFC, hippocampus, cortex, and cerebellum.
+Biological basis: β-adrenergic receptor effects on neural excitability.
+"""
+
+NE_GAIN_RANGE = 0.5
+"""Norepinephrine gain modulation range.
+
+Gain computed as: 1.0 + NE_GAIN_RANGE * ne_level
+Where ne_level ∈ [0, 1], yielding gain ∈ [1.0, 1.5]
+"""
+
+TONIC_D1_GAIN_SCALE = 0.5
+"""Tonic dopamine modulation of D1 pathway gain.
+
+Scales how much tonic DA increases D1 responsiveness.
+D1 gain = 1.0 + tonic_da * TONIC_D1_GAIN_SCALE
+Example: tonic_da=0.3, scale=0.5 → gain=1.15
+"""
+
+# =============================================================================
+# THETA OSCILLATION MODULATION PARAMETERS
+# =============================================================================
+
+THETA_BASELINE_MIN = 0.7
+"""Minimum theta baseline modulation factor.
+
+Theta baseline modulation range: 0.7-1.0
+Computed as: THETA_BASELINE_MIN + THETA_BASELINE_RANGE * encoding_phase
+Where encoding_phase ∈ [0, 1] from theta oscillation.
+"""
+
+THETA_BASELINE_RANGE = 0.3
+"""Theta baseline modulation range.
+
+Full range of theta baseline modulation (0.3).
+Combined with THETA_BASELINE_MIN (0.7) gives 0.7-1.0 range.
+"""
+
+THETA_CONTRAST_MIN = 0.8
+"""Minimum theta contrast modulation factor.
+
+Theta contrast modulation range: 0.8-1.0
+Computed as: THETA_CONTRAST_MIN + THETA_CONTRAST_RANGE * retrieval_phase
+Where retrieval_phase ∈ [0, 1] from theta oscillation.
+"""
+
+THETA_CONTRAST_RANGE = 0.2
+"""Theta contrast modulation range.
+
+Full range of theta contrast modulation (0.2).
+Combined with THETA_CONTRAST_MIN (0.8) gives 0.8-1.0 range.
+"""
+
+BASELINE_EXCITATION_SCALE = 1.2
+"""Baseline excitation scale factor.
+
+Scales theta-modulated baseline to set excitation level.
+baseline_exc = BASELINE_EXCITATION_SCALE * theta_baseline_mod
+Results in 0.84-1.2 range when theta_baseline_mod ∈ [0.7, 1.0]
+"""
+
+# =============================================================================
+# LEARNING THRESHOLD PARAMETERS
+# =============================================================================
+
+INTRINSIC_LEARNING_THRESHOLD = 0.3
+"""Intrinsic reward threshold for learning.
+
+Minimum absolute intrinsic reward to trigger learning updates.
+Used to filter out noise and focus learning on significant events.
+Biological basis: Requires sufficient novelty/surprise signal.
+"""
+
+MATCH_THRESHOLD = 0.5
+"""Pattern match threshold.
+
+Used for pattern completion and recognition tasks.
+Values above this threshold indicate successful pattern match.
+"""
+
+# =============================================================================
 # CONVENIENCE PRESETS
 # =============================================================================
 

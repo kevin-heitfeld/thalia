@@ -83,13 +83,9 @@ from typing import TYPE_CHECKING, Dict, Optional, Any
 import torch
 import torch.nn as nn
 
-if TYPE_CHECKING:
-    from thalia.config import ThaliaConfig
-
 from .event_system import (
-    Event, EventType, EventScheduler,
+    EventType, EventScheduler,
     SpikePayload,
-    get_axonal_delay,
 )
 from .event_regions import (
     EventDrivenCortex, EventDrivenHippocampus, EventDrivenPFC, EventDrivenStriatum,
@@ -98,6 +94,7 @@ from .event_regions import (
 from .parallel_executor import ParallelExecutor
 from .pathway_manager import PathwayManager
 from .neuromodulator_manager import NeuromodulatorManager
+from .neuron_constants import INTRINSIC_LEARNING_THRESHOLD
 from .diagnostics import (
     DiagnosticsManager,
     StriatumDiagnostics,
@@ -119,6 +116,9 @@ from ..regions.theta_dynamics import TemporalIntegrationLayer
 
 # Import config types
 from ..config.brain_config import CortexType
+
+if TYPE_CHECKING:
+    from thalia.config import ThaliaConfig
 
 
 @dataclass
@@ -424,7 +424,7 @@ class EventDrivenBrain(nn.Module):
         # - Health monitoring and diagnostics
         #
         # This enables curriculum learning and coordinated adaptation.
-        
+
         self.pathway_manager = PathwayManager(
             cortex_l23_size=self._cortex_l23_size,
             cortex_l5_size=self._cortex_l5_size,
@@ -437,7 +437,7 @@ class EventDrivenBrain(nn.Module):
             dt_ms=self.config.dt_ms,
             device=self.config.device,
         )
-        
+
         # Create shortcuts for backward compatibility
         self.cortex_to_hippo_pathway = self.pathway_manager.cortex_to_hippo
         self.cortex_to_striatum_pathway = self.pathway_manager.cortex_to_striatum
@@ -448,10 +448,10 @@ class EventDrivenBrain(nn.Module):
         self.striatum_to_cerebellum_pathway = self.pathway_manager.striatum_to_cerebellum
         self.attention_pathway = self.pathway_manager.attention
         self.replay_pathway = self.pathway_manager.replay
-        
+
         # Pathway registry for iteration (growth, checkpointing, diagnostics)
         self.pathways = self.pathway_manager.get_all_pathways()
-        
+
         # Pathway-region connection tracking (now managed by PathwayManager)
         self._region_pathway_connections = self.pathway_manager.region_connections
 
@@ -481,9 +481,9 @@ class EventDrivenBrain(nn.Module):
         # Coordinates VTA (dopamine), LC (norepinephrine), NB (acetylcholine)
         # Manages tonic + phasic signaling, broadcasts to all regions
         # Computes uncertainty, intrinsic reward, prediction error
-        
+
         self.neuromodulator_manager = NeuromodulatorManager()
-        
+
         # Create shortcuts for backward compatibility
         self.vta = self.neuromodulator_manager.vta
         self.locus_coeruleus = self.neuromodulator_manager.locus_coeruleus
@@ -554,6 +554,52 @@ class EventDrivenBrain(nn.Module):
                 hippocampus=self.hippocampus,
                 config=DynaConfig(),
             )
+
+        # =====================================================================
+        # TRIAL COORDINATOR
+        # =====================================================================
+        # Coordinates trial execution flow (forward, select_action, deliver_reward)
+        # Follows existing manager pattern to reduce god object complexity
+        from .trial_coordinator import TrialCoordinator
+
+        # Create mutable container for shared time state
+        # This allows coordinator to update brain's _current_time
+        self._time_container = [self._current_time]
+
+        self.trial_coordinator = TrialCoordinator(
+            regions=self.adapters,
+            pathways=self.pathway_manager,
+            neuromodulators=self.neuromodulator_manager,
+            oscillators=self.oscillators,
+            config=self.config,
+            spike_counts=self._spike_counts,
+            vta=self.vta,
+            brain_time=self._time_container,
+            mental_simulation=self.mental_simulation,
+            dyna_planner=self.dyna_planner,
+        )
+
+        # =====================================================================
+        # CONSOLIDATION MANAGER
+        # =====================================================================
+        # Manages memory consolidation and offline replay
+        # Follows existing manager pattern to reduce god object complexity
+        from .consolidation_manager import ConsolidationManager
+
+        # Create mutable container for shared last_action state
+        self._last_action_container = [None]
+
+        self.consolidation_manager = ConsolidationManager(
+            hippocampus=self.hippocampus,
+            striatum=self.striatum,
+            cortex=self.cortex,
+            pfc=self.pfc,
+            config=self.config,
+            deliver_reward_fn=self.deliver_reward,
+        )
+
+        # Set cortex L5 size (needed for state reconstruction)
+        self.consolidation_manager.set_cortex_l5_size(self._cortex_l5_size)
 
     @classmethod
     def from_thalia_config(cls, config: "ThaliaConfig") -> "EventDrivenBrain":
@@ -679,22 +725,22 @@ class EventDrivenBrain(nn.Module):
         # Build regions using ComponentRegistry
         regions = {}
         regions_dict = config_dict.get("regions", {})
-        
+
         for region_name, region_config in regions_dict.items():
             region_type = region_config.pop("type")  # Extract registry name
-            
+
             # Inject global config into region config
             region_config["device"] = device
             region_config["dt_ms"] = dt_ms
-            
+
             # Get the appropriate config class from registry metadata
             region_class = ComponentRegistry.get("region", region_type)
             if region_class is None:
                 raise ValueError(f"Region type '{region_type}' not registered")
-            
+
             # Determine config class (assume it's ClassNameConfig)
             config_class_name = f"{region_class.__name__}Config"
-            
+
             # Try to find the config class
             if region_type == "cortex" or region_type == "layered_cortex":
                 config_obj = LayeredCortexConfig(**region_config)
@@ -712,29 +758,29 @@ class EventDrivenBrain(nn.Module):
                     f"Unknown region type '{region_type}'. "
                     f"Supported types: cortex, hippocampus, prefrontal, striatum, cerebellum"
                 )
-            
+
             # Create region instance via registry
             regions[region_name] = ComponentRegistry.create("region", region_type, config_obj)
 
         # Build pathways using ComponentRegistry
         pathways = {}
         pathways_dict = config_dict.get("pathways", {})
-        
+
         for pathway_name, pathway_config in pathways_dict.items():
             pathway_type = pathway_config.pop("type")  # Extract registry name
-            
+
             # Inject global config into pathway config
             pathway_config["device"] = device
             pathway_config["dt_ms"] = dt_ms
-            
+
             # Pathway configs are more uniform - they all inherit from SpikingPathwayConfig
             # For now, we'll create a simple config dict and let the pathway handle it
             # This is a simplified approach; full implementation would map to proper config classes
-            
+
             pathway_class = ComponentRegistry.get("pathway", pathway_type)
             if pathway_class is None:
                 raise ValueError(f"Pathway type '{pathway_type}' not registered")
-            
+
             # Note: This is a simplified implementation
             # Full version would need proper config class mapping like regions
             # For now, skip pathway creation as it requires more complex config handling
@@ -743,21 +789,21 @@ class EventDrivenBrain(nn.Module):
         # For now, create a minimal ThaliaConfig and standard brain
         # Full dynamic construction would require more infrastructure
         # This provides the foundation for future expansion
-        
+
         # Build ThaliaConfig from extracted values
         global_config = GlobalConfig(
             device=device,
             dt_ms=dt_ms,
             theta_frequency_hz=theta_frequency_hz,
         )
-        
+
         # Extract sizes from regions if provided
         cortex_size = regions_dict.get("cortex", {}).get("n_output", 256)
         hippocampus_size = regions_dict.get("hippocampus", {}).get("ca1_size", 200)
         pfc_size = regions_dict.get("pfc", {}).get("n_neurons", 128)
         n_actions = regions_dict.get("striatum", {}).get("n_actions", 10)
         input_size = regions_dict.get("cortex", {}).get("n_input", 784)
-        
+
         region_sizes = RegionSizes(
             input_size=input_size,
             cortex_size=cortex_size,
@@ -765,22 +811,22 @@ class EventDrivenBrain(nn.Module):
             pfc_size=pfc_size,
             n_actions=n_actions,
         )
-        
+
         brain_config = BrainConfig(sizes=region_sizes)
-        
+
         thalia_config = ThaliaConfig(
             global_=global_config,
             brain=brain_config,
         )
-        
+
         # Create brain using standard constructor
         # In future, this could be extended to use the dynamically created regions
         brain = cls.from_thalia_config(thalia_config)
-        
+
         # Store the dynamically created regions for introspection
         brain._dynamic_regions = regions
         brain._dynamic_pathways = pathways
-        
+
         return brain
 
     def _init_parallel_executor(self) -> None:
@@ -859,107 +905,25 @@ class EventDrivenBrain(nn.Module):
             # Learning
             brain.deliver_reward(external_reward=1.0)
         """
-        # Validate input if provided
-        if sensory_input is not None:
-            assert sensory_input.shape[-1] == self.config.input_size, (
-                f"EventDrivenBrain.forward: sensory_input has shape {sensory_input.shape} "
-                f"but input_size={self.config.input_size}. Check that input matches brain config."
-            )
-
         # Default timesteps
         n_timesteps = n_timesteps or self.config.encoding_timesteps
 
-        # Choose execution path: parallel or sequential
-        if self._parallel_executor is not None:
-            # PARALLEL EXECUTION
-            end_time = self._current_time + n_timesteps * self.config.dt_ms
+        # Delegate to trial coordinator
+        result = self.trial_coordinator.forward(
+            sensory_input=sensory_input,
+            n_timesteps=n_timesteps,
+            scheduler=self.scheduler,
+            parallel_executor=self._parallel_executor,
+            process_events_fn=self._process_events_until,
+            update_neuromodulators_fn=self._update_neuromodulators,
+            get_cortex_input_fn=self._get_cortex_input,
+            criticality_monitor=self.criticality_monitor,
+        )
 
-            # Get effective input (zero tensor for consolidation, allows recurrent dynamics)
-            cortex_input = self._get_cortex_input(sensory_input)
+        # Sync time from coordinator
+        self._current_time = self._time_container[0]
 
-            # Inject sensory input (always - even zeros for consolidation)
-            self._parallel_executor.inject_sensory_input(
-                cortex_input,
-                target="cortex",
-                time=self._current_time,
-            )
-
-            # Run parallel simulation
-            result = self._parallel_executor.run_until(end_time)
-
-            # Update local state
-            self._current_time = end_time
-            self._spike_counts = result["spike_counts"]
-            self._events_processed = result["events_processed"]
-
-            results = {
-                "cortex_activity": torch.zeros(self._cortex_l23_size),
-                "hippocampus_activity": torch.zeros(self.config.hippocampus_size),
-                "pfc_activity": torch.zeros(self.config.pfc_size),
-                "spike_counts": self._spike_counts.copy(),
-                "events_processed": self._events_processed,
-                "final_time": self._current_time,
-            }
-        else:
-            # SEQUENTIAL EXECUTION
-            # Track activities for monitoring
-            cortex_total = torch.zeros(self._cortex_l23_size)
-            hippo_total = torch.zeros(self.config.hippocampus_size)
-            pfc_total = torch.zeros(self.config.pfc_size)
-
-            for t in range(n_timesteps):
-                step_time = self._current_time + t * self.config.dt_ms
-
-                # Advance oscillators (once per timestep, like dopamine)
-                self.oscillators.advance(self.config.dt_ms)
-
-                # Schedule sensory input (or zero input for consolidation)
-                cortex_input = self._get_cortex_input(sensory_input)
-                delay = get_axonal_delay("sensory", "cortex")
-                event = Event(
-                    time=step_time + delay,
-                    event_type=EventType.SENSORY,
-                    source="sensory_input",
-                    target="cortex",
-                    # Detach tensor to prevent memory leak from accumulated events
-                    payload=SpikePayload(spikes=cortex_input.detach().clone()),
-                )
-                self.scheduler.schedule(event)
-
-                # Dopamine is broadcast directly to all regions via set_dopamine() above
-
-                # =========================================================
-                # CONTINUOUS NEUROMODULATOR UPDATES
-                # =========================================================
-                # Update all centralized neuromodulator systems:
-                # - VTA dopamine (tonic from intrinsic reward, phasic decay)
-                # - Locus coeruleus NE (arousal from uncertainty)
-                # This happens every timestep for continuous modulation.
-                self._update_neuromodulators()
-
-            # Update time
-            end_time = self._current_time + n_timesteps * self.config.dt_ms
-
-            # Process all events up to end_time
-            self._process_events_until(end_time)
-
-            self._current_time = end_time
-
-            results = {
-                "cortex_activity": cortex_total,
-                "hippocampus_activity": hippo_total,
-                "pfc_activity": pfc_total,
-                "spike_counts": self._spike_counts.copy(),
-                "events_processed": self._events_processed,
-                "final_time": self._current_time,
-            }
-
-        # Capture PFC output for decoder (language model, mental simulation)
-        if hasattr(self.pfc.impl, 'state') and self.pfc.impl.state is not None:
-            if self.pfc.impl.state.spikes is not None:
-                self._last_pfc_output = self.pfc.impl.state.spikes.float().squeeze(0).clone()
-
-        return results
+        return result
 
     def select_action(self, explore: bool = True, use_planning: bool = True) -> tuple[int, float]:
         """Select action based on current striatum state.
@@ -981,48 +945,8 @@ class EventDrivenBrain(nn.Module):
         Returns:
             (action, confidence): Selected action index and confidence [0, 1]
         """
-        # Phase 2: Mental simulation planning
-        if use_planning and self.mental_simulation is not None:
-            # Get current state from PFC working memory
-            current_state = self._last_pfc_output
-            if current_state is None:
-                # No state yet, fall back to model-free
-                pass
-            else:
-                # Get goal context from PFC working memory (already captured via pathways)
-                # _last_pfc_output contains PFC state obtained through proper event-driven processing
-                goal_context = self._last_pfc_output
-
-                # Plan best action using mental simulation
-                available_actions = list(range(self.config.n_actions))
-                best_action, best_rollout = self.mental_simulation.plan_best_action(
-                    current_state=current_state,
-                    available_actions=available_actions,
-                    goal_context=goal_context
-                )
-
-                # Confidence from rollout (higher value = higher confidence)
-                # Normalize cumulative value to [0, 1] range
-                confidence = float(torch.sigmoid(torch.tensor(best_rollout.cumulative_value)).item())
-
-                self._last_action = best_action
-                return best_action, confidence
-
-        # Model-free action selection (standard)
-        # Use striatum's finalize_action method
-        result = self.striatum.impl.finalize_action(explore=explore)
-
-        action = result.get("selected_action", 0)
-        probs = result.get("probs", None)
-
-        if probs is not None:
-            confidence = float(probs[action].item())
-        else:
-            confidence = 1.0
-
-        self._last_action = action
-
-        return action, confidence
+        # Delegate to trial coordinator
+        return self.trial_coordinator.select_action(explore=explore, use_planning=use_planning)
 
     def deliver_reward(self, external_reward: Optional[float] = None) -> None:
         """Deliver external reward signal for learning.
@@ -1049,102 +973,45 @@ class EventDrivenBrain(nn.Module):
         Args:
             external_reward: Task-based reward value (-1 to +1), or None for pure intrinsic
         """
-        # =====================================================================
-        # STEP 1: Compute total reward (external + intrinsic)
-        # =====================================================================
-        # Biologically, external and intrinsic rewards COMBINE additively.
-        # VTA dopamine neurons integrate both signals.
-        intrinsic_reward = self._compute_intrinsic_reward()
-
-        if external_reward is None:
-            # No external feedback - use pure intrinsic
-            total_reward = intrinsic_reward
-        else:
-            # External feedback provided - ADD to intrinsic
-            # This allows external_reward=0.0 (neutral) to still include intrinsic component
-            total_reward = external_reward + intrinsic_reward
-            # Clamp to reasonable range (dopamine saturation)
-            total_reward = max(-2.0, min(2.0, total_reward))
-
-        # =====================================================================
-        # STEP 2: Get expected value from striatum
-        # =====================================================================
-        expected = self.striatum.impl.get_expected_value(self._last_action)
-
-        # =====================================================================
-        # STEP 3: Compute RPE and deliver to VTA
-        # =====================================================================
-        # VTA handles normalization, phasic burst computation, and decay
-        self.vta.deliver_reward(
-            external_reward=total_reward,
-            expected_value=expected
+        # Delegate to trial coordinator
+        self.trial_coordinator.deliver_reward(
+            external_reward=external_reward,
+            compute_intrinsic_reward_fn=self._compute_intrinsic_reward,
         )
 
-        # =====================================================================
-        # STEP 4: Get dopamine signal from VTA and broadcast to ALL regions
-        # =====================================================================
-        dopamine = self.vta.get_global_dopamine()
+        # Store experience automatically (for replay) via consolidation manager
+        if self.trial_coordinator.get_last_action() is not None:
+            # Compute total reward for experience storage
+            intrinsic_reward = self._compute_intrinsic_reward()
+            if external_reward is None:
+                total_reward = intrinsic_reward
+            else:
+                total_reward = external_reward + intrinsic_reward
+                total_reward = max(-2.0, min(2.0, total_reward))
 
-        self.cortex.impl.set_dopamine(dopamine)
-        self.hippocampus.impl.set_dopamine(dopamine)
-        self.pfc.impl.set_dopamine(dopamine)
-        self.striatum.impl.set_dopamine(dopamine)
-        self.cerebellum.impl.set_dopamine(dopamine)
+            # Sync last_action to container for consolidation manager
+            self._last_action_container[0] = self.trial_coordinator.get_last_action()
 
-        # =====================================================================
-        # STEP 5: Trigger striatum learning (D1/D2 plasticity)
-        # =====================================================================
-        if self._last_action is not None:
-            self.striatum.impl.deliver_reward(total_reward)
-
-        # =====================================================================
-        # STEP 6: Update value estimate in striatum
-        # =====================================================================
-        if self._last_action is not None:
-            self.striatum.impl.update_value_estimate(self._last_action, total_reward)
-
-        # =====================================================================
-        # STEP 7: Store experience for replay (AUTOMATIC)
-        # =====================================================================
-        # Automatically store experience in hippocampus for:
-        # - Prioritized experience replay during consolidation
-        # - HER (Hindsight Experience Replay) if enabled
-        # - Mental simulation state transitions
-        #
-        # The brain automatically tracks everything needed:
-        # - State (from last forward pass)
-        # - Action (from _last_action)
-        # - Reward (just received)
-        # - Correctness (reward > threshold)
-        if self._last_action is not None:
-            self._store_experience_automatically(
-                action=self._last_action,
+            self.consolidation_manager.store_experience(
+                action=self.trial_coordinator.get_last_action(),
                 reward=total_reward,
-            )
+                last_action_holder=self._last_action_container,
+            )            # Trigger background planning (Phase 2)
+            if self.dyna_planner is not None:
+                current_state = self.trial_coordinator.get_last_pfc_output()
+                next_state = self.pfc.impl.state.spikes if self.pfc.impl.state else None
 
-        # =====================================================================
-        # STEP 8: Trigger background planning (Phase 2)
-        # =====================================================================
-        # After processing real experience, do simulated planning
-        if self.dyna_planner is not None and self._last_action is not None:
-            # Get state, action, reward, next_state for Dyna
-            current_state = self._last_pfc_output
-            next_state = self.pfc.impl.state.spikes  # Current PFC state is "next" after action
+                if current_state is not None and next_state is not None:
+                    goal_context = current_state
 
-            if current_state is not None:
-                # Get goal context from PFC working memory (already captured via pathways)
-                # _last_pfc_output contains PFC state obtained through proper event-driven processing
-                goal_context = self._last_pfc_output
-
-                # Trigger background planning
-                self.dyna_planner.process_real_experience(
-                    state=current_state,
-                    action=self._last_action,
-                    reward=total_reward,
-                    next_state=next_state,
-                    done=False,  # Would need task-specific logic to determine episode end
-                    goal_context=goal_context
-                )
+                    self.dyna_planner.process_real_experience(
+                        state=current_state,
+                        action=self.trial_coordinator.get_last_action(),
+                        reward=total_reward,
+                        next_state=next_state,
+                        done=False,
+                        goal_context=goal_context
+                    )
 
     def _compute_uncertainty(self) -> float:
         """Compute current task uncertainty for arousal modulation.
@@ -1324,11 +1191,11 @@ class EventDrivenBrain(nn.Module):
         # Other coordinations (NE-ACh, DA-ACh) are handled in manager
         dopamine = self.vta.get_global_dopamine()
         norepinephrine = self.locus_coeruleus.get_norepinephrine()
-        
+
         dopamine, norepinephrine = self.neuromodulator_manager.coordination.coordinate_da_ne(
             dopamine, norepinephrine, prediction_error
         )
-        
+
         # Update the systems with coordinated values
         # (These are small adjustments to the raw signals)
         # Note: We don't call set_dopamine/set_norepinephrine because those
@@ -1344,7 +1211,7 @@ class EventDrivenBrain(nn.Module):
             'striatum': self.striatum.impl,
             'cerebellum': self.cerebellum.impl,
         }
-        
+
         # Manager handles NE-ACh and DA-ACh coordination, then broadcasts
         self.neuromodulator_manager.broadcast_to_regions(regions)
 
@@ -1362,7 +1229,7 @@ class EventDrivenBrain(nn.Module):
         dopamine = self.vta.get_global_dopamine()
         norepinephrine = self.locus_coeruleus.get_norepinephrine()
         acetylcholine = self.nucleus_basalis.get_acetylcholine()
-        
+
         for pathway in self.pathways.values():
             if hasattr(pathway, 'set_neuromodulators'):
                 pathway.set_neuromodulators(dopamine, norepinephrine, acetylcholine)
@@ -1379,12 +1246,13 @@ class EventDrivenBrain(nn.Module):
         #
         # Threshold: Only trigger learning for strong intrinsic signals (|reward| > 0.3)
         # to avoid learning from noise. This mirrors dopamine neuron firing thresholds.
-        if abs(intrinsic_reward) > 0.3 and self._last_action is not None:
+        last_action = self.trial_coordinator.get_last_action()
+        if abs(intrinsic_reward) > INTRINSIC_LEARNING_THRESHOLD and last_action is not None:
             # Trigger striatum learning from intrinsic reward
             # Note: This uses the SAME learning mechanism as external rewards,
             # just with intrinsic signal as the teaching signal
             self.striatum.impl.deliver_reward(intrinsic_reward)
-            self.striatum.impl.update_value_estimate(self._last_action, intrinsic_reward)
+            self.striatum.impl.update_value_estimate(last_action, intrinsic_reward)
 
         # =====================================================================
         # 8. PHASE 3: UPDATE COGNITIVE LOAD (HYPERBOLIC DISCOUNTING)
@@ -1497,72 +1365,6 @@ class EventDrivenBrain(nn.Module):
                     phases, signals, theta_slot, effective_amplitudes
                 )
 
-    def _store_experience_automatically(
-        self,
-        action: int,
-        reward: float,
-    ) -> None:
-        """Automatically store experience from current brain state.
-
-        This is called automatically by deliver_reward(). No manual calls needed.
-
-        Extracts all needed information from brain's current state:
-        - State: Combined cortex L5 + hippocampus + PFC activity
-        - Action: From parameter (already tracked)
-        - Reward: From parameter (just delivered)
-        - Correctness: Inferred from reward (positive = correct)
-        - Goal context: From PFC (for HER)
-
-        Args:
-            action: Action that was taken
-            reward: Reward that was received
-        """
-        # Infer correctness from reward
-        correct = reward > 0.0
-
-        # Construct state from current brain activity
-        cortex_L5 = self.cortex.impl.state.l5_spikes
-        if cortex_L5 is None:
-            cortex_L5 = torch.zeros(1, self._cortex_l5_size, device=self.config.device)
-
-        hippo_out = self.hippocampus.impl.state.ca1_spikes
-        if hippo_out is None:
-            hippo_out = torch.zeros(1, self.config.hippocampus_size, device=self.config.device)
-
-        pfc_out = self.pfc.impl.state.spikes
-        if pfc_out is None:
-            pfc_out = torch.zeros(1, self.config.pfc_size, device=self.config.device)
-
-        combined_state = torch.cat([
-            cortex_L5.view(-1),
-            hippo_out.view(-1),
-            pfc_out.view(-1),
-        ])
-
-        # Priority boost for rare/important experiences
-        priority_boost = 0.0
-        if correct and action == 1:  # Correct NOMATCH (rare)
-            priority_boost += 3.0
-
-        # Goal-conditioned storage for HER
-        goal_for_her = None
-        if self.hippocampus.impl.her_integration is not None:
-            goal_for_her = pfc_out.clone()
-
-        # Store in hippocampus
-        self.hippocampus.impl.store_episode(
-            state=combined_state,
-            action=action,
-            reward=reward,
-            correct=correct,
-            context=None,  # Could store last sensory input if needed
-            metadata={},
-            priority_boost=priority_boost,
-            goal=goal_for_her,
-            achieved_goal=hippo_out.clone(),
-            done=correct,
-        )
-
     def consolidate(self, n_cycles: int = 5, batch_size: int = 32, verbose: bool = False) -> Dict[str, Any]:
         """Perform memory consolidation (replay) automatically.
 
@@ -1587,108 +1389,16 @@ class EventDrivenBrain(nn.Module):
         Returns:
             Dict with consolidation statistics
         """
-        stats = {
-            'cycles_completed': 0,
-            'total_replayed': 0,
-            'experiences_learned': 0,
-            'her_enabled': self.hippocampus.impl.her_integration is not None,
-        }
+        # Sync coordinator's last_action to container before consolidation
+        self._last_action_container[0] = self.trial_coordinator.get_last_action()
 
-        # Enter consolidation mode if HER enabled
-        if self.hippocampus.impl.her_integration is not None:
-            self.hippocampus.impl.enter_consolidation_mode()
-            if verbose:
-                her_diag = self.hippocampus.impl.get_her_diagnostics()
-                print(f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions")
-
-        # Run replay cycles
-        for cycle in range(n_cycles):
-            if self.hippocampus.impl.her_integration is not None:
-                # Sample mix of real + hindsight experiences
-                batch = self.hippocampus.impl.sample_her_replay_batch(batch_size=batch_size)
-                if batch:
-                    stats['total_replayed'] += len(batch)
-
-                    # CRITICAL: Replay each experience and trigger learning
-                    for experience in batch:
-                        action = experience.get('action', None)
-                        reward = experience.get('reward', 0.0)
-                        state = experience.get('state', None)
-
-                        if action is None or state is None:
-                            continue
-
-                        # Reconstruct state components
-                        cortex_size = self._cortex_l5_size
-                        hippo_size = self.config.hippocampus_size
-                        pfc_size = self.config.pfc_size
-
-                        cortex_state = state[:cortex_size]
-                        hippo_state = state[cortex_size:cortex_size + hippo_size]
-                        pfc_state = state[cortex_size + hippo_size:]
-
-                        # Reactivate pattern in striatum
-                        striatum_input = torch.cat([
-                            cortex_state.unsqueeze(0),
-                            hippo_state.unsqueeze(0),
-                            pfc_state.unsqueeze(0),
-                        ], dim=-1)
-                        _ = self.striatum.impl.forward(striatum_input)
-
-                        # Set action and deliver reward (triggers learning!)
-                        self._last_action = action
-                        self.deliver_reward(external_reward=reward)
-                        stats['experiences_learned'] += 1
-
-                    if verbose:
-                        print(f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(batch)} experiences, {stats['experiences_learned']} learned")
-            else:
-                # Sample normal episodic replay
-                episodes = self.hippocampus.impl.sample_episodes_prioritized(n=batch_size)
-                if episodes:
-                    stats['total_replayed'] += len(episodes)
-
-                    # CRITICAL: Replay each episode and trigger learning
-                    for episode in episodes:
-                        action = episode.get('action', None)
-                        reward = episode.get('reward', 0.0)
-                        state = episode.get('state', None)
-
-                        if action is None or state is None:
-                            continue
-
-                        # Reconstruct state components
-                        cortex_size = self._cortex_l5_size
-                        hippo_size = self.config.hippocampus_size
-                        pfc_size = self.config.pfc_size
-
-                        cortex_state = state[:cortex_size]
-                        hippo_state = state[cortex_size:cortex_size + hippo_size]
-                        pfc_state = state[cortex_size + hippo_size:]
-
-                        # Reactivate pattern in striatum
-                        striatum_input = torch.cat([
-                            cortex_state.unsqueeze(0),
-                            hippo_state.unsqueeze(0),
-                            pfc_state.unsqueeze(0),
-                        ], dim=-1)
-                        _ = self.striatum.impl.forward(striatum_input)
-
-                        # Set action and deliver reward (triggers learning!)
-                        self._last_action = action
-                        self.deliver_reward(external_reward=reward)
-                        stats['experiences_learned'] += 1
-
-                    if verbose:
-                        print(f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(episodes)} episodes, {stats['experiences_learned']} learned")
-
-            stats['cycles_completed'] += 1
-
-        # Exit consolidation mode
-        if self.hippocampus.impl.her_integration is not None:
-            self.hippocampus.impl.exit_consolidation_mode()
-
-        return stats
+        # Delegate to consolidation manager
+        return self.consolidation_manager.consolidate(
+            n_cycles=n_cycles,
+            batch_size=batch_size,
+            verbose=verbose,
+            last_action_holder=self._last_action_container,
+        )
 
     def reset_state(self) -> None:
         """Reset brain state for new episode.
@@ -1697,6 +1407,7 @@ class EventDrivenBrain(nn.Module):
         For starting a new sequence within the same session, use new_sequence().
         """
         self._current_time = 0.0
+        self._time_container[0] = 0.0  # Sync coordinator's time
         self.scheduler = EventScheduler()
 
         # Reset regions (full state reset)
@@ -1762,7 +1473,7 @@ class EventDrivenBrain(nn.Module):
             },
             "trial_state": {
                 "spike_counts": self._spike_counts.copy(),
-                "last_action": self._last_action,
+                "last_action": self.trial_coordinator.get_last_action(),
             },
             "config": {
                 "input_size": self.config.input_size,
@@ -1936,49 +1647,17 @@ class EventDrivenBrain(nn.Module):
         Returns:
             Dict with both real and counterfactual learning metrics
         """
-        # Get novelty-based learning boost if available
+        # Delegate to trial coordinator for counterfactual learning
+        other_action = 1 - selected_action
+        self.trial_coordinator.deliver_reward_with_counterfactual(
+            external_reward=reward,
+            counterfactual_action=other_action,
+            compute_intrinsic_reward_fn=self._compute_intrinsic_reward,
+        )
+
+        # Get novelty boost and apply to specialized pathways
         novelty_boost = self._get_novelty_boost()
         modulated_reward = reward * novelty_boost
-
-        # Deliver to VTA and broadcast
-        expected = self.striatum.impl.get_expected_value(selected_action)
-        self.vta.deliver_reward(
-            external_reward=modulated_reward,
-            expected_value=expected
-        )
-        dopamine = self.vta.get_global_dopamine()
-
-        # Broadcast to all regions
-        self.cortex.impl.set_dopamine(dopamine)
-        self.hippocampus.impl.set_dopamine(dopamine)
-        self.pfc.impl.set_dopamine(dopamine)
-        self.striatum.impl.set_dopamine(dopamine)
-        self.cerebellum.impl.set_dopamine(dopamine)
-
-        # 1. Real learning: update striatum for SELECTED action
-        real_result = self.striatum.impl.deliver_reward(modulated_reward)
-
-        # 2. Counterfactual: what would the OTHER action have gotten?
-        other_action = 1 - selected_action
-
-        # Determine counterfactual reward:
-        # - If trial is MATCH: MATCH action (0) would get +1, NOMATCH (1) would get -1
-        # - If trial is NOMATCH: NOMATCH action (1) would get +1, MATCH (0) would get -1
-        correct_action = 0 if is_match else 1
-        counterfactual_reward = 1.0 if (other_action == correct_action) else -1.0
-
-        # Apply counterfactual learning
-        counterfactual_result = {}
-        if hasattr(self.striatum.impl, 'deliver_counterfactual_reward'):
-            counterfactual_result = self.striatum.impl.deliver_counterfactual_reward(
-                reward=counterfactual_reward,
-                action=other_action,
-                counterfactual_scale=counterfactual_scale,
-            )
-
-        # Reset eligibility after both learnings
-        if hasattr(self.striatum.impl, 'reset_eligibility'):
-            self.striatum.impl.reset_eligibility()
 
         # Update specialized pathways (most pathways already learned during forward)
         attention_result = {}
@@ -1989,9 +1668,13 @@ class EventDrivenBrain(nn.Module):
                 dopamine=modulated_reward,
             )
 
+        # Determine counterfactual reward for metrics
+        correct_action = 0 if is_match else 1
+        counterfactual_reward = 1.0 if (other_action == correct_action) else -1.0
+
         return {
-            "real": real_result,
-            "counterfactual": counterfactual_result,
+            "real": {},  # Metrics now handled by coordinator
+            "counterfactual": {},
             "selected_action": selected_action,
             "other_action": other_action,
             "counterfactual_reward": counterfactual_reward,
@@ -2197,7 +1880,7 @@ class EventDrivenBrain(nn.Module):
             net_per_action=net_per_action,
             d1_elig_per_action=d1_elig_per_action,
             d2_elig_per_action=d2_elig_per_action,
-            last_action=self._last_action,
+            last_action=self.trial_coordinator.get_last_action(),
             exploring=getattr(striatum, '_last_exploring', False),
             exploration_prob=exploration_prob,
             action_counts=action_counts,

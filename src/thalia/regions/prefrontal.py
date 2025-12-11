@@ -69,6 +69,7 @@ from thalia.regions.base import (
     LearningRule,
 )
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.core.neuron_constants import NE_GAIN_RANGE
 
 
 @dataclass
@@ -439,12 +440,8 @@ class Prefrontal(NeuralComponent):
             dopamine=0.2,  # Baseline
         )
 
-        self.neurons.reset_state()
-        self.dopamine_system.reset_state()
-
-        # Reset STP state
-        if hasattr(self, 'stp_recurrent') and self.stp_recurrent is not None:
-            self.stp_recurrent.reset_state()
+        # Reset subsystems using helper
+        self._reset_subsystems('neurons', 'dopamine_system', 'stp_recurrent')
 
     def add_neurons(
         self,
@@ -582,7 +579,7 @@ class Prefrontal(NeuralComponent):
         # working memory flexibility (Arnsten 2009)
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + 0.5 * ne_level
+        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
         ff_input = ff_input * ne_gain
 
         # =====================================================================
@@ -708,6 +705,42 @@ class Prefrontal(NeuralComponent):
                     cfg.recurrent_strength
                 )  # Maintain self-excitation
                 self.rec_weights.data.clamp_(0.0, 1.0)
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostics using DiagnosticsMixin helpers.
+
+        Reports working memory state, gating, and weight statistics.
+        """
+        cfg = self.pfc_config
+
+        # Custom metrics specific to PFC
+        custom = {
+            "n_output": cfg.n_output,
+            "gate_mean": self.state.update_gate.mean().item() if self.state.update_gate is not None else 0.0,
+            "gate_std": self.state.update_gate.std().item() if self.state.update_gate is not None else 0.0,
+            "wm_mean": self.state.working_memory.mean().item() if self.state.working_memory is not None else 0.0,
+            "wm_std": self.state.working_memory.std().item() if self.state.working_memory is not None else 0.0,
+            "wm_active": (self.state.working_memory > 0.1).sum().item() if self.state.working_memory is not None else 0,
+            "dopamine_level": self.state.dopamine,
+            "config_w_min": cfg.w_min,
+            "config_w_max": cfg.w_max,
+            "config_rec_w_min": cfg.recurrent_w_min,
+            "config_rec_w_max": cfg.recurrent_w_max,
+        }
+
+        # Use collect_standard_diagnostics for weight and spike statistics
+        return self.collect_standard_diagnostics(
+            region_name="prefrontal",
+            weight_matrices={
+                "feedforward": self.weights.data,
+                "recurrent": self.rec_weights.data,
+                "inhibition": self.inhib_weights.data,
+            },
+            spike_tensors={
+                "output": self.state.spikes,
+            },
+            custom_metrics=custom,
+        )
 
     def set_context(self, context: torch.Tensor) -> None:
         """

@@ -449,12 +449,8 @@ class LayeredCortex(NeuralComponent):
         """
         dev = self.device
 
-        self.l4_neurons.reset_state()
-        self.l23_neurons.reset_state()
-        self.l5_neurons.reset_state()
-
-        # Reset STP state for L2/3 recurrent (always enabled)
-        self.stp_l23_recurrent.reset_state()
+        # Reset neuron populations and STP using helpers
+        self._reset_subsystems('l4_neurons', 'l23_neurons', 'l5_neurons', 'stp_l23_recurrent')
 
         # Note: No local oscillators to reset - phases come from Brain
 
@@ -478,10 +474,12 @@ class LayeredCortex(NeuralComponent):
         self.state._oscillator_phases = existing_phases
         self.state._oscillator_signals = existing_signals
 
-        # Reset cumulative spike counters (for diagnostics across timesteps)
-        self._cumulative_l4_spikes = 0
-        self._cumulative_l23_spikes = 0
-        self._cumulative_l5_spikes = 0
+        # Reset cumulative spike counters using helper
+        self._reset_scalars(
+            _cumulative_l4_spikes=0,
+            _cumulative_l23_spikes=0,
+            _cumulative_l5_spikes=0
+        )
 
         # Note: FFI state decays naturally, no hard reset needed
 
@@ -735,7 +733,7 @@ class LayeredCortex(NeuralComponent):
         # Biological: β-adrenergic receptors increase neuronal excitability
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + 0.5 * ne_level
+        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
         l4_g_exc = l4_g_exc * ne_gain
 
         # ConductanceLIF automatically handles shunting inhibition
@@ -1120,7 +1118,9 @@ class LayeredCortex(NeuralComponent):
         total activity since last reset.
         """
         cfg = self.layer_config
-        diag: Dict[str, Any] = {
+        
+        # Custom metrics specific to cortex
+        custom = {
             "l4_size": self.l4_size,
             "l23_size": self.l23_size,
             "l5_size": self.l5_size,
@@ -1134,41 +1134,42 @@ class LayeredCortex(NeuralComponent):
             "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
             "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
         }
-
-        # Spike diagnostics for each layer (instantaneous)
-        if self.state.l4_spikes is not None:
-            diag.update(self.spike_diagnostics(self.state.l4_spikes, "l4"))
-        if self.state.l23_spikes is not None:
-            diag.update(self.spike_diagnostics(self.state.l23_spikes, "l23"))
-        if self.state.l5_spikes is not None:
-            diag.update(self.spike_diagnostics(self.state.l5_spikes, "l5"))
-
+        
         # Recurrent activity
         if self.state.l23_recurrent_activity is not None:
-            diag["l23_recurrent_mean"] = self.state.l23_recurrent_activity.mean().item()
-
-        # Weight diagnostics for inter-layer connections
-        diag.update(self.weight_diagnostics(self.w_input_l4.data, "input_l4"))
-        diag.update(self.weight_diagnostics(self.w_l4_l23.data, "l4_l23"))
-        diag.update(self.weight_diagnostics(self.w_l23_recurrent.data, "l23_rec"))
-        diag.update(self.weight_diagnostics(self.w_l23_l5.data, "l23_l5"))
-
+            custom["l23_recurrent_mean"] = self.state.l23_recurrent_activity.mean().item()
+        
         # Robustness mechanism diagnostics
         if self.ei_balance is not None:
             ei_diag = self.ei_balance.get_diagnostics()
-            diag["robustness_ei_ratio"] = ei_diag.get("current_ratio", 0.0)
-            diag["robustness_ei_scale"] = ei_diag.get("inh_scale", 1.0)
-            diag["robustness_ei_status"] = ei_diag.get("status", "unknown")
+            custom["robustness_ei_ratio"] = ei_diag.get("current_ratio", 0.0)
+            custom["robustness_ei_scale"] = ei_diag.get("inh_scale", 1.0)
+            custom["robustness_ei_status"] = ei_diag.get("status", "unknown")
 
         if self.divisive_norm_l4 is not None:
-            diag["robustness_divisive_norm_enabled"] = True
+            custom["robustness_divisive_norm_enabled"] = True
 
         if self.pop_intrinsic_plasticity is not None:
             ip_diag = self.pop_intrinsic_plasticity.get_diagnostics()
-            diag["robustness_ip_rate_avg"] = ip_diag.get("rate_avg", 0.0)
-            diag["robustness_ip_excitability"] = ip_diag.get("excitability", 1.0)
-
-        return diag
+            custom["robustness_ip_rate_avg"] = ip_diag.get("rate_avg", 0.0)
+            custom["robustness_ip_excitability"] = ip_diag.get("excitability", 1.0)
+        
+        # Use collect_standard_diagnostics for weight and spike statistics
+        return self.collect_standard_diagnostics(
+            region_name="cortex",
+            weight_matrices={
+                "input_l4": self.w_input_l4.data,
+                "l4_l23": self.w_l4_l23.data,
+                "l23_rec": self.w_l23_recurrent.data,
+                "l23_l5": self.w_l23_l5.data,
+            },
+            spike_tensors={
+                "l4": self.state.l4_spikes,
+                "l23": self.state.l23_spikes,
+                "l5": self.state.l5_spikes,
+            },
+            custom_metrics=custom,
+        )
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.

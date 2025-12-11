@@ -48,7 +48,6 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
 import torch
-import torch.nn as nn
 
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
@@ -58,15 +57,13 @@ from thalia.core.neuron_constants import (
     E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
+    NE_GAIN_RANGE,
 )
 from thalia.regions.base import (
     NeuralComponent,
     RegionConfig,
     LearningRule,
 )
-import torch.nn as nn
-import torch.nn.functional as F
-
 from thalia.core.component_registry import register_region
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 
@@ -238,7 +235,7 @@ class Cerebellum(NeuralComponent):
             config=stdp_config,
             device=self.device,
         )
-        
+
         # Legacy input trace (for input gain modulation)
         # TODO: Migrate this to trace manager if needed
         self.input_trace = torch.zeros(config.n_input, device=self.device)
@@ -251,12 +248,12 @@ class Cerebellum(NeuralComponent):
         self._beta_amplitude: float = 1.0
         self._gamma_amplitude: float = 1.0
         self._coupled_amplitudes: Dict[str, float] = {}
-    
+
     @property
     def output_trace(self) -> torch.Tensor:
         """Output trace (backward compatibility)."""
         return self._trace_manager.output_trace
-    
+
     @property
     def stdp_eligibility(self) -> torch.Tensor:
         """STDP eligibility (backward compatibility)."""
@@ -468,7 +465,7 @@ class Cerebellum(NeuralComponent):
         # Biological: NE modulates cerebellar Purkinje cell excitability
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + 0.5 * ne_level
+        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
         g_exc = g_exc * ne_gain
 
         # Forward through neurons (returns 1D bool spikes)
@@ -488,16 +485,16 @@ class Cerebellum(NeuralComponent):
             output_spikes=output_spikes,
             dt_ms=dt,
         )
-        
+
         # Compute STDP weight change direction (raw LTP/LTD without combining)
         ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(
             input_spikes=input_spikes,
             output_spikes=output_spikes,
         )
-        
+
         # Combine LTP and LTD with learning rate and heterosynaptic ratio
         stdp_dw = cfg.stdp_lr * (ltp - cfg.heterosynaptic_ratio * ltd)
-        
+
         # Accumulate into eligibility trace (with decay)
         if isinstance(stdp_dw, torch.Tensor):
             self._trace_manager.accumulate_eligibility(stdp_dw, dt_ms=dt)
@@ -689,11 +686,50 @@ class Cerebellum(NeuralComponent):
 
     def reset_state(self) -> None:
         super().reset_state()
-        self.input_trace.zero_()
-        self._trace_manager.reset_traces()
-        self.climbing_fiber.reset_state()
-        if self.neurons is not None:
-            self.neurons.reset_state()
+        
+        # Reset trace tensors
+        self._reset_tensors('input_trace')
+        
+        # Reset subsystems
+        self._reset_subsystems('_trace_manager', 'climbing_fiber')
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostics using DiagnosticsMixin helpers.
+
+        Reports weight statistics, traces, and error signals.
+        """
+        cfg = self.cerebellum_config
+
+        # Custom metrics specific to cerebellum
+        custom = {
+            "n_input": cfg.n_input,
+            "n_output": cfg.n_output,
+            "config_w_min": cfg.w_min,
+            "config_w_max": cfg.w_max,
+            "error_mean": self.climbing_fiber.get_state().get("last_error_mean", 0.0),
+            "beta_phase": self._beta_phase,
+            "gamma_phase": self._gamma_phase,
+            "theta_phase": self._theta_phase,
+            "beta_amplitude": self._beta_amplitude,
+            "gamma_amplitude": self._gamma_amplitude,
+        }
+
+        # Use collect_standard_diagnostics for weight, spike, and trace statistics
+        return self.collect_standard_diagnostics(
+            region_name="cerebellum",
+            weight_matrices={
+                "parallel_fiber": self.weights.data,
+            },
+            spike_tensors={
+                "output": self.state.spikes,
+            },
+            trace_tensors={
+                "input": self.input_trace,
+                "output": self.output_trace,
+                "eligibility": self.stdp_eligibility,
+            },
+            custom_metrics=custom,
+        )
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.

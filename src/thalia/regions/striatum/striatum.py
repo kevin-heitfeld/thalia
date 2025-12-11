@@ -60,6 +60,13 @@ from thalia.core.neuron_constants import (
     E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
+    THETA_BASELINE_MIN,
+    THETA_BASELINE_RANGE,
+    THETA_CONTRAST_MIN,
+    THETA_CONTRAST_RANGE,
+    BASELINE_EXCITATION_SCALE,
+    TONIC_D1_GAIN_SCALE,
+    NE_GAIN_RANGE,
 )
 from thalia.regions.base import (
     NeuralComponent,
@@ -1290,11 +1297,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         encoding_mod = (1 + torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
         retrieval_mod = (1 - torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
 
-        theta_baseline_mod = 0.7 + 0.3 * encoding_mod  # 0.7-1.0 range
-        theta_contrast_mod = 0.8 + 0.2 * retrieval_mod  # 0.8-1.0 range
+        theta_baseline_mod = THETA_BASELINE_MIN + THETA_BASELINE_RANGE * encoding_mod  # 0.7-1.0 range
+        theta_contrast_mod = THETA_CONTRAST_MIN + THETA_CONTRAST_RANGE * retrieval_mod  # 0.8-1.0 range
 
         # Baseline excitation modulated by theta phase
-        baseline_exc = 1.2 * theta_baseline_mod  # 0.84-1.2 range
+        baseline_exc = BASELINE_EXCITATION_SCALE * theta_baseline_mod  # 0.84-1.2 range
 
         # =====================================================================
         # TONIC DOPAMINE MODULATION OF D1 GAIN
@@ -1305,7 +1312,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         d2_gain = 1.0
         if self.striatum_config.tonic_modulates_d1_gain:
             # Higher tonic DA → stronger D1 response
-            tonic_factor = self.tonic_dopamine * self.striatum_config.tonic_d1_gain_scale
+            tonic_factor = self.tonic_dopamine * TONIC_D1_GAIN_SCALE
             d1_gain = 1.0 + tonic_factor  # e.g., tonic=0.3, scale=0.5 → gain=1.15
 
         # =====================================================================
@@ -1393,7 +1400,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # Biological: NE modulates striatal excitability and action variability
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + 0.5 * ne_level
+        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
         d1_g_exc = d1_g_exc * ne_gain
 
         # Add lateral inhibition within D1 population if enabled
@@ -1727,38 +1734,33 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
     def reset_state(self) -> None:
         super().reset_state()
-        self.eligibility.reset_state()
-        # NOTE: Dopamine is now managed by Brain, no local dopamine system to reset
-        self.recent_spikes.zero_()
-        self.last_action = None
-        self.exploring = False
-        # Reset D1/D2 traces (always enabled)
-        self.d1_eligibility.zero_()
-        self.d2_eligibility.zero_()
-        self.d1_input_trace.zero_()
-        self.d2_input_trace.zero_()
-        self.d1_output_trace.zero_()
-        self.d2_output_trace.zero_()
-
+        
+        # Reset managers and subsystems
+        self._reset_subsystems('eligibility', 'd1_neurons', 'd2_neurons')
+        
+        # Reset trace tensors
+        self._reset_tensors(
+            'recent_spikes',
+            'd1_eligibility', 'd2_eligibility',
+            'd1_input_trace', 'd2_input_trace',
+            'd1_output_trace', 'd2_output_trace'
+        )
+        
         # Reset TD(λ) traces if enabled
         if self.td_lambda_d1 is not None:
             self.td_lambda_d1.reset_episode()
             self.td_lambda_d2.reset_episode()
-
-        # Reset homeostatic trial counters (but NOT the EMA - that persists)
-        self._trial_spike_count = 0.0
-        self._trial_timesteps = 0
-        # Reset all neuron populations
-        if self.neurons is not None:
-            self.neurons.reset_state()
-        if hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
-            self.d1_neurons.reset_state()
-        if hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
-            self.d2_neurons.reset_state()
-        # Reset RPE tracking
-        self._last_rpe = 0.0
-        self._last_expected = 0.0
-        self._last_d1_spikes = None
+        
+        # Reset scalars
+        self._reset_scalars(
+            last_action=None,
+            exploring=False,
+            _trial_spike_count=0.0,
+            _trial_timesteps=0,
+            _last_rpe=0.0,
+            _last_expected=0.0,
+            _last_d1_spikes=None
+        )
         self._last_d2_spikes = None
 
     # =========================================================================
@@ -1834,12 +1836,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         if self.value_estimates is not None:
             value_estimates = self.value_estimates.tolist()
 
-        # Use mixin helpers for eligibility trace diagnostics
-        eligibility_state = {
-            **self.trace_diagnostics(self.d1_eligibility, "d1_elig"),
-            **self.trace_diagnostics(self.d2_eligibility, "d2_elig"),
-        }
-
         # TD(λ) diagnostics (if enabled)
         td_lambda_state = {}
         if self.td_lambda_d1 is not None:
@@ -1852,9 +1848,9 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             }
         else:
             td_lambda_state = {"td_lambda_enabled": False}
-
-        return {
-            "region": "striatum",
+        
+        # Custom metrics for striatum (per-action analysis, votes, etc.)
+        custom = {
             "n_actions": self.n_actions,
             "neurons_per_action": self.neurons_per_action,
             "last_action": self.last_action,
@@ -1866,7 +1862,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             "d1_votes": d1_votes,
             "d2_votes": d2_votes,
             "net_votes": net_votes,
-            # Weight statistics (from mixin)
+            # Weight statistics (manual due to NET computation)
             **d1_weight_stats,
             **d2_weight_stats,
             **net_stats,
@@ -1877,11 +1873,19 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             "ucb": ucb_state,
             # Value estimates
             "value_estimates": value_estimates,
-            # Eligibility (from mixin)
-            "eligibility": eligibility_state,
             # TD(λ) state
             "td_lambda": td_lambda_state,
         }
+        
+        # Use collect_standard_diagnostics for trace statistics
+        return self.collect_standard_diagnostics(
+            region_name="striatum",
+            trace_tensors={
+                "d1_elig": self.d1_eligibility,
+                "d2_elig": self.d2_eligibility,
+            },
+            custom_metrics=custom,
+        )
 
     # =========================================================================
     # CHECKPOINT STATE MANAGEMENT

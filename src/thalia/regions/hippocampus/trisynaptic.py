@@ -496,8 +496,9 @@ class TrisynapticHippocampus(NeuralComponent):
         """
         super().reset_state()
         self._init_state()
-        # Reset managers
-        self.plasticity_manager.reset_state()
+        
+        # Reset managers using helper
+        self._reset_subsystems('plasticity_manager')
 
     def new_trial(self) -> None:
         """Prepare for a new sequence/episode.
@@ -951,7 +952,7 @@ class TrisynapticHippocampus(NeuralComponent):
         # Biological: β-adrenergic receptors increase neuronal excitability
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + 0.5 * ne_level
+        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
         ca3_input = ca3_input * ne_gain
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
@@ -1849,21 +1850,13 @@ class TrisynapticHippocampus(NeuralComponent):
             pattern_comparison["current_active"] = (current > 0).sum().item()
             pattern_comparison["overlap"] = ((stored > 0) & (current > 0)).sum().item()
 
-        # Weight statistics using weight_diagnostics helper
-        weight_stats: Dict[str, Any] = {}
-        weight_stats.update(self.weight_diagnostics(self.w_ec_dg.data, "ec_dg"))
-        weight_stats.update(self.weight_diagnostics(self.w_dg_ca3.data, "dg_ca3"))
-        weight_stats.update(self.weight_diagnostics(self.w_ca3_ca3.data, "ca3_ca3"))
-        weight_stats.update(self.weight_diagnostics(self.w_ca3_ca1.data, "ca3_ca1"))
-        weight_stats.update(self.weight_diagnostics(self.w_ec_ca1.data, "ec_ca1"))
-
         # Feedforward inhibition state
         ffi_state = {
             "current_strength": state.ffi_strength,
         }
-
-        return {
-            "region": "hippocampus",
+        
+        # Custom metrics for hippocampus
+        custom = {
             "layer_sizes": {
                 "dg": self.dg_size,
                 "ca3": self.ca3_size,
@@ -1878,8 +1871,6 @@ class TrisynapticHippocampus(NeuralComponent):
             # Comparison mechanism (critical for match/mismatch)
             "nmda": nmda_diagnostics,
             "pattern_comparison": pattern_comparison,
-            # Weights (now with full stats from mixin)
-            "weight_stats": weight_stats,
             # Inhibition
             "ffi": ffi_state,
             # Episode buffer
@@ -1890,6 +1881,19 @@ class TrisynapticHippocampus(NeuralComponent):
             # HER diagnostics
             "her": self.get_her_diagnostics(),
         }
+        
+        # Use collect_standard_diagnostics for weight statistics
+        return self.collect_standard_diagnostics(
+            region_name="hippocampus",
+            weight_matrices={
+                "ec_dg": self.w_ec_dg.data,
+                "dg_ca3": self.w_dg_ca3.data,
+                "ca3_ca3": self.w_ca3_ca3.data,
+                "ca3_ca1": self.w_ca3_ca1.data,
+                "ec_ca1": self.w_ec_ca1.data,
+            },
+            custom_metrics=custom,
+        )
 
     def diagnostic_get_pattern_similarity(self) -> Optional[float]:
         """Get similarity between stored and current DG patterns (DEPRECATED - for debugging only).

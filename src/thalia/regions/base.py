@@ -278,6 +278,49 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         """
         pass
 
+    def _reset_tensors(self, *tensor_names: str) -> None:
+        """Helper to zero multiple tensors by name.
+        
+        Args:
+            *tensor_names: Names of tensor attributes to zero
+            
+        Example:
+            self._reset_tensors('eligibility', 'input_trace', 'output_trace')
+        """
+        for name in tensor_names:
+            if hasattr(self, name):
+                tensor = getattr(self, name)
+                if tensor is not None and isinstance(tensor, torch.Tensor):
+                    tensor.zero_()
+    
+    def _reset_subsystems(self, *subsystem_names: str) -> None:
+        """Helper to reset multiple subsystems that have reset_state() methods.
+        
+        Args:
+            *subsystem_names: Names of subsystem attributes to reset
+            
+        Example:
+            self._reset_subsystems('neurons', 'd1_neurons', 'd2_neurons', 'eligibility')
+        """
+        for name in subsystem_names:
+            if hasattr(self, name):
+                subsystem = getattr(self, name)
+                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                    subsystem.reset_state()
+    
+    def _reset_scalars(self, **scalar_values: Any) -> None:
+        """Helper to reset scalar attributes to specified values.
+        
+        Args:
+            **scalar_values: Mapping of attribute name to reset value
+            
+        Example:
+            self._reset_scalars(last_action=None, exploring=False, timestep=0)
+        """
+        for name, value in scalar_values.items():
+            if hasattr(self, name):
+                setattr(self, name, value)
+
     def reset_state(self) -> None:
         """Reset the region's dynamic state to initial conditions.
 
@@ -296,19 +339,13 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         spike history) while preserving learned weights.
         """
         self.state = RegionState()
-        if hasattr(self, 'neurons') and hasattr(self.neurons, 'reset_state'):
-            self.neurons.reset_state()
         
-        # Reset delay buffer (if it exists)
-        if hasattr(self, 'delay_buffer') and self.delay_buffer is not None:
-            self.delay_buffer.zero_()
-        if hasattr(self, 'delay_buffer_idx'):
-            self.delay_buffer_idx = 0
+        # Reset common subsystems using helper
+        self._reset_subsystems('neurons')
         
-        # Reset delay buffer
-        if self.delay_buffer is not None:
-            self.delay_buffer.zero_()
-        self.delay_buffer_idx = 0
+        # Reset delay buffer tensors and scalars using helpers
+        self._reset_tensors('delay_buffer')
+        self._reset_scalars(delay_buffer_idx=0)
 
     def set_oscillator_phases(
         self,
