@@ -478,6 +478,20 @@ class BCMStrategy(BaseStrategy):
         # Clamp
         self.theta = self.theta.clamp(cfg.theta_min, cfg.theta_max)
 
+    def update_threshold(self, post: torch.Tensor) -> None:
+        """Update sliding threshold (public API for backward compatibility).
+        
+        This is an alias for _update_theta() to maintain compatibility with
+        code that used the legacy BCMRule.
+        
+        Args:
+            post: Postsynaptic activity [n_post] (1D)
+        """
+        # Initialize theta if needed
+        if self.theta is None:
+            self._init_theta(post.shape[0], post.device)
+        self._update_theta(post)
+
     def compute_update(
         self,
         weights: torch.Tensor,

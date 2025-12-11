@@ -48,13 +48,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.regions.base import NeuralComponent, RegionConfig, LearningRule
+from thalia.core.neuron_constants import NE_GAIN_RANGE
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.theta_dynamics import FeedforwardInhibition
-from thalia.learning.bcm import BCMRule, BCMConfig
+from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig
 from thalia.learning import create_cortex_strategy
 from thalia.core.utils import ensure_1d, clamp_weights
 from thalia.core.traces import update_trace
@@ -160,19 +161,23 @@ class LayeredCortex(NeuralComponent):
             decay_rate=1.0 - (1.0 / config.ffi_tau),
         )
 
-        # BCM for each layer
+        # BCM learning strategies for each layer
         if config.bcm_enabled:
             device = torch.device(config.device)
-            bcm_cfg = config.bcm_config or BCMConfig(
+            bcm_cfg = config.bcm_config or BCMStrategyConfig(
                 tau_theta=config.bcm_tau_theta,
                 theta_init=config.bcm_theta_init,
+                learning_rate=config.learning_rate,
+                w_min=config.w_min,
+                w_max=config.w_max,
+                soft_bounds=config.soft_bounds,
+                dt=config.dt_ms,
             )
-            self.bcm_l4 = BCMRule(n_post=self.l4_size, config=bcm_cfg)
-            self.bcm_l4.to(device)
-            self.bcm_l23 = BCMRule(n_post=self.l23_size, config=bcm_cfg)
-            self.bcm_l23.to(device)
-            self.bcm_l5 = BCMRule(n_post=self.l5_size, config=bcm_cfg)
-            self.bcm_l5.to(device)
+            
+            # Create BCM strategies for each layer
+            self.bcm_l4 = LearningStrategyRegistry.create("bcm", bcm_cfg)
+            self.bcm_l23 = LearningStrategyRegistry.create("bcm", bcm_cfg)
+            self.bcm_l5 = LearningStrategyRegistry.create("bcm", bcm_cfg)
         else:
             self.bcm_l4 = None
             self.bcm_l23 = None
@@ -985,29 +990,35 @@ class LayeredCortex(NeuralComponent):
 
         total_change = 0.0
 
-        # BCM modulation factors
+        # BCM modulation factors (scalars for layer-wide modulation)
         l4_bcm_mod = 1.0
         l23_bcm_mod = 1.0
         l5_bcm_mod = 1.0
 
         if self.bcm_l4 is not None:
-            l4_activity = l4_spikes.mean()
-            l4_bcm_mod = self.bcm_l4.compute_phi(l4_activity)
-            self.bcm_l4.update_threshold(l4_activity)
+            # Update threshold with actual spike vector (per-neuron)
+            self.bcm_l4.update_threshold(l4_spikes.float())
+            # Compute BCM phi per-neuron, then take mean for layer modulation
+            l4_phi = self.bcm_l4.compute_phi(l4_spikes.float())
+            l4_bcm_mod = l4_phi.mean()  # Scalar for layer-wide scaling
 
         if self.bcm_l23 is not None and l23_spikes is not None:
-            l23_activity = l23_spikes.mean()
-            l23_bcm_mod = self.bcm_l23.compute_phi(l23_activity)
-            self.bcm_l23.update_threshold(l23_activity)
+            self.bcm_l23.update_threshold(l23_spikes.float())
+            l23_phi = self.bcm_l23.compute_phi(l23_spikes.float())
+            l23_bcm_mod = l23_phi.mean()
 
         if self.bcm_l5 is not None and l5_spikes is not None:
-            l5_activity = l5_spikes.mean()
-            l5_bcm_mod = self.bcm_l5.compute_phi(l5_activity)
-            self.bcm_l5.update_threshold(l5_activity)
+            self.bcm_l5.update_threshold(l5_spikes.float())
+            l5_phi = self.bcm_l5.compute_phi(l5_spikes.float())
+            l5_bcm_mod = l5_phi.mean()
 
         def bcm_to_scale(mod: Any) -> float:
+            """Convert BCM modulation to learning rate scale factor."""
             if isinstance(mod, torch.Tensor):
-                return float(1.0 + 0.5 * torch.tanh(mod).item())
+                if mod.numel() == 1:  # Scalar tensor
+                    return float(1.0 + 0.5 * torch.tanh(mod).item())
+                else:  # Should not happen with mean(), but handle gracefully
+                    return float(1.0 + 0.5 * torch.tanh(mod.mean()).item())
             return 1.0 + 0.5 * torch.tanh(torch.tensor(mod)).item()
 
         # Input → L4
