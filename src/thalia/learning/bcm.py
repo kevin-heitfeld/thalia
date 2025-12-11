@@ -195,27 +195,25 @@ class BCMRule(nn.Module):
 
         Args:
             post_activity: Postsynaptic activity (spikes or rates),
-                          shape (batch, n_post)
+                          shape: (n_post,) per-neuron 1D tensor (ADR-005: No Batch Dimension)
             normalize: If True, normalize by theta for more stable learning
 
         Returns:
-            BCM factor φ, shape (batch, n_post)
+            BCM factor φ, shape (n_post,) per-neuron modulation
             Positive = LTP direction, Negative = LTD direction
         """
+        # Initialize theta if needed (per-neuron 1D tensor)
         if self.theta is None:
-            self.reset_state(batch_size=post_activity.shape[0])
+            self.reset_state()
 
         # BCM function: φ(c, θ) = c(c - θ)
         # With normalize: φ(c, θ) = c(c - θ) / θ for scale invariance
-        c = post_activity
-        theta = self.theta  # (n_post,), broadcasts to (batch, n_post)
-
-        phi = c * (c - theta)
+        phi = post_activity * (post_activity - self.theta)
 
         if normalize:
             # Normalize by theta for scale-invariant learning
             # Add small epsilon to prevent division by zero
-            phi = phi / (theta + 1e-8)
+            phi = phi / (self.theta + 1e-8)
 
         return phi
 
@@ -223,21 +221,22 @@ class BCMRule(nn.Module):
         """Update sliding threshold based on postsynaptic activity.
 
         The threshold tracks the running average of activity^p:
-            θ_M(t) = decay * θ_M(t-1) + (1-decay) * E[c^p]
+            θ_M(t) = decay * θ_M(t-1) + (1-decay) * c^p
 
         where p=2 for classic BCM (tracks squared activity).
 
         Args:
             post_activity: Postsynaptic activity (spikes or rates),
-                          shape (batch, n_post)
+                          shape: (n_post,) per-neuron 1D tensor (ADR-005: No Batch Dimension)
         """
+        # Initialize theta if needed (per-neuron 1D tensor)
         if self.theta is None:
-            self.reset_state(batch_size=post_activity.shape[0])
+            self.reset_state()
 
-        # Compute activity^p, averaged over batch
-        c_p = post_activity.pow(self.config.p).mean(dim=0)  # (n_post,)
+        # Compute activity^p per neuron
+        c_p = post_activity.pow(self.config.p)  # (n_post,)
 
-        # Update threshold with EMA
+        # Update threshold with EMA (per-neuron)
         self.theta = (
             self.decay_theta * self.theta +
             self.one_minus_decay * c_p

@@ -16,16 +16,17 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 import torch
 import torch.nn as nn
-from ..spiking_pathway import SpikingPathway, SpikingPathwayConfig, TemporalCoding
 from thalia.core.component_registry import register_pathway
+from thalia.config.base import PathwayConfig
+from ..spiking_pathway import SpikingPathway
 
 
 @dataclass
-class SpikingReplayPathwayConfig(SpikingPathwayConfig):
+class SpikingReplayPathwayConfig(PathwayConfig):
     """Configuration for spiking replay pathway."""
 
     # Override defaults for replay-specific behavior
-    temporal_coding: TemporalCoding = TemporalCoding.LATENCY  # Precise timing for replay
+    temporal_coding: str = "LATENCY"  # Precise timing for replay
     axonal_delay_ms: float = 5.0  # Slower for consolidation
 
     # Sharp-wave ripple parameters
@@ -169,7 +170,7 @@ class SpikingReplayPathway(SpikingPathway):
     def trigger_ripple(self) -> bool:
         """
         Trigger a sharp-wave ripple event.
-        
+
         Uses brain-wide ripple oscillator for synchronization.
 
         Returns:
@@ -194,7 +195,7 @@ class SpikingReplayPathway(SpikingPathway):
     def replay_step(self, dt: float) -> Optional[torch.Tensor]:
         """
         Perform one step of replay during a ripple.
-        
+
         Uses brain-wide ripple oscillator for synchronized replay.
 
         Args:
@@ -205,37 +206,37 @@ class SpikingReplayPathway(SpikingPathway):
         """
         # Update current time
         self.current_time += dt
-        
+
         # Check if we're in a ripple event
         if not self.ripple_active_local:
             return None
-            
+
         # Check ripple duration (end after configured duration)
         ripple_elapsed = self.current_time - self.ripple_start_time
         if ripple_elapsed >= self.ripple_duration:
             self.ripple_active_local = False
             return None
-        
+
         # Get ripple phase and amplitude from brain oscillator
         # No fallback - must be provided by Brain for synchronized replay
         if hasattr(self, '_oscillator_phases') and 'ripple' in self._oscillator_phases:
             ripple_phase = self._oscillator_phases['ripple']
         else:
             ripple_phase = 0.0  # No fallback - must be connected to Brain
-        
+
         # Get ripple amplitude (modulated by other oscillators)
         ripple_amp = 1.0
         if hasattr(self, '_coupled_amplitudes') and 'ripple' in self._coupled_amplitudes:
             ripple_amp = self._coupled_amplitudes['ripple']
-        
+
         # Compute ripple envelope (gaussian)
         t_center = self.ripple_duration / 2
         sigma = self.ripple_duration / 4
         envelope = torch.exp(torch.tensor(-0.5 * ((ripple_elapsed - t_center) / sigma) ** 2))
-        
+
         # Ripple value with envelope and oscillation
         ripple_value = envelope * torch.cos(torch.tensor(ripple_phase)) * ripple_amp
-        
+
         if self.current_replay_idx >= len(self.replay_buffer):
             return None
 

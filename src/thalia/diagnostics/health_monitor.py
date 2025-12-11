@@ -58,6 +58,17 @@ class HealthIssue(Enum):
     LEARNING_STALL = "learning_stall"
 
 
+class IssueSeverity(Enum):
+    """Severity levels for health issues.
+
+    Values represent severity scores (0-100, higher = worse).
+    """
+    LOW = 20.0      # Minor issues, informational
+    MEDIUM = 50.0   # Moderate issues, should be addressed
+    HIGH = 80.0     # Critical issues, need immediate attention
+    CRITICAL = 100.0  # Catastrophic issues, system failure imminent
+
+
 @dataclass
 class HealthConfig:
     """Configuration for health monitoring.

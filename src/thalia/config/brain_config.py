@@ -45,6 +45,83 @@ class CortexType(Enum):
 
 
 @dataclass
+class NeuromodulationConfig:
+    """Configuration for neuromodulatory systems (VTA, LC, NB).
+    
+    Neuromodulators gate learning and modulate neural processing:
+    - Dopamine (VTA): Reward prediction error, gates striatal learning
+    - Norepinephrine (LC): Arousal, attention, gain modulation
+    - Acetylcholine (NB): Encoding vs retrieval mode in hippocampus
+    
+    Example:
+        config = NeuromodulationConfig(
+            dopamine_baseline=0.1,
+            dopamine_learning_threshold=0.05,
+            use_norepinephrine=True,
+        )
+    """
+    
+    # Dopamine (VTA - ventral tegmental area)
+    dopamine_baseline: float = 0.0
+    """Baseline dopamine level (tonic). Range: -0.5 to 0.5."""
+    
+    dopamine_learning_threshold: float = 0.01
+    """Minimum |dopamine| to trigger learning. Filters noise."""
+    
+    dopamine_decay_tau_ms: float = 100.0
+    """Time constant for dopamine decay back to baseline (milliseconds)."""
+    
+    # Norepinephrine (LC - locus coeruleus)
+    use_norepinephrine: bool = False
+    """Enable norepinephrine modulation (arousal, attention)."""
+    
+    norepinephrine_baseline: float = 0.5
+    """Baseline norepinephrine (arousal level). Range: 0.0 to 1.0."""
+    
+    norepinephrine_gain_scale: float = 1.5
+    """How much NE scales neural gain. 1.0 = no effect, >1.0 = amplification."""
+    
+    # Acetylcholine (NB - nucleus basalis)
+    use_acetylcholine: bool = True
+    """Enable acetylcholine modulation (encoding/retrieval)."""
+    
+    acetylcholine_encoding_level: float = 0.8
+    """ACh level during encoding (high = strengthen new memories)."""
+    
+    acetylcholine_retrieval_level: float = 0.2
+    """ACh level during retrieval (low = strengthen recall pathways)."""
+    
+    def summary(self) -> str:
+        """Return formatted summary."""
+        lines = [
+            "=== Neuromodulation ===",
+            "--- Dopamine (VTA) ---",
+            f"  Baseline: {self.dopamine_baseline}",
+            f"  Learning threshold: {self.dopamine_learning_threshold}",
+            f"  Decay tau: {self.dopamine_decay_tau_ms} ms",
+            "",
+            "--- Norepinephrine (LC) ---",
+            f"  Enabled: {self.use_norepinephrine}",
+        ]
+        if self.use_norepinephrine:
+            lines.extend([
+                f"  Baseline: {self.norepinephrine_baseline}",
+                f"  Gain scale: {self.norepinephrine_gain_scale}",
+            ])
+        lines.extend([
+            "",
+            "--- Acetylcholine (NB) ---",
+            f"  Enabled: {self.use_acetylcholine}",
+        ])
+        if self.use_acetylcholine:
+            lines.extend([
+                f"  Encoding level: {self.acetylcholine_encoding_level}",
+                f"  Retrieval level: {self.acetylcholine_retrieval_level}",
+            ])
+        return "\n".join(lines)
+
+
+@dataclass
 class RegionSizes:
     """Size configuration for brain regions.
 
@@ -144,7 +221,7 @@ def _default_cortex_config() -> PredictiveCortexConfig:
 class BrainConfig:
     """Complete brain configuration.
 
-    Combines region sizes with region-specific parameters.
+    Combines region sizes with region-specific parameters and neuromodulation.
     Global parameters come from GlobalConfig.
 
     Note: cortex uses LayeredCortexConfig from thalia.regions.cortex.
@@ -167,6 +244,10 @@ class BrainConfig:
     # Region type selection (allows swapping implementations)
     cortex_type: CortexType = CortexType.PREDICTIVE
     """Which cortex implementation to use. PREDICTIVE (default) enables local error learning, LAYERED for simpler feedforward."""
+
+    # Neuromodulation (dopamine, norepinephrine, acetylcholine)
+    neuromodulation: NeuromodulationConfig = field(default_factory=NeuromodulationConfig)
+    """Dopamine, norepinephrine, acetylcholine configuration."""
 
     # Oscillator configuration
     oscillator_couplings: Optional[List[OscillatorCoupling]] = None
@@ -243,6 +324,8 @@ class BrainConfig:
             f"  Delay: {self.delay_timesteps} timesteps",
             f"  Test: {self.test_timesteps} timesteps",
             f"  Parallel: {self.parallel}",
+            "",
+            self.neuromodulation.summary(),
         ]
         return "\n".join(lines)
 

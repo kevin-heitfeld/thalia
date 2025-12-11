@@ -26,28 +26,21 @@ Learning Rules:
 """
 
 from enum import Enum, auto
-from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 import numpy as np
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.config.base import PathwayConfig
 from thalia.core.utils import clamp_weights
-from thalia.core.neuron_constants import (
-    TAU_MEM_STANDARD,
-    TAU_SYN_EXCITATORY,
-    V_THRESHOLD_STANDARD,
-    V_RESET_STANDARD,
-    V_REST_STANDARD,
-    TAU_REF_STANDARD,
-)
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.regions.base import NeuralComponent, LearningRule
-from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
+from thalia.core.stp import ShortTermPlasticity, STPConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.learning.bcm import BCMRule, BCMConfig
+from thalia.learning.strategies import STDPConfig as StrategySTDPConfig
+from thalia.learning.strategy_registry import LearningStrategyRegistry
 from thalia.core.component_registry import register_pathway
 
 
@@ -67,128 +60,6 @@ class SpikingLearningRule(Enum):
     TRIPLET_STDP = auto()   # Triplet rule (more biologically accurate)
     DOPAMINE_STDP = auto()  # Dopamine-modulated STDP (reward learning)
     REPLAY_STDP = auto()    # Only active during replay/sleep
-
-
-@dataclass
-class SpikingPathwayConfig(NeuralComponentConfig):
-    """Configuration for a spiking pathway.
-
-    Inherits n_neurons, dt_ms, device, dtype, seed from NeuralComponentConfig.
-    The dt_ms should be set from GlobalConfig.dt_ms by Brain.
-
-    Note: For pathways, you can set either n_neurons OR target_size (they're synonyms).
-    If both are provided, target_size takes precedence. If neither is set, defaults to 100.
-    The n_neurons field represents the pathway's intermediate neuron population size.
-
-    Attributes:
-        source_size: Number of neurons in source region
-        target_size: Synonym for n_neurons (pathway's intermediate population size)
-
-        # Neuron model parameters
-        tau_mem_ms: Membrane time constant
-        tau_syn_ms: Synaptic time constant
-        v_thresh: Spike threshold
-        v_reset: Reset voltage after spike
-        v_rest: Resting membrane potential
-        refractory_ms: Refractory period
-
-        # STDP parameters
-        learning_rule: Which plasticity rule to use
-        stdp_lr: Learning rate
-        tau_plus_ms: LTP time constant
-        tau_minus_ms: LTD time constant
-        a_plus: LTP amplitude
-        a_minus: LTD amplitude
-
-        # Weight bounds
-        w_min: Minimum weight
-        w_max: Maximum weight
-        soft_bounds: Use soft bounds
-
-        # Temporal coding
-        temporal_coding: Which temporal coding scheme
-        oscillation_freq_hz: Frequency for phase coding
-        phase_precision: How tightly spikes lock to phase
-
-        # Connectivity
-        sparsity: Fraction of connections to keep
-        topographic: Use topographic connectivity
-        axonal_delay_ms: Axonal conduction delay
-        delay_variability: Variability in delays
-
-        # Homeostasis
-        synaptic_scaling: Enable homeostatic scaling
-        target_rate: Target firing rate for scaling
-
-    Note: Set source_size and either n_neurons or target_size when creating config.
-    They will be automatically synchronized.
-    """
-    # Required field - set this when creating config!
-    source_size: int = 0  # Must be set explicitly
-    target_size: int = 100  # Synonym for n_neurons (pathway neuron population)
-
-    def __post_init__(self):
-        """Synchronize n_neurons and target_size (they're synonyms for pathways)."""
-        # If target_size was explicitly set (not default), use it for n_neurons
-        if self.target_size != 100:
-            self.n_neurons = self.target_size
-        # Otherwise, use n_neurons value (from parent or explicitly set)
-        else:
-            self.target_size = self.n_neurons
-
-        # Synchronize learning_rate with stdp_lr for compatibility with NeuralComponent
-        # If stdp_lr was explicitly set, it takes precedence
-        if not hasattr(self, 'learning_rate'):
-            self.learning_rate = self.stdp_lr
-
-    # Neuron model
-    tau_mem_ms: float = TAU_MEM_STANDARD
-    tau_syn_ms: float = TAU_SYN_EXCITATORY
-    v_thresh: float = V_THRESHOLD_STANDARD
-    v_reset: float = V_RESET_STANDARD
-    v_rest: float = V_REST_STANDARD
-    refractory_ms: float = TAU_REF_STANDARD
-
-    # STDP
-    learning_rule: SpikingLearningRule = SpikingLearningRule.STDP
-    stdp_lr: float = 0.01
-    tau_plus_ms: float = 20.0
-    tau_minus_ms: float = 20.0
-    a_plus: float = 1.0
-    a_minus: float = 1.0
-    max_trace: float = 10.0  # Maximum trace value to prevent runaway accumulation
-
-    # Weights
-    w_min: float = 0.0
-    w_max: float = 1.0
-    soft_bounds: bool = True
-    init_mean: float = 0.3
-    init_std: float = 0.1
-
-    # Temporal coding
-    temporal_coding: TemporalCoding = TemporalCoding.RATE
-    oscillation_freq_hz: float = 8.0  # Theta rhythm
-    phase_precision: float = 0.5  # How tightly spikes lock to phase
-
-    # Connectivity
-    sparsity: float = 1.0
-    topographic: bool = False
-    axonal_delay_ms: float = 1.0
-    delay_variability: float = 0.2
-
-    # Homeostasis
-    synaptic_scaling: bool = True
-    target_rate: float = 0.1
-    scaling_tau_ms: float = 1000.0
-
-    # Short-Term Plasticity (STP)
-    stp_enabled: bool = False
-    stp_type: STPType = STPType.DEPRESSING  # Preset synapse type
-    stp_config: Optional[STPConfig] = None  # Custom STP parameters (overrides stp_type)
-
-    # BCM sliding threshold (metaplasticity)
-    bcm_enabled: bool = False
-    bcm_config: Optional[BCMConfig] = None  # Custom BCM parameters
 
 
 @register_pathway(
@@ -225,9 +96,9 @@ class SpikingPathway(NeuralComponent):
     learn() method - plasticity happens continuously and automatically.
 
     Example:
-        pathway = SpikingPathway(SpikingPathwayConfig(
-            source_size=64,
-            target_size=128,
+        pathway = SpikingPathway(PathwayConfig(
+            n_input=64,
+            n_output=128,
             temporal_coding=TemporalCoding.PHASE,
             oscillation_freq_hz=8.0,  # Theta
         ))
@@ -240,7 +111,7 @@ class SpikingPathway(NeuralComponent):
         metrics = pathway.get_learning_metrics()
     """
 
-    def __init__(self, config: SpikingPathwayConfig):
+    def __init__(self, config: PathwayConfig):
         super().__init__(config)
         self.config = config
 
@@ -254,8 +125,8 @@ class SpikingPathway(NeuralComponent):
 
         # Axonal delays (in timesteps, will be converted from ms)
         delays = WeightInitializer.gaussian(
-            n_output=config.target_size,
-            n_input=config.source_size,
+            n_output=config.n_output,
+            n_input=config.n_input,
             mean=config.axonal_delay_ms,
             std=config.delay_variability * config.axonal_delay_ms,
             device=config.device
@@ -265,8 +136,8 @@ class SpikingPathway(NeuralComponent):
         # Connectivity mask
         if config.sparsity < 1.0:
             mask = WeightInitializer.sparse_random(
-                n_output=config.target_size,
-                n_input=config.source_size,
+                n_output=config.n_output,
+                n_input=config.n_input,
                 sparsity=config.sparsity,
                 device=config.device
             )
@@ -282,7 +153,7 @@ class SpikingPathway(NeuralComponent):
         # Synaptic current (filtered input - still needed for temporal filtering)
         self.register_buffer(
             "synaptic_current",
-            torch.zeros(config.target_size, device=config.device),
+            torch.zeros(config.n_output, device=config.device),
         )
 
         # =====================================================================
@@ -300,8 +171,8 @@ class SpikingPathway(NeuralComponent):
             heterosynaptic_ratio=getattr(config, 'heterosynaptic_ratio', 0.3),
         )
         self._trace_manager = EligibilityTraceManager(
-            n_input=config.source_size,
-            n_output=config.target_size,
+            n_input=config.n_input,
+            n_output=config.n_output,
             config=stdp_config,
             device=config.device,
         )
@@ -317,7 +188,7 @@ class SpikingPathway(NeuralComponent):
         max_delay_steps = int(config.axonal_delay_ms * 2 / 1.0) + 1  # Assume dt=1ms
         self.register_buffer(
             "delay_buffer",
-            torch.zeros(max_delay_steps, config.source_size, device=config.device),
+            torch.zeros(max_delay_steps, config.n_input, device=config.device),
         )
         self.delay_buffer_idx = 0
 
@@ -339,7 +210,7 @@ class SpikingPathway(NeuralComponent):
         # Firing rate tracking for homeostasis
         self.register_buffer(
             "firing_rate_estimate",
-            torch.zeros(config.target_size, device=config.device) + config.target_rate,
+            torch.zeros(config.n_output, device=config.device) + config.target_rate,
         )
 
         # =====================================================================
@@ -348,11 +219,15 @@ class SpikingPathway(NeuralComponent):
         if config.stp_enabled:
             stp_cfg = config.stp_config
             if stp_cfg is None:
-                # Use preset based on stp_type
-                stp_cfg = STPConfig.from_type(config.stp_type, dt=1.0)
+                # Use preset based on stp_type (convert string to STPType if needed)
+                from thalia.core.stp import STPType
+                stp_type = config.stp_type
+                if isinstance(stp_type, str):
+                    stp_type = STPType[stp_type]
+                stp_cfg = STPConfig.from_type(stp_type, dt=1.0)
             self.stp = ShortTermPlasticity(
-                n_pre=config.source_size,
-                n_post=config.target_size,
+                n_pre=config.n_input,
+                n_post=config.n_output,
                 config=stp_cfg,
                 per_synapse=True,  # Per-synapse STP for pathways
             )
@@ -366,12 +241,32 @@ class SpikingPathway(NeuralComponent):
         if config.bcm_enabled:
             bcm_cfg = config.bcm_config or BCMConfig()
             self.bcm = BCMRule(
-                n_post=config.target_size,
+                n_post=config.n_output,
                 config=bcm_cfg,
             )
             self.bcm.to(config.device)
         else:
             self.bcm = None
+
+        # =====================================================================
+        # LEARNING STRATEGY (Strategy Pattern)
+        # =====================================================================
+        # Use STDPStrategy for spike-timing dependent plasticity
+        # This replaces the custom _apply_stdp() method
+        self.learning_strategy = LearningStrategyRegistry.create(
+            "stdp",
+            StrategySTDPConfig(
+                learning_rate=config.stdp_lr,
+                a_plus=config.a_plus,
+                a_minus=config.a_minus,
+                tau_plus=config.tau_plus_ms,
+                tau_minus=config.tau_minus_ms,
+                dt_ms=config.dt_ms,
+                w_min=config.w_min,
+                w_max=config.w_max,
+                soft_bounds=config.soft_bounds,
+            )
+        )
 
     @property
     def pre_trace(self) -> torch.Tensor:
@@ -399,7 +294,7 @@ class SpikingPathway(NeuralComponent):
             dt_ms=cfg.dt_ms,
             device=cfg.device,
         )
-        neurons = ConductanceLIF(n_neurons=cfg.target_size, config=neuron_config)
+        neurons = ConductanceLIF(n_neurons=cfg.n_output, config=neuron_config)
         return neurons
 
     def _get_learning_rule(self) -> LearningRule:
@@ -417,8 +312,8 @@ class SpikingPathway(NeuralComponent):
         if cfg.topographic:
             # Use topographic initialization from registry
             weights = WeightInitializer.topographic(
-                n_output=cfg.target_size,
-                n_input=cfg.source_size,
+                n_output=cfg.n_output,
+                n_input=cfg.n_input,
                 base_weight=cfg.init_mean,
                 sigma_factor=4.0,
                 boost_strength=0.3,
@@ -427,8 +322,8 @@ class SpikingPathway(NeuralComponent):
         else:
             # Use Gaussian initialization from registry
             weights = WeightInitializer.gaussian(
-                n_output=cfg.target_size,
-                n_input=cfg.source_size,
+                n_output=cfg.n_output,
+                n_input=cfg.n_input,
                 mean=cfg.init_mean,
                 std=cfg.init_std,
                 device=cfg.device
@@ -445,12 +340,12 @@ class SpikingPathway(NeuralComponent):
         """Process source spikes and generate target spikes.
 
         Args:
-            input_spikes: Binary spike tensor from source (source_size,)
+            input_spikes: Binary spike tensor from source (n_input,)
             time_ms: Current time in ms (for phase coding)
             **kwargs: Additional arguments (ignored)
 
         Returns:
-            Binary spike tensor for target (target_size,)
+            Binary spike tensor for target (n_output,)
 
         Note:
             Timestep (dt_ms) is obtained from self.config.dt_ms (set from GlobalConfig)
@@ -464,15 +359,20 @@ class SpikingPathway(NeuralComponent):
         # =====================================================================
         # Ensure 1D
         source_spikes = input_spikes.squeeze()
-        assert source_spikes.shape[-1] == cfg.source_size, (
+        assert source_spikes.shape[-1] == cfg.n_input, (
             f"SpikingPathway.forward: source_spikes has shape {source_spikes.shape} "
-            f"but source_size={cfg.source_size}. Check pathway input dimensions."
+            f"but n_input={cfg.n_input}. Check pathway input dimensions."
         )
 
         # =====================================================================
         # 1. UPDATE OSCILLATION PHASE (for phase coding)
         # =====================================================================
-        if cfg.temporal_coding == TemporalCoding.PHASE:
+        # Convert string temporal_coding to enum if needed
+        temporal_coding = cfg.temporal_coding
+        if isinstance(temporal_coding, str):
+            temporal_coding = TemporalCoding[temporal_coding]
+
+        if temporal_coding == TemporalCoding.PHASE:
             # Use brain-wide gamma oscillator (no fallback - must be provided by Brain)
             if hasattr(self, '_oscillator_phases') and 'gamma' in self._oscillator_phases:
                 self.oscillation_phase = self._oscillator_phases['gamma']
@@ -523,7 +423,7 @@ class SpikingPathway(NeuralComponent):
         # 5. GENERATE SPIKES using ConductanceLIF
         # =====================================================================
         # Apply phase modulation for phase coding by temporarily adjusting threshold
-        if cfg.temporal_coding == TemporalCoding.PHASE:
+        if temporal_coding == TemporalCoding.PHASE:
             # Threshold is lower at preferred phase (phase=0)
             phase_modulation = 1.0 - cfg.phase_precision * np.cos(self.oscillation_phase)
             original_thresh = self.neurons.config.v_threshold
@@ -544,10 +444,39 @@ class SpikingPathway(NeuralComponent):
         )
 
         # =====================================================================
-        # 8. APPLY STDP LEARNING
+        # 8. APPLY STDP LEARNING (via Strategy Pattern)
         # =====================================================================
-        if cfg.learning_rule != SpikingLearningRule.REPLAY_STDP or self.replay_active:
-            self._apply_stdp(source_spikes, target_spikes)
+        # Convert string learning_rule to enum if needed
+        learning_rule = cfg.learning_rule
+        if isinstance(learning_rule, str):
+            learning_rule = SpikingLearningRule[learning_rule]
+
+        if learning_rule != SpikingLearningRule.REPLAY_STDP or self.replay_active:
+            # Use strategy pattern for learning (inherited from LearningStrategyMixin)
+            # Apply neuromodulator and BCM modulation via kwargs
+
+            # Compute BCM modulation if enabled (per-neuron)
+            bcm_modulation = 1.0
+            if self.bcm is not None:
+                # Per-neuron activity (n_post,) for per-neuron BCM thresholds
+                post_activity = target_spikes.float()
+                # BCM returns per-neuron modulation factors (n_post,)
+                bcm_modulation = self.bcm.compute_phi(post_activity)
+                self.bcm.update_threshold(post_activity)
+
+            # Apply learning with modulations
+            _ = self.apply_strategy_learning(
+                pre_activity=source_spikes,
+                post_activity=target_spikes,
+                weights=self.weights,
+                # Neuromodulator modulation (passed to strategy)
+                dopamine=self.dopamine_level,
+                acetylcholine=self.acetylcholine_level,
+                norepinephrine=self.norepinephrine_level,
+                bcm_modulation=bcm_modulation,
+                oscillation_phase=self.oscillation_phase,
+                learning_rule=cfg.learning_rule,
+            )
 
         # =====================================================================
         # 9. UPDATE FIRING RATE ESTIMATE (for homeostasis)
@@ -564,100 +493,15 @@ class SpikingPathway(NeuralComponent):
 
         return target_spikes
 
-    def _apply_stdp(
-        self,
-        pre_spikes: torch.Tensor,
-        post_spikes: torch.Tensor,
-    ) -> None:
-        """Apply STDP weight updates with optional BCM modulation.
-
-        Note:
-            Timestep (dt_ms) obtained from self.config
-        """
-        cfg = self.config
-
-        # =====================================================================
-        # BCM MODULATION (if enabled)
-        # =====================================================================
-        # BCM scales the learning rate based on postsynaptic activity relative
-        # to a sliding threshold. This prevents runaway potentiation/depression.
-        bcm_modulation = 1.0
-        if self.bcm is not None:
-            # Compute BCM modulation factor based on postsynaptic activity
-            # φ(c, θ) = c(c - θ) / θ  →  positive above threshold, negative below
-            post_activity = post_spikes.mean()  # Average firing rate
-            bcm_modulation = self.bcm.compute_phi(post_activity)
-            # Update the sliding threshold based on recent activity
-            self.bcm.update_threshold(post_activity)
-
-        # Use trace manager to compute raw LTP/LTD (without combining or soft bounds)
-        ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(
-            input_spikes=pre_spikes,
-            output_spikes=post_spikes,
-        )
-
-        # Apply neuromodulator and phase modulations to LTP
-        # Modulate by dopamine for dopamine-STDP
-        if cfg.learning_rule == SpikingLearningRule.DOPAMINE_STDP:
-            ltp = ltp * (1 + self.dopamine_level)
-
-        # Modulate by acetylcholine (high ACh = favor LTP/encoding)
-        # Biologically: ACh from nucleus basalis enhances encoding
-        ach_modulation = 0.5 + 0.5 * self.acetylcholine_level  # Range: [0.5, 1.5]
-        ltp = ltp * ach_modulation
-
-        # Modulate by norepinephrine (inverted-U: moderate NE optimal)
-        # Biologically: NE from locus coeruleus affects learning rate
-        # Too low = weak learning, optimal (~0.5) = strong, too high = noisy
-        ne_modulation = 1.0 - 0.5 * abs(self.norepinephrine_level - 0.5)  # Peak at 0.5
-        ltp = ltp * ne_modulation
-
-        # Modulate by phase for phase-STDP
-        if cfg.learning_rule == SpikingLearningRule.PHASE_STDP:
-            # LTP is stronger at preferred phase
-            phase_mod = 0.5 + 0.5 * np.cos(self.oscillation_phase)
-            ltp = ltp * phase_mod
-
-        # Apply BCM modulation
-        if isinstance(bcm_modulation, torch.Tensor):
-            ltp = ltp * bcm_modulation.unsqueeze(1)
-        else:
-            ltp = ltp * bcm_modulation
-
-        # Apply neuromodulator and phase modulations to LTD
-        if cfg.learning_rule == SpikingLearningRule.DOPAMINE_STDP:
-            # LTD is reduced by dopamine (protects good synapses)
-            ltd = ltd * (1 - 0.5 * max(0, self.dopamine_level))
-
-        # Modulate by acetylcholine (high ACh = reduce LTD/favor encoding)
-        # Biologically: ACh shifts LTP/LTD balance toward LTP
-        ach_ltd_suppression = 1.0 - 0.3 * self.acetylcholine_level  # Range: [0.7, 1.0]
-        ltd = ltd * ach_ltd_suppression
-
-        # Norepinephrine also affects LTD with inverted-U
-        ne_modulation = 1.0 - 0.5 * abs(self.norepinephrine_level - 0.5)
-        ltd = ltd * ne_modulation
-
-        if cfg.learning_rule == SpikingLearningRule.PHASE_STDP:
-            # LTD is stronger at anti-phase
-            phase_mod = 0.5 - 0.5 * np.cos(self.oscillation_phase)
-            ltd = ltd * phase_mod
-
-        # Track LTP/LTD for diagnostics (only if tensors, not scalar 0)
-        if isinstance(ltp, torch.Tensor):
-            self.total_ltp += ltp.sum().item()
-        if isinstance(ltd, torch.Tensor):
-            self.total_ltd += ltd.sum().item()
-
-        # Compute weight change
-        dw = cfg.stdp_lr * (ltp - ltd)        # Apply connectivity mask
-        if self.connectivity_mask is not None and isinstance(dw, torch.Tensor):
-            dw = dw * self.connectivity_mask
-
-        # Update weights
-        if isinstance(dw, torch.Tensor):
-            self.weights.data += dw
-            clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
+    # NOTE: _apply_stdp() method removed - now using strategy pattern
+    # Learning handled by self.apply_strategy_learning() from LearningStrategyMixin
+    # The old custom _apply_stdp() included advanced features that need to be
+    # re-implemented in the strategy system:
+    #   - BCM metaplasticity modulation
+    #   - Neuromodulator modulation (DA, ACh, NE)
+    #   - Phase-locked STDP (for phase coding)
+    #   - Dopamine-STDP and Replay-STDP learning rules
+    # These features are marked as TODOs in the forward() method above.
 
     def _apply_synaptic_scaling(self) -> None:
         """Apply homeostatic synaptic scaling.
@@ -706,8 +550,8 @@ class SpikingPathway(NeuralComponent):
         updates with dopamine modulation.
 
         Args:
-            source_activity: Pre-synaptic activity [source_size] (uses traces if None)
-            target_activity: Post-synaptic activity [target_size] (uses traces if None)
+            source_activity: Pre-synaptic activity [n_input] (uses traces if None)
+            target_activity: Post-synaptic activity [n_output] (uses traces if None)
             dopamine: Dopamine signal for modulated learning
             **kwargs: Additional arguments (ignored)
 
@@ -726,13 +570,13 @@ class SpikingPathway(NeuralComponent):
             post_trace = torch.clamp(target_activity.flatten(), 0, 1)
 
             # Resize to match weight dimensions if needed
-            if pre_trace.shape[0] != cfg.source_size:
-                pre_resized = torch.zeros(cfg.source_size, device=pre_trace.device)
-                pre_resized[:min(pre_trace.shape[0], cfg.source_size)] = pre_trace[:cfg.source_size]
+            if pre_trace.shape[0] != cfg.n_input:
+                pre_resized = torch.zeros(cfg.n_input, device=pre_trace.device)
+                pre_resized[:min(pre_trace.shape[0], cfg.n_input)] = pre_trace[:cfg.n_input]
                 pre_trace = pre_resized
-            if post_trace.shape[0] != cfg.target_size:
-                post_resized = torch.zeros(cfg.target_size, device=post_trace.device)
-                post_resized[:min(post_trace.shape[0], cfg.target_size)] = post_trace[:cfg.target_size]
+            if post_trace.shape[0] != cfg.n_output:
+                post_resized = torch.zeros(cfg.n_output, device=post_trace.device)
+                post_resized[:min(post_trace.shape[0], cfg.n_output)] = post_trace[:cfg.n_output]
                 post_trace = post_resized
 
             # STDP update: weights are [target_size, source_size]
@@ -743,8 +587,12 @@ class SpikingPathway(NeuralComponent):
 
             lr = cfg.stdp_lr
 
-            # Dopamine modulation
-            if cfg.learning_rule == SpikingLearningRule.DOPAMINE_STDP:
+            # Dopamine modulation (convert string to enum if needed)
+            learning_rule_enum = cfg.learning_rule
+            if isinstance(learning_rule_enum, str):
+                learning_rule_enum = SpikingLearningRule[learning_rule_enum]
+
+            if learning_rule_enum == SpikingLearningRule.DOPAMINE_STDP:
                 lr *= (1.0 + dopamine)
 
             # Update weights - simple Hebbian with dopamine gating
@@ -884,7 +732,7 @@ class SpikingPathway(NeuralComponent):
         """
         cfg = self.config
         device = self.weights.device
-        old_target_size = cfg.target_size
+        old_target_size = cfg.n_output
         new_target_size = old_target_size + n_new
 
         # 1. Expand weight matrix [target, source] → [target+n_new, source]
@@ -894,13 +742,13 @@ class SpikingPathway(NeuralComponent):
         if initialization == 'xavier':
             new_weights = WeightInitializer.xavier(
                 n_output=n_new,
-                n_input=cfg.source_size,
+                n_input=cfg.n_input,
                 device=device
             )
         elif initialization == 'uniform':
             new_weights = WeightInitializer.uniform(
                 n_output=n_new,
-                n_input=cfg.source_size,
+                n_input=cfg.n_input,
                 low=cfg.w_min,
                 high=cfg.w_max,
                 device=device
@@ -908,7 +756,7 @@ class SpikingPathway(NeuralComponent):
         else:  # sparse_random (default)
             new_weights = WeightInitializer.sparse_random(
                 n_output=n_new,
-                n_input=cfg.source_size,
+                n_input=cfg.n_input,
                 sparsity=sparsity,
                 mean=cfg.init_mean,
                 std=cfg.init_std,
@@ -925,7 +773,7 @@ class SpikingPathway(NeuralComponent):
         # 2. Expand axonal delays [target, source] → [target+n_new, source]
         new_delays = WeightInitializer.gaussian(
             n_output=n_new,
-            n_input=cfg.source_size,
+            n_input=cfg.n_input,
             mean=cfg.axonal_delay_ms,
             std=cfg.delay_variability * cfg.axonal_delay_ms,
             device=device
@@ -937,7 +785,7 @@ class SpikingPathway(NeuralComponent):
         if self.connectivity_mask is not None:
             new_mask = WeightInitializer.sparse_random(
                 n_output=n_new,
-                n_input=cfg.source_size,
+                n_input=cfg.n_input,
                 sparsity=cfg.sparsity,
                 device=device
             )
@@ -988,7 +836,7 @@ class SpikingPathway(NeuralComponent):
         if self.stp is not None:
             # STP tracks post-synaptic resources
             self.stp = ShortTermPlasticity(
-                n_pre=cfg.source_size,
+                n_pre=cfg.n_input,
                 n_post=new_target_size,
                 config=self.stp.config,
                 per_synapse=True,
@@ -1006,7 +854,7 @@ class SpikingPathway(NeuralComponent):
             self.bcm.to(device)
 
         # 7. Update config
-        self.config.target_size = new_target_size
+        self.config.n_output = new_target_size
         self.config.n_neurons = new_target_size  # Keep n_neurons in sync
 
     def get_state(self) -> Dict[str, Any]:
@@ -1119,7 +967,7 @@ class SpikingPathway(NeuralComponent):
             Dictionary with keys:
             - 'weights': Dict[str, torch.Tensor] - All learnable parameters
             - 'pathway_state': Dict[str, Any] - Dynamic state
-            - 'config': SpikingPathwayConfig - Configuration
+            - 'config': PathwayConfig - Configuration
             - 'class_name': str - Class name for reconstruction
         """
         return {

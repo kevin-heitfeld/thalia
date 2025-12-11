@@ -50,10 +50,10 @@ import torch
 from thalia.core.base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from thalia.config.base import RegionConfigBase
+    from thalia.config.base import NeuralComponentConfig
 
 
-class LearningComponent(BaseManager["RegionConfigBase"]):
+class LearningComponent(BaseManager["NeuralComponentConfig"]):
     """Base class for region learning components.
 
     Manages plasticity rules and weight updates for a region.
@@ -100,7 +100,7 @@ class LearningComponent(BaseManager["RegionConfigBase"]):
         }
 
 
-class HomeostasisComponent(BaseManager["RegionConfigBase"]):
+class HomeostasisComponent(BaseManager["NeuralComponentConfig"]):
     """Base class for homeostatic regulation components.
 
     Manages stability and balance mechanisms for a region.
@@ -144,7 +144,7 @@ class HomeostasisComponent(BaseManager["RegionConfigBase"]):
         }
 
 
-class MemoryComponent(BaseManager["RegionConfigBase"]):
+class MemoryComponent(BaseManager["NeuralComponentConfig"]):
     """Base class for memory management components.
 
     Manages episodic or working memory storage and retrieval.
@@ -197,7 +197,7 @@ class MemoryComponent(BaseManager["RegionConfigBase"]):
         }
 
 
-class ExplorationComponent(BaseManager["RegionConfigBase"]):
+class ExplorationComponent(BaseManager["NeuralComponentConfig"]):
     """Base class for exploration strategy components.
 
     Manages exploration vs exploitation tradeoffs for decision-making regions.

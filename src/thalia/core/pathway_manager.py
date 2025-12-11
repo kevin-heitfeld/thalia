@@ -6,7 +6,8 @@ Handles creation, tracking, and coordinated growth of all inter-region pathways.
 
 from typing import Dict, List, Tuple, Any
 
-from thalia.integration.spiking_pathway import SpikingPathway, SpikingPathwayConfig
+from thalia.config.base import PathwayConfig
+from thalia.integration.spiking_pathway import SpikingPathway
 from thalia.integration.spiking_pathway import SpikingLearningRule, TemporalCoding
 from thalia.integration.pathways.spiking_attention import (
     SpikingAttentionPathway,
@@ -20,13 +21,13 @@ from thalia.integration.pathways.spiking_replay import (
 
 class PathwayManager:
     """Manages all inter-region neural pathways in the brain.
-    
+
     Responsibilities:
     - Create and configure all pathways
     - Track region-pathway connections for coordinated growth
     - Provide unified access to pathways for checkpointing and diagnostics
     """
-    
+
     def __init__(
         self,
         cortex_l23_size: int,
@@ -41,7 +42,7 @@ class PathwayManager:
         device: str,
     ):
         """Initialize pathway manager.
-        
+
         Args:
             cortex_l23_size: Size of cortex layer 2/3 output
             cortex_l5_size: Size of cortex layer 5 output
@@ -56,7 +57,7 @@ class PathwayManager:
         """
         self.dt_ms = dt_ms
         self.device = device
-        
+
         # Store sizes for growth coordination
         self._sizes = {
             'cortex_l23': cortex_l23_size,
@@ -68,20 +69,20 @@ class PathwayManager:
             'n_actions': n_actions,
             'neurons_per_action': neurons_per_action,
         }
-        
+
         # Create pathways
         self._create_pathways()
-        
+
         # Track region-pathway connections for coordinated growth
         self._setup_connection_tracking()
-        
+
     def _create_pathways(self) -> None:
         """Create all inter-region pathways."""
         # 1. Cortex L2/3 → Hippocampus (encoding pathway)
         self.cortex_to_hippo = SpikingPathway(
-            SpikingPathwayConfig(
-                source_size=self._sizes['cortex_l23'],
-                target_size=self._sizes['cortex_l23'],  # Match hippo input
+            PathwayConfig(
+                n_input=self._sizes['cortex_l23'],
+                n_output=self._sizes['cortex_l23'],  # Match hippo input
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.PHASE,  # Theta phase coding
                 stdp_lr=0.001,
@@ -92,9 +93,9 @@ class PathwayManager:
 
         # 2. Cortex L5 → Striatum (action selection pathway)
         self.cortex_to_striatum = SpikingPathway(
-            SpikingPathwayConfig(
-                source_size=self._sizes['cortex_l5'],
-                target_size=self._sizes['cortex_l5'],  # Match striatum input
+            PathwayConfig(
+                n_input=self._sizes['cortex_l5'],
+                n_output=self._sizes['cortex_l5'],  # Match striatum input
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.RATE,
                 stdp_lr=0.002,
@@ -105,9 +106,9 @@ class PathwayManager:
 
         # 3. Cortex L2/3 → PFC (working memory input)
         self.cortex_to_pfc = SpikingPathway(
-            SpikingPathwayConfig(
-                source_size=self._sizes['cortex_l23'],
-                target_size=self._sizes['cortex_l23'],  # PFC receives cortex + hippo
+            PathwayConfig(
+                n_input=self._sizes['cortex_l23'],
+                n_output=self._sizes['cortex_l23'],  # PFC receives cortex + hippo
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.SYNCHRONY,  # Binding via synchrony
                 stdp_lr=0.0015,
@@ -118,9 +119,9 @@ class PathwayManager:
 
         # 4. Hippocampus → PFC (episodic to working memory)
         self.hippo_to_pfc = SpikingPathway(
-            SpikingPathwayConfig(
-                source_size=self._sizes['hippocampus'],
-                target_size=self._sizes['hippocampus'],
+            PathwayConfig(
+                n_input=self._sizes['hippocampus'],
+                n_output=self._sizes['hippocampus'],
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.PHASE,  # Theta-coupled
                 stdp_lr=0.001,
@@ -131,9 +132,9 @@ class PathwayManager:
 
         # 5. Hippocampus → Striatum (context for action selection)
         self.hippo_to_striatum = SpikingPathway(
-            SpikingPathwayConfig(
-                source_size=self._sizes['hippocampus'],
-                target_size=self._sizes['hippocampus'],
+            PathwayConfig(
+                n_input=self._sizes['hippocampus'],
+                n_output=self._sizes['hippocampus'],
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.PHASE,
                 stdp_lr=0.0015,
@@ -144,9 +145,9 @@ class PathwayManager:
 
         # 6. PFC → Striatum (goal-directed control)
         self.pfc_to_striatum = SpikingPathway(
-            SpikingPathwayConfig(
-                source_size=self._sizes['pfc'],
-                target_size=self._sizes['pfc'],
+            PathwayConfig(
+                n_input=self._sizes['pfc'],
+                n_output=self._sizes['pfc'],
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.RATE,
                 stdp_lr=0.002,
@@ -158,9 +159,9 @@ class PathwayManager:
         # 7. Striatum → Cerebellum (action refinement)
         striatum_size = self._sizes['n_actions'] * self._sizes['neurons_per_action']
         self.striatum_to_cerebellum = SpikingPathway(
-            SpikingPathwayConfig(
-                source_size=striatum_size,
-                target_size=striatum_size,
+            PathwayConfig(
+                n_input=striatum_size,
+                n_output=striatum_size,
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.LATENCY,  # Precise timing for motor control
                 stdp_lr=0.001,
@@ -172,8 +173,8 @@ class PathwayManager:
         # 8. PFC → Cortex (top-down attention modulation) [SPECIALIZED]
         self.attention = SpikingAttentionPathway(
             SpikingAttentionPathwayConfig(
-                source_size=self._sizes['pfc'],
-                target_size=self._sizes['input'],
+                n_input=self._sizes['pfc'],
+                n_output=self._sizes['input'],
                 device=self.device,
             )
         )
@@ -181,12 +182,12 @@ class PathwayManager:
         # 9. Hippocampus → Cortex (replay/consolidation during sleep) [SPECIALIZED]
         self.replay = SpikingReplayPathway(
             SpikingReplayPathwayConfig(
-                source_size=self._sizes['hippocampus'],
-                target_size=self._sizes['cortex'],
+                n_input=self._sizes['hippocampus'],
+                n_output=self._sizes['cortex'],
                 device=self.device,
             )
         )
-        
+
     def _setup_connection_tracking(self) -> None:
         """Setup tracking of region-pathway connections for coordinated growth."""
         # Maps: region_name -> list of (pathway, dimension_type)
@@ -221,7 +222,7 @@ class PathwayManager:
                 (self.striatum_to_cerebellum, 'target'),
             ],
         }
-        
+
     def get_all_pathways(self) -> Dict[str, Any]:
         """Get dictionary of all pathways for iteration."""
         return {
@@ -235,28 +236,28 @@ class PathwayManager:
             "attention": self.attention,
             "replay": self.replay,
         }
-        
+
     def grow_connected_pathways(
         self,
         region_name: str,
         growth_amount: int,
     ) -> None:
         """Grow all pathways connected to a region.
-        
+
         Args:
             region_name: Name of the region that grew
             growth_amount: Number of neurons added to the region
         """
         if region_name not in self.region_connections:
             return
-            
+
         for pathway, dimension_type in self.region_connections[region_name]:
             if hasattr(pathway, 'add_neurons'):
                 if dimension_type == 'source':
                     pathway.add_neurons(source_growth=growth_amount, target_growth=0)
                 else:  # target
                     pathway.add_neurons(source_growth=0, target_growth=growth_amount)
-                    
+
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get pathway diagnostics."""
         diagnostics = {}
@@ -279,4 +280,3 @@ class PathwayManager:
             pathway = self.get_all_pathways().get(name)
             if pathway is not None and hasattr(pathway, 'load_state'):
                 pathway.load_state(pathway_state)
-

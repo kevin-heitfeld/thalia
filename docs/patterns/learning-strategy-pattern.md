@@ -641,6 +641,85 @@ def reset_state(self):
 
 **A**: Yes! Strategies are optional. If your region has highly specialized learning (e.g., hippocampal consolidation with multiple stages), keep custom logic. Use strategies for common patterns.
 
+### Q: Can pathways use learning strategies?
+
+**A**: **Yes! Pathways inherit from `NeuralComponent` which includes `LearningStrategyMixin`.**
+
+All pathways can use the same strategies as regions - no pathway-specific wrappers needed:
+
+```python
+# SpikingPathway uses STDP strategy (migrated from custom _apply_stdp)
+from thalia.integration.spiking_pathway import SpikingPathway, SpikingPathwayConfig
+from thalia.learning import LearningStrategyRegistry, STDPConfig
+
+# Create pathway with strategy-based learning
+config = SpikingPathwayConfig(
+    source_size=64,
+    target_size=128,
+    stdp_lr=0.01,  # Learning rate for STDP
+)
+pathway = SpikingPathway(config)
+
+# The pathway automatically initializes STDPStrategy in __init__:
+#   self.learning_strategy = LearningStrategyRegistry.create('stdp', ...)
+
+# Forward pass applies learning automatically
+for timestep in range(n_timesteps):
+    source_spikes = get_source_activity()
+    target_spikes = pathway(source_spikes, dt=1.0, time_ms=timestep)
+    # Learning happens inside forward() via self.apply_strategy_learning()
+```
+
+**Component parity in action**: Regions and pathways use identical learning infrastructure!
+
+**Migration example**: SpikingPathway was migrated from custom `_apply_stdp()` to strategy pattern:
+
+```python
+# BEFORE (custom learning):
+class SpikingPathway(NeuralComponent):
+    def forward(self, source_spikes):
+        target_spikes = self.neurons(...)
+        self._apply_stdp(source_spikes, target_spikes)  # Custom method
+        return target_spikes
+    
+    def _apply_stdp(self, pre, post):
+        # 100+ lines of custom STDP logic
+        ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(...)
+        dw = self.config.stdp_lr * (ltp - ltd)
+        self.weights.data += dw
+        clamp_weights(...)
+
+# AFTER (strategy pattern):
+class SpikingPathway(NeuralComponent):
+    def __init__(self, config):
+        super().__init__(config)
+        self.learning_strategy = LearningStrategyRegistry.create(
+            'stdp',
+            STDPConfig(learning_rate=config.stdp_lr, ...)
+        )
+    
+    def forward(self, source_spikes):
+        target_spikes = self.neurons(...)
+        # Use strategy (inherited from LearningStrategyMixin)
+        _ = self.apply_strategy_learning(
+            pre_activity=source_spikes,
+            post_activity=target_spikes,
+            weights=self.weights,
+        )
+        return target_spikes
+```
+
+**Benefits of migration**:
+- ✅ Removed 100+ lines of custom STDP code
+- ✅ Now can swap strategies (STDP → BCM → Hebbian) by changing 1 line
+- ✅ Shares trace management with regions (consistent behavior)
+- ✅ Backward compatible (old `learn()` method still works)
+
+**Special pathway cases**:
+- **Sensory pathways** (Visual, Audio, Language): No learning needed - they encode, not learn
+- **Attention pathways**: Use strategies + pass attention via kwargs
+- **Replay pathways**: Don't set `learning_strategy` (no plasticity during replay)
+
 ### Q: How do strategies handle neuromodulation?
 
 **A**: Strategies provide the **base learning rule**. Regions handle **neuromodulation** (dopamine, ACh, NE) by:

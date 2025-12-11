@@ -28,11 +28,19 @@ Author: Thalia Project
 Date: December 2025
 """
 
+# Re-export region configs from canonical locations
+from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
+from thalia.regions.hippocampus.config import HippocampusConfig
+from thalia.regions.striatum.config import StriatumConfig
+from thalia.regions.prefrontal import PrefrontalConfig
+from thalia.regions.cerebellum import CerebellumConfig
+
 from .base import (
     BaseConfig,
     NeuralComponentConfig,
     LearningComponentConfig,
-    RegionConfigBase,
+    PathwayConfig,
 )
 # Note: BaseNeuronConfig not exported here to avoid circular import
 # Import directly: from thalia.config.neuron_config import BaseNeuronConfig
@@ -41,14 +49,9 @@ from .brain_config import (
     BrainConfig,
     RegionSizes,
     CortexType,
+    NeuromodulationConfig,
 )
-# Re-export region configs from canonical locations
-from thalia.regions.cortex.config import LayeredCortexConfig
-from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
-from thalia.regions.hippocampus.config import HippocampusConfig
-from thalia.regions.striatum.config import StriatumConfig
-from thalia.regions.prefrontal import PrefrontalConfig
-from thalia.regions.cerebellum import CerebellumConfig
+from .training_config import TrainingConfig
 from .language_config import (
     LanguageConfig,
     EncodingConfig,
@@ -101,13 +104,16 @@ __all__ = [
     "BaseConfig",
     "NeuralComponentConfig",
     "LearningComponentConfig",
-    "RegionConfigBase",
+    "PathwayConfig",
     # Global
     "GlobalConfig",
     # Brain
     "BrainConfig",
     "RegionSizes",
     "CortexType",
+    "NeuromodulationConfig",
+    # Training
+    "TrainingConfig",
     # Region configs (canonical locations)
     "LayeredCortexConfig",
     "PredictiveCortexConfig",

@@ -17,15 +17,16 @@ from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 from thalia.core.component_registry import register_pathway
-from ..spiking_pathway import SpikingPathway, SpikingPathwayConfig, TemporalCoding
+from thalia.config.base import PathwayConfig
+from ..spiking_pathway import SpikingPathway
 
 
 @dataclass
-class SpikingAttentionPathwayConfig(SpikingPathwayConfig):
+class SpikingAttentionPathwayConfig(PathwayConfig):
     """Configuration for spiking attention pathway."""
 
     # Override defaults for attention-specific behavior
-    temporal_coding: TemporalCoding = TemporalCoding.PHASE  # Phase coding for attention rhythms
+    temporal_coding: str = "PHASE"  # Phase coding for attention rhythms
     axonal_delay_ms: float = 2.0  # Faster for top-down signals
 
     # Attention-specific parameters

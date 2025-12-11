@@ -53,6 +53,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, List, Tuple, Protocol
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -363,7 +364,7 @@ class STDPStrategy(BaseStrategy):
         post: torch.Tensor,
         **kwargs: Any,
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        """Apply STDP learning.
+        """Apply STDP learning with optional neuromodulator and BCM modulation.
 
         LTP: A+ × pre_trace × post_spike
         LTD: A- × post_trace × pre_spike
@@ -372,6 +373,13 @@ class STDPStrategy(BaseStrategy):
             weights: Current weights [n_post, n_pre]
             pre: Presynaptic spikes [n_pre] (1D)
             post: Postsynaptic spikes [n_post] (1D)
+            **kwargs: Optional modulations:
+                - dopamine (float): Dopamine level for DA-modulated STDP
+                - acetylcholine (float): ACh level (favors LTP/encoding)
+                - norepinephrine (float): NE level (inverted-U modulation)
+                - bcm_modulation (float|Tensor): BCM metaplasticity factor
+                - oscillation_phase (float): Phase for phase-locked STDP
+                - learning_rule (SpikingLearningRule): Rule type for conditional modulation
         """
         cfg = self.stdp_config
 
@@ -389,6 +397,63 @@ class STDPStrategy(BaseStrategy):
         # Update traces and compute LTP/LTD
         self._trace_manager.update_traces(pre, post, cfg.dt_ms)
         ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(pre, post)
+
+        # Extract modulation kwargs
+        dopamine = kwargs.get('dopamine', 0.0)
+        acetylcholine = kwargs.get('acetylcholine', 0.0)
+        norepinephrine = kwargs.get('norepinephrine', 0.0)
+        bcm_modulation = kwargs.get('bcm_modulation', 1.0)
+        oscillation_phase = kwargs.get('oscillation_phase', 0.0)
+        learning_rule = kwargs.get('learning_rule', None)
+
+        # Apply neuromodulator modulations to LTP
+        if isinstance(ltp, torch.Tensor):
+            # Dopamine modulation (for dopamine-STDP)
+            if learning_rule is not None and hasattr(learning_rule, 'name'):
+                # Check if this is dopamine-STDP rule
+                if 'DOPAMINE' in learning_rule.name:
+                    ltp = ltp * (1.0 + dopamine)
+            
+            # Acetylcholine modulation (high ACh = favor LTP/encoding)
+            ach_modulation = 0.5 + 0.5 * acetylcholine  # Range: [0.5, 1.5]
+            ltp = ltp * ach_modulation
+            
+            # Norepinephrine modulation (inverted-U: moderate NE optimal)
+            ne_modulation = 1.0 - 0.5 * abs(norepinephrine - 0.5)  # Peak at 0.5
+            ltp = ltp * ne_modulation
+            
+            # Phase modulation (for phase-STDP)
+            if learning_rule is not None and hasattr(learning_rule, 'name'):
+                if 'PHASE' in learning_rule.name:
+                    phase_mod = 0.5 + 0.5 * np.cos(oscillation_phase)
+                    ltp = ltp * phase_mod
+            
+            # BCM modulation
+            if isinstance(bcm_modulation, torch.Tensor):
+                ltp = ltp * bcm_modulation.unsqueeze(1)
+            else:
+                ltp = ltp * bcm_modulation
+
+        # Apply neuromodulator modulations to LTD
+        if isinstance(ltd, torch.Tensor):
+            # Dopamine modulation (reduces LTD, protects good synapses)
+            if learning_rule is not None and hasattr(learning_rule, 'name'):
+                if 'DOPAMINE' in learning_rule.name:
+                    ltd = ltd * (1.0 - 0.5 * max(0.0, dopamine))
+            
+            # Acetylcholine modulation (high ACh = reduce LTD/favor encoding)
+            ach_ltd_suppression = 1.0 - 0.3 * acetylcholine  # Range: [0.7, 1.0]
+            ltd = ltd * ach_ltd_suppression
+            
+            # Norepinephrine modulation (inverted-U)
+            ne_modulation = 1.0 - 0.5 * abs(norepinephrine - 0.5)
+            ltd = ltd * ne_modulation
+            
+            # Phase modulation (for phase-STDP)
+            if learning_rule is not None and hasattr(learning_rule, 'name'):
+                if 'PHASE' in learning_rule.name:
+                    phase_mod = 0.5 - 0.5 * np.cos(oscillation_phase)
+                    ltd = ltd * phase_mod
 
         # Compute weight change
         dw = ltp - ltd if isinstance(ltp, torch.Tensor) or isinstance(ltd, torch.Tensor) else 0

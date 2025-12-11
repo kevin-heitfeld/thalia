@@ -26,7 +26,7 @@ Date: December 7, 2025
 
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, Dict, Protocol, runtime_checkable
 
 import torch
@@ -375,7 +375,182 @@ class BrainComponent(Protocol):
 
 
 # =============================================================================
-# Concrete Base Classes
+# Abstract Base Class (Enforces Protocol)
+# =============================================================================
+
+class BrainComponentBase(ABC):
+    """
+    Abstract base class enforcing the BrainComponent protocol.
+
+    **ALL regions and pathways MUST inherit from this class.**
+
+    This enforces implementation of the complete BrainComponent interface at
+    compile time, preventing missing methods and ensuring component parity.
+
+    Why Enforce with ABC?
+    =====================
+    The BrainComponent Protocol (above) defines the interface but doesn't enforce
+    it until runtime. This ABC provides:
+    - **Static checking**: Missing methods caught by IDEs and type checkers
+    - **Clear errors**: Python raises TypeError if abstract methods not implemented
+    - **Documentation**: Explicit which methods are required vs optional
+
+    Migration Path
+    ==============
+    For existing components that don't implement all methods yet:
+    1. Inherit from BrainComponentBase
+    2. Python will raise TypeError listing missing methods
+    3. Implement missing methods (can use defaults from BrainComponentMixin)
+    4. Ensure all tests pass
+
+    See: docs/patterns/component-interface-enforcement.md for migration guide
+    """
+
+    # =========================================================================
+    # Core Processing (REQUIRED)
+    # =========================================================================
+
+    @abstractmethod
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        """
+        Process input and update state (standard PyTorch convention).
+        
+        REQUIRED for all components. Must be implemented by all subclasses.
+        See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    # =========================================================================
+    # State Management (REQUIRED)
+    # =========================================================================
+
+    @abstractmethod
+    def reset_state(self) -> None:
+        """
+        Reset temporal state to initial conditions.
+        
+        REQUIRED for all components. Must be implemented by all subclasses.
+        See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    # =========================================================================
+    # Neuromodulation & Oscillators (REQUIRED)
+    # =========================================================================
+
+    @abstractmethod
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float] | None = None,
+        theta_slot: int = 0,
+        coupled_amplitudes: Dict[str, float] | None = None,
+    ) -> None:
+        """
+        Receive oscillator phases and amplitudes from brain broadcast.
+        
+        REQUIRED for all components. Default implementation available in
+        BrainComponentMixin. See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    # =========================================================================
+    # Growth (REQUIRED for curriculum learning)
+    # =========================================================================
+
+    @abstractmethod
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """
+        Add neurons/capacity to component without disrupting existing circuits.
+        
+        REQUIRED for all components (curriculum learning depends on growth).
+        Can raise NotImplementedError with helpful message if not yet supported.
+        See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    @abstractmethod
+    def get_capacity_metrics(self) -> Any:
+        """
+        Compute utilization metrics to guide growth decisions.
+        
+        REQUIRED for all components. Default implementation available in
+        BrainComponentMixin. See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    # =========================================================================
+    # Diagnostics (REQUIRED)
+    # =========================================================================
+
+    @abstractmethod
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """
+        Get current activity and health metrics.
+        
+        REQUIRED for all components. Must be implemented by all subclasses.
+        See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    @abstractmethod
+    def check_health(self) -> Any:
+        """
+        Check for pathological states.
+        
+        REQUIRED for all components. Default implementation available in
+        BrainComponentMixin. See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    # =========================================================================
+    # Checkpointing (REQUIRED)
+    # =========================================================================
+
+    @abstractmethod
+    def get_full_state(self) -> Dict[str, Any]:
+        """
+        Serialize complete component state for checkpointing.
+        
+        REQUIRED for all components. Must be implemented by all subclasses.
+        See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    @abstractmethod
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """
+        Restore component from checkpoint.
+        
+        REQUIRED for all components. Must be implemented by all subclasses.
+        See BrainComponent protocol for full documentation.
+        """
+        pass
+
+    # =========================================================================
+    # Properties (REQUIRED)
+    # =========================================================================
+
+    @property
+    @abstractmethod
+    def device(self) -> torch.device:
+        """Device where tensors are stored (CPU or CUDA). REQUIRED."""
+        pass
+
+    @property
+    @abstractmethod
+    def dtype(self) -> torch.dtype:
+        """Data type for floating point tensors. REQUIRED."""
+        pass
+
+
+# =============================================================================
+# Mixin with Default Implementations
 # =============================================================================
 
 class BrainComponentMixin:
@@ -388,6 +563,13 @@ class BrainComponentMixin:
     - Consistent behavior
 
     Subclasses override specific methods as needed.
+
+    Usage:
+        class MyRegion(BrainComponentBase, nn.Module, BrainComponentMixin):
+            # BrainComponentBase enforces interface
+            # nn.Module provides PyTorch functionality
+            # BrainComponentMixin provides default implementations
+            pass
     """
 
     def add_neurons(

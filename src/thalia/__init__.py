@@ -115,7 +115,7 @@ from thalia.learning import (
 )
 
 # Pathways
-from thalia.integration import SpikingPathway, SpikingPathwayConfig
+from thalia.integration import SpikingPathway
 
 # Visualization (optional - requires manim)
 try:
@@ -173,7 +173,6 @@ __all__ = [
     "UnifiedHomeostasis",
     # Pathways
     "SpikingPathway",
-    "SpikingPathwayConfig",
     # Oscillators
     "SinusoidalOscillator",
     "OscillatorManager",

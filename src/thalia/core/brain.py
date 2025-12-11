@@ -786,7 +786,7 @@ class EventDrivenBrain(nn.Module):
             pathway_config["device"] = device
             pathway_config["dt_ms"] = dt_ms
 
-            # Pathway configs are more uniform - they all inherit from SpikingPathwayConfig
+            # Pathway configs are uniform - they all inherit from PathwayConfig
             # For now, we'll create a simple config dict and let the pathway handle it
             # This is a simplified approach; full implementation would map to proper config classes
 

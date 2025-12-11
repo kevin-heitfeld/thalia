@@ -28,15 +28,15 @@ Usage Example:
     @ComponentRegistry.register("cortex", "region")
     class LayeredCortex(NeuralComponent):
         ...
-    
+
     @ComponentRegistry.register("spiking_stdp", "pathway")
     class SpikingPathway(NeuralComponent):
         ...
-    
+
     # Create components dynamically
     cortex = ComponentRegistry.create("region", "cortex", config)
     pathway = ComponentRegistry.create("pathway", "spiking_stdp", config)
-    
+
     # Discover components
     regions = ComponentRegistry.list_components("region")
     pathways = ComponentRegistry.list_components("pathway")
@@ -64,41 +64,41 @@ from thalia.core.component_protocol import BrainComponent
 
 class ComponentRegistry:
     """Unified registry for all brain components (regions, pathways, modules).
-    
+
     Maintains separate namespaces for different component types while
     providing a unified interface for registration and creation.
-    
+
     Registry Structure:
         _registry = {
             "region": {"cortex": LayeredCortex, "hippocampus": Trisynaptic},
             "pathway": {"spiking_stdp": SpikingPathway, "attention": Attention},
             "module": {"oscillator": ThetaOscillator}
         }
-    
+
     Attributes:
         _registry: Nested dict of component_type -> name -> class
         _aliases: Nested dict of component_type -> alias -> canonical_name
         _metadata: Component metadata (description, version, author, etc.)
     """
-    
+
     _registry: Dict[str, Dict[str, Type[BrainComponent]]] = {
         "region": {},
         "pathway": {},
         "module": {},
     }
-    
+
     _aliases: Dict[str, Dict[str, str]] = {
         "region": {},
         "pathway": {},
         "module": {},
     }
-    
+
     _metadata: Dict[str, Dict[str, Dict[str, Any]]] = {
         "region": {},
         "pathway": {},
         "module": {},
     }
-    
+
     @classmethod
     def register(
         cls,
@@ -111,7 +111,7 @@ class ComponentRegistry:
         author: str = "",
     ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
         """Decorator to register a brain component.
-        
+
         Args:
             name: Primary name for the component
             component_type: Type of component ("region", "pathway", "module")
@@ -119,19 +119,19 @@ class ComponentRegistry:
             description: Human-readable description
             version: Component version string
             author: Component author/maintainer
-        
+
         Returns:
             Decorator function
-        
+
         Raises:
             ValueError: If component_type invalid or name already registered
-        
+
         Example:
             @ComponentRegistry.register("cortex", "region", aliases=["layered_cortex"])
             class LayeredCortex(NeuralComponent):
                 '''Multi-layer cortical microcircuit.'''
                 ...
-            
+
             @ComponentRegistry.register("spiking_stdp", "pathway")
             class SpikingPathway(NeuralComponent):
                 '''STDP-learning spiking pathway.'''
@@ -143,14 +143,14 @@ class ComponentRegistry:
                 f"Invalid component_type '{component_type}'. "
                 f"Must be one of: {list(cls._registry.keys())}"
             )
-        
+
         def decorator(component_class: Type[BrainComponent]) -> Type[BrainComponent]:
             # Validate component class
             if not inspect.isclass(component_class):
                 raise ValueError(
                     f"Component must be a class, got {component_class}"
                 )
-            
+
             # Check if already registered
             type_registry = cls._registry[component_type]
             if name in type_registry:
@@ -161,10 +161,10 @@ class ComponentRegistry:
                         f"registered to {existing.__name__}"
                     )
                 return component_class  # Same class, already registered
-            
+
             # Register primary name
             type_registry[name] = component_class
-            
+
             # Register aliases
             if aliases:
                 alias_registry = cls._aliases[component_type]
@@ -174,7 +174,7 @@ class ComponentRegistry:
                             f"Alias '{alias}' already registered for {component_type}"
                         )
                     alias_registry[alias] = name
-            
+
             # Store metadata
             cls._metadata[component_type][name] = {
                 "description": description or component_class.__doc__ or "",
@@ -183,11 +183,11 @@ class ComponentRegistry:
                 "class": component_class.__name__,
                 "module": component_class.__module__,
             }
-            
+
             return component_class
-        
+
         return decorator
-    
+
     @classmethod
     def get(
         cls,
@@ -195,30 +195,30 @@ class ComponentRegistry:
         name: str,
     ) -> Optional[Type[BrainComponent]]:
         """Get component class by type and name.
-        
+
         Args:
             component_type: Type of component ("region", "pathway", "module")
             name: Component name or alias
-        
+
         Returns:
             Component class if found, None otherwise
-        
+
         Example:
             cortex_class = ComponentRegistry.get("region", "cortex")
             pathway_class = ComponentRegistry.get("pathway", "spiking_stdp")
         """
         if component_type not in cls._registry:
             return None
-        
+
         type_registry = cls._registry[component_type]
-        
+
         # Check if it's an alias
         alias_registry = cls._aliases[component_type]
         if name in alias_registry:
             name = alias_registry[name]
-        
+
         return type_registry.get(name)
-    
+
     @classmethod
     def create(
         cls,
@@ -228,40 +228,40 @@ class ComponentRegistry:
         **kwargs: Any,
     ) -> BrainComponent:
         """Create a component instance.
-        
+
         Args:
             component_type: Type of component ("region", "pathway", "module")
             name: Component name or alias
             config: Configuration for the component
             **kwargs: Additional arguments passed to constructor
-        
+
         Returns:
             Instantiated component
-        
+
         Raises:
             ValueError: If component not registered
             TypeError: If config type doesn't match component requirements
-        
+
         Example:
             cortex = ComponentRegistry.create(
                 "region", "cortex",
                 LayeredCortexConfig(n_input=256, n_output=128)
             )
-            
+
             pathway = ComponentRegistry.create(
                 "pathway", "spiking_stdp",
-                SpikingPathwayConfig(source_size=256, target_size=128)
+                PathwayConfig(n_input=256, n_output=128)
             )
         """
         component_class = cls.get(component_type, name)
-        
+
         if component_class is None:
             available = cls.list_components(component_type)
             raise ValueError(
                 f"{component_type.capitalize()} '{name}' not registered. "
                 f"Available {component_type}s: {available}"
             )
-        
+
         # Create instance
         try:
             return component_class(config, **kwargs)
@@ -270,7 +270,7 @@ class ComponentRegistry:
                 f"Failed to create {component_type} '{name}': {e}\n"
                 f"Expected config type for {component_class.__name__}"
             ) from e
-    
+
     @classmethod
     def is_registered(
         cls,
@@ -278,50 +278,50 @@ class ComponentRegistry:
         name: str,
     ) -> bool:
         """Check if a component is registered.
-        
+
         Args:
             component_type: Type of component
             name: Component name or alias
-        
+
         Returns:
             True if registered, False otherwise
-        
+
         Example:
             if ComponentRegistry.is_registered("region", "cortex"):
                 cortex = ComponentRegistry.create("region", "cortex", config)
         """
         if component_type not in cls._registry:
             return False
-        
+
         type_registry = cls._registry[component_type]
         alias_registry = cls._aliases[component_type]
-        
+
         return name in type_registry or name in alias_registry
-    
+
     @classmethod
     def list_components(
         cls,
         component_type: Optional[str] = None,
     ) -> List[str] | Dict[str, List[str]]:
         """List all registered components.
-        
+
         Args:
             component_type: If specified, list only this type.
                           If None, return dict of all types.
-        
+
         Returns:
             If component_type specified: Sorted list of component names
             If component_type is None: Dict mapping type -> list of names
-        
+
         Example:
             # List all regions
             regions = ComponentRegistry.list_components("region")
             # ['cerebellum', 'cortex', 'hippocampus', 'striatum']
-            
+
             # List all pathways
             pathways = ComponentRegistry.list_components("pathway")
             # ['attention', 'replay', 'spiking_stdp']
-            
+
             # List all components by type
             all_components = ComponentRegistry.list_components()
             # {'region': [...], 'pathway': [...], 'module': [...]}
@@ -330,36 +330,36 @@ class ComponentRegistry:
             if component_type not in cls._registry:
                 return []
             return sorted(cls._registry[component_type].keys())
-        
+
         # Return all types
         return {
             ctype: sorted(registry.keys())
             for ctype, registry in cls._registry.items()
             if registry  # Only include non-empty types
         }
-    
+
     @classmethod
     def list_aliases(
         cls,
         component_type: str,
     ) -> Dict[str, str]:
         """Get mapping of aliases to canonical names.
-        
+
         Args:
             component_type: Type of component
-        
+
         Returns:
             Dict mapping alias -> canonical_name
-        
+
         Example:
             aliases = ComponentRegistry.list_aliases("region")
             # {"layered_cortex": "cortex", "tri_circuit": "hippocampus"}
         """
         if component_type not in cls._aliases:
             return {}
-        
+
         return cls._aliases[component_type].copy()
-    
+
     @classmethod
     def get_component_info(
         cls,
@@ -367,15 +367,15 @@ class ComponentRegistry:
         name: str,
     ) -> Optional[Dict[str, Any]]:
         """Get metadata for a registered component.
-        
+
         Args:
             component_type: Type of component
             name: Component name or alias
-        
+
         Returns:
             Dict with description, version, author, class, module
             None if not registered
-        
+
         Example:
             info = ComponentRegistry.get_component_info("region", "cortex")
             print(f"{info['description']} (v{info['version']})")
@@ -385,12 +385,12 @@ class ComponentRegistry:
             alias_registry = cls._aliases[component_type]
             if name in alias_registry:
                 name = alias_registry[name]
-        
+
         if component_type not in cls._metadata:
             return None
-        
+
         return cls._metadata[component_type].get(name)
-    
+
     @classmethod
     def validate_component(
         cls,
@@ -399,16 +399,16 @@ class ComponentRegistry:
         config: Any,
     ) -> Tuple[bool, Optional[str]]:
         """Validate that a component can be created with given config.
-        
+
         Args:
             component_type: Type of component
             name: Component name
             config: Configuration to validate
-        
+
         Returns:
             Tuple of (is_valid, error_message)
             error_message is None if valid
-        
+
         Example:
             valid, error = ComponentRegistry.validate_component(
                 "region", "cortex", config
@@ -417,40 +417,40 @@ class ComponentRegistry:
                 print(f"Invalid config: {error}")
         """
         component_class = cls.get(component_type, name)
-        
+
         if component_class is None:
             return False, f"{component_type} '{name}' not registered"
-        
+
         # Try to instantiate (dry run)
         try:
             # Check if __init__ signature accepts config
             sig = inspect.signature(component_class.__init__)
             params = list(sig.parameters.keys())
-            
+
             if 'config' not in params and len(params) < 2:
                 return False, f"{component_class.__name__} doesn't accept config"
-            
+
             # Validation passed
             return True, None
-            
+
         except Exception as e:
             return False, str(e)
-    
+
     @classmethod
     def clear(
         cls,
         component_type: Optional[str] = None,
     ) -> None:
         """Clear the registry (mainly for testing).
-        
+
         Args:
             component_type: If specified, clear only this type.
                           If None, clear all types.
-        
+
         Example:
             # Clear all regions
             ComponentRegistry.clear("region")
-            
+
             # Clear everything
             ComponentRegistry.clear()
         """
@@ -476,20 +476,20 @@ def register_region(
     author: str = "",
 ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
     """Shorthand for @ComponentRegistry.register(name, "region").
-    
+
     This provides backward compatibility with existing @register_region decorator
     while migrating to the unified registry.
-    
+
     Args:
         name: Region name
         aliases: Optional list of alternative names
         description: Human-readable description
         version: Component version
         author: Component author
-    
+
     Returns:
         Decorator function
-    
+
     Example:
         @register_region("cortex", aliases=["layered_cortex"])
         class LayeredCortex(NeuralComponent):
@@ -513,17 +513,17 @@ def register_pathway(
     author: str = "",
 ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
     """Shorthand for @ComponentRegistry.register(name, "pathway").
-    
+
     Args:
         name: Pathway name
         aliases: Optional list of alternative names
         description: Human-readable description
         version: Component version
         author: Component author
-    
+
     Returns:
         Decorator function
-    
+
     Example:
         @register_pathway("spiking_stdp", aliases=["stdp_pathway"])
         class SpikingPathway(NeuralComponent):
@@ -547,17 +547,17 @@ def register_module(
     author: str = "",
 ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
     """Shorthand for @ComponentRegistry.register(name, "module").
-    
+
     Args:
         name: Module name
         aliases: Optional list of alternative names
         description: Human-readable description
         version: Component version
         author: Component author
-    
+
     Returns:
         Decorator function
-    
+
     Example:
         @register_module("theta_oscillator")
         class ThetaOscillator(BrainComponent):

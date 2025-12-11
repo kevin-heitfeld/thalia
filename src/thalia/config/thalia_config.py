@@ -23,6 +23,7 @@ from .global_config import GlobalConfig
 from .brain_config import BrainConfig, RegionSizes
 from .language_config import LanguageConfig
 from .robustness_config import RobustnessConfig
+from .training_config import TrainingConfig
 
 
 def print_config(
@@ -214,6 +215,7 @@ class ThaliaConfig:
     # Module-specific configurations
     brain: BrainConfig = field(default_factory=BrainConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
     robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
 
     def __post_init__(self):
@@ -255,6 +257,250 @@ class ThaliaConfig:
                 f"Encoding timesteps ({self.brain.encoding_timesteps}) > 2 theta periods "
                 f"({theta_period_timesteps:.1f}) - may have phase ambiguity"
             )
+
+        # Run specialized validation helpers
+        issues.extend(self.validate_striatum_pfc_sizes())
+        issues.extend(self.validate_timing())
+        issues.extend(self.validate_sparsity())
+        issues.extend(self.validate_neuromodulation())
+        issues.extend(self.validate_training_params())
+
+        return issues
+
+    def validate_striatum_pfc_sizes(self) -> List[str]:
+        """Validate that striatum-PFC sizes match when goal conditioning is enabled.
+
+        When use_goal_conditioning=True, the striatum creates PFC modulation weights.
+        The PFC size must match the configured striatum_pfc_size.
+
+        Returns:
+            List of error messages (empty if valid)
+        """
+        issues: List[str] = []
+
+        if self.brain.use_goal_conditioning:
+            striatum_pfc_size = self.brain.striatum_pfc_size
+            actual_pfc_size = self.brain.sizes.pfc_size
+
+            if striatum_pfc_size != actual_pfc_size:
+                issues.append(
+                    f"Goal conditioning enabled but size mismatch: "
+                    f"striatum_pfc_size={striatum_pfc_size} != pfc_size={actual_pfc_size}. "
+                    f"These must match for PFC -> Striatum modulation."
+                )
+
+        return issues
+
+    def validate_timing(self) -> List[str]:
+        """Validate timing parameters for biological plausibility.
+
+        Checks:
+        - dt_ms is reasonable (0.1-10 ms)
+        - theta frequency is in biological range (4-12 Hz)
+        - encoding/delay/test timesteps are positive
+        - encoding timesteps allow at least one theta cycle
+
+        Returns:
+            List of warning/error messages (empty if valid)
+        """
+        issues: List[str] = []
+
+        # dt_ms should be reasonable
+        if self.global_.dt_ms < 0.1:
+            issues.append(
+                f"dt_ms={self.global_.dt_ms} is very small - may be computationally expensive"
+            )
+        elif self.global_.dt_ms > 10.0:
+            issues.append(
+                f"dt_ms={self.global_.dt_ms} is large - may miss important dynamics"
+            )
+
+        # Theta frequency should be biological (4-12 Hz)
+        if not (4.0 <= self.global_.theta_frequency_hz <= 12.0):
+            issues.append(
+                f"theta_frequency_hz={self.global_.theta_frequency_hz} is outside biological range (4-12 Hz)"
+            )
+
+        # Timesteps should be positive
+        if self.brain.encoding_timesteps <= 0:
+            issues.append(f"encoding_timesteps={self.brain.encoding_timesteps} must be positive")
+        if self.brain.delay_timesteps < 0:
+            issues.append(f"delay_timesteps={self.brain.delay_timesteps} must be non-negative")
+        if self.brain.test_timesteps <= 0:
+            issues.append(f"test_timesteps={self.brain.test_timesteps} must be positive")
+
+        # Encoding should allow at least one theta cycle
+        theta_period_ms = 1000.0 / self.global_.theta_frequency_hz
+        encoding_duration_ms = self.brain.encoding_timesteps * self.global_.dt_ms
+        if encoding_duration_ms < theta_period_ms:
+            issues.append(
+                f"Encoding duration ({encoding_duration_ms:.1f} ms) < one theta cycle ({theta_period_ms:.1f} ms). "
+                f"Phase coding may not work properly."
+            )
+
+        return issues
+
+    def validate_sparsity(self) -> List[str]:
+        """Validate sparsity parameters across regions.
+
+        Checks:
+        - Default sparsity is in reasonable range (0.01-0.3)
+        - Region-specific sparsities are reasonable
+        - Active neurons > 1 for each region
+
+        Returns:
+            List of warning messages (empty if valid)
+        """
+        issues: List[str] = []
+
+        # Default sparsity check
+        if self.global_.default_sparsity < 0.01:
+            issues.append(
+                f"default_sparsity={self.global_.default_sparsity} is very sparse - may lose information"
+            )
+        elif self.global_.default_sparsity > 0.3:
+            issues.append(
+                f"default_sparsity={self.global_.default_sparsity} is high - sparse coding benefits reduced"
+            )
+
+        # Check active neurons for each region
+        regions = [
+            ("cortex", self.brain.sizes.cortex_size, getattr(self.brain.cortex, 'l4_sparsity', self.global_.default_sparsity)),
+            ("hippocampus", self.brain.sizes.hippocampus_size, getattr(self.brain.hippocampus, 'ca1_sparsity', self.global_.default_sparsity)),
+            ("pfc", self.brain.sizes.pfc_size, getattr(self.brain.pfc, 'sparsity', self.global_.default_sparsity)),
+        ]
+
+        for name, size, sparsity in regions:
+            active = size * sparsity
+            if active < 1:
+                issues.append(
+                    f"{name}: size={size}, sparsity={sparsity:.3f} -> {active:.1f} active neurons. "
+                    f"Need at least 1 active neuron."
+                )
+            elif active < 3:
+                issues.append(
+                    f"{name}: only {active:.1f} active neurons - may be too few for robust coding"
+                )
+
+        return issues
+
+    def validate_neuromodulation(self) -> List[str]:
+        """Validate neuromodulation parameters.
+
+        Checks:
+        - Dopamine baseline is in reasonable range (-1.0 to 1.0)
+        - Dopamine learning threshold is positive and small
+        - Norepinephrine baseline is in valid range (0.0 to 1.0)
+        - Acetylcholine levels are in valid range (0.0 to 1.0)
+
+        Returns:
+            List of warning/error messages (empty if valid)
+        """
+        issues: List[str] = []
+        nm = self.brain.neuromodulation
+
+        # Dopamine baseline
+        if not (-1.0 <= nm.dopamine_baseline <= 1.0):
+            issues.append(
+                f"dopamine_baseline={nm.dopamine_baseline} outside reasonable range (-1.0 to 1.0)"
+            )
+
+        # Dopamine learning threshold
+        if nm.dopamine_learning_threshold <= 0:
+            issues.append(
+                f"dopamine_learning_threshold={nm.dopamine_learning_threshold} must be positive"
+            )
+        elif nm.dopamine_learning_threshold > 0.5:
+            issues.append(
+                f"dopamine_learning_threshold={nm.dopamine_learning_threshold} is large - may miss learning signals"
+            )
+
+        # Norepinephrine (if enabled)
+        if nm.use_norepinephrine:
+            if not (0.0 <= nm.norepinephrine_baseline <= 1.0):
+                issues.append(
+                    f"norepinephrine_baseline={nm.norepinephrine_baseline} outside valid range (0.0 to 1.0)"
+                )
+            if nm.norepinephrine_gain_scale < 1.0:
+                issues.append(
+                    f"norepinephrine_gain_scale={nm.norepinephrine_gain_scale} < 1.0 will reduce gain (unusual)"
+                )
+
+        # Acetylcholine (if enabled)
+        if nm.use_acetylcholine:
+            if not (0.0 <= nm.acetylcholine_encoding_level <= 1.0):
+                issues.append(
+                    f"acetylcholine_encoding_level={nm.acetylcholine_encoding_level} outside valid range (0.0 to 1.0)"
+                )
+            if not (0.0 <= nm.acetylcholine_retrieval_level <= 1.0):
+                issues.append(
+                    f"acetylcholine_retrieval_level={nm.acetylcholine_retrieval_level} outside valid range (0.0 to 1.0)"
+                )
+            # Encoding should be higher than retrieval
+            if nm.acetylcholine_encoding_level <= nm.acetylcholine_retrieval_level:
+                issues.append(
+                    f"acetylcholine_encoding_level ({nm.acetylcholine_encoding_level}) should be > "
+                    f"retrieval_level ({nm.acetylcholine_retrieval_level}) for proper encoding/retrieval distinction"
+                )
+
+        return issues
+
+    def validate_training_params(self) -> List[str]:
+        """Validate training parameters.
+
+        Checks:
+        - n_epochs is positive
+        - batch_size is positive
+        - learning_rate_scale is positive
+        - checkpoint_every_n_epochs is reasonable
+        - curriculum difficulty range is valid
+
+        Returns:
+            List of warning/error messages (empty if valid)
+        """
+        issues: List[str] = []
+        tr = self.training
+
+        # n_epochs
+        if tr.n_epochs <= 0:
+            issues.append(f"n_epochs={tr.n_epochs} must be positive")
+        elif tr.n_epochs > 10000:
+            issues.append(f"n_epochs={tr.n_epochs} is very large - may take long time")
+
+        # batch_size
+        if tr.batch_size <= 0:
+            issues.append(f"batch_size={tr.batch_size} must be positive")
+
+        # learning_rate_scale
+        if tr.learning_rate_scale <= 0:
+            issues.append(f"learning_rate_scale={tr.learning_rate_scale} must be positive")
+        elif tr.learning_rate_scale > 10.0:
+            issues.append(
+                f"learning_rate_scale={tr.learning_rate_scale} is very large - may cause instability"
+            )
+
+        # checkpoint_every_n_epochs
+        if tr.checkpoint_every_n_epochs > 0 and tr.checkpoint_every_n_epochs > tr.n_epochs:
+            issues.append(
+                f"checkpoint_every_n_epochs ({tr.checkpoint_every_n_epochs}) > n_epochs ({tr.n_epochs}) - "
+                f"no checkpoints will be saved"
+            )
+
+        # Curriculum (if enabled)
+        if tr.use_curriculum:
+            if not (0.0 <= tr.curriculum_start_difficulty <= 1.0):
+                issues.append(
+                    f"curriculum_start_difficulty={tr.curriculum_start_difficulty} outside valid range (0.0 to 1.0)"
+                )
+            if not (0.0 <= tr.curriculum_end_difficulty <= 1.0):
+                issues.append(
+                    f"curriculum_end_difficulty={tr.curriculum_end_difficulty} outside valid range (0.0 to 1.0)"
+                )
+            if tr.curriculum_start_difficulty >= tr.curriculum_end_difficulty:
+                issues.append(
+                    f"curriculum_start_difficulty ({tr.curriculum_start_difficulty}) should be < "
+                    f"end_difficulty ({tr.curriculum_end_difficulty}) for progressive learning"
+                )
 
         return issues
 

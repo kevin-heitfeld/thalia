@@ -11,7 +11,7 @@ they are plastic and learn according to spike-timing dependent rules.
 Example usage:
     from thalia.core.brain import EventDrivenBrain
     from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
-    
+
     config = ThaliaConfig(
         global_=GlobalConfig(device="cpu"),
         brain=BrainConfig(
@@ -24,28 +24,27 @@ Example usage:
             ),
         ),
     )
-    
+
     brain = EventDrivenBrain.from_thalia_config(config)
-    
+
     # Process input (encoding, maintenance, or retrieval)
     result = brain.forward(sample_pattern, n_timesteps=15)
     result = brain.forward(None, n_timesteps=10)  # Maintenance period
     result = brain.forward(test_pattern, n_timesteps=15)
-    
+
     # Action selection and learning
     action, confidence = brain.select_action()
     brain.deliver_reward(external_reward=1.0)  # Combines with intrinsic rewards
-    
+
     # Sleep consolidation
     brain.consolidate(n_cycles=5)
 """
 
-from .spiking_pathway import SpikingPathway, SpikingPathwayConfig
+from .spiking_pathway import SpikingPathway
 
 # Note: EventDrivenBrain should be imported from thalia.core.brain directly
 # to avoid circular imports
 
 __all__ = [
     "SpikingPathway",
-    "SpikingPathwayConfig",
 ]

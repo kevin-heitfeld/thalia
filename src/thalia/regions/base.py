@@ -7,7 +7,7 @@ ensuring consistent API while allowing specialized learning rules.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, Dict, Any, List
@@ -15,11 +15,11 @@ from typing import Optional, Dict, Any, List
 import torch
 import torch.nn as nn
 
-from thalia.config.base import RegionConfigBase
+from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_protocol import BrainComponentBase, BrainComponentMixin
 from thalia.core.neuromodulator_mixin import NeuromodulatorMixin
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
-from thalia.core.learning_constants import LEARNING_RATE_DEFAULT
 from thalia.core.homeostasis_constants import (
     TARGET_FIRING_RATE_STANDARD,
     HOMEOSTATIC_TAU_STANDARD,
@@ -54,21 +54,20 @@ class LearningRule(Enum):
 
 
 @dataclass
-class RegionConfig(RegionConfigBase):
+class RegionConfig(NeuralComponentConfig):
     """Configuration for a brain region.
 
-    Inherits n_input, n_output, n_neurons, dt, device, dtype, seed from RegionConfigBase.
+    Inherits common parameters from NeuralComponentConfig:
+    - Dimensionality: n_input, n_output, n_neurons
+    - Learning: learn, learning_rate
+    - Weight bounds: w_min, w_max
+    - Temporal: dt_ms, axonal_delay_ms
+    - Device: device, dtype, seed
 
-    This contains all the parameters needed to instantiate a region,
-    with biologically-plausible defaults.
+    This config adds region-specific parameters on top of the common base.
     """
     # Neuron model
     neuron_type: str = "lif"  # "lif", "conductance", "dendritic"
-
-    # Learning parameters
-    learning_rate: float = LEARNING_RATE_DEFAULT
-    w_max: float = 1.0
-    w_min: float = 0.0
 
     # Homeostasis
     target_firing_rate_hz: float = TARGET_FIRING_RATE_STANDARD
@@ -108,7 +107,7 @@ class RegionState:
     t: int = 0
 
 
-class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, DiagnosticsMixin, ABC):
+class NeuralComponent(BrainComponentBase, nn.Module, BrainComponentMixin, NeuromodulatorMixin, LearningStrategyMixin, DiagnosticsMixin):
     """Abstract base class for ALL neural components (regions, pathways, populations).
 
     This unified base class reflects a key biological insight:
@@ -122,7 +121,7 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
 
     The distinction is semantic/organizational, not architectural:
     - "Regions": Named functional populations (Cortex, Hippocampus, Striatum)
-    - "Pathways": Connection populations between regions (Cortex→Hippocampus)
+    - "Pathways": Connection populations between regions (Cortex->Hippocampus)
     - "Components": Generic term for any neural population
 
     DESIGN PHILOSOPHY
@@ -135,15 +134,27 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
     - SpikingComponent(NeuralComponent) - inter-region connections
     - All inherit from same base, use same interfaces
 
-    COMPONENT PROTOCOL
-    ==================
-    NeuralComponent implements the BrainComponent protocol, defining the
-    unified interface for all neural populations.
+    COMPONENT PROTOCOL ENFORCEMENT
+    ==============================
+    NeuralComponent now inherits from BrainComponentBase which enforces the
+    complete BrainComponent protocol interface. This ensures:
+    - All required methods are implemented (compile-time checking)
+    - Component parity between regions and pathways
+    - Consistent API across all neural components
+
+    Inheritance order matters:
+    1. BrainComponentBase - Enforces abstract interface
+    2. nn.Module - Provides PyTorch functionality
+    3. BrainComponentMixin - Provides default implementations
+    4. NeuromodulatorMixin - Provides neuromodulation
+    5. LearningStrategyMixin - Provides learning strategies
+    6. DiagnosticsMixin - Provides diagnostics helpers
 
     All components use forward() for processing (standard PyTorch, ADR-007).
 
     See: src/thalia/core/component_protocol.py
          docs/patterns/component-parity.md
+         docs/patterns/component-interface-enforcement.md
          docs/decisions/adr-007-pytorch-consistency.md
 
     CONTINUOUS PLASTICITY
@@ -476,6 +487,26 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
     def n_output(self) -> int:
         return self.config.n_output
 
+    @property
+    def device(self) -> torch.device:
+        """Device where tensors are stored (CPU or CUDA)."""
+        return self._device if hasattr(self, '_device') else torch.device('cpu')
+
+    @device.setter
+    def device(self, value: torch.device) -> None:
+        """Set device (allows assignment from __init__)."""
+        self._device = value
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Data type for floating point tensors."""
+        return self._dtype if hasattr(self, '_dtype') else torch.float32
+
+    @dtype.setter
+    def dtype(self, value: torch.dtype) -> None:
+        """Set dtype (allows assignment from __init__)."""
+        self._dtype = value
+
     def add_neurons(
         self,
         n_new: int,
@@ -562,7 +593,9 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
         Returns:
             HealthReport with detected issues
         """
-        from thalia.diagnostics.health_monitor import HealthReport, IssueReport, IssueSeverity
+        from thalia.diagnostics.health_monitor import (
+            HealthReport, IssueReport, HealthIssue, IssueSeverity
+        )
 
         issues = []
 
@@ -572,17 +605,17 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
 
             if firing_rate < 0.01:  # Less than 1%
                 issues.append(IssueReport(
-                    severity=IssueSeverity.HIGH,
-                    issue_type='silence',
-                    message=f'Firing rate too low: {firing_rate:.1%}',
-                    suggested_fix='Check input strength, reduce thresholds, or increase excitation'
+                    issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                    severity=IssueSeverity.HIGH.value,
+                    description=f'Firing rate too low: {firing_rate:.1%}',
+                    recommendation='Check input strength, reduce thresholds, or increase excitation'
                 ))
             elif firing_rate > 0.90:  # More than 90%
                 issues.append(IssueReport(
-                    severity=IssueSeverity.HIGH,
-                    issue_type='runaway',
-                    message=f'Firing rate too high: {firing_rate:.1%}',
-                    suggested_fix='Increase inhibition, increase thresholds, or reduce input strength'
+                    issue_type=HealthIssue.SEIZURE_RISK,
+                    severity=IssueSeverity.HIGH.value,
+                    description=f'Firing rate too high: {firing_rate:.1%}',
+                    recommendation='Increase inhibition, increase thresholds, or reduce input strength'
                 ))
 
         # Check weight saturation
@@ -591,12 +624,19 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
             near_max = (w > self.config.w_max * 0.95).float().mean().item()
             near_min = (w < self.config.w_min + 0.05).float().mean().item()
 
-            if near_max > 0.5 or near_min > 0.5:
+            if near_max > 0.5:
                 issues.append(IssueReport(
-                    severity=IssueSeverity.MEDIUM,
-                    issue_type='weight_saturation',
-                    message=f'Weight saturation: {near_max:.1%} near max, {near_min:.1%} near min',
-                    suggested_fix='Consider synaptic scaling or weight normalization'
+                    issue_type=HealthIssue.WEIGHT_EXPLOSION,
+                    severity=IssueSeverity.MEDIUM.value,
+                    description=f'Weight saturation at maximum: {near_max:.1%} near max',
+                    recommendation='Consider synaptic scaling or weight normalization'
+                ))
+            elif near_min > 0.5:
+                issues.append(IssueReport(
+                    issue_type=HealthIssue.WEIGHT_COLLAPSE,
+                    severity=IssueSeverity.MEDIUM.value,
+                    description=f'Weight saturation at minimum: {near_min:.1%} near min',
+                    recommendation='Consider increasing learning rate or input strength'
                 ))
 
         # Create report
@@ -905,41 +945,3 @@ class NeuralComponent(nn.Module, NeuromodulatorMixin, LearningStrategyMixin, Dia
             >>> # Region continues from exact state where checkpoint was saved
         """
         pass
-
-
-class NeuromodulatorSystem(ABC):
-    """Base class for neuromodulatory systems.
-
-    Different brain regions are modulated by different neuromodulators:
-    - Dopamine: Reward prediction error (striatum, PFC)
-    - Acetylcholine: Attention, novelty (cortex, hippocampus)
-    - Norepinephrine: Arousal, flexibility (widespread)
-    - Serotonin: Mood, patience (widespread)
-
-    Each neuromodulator affects learning and processing differently.
-    """
-
-    def __init__(self, tau_ms: float = 50.0, device: str = "cpu"):
-        self.tau_ms = tau_ms
-        self.device = torch.device(device)
-        self.level = 0.0
-        self.baseline = 0.0
-
-    @abstractmethod
-    def compute(self, **kwargs) -> float:
-        """Compute the neuromodulator level based on current state.
-
-        Returns:
-            Current neuromodulator level (can be positive or negative
-            relative to baseline, depending on the system).
-        """
-        pass
-
-    def decay(self, dt_ms: float) -> None:
-        """Decay neuromodulator level toward baseline."""
-        decay_factor = 1.0 - dt_ms / self.tau_ms
-        self.level = self.baseline + (self.level - self.baseline) * decay_factor
-
-    def reset_state(self) -> None:
-        """Reset to baseline level."""
-        self.level = self.baseline

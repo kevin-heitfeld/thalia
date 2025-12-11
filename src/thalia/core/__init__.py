@@ -45,6 +45,11 @@ from thalia.core.component_registry import (
     register_pathway,
     register_module,
 )
+from thalia.core.component_protocol import (
+    BrainComponent,
+    BrainComponentBase,
+    BrainComponentMixin,
+)
 from thalia.core.mixins import (
     DeviceMixin,
     ResettableMixin,
@@ -188,6 +193,10 @@ __all__ = [
     "register_region",
     "register_pathway",
     "register_module",
+    # Component Protocol
+    "BrainComponent",
+    "BrainComponentBase",
+    "BrainComponentMixin",
     # Diagnostics
     "DiagnosticLevel",
     "DiagnosticsConfig",
