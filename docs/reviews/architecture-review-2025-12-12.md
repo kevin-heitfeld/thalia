@@ -222,18 +222,17 @@ src/thalia/regions/hippocampus/memory_component.py:22
 ## Tier 2 – Moderate Refactoring (Strategic Improvements) ⏳ IN PROGRESS
 
 Progress Summary:
+- ✅ T2.1 COMPLETED: Removed redundant eligibility traces from Striatum (dead code elimination)
 - ✅ T2.3 COMPLETED: Diagnostic patterns extracted (SpikingPathway, CrossModalGammaBinding)
-- ⏭️ T2.1 DEFERRED: Striatum eligibility already uses manager (breaking change to remove redundant traces)
 - 🔄 T2.2, T2.4, T2.5: Ready for implementation (require multi-file coordination)
 
 ---
 
-### T2.1 – Consolidate Eligibility Trace Management ⏭️ DEFERRED
+### T2.1 – Consolidate Eligibility Trace Management ✅ COMPLETED
 
-**Analysis Update:**
-Investigation reveals Striatum D1/D2 pathways ALREADY use `EligibilityTraceManager` (since pathway_base.py refactor).
-The redundant `EligibilityTraces` in striatum.py line 168 is **dead code** - it updates every timestep but is never
-read for learning. Only D1/D2 pathway traces matter.
+**Completed State:**
+Removed redundant `self.eligibility` (EligibilityTraces) from Striatum main class. D1/D2 pathways correctly
+use EligibilityTraceManager - this was the only correct implementation. The central eligibility was dead code.
 
 **Current State:**
 Eligibility traces implemented inconsistently across regions:
@@ -253,10 +252,10 @@ Recommend deferring to next major version (0.3.0).
 - Low priority: not causing bugs, just memory overhead
 
 **Impact:**
-- **Files affected**: 1 file (Striatum), checkpoint migration script needed
-- **Breaking changes**: HIGH – checkpoint format changes
-- **Benefits**: -150 lines, -redundant computation, +clarity
-- **Recommendation**: DEFER to v0.3.0
+- **Files affected**: 4 files (striatum.py, learning_component.py, __init__.py, eligibility.py deleted)
+- **Breaking changes**: None - no existing checkpoints to migrate
+- **Benefits**: -~100 lines (including file deletion), eliminated dead computation, +clarity
+- **Status**: ✅ COMPLETED
 
 ---
 
