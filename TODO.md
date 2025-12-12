@@ -2,7 +2,8 @@
 
 ## Architecture & Infrastructure
 
-- Remove `RegionConfig`
+- `PredictiveCortex` not registered with `@register_region`
+- **Nothing** registered with `@register_module`
 - See `PathwayConfig.bidirectional`, should those be split into two pathways (with own weight matrices)?
 - Review public brain API (`new_trial()`, etc. necessary?)
 - Add learning mechanisms to `CrossModalGammaBinding`

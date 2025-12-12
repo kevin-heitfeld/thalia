@@ -20,9 +20,17 @@ from enum import Enum
 import numpy as np
 import torch
 
-from thalia.core.neuron_constants import (
+from thalia.tasks.task_constants import (
     STIMULUS_STRENGTH_HIGH,
     WEIGHT_INIT_SCALE_SMALL,
+    FEATURE_INCREMENT_BASE,
+    FEATURE_INCREMENT_COLUMN,
+    FEATURE_INCREMENT_INTERACTION,
+    FEATURE_NOISE_MATCH,
+)
+from thalia.tasks.stimulus_utils import (
+    create_random_stimulus,
+    create_zero_stimulus,
 )
 
 
@@ -202,14 +210,14 @@ class ExecutiveFunctionTasks:
     def _generate_target_stimulus(self, dim: int, device: torch.device) -> torch.Tensor:
         """Generate target stimulus (e.g., green circle)."""
         # Pattern: High values in first half of dimensions
-        stimulus = torch.zeros(dim, device=device)
+        stimulus = create_zero_stimulus(dim, device)
         stimulus[:dim//2] = STIMULUS_STRENGTH_HIGH + torch.randn(dim//2, device=device) * WEIGHT_INIT_SCALE_SMALL
         return torch.clamp(stimulus, 0, 1)
 
     def _generate_distractor_stimulus(self, dim: int, device: torch.device) -> torch.Tensor:
         """Generate distractor stimulus (e.g., red square)."""
         # Pattern: High values in second half of dimensions
-        stimulus = torch.zeros(dim, device=device)
+        stimulus = create_zero_stimulus(dim, device)
         stimulus[dim//2:] = STIMULUS_STRENGTH_HIGH + torch.randn(dim//2, device=device) * WEIGHT_INIT_SCALE_SMALL
         return torch.clamp(stimulus, 0, 1)
 
@@ -410,7 +418,10 @@ class ExecutiveFunctionTasks:
             shape = np.random.randint(0, config.n_features_per_dim)
 
             # Encode as tensor (one-hot for color and shape)
-            card = torch.zeros(config.n_dimensions * config.n_features_per_dim, device=device)
+            card = create_zero_stimulus(
+                config.n_dimensions * config.n_features_per_dim,
+                device=device
+            )
             card[color] = 1.0  # Color dimension
             card[config.n_features_per_dim + shape] = 1.0  # Shape dimension
 
@@ -533,7 +544,7 @@ class ExecutiveFunctionTasks:
                 is_switch = False
 
             # Generate stimulus (random pattern)
-            stimulus = torch.randn(config.stimulus_dim, device=device)
+            stimulus = create_random_stimulus(config.stimulus_dim, device)
 
             # Task-specific correct response
             # Task 0: Respond to first half of stimulus
@@ -756,7 +767,7 @@ class ExecutiveFunctionTasks:
         Returns:
             state: Encoded state [encode_dim * 3]
         """
-        state = torch.zeros(encode_dim * 3, device=torch.device(device))
+        state = create_zero_stimulus(encode_dim * 3, device=torch.device(device))
 
         for peg_id, peg_disks in enumerate(pegs):
             offset = peg_id * encode_dim
@@ -935,13 +946,13 @@ class ExecutiveFunctionTasks:
         Rule: Each row/column has a progression (e.g., increasing size, rotation).
         """
         n_cells = grid_size ** 2
-        matrix = torch.zeros(n_cells, stimulus_dim, device=device)
+        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(n_cells, stimulus_dim)
 
         # Base feature
-        base_features = torch.rand(stimulus_dim, device=device)
+        base_features = create_random_stimulus(stimulus_dim, device)
 
         # Progression increment
-        increment = torch.rand(stimulus_dim, device=device) * 0.2
+        increment = create_random_stimulus(stimulus_dim, device) * FEATURE_INCREMENT_BASE
 
         if complexity == "simple":
             # Row-wise progression
@@ -953,7 +964,7 @@ class ExecutiveFunctionTasks:
         elif complexity == "medium":
             # Both row and column progression
             row_increment = increment
-            col_increment = torch.rand(stimulus_dim, device=device) * 0.15
+            col_increment = create_random_stimulus(stimulus_dim, device) * FEATURE_INCREMENT_COLUMN
 
             for i in range(grid_size):
                 for j in range(grid_size):
@@ -967,7 +978,7 @@ class ExecutiveFunctionTasks:
                     cell_idx = i * grid_size + j
                     matrix[cell_idx] = (
                         base_features + increment * (i + j) +
-                        torch.rand(stimulus_dim, device=device) * 0.1 * i * j
+                        create_random_stimulus(stimulus_dim, device) * FEATURE_INCREMENT_INTERACTION * i * j
                     )
 
         # Clip to [0, 1]
@@ -991,10 +1002,10 @@ class ExecutiveFunctionTasks:
         Rule: Certain features remain constant across row/column.
         """
         n_cells = grid_size ** 2
-        matrix = torch.zeros(n_cells, stimulus_dim, device=device)
+        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(n_cells, stimulus_dim)
 
         # Constant features (same in all cells)
-        constant_features = torch.rand(stimulus_dim // 2, device=device)
+        constant_features = create_random_stimulus(stimulus_dim // 2, device)
 
         # Variable features (different per cell)
         for i in range(n_cells):
@@ -1018,7 +1029,7 @@ class ExecutiveFunctionTasks:
         Rule: Each row/column contains each feature value exactly once.
         """
         n_cells = grid_size ** 2
-        matrix = torch.zeros(n_cells, stimulus_dim, device=device)
+        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(n_cells, stimulus_dim)
 
         # Generate feature values for distribution
         feature_values = [
@@ -1045,7 +1056,7 @@ class ExecutiveFunctionTasks:
     ) -> torch.Tensor:
         """Generate distractor answer choice."""
         # Random perturbation of correct answer
-        noise = torch.randn_like(correct_cell) * 0.3
+        noise = torch.randn_like(correct_cell) * FEATURE_NOISE_MATCH
         distractor = correct_cell + noise
         distractor = torch.clamp(distractor, 0, 1)
 

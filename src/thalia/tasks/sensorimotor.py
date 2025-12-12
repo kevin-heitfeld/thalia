@@ -27,8 +27,13 @@ import random
 import torch
 import numpy as np
 
-from thalia.training.datasets.constants import (
+from thalia.tasks.task_constants import (
     PROPRIOCEPTION_NOISE_SCALE,
+)
+from thalia.tasks.stimulus_utils import (
+    create_zero_stimulus,
+    create_random_position,
+    add_proprioceptive_noise,
 )
 
 
@@ -183,20 +188,20 @@ class MotorControlTask:
         direction = random.choice(self.config.movement_types)
 
         # Create target encoding (one-hot)
-        target = torch.zeros(self.n_directions, device=self.device)
+        target = create_zero_stimulus(self.n_directions, self.device)
         target[direction.value] = 1.0
 
         # Create input: proprioceptive state + movement command
         # First half: current state (noisy)
-        proprioception = torch.randn(
-            self.config.input_size // 2,
-            device=self.device
-        ) * self.config.noise_level
+        proprioception = add_proprioceptive_noise(
+            torch.zeros(self.config.input_size // 2, device=self.device),
+            noise_scale=self.config.noise_level
+        )
 
         # Second half: movement command embedding
-        command_encoding = torch.zeros(
+        command_encoding = create_zero_stimulus(
             self.config.input_size // 2,
-            device=self.device
+            self.device
         )
         # Encode target direction in input
         command_start = direction.value * (len(command_encoding) // self.n_directions)
@@ -320,10 +325,10 @@ class ReachingTask:
             Dictionary with input, target, reward parameters
         """
         # Sample random target position in workspace
-        target_pos = torch.rand(2, device=self.device) * self.config.workspace_size
+        target_pos = create_random_position(self.config.workspace_size, self.device)
 
         # Sample start position (current effector position)
-        start_pos = torch.rand(2, device=self.device) * self.config.workspace_size
+        start_pos = create_random_position(self.config.workspace_size, self.device)
 
         # Create visual input: target position encoded spatially
         visual_input = self._encode_visual_target(target_pos)
@@ -365,7 +370,7 @@ class ReachingTask:
     def _encode_visual_target(self, position: torch.Tensor) -> torch.Tensor:
         """Encode target position as visual input."""
         # Simple spatial encoding: Gaussian bump at target position
-        visual_input = torch.zeros(self.config.visual_input_size, device=self.device)
+        visual_input = create_zero_stimulus(self.config.visual_input_size, self.device)
 
         # Map 2D position to 1D visual array
         pos_idx = int((position[0] / self.config.workspace_size) * len(visual_input))
@@ -482,9 +487,9 @@ class ManipulationTask:
         affordance = random.choice(self.config.object_properties)
 
         # Create visual input: object representation
-        visual_input = torch.zeros(
+        visual_input = create_zero_stimulus(
             self.config.input_size // 2,
-            device=self.device
+            self.device
         )
         # Encode object identity
         obj_start = object_idx * (len(visual_input) // self.config.n_objects)
@@ -492,9 +497,9 @@ class ManipulationTask:
         visual_input[obj_start:obj_end] = 1.0
 
         # Create action command: what to do with object
-        action_input = torch.zeros(
+        action_input = create_zero_stimulus(
             self.config.input_size // 2,
-            device=self.device
+            self.device
         )
         affordance_idx = self.config.object_properties.index(affordance)
         action_start = affordance_idx * (len(action_input) // len(self.config.object_properties))

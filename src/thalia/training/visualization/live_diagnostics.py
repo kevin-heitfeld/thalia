@@ -25,6 +25,13 @@ Date: December 10, 2025
 from typing import Dict, Any, Optional
 
 from thalia.core.spike_utils import compute_firing_rate
+from thalia.training.visualization.constants import (
+    TEXT_POSITION_CENTER,
+    ALPHA_SEMI_TRANSPARENT,
+    PERFORMANCE_EXCELLENT,
+    PERFORMANCE_GOOD,
+    PERFORMANCE_ACCEPTABLE,
+)
 from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
@@ -188,7 +195,7 @@ class LiveDiagnostics:
     def _plot_spike_raster(self, ax) -> None:
         """Plot spike raster for latest timesteps."""
         if not self.latest_spikes:
-            ax.text(0.5, 0.5, 'No spike data yet', ha='center', va='center')
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No spike data yet', ha='center', va='center')
             ax.axis('off')
             return
 
@@ -220,7 +227,7 @@ class LiveDiagnostics:
     def _plot_firing_rate_distribution(self, ax) -> None:
         """Plot firing rate distribution across regions."""
         if not self.firing_rate_history['cortex']:
-            ax.text(0.5, 0.5, 'No data yet', ha='center', va='center')
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No data yet', ha='center', va='center')
             ax.axis('off')
             return
 
@@ -259,7 +266,7 @@ class LiveDiagnostics:
     def _plot_health_metrics(self, ax) -> None:
         """Plot health metrics over time."""
         if not self.step_history:
-            ax.text(0.5, 0.5, 'No data yet', ha='center', va='center')
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No data yet', ha='center', va='center')
             ax.axis('off')
             return
 
@@ -294,7 +301,7 @@ class LiveDiagnostics:
     def _plot_performance(self, ax) -> None:
         """Plot task performance over time."""
         if not self.step_history:
-            ax.text(0.5, 0.5, 'No data yet', ha='center', va='center')
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No data yet', ha='center', va='center')
             ax.axis('off')
             return
 
@@ -309,11 +316,11 @@ class LiveDiagnostics:
                        alpha=0.8)
 
         # Add target lines
-        ax.axhline(y=0.95, color='green', linestyle='--', alpha=0.5,
+        ax.axhline(y=PERFORMANCE_EXCELLENT, color='green', linestyle='--', alpha=ALPHA_SEMI_TRANSPARENT,
                   linewidth=1, label='Motor Target (95%)')
-        ax.axhline(y=0.90, color='blue', linestyle='--', alpha=0.5,
+        ax.axhline(y=PERFORMANCE_GOOD, color='blue', linestyle='--', alpha=ALPHA_SEMI_TRANSPARENT,
                   linewidth=1, label='Reaching Target (90%)')
-        ax.axhline(y=0.85, color='orange', linestyle='--', alpha=0.5,
+        ax.axhline(y=PERFORMANCE_ACCEPTABLE, color='orange', linestyle='--', alpha=ALPHA_SEMI_TRANSPARENT,
                   linewidth=1, label='Manipulation Target (85%)')
 
         ax.set_xlabel('Step')

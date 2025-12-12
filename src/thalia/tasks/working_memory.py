@@ -49,6 +49,7 @@ import math
 import torch
 import torch.nn as nn
 
+from thalia.tasks.stimulus_utils import create_random_stimulus
 from thalia.regions.prefrontal import Prefrontal
 from thalia.training.datasets.constants import MATCH_PROBABILITY_DEFAULT
 
@@ -486,7 +487,7 @@ def create_n_back_sequence(
             is_match = True
         else:
             # Create novel item
-            stimulus = torch.randn(n_dims, device=device)
+            stimulus = create_random_stimulus(n_dims, device)
             stimulus = stimulus / (stimulus.norm() + 1e-8)  # Normalize
             is_match = (i >= n_back and (stimulus == sequence[i - n_back]).all().item())
 

@@ -23,6 +23,14 @@ import threading
 
 import matplotlib.pyplot as plt
 
+from thalia.training.visualization.constants import (
+    TEXT_POSITION_CENTER,
+    PROGRESS_BAR_HEIGHT,
+    AXIS_MARGIN_POSITIVE,
+    AXIS_MARGIN_NEGATIVE,
+    ALPHA_SEMI_TRANSPARENT,
+)
+
 
 class TrainingMonitor:
     """
@@ -149,7 +157,7 @@ class TrainingMonitor:
 
         Status: {'[COMPLETE]' if progress_pct >= 100 else '[TRAINING]'}
         """
-        ax2.text(0.1, 0.5, status_text.strip(), fontsize=11, family='monospace',
+        ax2.text(0.1, TEXT_POSITION_CENTER, status_text.strip(), fontsize=11, family='monospace',
                 verticalalignment='center', bbox=dict(boxstyle='round',
                 facecolor='wheat', alpha=0.3))
 
@@ -278,7 +286,7 @@ class TrainingMonitor:
         ax.text(0.98, 0.98, f'Total: {total:,} neurons',
                transform=ax.transAxes, fontsize=11, fontweight='bold',
                verticalalignment='top', horizontalalignment='right',
-               bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
+               bbox=dict(boxstyle='round', facecolor='yellow', alpha=ALPHA_SEMI_TRANSPARENT))
 
         plt.tight_layout()
         plt.show()
@@ -359,7 +367,7 @@ class TrainingMonitor:
         """Helper to plot progress to specific axes."""
         latest = self.data.get('latest')
         if not latest:
-            ax.text(0.5, 0.5, 'No data', ha='center', va='center')
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No data', ha='center', va='center')
             ax.axis('off')
             return
 
@@ -368,10 +376,10 @@ class TrainingMonitor:
         total_steps = metadata.get('total_steps', 0)
         progress_pct = (step / total_steps * 100) if total_steps > 0 else 0
 
-        ax.barh([0], [progress_pct], color='#4CAF50', height=0.5)
-        ax.barh([0], [100 - progress_pct], left=[progress_pct], color='#E0E0E0', height=0.5)
+        ax.barh([0], [progress_pct], color='#4CAF50', height=PROGRESS_BAR_HEIGHT)
+        ax.barh([0], [100 - progress_pct], left=[progress_pct], color='#E0E0E0', height=PROGRESS_BAR_HEIGHT)
         ax.set_xlim(0, 100)
-        ax.set_ylim(-0.5, 0.5)
+        ax.set_ylim(AXIS_MARGIN_NEGATIVE, AXIS_MARGIN_POSITIVE)
         ax.set_xlabel('Progress (%)')
         ax.set_title('Training Progress')
         ax.set_yticks([])
@@ -402,7 +410,7 @@ class TrainingMonitor:
             ax.set_title('Metrics Over Time')
             ax.grid(True, alpha=0.3)
         else:
-            ax.text(0.5, 0.5, 'No metrics', ha='center', va='center')
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No metrics', ha='center', va='center')
             ax.axis('off')
 
     def _plot_growth_to_ax(self, ax):
@@ -427,7 +435,7 @@ class TrainingMonitor:
             ax.set_title('Neurogenesis')
             ax.grid(True, alpha=0.3)
         else:
-            ax.text(0.5, 0.5, 'No growth data', ha='center', va='center')
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No growth data', ha='center', va='center')
             ax.axis('off')
 
 
