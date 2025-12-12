@@ -254,14 +254,11 @@ class EventDrivenBrain(nn.Module):
                 l4_to_l23_strength=cortex_config.l4_to_l23_strength,
                 l23_to_l5_strength=cortex_config.l23_to_l5_strength,
                 l23_top_down_strength=cortex_config.l23_top_down_strength,
-                stdp_lr=cortex_config.stdp_lr,
-                stdp_tau_plus=cortex_config.stdp_tau_plus,
-                stdp_tau_minus=cortex_config.stdp_tau_minus,
                 ffi_threshold=cortex_config.ffi_threshold,
                 ffi_strength=cortex_config.ffi_strength,
                 ffi_tau=cortex_config.ffi_tau,
                 bcm_enabled=cortex_config.bcm_enabled,
-                bcm_tau_theta=cortex_config.bcm_tau_theta,
+                bcm_config=cortex_config.bcm_config,
                 prediction_enabled=True,
             )
             _cortex_impl = PredictiveCortex(pred_config)

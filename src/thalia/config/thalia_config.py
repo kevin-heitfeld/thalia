@@ -22,7 +22,6 @@ from pathlib import Path
 from .global_config import GlobalConfig
 from .brain_config import BrainConfig, RegionSizes
 from .language_config import LanguageConfig
-from .robustness_config import RobustnessConfig
 from .training_config import TrainingConfig
 
 
@@ -216,7 +215,6 @@ class ThaliaConfig:
     brain: BrainConfig = field(default_factory=BrainConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
-    robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
 
     def __post_init__(self):
         """Validate after initialization."""
@@ -525,8 +523,6 @@ class ThaliaConfig:
             self.language.summary(),
             "",
             self.training.summary(),
-            "",
-            self.robustness.summary(),
         ]
 
         # Add validation warnings

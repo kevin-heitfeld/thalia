@@ -73,10 +73,7 @@ from thalia.learning.strategies import (
 )
 from thalia.learning.strategy_registry import (
     LearningStrategyRegistry,
-)
-from thalia.learning.strategy_factory import (
     create_learning_strategy,
-    create_cortex_strategy,
 )
 from thalia.learning.strategy_mixin import (
     LearningStrategyMixin,
@@ -129,9 +126,8 @@ __all__ = [
     "create_strategy",
     # Strategy Registry (new Tier 3 feature)
     "LearningStrategyRegistry",
-    # Strategy Factory (Tier 2 - minimal, used only)
+    # Strategy Factory (backward compatibility helper)
     "create_learning_strategy",
-    "create_cortex_strategy",
     # Strategy Mixin for Regions
     "LearningStrategyMixin",
 ]

@@ -416,13 +416,7 @@ class Cerebellum(BrainRegion):
         effective_lr = self.get_effective_learning_rate()
         dw = self.stdp_eligibility * error_sign * error.abs().unsqueeze(1) * effective_lr
         
-        # Apply soft bounds manually
-        if cfg.soft_bounds:
-            w_normalized = (self.weights - cfg.w_min) / (cfg.w_max - cfg.w_min + 1e-6)
-            ltp_factor = 1.0 - w_normalized
-            ltd_factor = w_normalized
-            dw = torch.where(dw > 0, dw * ltp_factor, dw * ltd_factor)
-        
+        # Apply hard bounds
         old_weights = self.weights.clone()
         self.weights = clamp_weights(self.weights + dw, cfg.w_min, cfg.w_max, inplace=False)
         
@@ -451,7 +445,6 @@ class Cerebellum(BrainRegion):
                 error_threshold=config.error_threshold,
                 w_min=config.w_min,
                 w_max=config.w_max,
-                soft_bounds=config.soft_bounds,
             )
         )
     

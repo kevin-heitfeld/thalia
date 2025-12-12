@@ -48,6 +48,9 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
 import torch
+import torch.nn as nn
+
+from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.utils import clamp_weights
@@ -93,25 +96,18 @@ class CerebellumConfig(RegionConfig):
     # Learning rates
     learning_rate_ltp: float = LEARNING_RATE_ERROR_CORRECTIVE   # Rate for strengthening correct
     learning_rate_ltd: float = LEARNING_RATE_ERROR_CORRECTIVE   # Rate for weakening incorrect
-    stdp_lr: float = LEARNING_RATE_STDP  # STDP learning rate for spike-based version
+    # Note: stdp_lr and tau_plus_ms/tau_minus_ms inherited from NeuralComponentConfig
 
     # Error signaling
     error_threshold: float = 0.01     # Minimum error to trigger learning
     temporal_window_ms: float = 10.0  # Window for coincidence detection
 
     # Spike-based learning
-    stdp_tau_ms: float = TAU_STDP_PLUS  # STDP trace decay constant
     eligibility_tau_ms: float = TAU_ELIGIBILITY_STANDARD  # Eligibility trace decay (increased for delayed error)
     heterosynaptic_ratio: float = 0.2  # LTD for non-active synapses
 
-    # Weight bounds
-    soft_bounds: bool = True
+    # Input trace parameters
     input_trace_tau_ms: float = 20.0  # Input trace decay
-
-    # Synaptic scaling
-    synaptic_scaling_enabled: bool = True
-    synaptic_scaling_target: float = 0.3
-    synaptic_scaling_rate: float = 0.001
 
 
 class ClimbingFiberSystem:
@@ -250,6 +246,17 @@ class Cerebellum(NeuralComponent):
         # Beta oscillator phase tracking for motor timing
         self._beta_phase: float = 0.0
         self._gamma_phase: float = 0.0
+
+        # Homeostasis for synaptic scaling
+        homeostasis_config = UnifiedHomeostasisConfig(
+            weight_budget=config.weight_budget * config.n_input,  # Total budget per neuron
+            w_min=config.w_min,
+            w_max=config.w_max,
+            soft_normalization=config.soft_normalization,
+            normalization_rate=config.normalization_rate,
+            device=config.device,
+        )
+        self.homeostasis = UnifiedHomeostasis(homeostasis_config)
         self._theta_phase: float = 0.0
         self._beta_amplitude: float = 1.0
         self._gamma_amplitude: float = 1.0
@@ -585,22 +592,15 @@ class Cerebellum(NeuralComponent):
         effective_lr = self.get_effective_learning_rate() * beta_gate
         dw = self.stdp_eligibility * error_sign * error.abs().unsqueeze(1) * effective_lr
 
-        # Apply soft bounds
-        if cfg.soft_bounds:
-            w_normalized = (self.weights - self.config.w_min) / (self.config.w_max - self.config.w_min + 1e-6)
-            ltp_factor = 1.0 - w_normalized
-            ltd_factor = w_normalized
-            dw = torch.where(dw > 0, dw * ltp_factor, dw * ltd_factor)
-
+        # Update weights with hard bounds
+        # Biological regulation via UnifiedHomeostasis (weight normalization)
         old_weights = self.weights.clone()
         self.weights = clamp_weights(self.weights + dw, self.config.w_min, self.config.w_max, inplace=False)
 
-        # Synaptic scaling for homeostasis
-        if cfg.synaptic_scaling_enabled:
+        # Synaptic scaling for homeostasis using UnifiedHomeostasis
+        if cfg.homeostasis_enabled:
             with torch.no_grad():
-                mean_weight = self.weights.mean()
-                scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
-                self.weights = clamp_weights(self.weights * scaling, self.config.w_min, self.config.w_max, inplace=False)
+                self.weights = self.homeostasis.normalize_weights(self.weights, dim=1)
 
         actual_dw = self.weights - old_weights
         ltp = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
@@ -677,11 +677,7 @@ class Cerebellum(NeuralComponent):
             dw[target, :] = lr * input_trace      # LTP for target
             dw[winner, :] = -lr * input_trace     # LTD for wrong winner
 
-        if self.cerebellum_config.soft_bounds:
-            headroom = (self.config.w_max - self.weights) / self.config.w_max
-            footroom = (self.weights - self.config.w_min) / self.config.w_max
-            dw = torch.where(dw > 0, dw * headroom.clamp(0, 1), dw * footroom.clamp(0, 1))
-
+        # Apply update with hard bounds
         old_weights = self.weights.clone()
         self.weights = clamp_weights(self.weights + dw, self.config.w_min, self.config.w_max, inplace=False)
 

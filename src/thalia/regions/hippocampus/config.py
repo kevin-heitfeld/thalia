@@ -14,11 +14,7 @@ import torch
 
 from thalia.regions.base import RegionConfig, RegionState
 from thalia.core.stp import STPType
-from thalia.core.learning_constants import (
-    LEARNING_RATE_ONE_SHOT,
-    TAU_STDP_PLUS,
-    TAU_STDP_MINUS,
-)
+from thalia.core.learning_constants import LEARNING_RATE_ONE_SHOT
 
 
 @dataclass
@@ -88,12 +84,7 @@ class HippocampusConfig(RegionConfig):
     # Learning rates
     learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
     ec_ca1_learning_rate: float = 0.5  # Strong learning for EC→CA1 alignment
-    stdp_tau_plus: float = TAU_STDP_PLUS      # ms
-    stdp_tau_minus: float = TAU_STDP_MINUS     # ms
-
-    # Weight bounds
-    w_max: float = 2.0
-    w_min: float = 0.0
+    # Note: STDP tau parameters inherited from NeuralComponentConfig (tau_plus_ms, tau_minus_ms)
 
     # Feedforward inhibition parameters
     ffi_threshold: float = 0.3       # Input change threshold to trigger FFI
@@ -177,27 +168,6 @@ class HippocampusConfig(RegionConfig):
     theta_reset_fraction: float = 0.5    # How much to decay (0=none, 1=full)
 
     # =========================================================================
-    # SYNAPTIC SCALING (Homeostatic)
-    # =========================================================================
-    # Synaptic scaling maintains stable firing rates by multiplicatively
-    # adjusting all synapses to a neuron. If a neuron fires too much/little,
-    # all its input synapses scale down/up together.
-    synaptic_scaling_enabled: bool = True
-    synaptic_scaling_target: float = 0.3  # Target mean weight
-    synaptic_scaling_rate: float = 0.001  # Slow adaptation rate
-
-    # =========================================================================
-    # INTRINSIC PLASTICITY
-    # =========================================================================
-    # Neurons adjust their own excitability based on firing history.
-    # High activity → higher threshold (less excitable)
-    # Low activity → lower threshold (more excitable)
-    # This operates on LONGER timescales than SFA.
-    intrinsic_plasticity_enabled: bool = True
-    intrinsic_target_rate: float = 0.1    # Target firing rate
-    intrinsic_adaptation_rate: float = 0.01  # How fast threshold adapts
-
-    # =========================================================================
     # THETA-GAMMA COUPLING
     # =========================================================================
     # Gamma oscillations (30-100 Hz) nested within theta enable:
@@ -267,20 +237,3 @@ class HippocampusState(RegionState):
 
     # Current feedforward inhibition strength
     ffi_strength: float = 0.0
-
-
-# ============================================================================
-# DEPRECATED ALIASES (for backward compatibility)
-# ============================================================================
-# These will be removed in v0.4.0
-
-import warnings
-
-def _deprecated_alias(old_name: str, new_name: str):
-    """Helper to create deprecation warning."""
-    warnings.warn(
-        f"{old_name} is deprecated and will be removed in v0.4.0. "
-        f"Use {new_name} instead.",
-        DeprecationWarning,
-        stacklevel=3
-    )

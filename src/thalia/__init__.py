@@ -75,7 +75,6 @@ from thalia.core import (
     STPPreset,
     get_stp_config,
     # Utilities
-    ensure_batch_dim,
     clamp_weights,
 )
 
@@ -164,7 +163,6 @@ __all__ = [
     "STP_PRESETS",
     "STPPreset",
     "get_stp_config",
-    "ensure_batch_dim",
     "clamp_weights",
     # Learning
     "BCMRule",

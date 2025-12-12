@@ -28,6 +28,7 @@ Learning Rules:
 from enum import Enum, auto
 from typing import Optional, Dict, Any
 import torch
+from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 import torch.nn as nn
 import numpy as np
 
@@ -210,7 +211,7 @@ class SpikingPathway(NeuralComponent):
         # Firing rate tracking for homeostasis
         self.register_buffer(
             "firing_rate_estimate",
-            torch.zeros(config.n_output, device=config.device) + config.target_rate,
+            torch.zeros(config.n_output, device=config.device) + config.activity_target,
         )
 
         # =====================================================================
@@ -264,9 +265,21 @@ class SpikingPathway(NeuralComponent):
                 dt_ms=config.dt_ms,
                 w_min=config.w_min,
                 w_max=config.w_max,
-                soft_bounds=config.soft_bounds,
             )
         )
+
+        # =====================================================================
+        # HOMEOSTASIS (UnifiedHomeostasis)
+        # =====================================================================
+        homeostasis_config = UnifiedHomeostasisConfig(
+            weight_budget=config.weight_budget * config.n_input,  # Total budget per neuron
+            w_min=config.w_min,
+            w_max=config.w_max,
+            soft_normalization=config.soft_normalization,
+            normalization_rate=config.normalization_rate,
+            device=config.device,
+        )
+        self.homeostasis = UnifiedHomeostasis(homeostasis_config)
 
     @property
     def pre_trace(self) -> torch.Tensor:
@@ -481,14 +494,14 @@ class SpikingPathway(NeuralComponent):
         # =====================================================================
         # 9. UPDATE FIRING RATE ESTIMATE (for homeostasis)
         # =====================================================================
-        rate_decay = np.exp(-dt / cfg.scaling_tau_ms)
+        rate_decay = np.exp(-dt / cfg.activity_tau_ms)
         self.firing_rate_estimate = (
             self.firing_rate_estimate * rate_decay +
             target_spikes * (1 - rate_decay)
         )
 
         # Apply synaptic scaling
-        if cfg.synaptic_scaling:
+        if cfg.homeostasis_enabled:
             self._apply_synaptic_scaling()
 
         return target_spikes
@@ -506,21 +519,14 @@ class SpikingPathway(NeuralComponent):
     def _apply_synaptic_scaling(self) -> None:
         """Apply homeostatic synaptic scaling.
 
-        Note:
-            Timestep (dt_ms) obtained from self.config
+        Delegates to UnifiedHomeostasis for constraint-based weight normalization.
         """
-        cfg = self.config
+        if self.config.homeostasis_enabled:
+            self.weights.data = self.homeostasis.normalize_weights(
+                self.weights.data,
+                dim=1,  # Normalize rows (per-neuron)
+            )
 
-        # Compute scaling factor per neuron
-        rate_ratio = cfg.target_rate / (self.firing_rate_estimate + 1e-6)
-
-        # Gentle scaling (1% per timestep toward target)
-        scale_factor = 1.0 + 0.01 * (rate_ratio - 1.0)
-        scale_factor = scale_factor.clamp(0.99, 1.01)  # Limit change rate
-
-        # Apply to outgoing weights of each target neuron
-        self.weights.data *= scale_factor.unsqueeze(1)
-        clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
 
     def reset_state(self) -> None:
         """Reset all state (call between trials)."""
@@ -598,10 +604,7 @@ class SpikingPathway(NeuralComponent):
             # Update weights - simple Hebbian with dopamine gating
             dw = lr * cfg.a_plus * ltp * (1.0 + dopamine)
 
-            # Soft bounds
-            if cfg.soft_bounds:
-                dw = dw * (cfg.w_max - self.weights.data) * (self.weights.data - cfg.w_min)
-
+            # Apply update with hard bounds
             self.weights.data += dw
             clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
 
@@ -828,7 +831,7 @@ class SpikingPathway(NeuralComponent):
         self._trace_manager = self._trace_manager.add_neurons(n_new)
 
         # Firing rate estimate
-        new_firing_rate = torch.zeros(n_new, device=device) + cfg.target_rate
+        new_firing_rate = torch.zeros(n_new, device=device) + cfg.activity_target
         expanded_firing_rate = torch.cat([self.firing_rate_estimate, new_firing_rate], dim=0)
         self.register_buffer("firing_rate_estimate", expanded_firing_rate)
 

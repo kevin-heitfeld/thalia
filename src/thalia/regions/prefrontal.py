@@ -52,6 +52,11 @@ from typing import TYPE_CHECKING, Optional, Dict, Any
 import torch
 import torch.nn as nn
 
+from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+
+import torch
+import torch.nn as nn
+
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 
 from thalia.core.utils import clamp_weights, cosine_similarity_safe
@@ -99,12 +104,9 @@ class PrefrontalConfig(RegionConfig):
     # Learning rates
     wm_lr: float = 0.1  # Learning rate for WM update weights
     rule_lr: float = LEARNING_RATE_STDP  # Learning rate for rule weights
-    stdp_lr: float = 0.02  # STDP learning rate for spike-based version
+    # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
+    # are inherited from NeuralComponentConfig
 
-    # STDP parameters
-    stdp_tau_ms: float = 20.0  # STDP trace decay
-    stdp_a_plus: float = 0.01  # LTP amplitude
-    stdp_a_minus: float = 0.012  # LTD amplitude (slightly larger for stability)
     heterosynaptic_ratio: float = 0.3  # LTD for non-active synapses
 
     # Recurrent connections for WM maintenance
@@ -126,13 +128,7 @@ class PrefrontalConfig(RegionConfig):
     # frozen attractors. This allows working memory to be updated.
     stp_recurrent_enabled: bool = True
 
-    # Weight constraints
-    soft_bounds: bool = True
-
-    # Synaptic scaling for homeostasis
-    synaptic_scaling_enabled: bool = True
-    synaptic_scaling_target: float = 0.4
-    synaptic_scaling_rate: float = 0.001
+    # Note: Synaptic scaling parameters inherited from NeuralComponentConfig
 
     # =========================================================================
     # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
@@ -337,17 +333,27 @@ class Prefrontal(NeuralComponent):
         self.learning_strategy = LearningStrategyRegistry.create(
             "stdp",
             STDPConfig(
-                learning_rate=config.stdp_lr,
-                a_plus=config.stdp_a_plus,
-                a_minus=config.stdp_a_minus,
-                tau_plus=config.stdp_tau_ms,
-                tau_minus=config.stdp_tau_ms,
+                learning_rate=config.learning_rate,
+                a_plus=config.a_plus,
+                a_minus=config.a_minus,
+                tau_plus=config.tau_plus_ms,
+                tau_minus=config.tau_minus_ms,
                 dt_ms=config.dt_ms,
                 w_min=config.w_min,
                 w_max=config.w_max,
-                soft_bounds=config.soft_bounds,
             )
         )
+
+        # Homeostasis for synaptic scaling
+        homeostasis_config = UnifiedHomeostasisConfig(
+            weight_budget=config.weight_budget * config.n_input,  # Total budget per neuron
+            w_min=config.w_min,
+            w_max=config.w_max,
+            soft_normalization=config.soft_normalization,
+            normalization_rate=config.normalization_rate,
+            device=config.device,
+        )
+        self.homeostasis = UnifiedHomeostasis(homeostasis_config)
 
         # Initialize working memory state (1D tensors, ADR-005)
         self.state = PrefrontalState(
@@ -686,12 +692,9 @@ class Prefrontal(NeuralComponent):
         )
 
         # Optional: Apply synaptic scaling for homeostasis
-        if cfg.synaptic_scaling_enabled and metrics:
+        if cfg.homeostasis_enabled and metrics:
             with torch.no_grad():
-                mean_weight = self.weights.data.mean()
-                scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
-                self.weights.data *= scaling
-                clamp_weights(self.weights.data, self.config.w_min, self.config.w_max)
+                self.weights.data = self.homeostasis.normalize_weights(self.weights.data, dim=1)
 
         # ======================================================================
         # Update recurrent weights to strengthen WM patterns

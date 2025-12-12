@@ -4,6 +4,7 @@
 
 - Review public brain API (`new_trial()`, etc. necessary?)
 - See `PathwayConfig.bidirectional`, should those be split into two pathways (with own weight matrices)?
+- Add learning mechanisms to `CrossModalGammaBinding`
 
 - [ ] Sleep/Wake System 🟢 **LOW PRIORITY**
   - Already partially handled by oscillator frequency modulation

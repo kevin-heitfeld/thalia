@@ -9,11 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from thalia.regions.base import RegionConfig, LearningRule
+from thalia.regions.base import RegionConfig
 from thalia.core.learning_constants import (
     TAU_ELIGIBILITY_STANDARD,
-    LEARNING_RATE_STDP,
-    TAU_STDP_PLUS,
 )
 
 
@@ -37,9 +35,7 @@ class StriatumConfig(RegionConfig):
 
     # Learning rate for homeostatic normalization
     learning_rate: float = 0.005  # Region-specific value
-
-    # STDP learning rate for weight updates
-    stdp_lr: float = LEARNING_RATE_STDP
+    # Note: stdp_lr and tau_plus_ms/tau_minus_ms inherited from NeuralComponentConfig
 
     # Action selection
     lateral_inhibition: bool = True
@@ -49,8 +45,7 @@ class StriatumConfig(RegionConfig):
     # Uses D1/D2 eligibility traces: spike-timing correlations modulated by dopamine
     # Δw_d1 = d1_eligibility × dopamine (standard)
     # Δw_d2 = d2_eligibility × (-dopamine) (inverted)
-    learning_rule: LearningRule = LearningRule.REWARD_MODULATED_STDP
-    stdp_tau_ms: float = TAU_STDP_PLUS
+    # Note: learning_rule and tau_plus_ms/tau_minus_ms inherited from NeuralComponentConfig
     heterosynaptic_ratio: float = 0.3
 
     # =========================================================================

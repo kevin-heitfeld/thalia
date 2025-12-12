@@ -71,17 +71,17 @@ class DendriticBranchConfig:
     saturation_level: float = 2.0         # Maximum branch output
     subthreshold_attenuation: float = 0.8 # Cable filtering for weak inputs
     branch_coupling: float = 1.0          # Soma coupling strength
-    dt: float = 0.1                       # Simulation timestep (ms)
+    dt_ms: float = 0.1                    # Simulation timestep (ms)
 
     @property
     def plateau_decay(self) -> float:
         """Decay factor for NMDA plateau per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.plateau_tau_ms)).item()
+        return torch.exp(torch.tensor(-self.dt_ms / self.plateau_tau_ms)).item()
 
     @property
     def syn_decay(self) -> float:
         """Decay factor for synaptic conductance per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_syn_ms)).item()
+        return torch.exp(torch.tensor(-self.dt_ms / self.tau_syn_ms)).item()
 
 
 @dataclass

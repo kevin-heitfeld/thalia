@@ -675,7 +675,7 @@ class TrisynapticHippocampus(NeuralComponent):
     # =========================================================================
     # BACKWARDS COMPATIBILITY PROPERTIES
     # =========================================================================
-    
+
     @property
     def plasticity_manager(self):
         """Backwards compatibility alias for learning component."""
@@ -971,7 +971,7 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
         # Neurons that fire too much have higher thresholds (less excitable)
-        if (self.tri_config.intrinsic_plasticity_enabled and
+        if (self.tri_config.homeostasis_enabled and
             self.plasticity_manager._ca3_threshold_offset is not None):
             ca3_input = ca3_input - self.plasticity_manager._ca3_threshold_offset
 
@@ -1479,7 +1479,7 @@ class TrisynapticHippocampus(NeuralComponent):
         )
 
         # Apply intrinsic plasticity if CA3 has spiked
-        if cfg.intrinsic_plasticity_enabled and self.state.ca3_spikes is not None:
+        if cfg.homeostasis_enabled and self.state.ca3_spikes is not None:
             self.plasticity_manager.apply_intrinsic_plasticity(self.state.ca3_spikes)
 
     def get_state(self) -> HippocampusState:
@@ -1908,33 +1908,6 @@ class TrisynapticHippocampus(NeuralComponent):
             },
             custom_metrics=custom,
         )
-
-    def diagnostic_get_pattern_similarity(self) -> Optional[float]:
-        """Get similarity between stored and current DG patterns (DEPRECATED - for debugging only).
-
-        ⚠️ DEPRECATED: Use CA1 spike output instead!
-
-        **Why deprecated**: In biology, VTA/neuromodulator systems don't have direct
-        access to internal DG representations. They observe CA1 OUTPUT activity.
-
-        **New approach**: Brain.py now computes intrinsic reward from CA1 firing rate
-        (state.ca1_spikes), which is the observable signal that VTA would actually see.
-
-        This method remains for backward compatibility and debugging DG pattern storage,
-        but should not be used for operational reward computation.
-
-        Returns:
-            Cosine similarity (0.0 to 1.0), or None if no stored pattern
-        """
-        if (self.state.stored_dg_pattern is None or
-            self.state.dg_spikes is None):
-            return None
-
-        stored = self.state.stored_dg_pattern.float().squeeze()
-        current = self.state.dg_spikes.float().squeeze()
-
-        similarity = cosine_similarity_safe(stored, current)
-        return similarity.item()
 
     # =========================================================================
     # THETA-GAMMA COUPLING METHODS

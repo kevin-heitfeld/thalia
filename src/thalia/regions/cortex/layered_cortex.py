@@ -55,13 +55,11 @@ from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.theta_dynamics import FeedforwardInhibition
-from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig
-from thalia.learning import create_cortex_strategy
+from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig, STDPStrategy, STDPConfig
 from thalia.core.utils import ensure_1d, clamp_weights
 from thalia.core.traces import update_trace
 from thalia.learning.ei_balance import LayerEIBalance
-from thalia.core.normalization import DivisiveNormalization
-from thalia.learning.intrinsic_plasticity import PopulationIntrinsicPlasticity
+from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 from .config import LayeredCortexConfig, LayeredCortexState
 
@@ -165,15 +163,12 @@ class LayeredCortex(NeuralComponent):
         if config.bcm_enabled:
             device = torch.device(config.device)
             bcm_cfg = config.bcm_config or BCMStrategyConfig(
-                tau_theta=config.bcm_tau_theta,
-                theta_init=config.bcm_theta_init,
                 learning_rate=config.learning_rate,
                 w_min=config.w_min,
                 w_max=config.w_max,
-                soft_bounds=config.soft_bounds,
                 dt=config.dt_ms,
             )
-            
+
             # Create BCM strategies for each layer
             self.bcm_l4 = LearningStrategyRegistry.create("bcm", bcm_cfg)
             self.bcm_l23 = LearningStrategyRegistry.create("bcm", bcm_cfg)
@@ -197,6 +192,18 @@ class LayeredCortex(NeuralComponent):
         # Intrinsic plasticity tracking (initialized in _init_layers)
         self._l23_threshold_offset: Optional[torch.Tensor] = None
         self._l23_activity_history: Optional[torch.Tensor] = None
+
+        # Homeostasis for synaptic scaling and intrinsic plasticity
+        homeostasis_config = UnifiedHomeostasisConfig(
+            weight_budget=config.weight_budget * config.n_input,
+            w_min=config.w_min,
+            w_max=config.w_max,
+            soft_normalization=config.soft_normalization,
+            normalization_rate=config.normalization_rate,
+            activity_target=config.activity_target,
+            device=config.device,
+        )
+        self.homeostasis = UnifiedHomeostasis(homeostasis_config)
 
         # =====================================================================
         # ROBUSTNESS MECHANISMS (from RobustnessConfig)
@@ -280,11 +287,12 @@ class LayeredCortex(NeuralComponent):
     def _init_robustness_mechanisms(self) -> None:
         """Initialize robustness mechanisms from RobustnessConfig.
 
-        These mechanisms provide hyperparameter robustness similar to
-        biological homeostatic regulation:
-        - E/I Balance: Tracks excitation vs inhibition, scales inhibitory gain
-        - Divisive Normalization: Automatic gain control on L4 inputs
-        - Population Intrinsic Plasticity: Activity-dependent threshold adaptation
+        These mechanisms are cortex-specific and NOT redundant with UnifiedHomeostasis:
+        - E/I Balance: Critical for recurrent cortical stability
+
+        Note: Activity regulation is handled by UnifiedHomeostasis.
+        ConductanceLIF neurons provide natural gain control via shunting inhibition,
+        so divisive normalization is not needed.
         """
         cfg = self.layer_config
         rob = cfg.robustness
@@ -292,8 +300,6 @@ class LayeredCortex(NeuralComponent):
 
         # Default: no robustness mechanisms
         self.ei_balance: Optional[LayerEIBalance] = None
-        self.divisive_norm_l4: Optional[DivisiveNormalization] = None
-        self.pop_intrinsic_plasticity: Optional[PopulationIntrinsicPlasticity] = None
 
         if rob is None:
             return
@@ -306,19 +312,6 @@ class LayeredCortex(NeuralComponent):
                 n_inh=self.l23_size,  # Approximation: use L2/3 size for inhibition
                 config=rob.ei_balance,
                 device=device,
-            )
-
-        # NOTE: Divisive normalization disabled for cortex.
-        # ConductanceLIF provides natural gain control via shunting inhibition.
-        # Divisive norm is appropriate for sensory pathways (retina, LGN),
-        # not for cortical processing where E/I balance handles gain control.
-        self.divisive_norm_l4 = None
-
-        # Population Intrinsic Plasticity for L2/3
-        # Global excitability modulation based on population activity
-        if rob.enable_intrinsic_plasticity:
-            self.pop_intrinsic_plasticity = PopulationIntrinsicPlasticity(
-                config=rob.intrinsic_plasticity,
             )
 
     def _init_gamma_attention(self) -> None:
@@ -435,17 +428,17 @@ class LayeredCortex(NeuralComponent):
         # Initialize learning strategy (STDP for cortical learning)
         # We use a single STDP strategy instance that we'll apply to different
         # weight matrices (input->L4, L4->L2/3, L2/3->L5, L2/3 recurrent)
-        self.learning_strategy = create_cortex_strategy(
+        stdp_config = STDPConfig(
             learning_rate=cfg.stdp_lr,
-            a_plus=0.01,
-            a_minus=0.012,
-            tau_plus=20.0,
-            tau_minus=20.0,
+            a_plus=cfg.a_plus,
+            a_minus=cfg.a_minus,
+            tau_plus=cfg.tau_plus_ms,
+            tau_minus=cfg.tau_minus_ms,
             dt_ms=cfg.dt_ms,
             w_min=cfg.w_min,
             w_max=cfg.w_max,
-            soft_bounds=cfg.soft_bounds,
         )
+        self.learning_strategy = STDPStrategy(stdp_config)
 
     def reset_state(self) -> None:
         """Reset all layer states.
@@ -827,15 +820,10 @@ class LayeredCortex(NeuralComponent):
 
             l23_input = l23_input - l23_inhib
 
-        # Population Intrinsic Plasticity: Modulate input based on population rate
-        if self.pop_intrinsic_plasticity is not None and self.state.l23_spikes is not None:
-            self.pop_intrinsic_plasticity.update(self.state.l23_spikes)
-            l23_input = self.pop_intrinsic_plasticity.modulate_input(l23_input)
-
-        # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
+        # INTRINSIC PLASTICITY: Apply per-neuron threshold offset (UnifiedHomeostasis)
         # Neurons that fire too much have higher thresholds (less excitable)
         cfg = self.layer_config
-        if (cfg.intrinsic_plasticity_enabled and
+        if (cfg.homeostasis_enabled and
             self._l23_threshold_offset is not None):
             l23_input = l23_input - self._l23_threshold_offset
 
@@ -1069,8 +1057,8 @@ class LayeredCortex(NeuralComponent):
             # =================================================================
             # INTRINSIC PLASTICITY: Update per-neuron threshold offsets
             # =================================================================
-            # This operates on LONGER timescales than SFA.
-            if cfg.intrinsic_plasticity_enabled:
+            # Handled by UnifiedHomeostasis.compute_excitability_modulation()
+            if cfg.homeostasis_enabled:
                 l23_spikes_1d = l23_activity
 
                 # Initialize if needed
@@ -1084,11 +1072,12 @@ class LayeredCortex(NeuralComponent):
                     0.99 * self._l23_activity_history + 0.01 * l23_spikes_1d
                 )
 
-                # Adjust threshold: high activity → higher threshold (less excitable)
-                rate_error = self._l23_activity_history - cfg.intrinsic_target_rate
-                self._l23_threshold_offset = (
-                    self._l23_threshold_offset + cfg.intrinsic_adaptation_rate * rate_error
-                ).clamp(-0.5, 0.5)  # Limit threshold adjustment range
+                # Compute threshold modulation using UnifiedHomeostasis
+                threshold_mod = self.homeostasis.compute_excitability_modulation(
+                    activity_history=self._l23_activity_history,
+                    tau=100.0
+                )
+                self._l23_threshold_offset = threshold_mod.clamp(-0.5, 0.5)
 
             # L2/3 → L5
             if l5_spikes is not None:
@@ -1129,7 +1118,7 @@ class LayeredCortex(NeuralComponent):
         total activity since last reset.
         """
         cfg = self.layer_config
-        
+
         # Custom metrics specific to cortex
         custom = {
             "l4_size": self.l4_size,
@@ -1145,26 +1134,18 @@ class LayeredCortex(NeuralComponent):
             "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
             "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
         }
-        
+
         # Recurrent activity
         if self.state.l23_recurrent_activity is not None:
             custom["l23_recurrent_mean"] = self.state.l23_recurrent_activity.mean().item()
-        
-        # Robustness mechanism diagnostics
+
+        # Robustness mechanisms (E/I balance only)
         if self.ei_balance is not None:
             ei_diag = self.ei_balance.get_diagnostics()
             custom["robustness_ei_ratio"] = ei_diag.get("current_ratio", 0.0)
             custom["robustness_ei_scale"] = ei_diag.get("inh_scale", 1.0)
             custom["robustness_ei_status"] = ei_diag.get("status", "unknown")
 
-        if self.divisive_norm_l4 is not None:
-            custom["robustness_divisive_norm_enabled"] = True
-
-        if self.pop_intrinsic_plasticity is not None:
-            ip_diag = self.pop_intrinsic_plasticity.get_diagnostics()
-            custom["robustness_ip_rate_avg"] = ip_diag.get("rate_avg", 0.0)
-            custom["robustness_ip_excitability"] = ip_diag.get("excitability", 1.0)
-        
         # Use collect_standard_diagnostics for weight and spike statistics
         return self.collect_standard_diagnostics(
             region_name="cortex",

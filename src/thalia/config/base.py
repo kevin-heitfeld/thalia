@@ -11,8 +11,12 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Optional, TYPE_CHECKING
 import torch
+
+if TYPE_CHECKING:
+    from thalia.core.stp import STPConfig
+    from thalia.learning.bcm import BCMConfig
 
 
 @dataclass
@@ -115,6 +119,103 @@ class NeuralComponentConfig(BaseConfig):
     w_max: float = 1.0
     """Maximum synaptic weight (prevents runaway potentiation)."""
 
+    # =========================================================================
+    # STDP LEARNING PARAMETERS (Component Parity: applies to regions AND pathways)
+    # =========================================================================
+    # Spike-timing dependent plasticity parameters are needed by all components
+    # that perform online learning based on spike correlations.
+
+    learning_rule: str = "STDP"  # SpikingLearningRule enum value
+    """Which plasticity rule to use (STDP, PHASE_STDP, TRIPLET_STDP, etc.)."""
+
+    stdp_lr: float = 0.01
+    """STDP-specific learning rate."""
+
+    tau_plus_ms: float = 20.0
+    """LTP time constant in milliseconds."""
+
+    tau_minus_ms: float = 20.0
+    """LTD time constant in milliseconds."""
+
+    a_plus: float = 1.0
+    """LTP amplitude."""
+
+    a_minus: float = 1.0
+    """LTD amplitude."""
+
+    max_trace: float = 10.0
+    """Maximum trace value to prevent runaway accumulation."""
+
+    # =========================================================================
+    # HOMEOSTATIC PLASTICITY (Component Parity: applies to regions AND pathways)
+    # =========================================================================
+    # Unified constraint-based homeostasis maintains stable dynamics and prevents
+    # pathological states. Both regions and pathways need homeostasis because they
+    # both have:
+    # - Synaptic weights that can grow unbounded during learning
+    # - Activity patterns that can become pathological (silent or saturated)
+    #
+    # Biological basis: All neural tissue has homeostatic mechanisms to maintain
+    # stable firing rates and prevent epilepsy/silence. This is universal.
+    #
+    # Implementation: Uses UnifiedHomeostasis for constraint-based regulation:
+    # - Weight normalization: Each neuron's total input is bounded
+    # - Activity regulation: Population activity is constrained
+    # - Competitive adjustment: Strong weights suppress weak ones
+    #
+    # References:
+    # - Turrigiano & Nelson (2004): Homeostatic plasticity in the developing nervous system
+    # - Turrigiano (2008): The self-tuning neuron: synaptic scaling of excitatory synapses
+    # - Desai et al. (1999): Plasticity in the intrinsic excitability of cortical pyramidal neurons
+
+    # Enable/disable
+    homeostasis_enabled: bool = True
+    """Enable homeostatic regulation (weight normalization and activity control)."""
+
+    # Weight constraints
+    weight_budget: float = 1.0
+    """Target sum of weights per neuron (row normalization constraint).
+
+    NOTE: This is typically scaled by n_input when creating UnifiedHomeostasisConfig.
+    For example, if you want each synapse to average 0.3, set weight_budget=0.3
+    and then use weight_budget * n_input when initializing UnifiedHomeostasis.
+
+    Default of 1.0 assumes you'll scale it appropriately for your architecture.
+    """
+
+    # Activity constraints
+    activity_target: float = 0.1
+    """Target fraction of neurons active per timestep."""
+
+    activity_min: float = 0.01
+    """Minimum activity level (prevents dead neurons)."""
+
+    activity_max: float = 0.5
+    """Maximum activity level (prevents seizure-like states)."""
+
+    # Normalization settings
+    normalize_rows: bool = True
+    """Normalize each neuron's input weights (standard for feedforward/recurrent)."""
+
+    normalize_cols: bool = False
+    """Normalize each input's output weights (useful for sensory normalization)."""
+
+    soft_normalization: bool = True
+    """Use soft (multiplicative) normalization instead of hard constraint enforcement."""
+
+    normalization_rate: float = 0.1
+    """Rate of convergence toward target (soft normalization only)."""
+
+    activity_tau_ms: float = 1000.0
+    """Time constant for activity rate estimation (exponential moving average)."""
+
+    # Competition settings
+    enable_competition: bool = True
+    """Enable competitive weight adjustment (winner-take-all dynamics)."""
+
+    competition_strength: float = 0.1
+    """Strength of competitive suppression between neurons."""
+
 
 @dataclass
 class LearningComponentConfig(BaseConfig):
@@ -162,7 +263,7 @@ class PathwayConfig(NeuralComponentConfig):
         """Synchronize n_neurons with n_output for pathway consistency."""
         # For pathways, n_neurons should match n_output (target size)
         self.n_neurons = self.n_output
-        
+
         # Synchronize learning_rate with stdp_lr if stdp_lr was explicitly set
         if hasattr(self, 'stdp_lr') and self.stdp_lr != 0.01:
             self.learning_rate = self.stdp_lr
@@ -199,32 +300,7 @@ class PathwayConfig(NeuralComponentConfig):
     refractory_ms: float = 2.0  # TAU_REF_STANDARD
     """Refractory period in milliseconds."""
 
-    # STDP parameters
-    learning_rule: str = "STDP"  # SpikingLearningRule enum value
-    """Which plasticity rule to use (STDP, PHASE_STDP, TRIPLET_STDP, etc.)."""
-
-    stdp_lr: float = 0.01
-    """STDP-specific learning rate."""
-
-    tau_plus_ms: float = 20.0
-    """LTP time constant in milliseconds."""
-
-    tau_minus_ms: float = 20.0
-    """LTD time constant in milliseconds."""
-
-    a_plus: float = 1.0
-    """LTP amplitude."""
-
-    a_minus: float = 1.0
-    """LTD amplitude."""
-
-    max_trace: float = 10.0
-    """Maximum trace value to prevent runaway accumulation."""
-
     # Weight initialization
-    soft_bounds: bool = True
-    """Use soft weight bounds (weight-dependent learning rate)."""
-
     init_mean: float = 0.3
     """Initial weight mean."""
 
@@ -241,16 +317,6 @@ class PathwayConfig(NeuralComponentConfig):
     phase_precision: float = 0.5
     """How tightly spikes lock to phase (0-1)."""
 
-    # Homeostasis
-    synaptic_scaling: bool = True
-    """Enable homeostatic synaptic scaling."""
-
-    target_rate: float = 0.1
-    """Target firing rate for homeostatic scaling."""
-
-    scaling_tau_ms: float = 1000.0
-    """Time constant for homeostatic scaling in milliseconds."""
-
     # Short-Term Plasticity (STP)
     stp_enabled: bool = False
     """Enable short-term plasticity."""
@@ -258,14 +324,14 @@ class PathwayConfig(NeuralComponentConfig):
     stp_type: str = "DEPRESSING"  # STPType enum value
     """Preset synapse type (DEPRESSING, FACILITATING, DUAL)."""
 
-    stp_config: Optional[Any] = None
+    stp_config: Optional["STPConfig"] = None
     """Custom STP parameters (overrides stp_type)."""
 
     # BCM sliding threshold (metaplasticity)
     bcm_enabled: bool = False
     """Enable BCM sliding threshold rule."""
 
-    bcm_config: Optional[Any] = None
+    bcm_config: Optional["BCMConfig"] = None
     """Custom BCM parameters."""
 
 

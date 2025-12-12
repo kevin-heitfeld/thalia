@@ -16,6 +16,7 @@ from thalia.core.region_components import LearningComponent
 from thalia.core.base_manager import ManagerContext
 from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
+from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.config import HippocampusConfig, HippocampusState
@@ -64,6 +65,17 @@ class HippocampusLearningComponent(LearningComponent):
         self._ca3_activity_history: Optional[torch.Tensor] = None
         self._ca3_threshold_offset: Optional[torch.Tensor] = None
 
+        # Homeostasis for synaptic scaling
+        homeostasis_config = UnifiedHomeostasisConfig(
+            weight_budget=config.weight_budget * self.ca3_size,  # Total budget
+            w_min=config.w_min,
+            w_max=config.w_max,
+            soft_normalization=config.soft_normalization,
+            normalization_rate=config.normalization_rate,
+            device=self.context.device,
+        )
+        self.homeostasis = UnifiedHomeostasis(homeostasis_config)
+
     def apply_learning(
         self,
         state: HippocampusState,
@@ -105,13 +117,10 @@ class HippocampusLearningComponent(LearningComponent):
                     w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
                     clamp_weights(w_ca3_ca3.data, cfg.w_min, cfg.w_max)
 
-                    # Synaptic scaling (homeostatic)
-                    if cfg.synaptic_scaling_enabled:
-                        mean_weight = w_ca3_ca3.data.mean()
-                        scaling = 1.0 + cfg.synaptic_scaling_rate * (cfg.synaptic_scaling_target - mean_weight)
-                        w_ca3_ca3.data *= scaling
-                        w_ca3_ca3.data.fill_diagonal_(0.0)
-                        clamp_weights(w_ca3_ca3.data, cfg.w_min, cfg.w_max)
+                    # Synaptic scaling (homeostatic) using UnifiedHomeostasis
+                    if cfg.homeostasis_enabled:
+                        w_ca3_ca3.data = self.homeostasis.normalize_weights(w_ca3_ca3.data, dim=1)
+                        w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
 
                 return {
                     "learning_applied": True,
@@ -132,7 +141,7 @@ class HippocampusLearningComponent(LearningComponent):
         Returns:
             Threshold offset tensor
         """
-        if not self.config.intrinsic_plasticity_enabled:
+        if not self.config.homeostasis_enabled:
             if self._ca3_threshold_offset is None:
                 self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=self.context.device)
             return self._ca3_threshold_offset
@@ -150,8 +159,8 @@ class HippocampusLearningComponent(LearningComponent):
         self._ca3_activity_history.mul_(0.99).add_(ca3_spikes_1d, alpha=0.01)
 
         # Adjust threshold
-        rate_error = self._ca3_activity_history - cfg.intrinsic_target_rate
-        self._ca3_threshold_offset.add_(rate_error, alpha=cfg.intrinsic_adaptation_rate)
+        rate_error = self._ca3_activity_history - cfg.activity_target
+        self._ca3_threshold_offset.add_(rate_error, alpha=cfg.normalization_rate)
         self._ca3_threshold_offset.clamp_(-0.5, 0.5)
 
         return self._ca3_threshold_offset

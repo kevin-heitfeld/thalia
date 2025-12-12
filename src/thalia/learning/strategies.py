@@ -75,7 +75,6 @@ class LearningConfig(LearningComponentConfig):
     """
     w_min: float = 0.0
     w_max: float = 1.0
-    soft_bounds: bool = True  # Use soft bounds (multiplicative) vs hard clamp
 
 
 @dataclass
@@ -194,20 +193,14 @@ class BaseStrategy(nn.Module, ABC):
         weights: torch.Tensor,
         dw: torch.Tensor,
     ) -> torch.Tensor:
-        """Apply weight bounds using soft or hard constraints."""
+        """Apply weight bounds using hard clamp.
+        
+        Weight bounds are enforced via hard clamping. Biological regulation
+        is provided by UnifiedHomeostasis (weight normalization) and BCM
+        (sliding threshold), not by soft bounds.
+        """
         cfg = self.config
-
-        if cfg.soft_bounds:
-            # Soft bounds: scale update by headroom/footroom
-            headroom = (cfg.w_max - weights) / (cfg.w_max - cfg.w_min + 1e-8)
-            footroom = (weights - cfg.w_min) / (cfg.w_max - cfg.w_min + 1e-8)
-            dw = torch.where(
-                dw > 0,
-                dw * headroom.clamp(0, 1),
-                dw * footroom.clamp(0, 1),
-            )
-
-        # Apply update and clamp
+        # Apply update and clamp to hard bounds
         new_weights = clamp_weights(weights + dw, cfg.w_min, cfg.w_max, inplace=False)
         return new_weights
 

@@ -259,14 +259,19 @@ Created `thalia/config/robustness_config.py` with:
 - `RobustnessConfig`: Unified configuration for all mechanisms
 - Presets: `minimal()`, `stable()`, `biological()`, `full()`
 - Easy enable/disable flags for each mechanism
-- Integrated into `ThaliaConfig` as `robustness` field
+- Configure at LayeredCortexConfig level (cortex-specific)
 
 Usage:
 ```python
-from thalia.config import ThaliaConfig, RobustnessConfig
+from thalia.config import ThaliaConfig
+from thalia.regions.cortex import LayeredCortexConfig, RobustnessConfig
 
 config = ThaliaConfig(
-    robustness=RobustnessConfig.biological(),  # Enable most mechanisms
+    brain=BrainConfig(
+        cortex=LayeredCortexConfig(
+            robustness=RobustnessConfig.minimal(),  # Cortex-specific
+        ),
+    ),
 )
 brain = EventDrivenBrain.from_thalia_config(config)
 ```

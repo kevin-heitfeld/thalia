@@ -99,11 +99,7 @@ from thalia.core.predictive_coding import (
 # - Winner-take-all: Lateral inhibition, striatum action selection, PFC gating
 # - Phase binding: Gamma oscillations, cross-modal binding pathways
 from thalia.core.utils import (
-    ensure_batch_dim,
-    ensure_batch_dims,
-    remove_batch_dim,
     clamp_weights,
-    apply_soft_bounds,
     cosine_similarity_safe,
     zeros_like_config,
     ones_like_config,
@@ -214,11 +210,7 @@ __all__ = [
     "ErrorType",
     # NOTE: Scalable attention removed - emerges from gamma/STDP/lateral-inhibition
     # Utilities
-    "ensure_batch_dim",
-    "ensure_batch_dims",
-    "remove_batch_dim",
     "clamp_weights",
-    "apply_soft_bounds",
     "cosine_similarity_safe",
     "zeros_like_config",
     "ones_like_config",

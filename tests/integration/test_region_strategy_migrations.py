@@ -24,8 +24,6 @@ class TestLayeredCortexStrategyMigration:
             n_input=32,
             n_output=16,
             bcm_enabled=True,
-            bcm_tau_theta=5000.0,
-            bcm_theta_init=0.01,
         )
         cortex = LayeredCortex(config)
 

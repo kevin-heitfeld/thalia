@@ -59,7 +59,6 @@ from .language_config import (
     PositionConfig,
     SequenceMemoryConfig,
 )
-from .robustness_config import RobustnessConfig
 from .thalia_config import ThaliaConfig, print_config
 from .validation import (
     validate_thalia_config,
@@ -127,8 +126,6 @@ __all__ = [
     "DecodingConfig",
     "PositionConfig",
     "SequenceMemoryConfig",
-    # Robustness
-    "RobustnessConfig",
     # Region size constants
     "DG_TO_EC_EXPANSION",
     "CA3_TO_DG_RATIO",

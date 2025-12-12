@@ -17,12 +17,7 @@ import torch
 
 from thalia.regions.base import RegionConfig, RegionState
 from thalia.learning.bcm import BCMConfig
-from thalia.config.robustness_config import RobustnessConfig
-from thalia.core.learning_constants import (
-    LEARNING_RATE_STDP,
-    TAU_STDP_PLUS,
-    TAU_STDP_MINUS,
-)
+from .robustness_config import RobustnessConfig
 
 
 def calculate_layer_sizes(n_output: int, l4_ratio: float, l23_ratio: float, l5_ratio: float) -> tuple[int, int, int]:
@@ -93,15 +88,8 @@ class LayeredCortexConfig(RegionConfig):
     # Top-down modulation (for attention pathway)
     l23_top_down_strength: float = 0.2  # Feedback to L2/3
 
-    # STDP learning parameters
-    stdp_lr: float = LEARNING_RATE_STDP
-    stdp_tau_plus: float = TAU_STDP_PLUS
-    stdp_tau_minus: float = TAU_STDP_MINUS
-
-    # Weight bounds for feedforward connections (positive-only, Dale's law)
-    w_max: float = 1.0
-    w_min: float = 0.0
-    soft_bounds: bool = True  # Use soft weight bounds (vs hard clipping)
+    # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
+    # are inherited from NeuralComponentConfig
 
     # Weight bounds for L2/3 recurrent connections (signed, compact E/I approximation)
     # Unlike feedforward connections, recurrent lateral connections use signed weights
@@ -120,28 +108,13 @@ class LayeredCortexConfig(RegionConfig):
     l23_adapt_tau: float = 100.0      # Adaptation time constant (ms)
 
     # =========================================================================
-    # SHORT-TERM PLASTICITY (STP) for L2/3 recurrent
+    # CORTEX-SPECIFIC DYNAMICS
     # =========================================================================
-    # L2/3 recurrent connections show SHORT-TERM DEPRESSION, preventing
-    # frozen attractors. Without STD, the same neurons fire every timestep.
-    # Always enabled (critical for pattern transitions).
-    # DEPRESSING_FAST: High U (0.8), fast depression, quick recovery
-    # This allows pattern transitions rather than frozen attractors.
-
-    # =========================================================================
-    # HETEROSYNAPTIC PLASTICITY & SYNAPTIC SCALING
-    # =========================================================================
-    # These are handled by UnifiedHomeostasis (see learning/unified_homeostasis.py)
-
-    # =========================================================================
-    # INTRINSIC PLASTICITY
-    # =========================================================================
-    # Neurons adjust their own excitability based on firing history.
-    # High activity → higher threshold (less excitable)
-    # This operates on LONGER timescales than SFA.
-    intrinsic_plasticity_enabled: bool = True
-    intrinsic_target_rate: float = 0.1    # Target firing rate
-    intrinsic_adaptation_rate: float = 0.01  # How fast threshold adapts
+    # These parameters control cortical circuit mechanisms that are specific
+    # to layered cortex architecture (not universal like homeostasis).
+    #
+    # Note: Intrinsic plasticity (threshold adaptation) is handled by
+    # UnifiedHomeostasis via activity_target in the base NeuralComponentConfig.
 
     # Feedforward Inhibition (FFI) parameters
     # FFI detects stimulus changes and transiently suppresses recurrent activity
@@ -169,19 +142,18 @@ class LayeredCortexConfig(RegionConfig):
     # neurons that respond strongly to one orientation have high thresholds,
     # making them less likely to respond to other orientations.
     bcm_enabled: bool = False
-    bcm_tau_theta: float = 5000.0  # Threshold adaptation time constant (ms)
-    bcm_theta_init: float = 0.01  # Initial sliding threshold
-    bcm_config: Optional[BCMConfig] = None  # Custom BCM configuration
+    bcm_config: Optional[BCMConfig] = None  # BCM configuration (if enabled)
 
     # =========================================================================
-    # ROBUSTNESS MECHANISMS
+    # ROBUSTNESS MECHANISMS (Cortex-Specific)
     # =========================================================================
-    # Unified configuration for hyperparameter robustness mechanisms:
-    # - E/I Balance: Maintains healthy excitation/inhibition ratio
-    # - Divisive Normalization: Automatic gain control for inputs
-    # - Intrinsic Plasticity: Activity-dependent threshold adaptation
-    # - Criticality: Maintains network near critical point (optional)
-    # - Metabolic: Energy-based regularization for sparsity (optional)
+    # Optional configuration for mechanisms NOT already in UnifiedHomeostasis:
+    # - E/I Balance: Maintains healthy excitation/inhibition ratio (critical for recurrence)
+    # - Criticality: Maintains network near critical point (research/diagnostics)
+    # - Metabolic: Energy-based regularization for sparsity (optional goal)
+    #
+    # Note: Activity regulation and threshold adaptation are handled by
+    # UnifiedHomeostasis (in NeuralComponentConfig base class).
     robustness: Optional[RobustnessConfig] = field(default=None)
 
 

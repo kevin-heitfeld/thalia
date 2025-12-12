@@ -37,8 +37,7 @@ class TestLearningStrategyBasics:
 
     def test_hebbian_strategy_basic(self):
         """Test HebbianStrategy computes correct updates."""
-        # Use soft_bounds=False for exact comparison
-        config = HebbianConfig(learning_rate=0.1, w_min=0.0, w_max=1.0, soft_bounds=False)
+        config = HebbianConfig(learning_rate=0.1, w_min=0.0, w_max=1.0)
         strategy = HebbianStrategy(config)
 
         # Setup
@@ -153,7 +152,6 @@ class TestLearningStrategyBasics:
             error_threshold=0.01,
             w_min=0.0,
             w_max=1.0,
-            soft_bounds=False,  # Disable soft bounds for exact comparison
         )
         strategy = ErrorCorrectiveStrategy(config)
 
@@ -280,7 +278,7 @@ class TestRegionIntegration:
         config = PrefrontalConfig(
             n_input=20,
             n_output=10,
-            stdp_lr=0.001,
+            learning_rate=0.001,  # Uses learning_rate from base config
             device=device,
         )
         pfc = Prefrontal(config)
@@ -302,7 +300,7 @@ class TestRegionIntegration:
         config = PrefrontalConfig(
             n_input=20,
             n_output=10,
-            stdp_lr=0.001,
+            learning_rate=0.001,
         )
         pfc = Prefrontal(config)
 
@@ -320,7 +318,7 @@ class TestRegionIntegration:
         config = PrefrontalConfig(
             n_input=20,
             n_output=10,
-            stdp_lr=0.001,
+            learning_rate=0.001,
         )
         pfc = Prefrontal(config)
 
@@ -385,42 +383,6 @@ class TestStrategyBoundsHandling:
         # Verify bounds
         assert weights.min() >= strategy_config.w_min
         assert weights.max() <= strategy_config.w_max
-
-    def test_soft_bounds_vs_hard_clamp(self):
-        """Test difference between soft bounds and hard clamp."""
-        # Soft bounds
-        soft_config = HebbianConfig(
-            learning_rate=0.5,
-            w_min=0.0,
-            w_max=1.0,
-            soft_bounds=True,
-        )
-        soft_strategy = HebbianStrategy(soft_config)
-
-        # Hard clamp
-        hard_config = HebbianConfig(
-            learning_rate=0.5,
-            w_min=0.0,
-            w_max=1.0,
-            soft_bounds=False,
-        )
-        hard_strategy = HebbianStrategy(hard_config)
-
-        # Setup
-        weights = torch.ones(3, 4) * 0.9  # Near max
-        pre = torch.ones(4)
-        post = torch.ones(3)
-
-        # Soft bounds should slow down as approaching max
-        soft_weights, _ = soft_strategy.compute_update(weights, pre, post)
-        soft_change = (soft_weights - weights).mean().item()
-
-        # Hard clamp allows full update until hitting max
-        hard_weights, _ = hard_strategy.compute_update(weights, pre, post)
-        hard_change = (hard_weights - weights).mean().item()
-
-        # Soft bounds should produce smaller change near max
-        assert abs(soft_change) < abs(hard_change)
 
 
 class TestStrategyMetrics:
