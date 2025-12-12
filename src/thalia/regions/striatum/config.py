@@ -135,3 +135,17 @@ class StriatumConfig(NeuralComponentConfig):
     pfc_size: int = 128  # Size of PFC goal context input (must match PFC n_output)
     goal_modulation_strength: float = 0.5  # How strongly goals modulate values
     goal_modulation_lr: float = 0.001  # Learning rate for PFC → striatum weights
+
+    # =========================================================================
+    # D1/D2 PATHWAY DELAYS (Temporal Competition)
+    # =========================================================================
+    # Biological timing for opponent pathways creates temporal competition:
+    # - D1 "Go" pathway: Striatum → GPi/SNr → Thalamus (~15-20ms total)
+    #   Direct inhibition of GPi/SNr → disinhibits thalamus → facilitates action
+    # - D2 "No-Go" pathway: Striatum → GPe → STN → GPi/SNr (~23-28ms total)
+    #   Indirect route via GPe and STN → inhibits thalamus → suppresses action
+    # - Key insight: D1 pathway is ~8ms FASTER than D2 pathway
+    #   Creates temporal competition window where D1 "vote" arrives first,
+    #   D2 "veto" arrives later. Explains action selection timing and impulsivity.
+    d1_to_output_delay_ms: float = 15.0  # D1 direct pathway delay
+    d2_to_output_delay_ms: float = 25.0  # D2 indirect pathway delay (slower!)

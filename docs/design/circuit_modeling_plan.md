@@ -59,11 +59,8 @@ This document prioritizes biological circuit implementations based on:
 
 ---
 
-## Circuits to Implement
-
-### 🔴 HIGH PRIORITY: Striatum D1/D2 Opponent Pathways
-
-**Status**: Pathways exist as classes but integrate synchronously (no explicit delays)
+### ✅ Striatum: D1/D2 Opponent Pathways with Temporal Competition
+**Status**: Fully implemented with pathway-specific delays (December 12, 2025)
 
 **Biological Timing**:
 - **D1 "Go" pathway**: Striatum → GPi/SNr → Thalamus (~15-20ms total)
@@ -92,40 +89,23 @@ This document prioritizes biological circuit implementations based on:
 - **Stage 2**: Sequence learning (action timing in sequences)
 - **Stage 3-4**: Cognitive control (inhibit prepotent responses)
 
-**Implementation Approach**:
-```python
-# In StriatumConfig
-d1_to_output_delay_ms: float = 15.0  # D1 direct pathway
-d2_to_output_delay_ms: float = 25.0  # D2 indirect pathway (slower!)
+**Implementation Details**:
+See implementation in:
+- `src/thalia/regions/striatum/config.py`: Config parameters (d1_to_output_delay_ms, d2_to_output_delay_ms)
+- `src/thalia/regions/striatum/striatum.py`: Circular delay buffers and forward pass logic
+- `src/thalia/regions/striatum/checkpoint_manager.py`: Checkpoint support for delay buffers
+- `tests/unit/test_striatum_d1d2_delays.py`: Comprehensive test suite (9 tests, all passing)
 
-# In Striatum.forward()
-# D1 pathway processes immediately
-d1_votes = self.d1_pathway(cortex_input, hippo_input, pfc_input)
-
-# D2 pathway has additional delay
-if self._d2_delay_buffer is None:
-    # Initialize circular buffer for D2 pathway delay
-    delay_steps = int(self.config.d2_to_output_delay_ms / self.config.dt_ms)
-    self._d2_delay_buffer = torch.zeros(
-        delay_steps, self.n_output, device=self.device
-    )
-    self._d2_delay_ptr = 0
-
-# Apply delay to D2 votes
-d2_votes_current = self.d2_pathway(cortex_input, hippo_input, pfc_input)
-self._d2_delay_buffer[self._d2_delay_ptr] = d2_votes_current
-d2_votes_delayed = self._d2_delay_buffer[
-    (self._d2_delay_ptr - delay_steps) % delay_steps
-]
-self._d2_delay_ptr = (self._d2_delay_ptr + 1) % delay_steps
-
-# Temporal competition (D1 arrives first!)
-net_votes = d1_votes - d2_votes_delayed
-```
-
-**Estimated Effort**: 2-3 hours (similar to cortex/hippocampus delays)
+Key features:
+- D1 delay: 15ms (direct pathway)
+- D2 delay: 25ms (indirect pathway, arrives 10ms later)
+- Circular buffers for efficient memory usage
+- Checkpoint save/restore support
+- Backward compatible (zero delays disable buffering)
 
 ---
+
+## Circuits to Implement
 
 ### 🟡 MEDIUM PRIORITY: Thalamus-Cortex-TRN Loop
 
@@ -271,9 +251,11 @@ thalamus_to_pfc_delay_ms: float = 6.0
 
 ### Priority Order
 
-1. **🔴 D1/D2 pathway delays** (2-3 hours)
-   - Highest impact on action selection realism
-   - Explains temporal dynamics of decision-making
+1. **✅ D1/D2 pathway delays** (COMPLETED - December 12, 2025)
+   - ✅ Implemented with configurable delays (D1: 15ms, D2: 25ms)
+   - ✅ Circular delay buffers with checkpoint support
+   - ✅ Comprehensive test suite (9 tests, all passing)
+   - Impact: Enables realistic action selection timing and temporal competition
    - Critical for Stages -0.5, 1, 2, 3-4
 
 2. **🟡 Thalamus-Cortex-TRN loop** (4-6 hours)
@@ -293,10 +275,11 @@ thalamus_to_pfc_delay_ms: float = 6.0
 
 ### Implementation Strategy
 
-**Phase 1** (Recommended now):
-- Implement D1/D2 pathway delays (highest ROI)
-- Add checkpoint support for delay buffers
-- Test impact on action selection timing
+**Phase 1** (✅ COMPLETED - December 12, 2025):
+- ✅ Implemented D1/D2 pathway delays
+- ✅ Added checkpoint support for delay buffers
+- ✅ Validated with comprehensive test suite
+- Next: Monitor impact on action selection during curriculum training
 
 **Phase 2** (After curriculum Stage 1 validation):
 - Add TRN loop if attention issues arise
@@ -312,7 +295,7 @@ thalamus_to_pfc_delay_ms: float = 6.0
 
 ### Stage -0.5: Sensorimotor Grounding
 **Critical Circuits**:
-- 🔴 **D1/D2 pathways**: Action selection for reaching/manipulation
+- ✅ **D1/D2 pathways**: Action selection for reaching/manipulation (IMPLEMENTED)
 - ✅ **Cerebellum**: Forward/inverse models (current implementation OK)
 
 **Why**: Motor control requires fast, accurate action selection. D1/D2 timing affects reaction times and movement smoothness.
@@ -332,7 +315,7 @@ thalamus_to_pfc_delay_ms: float = 6.0
 **Critical Circuits**:
 - ✅ **Cortex laminar**: Object recognition
 - ✅ **Hippocampus trisynaptic**: Episodic associations
-- 🔴 **D1/D2 pathways**: Policy learning (which object to attend)
+- ✅ **D1/D2 pathways**: Policy learning (which object to attend) (IMPLEMENTED)
 - 🟡 **PFC-Thalamus loop**: Working memory maintenance
 
 **Why**: Working memory requires stable PFC activity coordinated with thalamic gating. Policy learning needs proper action timing.
@@ -343,7 +326,7 @@ thalamus_to_pfc_delay_ms: float = 6.0
 **Critical Circuits**:
 - ✅ **Hippocampus trisynaptic**: Episode sequences
 - ✅ **Cortex laminar**: Temporal patterns
-- 🔴 **D1/D2 pathways**: Action sequences (verb learning)
+- ✅ **D1/D2 pathways**: Action sequences (verb learning) (IMPLEMENTED)
 - 🟡 **PFC-Striatum loop**: Rule representation
 
 **Why**: Sequence learning depends on proper temporal credit assignment. D1/D2 delays affect which actions in sequence get reinforced.
@@ -389,10 +372,11 @@ thalamus_to_pfc_delay_ms: float = 6.0
 
 ## Next Steps
 
-1. ✅ **Complete hippocampus delay checkpoint implementation** (in progress)
-2. 🔄 **Implement D1/D2 pathway delays** (recommended next)
-3. ⏸️ **Monitor curriculum training for attention/control issues** (inform TRN/PFC-Striatum loop priority)
-4. 📊 **Measure oscillation emergence** (validate that explicit delays generate expected rhythms)
+1. ✅ **Complete hippocampus delay checkpoint implementation** (COMPLETED)
+2. ✅ **Implement D1/D2 pathway delays** (COMPLETED - December 12, 2025)
+3. 🔄 **Monitor curriculum training for D1/D2 delay impact** (evaluate action selection timing)
+4. ⏸️ **Monitor curriculum training for attention/control issues** (inform TRN/PFC-Striatum loop priority)
+5. 📊 **Measure oscillation emergence** (validate that explicit delays generate expected rhythms)
 
 ---
 
@@ -406,4 +390,4 @@ thalamus_to_pfc_delay_ms: float = 6.0
 
 ---
 
-**Document Status**: Planning complete, ready for implementation prioritization
+**Document Status**: Updated December 12, 2025 - D1/D2 pathway delays completed

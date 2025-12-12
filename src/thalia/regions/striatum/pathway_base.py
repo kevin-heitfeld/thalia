@@ -38,6 +38,9 @@ class StriatumPathwayConfig(PathwayConfig):
     - Learning dynamics
     """
 
+    # STDP trace parameters
+    stdp_tau_ms: float = 20.0  # Spike trace decay time (for STDP)
+
     # Eligibility trace parameters
     eligibility_tau_ms: float = 1000.0
 

@@ -180,6 +180,32 @@ class StriatumExplorationComponent(ExplorationComponent):
         self._recent_rewards.clear()
         self._recent_accuracy = 0.0
 
+    def get_state(self) -> Dict[str, Any]:
+        """Get exploration component state for checkpointing.
+        
+        Returns:
+            Dict containing all state needed to restore exploration
+        """
+        return {
+            "action_counts": self._action_counts.detach().clone(),
+            "total_trials": self._total_trials,
+            "recent_rewards": self._recent_rewards.copy(),
+            "recent_accuracy": self._recent_accuracy,
+            "tonic_dopamine": self.tonic_dopamine,
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Restore exploration component state from checkpoint.
+        
+        Args:
+            state: Dict from get_state()
+        """
+        self._action_counts = state["action_counts"].to(self.context.device)
+        self._total_trials = state["total_trials"]
+        self._recent_rewards = state["recent_rewards"].copy()
+        self._recent_accuracy = state["recent_accuracy"]
+        self.tonic_dopamine = state["tonic_dopamine"]
+
     def get_exploration_diagnostics(self) -> Dict[str, Any]:
         """Get exploration-specific diagnostics."""
         diag = super().get_exploration_diagnostics()

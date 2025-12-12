@@ -101,6 +101,7 @@ from thalia.core.utils import clamp_weights
 from thalia.regions.base import (
     NeuralComponent,
 )
+from thalia.regions.striatum.exploration import ExplorationConfig
 
 from .config import StriatumConfig
 from .action_selection import ActionSelectionMixin
@@ -113,6 +114,7 @@ from .exploration_component import StriatumExplorationComponent
 from .checkpoint_manager import CheckpointManager
 from .state_tracker import StriatumStateTracker
 from .forward_coordinator import ForwardPassCoordinator
+from .td_lambda import TDLambdaLearner, TDLambdaConfig
 
 
 @register_region(
@@ -193,10 +195,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         super().__init__(config)
 
-        # NOTE: Dopamine is now managed centrally by Brain (acting as VTA).
-        # The Brain computes RPE and broadcasts normalized dopamine via set_dopamine().
-        # We no longer have a local DopamineSystem here.
-
         # =====================================================================
         # STATE TRACKER - Temporal State Management
         # =====================================================================
@@ -212,8 +210,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # =====================================================================
         # Centralized exploration management with UCB tracking and adaptive
         # tonic dopamine adjustment based on performance.
-        from thalia.regions.striatum.exploration import ExplorationConfig
-
         exploration_config = ExplorationConfig(
             ucb_exploration=self.striatum_config.ucb_exploration,
             ucb_coefficient=self.striatum_config.ucb_coefficient,
@@ -287,15 +283,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             d2_pathway=self.d2_pathway,
         )
 
-        # Property delegation for backward compatibility
-        # Old code accesses self.d1_weights, self.d2_weights, etc.
-        # These now delegate to pathway objects
-
-        # =====================================================================
-        # BACKWARD COMPATIBILITY PROPERTIES (DEPRECATED - use pathways directly)
-        # =====================================================================
-        # These properties maintain compatibility with old checkpoints and code
-
         # =====================================================================
         # HOMEOSTATIC PLASTICITY STATE
         # =====================================================================
@@ -305,13 +292,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self._trial_spike_count = 0.0  # Spikes accumulated this trial
         self._trial_timesteps = 0  # Timesteps in current trial
         self._homeostatic_scaling_applied = False  # Track if scaling happened
-
-        # =====================================================================
-        # TONIC DOPAMINE STATE
-        # =====================================================================
-        # Baseline dopamine level that modulates D1 gain and exploration.
-        # Updated slowly based on overall reward history (motivational state).
-        # Now managed by exploration_manager (set during initialization above)
 
         # =====================================================================
         # UNIFIED HOMEOSTASIS (Constraint-Based Stability)
@@ -371,8 +351,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # When enabled, replaces basic eligibility traces with TD(λ) traces that
         # accumulate with factor (γλ) instead of simple exponential decay.
         if self.striatum_config.use_td_lambda:
-            from .td_lambda import TDLambdaLearner, TDLambdaConfig
-
             td_config = TDLambdaConfig(
                 lambda_=self.striatum_config.td_lambda,
                 gamma=self.striatum_config.td_gamma,
@@ -428,20 +406,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             self.pfc_modulation_d2 = None
 
         # =====================================================================
-        # D1/D2 SEPARATE NEURON POPULATIONS (Biological Architecture)
-        # =====================================================================
-        # In biology, D1-MSNs and D2-MSNs are SEPARATE neurons with different
-        # dopamine receptor types. This is crucial because:
-        # - D1-MSNs express D1 receptors: DA+ → LTP
-        # - D2-MSNs express D2 receptors: DA+ → LTD (inverted!)
-        #
-        # Previous implementation: D1/D2 were weight matrices on the same neurons
-        # Current implementation: D1/D2 are separate pathway objects with their own neurons
-        #
-        # Neurons are now managed by pathway objects (d1_pathway.neurons, d2_pathway.neurons)
-        # For backward compatibility, we expose them as properties
-
-        # =====================================================================
         # REWARD PREDICTION ERROR (RPE) - Value Estimates
         # =====================================================================
         # Track expected value per action for computing prediction error.
@@ -462,10 +426,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self._last_d1_spikes = None
         self._last_d2_spikes = None
         self._last_pfc_goal_context = None  # For goal-conditioned learning
-        
+
         # Initialize recent_spikes tensor for trial activity tracking
         self.recent_spikes = torch.zeros(config.n_output, device=self.device)
-        
+
         # Initialize rpe_trace if RPE is enabled
         self.rpe_trace = (
             torch.zeros(self.n_actions, device=self.device)
@@ -508,9 +472,23 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self._beta_amplitude: float = 1.0
         self._coupled_amplitudes: Dict[str, float] = {}
 
-    # =========================================================================
-    # PLASTICITY CONTROL (for debugging only)
-    # =========================================================================
+        # =====================================================================
+        # D1/D2 PATHWAY DELAY BUFFERS (Temporal Competition)
+        # =====================================================================
+        # Implement biologically-accurate transmission delays for opponent pathways:
+        # - D1 direct pathway: ~15ms (Striatum → GPi/SNr → Thalamus)
+        # - D2 indirect pathway: ~25ms (Striatum → GPe → STN → GPi/SNr → Thalamus)
+        # D1 arrives ~10ms before D2, creating temporal competition window.
+
+        # Calculate delay steps from millisecond delays
+        self._d1_delay_steps = int(self.striatum_config.d1_to_output_delay_ms / self.config.dt_ms)
+        self._d2_delay_steps = int(self.striatum_config.d2_to_output_delay_ms / self.config.dt_ms)
+
+        # Delay buffers (initialized lazily on first forward pass)
+        self._d1_delay_buffer: Optional[torch.Tensor] = None
+        self._d2_delay_buffer: Optional[torch.Tensor] = None
+        self._d1_delay_ptr: int = 0
+        self._d2_delay_ptr: int = 0
 
     # =========================================================================
     # EXPLORATION STATE PROPERTIES (Backward Compatibility)
@@ -1315,16 +1293,72 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         )
 
         # =====================================================================
-        # ACTION SELECTION: D1 - D2 (GO - NOGO)
+        # ACTION SELECTION: D1 - D2 (GO - NOGO) WITH TEMPORAL COMPETITION
         # =====================================================================
         # For each action, compute NET = D1_activity - D2_activity
         # Select action with highest NET value (or sample from softmax)
         # This is the key biological insight: D1 and D2 populations COMPETE
-        d1_votes = self._count_population_votes(d1_spikes)
-        d2_votes = self._count_population_votes(d2_spikes)
 
-        # ACCUMULATE D1/D2 votes across timesteps for trial-level decision
-        # This integrates sparse spiking evidence over time
+        # Count votes from current timestep spikes
+        d1_votes_current = self._count_population_votes(d1_spikes)
+        d2_votes_current = self._count_population_votes(d2_spikes)
+
+        # =====================================================================
+        # APPLY D1/D2 PATHWAY DELAYS (Biological Realism)
+        # =====================================================================
+        # D1 direct pathway: ~15ms (arrives first!)
+        # D2 indirect pathway: ~25ms (arrives ~10ms later)
+        # This creates temporal competition where D1 "Go" signal arrives before
+        # D2 "No-Go" signal, explaining impulsivity and action selection timing.
+
+        # Apply D1 delay (if configured)
+        if self._d1_delay_steps > 0:
+            # Initialize D1 delay buffer on first use
+            if self._d1_delay_buffer is None:
+                max_delay_steps = max(1, self._d1_delay_steps * 2 + 1)
+                self._d1_delay_buffer = torch.zeros(
+                    max_delay_steps, self.n_actions,
+                    device=self.device, dtype=d1_votes_current.dtype
+                )
+                self._d1_delay_ptr = 0
+
+            # Store current D1 votes in circular buffer
+            self._d1_delay_buffer[self._d1_delay_ptr] = d1_votes_current
+
+            # Retrieve delayed D1 votes
+            read_idx = (self._d1_delay_ptr - self._d1_delay_steps) % self._d1_delay_buffer.shape[0]
+            d1_votes = self._d1_delay_buffer[read_idx]
+
+            # Advance pointer
+            self._d1_delay_ptr = (self._d1_delay_ptr + 1) % self._d1_delay_buffer.shape[0]
+        else:
+            d1_votes = d1_votes_current
+
+        # Apply D2 delay (if configured, typically LONGER than D1)
+        if self._d2_delay_steps > 0:
+            # Initialize D2 delay buffer on first use
+            if self._d2_delay_buffer is None:
+                max_delay_steps = max(1, self._d2_delay_steps * 2 + 1)
+                self._d2_delay_buffer = torch.zeros(
+                    max_delay_steps, self.n_actions,
+                    device=self.device, dtype=d2_votes_current.dtype
+                )
+                self._d2_delay_ptr = 0
+
+            # Store current D2 votes in circular buffer
+            self._d2_delay_buffer[self._d2_delay_ptr] = d2_votes_current
+
+            # Retrieve delayed D2 votes (arrives LATER than D1!)
+            read_idx = (self._d2_delay_ptr - self._d2_delay_steps) % self._d2_delay_buffer.shape[0]
+            d2_votes = self._d2_delay_buffer[read_idx]
+
+            # Advance pointer
+            self._d2_delay_ptr = (self._d2_delay_ptr + 1) % self._d2_delay_buffer.shape[0]
+        else:
+            d2_votes = d2_votes_current
+
+        # ACCUMULATE delayed D1/D2 votes across timesteps for trial-level decision
+        # This integrates sparse spiking evidence over time WITH proper temporal dynamics
         self.state_tracker.accumulate_votes(d1_votes, d2_votes)
 
         # =====================================================================
@@ -1344,10 +1378,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         # =====================================================================
         # UPDATE ELIGIBILITY TRACES (for all active neurons)
+        # =====================================================================
         # Get timestep from config for temporal dynamics
         dt = self.config.dt_ms
 
-        # =====================================================================
         # Update D1/D2 STDP-style eligibility (always enabled)
         # Eligibility accumulates for ALL neurons that fire during the trial.
         # When reward arrives, deliver_reward() uses last_action (set by finalize_action)
@@ -1375,11 +1409,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # The action-specific masking happens in deliver_reward(), not here
         self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes)
 
-        # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
-        # VTA updates dopamine, LC updates NE, NB updates ACh.
-        # Brain broadcasts to all regions every timestep via _update_neuromodulators().
-        # No local decay needed.
-
         # Update recent spikes and trial activity via state_tracker
         self.state_tracker.update_recent_spikes(d1_spikes, decay=0.9)
         self.state_tracker.update_trial_activity(d1_spikes, d2_spikes)
@@ -1388,7 +1417,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self.learning_manager.store_spikes(d1_spikes, d2_spikes)
 
         self.state.spikes = output_spikes
-        # self.state.dopamine is set by Brain via set_dopamine(), no need to update here
         self.state.t += 1
 
         # Apply axonal delay (biological reality: ALL neural connections have delays)
@@ -1497,6 +1525,16 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         if self.td_lambda_d1 is not None:
             self.td_lambda_d1.reset_episode()
             self.td_lambda_d2.reset_episode()
+
+        # Reset D1/D2 pathway delay buffers
+        # Keep buffers allocated (for efficiency) but reset pointers to beginning
+        # Buffers will be refilled with zeros on next forward pass naturally
+        self._d1_delay_ptr = 0
+        self._d2_delay_ptr = 0
+        if self._d1_delay_buffer is not None:
+            self._d1_delay_buffer.zero_()
+        if self._d2_delay_buffer is not None:
+            self._d2_delay_buffer.zero_()
 
     # endregion
 
