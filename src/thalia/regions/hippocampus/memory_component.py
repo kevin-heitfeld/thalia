@@ -22,11 +22,66 @@ if TYPE_CHECKING:
 class HippocampusMemoryComponent(MemoryComponent):
     """Manages episodic memory buffer for hippocampus.
 
-    Handles:
-    1. Episode storage with priority
-    2. Prioritized sampling for replay
-    3. Pattern completion (retrieve similar experiences)
-    4. Buffer management (capacity limits)
+    This component implements the episodic memory buffer that stores experiences
+    for offline replay, pattern completion, and consolidation to cortex.
+
+    Responsibilities:
+    =================
+    1. **Episode Storage**: Store experiences with metadata and priority
+    2. **Prioritized Sampling**: Sample important/surprising episodes for replay
+    3. **Pattern Completion**: Retrieve similar experiences given partial cue
+    4. **Buffer Management**: Enforce capacity limits, replace old episodes
+
+    Key Features:
+    =============
+    - **Priority-Based Storage**: High-priority episodes (surprising, rewarding)
+      are less likely to be overwritten
+    
+    - **Similarity-Based Retrieval**: Pattern completion via cosine similarity
+      between query and stored patterns (CA3 autoassociation model)
+    
+    - **Sequence Support**: Store temporal sequences, not just single states
+      (models sequential replay during sharp-wave ripples)
+    
+    - **Metadata Tracking**: Store task context, timestamps, confidence
+
+    Biological Motivation:
+    =====================
+    The hippocampus rapidly stores episodic memories:
+    - **CA3**: Autoassociative network for pattern completion
+    - **CA1**: Comparator for novelty detection
+    - **Replay**: Offline reactivation during sleep/rest (SWRs)
+    - **Consolidation**: Gradual transfer to cortex over days/weeks
+
+    This component models the episode buffer and retrieval mechanisms.
+
+    Usage:
+    ======
+        memory = HippocampusMemoryComponent(config, context)
+        
+        # Store episode after trial
+        memory.store_memory(
+            state=ca3_pattern,
+            action=action_taken,
+            reward=reward_received,
+            correct=was_correct,
+            priority_boost=surprise_value,
+        )
+        
+        # Retrieve similar episodes (pattern completion)
+        similar_episodes = memory.retrieve_similar(
+            query_pattern=partial_cue,
+            k=5,  # Top 5 matches
+        )
+        
+        # Sample for replay
+        replay_batch = memory.sample_batch(batch_size=32, prioritized=True)
+
+    See Also:
+    =========
+    - `thalia.regions.hippocampus.replay_engine` for replay mechanisms
+    - `thalia.regions.hippocampus.hindsight_relabeling` for goal relabeling
+    - `docs/design/memory_consolidation.md` (if exists)
     """
 
     def __init__(self, config: HippocampusConfig, context: ManagerContext):

@@ -51,7 +51,7 @@ from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.traces import update_trace
 from thalia.core.weight_init import WeightInitializer
 from thalia.regions.base import NeuralComponent, LearningRule
-from thalia.regions.theta_dynamics import FeedforwardInhibition
+from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
 from .learning_component import HippocampusLearningComponent

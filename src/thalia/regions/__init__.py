@@ -81,7 +81,7 @@ from thalia.regions.hippocampus import (
     HippocampusConfig,
     HippocampusState,
 )
-from thalia.regions.theta_dynamics import FeedforwardInhibition
+from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 
 # Register all regions with the factory
 register_region("cortex", aliases=["layered_cortex"])(LayeredCortex)

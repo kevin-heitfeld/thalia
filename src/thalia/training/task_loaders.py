@@ -41,10 +41,19 @@ from thalia.sensory import (
     VisualConfig,
     RetinalEncoder,
 )
-from thalia.core.neuron_constants import (
+from thalia.training.task_constants import (
     SPIKE_PROBABILITY_LOW,
     SPIKE_PROBABILITY_MEDIUM,
     SPIKE_PROBABILITY_HIGH,
+    SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
+    SENSORIMOTOR_WEIGHT_REACHING,
+    SENSORIMOTOR_WEIGHT_MANIPULATION,
+    SENSORIMOTOR_WEIGHT_PREDICTION,
+    DATASET_WEIGHT_MNIST,
+    DATASET_WEIGHT_TEMPORAL,
+    DATASET_WEIGHT_PHONOLOGY,
+    DATASET_WEIGHT_GAZE,
+    REWARD_SCALE_PREDICTION,
 )
 
 
@@ -114,10 +123,10 @@ class SensorimotorConfig:
         if self.task_probabilities is None:
             # Equal probability for all tasks
             self.task_probabilities = {
-                'motor_control': 0.25,
-                'reaching': 0.25,
-                'manipulation': 0.25,
-                'prediction': 0.25,
+                'motor_control': SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
+                'reaching': SENSORIMOTOR_WEIGHT_REACHING,
+                'manipulation': SENSORIMOTOR_WEIGHT_MANIPULATION,
+                'prediction': SENSORIMOTOR_WEIGHT_PREDICTION,
             }
 
 
@@ -367,7 +376,7 @@ class SensorimotorTaskLoader:
         if self.last_obs is not None and self.last_action is not None:
             prediction_error = torch.sum(torch.abs(next_obs.float() - self.last_obs.float()))
             prediction_error = prediction_error / next_obs.numel()
-            prediction_reward = max(0.0, 1.0 - prediction_error.item())
+            prediction_reward = max(0.0, REWARD_SCALE_PREDICTION - prediction_error.item())
         else:
             prediction_reward = 0.0
 
@@ -442,10 +451,10 @@ class PhonologyConfig:
         if self.task_probabilities is None:
             # Default task distribution (per curriculum strategy)
             self.task_probabilities = {
-                'mnist': 0.40,          # Visual foundation
-                'temporal': 0.20,       # Sequence learning
-                'phonology': 0.30,      # Phoneme discrimination
-                'gaze_following': 0.10, # Social attention
+                'mnist': DATASET_WEIGHT_MNIST,          # Visual foundation
+                'temporal': DATASET_WEIGHT_TEMPORAL,       # Sequence learning
+                'phonology': DATASET_WEIGHT_PHONOLOGY,      # Phoneme discrimination
+                'gaze_following': DATASET_WEIGHT_GAZE, # Social attention
             }
 
 

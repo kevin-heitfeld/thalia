@@ -21,10 +21,59 @@ if TYPE_CHECKING:
 class StriatumExplorationComponent(ExplorationComponent):
     """Manages exploration strategies for striatal action selection.
 
-    Handles:
-    1. UCB (Upper Confidence Bound) tracking for information-seeking behavior
-    2. Adaptive exploration via tonic dopamine adjustment
-    3. Performance history tracking
+    This component implements exploration mechanisms that balance exploitation
+    of known good actions with information-seeking about uncertain actions.
+
+    Responsibilities:
+    =================
+    1. **UCB Tracking**: Upper Confidence Bound for information seeking
+    2. **Adaptive Exploration**: Adjusts exploration based on performance
+    3. **Tonic Dopamine Management**: Motivational state modulation
+    4. **Performance History**: Tracks recent rewards and accuracy
+
+    Exploration Strategies:
+    =======================
+    - **UCB (Upper Confidence Bound)**:
+      bonus = coefficient * sqrt(log(total_trials) / action_count)
+      Selects uncertain actions more often (information value)
+    
+    - **Adaptive Tonic Dopamine**:
+      High performance → reduce exploration (exploit)
+      Low performance → increase exploration (explore alternatives)
+      Biologically plausible: sustained DA levels modulate motivation
+
+    - **Tonic Modulation of Phasic**:
+      Phasic DA (reward prediction error) scaled by tonic level
+      High tonic → stronger learning from rewards
+      Low tonic → reduced impact of individual rewards
+
+    Biological Motivation:
+    =====================
+    In biological systems, exploration is driven by:
+    - **Tonic dopamine**: Sustained baseline DA from VTA/SNc
+    - **Norepinephrine**: Uncertainty-driven arousal (LC)
+    - **Prefrontal control**: Goal-directed exploration policies
+
+    This component models tonic DA and implicit exploration bonuses.
+
+    Usage:
+    ======
+        exploration = StriatumExplorationComponent(config, context)
+        
+        # Add exploration bonus to Q-values
+        exploration_bonus = exploration.compute_exploration_bonus(q_values)
+        action_values = q_values + exploration_bonus
+        
+        # Update after trial
+        exploration.update_exploration(action, reward, accuracy)
+        
+        # Get current tonic dopamine level
+        tonic_da = exploration.get_tonic_dopamine()
+
+    See Also:
+    =========
+    - `thalia.regions.striatum.action_selection` for selection methods
+    - `docs/design/exploration_strategies.md` (if exists)
     """
 
     def __init__(

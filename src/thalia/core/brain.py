@@ -116,7 +116,7 @@ from ..regions.hippocampus import Hippocampus, HippocampusConfig
 from ..regions.prefrontal import Prefrontal, PrefrontalConfig
 from ..regions.striatum import Striatum, StriatumConfig
 from ..regions.cerebellum import Cerebellum, CerebellumConfig
-from ..regions.theta_dynamics import TemporalIntegrationLayer
+from ..regions.feedforward_inhibition import TemporalIntegrationLayer
 
 # Import config types
 from ..config.brain_config import CortexType

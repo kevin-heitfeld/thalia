@@ -54,7 +54,7 @@ from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
 from thalia.regions.cortex.config import calculate_layer_sizes
-from thalia.regions.theta_dynamics import FeedforwardInhibition
+from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig, STDPStrategy, STDPConfig
 from thalia.core.utils import ensure_1d, clamp_weights
 from thalia.core.traces import update_trace

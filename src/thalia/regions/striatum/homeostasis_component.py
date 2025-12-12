@@ -43,8 +43,53 @@ class HomeostasisManagerConfig(BaseConfig):
 class StriatumHomeostasisComponent(HomeostasisComponent):
     """Manages homeostatic regulation for striatal D1/D2 pathways.
 
-    Provides budget-constrained weight normalization and baseline pressure
-    to maintain stable D1/D2 competition.
+    This component implements constraint-based homeostasis to maintain stable
+    D1/D2 competition and prevent pathological states (runaway D2 inhibition,
+    weight saturation).
+
+    Responsibilities:
+    =================
+    1. **Budget Enforcement**: Constrains total D1/D2 weight sums
+    2. **Weight Normalization**: Keeps weights within biological bounds
+    3. **Baseline Pressure**: Prevents D1-D2 imbalance from growing unbounded
+    4. **Diagnostics**: Reports homeostatic state and violations
+
+    Key Mechanisms:
+    ===============
+    - **Unified Homeostasis**: Uses constraint-based weight normalization
+      (see thalia.learning.unified_homeostasis)
+    - **Separate D1/D2 Budgets**: Independent weight budgets per pathway
+    - **Baseline Pressure**: Soft constraint toward net_balance ≈ 0
+
+    Biological Motivation:
+    =====================
+    In biological striatum, homeostatic mechanisms prevent runaway competition:
+    - Synaptic scaling maintains stable firing rates
+    - Intrinsic plasticity adjusts neuronal excitability
+    - Inhibitory plasticity balances excitation/inhibition
+
+    This component consolidates these mechanisms into constraint-based regulation.
+
+    Usage:
+    ======
+        homeostasis = StriatumHomeostasisComponent(config, context)
+        
+        # Apply normalization during learning
+        d1_weights = homeostasis.apply_homeostasis(
+            d1_weights, pathway='d1', metrics=d1_metrics
+        )
+        d2_weights = homeostasis.apply_homeostasis(
+            d2_weights, pathway='d2', metrics=d2_metrics
+        )
+        
+        # Check for violations
+        diagnostics = homeostasis.get_diagnostics()
+
+    See Also:
+    =========
+    - `thalia.learning.unified_homeostasis.StriatumHomeostasis`
+    - `docs/patterns/mixins.md` for component patterns
+    - `docs/patterns/state-management.md` for state handling
     """
 
     def __init__(
