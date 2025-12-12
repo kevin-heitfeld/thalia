@@ -317,7 +317,10 @@ class GrowthMixin:
 - ✅ ~180 lines removed from base class, consolidated into single mixin
 - ✅ ~20 lines saved in Prefrontal (cleaner implementation)
 - ✅ Pattern ready for future region implementations
-- ✅ Component parity: Pathways can use same mixin (already available via NeuralComponent)
+- ✅ Component parity verified: Pathways inherit GrowthMixin via NeuralComponent
+  - SpikingPathway: Custom `add_neurons()` for pathway-specific growth (axonal delays, connectivity masks)
+  - SensoryPathway: Can use template method or helpers as needed
+  - Both have access to `_expand_weights()`, `_expand_state_tensors()`, `_recreate_neurons_with_state()`
 
 **Rationale:**
 - Eliminates duplication of weight expansion, config update, neuron recreation logic
