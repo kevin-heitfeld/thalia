@@ -40,7 +40,7 @@ Example usage:
     brain.consolidate(n_cycles=5)
 """
 
-from .spiking_pathway import SpikingPathway
+from thalia.pathways.spiking_pathway import SpikingPathway
 
 # Note: EventDrivenBrain should be imported from thalia.core.brain directly
 # to avoid circular imports

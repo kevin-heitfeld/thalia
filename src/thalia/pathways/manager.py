@@ -7,14 +7,14 @@ Handles creation, tracking, and coordinated growth of all inter-region pathways.
 from typing import Dict, List, Tuple, Any
 
 from thalia.core.component_config import PathwayConfig
-from thalia.integration.spiking_pathway import SpikingPathway
-from thalia.integration.spiking_pathway import SpikingLearningRule, TemporalCoding
+from thalia.pathways.spiking_pathway import SpikingPathway
+from thalia.pathways.spiking_pathway import SpikingLearningRule, TemporalCoding
 from thalia.events.system import Event, EventType, SpikePayload
-from thalia.integration.pathways.spiking_attention import (
+from thalia.pathways.attention.spiking_attention import (
     SpikingAttentionPathway,
     SpikingAttentionPathwayConfig,
 )
-from thalia.integration.pathways.spiking_replay import (
+from thalia.pathways.spiking_replay import (
     SpikingReplayPathway,
     SpikingReplayPathwayConfig,
 )

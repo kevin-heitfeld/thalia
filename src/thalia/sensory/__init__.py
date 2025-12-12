@@ -61,7 +61,7 @@ Author: Thalia Project
 Date: December 2025
 """
 
-from thalia.sensory.pathways import (
+from thalia.pathways.sensory_pathways import (
     # Base classes
     Modality,
     SensoryPathwayConfig,

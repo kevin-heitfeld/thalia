@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 from thalia.core.component_registry import register_pathway
 from thalia.core.component_config import PathwayConfig
-from ..spiking_pathway import SpikingPathway
+from thalia.pathways.spiking_pathway import SpikingPathway
 
 
 @dataclass

@@ -107,17 +107,17 @@ from thalia.events.adapters import (
     EventDrivenCerebellum, EventDrivenThalamus, EventRegionConfig,
 )
 from thalia.events.parallel import ParallelExecutor
-from thalia.integration.pathways.spiking_attention import SpikingAttentionPathwayConfig
-from thalia.integration.pathways.spiking_replay import SpikingReplayPathwayConfig
-from thalia.sensory.pathways import VisualConfig
-from thalia.sensory.pathways import AuditoryConfig
-from thalia.sensory.pathways import LanguageConfig
+from thalia.pathways.attention.spiking_attention import SpikingAttentionPathwayConfig
+from thalia.pathways.spiking_replay import SpikingReplayPathwayConfig
+from thalia.pathways.sensory_pathways import VisualConfig
+from thalia.pathways.sensory_pathways import AuditoryConfig
+from thalia.pathways.sensory_pathways import LanguageConfig
 from thalia.components.neurons.neuron_constants import INTRINSIC_LEARNING_THRESHOLD
 from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.neuromodulation.manager import NeuromodulatorManager
+from thalia.pathways.manager import PathwayManager
 
 from .oscillator import OscillatorManager
-from .pathway_manager import PathwayManager
 from .errors import ConfigurationError, CheckpointError
 from .diagnostics import (
     DiagnosticsManager,

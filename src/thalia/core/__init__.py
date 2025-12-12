@@ -128,10 +128,11 @@ from thalia.core.protocols import (
     Configurable,
     NeuralComponentProtocol,
 )
-from thalia.core.pathway_protocol import (
+from thalia.pathways.protocol import (
     NeuralPathway,
     Pathway,
 )
+from thalia.pathways.manager import PathwayManager
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.components.synapses.traces import (
     SpikeTrace,
@@ -243,6 +244,8 @@ __all__ = [
     # Pathway protocols
     "NeuralPathway",
     "Pathway",
+    # Pathway manager
+    "PathwayManager",
     # Diagnostic mixin
     "DiagnosticsMixin",
     # Spike Coding
