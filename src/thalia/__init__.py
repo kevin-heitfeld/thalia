@@ -87,15 +87,15 @@ from thalia.core.oscillator import (
 )
 
 # Neuromodulator Systems (centralized)
-from thalia.core.vta import (
+from thalia.neuromodulation.systems.vta import (
     VTADopamineSystem,
     VTAConfig,
 )
-from thalia.core.locus_coeruleus import (
+from thalia.neuromodulation.systems.locus_coeruleus import (
     LocusCoeruleusSystem,
     LocusCoeruleusConfig,
 )
-from thalia.core.nucleus_basalis import (
+from thalia.neuromodulation.systems.nucleus_basalis import (
     NucleusBasalisSystem,
     NucleusBasalisConfig,
 )

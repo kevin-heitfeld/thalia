@@ -65,7 +65,7 @@ Follows centralized broadcast pattern:
 from dataclasses import dataclass
 from typing import Optional
 import math
-from .neuromodulator_homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
+from thalia.core.neuromodulator_homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
 
 
 @dataclass
