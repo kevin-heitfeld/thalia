@@ -83,6 +83,26 @@ class LIFConfig(BaseNeuronConfig):
 
 class LIFNeuron(nn.Module):
     """Leaky Integrate-and-Fire neuron layer.
+    
+    ⚠️ DEPRECATED: Use ConductanceLIF for better biological accuracy.
+    
+    This current-based LIF model is kept for backward compatibility only.
+    New code should use ConductanceLIF which provides:
+    - Natural saturation at reversal potentials
+    - Proper shunting inhibition (divisive, not subtractive)
+    - Realistic voltage-dependent current flow
+    
+    Migration Example:
+        # Old (current-based)
+        neuron = LIFNeuron(n_neurons=100, config=LIFConfig(...))
+        spikes, v = neuron(input_current)
+        
+        # New (conductance-based)
+        from thalia.core.conductance_lif import ConductanceLIF, ConductanceLIFConfig
+        neuron = ConductanceLIF(n_neurons=100, config=ConductanceLIFConfig(...))
+        spikes, v = neuron(g_exc_input, g_inh_input)
+    
+    See: docs/design/neuron_models.md
 
     Implements a population of LIF neurons with shared parameters.
 
@@ -117,6 +137,13 @@ class LIFNeuron(nn.Module):
         n_neurons: int,
         config: Optional[LIFConfig] = None
     ):
+        import warnings
+        warnings.warn(
+            "LIFNeuron is deprecated. Use ConductanceLIF for better biological accuracy. "
+            "See docs/design/neuron_models.md for migration guide.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         super().__init__()
         self.n_neurons = n_neurons
         self.config = config or LIFConfig()
