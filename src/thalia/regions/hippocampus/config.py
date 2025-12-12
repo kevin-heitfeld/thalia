@@ -14,7 +14,7 @@ import torch
 
 from thalia.core.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponentState
-from thalia.core.stp import STPType
+from thalia.components.synapses.stp import STPType
 from thalia.core.learning_constants import LEARNING_RATE_ONE_SHOT
 
 

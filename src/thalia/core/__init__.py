@@ -31,13 +31,13 @@ from thalia.components.neurons.dendritic import (
     create_clustered_input,
     create_scattered_input,
 )
-from thalia.core.stp import (
+from thalia.components.synapses.stp import (
     ShortTermPlasticity,
     STPConfig,
     STPType,
     STPSynapse,
 )
-from thalia.core.stp_presets import (
+from thalia.components.synapses.stp_presets import (
     STP_PRESETS,
     STPPreset,
     get_stp_config,
@@ -126,7 +126,7 @@ from thalia.core.pathway_protocol import (
     Pathway,
 )
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
-from thalia.core.traces import (
+from thalia.components.synapses.traces import (
     SpikeTrace,
     PairedTraces,
     TraceConfig,
@@ -135,7 +135,7 @@ from thalia.core.traces import (
     update_trace,
     compute_decay,
 )
-from thalia.core.weight_init import (
+from thalia.components.synapses.weight_init import (
     InitStrategy,
     WeightInitializer,
 )

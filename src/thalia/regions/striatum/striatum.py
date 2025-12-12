@@ -93,7 +93,7 @@ import torch
 import torch.nn as nn
 
 from thalia.core.component_config import NeuralComponentConfig
-from thalia.core.weight_init import WeightInitializer
+from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.core.base_manager import ManagerContext
 from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,

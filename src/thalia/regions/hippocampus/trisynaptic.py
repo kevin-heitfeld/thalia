@@ -82,11 +82,11 @@ from thalia.components.neurons.neuron_constants import (
     TAU_SYN_INHIBITORY,
     NE_GAIN_RANGE,
 )
-from thalia.core.stp import ShortTermPlasticity
-from thalia.core.stp_presets import get_stp_config
+from thalia.components.synapses.stp import ShortTermPlasticity
+from thalia.components.synapses.stp_presets import get_stp_config
 from thalia.core.utils import clamp_weights, cosine_similarity_safe
-from thalia.core.traces import update_trace
-from thalia.core.weight_init import WeightInitializer
+from thalia.components.synapses.traces import update_trace
+from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.regions.base import NeuralComponent
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition

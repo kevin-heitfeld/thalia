@@ -36,8 +36,8 @@ from thalia.core.component_config import PathwayConfig
 from thalia.core.errors import CheckpointError
 from thalia.core.utils import clamp_weights
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.core.stp import ShortTermPlasticity, STPConfig
-from thalia.core.weight_init import WeightInitializer
+from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig
+from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.core.component_registry import register_pathway
 from thalia.regions.base import NeuralComponent
@@ -239,7 +239,7 @@ class SpikingPathway(NeuralComponent):
             stp_cfg = config.stp_config
             if stp_cfg is None:
                 # Use preset based on stp_type (convert string to STPType if needed)
-                from thalia.core.stp import STPType
+                from thalia.components.synapses.stp import STPType
                 stp_type = config.stp_type
                 if isinstance(stp_type, str):
                     stp_type = STPType[stp_type]

@@ -16,7 +16,7 @@ import torch.nn as nn
 
 from thalia.core.component_config import PathwayConfig
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.core.weight_init import WeightInitializer
+from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,

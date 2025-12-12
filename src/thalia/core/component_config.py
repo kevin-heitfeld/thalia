@@ -23,7 +23,7 @@ from typing import Optional, TYPE_CHECKING
 from thalia.config.base import BaseConfig
 
 if TYPE_CHECKING:
-    from thalia.core.stp import STPConfig
+    from thalia.components.synapses.stp import STPConfig
     from thalia.learning.bcm import BCMConfig
 
 

@@ -26,7 +26,7 @@ References:
 from dataclasses import dataclass
 from typing import Dict
 
-from thalia.core.stp import STPConfig
+from thalia.components.synapses.stp import STPConfig
 
 
 @dataclass(frozen=True)

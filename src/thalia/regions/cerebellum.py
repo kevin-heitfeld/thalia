@@ -53,7 +53,7 @@ import torch
 
 from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.errors import CheckpointError
-from thalia.core.weight_init import WeightInitializer
+from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.core.component_registry import register_region

@@ -90,7 +90,7 @@ from thalia.components.neurons.neuron_constants import (
     E_EXCITATORY, E_INHIBITORY, G_LEAK_STANDARD,
     TAU_MEM_STANDARD,
 )
-from thalia.core.weight_init import WeightInitializer
+from thalia.components.synapses.weight_init import WeightInitializer
 
 
 @dataclass
