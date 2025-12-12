@@ -820,7 +820,7 @@ class EventDrivenBrain(nn.Module):
             # Most pathways use PathwayConfig or specialized subclasses
             if pathway_type in ["spiking", "spiking_stdp"]:
                 # Base spiking pathway
-                from thalia.config.base import PathwayConfig
+                from thalia.core.component_config import PathwayConfig
                 config_obj = PathwayConfig(**pathway_config)
             elif pathway_type == "attention" or pathway_type == "spiking_attention":
                 # Attention pathway with specialized config
@@ -844,7 +844,7 @@ class EventDrivenBrain(nn.Module):
                 config_obj = LanguageConfig(**pathway_config)
             else:
                 # Generic fallback - try PathwayConfig
-                from thalia.config.base import PathwayConfig
+                from thalia.core.component_config import PathwayConfig
                 try:
                     config_obj = PathwayConfig(**pathway_config)
                 except Exception as e:

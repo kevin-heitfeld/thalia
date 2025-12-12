@@ -15,7 +15,7 @@ from enum import Enum
 
 import torch
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponentState
 from thalia.learning.bcm import BCMConfig
 from .robustness_config import RobustnessConfig

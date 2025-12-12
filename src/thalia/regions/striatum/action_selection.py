@@ -38,7 +38,7 @@ class ActionSelectionMixin:
     striatum_config: "StriatumConfig"
     n_actions: int
     neurons_per_action: int
-    device: torch.device
+    # device: provided by NeuralComponent base class as @property
     state_tracker: Any  # StriatumStateTracker
     exploration_manager: Any  # ExplorationManager
     state: Any

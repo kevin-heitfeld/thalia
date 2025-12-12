@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 
-from thalia.config.base import PathwayConfig
+from thalia.core.component_config import PathwayConfig
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig

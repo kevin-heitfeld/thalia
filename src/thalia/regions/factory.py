@@ -43,7 +43,7 @@ from __future__ import annotations
 from typing import Dict, Type, Optional, List, Callable, Any
 import inspect
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponent
 
 

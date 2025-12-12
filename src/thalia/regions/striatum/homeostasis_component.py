@@ -1,5 +1,5 @@
 """
-Striatum Homeostasis Component  
+Striatum Homeostasis Component
 
 Manages homeostatic regulation for D1/D2 opponent pathways.
 Standardized component following the region_components pattern.
@@ -15,7 +15,7 @@ import torch.nn as nn
 from thalia.config.base import BaseConfig
 from thalia.core.region_components import HomeostasisComponent
 from thalia.core.base_manager import ManagerContext
-from thalia.learning.unified_homeostasis import (
+from thalia.learning.synaptic_homeostasis import (
     StriatumHomeostasis,
     UnifiedHomeostasisConfig,
 )
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 @dataclass
 class HomeostasisManagerConfig(BaseConfig):
     """Configuration for striatum homeostasis management.
-    
+
     Extends UnifiedHomeostasisConfig with striatum-specific parameters.
     """
     weight_budget: float = 1.0
@@ -73,7 +73,7 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
     Usage:
     ======
         homeostasis = StriatumHomeostasisComponent(config, context)
-        
+
         # Apply normalization during learning
         d1_weights = homeostasis.apply_homeostasis(
             d1_weights, pathway='d1', metrics=d1_metrics
@@ -81,7 +81,7 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
         d2_weights = homeostasis.apply_homeostasis(
             d2_weights, pathway='d2', metrics=d2_metrics
         )
-        
+
         # Check for violations
         diagnostics = homeostasis.get_diagnostics()
 

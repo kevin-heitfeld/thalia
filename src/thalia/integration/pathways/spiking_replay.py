@@ -17,7 +17,7 @@ from typing import Optional, List, Dict, Any
 import torch
 import torch.nn as nn
 from thalia.core.component_registry import register_pathway
-from thalia.config.base import PathwayConfig
+from thalia.core.component_config import PathwayConfig
 from ..spiking_pathway import SpikingPathway
 
 

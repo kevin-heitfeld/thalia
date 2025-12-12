@@ -36,12 +36,15 @@ from thalia.regions.striatum.config import StriatumConfig
 from thalia.regions.prefrontal import PrefrontalConfig
 from thalia.regions.cerebellum import CerebellumConfig
 
-from .base import (
-    BaseConfig,
+# Re-export component configs from core/ for backward compatibility
+from thalia.core.component_config import (
     NeuralComponentConfig,
     LearningComponentConfig,
     PathwayConfig,
 )
+
+from .base import BaseConfig
+
 # Note: BaseNeuronConfig not exported here to avoid circular import
 # Import directly: from thalia.config.neuron_config import BaseNeuronConfig
 from .global_config import GlobalConfig
@@ -67,6 +70,8 @@ from .validation import (
     validate_region_sizes,
     check_config_and_warn,
     ConfigValidationError,
+    ValidatedConfig,
+    ValidatorRegistry,
 )
 from .region_sizes import (
     # Hippocampus ratios
@@ -99,6 +104,8 @@ __all__ = [
     "validate_region_sizes",
     "check_config_and_warn",
     "ConfigValidationError",
+    "ValidatedConfig",
+    "ValidatorRegistry",
     # Base configs
     "BaseConfig",
     "NeuralComponentConfig",

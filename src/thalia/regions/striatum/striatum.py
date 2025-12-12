@@ -86,7 +86,7 @@ from typing import Optional, Dict, Any, List, Generator
 import torch
 import torch.nn as nn
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.base_manager import ManagerContext
 from thalia.core.neuron_constants import (

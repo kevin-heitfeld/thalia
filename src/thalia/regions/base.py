@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any, List
 import torch
 import torch.nn as nn
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.component_protocol import BrainComponentBase, BrainComponentMixin
 from thalia.core.neuromodulator_mixin import NeuromodulatorMixin
 from thalia.core.diagnostics_mixin import DiagnosticsMixin

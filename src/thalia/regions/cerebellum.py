@@ -49,7 +49,7 @@ from typing import Optional, Dict, Any
 
 import torch
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig

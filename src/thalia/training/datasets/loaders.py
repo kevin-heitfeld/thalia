@@ -32,11 +32,18 @@ from __future__ import annotations
 from typing import Protocol, Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
+
 import torch
 import torch.nn as nn
 import numpy as np
 
-# Import sensory pathways for encoding
+from thalia.training.constants import (
+    REWARD_MOVEMENT_THRESHOLD,
+    REWARD_SMALL_SUCCESS,
+    REWARD_REACHING_THRESHOLD,
+    REWARD_HIGH_SUCCESS,
+    REWARD_MANIPULATION_BASE,
+)
 from thalia.sensory import (
     VisualConfig,
     RetinalEncoder,
@@ -292,7 +299,7 @@ class SensorimotorTaskLoader:
         self.last_action = motor_spikes
 
         # Reward based on movement execution
-        movement_reward = 0.1 if reward > -0.5 else 0.0
+        movement_reward = REWARD_SMALL_SUCCESS if reward > REWARD_MOVEMENT_THRESHOLD else 0.0
 
         return {
             'input': obs_spikes,
@@ -318,10 +325,10 @@ class SensorimotorTaskLoader:
         self.last_action = motor_spikes
 
         # Reward is based on reaching accuracy
-        reaching_reward = max(0.0, reward + 0.1)
+        reaching_reward = max(0.0, reward + REWARD_SMALL_SUCCESS)
 
         # Track success
-        if reaching_reward > 0.9:
+        if reaching_reward > REWARD_HIGH_SUCCESS:
             self.task_successes['reaching'] += 1
 
         return {
@@ -331,7 +338,7 @@ class SensorimotorTaskLoader:
             'target': self._encode_sensory(next_obs),
             'action': motor_spikes,
             'task_type': 'reaching',
-            'success': reaching_reward > 0.9,
+            'success': reaching_reward > REWARD_HIGH_SUCCESS,
         }
 
     def _manipulation_task(self, obs_spikes: torch.Tensor) -> Dict[str, Any]:
@@ -349,7 +356,7 @@ class SensorimotorTaskLoader:
         self.last_action = motor_spikes
 
         # Reward for any interaction
-        manipulation_reward = 0.5 if reward > -0.3 else 0.1
+        manipulation_reward = REWARD_MANIPULATION_BASE if reward > REWARD_REACHING_THRESHOLD else REWARD_SMALL_SUCCESS
 
         # Track success
         if manipulation_reward > 0.4:

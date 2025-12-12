@@ -2,7 +2,7 @@
 Learning rules: STDP, homeostatic mechanisms, and reward-modulated learning.
 
 This module provides:
-1. Legacy BCMRule - existing BCM implementation
+1. BCMRule - existing BCM implementation
 2. UnifiedHomeostasis - constraint-based stability
 3. Learning Strategies - pluggable, composable learning algorithms:
    - HebbianStrategy, STDPStrategy, BCMStrategy
@@ -31,7 +31,7 @@ from thalia.learning.social_learning import (
     SocialCueType,
     compute_shared_attention,
 )
-from thalia.learning.unified_homeostasis import (
+from thalia.learning.synaptic_homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
     StriatumHomeostasis,
@@ -73,14 +73,13 @@ from thalia.learning.strategies import (
 )
 from thalia.learning.strategy_registry import (
     LearningStrategyRegistry,
-    create_learning_strategy,
 )
 from thalia.learning.strategy_mixin import (
     LearningStrategyMixin,
 )
 
 __all__ = [
-    # BCM (Bienenstock-Cooper-Munro) - legacy
+    # BCM (Bienenstock-Cooper-Munro)
     "BCMRule",
     "BCMConfig",
     # Critical Period Gating
@@ -109,7 +108,7 @@ __all__ = [
     "MetabolicConfig",
     "MetabolicConstraint",
     "RegionalMetabolicBudget",
-    # Learning Strategies (new pluggable system)
+    # Learning Strategies
     "LearningConfig",
     "BaseStrategy",
     "HebbianConfig",
@@ -124,10 +123,8 @@ __all__ = [
     "ErrorCorrectiveStrategy",
     "CompositeStrategy",
     "create_strategy",
-    # Strategy Registry (new Tier 3 feature)
+    # Strategy Registry
     "LearningStrategyRegistry",
-    # Strategy Factory (backward compatibility helper)
-    "create_learning_strategy",
     # Strategy Mixin for Regions
     "LearningStrategyMixin",
 ]

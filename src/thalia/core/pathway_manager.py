@@ -6,7 +6,7 @@ Handles creation, tracking, and coordinated growth of all inter-region pathways.
 
 from typing import Dict, List, Tuple, Any
 
-from thalia.config.base import PathwayConfig
+from thalia.core.component_config import PathwayConfig
 from thalia.integration.spiking_pathway import SpikingPathway
 from thalia.integration.spiking_pathway import SpikingLearningRule, TemporalCoding
 from thalia.events.system import Event, EventType, SpikePayload
@@ -249,7 +249,7 @@ class PathwayManager:
 
     def _build_pathway_map(self) -> None:
         """Build (source, target) -> pathway mapping for event interception.
-        
+
         This enables O(1) pathway lookup during event processing.
         """
         self._pathway_map: Dict[Tuple[str, str], Any] = {
@@ -267,19 +267,19 @@ class PathwayManager:
 
     def process_event(self, event: Event) -> Event:
         """Process spike event through pathway if one exists.
-        
+
         This is the core pathway interception mechanism. When a spike event
         travels from source to target, we intercept it and transform the spikes
         through the pathway's synaptic weights and dynamics.
-        
+
         **This is where STDP learning happens automatically!**
-        
+
         Args:
             event: Spike event with source, target, and spike payload
-            
+
         Returns:
             Event with transformed spikes (or original if no pathway exists)
-            
+
         Example:
             Thalamus fires [100 spikes] → pathway.forward() → Cortex receives [256 spikes]
             During forward(), pathway weights are updated via STDP.
@@ -287,14 +287,14 @@ class PathwayManager:
         # Only process spike events
         if event.event_type != EventType.SPIKE:
             return event
-            
+
         # Check if payload is valid
         if not isinstance(event.payload, SpikePayload):
             return event
-            
+
         # Look up pathway for this (source, target) pair
         pathway = self._pathway_map.get((event.source, event.target))
-        
+
         if pathway is not None:
             # Transform spikes through pathway
             # CRITICAL: This calls pathway.forward() which:
@@ -303,10 +303,10 @@ class PathwayManager:
             # 3. Applies STDP learning (weight updates)
             # 4. Returns output spikes to target
             transformed_spikes = pathway.forward(event.payload.spikes)
-            
+
             # Update event with transformed spikes
             event.payload = SpikePayload(spikes=transformed_spikes)
-            
+
         return event
 
     def get_all_pathways(self) -> Dict[str, Any]:

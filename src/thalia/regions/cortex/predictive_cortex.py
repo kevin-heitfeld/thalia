@@ -62,7 +62,7 @@ from typing import Optional, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponent, NeuralComponentState, LearningRule
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
 from thalia.core.predictive_coding import (

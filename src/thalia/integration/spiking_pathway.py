@@ -27,22 +27,23 @@ Learning Rules:
 
 from enum import Enum, auto
 from typing import Optional, Dict, Any
+
 import torch
-from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 import torch.nn as nn
 import numpy as np
 
-from thalia.config.base import PathwayConfig
+from thalia.core.component_config import PathwayConfig
 from thalia.core.utils import clamp_weights
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.regions.base import NeuralComponent, LearningRule
 from thalia.core.stp import ShortTermPlasticity, STPConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
+from thalia.core.component_registry import register_pathway
+from thalia.regions.base import NeuralComponent, LearningRule
 from thalia.learning.bcm import BCMRule, BCMConfig
 from thalia.learning.strategies import STDPConfig as StrategySTDPConfig
 from thalia.learning.strategy_registry import LearningStrategyRegistry
-from thalia.core.component_registry import register_pathway
+from thalia.learning.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 
 class TemporalCoding(Enum):
@@ -694,33 +695,33 @@ class SpikingPathway(NeuralComponent):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics using DiagnosticsMixin helpers.
-        
+
         Returns pathway state including weight statistics, membrane dynamics,
         eligibility traces, oscillation phase, and learning metrics.
         """
         diagnostics = {}
-        
+
         # Weight statistics using mixin helper
         diagnostics.update(self.weight_diagnostics(self.weights.data, prefix=""))
-        
+
         # Membrane dynamics
         diagnostics["membrane_mean"] = self.neurons.membrane.mean().item()
         diagnostics["membrane_std"] = self.neurons.membrane.std().item()
         diagnostics["firing_rate_mean"] = self.firing_rate_estimate.mean().item()
-        
+
         # Eligibility traces using mixin helper
         diagnostics.update(self.trace_diagnostics(self.pre_trace, prefix="pre"))
         diagnostics.update(self.trace_diagnostics(self.post_trace, prefix="post"))
-        
+
         # Oscillation and neuromodulation state
         diagnostics["oscillation_phase"] = self.oscillation_phase
         diagnostics["dopamine_level"] = self.dopamine_level
         diagnostics["replay_active"] = self.replay_active
-        
+
         # Learning metrics
         diagnostics["total_ltp"] = self.total_ltp
         diagnostics["total_ltd"] = self.total_ltd
-        
+
         return diagnostics
 
     def add_neurons(

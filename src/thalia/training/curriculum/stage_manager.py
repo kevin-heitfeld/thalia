@@ -95,9 +95,9 @@ Usage:
                 'manipulation': {'weight': 0.25, 'difficulty': 0.7},
             },
             success_criteria={
-                'reaching_accuracy': 0.90,
+                'reaching_accuracy': PERFORMANCE_GOOD,
                 'manipulation_success': 0.85,
-                'prediction_error': 0.05,
+                'prediction_error': PREDICTION_ERROR_SMALL,
             },
         ),
     )
@@ -136,6 +136,11 @@ from pathlib import Path
 from enum import IntEnum
 import time
 
+from thalia.training.constants import (
+    FIRING_RATE_MINIMUM,
+    CURRICULUM_LOAD_THRESHOLD,
+    CURRICULUM_MARGIN,
+)
 from thalia.config.curriculum_growth import (
     CurriculumGrowthConfig,
     CurriculumStage,
@@ -229,12 +234,12 @@ class CognitiveLoadMonitor:
     ```
 
     **Attributes**:
-        load_threshold: Maximum acceptable cognitive load (default 0.9)
+        load_threshold: Maximum acceptable cognitive load (default CURRICULUM_LOAD_THRESHOLD)
         active_mechanisms: List of currently active mechanisms
         deactivated_mechanisms: List of temporarily disabled mechanisms
     """
 
-    def __init__(self, load_threshold: float = 0.9):
+    def __init__(self, load_threshold: float = CURRICULUM_LOAD_THRESHOLD):
         """Initialize cognitive load monitor.
 
         **Args**:
@@ -381,13 +386,13 @@ class CognitiveLoadMonitor:
         """Suggest multiple mechanisms to deactivate to reach target load.
 
         **Args**:
-            target_load: Target cognitive load (default: threshold - 0.1)
+            target_load: Target cognitive load (default: threshold - CURRICULUM_MARGIN)
 
         **Returns**:
             List of mechanism names to deactivate (in order)
         """
         if target_load is None:
-            target_load = self.load_threshold - 0.1
+            target_load = self.load_threshold - CURRICULUM_MARGIN
 
         current_load = self.calculate_load()
         if current_load <= target_load:
@@ -1369,7 +1374,7 @@ class CurriculumTrainer:
         results['no_runaway_excitation'] = no_runaway
 
         # 2.3 No silent regions
-        no_silence = all(fr > 0.01 for fr in firing_rates.values())
+        no_silence = all(fr > FIRING_RATE_MINIMUM for fr in firing_rates.values())
         results['no_silent_regions'] = no_silence
 
         # 2.4 Weight health (not saturated)

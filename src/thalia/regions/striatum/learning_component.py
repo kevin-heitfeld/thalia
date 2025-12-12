@@ -17,6 +17,7 @@ import torch.nn as nn
 from thalia.core.region_components import LearningComponent
 from thalia.core.base_manager import ManagerContext
 from thalia.core.neuron_constants import WEIGHT_INIT_SCALE_SMALL
+from thalia.core.weight_init import WeightInitializer
 
 if TYPE_CHECKING:
     from thalia.regions.striatum.d1_pathway import D1Pathway
@@ -61,10 +62,22 @@ class StriatumLearningComponent(LearningComponent):
             # PFC→D1/D2 modulation matrices [n_output, pfc_size]
             # These learn which striatal neurons participate in which goals
             self.pfc_modulation_d1 = nn.Parameter(
-                torch.randn(config.n_output, config.pfc_size, device=self.context.device) * WEIGHT_INIT_SCALE_SMALL
+                WeightInitializer.gaussian(
+                    n_output=config.n_output,
+                    n_input=config.pfc_size,
+                    mean=0.0,
+                    std=WEIGHT_INIT_SCALE_SMALL,
+                    device=self.context.device,
+                )
             )
             self.pfc_modulation_d2 = nn.Parameter(
-                torch.randn(config.n_output, config.pfc_size, device=self.context.device) * WEIGHT_INIT_SCALE_SMALL
+                WeightInitializer.gaussian(
+                    n_output=config.n_output,
+                    n_input=config.pfc_size,
+                    mean=0.0,
+                    std=WEIGHT_INIT_SCALE_SMALL,
+                    device=self.context.device,
+                )
             )
         else:
             self.pfc_modulation_d1 = None

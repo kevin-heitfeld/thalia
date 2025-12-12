@@ -2,8 +2,7 @@
 Core components: neurons, synapses, layers, and networks.
 """
 
-from thalia.core.neuron import LIFNeuron, LIFConfig, ConductanceLIF, ConductanceLIFConfig
-# Note: BaseNeuronConfig is in thalia.config.neuron_config, not imported here to avoid circular import
+from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.neuron_constants import (
     # Membrane time constants
     TAU_MEM_STANDARD, TAU_MEM_FAST, TAU_MEM_SLOW,
@@ -81,12 +80,6 @@ from thalia.core.diagnostics import (
     HippocampusDiagnostics,
     BrainSystemDiagnostics,
 )
-# Event system moved to thalia.events package (see thalia.events for imports)
-# from thalia.events import (
-#     Event, EventType, SpikePayload, EventScheduler,
-#     Connection, get_axonal_delay, AXONAL_DELAYS,
-#     ParallelExecutor, EventDrivenCortex, etc.
-# )
 from thalia.core.predictive_coding import (
     PredictiveCodingLayer,
     PredictiveCodingConfig,
@@ -94,10 +87,6 @@ from thalia.core.predictive_coding import (
     HierarchicalPredictiveCoding,
     ErrorType,
 )
-# NOTE: scalable_attention module removed - attention emerges from brain mechanisms
-# - Coincidence detection: STDP, gamma synchrony, theta-gamma coupling
-# - Winner-take-all: Lateral inhibition, striatum action selection, PFC gating
-# - Phase binding: Gamma oscillations, cross-modal binding pathways
 from thalia.core.utils import (
     clamp_weights,
     cosine_similarity_safe,
@@ -148,11 +137,8 @@ from thalia.core.weight_init import (
 
 __all__ = [
     # Neuron models
-    "LIFNeuron",
-    "LIFConfig",
     "ConductanceLIF",
     "ConductanceLIFConfig",
-    # Note: BaseNeuronConfig not exported to avoid circular import
     # Neuron constants
     "TAU_MEM_STANDARD",
     "TAU_MEM_FAST",
@@ -171,10 +157,6 @@ __all__ = [
     "G_LEAK_SLOW",
     "STANDARD_PYRAMIDAL",
     "FAST_SPIKING_INTERNEURON",
-    # Dendritic processing
-    "LIFConfig",
-    "ConductanceLIF",
-    "ConductanceLIFConfig",
     # Mixins
     "DeviceMixin",
     "ResettableMixin",
@@ -214,15 +196,12 @@ __all__ = [
     "StriatumDiagnostics",
     "HippocampusDiagnostics",
     "BrainSystemDiagnostics",
-    # Event system moved to thalia.events package
-    # (Event, EventType, SpikePayload, EventScheduler, Connection, etc.)
     # Predictive Coding
     "PredictiveCodingLayer",
     "PredictiveCodingConfig",
     "PredictiveCodingState",
     "HierarchicalPredictiveCoding",
     "ErrorType",
-    # NOTE: Scalable attention removed - emerges from gamma/STDP/lateral-inhibition
     # Utilities
     "clamp_weights",
     "cosine_similarity_safe",
@@ -251,7 +230,6 @@ __all__ = [
     "NeuralComponentProtocol",
     # Pathway protocols
     "NeuralPathway",
-    # Note: BaseNeuralPathway was consolidated into NeuralComponent (ADR-008)
     "Pathway",
     # Diagnostic mixin
     "DiagnosticsMixin",
@@ -281,6 +259,3 @@ __all__ = [
     "InitStrategy",
     "WeightInitializer",
 ]
-
-# Note: EventDrivenBrain has circular import issues and should be imported directly:
-# from thalia.core.brain import EventDrivenBrain

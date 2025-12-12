@@ -75,10 +75,13 @@ import time
 import torch
 import numpy as np
 
-# Use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    pass
+from thalia.training.constants import (
+    CURRICULUM_DIFFICULTY_MIN,
+    CURRICULUM_DIFFICULTY_MAX,
+    CALIBRATION_EXCELLENT_ECE,
+    CALIBRATION_GOOD_ECE,
+    CALIBRATION_ACCEPTABLE_ECE,
+)
 
 
 # ============================================================================
@@ -231,7 +234,7 @@ class MetacognitiveCalibrator:
     def generate_calibration_dataset(
         self,
         task_generator: Callable[[float], Tuple[torch.Tensor, torch.Tensor]],
-        difficulty_range: Tuple[float, float] = (0.3, 0.9),
+        difficulty_range: Tuple[float, float] = (CURRICULUM_DIFFICULTY_MIN, CURRICULUM_DIFFICULTY_MAX),
         n_samples: int = 1000,
         task_type: str = 'mixed',
         stratified: bool = True,
@@ -548,14 +551,14 @@ class MetacognitiveCalibrator:
 
         # Calibration quality assessment
         report.append("")
-        if metrics.ece < 0.05:
-            status = "EXCELLENT (ECE < 0.05)"
-        elif metrics.ece < 0.10:
-            status = "GOOD (ECE < 0.10)"
-        elif metrics.ece < 0.15:
-            status = "ACCEPTABLE (ECE < 0.15)"
+        if metrics.ece < CALIBRATION_EXCELLENT_ECE:
+            status = f"EXCELLENT (ECE < {CALIBRATION_EXCELLENT_ECE})"
+        elif metrics.ece < CALIBRATION_GOOD_ECE:
+            status = f"GOOD (ECE < {CALIBRATION_GOOD_ECE})"
+        elif metrics.ece < CALIBRATION_ACCEPTABLE_ECE:
+            status = f"ACCEPTABLE (ECE < {CALIBRATION_ACCEPTABLE_ECE})"
         else:
-            status = "POOR (ECE >= 0.15)"
+            status = f"POOR (ECE >= {CALIBRATION_ACCEPTABLE_ECE})"
         report.append(f"Calibration Quality: {status}")
 
         # Per-bin breakdown

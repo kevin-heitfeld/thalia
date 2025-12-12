@@ -77,7 +77,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.neuron_constants import NE_GAIN_RANGE
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType

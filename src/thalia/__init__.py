@@ -41,7 +41,7 @@ from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 # Brain System
 from thalia.core.brain import EventDrivenBrain as Brain
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 
 # Brain Regions (most commonly used)
 from thalia.regions import (

@@ -57,7 +57,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from thalia.config.base import LearningComponentConfig
+from thalia.core.component_config import LearningComponentConfig
 from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig as CoreSTDPConfig
 
@@ -194,7 +194,7 @@ class BaseStrategy(nn.Module, ABC):
         dw: torch.Tensor,
     ) -> torch.Tensor:
         """Apply weight bounds using hard clamp.
-        
+
         Weight bounds are enforced via hard clamping. Biological regulation
         is provided by UnifiedHomeostasis (weight normalization) and BCM
         (sliding threshold), not by soft bounds.
@@ -406,21 +406,21 @@ class STDPStrategy(BaseStrategy):
                 # Check if this is dopamine-STDP rule
                 if 'DOPAMINE' in learning_rule.name:
                     ltp = ltp * (1.0 + dopamine)
-            
+
             # Acetylcholine modulation (high ACh = favor LTP/encoding)
             ach_modulation = 0.5 + 0.5 * acetylcholine  # Range: [0.5, 1.5]
             ltp = ltp * ach_modulation
-            
+
             # Norepinephrine modulation (inverted-U: moderate NE optimal)
             ne_modulation = 1.0 - 0.5 * abs(norepinephrine - 0.5)  # Peak at 0.5
             ltp = ltp * ne_modulation
-            
+
             # Phase modulation (for phase-STDP)
             if learning_rule is not None and hasattr(learning_rule, 'name'):
                 if 'PHASE' in learning_rule.name:
                     phase_mod = 0.5 + 0.5 * np.cos(oscillation_phase)
                     ltp = ltp * phase_mod
-            
+
             # BCM modulation
             if isinstance(bcm_modulation, torch.Tensor):
                 ltp = ltp * bcm_modulation.unsqueeze(1)
@@ -433,15 +433,15 @@ class STDPStrategy(BaseStrategy):
             if learning_rule is not None and hasattr(learning_rule, 'name'):
                 if 'DOPAMINE' in learning_rule.name:
                     ltd = ltd * (1.0 - 0.5 * max(0.0, dopamine))
-            
+
             # Acetylcholine modulation (high ACh = reduce LTD/favor encoding)
             ach_ltd_suppression = 1.0 - 0.3 * acetylcholine  # Range: [0.7, 1.0]
             ltd = ltd * ach_ltd_suppression
-            
+
             # Norepinephrine modulation (inverted-U)
             ne_modulation = 1.0 - 0.5 * abs(norepinephrine - 0.5)
             ltd = ltd * ne_modulation
-            
+
             # Phase modulation (for phase-STDP)
             if learning_rule is not None and hasattr(learning_rule, 'name'):
                 if 'PHASE' in learning_rule.name:
@@ -538,10 +538,10 @@ class BCMStrategy(BaseStrategy):
 
     def update_threshold(self, post: torch.Tensor) -> None:
         """Update sliding threshold (public API for backward compatibility).
-        
+
         This is an alias for _update_theta() to maintain compatibility with
         code that used the legacy BCMRule.
-        
+
         Args:
             post: Postsynaptic activity [n_post] (1D)
         """

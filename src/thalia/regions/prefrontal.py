@@ -55,7 +55,7 @@ import torch.nn as nn
 from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 
-from thalia.config.base import NeuralComponentConfig
+from thalia.core.component_config import NeuralComponentConfig
 
 from thalia.core.utils import cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
