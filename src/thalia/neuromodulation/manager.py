@@ -11,7 +11,7 @@ from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.neuromodulation.systems.vta import VTADopamineSystem, VTAConfig
 from thalia.neuromodulation.systems.locus_coeruleus import LocusCoeruleusSystem, LocusCoeruleusConfig
 from thalia.neuromodulation.systems.nucleus_basalis import NucleusBasalisSystem, NucleusBasalisConfig
-from thalia.core.neuromodulator_homeostasis import NeuromodulatorCoordination
+from thalia.neuromodulation.homeostasis import NeuromodulatorCoordination
 
 
 class NeuromodulatorManager:

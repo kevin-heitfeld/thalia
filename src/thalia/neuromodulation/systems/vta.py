@@ -40,7 +40,7 @@ Date: December 2025
 
 from dataclasses import dataclass
 from typing import Optional
-from thalia.core.neuromodulator_homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
+from thalia.neuromodulation.homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
 
 
 @dataclass
