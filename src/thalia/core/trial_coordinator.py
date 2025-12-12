@@ -161,6 +161,30 @@ class TrialCoordinator:
                 # Advance oscillators (once per timestep)
                 self.oscillators.advance(self.config.dt_ms)
 
+                # =====================================================================
+                # PHASE 3: GOAL MANAGEMENT
+                # =====================================================================
+                # Before processing input, check if we have active hierarchical goals
+                # and whether current goal should be updated
+                pfc_region = self.regions.get("pfc")
+                if pfc_region and hasattr(pfc_region.impl, 'goal_manager') and pfc_region.impl.goal_manager is not None:
+                    goal_mgr = pfc_region.impl.goal_manager
+
+                    # Update current goal's progress if we have one
+                    current_goal = goal_mgr.get_current_goal()
+                    if current_goal is not None and self._last_pfc_output is not None:
+                        goal_mgr.update_progress(current_goal, self._last_pfc_output)
+
+                        # If current goal completed, pop it and activate parent
+                        if current_goal.status.value == "completed":
+                            goal_mgr.pop_goal()
+                            # Try to push parent goal if exists
+                            if current_goal.parent_goal is not None:
+                                goal_mgr.push_goal(current_goal.parent_goal)
+
+                    # Advance time counter for deadline tracking
+                    goal_mgr.advance_time()
+
                 # Schedule sensory input through thalamus (or zero input for consolidation)
                 # Sensory → Thalamus → Cortex pathway for biologically accurate relay
                 sensory_input_tensor = get_cortex_input_fn(sensory_input)
@@ -212,6 +236,11 @@ class TrialCoordinator:
         - Returns best action from simulated rollouts
         - Falls back to striatum if planning disabled
 
+        Phase 3: If hierarchical goals enabled:
+        - Checks current goal for policy override
+        - Uses goal's policy if available (options framework)
+        - Falls back to standard action selection
+
         Args:
             explore: Whether to allow exploration
             use_planning: Whether to use mental simulation
@@ -219,6 +248,23 @@ class TrialCoordinator:
         Returns:
             (action, confidence): Selected action index and confidence [0, 1]
         """
+        # =====================================================================
+        # PHASE 3: GOAL-DRIVEN ACTION SELECTION
+        # =====================================================================
+        # Check if we have an active goal with a policy (option)
+        pfc = self.regions.get("pfc")
+        if pfc and hasattr(pfc.impl, 'goal_manager') and pfc.impl.goal_manager is not None:
+            goal_mgr = pfc.impl.goal_manager
+            current_goal = goal_mgr.get_current_goal()
+
+            # If goal has a policy (it's an option), use it
+            if current_goal is not None and current_goal.policy is not None:
+                if self._last_pfc_output is not None:
+                    # Execute option policy
+                    action = current_goal.policy(self._last_pfc_output)
+                    self._last_action = action
+                    return action, 1.0  # High confidence - using learned option
+
         # Phase 2: Mental simulation planning
         if use_planning and self.mental_simulation is not None:
             # Get current state from PFC working memory
@@ -337,6 +383,74 @@ class TrialCoordinator:
                         next_state=next_state,
                         done=False,
                         goal_context=goal_context,
+                    )
+
+        # =====================================================================
+        # STEP 6: PHASE 3 - Adaptive temporal discounting (learn_from_choice)
+        # =====================================================================
+        # If hyperbolic discounting is enabled, adapt k parameter based on outcomes.
+        # This enables meta-learning: the brain learns its own impulsivity rate.
+        #
+        # Biology: PFC damage → increased temporal discounting (more impulsive).
+        # Here we model the adaptive process: good delayed choices → more patience.
+        pfc = self.regions["pfc"]
+        if (hasattr(pfc.impl, 'discounter') and
+            pfc.impl.discounter is not None and
+            self._last_action is not None):
+
+            # Determine if this was a delayed reward choice
+            # For now, use total_reward > 0 as proxy for "good outcome"
+            # In future, could track explicit delayed vs immediate choices
+            outcome_quality = (total_reward + 1.0) / 2.0  # Map [-1, 1] → [0, 1]
+            outcome_quality = max(0.0, min(1.0, outcome_quality))
+
+            # Simple heuristic: If reward is positive, assume delayed choice was made
+            # If reward is negative, assume immediate choice or bad delayed choice
+            chose_delayed = total_reward > 0.0
+
+            # For learning, we need to know what the choice was between
+            # Default values (can be enhanced with actual choice tracking)
+            immediate_value = 0.5  # Baseline immediate reward
+            delayed_value = 1.0    # Potential delayed reward
+            delay = 10             # Typical delay in timesteps
+
+            pfc.impl.discounter.learn_from_choice(
+                chose_delayed=chose_delayed,
+                immediate_value=immediate_value,
+                delayed_value=delayed_value,
+                delay=delay,
+                outcome_quality=outcome_quality,
+            )
+
+        # =====================================================================
+        # STEP 7: PHASE 3 - OPTION LEARNING
+        # =====================================================================
+        # Track option success and cache successful policies
+        # This implements the options framework for hierarchical RL
+        if hasattr(pfc.impl, 'goal_manager') and pfc.impl.goal_manager is not None:
+            goal_mgr = pfc.impl.goal_manager
+            current_goal = goal_mgr.get_current_goal()
+
+            # If we have an active goal that was just completed/failed
+            if current_goal is not None and current_goal.policy is not None:
+                # Determine success from reward
+                success = total_reward > 0.0
+
+                # Record option attempt for this goal
+                goal_mgr.record_option_attempt(current_goal.name, success)
+
+                # Get current success rate
+                success_rate = goal_mgr.get_option_success_rate(current_goal.name)
+
+                # If this policy is consistently successful, cache it as a reusable option
+                # This is Hebbian-like: "neurons that fire together wire together"
+                # Here: "goals achieved together get cached together"
+                if (success_rate > goal_mgr.config.option_discovery_threshold and
+                    current_goal.name not in goal_mgr.options):
+                    goal_mgr.cache_option(
+                        goal=current_goal,
+                        policy=current_goal.policy,
+                        success_rate=success_rate
                     )
 
     def deliver_reward_with_counterfactual(

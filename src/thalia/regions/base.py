@@ -320,11 +320,11 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
         - Initialization after construction
 
         WARNING: Do NOT use this between trials in a continuous task!
-        Real brains don't \"reset\" between trials. Instead, neural activity
+        Real brains don't "reset" between trials. Instead, neural activity
         decays naturally through membrane time constants. With continuous
         learning, state transitions happen via natural dynamics (decay, FFI).
-        Use brain.new_sequence() only when starting completely unrelated sequences.
 
+        Only use for initialization or after device changes, NOT during training.
         This method clears ALL transient state (membrane potentials, traces,
         spike history) while preserving learned weights.
         """

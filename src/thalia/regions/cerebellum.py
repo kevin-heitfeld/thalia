@@ -233,11 +233,6 @@ class Cerebellum(NeuralComponent):
             device=self.device,
         )
 
-        # Legacy input trace (for input gain modulation)
-        # TODO: Migrate this to trace manager if needed
-        self.input_trace = torch.zeros(config.n_input, device=self.device)
-        self.input_trace_tau = self.cerebellum_config.input_trace_tau_ms
-
         # Beta oscillator phase tracking for motor timing
         self._beta_phase: float = 0.0
         self._gamma_phase: float = 0.0
@@ -258,13 +253,18 @@ class Cerebellum(NeuralComponent):
         self._coupled_amplitudes: Dict[str, float] = {}
 
     @property
+    def input_trace(self) -> torch.Tensor:
+        """Input trace (delegated to trace manager)."""
+        return self._trace_manager.input_trace
+
+    @property
     def output_trace(self) -> torch.Tensor:
-        """Output trace (backward compatibility)."""
+        """Output trace (delegated to trace manager)."""
         return self._trace_manager.output_trace
 
     @property
     def stdp_eligibility(self) -> torch.Tensor:
-        """STDP eligibility (backward compatibility)."""
+        """STDP eligibility (delegated to trace manager)."""
         return self._trace_manager.eligibility
 
     def _get_learning_rule(self) -> LearningRule:
@@ -457,12 +457,8 @@ class Cerebellum(NeuralComponent):
         input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
         # Note: retrieval_mod could be used for output gain if needed for motor commands
 
-        # Update STDP traces (input trace still manual for gain modulation)
-        dt = self.config.dt_ms
-        trace_decay = 1.0 - dt / cfg.stdp_tau_ms
-        self.input_trace = self.input_trace * trace_decay + input_spikes.float()
-
         # Compute synaptic input - modulated by encoding phase
+        dt = self.config.dt_ms
         # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
         g_exc = (self.weights @ input_spikes.float()) * input_gain
 
@@ -652,43 +648,10 @@ class Cerebellum(NeuralComponent):
         # Apply error-corrective learning using accumulated eligibility
         return self._apply_error_learning(output_spikes, target)
 
-    def learn_from_phase(
-        self,
-        input_trace: torch.Tensor,
-        winner: int,
-        target: int,
-        learning_rate: Optional[float] = None,
-    ) -> Dict[str, Any]:
-        """Convenience method for phase-based supervised learning."""
-        lr = learning_rate or self.config.learning_rate
-
-        if winner == target:
-            # Correct - mild reinforcement
-            dw = torch.zeros_like(self.weights)
-            dw[target, :] = lr * 0.1 * input_trace
-        else:
-            # Wrong - correct both neurons
-            dw = torch.zeros_like(self.weights)
-            dw[target, :] = lr * input_trace      # LTP for target
-            dw[winner, :] = -lr * input_trace     # LTD for wrong winner
-
-        # Apply update with hard bounds
-        old_weights = self.weights.clone()
-        self.weights = clamp_weights(self.weights + dw, self.config.w_min, self.config.w_max, inplace=False)
-
-        actual_dw = self.weights - old_weights
-        ltp = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
-        ltd = actual_dw[actual_dw < 0].sum().item() if (actual_dw < 0).any() else 0.0
-
-        return {"correct": winner == target, "ltp": ltp, "ltd": ltd}
-
     def reset_state(self) -> None:
         super().reset_state()
 
-        # Reset trace tensors
-        self._reset_tensors('input_trace')
-
-        # Reset subsystems
+        # Reset subsystems (trace manager handles its own traces)
         self._reset_subsystems('_trace_manager', 'climbing_fiber')
 
     def get_diagnostics(self) -> Dict[str, Any]:
@@ -744,8 +707,7 @@ class Cerebellum(NeuralComponent):
             },
             "region_state": {
                 "neurons": self.neurons.get_state() if self.neurons is not None else None,
-                "input_trace": self.input_trace.clone(),
-                "output_trace": self.output_trace.clone(),
+                "trace_manager": self._trace_manager.get_state(),
             },
             "learning_state": {
                 "stdp_eligibility": self.stdp_eligibility.clone(),
@@ -784,9 +746,15 @@ class Cerebellum(NeuralComponent):
         if self.neurons is not None and region_state["neurons"] is not None:
             self.neurons.load_state(region_state["neurons"])
 
-        # Restore traces
-        self.input_trace.copy_(region_state["input_trace"].to(self.device))
-        self._trace_manager.output_trace.copy_(region_state["output_trace"].to(self.device))
+        # Restore trace manager state
+        if "trace_manager" in region_state:
+            self._trace_manager.load_state(region_state["trace_manager"])
+        else:
+            # Backward compatibility: old checkpoints had separate traces
+            if "input_trace" in region_state:
+                self._trace_manager.input_trace.copy_(region_state["input_trace"].to(self.device))
+            if "output_trace" in region_state:
+                self._trace_manager.output_trace.copy_(region_state["output_trace"].to(self.device))
 
         # Restore learning state
         learning_state = state["learning_state"]

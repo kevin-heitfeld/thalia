@@ -313,6 +313,37 @@ class BrainConfig:
         - Requires: PFC.predict_next_state, Hippocampus.retrieve_similar, Striatum.evaluate_state
     """
 
+    # =========================================================================
+    # Auto-growth (optional capacity expansion)
+    # =========================================================================
+    auto_growth_enabled: bool = False
+    """Enable automatic region growth based on capacity metrics.
+
+    When True:
+        - Brain checks capacity every auto_growth_check_interval timesteps
+        - Regions exceeding auto_growth_threshold are grown automatically
+        - Useful for open-ended learning and experiments
+
+    When False (default):
+        - Growth is managed explicitly via GrowthManager (curriculum training)
+        - Provides full control over when and how regions grow
+    """
+
+    auto_growth_threshold: float = 0.8
+    """Capacity utilization threshold for triggering auto-growth (0.0-1.0).
+
+    When a region's capacity exceeds this threshold, it will be grown.
+    Default 0.8 = grow when 80% of neurons are utilized.
+    """
+
+    auto_growth_check_interval: int = 1000
+    """Check for growth needs every N timesteps.
+
+    Lower values = more frequent checks (more overhead)
+    Higher values = less frequent checks (may delay growth)
+    Default 1000 = check every 1000 timesteps (~1 second at 1ms timesteps)
+    """
+
     def summary(self) -> str:
         """Return formatted summary of brain configuration."""
         lines = [

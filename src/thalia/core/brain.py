@@ -67,17 +67,19 @@ All inter-region connections are EXPLICIT PATHWAYS (not just event routing):
 Specialized Pathways:
 (pw 8) PFC → Cortex L2/3: Top-down attention (SpikingAttentionPathway)
 (pw 9) Hippocampus → Cortex: Memory replay during sleep (SpikingReplayPathway)
+(pw 10) PFC → Hippocampus: Goal-directed memory retrieval
 
-All 9 pathways:
+All 10 pathways:
 1. Cortex L2/3 → Hippocampus (encoding)
 2. Cortex L5 → Striatum (action selection)
 3. Cortex L2/3 → PFC (working memory input)
 4. Hippocampus → PFC (episodic → working memory)
-5. Hippocampus → Striatum (context for action)
-6. PFC → Striatum (goal-directed control)
-7. Striatum → Cerebellum (action refinement)
-8. PFC → Cortex (attention modulation) [SPECIALIZED]
-9. Hippocampus → Cortex (replay/consolidation) [SPECIALIZED]
+5. PFC → Hippocampus (goal-directed retrieval)
+6. Hippocampus → Striatum (context for action)
+7. PFC → Striatum (goal-directed control)
+8. Striatum → Cerebellum (action refinement)
+9. PFC → Cortex (attention modulation) [SPECIALIZED]
+10. Hippocampus → Cortex (replay/consolidation) [SPECIALIZED]
 
 Author: Thalia Project
 Date: December 2025
@@ -475,6 +477,7 @@ class EventDrivenBrain(nn.Module):
         self.cortex_to_striatum_pathway = self.pathway_manager.cortex_to_striatum
         self.cortex_to_pfc_pathway = self.pathway_manager.cortex_to_pfc
         self.hippo_to_pfc_pathway = self.pathway_manager.hippo_to_pfc
+        self.pfc_to_hippo_pathway = self.pathway_manager.pfc_to_hippo
         self.hippo_to_striatum_pathway = self.pathway_manager.hippo_to_striatum
         self.pfc_to_striatum_pathway = self.pathway_manager.pfc_to_striatum
         self.striatum_to_cerebellum_pathway = self.pathway_manager.striatum_to_cerebellum
@@ -529,10 +532,10 @@ class EventDrivenBrain(nn.Module):
         # Growth history tracking
         self._growth_history: list = []
 
-        # Comparison signal state (for match/mismatch detection)
-        self._ca1_accumulated: float = 0.0
-        self._last_comparison_decision: Optional[str] = None
-        self._last_similarity: float = 0.0
+        # Auto-growth tracking (timestep counter for periodic checks)
+        self._auto_growth_timestep_counter: int = 0
+
+        # Novelty signal for learning rate modulation
         self._novelty_signal: float = 0.0
 
         # =====================================================================
@@ -993,6 +996,13 @@ class EventDrivenBrain(nn.Module):
 
         # Sync time from coordinator
         self._current_time = self._time_container[0]
+
+        # Auto-growth check (if enabled)
+        if self.thalia_config.brain.auto_growth_enabled:
+            self._auto_growth_timestep_counter += n_timesteps
+            if self._auto_growth_timestep_counter >= self.thalia_config.brain.auto_growth_check_interval:
+                self.auto_grow(threshold=self.thalia_config.brain.auto_growth_threshold)
+                self._auto_growth_timestep_counter = 0
 
         return result
 
@@ -1472,10 +1482,18 @@ class EventDrivenBrain(nn.Module):
         )
 
     def reset_state(self) -> None:
-        """Reset brain state for new episode.
+        """Reset brain state for initialization only.
 
-        This is a HARD reset - use for completely new, unrelated episodes.
-        For starting a new sequence within the same session, use new_sequence().
+        WARNING: Do NOT call this between trials/episodes during training!
+        Real brains don't "reset" between trials. State transitions happen
+        naturally through membrane decay and neural dynamics.
+
+        Only use this for:
+        - Initial setup after construction
+        - After moving model to GPU (to ensure tensor device consistency)
+        - Starting completely fresh experiments (not during training)
+
+        Between trials: Let natural dynamics handle state transitions!
         """
         self._current_time = 0.0
         self._time_container[0] = 0.0  # Sync coordinator's time
@@ -1491,19 +1509,6 @@ class EventDrivenBrain(nn.Module):
         self._spike_counts = {name: 0 for name in self.adapters}
         self._events_processed = 0
         self._last_action = None
-
-    def new_sequence(self) -> None:
-        """Prepare for a new sequence while preserving learned representations.
-
-        Unlike reset(), this only clears what's needed for a new sequence:
-        - Hippocampus stored patterns (for new comparisons)
-        - Does NOT reset neural states (let natural decay handle transitions)
-        - Does NOT reset weights (preserves learning)
-
-        Call this between unrelated text sequences during training, but NOT
-        between tokens within a sequence.
-        """
-        self.hippocampus.impl.new_trial()
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete brain state for checkpointing.
@@ -1624,69 +1629,6 @@ class EventDrivenBrain(nn.Module):
 
         # Note: Event queue is NOT restored - assumes checkpoint at clean state
         # For mid-trial checkpointing, would need to serialize pending events
-
-    # =========================================================================
-    # COMPARISON SIGNAL (MATCH/MISMATCH DETECTION)
-    # =========================================================================
-
-    def _compute_comparison_signal(
-        self,
-        hippo_activity: torch.Tensor,
-        n_timesteps: int,
-        current_timestep: int,
-    ) -> torch.Tensor:
-        """Compute match/mismatch comparison signal using temporal burst coding.
-
-        Accumulates CA1 activity over the test phase, then generates synchronized
-        bursts in the decision window to signal match vs mismatch.
-
-        Args:
-            hippo_activity: Current hippocampal output [batch, hippo_size]
-            n_timesteps: Total timesteps in phase
-            current_timestep: Current timestep index
-
-        Returns:
-            Comparison signal [batch, comparison_size] for striatum
-        """
-        comparison_size = getattr(self.config, 'comparison_size', 4)
-        batch_size = hippo_activity.shape[0] if hippo_activity.dim() > 1 else 1
-
-        # Accumulate CA1 activity
-        if not hasattr(self, '_ca1_accumulated'):
-            self._ca1_accumulated = 0.0
-
-        ca1_sum = hippo_activity.sum().item()
-        self._ca1_accumulated += ca1_sum
-
-        # Decision window: last 20% of phase
-        decision_start = int(n_timesteps * 0.8)
-
-        if current_timestep >= decision_start:
-            # Compute similarity from accumulated activity
-            # High activity = match (CA3 retrieval succeeded)
-            # Low activity = mismatch (pattern not in CA3)
-
-            avg_activity = self._ca1_accumulated / (current_timestep + 1)
-
-            # Threshold for match/mismatch decision
-            match_threshold = 0.5  # Tunable parameter
-
-            if avg_activity > match_threshold:
-                # MATCH: Strong synchronized burst to match neurons
-                signal = torch.zeros(batch_size, comparison_size)
-                signal[:, :comparison_size // 2] = 1.0  # Match neurons fire
-                self._last_comparison_decision = 'MATCH'
-            else:
-                # MISMATCH: Strong synchronized burst to mismatch neurons
-                signal = torch.zeros(batch_size, comparison_size)
-                signal[:, comparison_size // 2:] = 1.0  # Mismatch neurons fire
-                self._last_comparison_decision = 'MISMATCH'
-
-            self._last_similarity = avg_activity
-            return signal.squeeze() if batch_size == 1 else signal
-        else:
-            # Not in decision window - return zeros
-            return torch.zeros(comparison_size)
 
     # =========================================================================
     # COUNTERFACTUAL LEARNING
@@ -1819,11 +1761,6 @@ class EventDrivenBrain(nn.Module):
                                 self.criticality_monitor.update(payload.spikes)
 
                 self._events_processed += 1
-
-    def _process_pending_events(self) -> None:
-        """Process all pending events (used for reward delivery)."""
-        max_time = self._current_time + 100.0  # Process up to 100ms ahead
-        self._process_events_until(max_time)
 
     # =========================================================================
     # GROWTH MANAGEMENT
@@ -1981,14 +1918,9 @@ class EventDrivenBrain(nn.Module):
         # Memory metrics
         n_stored = len(hippo.episode_buffer) if hasattr(hippo, 'episode_buffer') else 0
 
-        # Get comparison decision if available
-        comparison_decision = getattr(self, '_last_comparison_decision', 'UNKNOWN')
-
         return HippocampusDiagnostics(
             ca1_total_spikes=ca1_total,
             ca1_normalized=ca1_normalized,
-            ca1_similarity=getattr(self, '_last_similarity', 0.0),
-            comparison_decision=comparison_decision,
             dg_spikes=dg_spikes,
             ca3_spikes=ca3_spikes,
             ca1_spikes=ca1_total,

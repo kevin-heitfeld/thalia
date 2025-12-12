@@ -257,15 +257,35 @@ class GoalHierarchyManager:
         Returns:
             subgoals: List of subgoals to achieve
 
-        Note:
-            This is task-specific and would be learned or programmed.
-            For now, returns existing subgoals (set manually).
+        Implementation:
+            Uses a hybrid approach:
+            1. If goal has predefined subgoals (manual decomposition) → use them
+            2. Check for learned options that match this goal type
+            3. Consider state-dependent decomposition (which subgoals are achievable?)
+
+        This enables both programmed and learned hierarchical planning.
         """
-        # In full implementation, this could use:
-        # 1. Learned decomposition policies (via Hebbian associations)
-        # 2. Mental simulation (Phase 2) to evaluate decompositions
-        # 3. Hippocampal retrieval of similar goal structures
-        return goal.subgoals
+        # Start with existing subgoals (manual decomposition)
+        subgoals = goal.subgoals.copy()
+
+        # Check for learned options that could achieve this goal
+        if self.config.enable_option_learning:
+            for option_name, option in self.options.items():
+                # If option can help achieve this goal and is initiatable
+                if (option.initiation_set is not None and
+                    option.initiation_set(state) and
+                    option.level == goal.level - 1):  # Right hierarchical level
+                    # Check if not already in subgoals
+                    if not any(sg.name == option_name for sg in subgoals):
+                        subgoals.append(option)
+
+        # Filter to achievable subgoals based on current state
+        achievable = [
+            sg for sg in subgoals
+            if sg.is_achievable(state)
+        ]
+
+        return achievable if len(achievable) > 0 else subgoals
 
     def update_progress(self, goal: Goal, state: torch.Tensor):
         """

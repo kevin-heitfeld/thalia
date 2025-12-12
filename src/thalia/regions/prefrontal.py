@@ -47,7 +47,7 @@ When to Use:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Dict, Any
+from typing import TYPE_CHECKING, Optional, Dict, Any, List
 
 import torch
 import torch.nn as nn
@@ -733,46 +733,6 @@ class Prefrontal(NeuralComponent):
             custom_metrics=custom,
         )
 
-    def set_context(self, context: torch.Tensor) -> None:
-        """
-        Set the current context/rule in working memory.
-
-        This allows explicit control of PFC state for rule-based tasks.
-
-        Args:
-            context: Context pattern [n_output] (1D tensor, ADR-005)
-        """
-        assert context.dim() == 1, (
-            f"set_context: context must be 1D [n_output], got shape {context.shape}"
-        )
-        assert context.shape[0] == self.config.n_output, (
-            f"set_context: context has {context.shape[0]} elements but expected {self.config.n_output}"
-        )
-
-        self.state.working_memory = context.to(self.device).float()
-        self.state.active_rule = context.to(self.device).float()
-
-    def debug_get_working_memory(self) -> torch.Tensor:
-        """Get current working memory contents for debugging/testing (1D tensor, ADR-005).
-
-        ⚠️ DEBUG/TEST ONLY: Do not call this from other brain regions!
-
-        Working memory IS the goal context. In biology, PFC → Striatum
-        projections carry goal information via spike patterns through the
-        pfc_to_striatum pathway, not as a separate signal.
-
-        The working memory spikes flow through the pathway with proper
-        axonal delays and are extracted by striatum from its concatenated input.
-
-        This method is only for:
-        - Unit tests that need to inspect WM state
-        - Task evaluation (external to brain)
-        - Debugging and diagnostics
-        """
-        if self.state.working_memory is None:
-            return torch.zeros(self.config.n_output, device=self.device)
-        return self.state.working_memory
-
     def predict_next_state(
         self,
         current_state: torch.Tensor,
@@ -849,45 +809,6 @@ class Prefrontal(NeuralComponent):
 
         return prediction
 
-    def maintain(self, n_steps: int = 10) -> Dict[str, Any]:
-        """
-        Run maintenance steps without external input.
-
-        Useful for testing WM persistence.
-
-        Args:
-            n_steps: Number of maintenance steps
-
-        Returns:
-            Metrics about maintenance
-
-        Note:
-            Timestep (dt_ms) is obtained from self.config
-        """
-        if self.state.working_memory is None:
-            return {"error": "No working memory to maintain"}
-
-        initial_wm = self.state.working_memory.clone()
-
-        for _ in range(n_steps):
-            # No external input, low DA (maintenance mode)
-            null_input = torch.zeros(self.config.n_input, device=self.device)
-            self.forward(null_input, dopamine_signal=-0.3)
-
-        final_wm = self.state.working_memory
-
-        # Compute retention using safe cosine similarity
-        retention = cosine_similarity_safe(
-            initial_wm.flatten(), final_wm.flatten()
-        ).item()
-
-        return {
-            "n_steps": n_steps,
-            "retention": retention,
-            "initial_activity": initial_wm.mean().item(),
-            "final_activity": final_wm.mean().item(),
-        }
-
     # =========================================================================
     # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
     # =========================================================================
@@ -912,25 +833,69 @@ class Prefrontal(NeuralComponent):
             raise ConfigurationError("Hierarchical goals not enabled. Set use_hierarchical_goals=True in config.")
         self.goal_manager.set_root_goal(root_goal)
 
-    def debug_get_current_goal(self) -> Optional["Goal"]:
+    def push_goal(self, goal: "Goal") -> None:
         """
-        Get currently active goal from hierarchy (for debugging/inspection).
+        Push a goal onto the active goal stack.
 
-        ⚠️ DEBUG/TEST ONLY: For inspection and diagnostics.
+        Phase 3 functionality: Activates a goal for pursuit.
 
-        Phase 3 functionality: Returns the goal at the top of the active stack.
+        Args:
+            goal: Goal to activate
 
-        Returns:
-            Current goal or None if no active goals
+        Raises:
+            ValueError: If hierarchical goals not enabled
 
         Example:
-            goal = pfc.debug_get_current_goal()
-            if goal is not None:
-                print(f"Working on: {goal.name}")
+            subgoal = Goal(goal_id=1, name="research_topic", level=2)
+            pfc.push_goal(subgoal)
         """
         if self.goal_manager is None:
-            return None
-        return self.goal_manager.get_current_goal()
+            raise ConfigurationError("Hierarchical goals not enabled.")
+        self.goal_manager.push_goal(goal)
+
+    def get_active_goals(self) -> List["Goal"]:
+        """
+        Get list of currently active goals.
+
+        Phase 3 functionality: Returns all goals in the working memory stack.
+
+        Returns:
+            List of active goals (empty list if none or manager disabled)
+
+        Example:
+            goals = pfc.get_active_goals()
+            print(f"Working on {len(goals)} goals")
+        """
+        if self.goal_manager is None:
+            return []
+        return self.goal_manager.active_goals.copy()
+
+    def decompose_current_goal(self, state: torch.Tensor) -> List["Goal"]:
+        """
+        Decompose current goal into subgoals based on state.
+
+        Phase 3 functionality: Enables hierarchical planning.
+
+        Args:
+            state: Current state for context-dependent decomposition
+
+        Returns:
+            List of subgoals (empty if no current goal or manager disabled)
+
+        Example:
+            state = pfc.state.spikes.float()
+            subgoals = pfc.decompose_current_goal(state)
+            for sg in subgoals:
+                pfc.push_goal(sg)
+        """
+        if self.goal_manager is None:
+            return []
+
+        current_goal = self.goal_manager.get_current_goal()
+        if current_goal is None:
+            return []
+
+        return self.goal_manager.decompose_goal(current_goal, state)
 
     def update_cognitive_load(self, load: float) -> None:
         """

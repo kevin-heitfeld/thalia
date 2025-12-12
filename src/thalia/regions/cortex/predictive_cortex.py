@@ -63,6 +63,7 @@ import torch
 import torch.nn as nn
 
 from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.component_registry import register_region
 from thalia.regions.base import NeuralComponent, NeuralComponentState, LearningRule
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
 from thalia.core.predictive_coding import (
@@ -122,6 +123,12 @@ class PredictiveCortexState(NeuralComponentState):
     _oscillator_signals: Optional[Dict[str, float]] = None
 
 
+@register_region(
+    "predictive_cortex",
+    description="Layered cortex with predictive coding and precision-weighted prediction errors",
+    version="1.0",
+    author="Thalia Project"
+)
 class PredictiveCortex(NeuralComponent):
     """
     Layered cortex with integrated predictive coding.

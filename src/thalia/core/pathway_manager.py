@@ -150,7 +150,20 @@ class PathwayManager:
             )
         )
 
-        # 5. Hippocampus → Striatum (context for action selection)
+        # 5. PFC → Hippocampus (goal-directed memory retrieval)
+        self.pfc_to_hippo = SpikingPathway(
+            PathwayConfig(
+                n_input=self._sizes['pfc'],
+                n_output=self._sizes['pfc'],
+                learning_rule=SpikingLearningRule.STDP,
+                temporal_coding=TemporalCoding.PHASE,  # Theta-coupled
+                stdp_lr=0.001,
+                dt_ms=self.dt_ms,
+                device=self.device,
+            )
+        )
+
+        # 6. Hippocampus → Striatum (context for action selection)
         self.hippo_to_striatum = SpikingPathway(
             PathwayConfig(
                 n_input=self._sizes['hippocampus'],
@@ -163,7 +176,7 @@ class PathwayManager:
             )
         )
 
-        # 6. PFC → Striatum (goal-directed control)
+        # 7. PFC → Striatum (goal-directed control)
         self.pfc_to_striatum = SpikingPathway(
             PathwayConfig(
                 n_input=self._sizes['pfc'],
@@ -176,7 +189,7 @@ class PathwayManager:
             )
         )
 
-        # 7. Striatum → Cerebellum (action refinement)
+        # 8. Striatum → Cerebellum (action refinement)
         striatum_size = self._sizes['n_actions'] * self._sizes['neurons_per_action']
         self.striatum_to_cerebellum = SpikingPathway(
             PathwayConfig(
@@ -226,6 +239,7 @@ class PathwayManager:
             ],
             'hippocampus': [
                 (self.cortex_to_hippo, 'target'),
+                (self.pfc_to_hippo, 'target'),
                 (self.hippo_to_pfc, 'source'),
                 (self.hippo_to_striatum, 'source'),
                 (self.replay, 'source'),
@@ -233,6 +247,7 @@ class PathwayManager:
             'pfc': [
                 (self.cortex_to_pfc, 'target'),
                 (self.hippo_to_pfc, 'target'),
+                (self.pfc_to_hippo, 'source'),
                 (self.pfc_to_striatum, 'source'),
                 (self.attention, 'source'),
             ],
@@ -315,9 +330,10 @@ class PathwayManager:
             "thalamus_to_cortex": self.thalamus_to_cortex,
             "cortex_to_hippo": self.cortex_to_hippo,
             "cortex_to_striatum": self.cortex_to_striatum,
-            "cortex_to_pfc": self.cortex_to_pfc,
-            "hippo_to_pfc": self.hippo_to_pfc,
-            "hippo_to_striatum": self.hippo_to_striatum,
+            'cortex_to_pfc': self.cortex_to_pfc,
+            'hippo_to_pfc': self.hippo_to_pfc,
+            'pfc_to_hippo': self.pfc_to_hippo,
+            'hippo_to_striatum': self.hippo_to_striatum,
             "pfc_to_striatum": self.pfc_to_striatum,
             "striatum_to_cerebellum": self.striatum_to_cerebellum,
             "attention": self.attention,

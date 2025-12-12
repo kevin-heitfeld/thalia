@@ -79,9 +79,8 @@ When to Use:
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from dataclasses import replace
-from typing import Optional, Dict, Any, List, Generator
+from typing import Optional, Dict, Any, List
 
 import torch
 import torch.nn as nn
@@ -459,9 +458,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         else:
             self.value_estimates = None
 
-        # Plasticity freeze flag (for debugging/evaluation escape hatch)
-        self._plasticity_frozen = False
-
         # Initialize tracking variables (also reset in reset_state)
         self._last_rpe = 0.0
         self._last_expected = 0.0
@@ -644,29 +640,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     def d2_output_trace(self, value: torch.Tensor) -> None:
         """Set D2 output STDP trace."""
         self.d2_pathway.output_trace = value
-
-    @contextmanager
-    def freeze_plasticity(self) -> Generator[None, None, None]:
-        """Context manager to temporarily freeze learning.
-
-        WARNING: This is an escape hatch for debugging only!
-        The brain ALWAYS learns in biology — use sparingly.
-
-        Usage:
-            with striatum.freeze_plasticity():
-                # No learning during this block
-                action = striatum.forward(input_spikes)
-                striatum.deliver_reward(reward)  # No weight changes
-
-        Yields:
-            None
-        """
-        old_value = self._plasticity_frozen
-        self._plasticity_frozen = True
-        try:
-            yield
-        finally:
-            self._plasticity_frozen = old_value
 
     # =========================================================================
     # VALUE ESTIMATION (for centralized RPE computation in Brain/VTA)
@@ -1418,103 +1391,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         return delayed_spikes
 
-    def debug_state(self, label: str = "") -> Dict[str, float]:
-        """Print and return current D1/D2 weight state per action.
-
-        Centralized debug method for understanding striatum state.
-        Call this at key moments from experiment scripts.
-
-        Args:
-            label: Optional label to identify the debug point
-
-        Returns:
-            Dict with weight statistics
-        """
-        n_per = self.neurons_per_action
-
-        # Per-action weights
-        d1_match = self.d1_weights[0:n_per].mean().item()
-        d1_nomatch = self.d1_weights[n_per:2*n_per].mean().item()
-        d2_match = self.d2_weights[0:n_per].mean().item()
-        d2_nomatch = self.d2_weights[n_per:2*n_per].mean().item()
-
-        # Net (D1-D2) per action - this determines action selection
-        net_match = d1_match - d2_match
-        net_nomatch = d1_nomatch - d2_nomatch
-
-        # Eligibility traces
-        d1_elig_match = self.d1_eligibility[0:n_per].abs().mean().item()
-        d1_elig_nomatch = self.d1_eligibility[n_per:2*n_per].abs().mean().item()
-
-        # Value estimates (for RPE)
-        val_match = 0.0
-        val_nomatch = 0.0
-        if self.value_estimates is not None:
-            val_match = self.value_estimates[0].item()
-            val_nomatch = self.value_estimates[1].item() if len(self.value_estimates) > 1 else 0.0
-
-        prefix = f"[{label}] " if label else ""
-        print(f"{prefix}D1: M={d1_match:.4f}, NM={d1_nomatch:.4f} | "
-              f"D2: M={d2_match:.4f}, NM={d2_nomatch:.4f} | "
-              f"NET: M={net_match:.4f}, NM={net_nomatch:.4f} | "
-              f"VAL: M={val_match:.3f}, NM={val_nomatch:.3f}")
-
-        return {
-            "d1_match": d1_match, "d1_nomatch": d1_nomatch,
-            "d2_match": d2_match, "d2_nomatch": d2_nomatch,
-            "net_match": net_match, "net_nomatch": net_nomatch,
-            "elig_match": d1_elig_match, "elig_nomatch": d1_elig_nomatch,
-            "val_match": val_match, "val_nomatch": val_nomatch,
-        }
-
-    def apply_homeostatic_scaling(self) -> Dict[str, Any]:
-        """Apply homeostatic regulation.
-
-        This method is now largely obsolete because unified homeostasis
-        is applied during reward delivery via normalize_d1_d2().
-
-        Returns:
-            Dict with scaling statistics for monitoring.
-        """
-        cfg = self.striatum_config
-
-        if not cfg.homeostasis_enabled:
-            return {"homeostasis_applied": False}
-
-        # Calculate activity rate for this trial (still useful for diagnostics)
-        max_possible = self._trial_timesteps * self.config.n_output
-        if max_possible > 0:
-            trial_activity = self._trial_spike_count / max_possible
-        else:
-            trial_activity = 0.0
-
-        # Reset trial counters
-        self._trial_spike_count = 0.0
-        self._trial_timesteps = 0
-
-        d1_mean = self.d1_weights.mean().item()
-        d2_mean = self.d2_weights.mean().item()
-
-        return {
-            "homeostasis_applied": True,
-            "trial_activity": trial_activity,
-            "d1_mean": d1_mean,
-            "d2_mean": d2_mean,
-            "d1_d2_ratio": d1_mean / (d2_mean + 1e-6),
-            "note": "unified homeostasis now applied during reward delivery",
-        }
-
-    # NOTE: The _apply_baseline_pressure() method has been moved to HomeostasisManager
-    # to consolidate homeostatic regulation logic. The method is now accessed via
-    # self.homeostasis_manager.apply_baseline_pressure()
-
-    # NOTE: The learn() method and _three_factor_learn/_reward_modulated_stdp_learn
-    # have been removed. With the continuous learning paradigm:
-    # - forward() builds eligibility traces during activity
-    # - deliver_reward() applies D1/D2 plasticity when dopamine arrives
-    # This is biologically correct: striatum uses three-factor learning where
-    # plasticity is gated by dopamine, not continuous like cortical STDP.
-
     def deliver_reward(self, reward: float) -> Dict[str, Any]:
         """Deliver reward signal and trigger D1/D2 learning.
 
@@ -1538,18 +1414,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         # Delegate to learning manager
         goal_context = self._last_pfc_goal_context if hasattr(self, '_last_pfc_goal_context') else None
-
-        # Skip learning if plasticity frozen
-        if self._plasticity_frozen:
-            return {
-                "dopamine": da_level,
-                "d1_ltp": 0.0,
-                "d1_ltd": 0.0,
-                "d2_ltp": 0.0,
-                "d2_ltd": 0.0,
-                "net_change": 0.0,
-                "frozen": True,
-            }
 
         return self.learning_manager.apply_dopamine_learning(da_level, goal_context)
 

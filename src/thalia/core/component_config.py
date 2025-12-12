@@ -399,9 +399,6 @@ class PathwayConfig(NeuralComponentConfig):
     sparsity: float = 0.1
     """Target sparsity for pathway connections (fraction of non-zero weights)."""
 
-    bidirectional: bool = False
-    """Whether pathway supports bidirectional communication."""
-
     topographic: bool = False
     """Use topographic connectivity pattern."""
 

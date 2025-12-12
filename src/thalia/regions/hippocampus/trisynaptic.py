@@ -564,7 +564,6 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # Reset gamma position for new sequence
         self._sequence_position = 0
-        # Note: Gamma slot now comes from brain broadcast, no local control
 
     def _init_state(self) -> None:
         """Initialize all layer states (internal method)."""
@@ -1436,20 +1435,6 @@ class TrisynapticHippocampus(NeuralComponent):
 
         return sparse_spikes
 
-    def clear_sample_trace(self) -> None:
-        """Reset for new trial.
-
-        Note: We don't clear CA3 weights - the "memory" is in the weights!
-        We only reset the transient state (spikes, traces).
-        """
-        self.state.sample_trace = None
-        # Reset spike states
-        self.state.dg_spikes = None
-        self.state.ca3_spikes = None
-        self.state.ca1_spikes = None
-        self.state.dg_trace = None
-        self.state.ca3_trace = None
-
     def set_oscillator_phases(
         self,
         phases: Dict[str, float],
@@ -1984,36 +1969,6 @@ class TrisynapticHippocampus(NeuralComponent):
             },
             custom_metrics=custom,
         )
-
-    # =========================================================================
-    # THETA-GAMMA COUPLING METHODS
-    # =========================================================================
-
-    def set_sequence_position(self, position: int) -> None:
-        """Set the current sequence position.
-
-        Position auto-advances on each forward() call. Use this to:
-        - Reset to start of sequence
-        - Jump to specific position during replay
-        - Test specific gamma slots
-
-        Args:
-            position: Sequence position (0, 1, 2, ...)
-        """
-        self._sequence_position = position
-
-    def get_current_gamma_slot(self) -> Optional[int]:
-        """Get the current gamma slot (working memory position).
-
-        Returns the slot for this region's sequence position.
-        For oscillator diagnostics, query brain.oscillators instead.
-
-        Returns:
-            Current slot index [0, n_slots-1], or None if gamma disabled
-        """
-        if self.tri_config.theta_gamma_enabled:
-            return self._sequence_position % self.tri_config.gamma_n_slots
-        return None
 
     # =========================================================================
     # CHECKPOINT STATE MANAGEMENT

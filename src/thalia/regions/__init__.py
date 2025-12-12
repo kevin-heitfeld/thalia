@@ -85,15 +85,6 @@ from thalia.regions.hippocampus import (
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig, ThalamicRelayState
 
-# Register all regions with the factory
-register_region("cortex", aliases=["layered_cortex"])(LayeredCortex)
-register_region("predictive_cortex")(PredictiveCortex)
-register_region("cerebellum")(Cerebellum)
-register_region("striatum")(Striatum)
-register_region("prefrontal", aliases=["pfc"])(Prefrontal)
-register_region("hippocampus", aliases=["trisynaptic"])(Hippocampus)
-register_region("thalamus", aliases=["thalamic_relay"])(ThalamicRelay)
-
 __all__ = [
     # Base classes
     "NeuralComponent",  # Unified base for ALL neural populations (regions, pathways, etc.)

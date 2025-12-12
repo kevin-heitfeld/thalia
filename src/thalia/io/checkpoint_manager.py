@@ -64,6 +64,7 @@ from datetime import datetime
 
 import torch
 
+from thalia import __version__ as THALIA_VERSION
 from thalia.io.checkpoint import BrainCheckpoint
 from thalia.io.precision import PrecisionPolicy
 
@@ -145,7 +146,7 @@ class CheckpointManager:
         metadata.update({
             "checkpoint_version": "2.0",  # Checkpoint format version
             "saved_at": datetime.now().isoformat(),
-            "thalia_version": "0.1.0",  # TODO: Get from package
+            "thalia_version": THALIA_VERSION,
         })
 
         # Save using BrainCheckpoint API

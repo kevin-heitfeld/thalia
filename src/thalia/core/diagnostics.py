@@ -371,13 +371,9 @@ class StriatumDiagnostics:
 @dataclass
 class HippocampusDiagnostics:
     """Structured diagnostics for Hippocampus."""
-    # CA1 activity (key for match/mismatch)
+    # CA1 activity (implicit comparison via NMDA coincidence detection)
     ca1_total_spikes: float = 0.0
     ca1_normalized: float = 0.0  # Normalized activity [0, 1]
-    ca1_similarity: float = 0.0  # Scaled similarity for comparison
-
-    # Comparison decision
-    comparison_decision: str = "UNKNOWN"  # "MATCH" or "NOMATCH"
 
     # NMDA gating
     nmda_gate_mean: float = 0.0
@@ -396,8 +392,6 @@ class HippocampusDiagnostics:
         return {
             "ca1_total_spikes": self.ca1_total_spikes,
             "ca1_normalized": self.ca1_normalized,
-            "ca1_similarity": self.ca1_similarity,
-            "comparison_decision": self.comparison_decision,
             "nmda_gate_mean": self.nmda_gate_mean,
             "nmda_gate_max": self.nmda_gate_max,
             "dg_spikes": self.dg_spikes,
