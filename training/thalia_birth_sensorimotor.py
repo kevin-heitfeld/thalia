@@ -62,7 +62,7 @@ from thalia.config.curriculum_growth import (
     CurriculumStage,
     get_curriculum_growth_config,
 )
-from thalia.training.curriculum_trainer import (
+from thalia.training.curriculum.stage_manager import (
     CurriculumTrainer,
     StageConfig,
     TaskConfig,

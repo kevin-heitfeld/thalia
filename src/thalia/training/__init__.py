@@ -9,20 +9,19 @@ rather than backpropagation. All learning is biologically inspired:
 - Three-Factor: Eligibility traces + neuromodulatory signals
 - Hebbian: Activity correlation-based learning
 
-Components:
-- DataPipeline: Text data loading and batching
-- Metrics: Learning progress tracking
-- Curriculum: Advanced curriculum strategies (interleaving, spaced repetition, etc.)
-- CurriculumTrainer: Multi-stage developmental training orchestration
-- StageEvaluation: Milestone checking for stage transitions
-- TrainingMonitor: Interactive matplotlib-based monitoring (works in notebooks & locally)
+Organization:
+- curriculum/: Stage management, curriculum strategies, evaluation
+- datasets/: Task loaders, data pipeline, constants
+- evaluation/: Metacognition, metrics
+- visualization/: Monitoring, live diagnostics
+
+Author: Thalia Project
+Date: December 12, 2025
 """
 
-from thalia.training.data_pipeline import (
-    TextDataPipeline,
-    DataConfig,
-)
+# Import from reorganized subdirectories
 from thalia.training.curriculum import (
+    # Curriculum mechanics
     InterleavedCurriculumSampler,
     InterleavedCurriculumSamplerConfig,
     SpacedRepetitionScheduler,
@@ -36,8 +35,7 @@ from thalia.training.curriculum import (
     StageTransitionProtocol,
     StageTransitionConfig,
     TransitionWeekConfig,
-)
-from thalia.training.curriculum_trainer import (
+    # Stage manager
     CurriculumTrainer,
     StageConfig,
     TaskConfig,
@@ -45,27 +43,19 @@ from thalia.training.curriculum_trainer import (
     MechanismPriority,
     ActiveMechanism,
     CognitiveLoadMonitor,
-)
-from thalia.training.stage_evaluation import (
+    # Stage evaluation
     evaluate_stage_sensorimotor,
     evaluate_stage_phonology,
     evaluate_stage_toddler,
     check_system_health,
     generate_evaluation_report,
-)
-from thalia.training.curriculum_logger import (
+    # Logger
     CurriculumLogger,
     LogLevel,
     StageLog,
 )
-from thalia.training.metacognition import (
-    MetacognitiveCalibrator,
-    CalibrationSample,
-    CalibrationPrediction,
-    CalibrationMetrics,
-    create_simple_task_generator,
-)
-from thalia.training.task_loaders import (
+from thalia.training.datasets import (
+    # Task loaders
     BaseTaskLoader,
     SensorimotorTaskLoader,
     SensorimotorConfig,
@@ -74,12 +64,20 @@ from thalia.training.task_loaders import (
     TaskLoaderRegistry,
     create_sensorimotor_loader,
     create_phonology_loader,
+    # Data pipeline
+    TextDataPipeline,
+    DataConfig,
 )
-from thalia.training.monitor import (
+from thalia.training.evaluation import (
+    MetacognitiveCalibrator,
+    CalibrationSample,
+    CalibrationPrediction,
+    CalibrationMetrics,
+    create_simple_task_generator,
+)
+from thalia.training.visualization import (
     TrainingMonitor,
     quick_monitor,
-)
-from thalia.training.live_diagnostics import (
     LiveDiagnostics,
     quick_diagnostics,
 )

@@ -27,9 +27,8 @@ import random
 import torch
 import numpy as np
 
-from thalia.training.task_constants import (
+from thalia.training.datasets.constants import (
     PROPRIOCEPTION_NOISE_SCALE,
-    WORKSPACE_SIZE_DEFAULT,
 )
 
 

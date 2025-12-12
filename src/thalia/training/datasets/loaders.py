@@ -41,7 +41,7 @@ from thalia.sensory import (
     VisualConfig,
     RetinalEncoder,
 )
-from thalia.training.task_constants import (
+from thalia.training.datasets.constants import (
     SPIKE_PROBABILITY_LOW,
     SPIKE_PROBABILITY_MEDIUM,
     SPIKE_PROBABILITY_HIGH,

@@ -5,7 +5,7 @@ Provides real-time visualization of neural activity, health metrics,
 and learning dynamics during training.
 
 Usage:
-    from thalia.training.live_diagnostics import LiveDiagnostics
+    from thalia.training.visualization.live_diagnostics import LiveDiagnostics
 
     diagnostics = LiveDiagnostics()
 

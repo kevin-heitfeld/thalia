@@ -33,7 +33,7 @@ Evaluation Categories:
 Usage:
 ======
 
-    from thalia.training.stage_evaluation import (
+    from thalia.training.curriculum.stage_evaluation import (
         evaluate_stage_sensorimotor,
         evaluate_stage_phonology,
         evaluate_stage_toddler,

@@ -6,7 +6,7 @@ and comprehensive reporting.
 
 **Usage**:
 ```python
-from thalia.training.curriculum_logger import CurriculumLogger, LogLevel
+from thalia.training.curriculum.logger import CurriculumLogger, LogLevel
 
 # Initialize logger
 logger = CurriculumLogger(

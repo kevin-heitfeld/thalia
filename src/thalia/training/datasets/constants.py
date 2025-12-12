@@ -11,11 +11,11 @@ exploration, and dataset sampling weights during curriculum stages.
 
 Usage:
 ======
-    from thalia.training.task_constants import (
+    from thalia.training.datasets.constants import (
         SPIKE_PROBABILITY_LOW,
         DATASET_WEIGHT_MNIST
     )
-    
+
     motor_spikes = torch.rand(n_motor, device=device) < SPIKE_PROBABILITY_LOW
 
 Author: Thalia Project

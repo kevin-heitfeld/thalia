@@ -66,7 +66,7 @@ requires separate testing (behavioral experiments).
 Usage:
 ======
 
-    from thalia.training.curriculum_trainer import (
+    from thalia.training.curriculum.stage_manager import (
         CurriculumTrainer,
         StageConfig,
         CurriculumStage,
@@ -152,7 +152,7 @@ from thalia.memory.consolidation import (
     SleepStageController,
 )
 from thalia.io import CheckpointManager
-from thalia.training.live_diagnostics import LiveDiagnostics
+from thalia.training.visualization.live_diagnostics import LiveDiagnostics
 from thalia.regions.prefrontal_hierarchy import Goal
 
 
@@ -1300,62 +1300,62 @@ class CurriculumTrainer:
         config: StageConfig,
     ) -> Dict[str, bool]:
         """Default milestone evaluation if no custom evaluator provided.
-        
+
         Implements comprehensive milestone checking per curriculum_strategy.md.
         Each stage has specific success criteria that must ALL pass before
         proceeding to the next stage (go/no-go evaluation).
-        
+
         This method evaluates:
         1. Task-specific performance (accuracy thresholds)
         2. System health (firing rates, stability, no pathologies)
         3. Backward compatibility (previous stages maintained)
         4. Growth progress (capacity metrics)
-        
+
         Args:
             stage: Current curriculum stage
             task_loader: Task dataset for evaluation
             config: Stage configuration with success_criteria
-        
+
         Returns:
             Dict mapping criterion name to pass/fail bool
         """
         results = {}
-        
+
         # =====================================================================
         # 1. TASK-SPECIFIC PERFORMANCE
         # =====================================================================
         # Evaluate each criterion from config.success_criteria
         # These are stage-specific thresholds (e.g., "mnist_accuracy": 0.95)
-        
+
         for criterion, threshold in config.success_criteria.items():
             # Extract task and metric from criterion name
             # Format: "task_metric" (e.g., "mnist_accuracy", "reaching_success")
-            
+
             if hasattr(task_loader, 'evaluate'):
                 # Task loader provides evaluation method
                 actual_value = task_loader.evaluate(self.brain, criterion)
             else:
                 # Fallback: Run task and measure performance
                 actual_value = self._evaluate_criterion(criterion, task_loader, threshold)
-            
+
             # Compare against threshold
             passed = actual_value >= threshold
             results[criterion] = passed
-            
+
             if self.verbose:
                 status = "✅" if passed else "❌"
                 print(f"  {status} {criterion}: {actual_value:.3f} (threshold: {threshold:.3f})")
-        
+
         # =====================================================================
         # 2. SYSTEM HEALTH CHECKS
         # =====================================================================
         # These are universal criteria across all stages
-        
+
         # 2.1 Firing rate stability
         firing_rates = self._get_region_firing_rates()
         firing_rate_ok = all(0.05 <= fr <= 0.15 for fr in firing_rates.values())
         results['firing_rate_stability'] = firing_rate_ok
-        
+
         if self.verbose:
             status = "✅" if firing_rate_ok else "❌"
             print(f"  {status} firing_rate_stability: {firing_rate_ok}")
@@ -1363,59 +1363,59 @@ class CurriculumTrainer:
                 for region, fr in firing_rates.items():
                     if not (0.05 <= fr <= 0.15):
                         print(f"      ⚠️  {region}: {fr:.3f}")
-        
+
         # 2.2 No runaway excitation
         no_runaway = all(fr < 0.8 for fr in firing_rates.values())
         results['no_runaway_excitation'] = no_runaway
-        
+
         # 2.3 No silent regions
         no_silence = all(fr > 0.01 for fr in firing_rates.values())
         results['no_silent_regions'] = no_silence
-        
+
         # 2.4 Weight health (not saturated)
         weight_health = self._check_weight_saturation()
         results['weight_health'] = weight_health
-        
+
         if self.verbose:
             status = "✅" if weight_health else "❌"
             print(f"  {status} weight_health: {weight_health}")
-        
+
         # 2.5 Oscillator accuracy (if theta oscillations used)
         if hasattr(self.brain, 'oscillators') and hasattr(self.brain.oscillators, 'theta'):
             theta_freq = self.brain.oscillators.theta.frequency_hz
             theta_ok = 7.5 <= theta_freq <= 8.5
             results['theta_oscillations'] = theta_ok
-            
+
             if self.verbose:
                 status = "✅" if theta_ok else "❌"
                 print(f"  {status} theta_oscillations: {theta_freq:.2f} Hz")
-        
+
         # =====================================================================
         # 3. BACKWARD COMPATIBILITY
         # =====================================================================
         # Ensure previous stage performance is maintained (>90% of original)
-        
+
         if stage.value > -1:  # Not the first stage
             prev_stage_ok = self._check_backward_compatibility(stage)
             results['backward_compatibility'] = prev_stage_ok
-            
+
             if self.verbose:
                 status = "✅" if prev_stage_ok else "❌"
                 print(f"  {status} backward_compatibility: {prev_stage_ok}")
-        
+
         # =====================================================================
         # 4. GROWTH PROGRESS (if enabled)
         # =====================================================================
         if config.enable_growth:
             growth_ok = self._check_growth_progress(stage)
             results['growth_progress'] = growth_ok
-            
+
             if self.verbose:
                 status = "✅" if growth_ok else "❌"
                 print(f"  {status} growth_progress: {growth_ok}")
-        
+
         return results
-    
+
     def _evaluate_criterion(
         self,
         criterion: str,
@@ -1423,12 +1423,12 @@ class CurriculumTrainer:
         threshold: float,
     ) -> float:
         """Evaluate a single criterion by running tasks.
-        
+
         Args:
             criterion: Criterion name (e.g., "mnist_accuracy")
             task_loader: Task loader for evaluation
             threshold: Required threshold
-        
+
         Returns:
             Actual performance value (0.0 to 1.0)
         """
@@ -1440,11 +1440,11 @@ class CurriculumTrainer:
         else:
             task_name = criterion
             metric = 'accuracy'
-        
+
         # Run evaluation trials (e.g., 100 test samples)
         n_trials = 100
         correct = 0
-        
+
         for _ in range(n_trials):
             try:
                 # Get test sample
@@ -1453,13 +1453,13 @@ class CurriculumTrainer:
                 else:
                     # Fallback
                     test_data = task_loader.get_task(task_name)
-                
+
                 # Forward pass
                 output = self.brain.forward(
                     test_data['input'],
                     n_timesteps=test_data.get('n_timesteps', 10),
                 )
-                
+
                 # Evaluate based on metric type
                 if metric in ['accuracy', 'correct', 'success']:
                     # Classification/binary success
@@ -1478,13 +1478,13 @@ class CurriculumTrainer:
             except Exception:
                 # Skip failed trials
                 continue
-        
+
         # Return proportion correct
         return correct / n_trials if n_trials > 0 else 0.0
-    
+
     def _extract_prediction(self, output: Dict[str, Any]) -> int:
         """Extract prediction from brain output.
-        
+
         For classification, uses striatum action selection.
         For other tasks, may use different criteria.
         """
@@ -1492,25 +1492,25 @@ class CurriculumTrainer:
         if hasattr(self.brain, 'striatum'):
             action, _confidence = self.brain.select_action(explore=False)
             return action
-        
+
         # Fallback: use most active region
         return 0
-    
+
     def _compute_error(self, output: Dict[str, Any], target: Any) -> float:
         """Compute error between output and target."""
         # Placeholder - would compute actual error based on task
         return 0.0
-    
+
     def _get_region_firing_rates(self) -> Dict[str, float]:
         """Get firing rates for all brain regions.
-        
+
         Returns:
             Dict mapping region name to firing rate (0.0 to 1.0)
         """
         from thalia.core.spike_utils import compute_firing_rate
-        
+
         firing_rates = {}
-        
+
         region_mapping = {
             'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
             'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
@@ -1518,11 +1518,11 @@ class CurriculumTrainer:
             'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
             'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
         }
-        
+
         for region_name, region in region_mapping.items():
             if region is None:
                 continue
-            
+
             # Get firing rate from current state
             if hasattr(region, 'state') and hasattr(region.state, 'spikes'):
                 if region.state.spikes is not None:
@@ -1531,18 +1531,18 @@ class CurriculumTrainer:
                     firing_rates[region_name] = 0.0
             else:
                 firing_rates[region_name] = 0.0
-        
+
         return firing_rates
-    
+
     def _check_weight_saturation(self) -> bool:
         """Check if weights are healthy (not saturated).
-        
+
         Returns:
             True if <80% of weights are saturated
         """
         # Check each region for weight saturation
         from thalia.core.growth import GrowthManager
-        
+
         region_mapping = {
             'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
             'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
@@ -1550,48 +1550,48 @@ class CurriculumTrainer:
             'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
             'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
         }
-        
+
         for region_name, region in region_mapping.items():
             if region is None:
                 continue
-            
+
             growth_manager = GrowthManager(region_name=region_name)
             metrics = growth_manager.get_capacity_metrics(region)
-            
+
             # Check saturation fraction
             if metrics.saturation_fraction is not None:
                 if metrics.saturation_fraction >= 0.80:
                     return False
-        
+
         return True
-    
+
     def _check_backward_compatibility(self, current_stage: CurriculumStage) -> bool:
         """Check if previous stage performance is maintained.
-        
+
         Args:
             current_stage: Current stage being evaluated
-        
+
         Returns:
             True if previous stages maintained >90% performance
         """
         # For now, assume backward compatibility is maintained
         # Real implementation would re-run previous stage evaluations
         # and compare to original performance
-        
+
         # TODO: Implement full backward compatibility checking
         # This requires:
         # 1. Storing original performance metrics from each stage
         # 2. Re-evaluating previous stage tasks
         # 3. Comparing current to original (threshold: >90%)
-        
+
         return True
-    
+
     def _check_growth_progress(self, stage: CurriculumStage) -> bool:
         """Check if growth has progressed appropriately for stage.
-        
+
         Args:
             stage: Current curriculum stage
-        
+
         Returns:
             True if brain has grown to expected size for this stage
         """
@@ -1604,13 +1604,13 @@ class CurriculumTrainer:
             CurriculumStage.READING: 120000,      # +20k
             CurriculumStage.ABSTRACT: 135000,     # +15k
         }
-        
+
         if stage not in expected_sizes:
             return True
-        
+
         # Count current neurons across all regions
         total_neurons = 0
-        
+
         region_mapping = {
             'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
             'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
@@ -1618,13 +1618,13 @@ class CurriculumTrainer:
             'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
             'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
         }
-        
+
         for region in region_mapping.values():
             if region is not None and hasattr(region, 'n_output'):
                 total_neurons += region.n_output
-        
+
         expected = expected_sizes[stage]
-        
+
         # Allow 10% tolerance (may grow more or less than expected)
         return expected * 0.9 <= total_neurons <= expected * 1.2
 

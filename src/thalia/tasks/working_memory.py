@@ -50,7 +50,7 @@ import torch
 import torch.nn as nn
 
 from thalia.regions.prefrontal import Prefrontal
-from thalia.training.task_constants import MATCH_PROBABILITY_DEFAULT
+from thalia.training.datasets.constants import MATCH_PROBABILITY_DEFAULT
 
 
 @dataclass
