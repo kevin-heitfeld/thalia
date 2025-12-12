@@ -41,9 +41,10 @@ from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 # Brain System
 from thalia.core.brain import EventDrivenBrain as Brain
 
+from thalia.config.base import NeuralComponentConfig
+
 # Brain Regions (most commonly used)
 from thalia.regions import (
-    RegionConfig,
     Striatum,
     StriatumConfig,
     LayeredCortex,
@@ -117,11 +118,12 @@ from thalia.learning import (
 from thalia.integration import SpikingPathway
 
 # Visualization (optional - requires manim)
-try:
-    from thalia.visualization import BrainActivityVisualization, MANIM_AVAILABLE
-except ImportError:
-    BrainActivityVisualization = None
-    MANIM_AVAILABLE = False
+# try:
+#     from thalia.visualization import BrainActivityVisualization, MANIM_AVAILABLE
+# except ImportError:
+#     BrainActivityVisualization = None
+#     MANIM_AVAILABLE = False
+MANIM_AVAILABLE = False
 
 # Namespaces for topic-level imports (advanced users)
 from thalia import regions  # noqa: F401
@@ -139,7 +141,7 @@ __all__ = [
     # Brain System
     "Brain",
     # Brain Regions
-    "RegionConfig",
+    "NeuralComponentConfig",
     "Striatum",
     "StriatumConfig",
     "LayeredCortex",
@@ -187,7 +189,6 @@ __all__ = [
     "NeuromodulatorCoordination",
     "inverted_u_function",
     # Visualization
-    "BrainActivityVisualization",
     "MANIM_AVAILABLE",
     # Namespaces
     "regions",

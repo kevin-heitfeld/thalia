@@ -62,7 +62,8 @@ from typing import Optional, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 
-from thalia.regions.base import NeuralComponent, RegionConfig, RegionState, LearningRule
+from thalia.config.base import NeuralComponentConfig
+from thalia.regions.base import NeuralComponent, NeuralComponentState, LearningRule
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
 from thalia.core.predictive_coding import (
     PredictiveCodingLayer,
@@ -92,10 +93,10 @@ class PredictiveCortexConfig(LayeredCortexConfig):
 
 
 @dataclass
-class PredictiveCortexState(RegionState):
+class PredictiveCortexState(NeuralComponentState):
     """State for predictive cortex.
 
-    Extends RegionState with cortex-specific fields for layer spikes,
+    Extends NeuralComponentState with cortex-specific fields for layer spikes,
     predictive coding, and attention.
     """
     # Layer-specific spikes (cortex has L4→L2/3→L5 microcircuit)
@@ -153,7 +154,7 @@ class PredictiveCortex(NeuralComponent):
         - check_weight_health(weights, name) → WeightHealth
         - detect_runaway_excitation(spikes) → bool
 
-    From BrainRegion (abstract base):
+    From NeuralComponent (abstract base):
         - forward(input, **kwargs) → Tensor [delegates to cortex]
         - reset_state() → None [delegates to cortex]
         - get_diagnostics() → Dict
@@ -193,8 +194,8 @@ class PredictiveCortex(NeuralComponent):
         )
         _output_size = l23_size + l5_size
 
-        # Create parent config for BrainRegion
-        parent_config = RegionConfig(
+        # Create parent config for NeuralComponent
+        parent_config = NeuralComponentConfig(
             n_input=config.n_input,
             n_output=_output_size,
             dt_ms=config.dt_ms,
@@ -280,7 +281,7 @@ class PredictiveCortex(NeuralComponent):
         self._cumulative_l5_spikes = 0
 
     # =========================================================================
-    # ABSTRACT METHOD IMPLEMENTATIONS (from BrainRegion)
+    # ABSTRACT METHOD IMPLEMENTATIONS (from NeuralComponent)
     # =========================================================================
 
     def _get_learning_rule(self) -> LearningRule:

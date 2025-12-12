@@ -18,6 +18,13 @@ All inter-region connections are EXPLICIT PATHWAYS (not just event routing):
 
     Sensory Input
          │
+         ▼ (direct input)
+    ┌──────────┐
+    │ THALAMUS │ ← Alpha gating, NE modulation
+    │ (Relay+  │    Burst/tonic modes
+    │  TRN)    │
+    └────┬─────┘
+         │
          ▼ SpikingPathway (5ms delay)
     ┌─────────┐
     │  CORTEX │
@@ -89,7 +96,7 @@ from thalia.events import (
 )
 from thalia.events.adapters import (
     EventDrivenCortex, EventDrivenHippocampus, EventDrivenPFC, EventDrivenStriatum,
-    EventDrivenCerebellum, EventRegionConfig,
+    EventDrivenCerebellum, EventDrivenThalamus, EventRegionConfig,
 )
 from thalia.events.parallel import ParallelExecutor
 from .pathway_manager import PathwayManager
@@ -116,6 +123,7 @@ from ..regions.hippocampus import Hippocampus, HippocampusConfig
 from ..regions.prefrontal import Prefrontal, PrefrontalConfig
 from ..regions.striatum import Striatum, StriatumConfig
 from ..regions.cerebellum import Cerebellum, CerebellumConfig
+from ..regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 from ..regions.feedforward_inhibition import TemporalIntegrationLayer
 
 # Import config types
@@ -191,6 +199,7 @@ class EventDrivenBrain(nn.Module):
         from types import SimpleNamespace
         self.config = SimpleNamespace(
             input_size=config.brain.sizes.input_size,
+            thalamus_size=config.brain.sizes.thalamus_size,
             cortex_size=config.brain.sizes.cortex_size,
             hippocampus_size=config.brain.sizes.hippocampus_size,
             pfc_size=config.brain.sizes.pfc_size,
@@ -215,6 +224,15 @@ class EventDrivenBrain(nn.Module):
         # CREATE BRAIN REGIONS
         # =====================================================================
 
+        # 0. THALAMUS: Sensory relay and gating (NEW!)
+        _thalamus_impl = ThalamicRelay(ThalamicRelayConfig(
+            dt_ms=self.config.dt_ms,
+            device=self.config.device,
+            n_input=self.config.input_size,
+            n_output=self.config.thalamus_size,
+        ))
+        _thalamus_impl.reset_state()
+
         # 1. CORTEX: Feature extraction
         # Build cortex config by merging user config with computed sizes
         if self.config.cortex_config is not None:
@@ -225,11 +243,12 @@ class EventDrivenBrain(nn.Module):
             base_cortex_config = LayeredCortexConfig(n_input=0, n_output=0)
 
         # Merge with sizes from this config (sizes always come from here)
+        # Cortex now receives input from thalamus
         cortex_config = replace(
             base_cortex_config,
             dt_ms=self.config.dt_ms,
             device=self.config.device,
-            n_input=self.config.input_size,
+            n_input=self.config.thalamus_size,  # Changed: cortex gets input from thalamus
             n_output=self.config.cortex_size,
         )
 
@@ -330,6 +349,14 @@ class EventDrivenBrain(nn.Module):
         # =====================================================================
         # These ARE the brain regions - access underlying implementations via .impl
 
+        self.thalamus = EventDrivenThalamus(
+            EventRegionConfig(
+                name="thalamus",
+                output_targets=["cortex"],  # Thalamus → Cortex L4
+            ),
+            _thalamus_impl,
+        )
+
         self.cortex = EventDrivenCortex(
             EventRegionConfig(
                 name="cortex",
@@ -379,6 +406,7 @@ class EventDrivenBrain(nn.Module):
 
         # Region lookup (now just references the adapters directly)
         self.adapters = {
+            "thalamus": self.thalamus,
             "cortex": self.cortex,
             "hippocampus": self.hippocampus,
             "pfc": self.pfc,
@@ -427,6 +455,7 @@ class EventDrivenBrain(nn.Module):
         # This enables curriculum learning and coordinated adaptation.
 
         self.pathway_manager = PathwayManager(
+            thalamus_size=self.config.thalamus_size,
             cortex_l23_size=self._cortex_l23_size,
             cortex_l5_size=self._cortex_l5_size,
             input_size=self.config.input_size,
@@ -440,6 +469,7 @@ class EventDrivenBrain(nn.Module):
         )
 
         # Create shortcuts for backward compatibility
+        self.thalamus_to_cortex_pathway = self.pathway_manager.thalamus_to_cortex
         self.cortex_to_hippo_pathway = self.pathway_manager.cortex_to_hippo
         self.cortex_to_striatum_pathway = self.pathway_manager.cortex_to_striatum
         self.cortex_to_pfc_pathway = self.pathway_manager.cortex_to_pfc
@@ -517,6 +547,7 @@ class EventDrivenBrain(nn.Module):
         # =====================================================================
 
         self.diagnostics = DiagnosticsManager()
+        self.diagnostics.configure_component("thalamus", enabled=True)
         self.diagnostics.configure_component("striatum", enabled=True)
         self.diagnostics.configure_component("hippocampus", enabled=True)
         self.diagnostics.configure_component("cortex", enabled=True)
@@ -1760,6 +1791,11 @@ class EventDrivenBrain(nn.Module):
                 if event is not None:
                     self.scheduler.schedule(event)
                 break
+
+            # PATHWAY INTERCEPTION: Transform spikes through pathways
+            # This is where STDP learning happens automatically for all inter-region connections!
+            if event.event_type == EventType.SPIKE:
+                event = self.pathway_manager.process_event(event)
 
             # Route event to target region
             if event.target in self.adapters:

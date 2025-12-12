@@ -33,7 +33,7 @@ class GrowthMixin:
         The base add_neurons() handles orchestration.
 
         Example:
-            class SimpleRegion(BrainRegion, GrowthMixin):
+            class SimpleRegion(NeuralComponent, GrowthMixin):
                 def _expand_layer_weights(self, n_new, initialization, **kwargs):
                     self.weights = self._expand_weights(self.weights, n_new, initialization)
 
@@ -44,7 +44,7 @@ class GrowthMixin:
         Implement custom add_neurons() but use helper methods for weight expansion.
 
         Example:
-            class MultiLayerRegion(BrainRegion, GrowthMixin):
+            class MultiLayerRegion(NeuralComponent, GrowthMixin):
                 def add_neurons(self, n_new, **kwargs):
                     # Custom multi-layer orchestration
                     for layer in self.layers:

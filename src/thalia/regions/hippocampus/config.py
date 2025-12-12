@@ -12,7 +12,8 @@ from typing import Optional, Dict, Any, List
 
 import torch
 
-from thalia.regions.base import RegionConfig, RegionState
+from thalia.config.base import NeuralComponentConfig
+from thalia.regions.base import NeuralComponentState
 from thalia.core.stp import STPType
 from thalia.core.learning_constants import LEARNING_RATE_ONE_SHOT
 
@@ -44,7 +45,7 @@ class Episode:
 
 
 @dataclass
-class HippocampusConfig(RegionConfig):
+class HippocampusConfig(NeuralComponentConfig):
     """Configuration for hippocampus (trisynaptic circuit).
 
     The hippocampus has ~5x expansion from EC to DG, then compression back.
@@ -61,7 +62,6 @@ class HippocampusConfig(RegionConfig):
     # CA3 recurrent dynamics
     ca3_recurrent_strength: float = 0.4  # Strength of recurrent connections
     ca3_sparsity: float = 0.10           # 10% active
-    ca3_learning_rate: float = 0.1       # STDP learning rate
 
     # CA1 output
     ca1_sparsity: float = 0.15     # 15% active
@@ -82,9 +82,8 @@ class HippocampusConfig(RegionConfig):
     ampa_ratio: float = 0.05         # Minimal ungated response (discrimination comes from NMDA)
 
     # Learning rates
-    learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
+    ca3_recurrent_learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
     ec_ca1_learning_rate: float = 0.5  # Strong learning for EC→CA1 alignment
-    # Note: STDP tau parameters inherited from NeuralComponentConfig (tau_plus_ms, tau_minus_ms)
 
     # Feedforward inhibition parameters
     ffi_threshold: float = 0.3       # Input change threshold to trigger FFI
@@ -110,6 +109,13 @@ class HippocampusConfig(RegionConfig):
     # If 0, uses the same input as EC layer II (n_input)
     # If >0, expects separate raw sensory input for the temporoammonic path
     ec_l3_input_size: int = 0
+
+    # =========================================================================
+    # THETA-GAMMA COUPLING
+    # =========================================================================
+    # Enable theta-gamma coupling from centralized oscillator manager
+    theta_gamma_enabled: bool = True  # Use centralized oscillators for sequence encoding
+    gamma_n_slots: int = 7  # Number of gamma cycles per theta cycle
 
     # =========================================================================
     # SHORT-TERM PLASTICITY (STP)
@@ -140,8 +146,9 @@ class HippocampusConfig(RegionConfig):
     # Real CA3 pyramidal neurons show strong adaptation: Ca²⁺ influx during
     # spikes activates K⁺ channels (I_AHP) that hyperpolarize the neuron.
     # This prevents the same neurons from dominating activity.
-    ca3_adapt_increment: float = 0.5  # Adaptation per spike (0 = disabled)
-    ca3_adapt_tau: float = 100.0      # Adaptation time constant (ms)
+    # Inherited from base with hippocampus-specific override:
+    adapt_increment: float = 0.5  # Very strong (prevents CA3 seizure-like activity)
+    # adapt_tau: 100.0 (use base default)
 
     # =========================================================================
     # ACTIVITY-DEPENDENT INHIBITION
@@ -168,16 +175,12 @@ class HippocampusConfig(RegionConfig):
     theta_reset_fraction: float = 0.5    # How much to decay (0=none, 1=full)
 
     # =========================================================================
-    # THETA-GAMMA COUPLING
+    # GAMMA SLOTS (Theta-Gamma Coupling)
     # =========================================================================
-    # Gamma oscillations (30-100 Hz) nested within theta enable:
-    # 1. Sequence encoding: items at different gamma phases within theta
-    # 2. Working memory capacity: ~7 gamma slots per theta cycle
-    # 3. Phase coding: temporal order encoded in gamma phase
-    theta_gamma_enabled: bool = True     # Enable theta-gamma coupling
-    gamma_freq_hz: float = 40.0           # Gamma frequency (30-100 Hz typical)
+    # Note: Theta-gamma coupling itself (frequency, strength) is handled by
+    # the centralized OscillatorManager. These parameters control how the
+    # hippocampus uses the gamma oscillation for working memory.
     gamma_n_slots: int = 7                # Working memory slots per theta cycle
-    gamma_coupling_strength: float = 0.8  # How much theta modulates gamma
     gamma_gating_strength: float = 0.5    # How much gamma gates CA3 activity
 
     # Slot mode determines how items are assigned to gamma slots:
@@ -201,7 +204,7 @@ class HippocampusConfig(RegionConfig):
 
 
 @dataclass
-class HippocampusState(RegionState):
+class HippocampusState(NeuralComponentState):
     """State for hippocampus (trisynaptic circuit).
 
     The CA1 spikes ARE the output - no interpretation needed!

@@ -9,14 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from thalia.regions.base import RegionConfig
-from thalia.core.learning_constants import (
-    TAU_ELIGIBILITY_STANDARD,
-)
+from thalia.config.base import NeuralComponentConfig
 
 
 @dataclass
-class StriatumConfig(RegionConfig):
+class StriatumConfig(NeuralComponentConfig):
     """Configuration specific to striatal regions.
 
     Key Features:
@@ -30,23 +27,13 @@ class StriatumConfig(RegionConfig):
     (Brain acts as VTA). Striatum receives dopamine via set_dopamine().
     """
 
-    # Eligibility trace parameters (biological: 500-2000ms)
-    eligibility_tau_ms: float = TAU_ELIGIBILITY_STANDARD
-
     # Learning rate for homeostatic normalization
-    learning_rate: float = 0.005  # Region-specific value
+    learning_rate: float = 0.005  # Region-specific override (5x base for faster RL updates)
     # Note: stdp_lr and tau_plus_ms/tau_minus_ms inherited from NeuralComponentConfig
 
     # Action selection
     lateral_inhibition: bool = True
     inhibition_strength: float = 2.0
-
-    # REWARD_MODULATED_STDP parameters
-    # Uses D1/D2 eligibility traces: spike-timing correlations modulated by dopamine
-    # Δw_d1 = d1_eligibility × dopamine (standard)
-    # Δw_d2 = d2_eligibility × (-dopamine) (inverted)
-    # Note: learning_rule and tau_plus_ms/tau_minus_ms inherited from NeuralComponentConfig
-    heterosynaptic_ratio: float = 0.3
 
     # =========================================================================
     # POPULATION CODING
@@ -65,17 +52,13 @@ class StriatumConfig(RegionConfig):
     # =========================================================================
     # HOMEOSTATIC PLASTICITY
     # =========================================================================
-    homeostatic_enabled: bool = True
     # NOTE: weight_budget is computed dynamically from initialized weights
     # to automatically adapt to any architecture (population_coding, n_input, etc.)
     homeostatic_soft: bool = True
     homeostatic_rate: float = 0.1
 
-    # =========================================================================
-    # HETEROSYNAPTIC COMPETITION
-    # =========================================================================
-    heterosynaptic_competition: bool = False
-    competition_strength: float = 0.2
+    # Note: heterosynaptic_competition and heterosynaptic_ratio inherited from base
+    # Striatum-specific competition handled via baseline_pressure mechanism below
 
     # =========================================================================
     # BASELINE PRESSURE (drift towards balanced D1/D2)

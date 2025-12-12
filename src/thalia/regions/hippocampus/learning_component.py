@@ -1,7 +1,7 @@
-"""
-Hippocampus Learning Component
+"""Hippocampus Learning Component
 
-Manages STDP plasticity, synaptic scaling, and intrinsic plasticity for CA3 recurrent connections.
+Manages homeostatic plasticity (synaptic scaling and intrinsic plasticity) for CA3.
+CA3 recurrent learning uses one-shot Hebbian (theta-phase modulated) in forward().
 Standardized component following the region_components pattern.
 """
 
@@ -14,8 +14,6 @@ import torch.nn as nn
 
 from thalia.core.region_components import LearningComponent
 from thalia.core.base_manager import ManagerContext
-from thalia.core.utils import clamp_weights
-from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 if TYPE_CHECKING:
@@ -23,12 +21,14 @@ if TYPE_CHECKING:
 
 
 class HippocampusLearningComponent(LearningComponent):
-    """Manages STDP learning and homeostatic plasticity for hippocampus.
+    """Manages homeostatic plasticity for hippocampus.
 
-    Handles:
-    1. CA3 recurrent STDP (spike-timing dependent plasticity)
-    2. Synaptic scaling (homeostatic weight normalization)
-    3. Intrinsic plasticity (threshold adaptation)
+    CA3 recurrent learning uses one-shot Hebbian learning (theta-phase modulated)
+    which happens directly in the forward() pass, not here.
+
+    This component handles:
+    1. Synaptic scaling (homeostatic weight normalization)
+    2. Intrinsic plasticity (threshold adaptation)
     """
 
     def __init__(
@@ -46,20 +46,6 @@ class HippocampusLearningComponent(LearningComponent):
 
         # Extract CA3 size from context
         self.ca3_size = context.metadata.get("ca3_size", context.n_output) if context.metadata else context.n_output
-
-        # STDP trace manager for CA3 recurrent plasticity
-        self._trace_manager = EligibilityTraceManager(
-            n_input=self.ca3_size,
-            n_output=self.ca3_size,
-            config=STDPConfig(
-                stdp_tau_ms=config.stdp_tau_plus,
-                eligibility_tau_ms=1000.0,
-                a_plus=1.0,
-                a_minus=0.5,
-                stdp_lr=1.0,
-            ),
-            device=self.context.device,
-        )
 
         # Intrinsic plasticity state
         self._ca3_activity_history: Optional[torch.Tensor] = None
@@ -84,48 +70,32 @@ class HippocampusLearningComponent(LearningComponent):
         *args,
         **kwargs
     ) -> Dict[str, Any]:
-        """Apply STDP learning to CA3 recurrent weights.
+        """Apply homeostatic normalization to CA3 recurrent weights.
+
+        Note: CA3 recurrent learning (one-shot Hebbian) happens in forward().
+        This component only handles homeostatic regulation (synaptic scaling).
 
         Args:
             state: Current hippocampus state
             w_ca3_ca3: CA3 recurrent weight matrix
-            effective_learning_rate: ACh-modulated learning rate
+            effective_learning_rate: Unused (kept for interface compatibility)
             *args, **kwargs: Additional parameters
 
         Returns:
             Dict with learning metrics
         """
-        if effective_learning_rate < 1e-8:
-            return {"learning_applied": False, "reason": "low_learning_rate"}
-
         cfg = self.config
 
-        # CA3 recurrent STDP
-        if state.ca3_spikes is not None:
-            ca3_spikes = state.ca3_spikes.squeeze()
+        # Apply synaptic scaling (homeostatic normalization)
+        if cfg.homeostasis_enabled:
+            with torch.no_grad():
+                w_ca3_ca3.data = self.homeostasis.normalize_weights(w_ca3_ca3.data, dim=1)
+                w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
 
-            # Update traces and compute LTP/LTD
-            self._trace_manager.update_traces(ca3_spikes, ca3_spikes, cfg.dt_ms)
-            ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(ca3_spikes, ca3_spikes)
-
-            # Compute weight change
-            dW = effective_learning_rate * (ltp - ltd) if isinstance(ltp, torch.Tensor) or isinstance(ltd, torch.Tensor) else 0
-
-            if isinstance(dW, torch.Tensor):
-                with torch.no_grad():
-                    w_ca3_ca3.data += dW
-                    w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
-                    clamp_weights(w_ca3_ca3.data, cfg.w_min, cfg.w_max)
-
-                    # Synaptic scaling (homeostatic) using UnifiedHomeostasis
-                    if cfg.homeostasis_enabled:
-                        w_ca3_ca3.data = self.homeostasis.normalize_weights(w_ca3_ca3.data, dim=1)
-                        w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
-
-                return {
-                    "learning_applied": True,
-                    "mean_weight": w_ca3_ca3.data.mean().item(),
-                }
+            return {
+                "learning_applied": True,
+                "mean_weight": w_ca3_ca3.data.mean().item(),
+            }
 
         return {"learning_applied": False}
 

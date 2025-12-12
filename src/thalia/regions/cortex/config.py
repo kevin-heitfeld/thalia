@@ -15,7 +15,8 @@ from enum import Enum
 
 import torch
 
-from thalia.regions.base import RegionConfig, RegionState
+from thalia.config.base import NeuralComponentConfig
+from thalia.regions.base import NeuralComponentState
 from thalia.learning.bcm import BCMConfig
 from .robustness_config import RobustnessConfig
 
@@ -51,7 +52,7 @@ class CorticalLayer(Enum):
 
 
 @dataclass
-class LayeredCortexConfig(RegionConfig):
+class LayeredCortexConfig(NeuralComponentConfig):
     """Configuration for layered cortical microcircuit.
 
     Layer Sizes:
@@ -102,10 +103,10 @@ class LayeredCortexConfig(RegionConfig):
     # SPIKE-FREQUENCY ADAPTATION (SFA)
     # =========================================================================
     # Cortical pyramidal neurons show strong spike-frequency adaptation.
-    # This prevents the same neurons from dominating activity and enables
-    # temporal decorrelation of neural responses.
-    l23_adapt_increment: float = 0.3  # Adaptation per spike
-    l23_adapt_tau: float = 100.0      # Adaptation time constant (ms)
+    # Inherited from base: adapt_increment=0.0, adapt_tau=100.0
+    # Override for L2/3 strong adaptation:
+    adapt_increment: float = 0.3  # L2/3 needs strong adaptation for decorrelation
+    # adapt_tau: 100.0 (use base default)
 
     # =========================================================================
     # CORTEX-SPECIFIC DYNAMICS
@@ -158,7 +159,7 @@ class LayeredCortexConfig(RegionConfig):
 
 
 @dataclass
-class LayeredCortexState(RegionState):
+class LayeredCortexState(NeuralComponentState):
     """State for layered cortex."""
 
     # Input stored for continuous plasticity

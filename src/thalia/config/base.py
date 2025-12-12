@@ -147,6 +147,121 @@ class NeuralComponentConfig(BaseConfig):
     """Maximum trace value to prevent runaway accumulation."""
 
     # =========================================================================
+    # EXTENDED ELIGIBILITY TRACES (Component Parity: applies to regions AND pathways)
+    # =========================================================================
+    # Extended eligibility traces for learning rules with delayed modulation
+    # (rewards, errors, neuromodulation). This is SEPARATE from fast STDP traces
+    # (tau_plus_ms/tau_minus_ms) which handle spike coincidence detection (<50ms).
+    #
+    # Extended eligibility handles temporal credit assignment over longer timescales
+    # (100-1000ms) needed for:
+    # - Three-factor rule: eligibility × dopamine (delayed reward)
+    # - Error-corrective: eligibility × error (delayed feedback)
+    # - Neuromodulated plasticity: eligibility × ACh/NE (delayed context)
+    #
+    # Biological basis: Calcium transients, PKA/CaMKII cascades, and synaptic tags
+    # can persist for seconds, allowing correlation of pre/post activity with
+    # delayed modulatory signals.
+
+    eligibility_tau_ms: float = 1000.0
+    """Time constant for extended eligibility traces in milliseconds.
+
+    This is for DELAYED modulation (100-1000ms after spike correlation).
+    Fast STDP uses tau_plus_ms/tau_minus_ms (~20ms) for coincidence detection.
+
+    Typical values:
+    - Striatum (RL): 1000ms (dopamine arrives 100-500ms after action)
+    - Cerebellum (error): 1000ms (climbing fiber error delayed)
+    - Cortex (neuromod): 500-1000ms (ACh/NE context signals)
+    - Pathways: Usually matches connected regions
+
+    Set to 0 to disable extended eligibility (pure STDP only).
+    """
+
+    # =========================================================================
+    # SPIKE-FREQUENCY ADAPTATION (Component Parity: applies to regions AND pathways)
+    # =========================================================================
+    # Spike-frequency adaptation (SFA) is universal in pyramidal neurons via
+    # Ca²⁺-activated K⁺ channels (AHP currents). Adaptation prevents runaway
+    # activity, enables temporal decorrelation, and implements gain control.
+    #
+    # Mechanism: Each spike increases an adaptation current that hyperpolarizes
+    # the neuron, making subsequent spikes harder to generate. The adaptation
+    # current decays exponentially with time constant adapt_tau.
+    #
+    # Biological basis: Present in ALL cortical pyramidal neurons, hippocampal
+    # pyramidal cells, and other excitatory neurons. Only magnitude and timescale
+    # vary across cell types.
+    #
+    # References:
+    # - Madison & Nicoll (1984): Norepinephrine blocks accommodation in hippocampal pyramids
+    # - Sanchez-Vives & McCormick (2000): Cellular mechanisms of long-lasting adaptation
+
+    adapt_increment: float = 0.0
+    """Adaptation current increase per spike (0 = disabled).
+
+    Universal mechanism in pyramidal neurons via Ca²⁺-activated K⁺ channels.
+    Each spike increases adaptation current by this amount, making subsequent
+    spikes harder to generate (gain control, decorrelation).
+
+    Typical values:
+    - 0.0: Disabled (relay neurons, some interneurons)
+    - 0.2: Moderate adaptation (PFC, maintains working memory while adapting)
+    - 0.3: Strong adaptation (cortex L2/3, prevents dominance, decorrelates)
+    - 0.5: Very strong (hippocampus CA3, prevents seizure-like activity)
+
+    Biology: AHP magnitude varies across cell types but mechanism is universal.
+    """
+
+    adapt_tau: float = 100.0
+    """Adaptation decay time constant in milliseconds.
+
+    Controls how fast adaptation current decays. Biological range: 50-200ms.
+    Longer tau = more persistent adaptation = longer decorrelation timescale.
+    """
+
+    # =========================================================================
+    # HETEROSYNAPTIC COMPETITION (Component Parity: applies to regions AND pathways)
+    # =========================================================================
+    # Heterosynaptic competition implements competitive dynamics where strengthening
+    # active synapses weakens inactive ones. This is a universal mechanism for
+    # synaptic competition and resource allocation.
+    #
+    # Mechanism: When learning strengthens active synapses, inactive synapses on
+    # the same postsynaptic neuron receive LTD. This creates zero-sum competition
+    # for limited plasticity resources (protein synthesis, trafficking).
+    #
+    # Biological basis: Synaptic consolidation requires local protein synthesis
+    # which is limited. Active synapses capture these resources, leaving less for
+    # inactive synapses. This implements competitive allocation.
+    #
+    # References:
+    # - Chistiakova & Volgushev (2009): Heterosynaptic plasticity in neocortex
+    # - Fonseca et al. (2004): Competing for memory via synaptic tagging
+
+    heterosynaptic_competition: bool = True
+    """Enable heterosynaptic competition (universal competitive mechanism).
+
+    When True, strengthening active synapses causes LTD in inactive synapses
+    on the same neuron. Implements competitive resource allocation.
+    """
+
+    heterosynaptic_ratio: float = 0.3
+    """Fraction of LTD applied to non-active synapses during learning (0-1).
+
+    When learning causes LTP in active synapses, inactive synapses receive:
+        Δw_inactive = -heterosynaptic_ratio × |Δw_active|
+
+    Typical values:
+    - 0.0: Disabled (pure Hebbian, no competition)
+    - 0.2: Weak competition (cerebellum, needs fast convergence)
+    - 0.3: Standard competition (cortex, striatum, PFC, pathways)
+    - 0.5: Strong competition (sparse coding, winner-take-all)
+
+    Biology: Models limited protein synthesis creating zero-sum competition.
+    """
+
+    # =========================================================================
     # HOMEOSTATIC PLASTICITY (Component Parity: applies to regions AND pathways)
     # =========================================================================
     # Unified constraint-based homeostasis maintains stable dynamics and prevents
@@ -200,6 +315,26 @@ class NeuralComponentConfig(BaseConfig):
     normalize_cols: bool = False
     """Normalize each input's output weights (useful for sensory normalization)."""
 
+    # Neuron model
+    neuron_type: str = "lif"
+    """Type of neuron model: 'lif', 'conductance', 'dendritic'."""
+
+    target_firing_rate_hz: float = 5.0
+    """Target firing rate in Hz for homeostatic regulation.
+
+    Typical biological values:
+    - Cortex: 1-10 Hz
+    - Hippocampus: 0.1-5 Hz
+    - Striatum: 0.5-5 Hz (MSNs)
+    """
+
+    homeostatic_tau_ms: float = 10000.0
+    """Time constant for homeostatic adaptation in milliseconds.
+
+    Controls how quickly neurons adjust their excitability.
+    Typical value: 10000ms = 10s (slow adaptation).
+    """
+
     soft_normalization: bool = True
     """Use soft (multiplicative) normalization instead of hard constraint enforcement."""
 
@@ -242,14 +377,20 @@ class PathwayConfig(NeuralComponentConfig):
     - n_neurons: Intermediate neuron population (set to n_output)
     - dt_ms, device, dtype, seed: From NeuralComponentConfig
     - w_min, w_max: Weight bounds
-    - learning_rate: Base learning rate
-    - axonal_delay_ms: Conduction delay
+    - learning_rate: Base learning rate (0.001)
+    - stdp_lr: STDP learning rate (0.01)
+    - axonal_delay_ms: Conduction delay (OVERRIDDEN to 5.0ms for long-range)
 
     All inter-region pathways in Thalia are spike-based, implementing:
     - Leaky integrate-and-fire neurons
     - STDP learning
     - Temporal coding schemes
     - Axonal delays and synaptic filtering
+
+    Pathway-Specific Defaults:
+    - axonal_delay_ms: 5.0ms (inter-region typical, vs 1.0ms for local)
+    - adapt_increment: 0.0 (pathways are relay neurons, not pyramidal)
+    - learning_rule: "STDP" (spike-timing dependent plasticity)
 
     Example:
         config = PathwayConfig(
@@ -259,6 +400,24 @@ class PathwayConfig(NeuralComponentConfig):
             temporal_coding=TemporalCoding.PHASE,
         )
     """
+
+    # =========================================================================
+    # PATHWAY-SPECIFIC OVERRIDES
+    # =========================================================================
+    # Override axonal delay for long-range inter-region connections
+    axonal_delay_ms: float = 5.0
+    """Axonal conduction delay in milliseconds (inter-region default).
+
+    Biological ranges for inter-region pathways:
+    - Cortico-cortical: 5-10ms
+    - Thalamo-cortical: 8-15ms
+    - Striato-cortical: 10-20ms
+    - Hippocampo-cortical: 10-15ms
+
+    Default of 5.0ms is appropriate for typical cortico-cortical projections.
+    Specific pathways can override for longer delays (e.g., thalamus: 10ms).
+    """
+
     def __post_init__(self):
         """Synchronize n_neurons with n_output for pathway consistency."""
         # For pathways, n_neurons should match n_output (target size)
@@ -268,7 +427,9 @@ class PathwayConfig(NeuralComponentConfig):
         if hasattr(self, 'stdp_lr') and self.stdp_lr != 0.01:
             self.learning_rate = self.stdp_lr
 
-    # Connectivity
+    # =========================================================================
+    # CONNECTIVITY
+    # =========================================================================
     sparsity: float = 0.1
     """Target sparsity for pathway connections (fraction of non-zero weights)."""
 
@@ -281,7 +442,9 @@ class PathwayConfig(NeuralComponentConfig):
     delay_variability: float = 0.2
     """Variability in axonal delays (fraction of mean delay)."""
 
-    # Neuron model parameters
+    # =========================================================================
+    # NEURON MODEL PARAMETERS
+    # =========================================================================
     tau_mem_ms: float = 20.0  # TAU_MEM_STANDARD
     """Membrane time constant in milliseconds."""
 
@@ -300,14 +463,18 @@ class PathwayConfig(NeuralComponentConfig):
     refractory_ms: float = 2.0  # TAU_REF_STANDARD
     """Refractory period in milliseconds."""
 
-    # Weight initialization
+    # =========================================================================
+    # WEIGHT INITIALIZATION
+    # =========================================================================
     init_mean: float = 0.3
     """Initial weight mean."""
 
     init_std: float = 0.1
     """Initial weight standard deviation."""
 
-    # Temporal coding
+    # =========================================================================
+    # TEMPORAL CODING
+    # =========================================================================
     temporal_coding: str = "RATE"  # TemporalCoding enum value
     """Which temporal coding scheme (RATE, LATENCY, PHASE, SYNCHRONY, BURST)."""
 
@@ -317,7 +484,9 @@ class PathwayConfig(NeuralComponentConfig):
     phase_precision: float = 0.5
     """How tightly spikes lock to phase (0-1)."""
 
-    # Short-Term Plasticity (STP)
+    # =========================================================================
+    # SHORT-TERM PLASTICITY (STP)
+    # =========================================================================
     stp_enabled: bool = False
     """Enable short-term plasticity."""
 
@@ -327,7 +496,9 @@ class PathwayConfig(NeuralComponentConfig):
     stp_config: Optional["STPConfig"] = None
     """Custom STP parameters (overrides stp_type)."""
 
-    # BCM sliding threshold (metaplasticity)
+    # =========================================================================
+    # BCM SLIDING THRESHOLD (Metaplasticity)
+    # =========================================================================
     bcm_enabled: bool = False
     """Enable BCM sliding threshold rule."""
 

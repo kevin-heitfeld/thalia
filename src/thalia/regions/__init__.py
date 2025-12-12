@@ -69,7 +69,8 @@ Biological References:
 - Hippocampus: O'Keefe & Nadel (1978), Buzsáki (2002) - Theta and memory
 """
 
-from thalia.regions.base import NeuralComponent, LearningRule, RegionConfig, RegionState
+from thalia.config.base import NeuralComponentConfig
+from thalia.regions.base import NeuralComponent, LearningRule, NeuralComponentState
 from thalia.regions.factory import RegionFactory, RegionRegistry, register_region
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
@@ -82,6 +83,7 @@ from thalia.regions.hippocampus import (
     HippocampusState,
 )
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
+from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig, ThalamicRelayState
 
 # Register all regions with the factory
 register_region("cortex", aliases=["layered_cortex"])(LayeredCortex)
@@ -90,13 +92,14 @@ register_region("cerebellum")(Cerebellum)
 register_region("striatum")(Striatum)
 register_region("prefrontal", aliases=["pfc"])(Prefrontal)
 register_region("hippocampus", aliases=["trisynaptic"])(Hippocampus)
+register_region("thalamus", aliases=["thalamic_relay"])(ThalamicRelay)
 
 __all__ = [
     # Base classes
     "NeuralComponent",  # Unified base for ALL neural populations (regions, pathways, etc.)
     "LearningRule",
-    "RegionConfig",
-    "RegionState",
+    "NeuralComponentConfig",
+    "NeuralComponentState",
     # Factory and Registry
     "RegionFactory",
     "RegionRegistry",
@@ -120,6 +123,10 @@ __all__ = [
     "Hippocampus",
     "HippocampusConfig",
     "HippocampusState",
+    # Thalamus (sensory relay and gating)
+    "ThalamicRelay",
+    "ThalamicRelayConfig",
+    "ThalamicRelayState",
     # Theta dynamics
     "FeedforwardInhibition",
 ]

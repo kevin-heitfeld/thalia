@@ -44,17 +44,18 @@ from thalia.core.neuron_constants import (
     G_LEAK_STANDARD,
     TAU_SYN_EXCITATORY,
     TAU_SYN_INHIBITORY,
+    NE_GAIN_RANGE,
 )
 from thalia.core.stp import ShortTermPlasticity
 from thalia.core.stp_presets import get_stp_config
 from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.traces import update_trace
 from thalia.core.weight_init import WeightInitializer
+from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.regions.base import NeuralComponent, LearningRule
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
-from .learning_component import HippocampusLearningComponent
 from .memory_component import HippocampusMemoryComponent
 
 
@@ -110,7 +111,7 @@ class TrisynapticHippocampus(NeuralComponent):
         - detect_runaway_excitation(spikes) → bool
         - detect_silence(spikes) → bool
 
-    From BrainRegion (abstract base):
+    From NeuralComponent (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
@@ -154,8 +155,8 @@ class TrisynapticHippocampus(NeuralComponent):
             g_L=G_LEAK_STANDARD,
             tau_E=TAU_SYN_EXCITATORY,
             tau_I=TAU_SYN_INHIBITORY,
-            adapt_increment=config.ca3_adapt_increment,  # SFA enabled!
-            tau_adapt=config.ca3_adapt_tau,
+            adapt_increment=config.adapt_increment,  # SFA enabled!
+            tau_adapt=config.adapt_tau,
         )
         self.dg_neurons = ConductanceLIF(self.dg_size, base_neuron_config)
         self.ca3_neurons = ConductanceLIF(self.ca3_size, ca3_neuron_config)
@@ -244,11 +245,20 @@ class TrisynapticHippocampus(NeuralComponent):
             metadata={"ca3_size": self.ca3_size},
         )
 
-        # Plasticity manager: handles learning, synaptic scaling, intrinsic plasticity
-        self.learning = HippocampusLearningComponent(
-            config=config,
-            context=manager_context,
+        # Homeostasis for CA3 recurrent synaptic scaling
+        homeostasis_config = UnifiedHomeostasisConfig(
+            weight_budget=config.weight_budget * self.ca3_size,
+            w_min=config.w_min,
+            w_max=config.w_max,
+            soft_normalization=config.soft_normalization,
+            normalization_rate=config.normalization_rate,
+            device=torch.device(config.device),
         )
+        self.homeostasis = UnifiedHomeostasis(homeostasis_config)
+
+        # Intrinsic plasticity state (threshold adaptation)
+        self._ca3_activity_history: Optional[torch.Tensor] = None
+        self._ca3_threshold_offset: Optional[torch.Tensor] = None
 
         # Episode manager: handles episodic memory storage and retrieval
         self.memory = HippocampusMemoryComponent(
@@ -497,8 +507,9 @@ class TrisynapticHippocampus(NeuralComponent):
         super().reset_state()
         self._init_state()
 
-        # Reset managers using helper
-        self._reset_subsystems('plasticity_manager')
+        # Reset intrinsic plasticity state
+        self._ca3_activity_history = None
+        self._ca3_threshold_offset = None
 
     def new_trial(self) -> None:
         """Prepare for a new sequence/episode.
@@ -656,8 +667,8 @@ class TrisynapticHippocampus(NeuralComponent):
             g_L=G_LEAK_STANDARD,
             tau_E=TAU_SYN_EXCITATORY,
             tau_I=TAU_SYN_INHIBITORY,
-            adapt_increment=self.tri_config.ca3_adapt_increment,
-            tau_adapt=self.tri_config.ca3_adapt_tau,
+            adapt_increment=self.tri_config.adapt_increment,
+            tau_adapt=self.tri_config.adapt_tau,
         )
 
         self.dg_size = new_dg_size
@@ -675,11 +686,6 @@ class TrisynapticHippocampus(NeuralComponent):
     # =========================================================================
     # BACKWARDS COMPATIBILITY PROPERTIES
     # =========================================================================
-
-    @property
-    def plasticity_manager(self):
-        """Backwards compatibility alias for learning component."""
-        return self.learning
 
     @property
     def episode_manager(self):
@@ -972,8 +978,8 @@ class TrisynapticHippocampus(NeuralComponent):
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
         # Neurons that fire too much have higher thresholds (less excitable)
         if (self.tri_config.homeostasis_enabled and
-            self.plasticity_manager._ca3_threshold_offset is not None):
-            ca3_input = ca3_input - self.plasticity_manager._ca3_threshold_offset
+            self._ca3_threshold_offset is not None):
+            ca3_input = ca3_input - self._ca3_threshold_offset
 
         # =====================================================================
         # THETA-GAMMA COUPLING: Slot-based gating
@@ -1124,7 +1130,7 @@ class TrisynapticHippocampus(NeuralComponent):
             # is strong (theta trough, encoding phase). This implements
             # the biological finding that synaptic plasticity is enhanced
             # during periods of strong gamma oscillations.
-            base_lr = self.tri_config.learning_rate * encoding_mod
+            base_lr = self.tri_config.ca3_recurrent_learning_rate * encoding_mod
 
             # Apply automatic gamma amplitude modulation
             # Gamma is modulated by ALL slower oscillators (emergent multi-order coupling)
@@ -1449,11 +1455,11 @@ class TrisynapticHippocampus(NeuralComponent):
         _dt: float = 1.0,
     ) -> None:
         """
-        Apply continuous STDP learning to circuit weights.
+        Apply homeostatic plasticity to CA3 recurrent weights.
 
-        Called automatically at each forward() timestep.
-        CA3 recurrent connections learn via STDP to create attractors.
-        Learning rate is modulated by dopamine (via get_effective_learning_rate).
+        CA3 recurrent learning (one-shot Hebbian) happens in forward().
+        This method only applies homeostatic mechanisms (synaptic scaling,
+        intrinsic plasticity) to maintain stable network dynamics.
 
         Note: _input_spikes, _output_spikes, and _dt are required by the base class
         signature but not used here since we access spikes from self.state.
@@ -1468,19 +1474,40 @@ class TrisynapticHippocampus(NeuralComponent):
         # Brain broadcasts to all regions every timestep via _update_neuromodulators().
         # No local decay needed.
 
-        # Get dopamine-modulated learning rate
-        effective_lr = self.get_effective_learning_rate(cfg.ca3_learning_rate)
+        # CA3 recurrent learning happens in forward() using one-shot Hebbian.
+        # Here we only apply homeostatic mechanisms (if enabled).
 
-        # Delegate to plasticity manager
-        self.plasticity_manager.apply_plasticity(
-            state=self.state,
-            w_ca3_ca3=self.w_ca3_ca3,
-            effective_learning_rate=effective_lr,
-        )
+        if not cfg.homeostasis_enabled:
+            return
 
-        # Apply intrinsic plasticity if CA3 has spiked
-        if cfg.homeostasis_enabled and self.state.ca3_spikes is not None:
-            self.plasticity_manager.apply_intrinsic_plasticity(self.state.ca3_spikes)
+        # Apply homeostatic synaptic scaling to CA3 recurrent weights
+        with torch.no_grad():
+            self.w_ca3_ca3.data = self.homeostasis.normalize_weights(self.w_ca3_ca3.data, dim=1)
+            self.w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
+
+        # Apply intrinsic plasticity (threshold adaptation) using homeostasis helper
+        if self.state.ca3_spikes is not None:
+            ca3_spikes_1d = self.state.ca3_spikes.squeeze()
+
+            # Initialize if needed
+            if self._ca3_activity_history is None:
+                self._ca3_activity_history = torch.zeros(self.ca3_size, device=self.device)
+            if self._ca3_threshold_offset is None:
+                self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=self.device)
+
+            # Update activity history (exponential moving average)
+            self._ca3_activity_history.mul_(0.99).add_(ca3_spikes_1d.float(), alpha=0.01)
+
+            # Use homeostasis helper for excitability modulation
+            # This computes threshold offset based on activity deviation from target
+            excitability_mod = self.homeostasis.compute_excitability_modulation(
+                self._ca3_activity_history,
+                tau=100.0
+            )
+            # Convert excitability modulation (>1 = easier, <1 = harder) to threshold offset
+            # Higher excitability → lower threshold (subtract positive offset)
+            # Lower excitability → higher threshold (subtract negative offset)
+            self._ca3_threshold_offset = (1.0 - excitability_mod).clamp(-0.5, 0.5)
 
     def get_state(self) -> HippocampusState:
         """Get current state."""
@@ -1974,8 +2001,10 @@ class TrisynapticHippocampus(NeuralComponent):
             "ca3_activity_trace": self._ca3_activity_trace.detach().clone() if self._ca3_activity_trace is not None else None,
             "pending_theta_reset": self._pending_theta_reset,
             "sequence_position": self._sequence_position,
-            "ca3_threshold_offset": self.plasticity_manager._ca3_threshold_offset.detach().clone() if self.plasticity_manager._ca3_threshold_offset is not None else None,
-            "ca3_activity_history": self.plasticity_manager._ca3_activity_history.detach().clone() if self.plasticity_manager._ca3_activity_history is not None else None,
+            # Intrinsic plasticity state
+            "ca3_threshold_offset": self._ca3_threshold_offset.detach().clone() if self._ca3_threshold_offset is not None else None,
+            "ca3_activity_history": self._ca3_activity_history.detach().clone() if self._ca3_activity_history is not None else None,
+            # Gamma slot assignment
             "ca3_slot_assignment": self._ca3_slot_assignment.detach().clone() if self._ca3_slot_assignment is not None else None,
             "trisynaptic_state": {
                 "dg_spikes": self.state.dg_spikes.detach().clone() if self.state.dg_spikes is not None else None,
@@ -2088,11 +2117,11 @@ class TrisynapticHippocampus(NeuralComponent):
             self._ca3_activity_trace = region_state["ca3_activity_trace"].to(self.device)
         self._pending_theta_reset = region_state["pending_theta_reset"]
         self._sequence_position = region_state["sequence_position"]
-        # Restore plasticity manager state
+        # Restore intrinsic plasticity state
         if region_state["ca3_threshold_offset"] is not None:
-            self.plasticity_manager._ca3_threshold_offset = region_state["ca3_threshold_offset"].to(self.device)
+            self._ca3_threshold_offset = region_state["ca3_threshold_offset"].to(self.device)
         if region_state["ca3_activity_history"] is not None:
-            self.plasticity_manager._ca3_activity_history = region_state["ca3_activity_history"].to(self.device)
+            self._ca3_activity_history = region_state["ca3_activity_history"].to(self.device)
         if region_state["ca3_slot_assignment"] is not None:
             self._ca3_slot_assignment = region_state["ca3_slot_assignment"].to(self.device)
 

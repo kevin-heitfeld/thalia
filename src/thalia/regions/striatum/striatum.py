@@ -52,8 +52,7 @@ from typing import Optional, Dict, Any, List, Generator
 import torch
 import torch.nn as nn
 
-from thalia.core.utils import clamp_weights
-
+from thalia.config.base import NeuralComponentConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.base_manager import ManagerContext
 from thalia.core.neuron_constants import (
@@ -63,14 +62,13 @@ from thalia.core.neuron_constants import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
+from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.core.component_registry import register_region
+from thalia.core.utils import clamp_weights
 from thalia.regions.base import (
     NeuralComponent,
-    RegionConfig,
     LearningRule,
 )
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
-
-from thalia.core.component_registry import register_region
 
 from .config import StriatumConfig
 from .action_selection import ActionSelectionMixin
@@ -119,7 +117,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         - compute_policy(q_values, temperature) → Tensor
         - add_exploration_noise(q_values, noise_std) → Tensor
 
-    From BrainRegion (abstract base):
+    From NeuralComponent (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
@@ -128,7 +126,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
     """
-    def __init__(self, config: RegionConfig):
+    def __init__(self, config: NeuralComponentConfig):
         if not isinstance(config, StriatumConfig):
             config = StriatumConfig(
                 n_input=config.n_input,
@@ -302,7 +300,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         #
         # DYNAMIC BUDGET: Computed from actual initialized weights to adapt to
         # any architecture (population_coding on/off, different n_input, etc.)
-        if self.striatum_config.homeostatic_enabled:
+        if self.striatum_config.homeostasis_enabled:
             # Compute budget from initialized weights (per-action sum of D1+D2)
             # This ensures the budget matches the actual weight scale
             with torch.no_grad():
@@ -1440,8 +1438,8 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         """
         cfg = self.striatum_config
 
-        if not cfg.homeostatic_enabled:
-            return {"homeostatic_applied": False}
+        if not cfg.homeostasis_enabled:
+            return {"homeostasis_applied": False}
 
         # Calculate activity rate for this trial (still useful for diagnostics)
         max_possible = self._trial_timesteps * self.config.n_output
@@ -1458,7 +1456,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         d2_mean = self.d2_weights.mean().item()
 
         return {
-            "homeostatic_applied": True,
+            "homeostasis_applied": True,
             "trial_activity": trial_activity,
             "d1_mean": d1_mean,
             "d2_mean": d2_mean,

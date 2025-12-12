@@ -165,7 +165,7 @@ class GrowthManager:
 
     def get_capacity_metrics(
         self,
-        component: Any,  # BrainRegion or Pathway
+        component: Any,  # NeuralComponent (region or pathway)
         saturation_threshold: float = 0.9,
         usage_threshold: float = 0.1,
     ) -> CapacityMetrics:
@@ -272,7 +272,7 @@ class GrowthManager:
 
     def add_neurons(
         self,
-        component: Any,  # BrainRegion or Pathway
+        component: Any,  # NeuralComponent (region or pathway)
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,

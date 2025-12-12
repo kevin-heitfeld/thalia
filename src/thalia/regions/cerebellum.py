@@ -48,19 +48,13 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
 import torch
-import torch.nn as nn
 
-from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-
+from thalia.config.base import NeuralComponentConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
-from thalia.core.learning_constants import (
-    LEARNING_RATE_ERROR_CORRECTIVE,
-    LEARNING_RATE_STDP,
-    TAU_STDP_PLUS,
-    TAU_ELIGIBILITY_STANDARD,
-)
+from thalia.core.component_registry import register_region
+from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.neuron_constants import (
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
@@ -69,17 +63,18 @@ from thalia.core.neuron_constants import (
     E_INHIBITORY,
     NE_GAIN_RANGE,
 )
+from thalia.core.learning_constants import (
+    LEARNING_RATE_ERROR_CORRECTIVE,
+)
+from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.regions.base import (
     NeuralComponent,
-    RegionConfig,
     LearningRule,
 )
-from thalia.core.component_registry import register_region
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 @dataclass
-class CerebellumConfig(RegionConfig):
+class CerebellumConfig(NeuralComponentConfig):
     """Configuration specific to cerebellar regions.
 
     The cerebellum implements ERROR-CORRECTIVE learning through:
@@ -102,9 +97,8 @@ class CerebellumConfig(RegionConfig):
     error_threshold: float = 0.01     # Minimum error to trigger learning
     temporal_window_ms: float = 10.0  # Window for coincidence detection
 
-    # Spike-based learning
-    eligibility_tau_ms: float = TAU_ELIGIBILITY_STANDARD  # Eligibility trace decay (increased for delayed error)
-    heterosynaptic_ratio: float = 0.2  # LTD for non-active synapses
+    # Cerebellum uses weaker heterosynaptic competition for faster convergence:
+    heterosynaptic_ratio: float = 0.2  # Override base (0.3) - weaker competition
 
     # Input trace parameters
     input_trace_tau_ms: float = 20.0  # Input trace decay
@@ -186,7 +180,7 @@ class Cerebellum(NeuralComponent):
         - detect_runaway_excitation(spikes) → bool
         - detect_silence(spikes) → bool
 
-    From BrainRegion (abstract base):
+    From NeuralComponent (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
@@ -196,7 +190,7 @@ class Cerebellum(NeuralComponent):
         docs/patterns/mixins.md for detailed mixin patterns
     """
 
-    def __init__(self, config: RegionConfig):
+    def __init__(self, config: NeuralComponentConfig):
         if not isinstance(config, CerebellumConfig):
             config = CerebellumConfig(
                 n_input=config.n_input,

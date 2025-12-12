@@ -165,13 +165,48 @@ class MyPathway(NeuralComponent):
 - **ADR-007**: PyTorch consistency (all use forward())
 - **Component Parity Pattern**: Regions and pathways must have same features
 
+## Updates
+
+### December 12, 2025: Parameter Promotion
+
+After re-evaluation, promoted additional universal parameters to `NeuralComponentConfig`:
+
+**Added to base class**:
+1. **Spike-frequency adaptation** (`adapt_increment`, `adapt_tau`)
+   - Universal in pyramidal neurons via Ca²⁺-activated K⁺ channels
+   - Removed duplicates from Cortex, PFC, Hippocampus configs
+   - Regions override defaults when needed (e.g., PFC uses slower tau for WM)
+
+2. **Extended eligibility traces** (`eligibility_tau_ms`)
+   - Needed for learning with delayed modulation (rewards, errors)
+   - Distinct from fast STDP traces (tau_plus_ms/tau_minus_ms)
+   - Removed duplicates from Striatum, Cerebellum configs
+
+3. **Heterosynaptic competition** (`heterosynaptic_competition`, `heterosynaptic_ratio`)
+   - Universal competitive mechanism (limited protein synthesis)
+   - Removed duplicates from Striatum, PFC, Cerebellum configs
+   - Cerebellum overrides with weaker ratio (0.2 vs 0.3 default)
+
+**Fixed naming**:
+- Standardized `homeostatic_enabled` → `homeostasis_enabled` in Striatum
+- Matches base class naming, improves consistency
+
+**Impact**:
+- ~26 lines of duplicate parameters eliminated
+- Pathways automatically inherit adaptation and competition
+- Backward compatible (regions can override base values)
+- Biological accuracy improved (universal mechanisms now truly universal)
+
+See `temp/adr008_reevaluation.md` for detailed analysis.
+
 ## References
 
 - `src/thalia/regions/base.py` - NeuralComponent implementation
 - `src/thalia/core/pathway_protocol.py` - BaseNeuralPathway alias
 - `src/thalia/core/neuromodulator_mixin.py` - Shared neuromodulation
 - `docs/patterns/component-parity.md` - Design pattern documentation
+- `temp/adr008_reevaluation.md` - 2025-12-12 parameter consolidation analysis
 
 ---
 
-**Key Insight**: The distinction between "regions" and "pathways" is organizational (how we think about the system), not architectural (what they fundamentally are). Both are populations of neurons, so they should share a base class.
+**Key Insight**: The distinction between "regions" and "pathways" is organizational (how we think about the system), not architectural (what they fundamentally are). Both are populations of neurons, so they should share a base class AND common parameters for universal mechanisms.

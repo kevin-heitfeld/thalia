@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple, Any
 from thalia.config.base import PathwayConfig
 from thalia.integration.spiking_pathway import SpikingPathway
 from thalia.integration.spiking_pathway import SpikingLearningRule, TemporalCoding
+from thalia.events.system import Event, EventType, SpikePayload
 from thalia.integration.pathways.spiking_attention import (
     SpikingAttentionPathway,
     SpikingAttentionPathwayConfig,
@@ -30,6 +31,7 @@ class PathwayManager:
 
     def __init__(
         self,
+        thalamus_size: int,
         cortex_l23_size: int,
         cortex_l5_size: int,
         input_size: int,
@@ -44,6 +46,7 @@ class PathwayManager:
         """Initialize pathway manager.
 
         Args:
+            thalamus_size: Thalamus output size (sensory relay)
             cortex_l23_size: Size of cortex layer 2/3 output
             cortex_l5_size: Size of cortex layer 5 output
             input_size: Input size for attention pathway
@@ -60,6 +63,7 @@ class PathwayManager:
 
         # Store sizes for growth coordination
         self._sizes = {
+            'thalamus': thalamus_size,
             'cortex_l23': cortex_l23_size,
             'cortex_l5': cortex_l5_size,
             'input': input_size,
@@ -76,8 +80,24 @@ class PathwayManager:
         # Track region-pathway connections for coordinated growth
         self._setup_connection_tracking()
 
+        # Build pathway mapping for event interception
+        self._build_pathway_map()
+
     def _create_pathways(self) -> None:
         """Create all inter-region pathways."""
+        # 0. Thalamus → Cortex L4 (sensory relay with learning)
+        self.thalamus_to_cortex = SpikingPathway(
+            PathwayConfig(
+                n_input=self._sizes['thalamus'],
+                n_output=self._sizes['thalamus'],  # Match cortex L4 input
+                learning_rule=SpikingLearningRule.STDP,
+                temporal_coding=TemporalCoding.LATENCY,  # Sensory timing matters
+                stdp_lr=0.001,
+                dt_ms=self.dt_ms,
+                device=self.device,
+            )
+        )
+
         # 1. Cortex L2/3 → Hippocampus (encoding pathway)
         self.cortex_to_hippo = SpikingPathway(
             PathwayConfig(
@@ -193,7 +213,11 @@ class PathwayManager:
         # Maps: region_name -> list of (pathway, dimension_type)
         # dimension_type: 'source' or 'target'
         self.region_connections: Dict[str, List[Tuple[Any, str]]] = {
+            'thalamus': [
+                (self.thalamus_to_cortex, 'source'),
+            ],
             'cortex': [
+                (self.thalamus_to_cortex, 'target'),
                 (self.cortex_to_hippo, 'source'),
                 (self.cortex_to_striatum, 'source'),
                 (self.cortex_to_pfc, 'source'),
@@ -223,9 +247,72 @@ class PathwayManager:
             ],
         }
 
+    def _build_pathway_map(self) -> None:
+        """Build (source, target) -> pathway mapping for event interception.
+        
+        This enables O(1) pathway lookup during event processing.
+        """
+        self._pathway_map: Dict[Tuple[str, str], Any] = {
+            ('thalamus', 'cortex'): self.thalamus_to_cortex,
+            ('cortex', 'hippocampus'): self.cortex_to_hippo,
+            ('cortex', 'striatum'): self.cortex_to_striatum,
+            ('cortex', 'pfc'): self.cortex_to_pfc,
+            ('hippocampus', 'pfc'): self.hippo_to_pfc,
+            ('hippocampus', 'striatum'): self.hippo_to_striatum,
+            ('pfc', 'striatum'): self.pfc_to_striatum,
+            ('striatum', 'cerebellum'): self.striatum_to_cerebellum,
+            ('pfc', 'cortex'): self.attention,  # Top-down attention
+            ('hippocampus', 'cortex'): self.replay,  # Replay/consolidation
+        }
+
+    def process_event(self, event: Event) -> Event:
+        """Process spike event through pathway if one exists.
+        
+        This is the core pathway interception mechanism. When a spike event
+        travels from source to target, we intercept it and transform the spikes
+        through the pathway's synaptic weights and dynamics.
+        
+        **This is where STDP learning happens automatically!**
+        
+        Args:
+            event: Spike event with source, target, and spike payload
+            
+        Returns:
+            Event with transformed spikes (or original if no pathway exists)
+            
+        Example:
+            Thalamus fires [100 spikes] → pathway.forward() → Cortex receives [256 spikes]
+            During forward(), pathway weights are updated via STDP.
+        """
+        # Only process spike events
+        if event.event_type != EventType.SPIKE:
+            return event
+            
+        # Check if payload is valid
+        if not isinstance(event.payload, SpikePayload):
+            return event
+            
+        # Look up pathway for this (source, target) pair
+        pathway = self._pathway_map.get((event.source, event.target))
+        
+        if pathway is not None:
+            # Transform spikes through pathway
+            # CRITICAL: This calls pathway.forward() which:
+            # 1. Computes synaptic currents (weight matrix multiplication)
+            # 2. Processes through LIF neurons (temporal dynamics)
+            # 3. Applies STDP learning (weight updates)
+            # 4. Returns output spikes to target
+            transformed_spikes = pathway.forward(event.payload.spikes)
+            
+            # Update event with transformed spikes
+            event.payload = SpikePayload(spikes=transformed_spikes)
+            
+        return event
+
     def get_all_pathways(self) -> Dict[str, Any]:
         """Get dictionary of all pathways for iteration."""
         return {
+            "thalamus_to_cortex": self.thalamus_to_cortex,
             "cortex_to_hippo": self.cortex_to_hippo,
             "cortex_to_striatum": self.cortex_to_striatum,
             "cortex_to_pfc": self.cortex_to_pfc,

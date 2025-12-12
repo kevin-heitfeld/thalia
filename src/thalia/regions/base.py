@@ -8,7 +8,7 @@ ensuring consistent API while allowing specialized learning rules.
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional, Dict, Any, List
 
@@ -21,10 +21,6 @@ from thalia.core.neuromodulator_mixin import NeuromodulatorMixin
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.growth_mixin import GrowthMixin
-from thalia.core.homeostasis_constants import (
-    TARGET_FIRING_RATE_STANDARD,
-    HOMEOSTATIC_TAU_STANDARD,
-)
 from thalia.core.spike_utils import compute_firing_rate
 
 
@@ -54,35 +50,11 @@ class LearningRule(Enum):
 
 
 @dataclass
-class RegionConfig(NeuralComponentConfig):
-    """Configuration for a brain region.
-
-    Inherits common parameters from NeuralComponentConfig:
-    - Dimensionality: n_input, n_output, n_neurons
-    - Learning: learn, learning_rate
-    - Weight bounds: w_min, w_max
-    - Temporal: dt_ms, axonal_delay_ms
-    - Device: device, dtype, seed
-
-    This config adds region-specific parameters on top of the common base.
-    """
-    # Neuron model
-    neuron_type: str = "lif"  # "lif", "conductance", "dendritic"
-
-    # Homeostasis
-    target_firing_rate_hz: float = TARGET_FIRING_RATE_STANDARD
-    homeostatic_tau_ms: float = HOMEOSTATIC_TAU_STANDARD
-
-    # Additional region-specific parameters
-    extra: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class RegionState:
-    """Dynamic state of a brain region during simulation.
+class NeuralComponentState:
+    """Dynamic state of a neural component during simulation.
 
     This holds all the time-varying quantities that change during
-    forward passes and learning.
+    forward passes and learning for any neural component (region, pathway, etc.).
     """
     # Membrane potentials
     membrane: Optional[torch.Tensor] = None
@@ -126,7 +98,7 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
 
     DESIGN PHILOSOPHY
     =================
-    Previously, we had BrainRegion and BaseNeuralPathway as separate hierarchies.
+    Previously, we had separate hierarchies for regions and pathways.
     This created artificial distinctions and code duplication. Now unified:
 
     - LayeredCortex(NeuralComponent) - named functional unit
@@ -181,7 +153,7 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
     See NeuromodulatorMixin for full interface and usage examples.
     """
 
-    def __init__(self, config: RegionConfig):
+    def __init__(self, config: NeuralComponentConfig):
         """Initialize the brain region.
 
         Args:
@@ -208,7 +180,7 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
             self.neurons = neurons
 
         # Initialize state
-        self.state = RegionState()
+        self.state = NeuralComponentState()
 
         # Learning rule for this region
         self.learning_rule = self._get_learning_rule()
@@ -356,7 +328,7 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
         This method clears ALL transient state (membrane potentials, traces,
         spike history) while preserving learned weights.
         """
-        self.state = RegionState()
+        self.state = NeuralComponentState()
 
         # Reset common subsystems using helper
         self._reset_subsystems('neurons')
@@ -660,7 +632,7 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
            - Weight matrices
            - Any additional learnable parameters specific to the region
 
-        2. **Region State** (dynamic state from RegionState):
+        2. **Component State** (dynamic state from NeuralComponentState):
            - Current spikes
            - Membrane potentials
            - Conductances (if using conductance-based neurons)
@@ -689,11 +661,11 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
         Returns:
             Dictionary with keys:
             - 'weights': Dict[str, torch.Tensor] - All learnable parameters
-            - 'region_state': Dict[str, Any] - Current RegionState data
+            - 'component_state': Dict[str, Any] - Current NeuralComponentState data
             - 'learning_state': Dict[str, Any] - Learning rule internal state
             - 'oscillator_state': Dict[str, Any] - Oscillator phases/state (if applicable)
             - 'neuromodulator_state': Dict[str, float] - Neuromodulator levels
-            - 'config': RegionConfig - Configuration (for validation on load)
+            - 'config': NeuralComponentConfig - Configuration (for validation on load)
 
         Note:
             All tensor values should be detached and cloned to prevent
@@ -732,7 +704,7 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
         Args:
             state: Dictionary returned by get_full_state() containing:
                 - 'weights': Learnable parameters
-                - 'region_state': Dynamic state (spikes, membrane, etc.)
+                - 'component_state': Dynamic state (spikes, membrane, etc.)
                 - 'learning_state': Learning rule internal state
                 - 'oscillator_state': Oscillator phases (if applicable)
                 - 'neuromodulator_state': Neuromodulator levels

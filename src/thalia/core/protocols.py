@@ -13,7 +13,7 @@ of brain region components. Using protocols instead of inheritance allows:
 Design Philosophy:
 ==================
 The THALIA codebase has two parallel hierarchies:
-- `BrainRegion` (regions/base.py) - Domain model for brain regions
+- `NeuralComponent` (regions/base.py) - Domain model for neural components
 - `EventDrivenRegionBase` (event_regions/base.py) - Event system adapter
 
 Rather than force these into a single hierarchy, we define protocols
@@ -201,10 +201,10 @@ class Configurable(Protocol):
 # =============================================================================
 
 @runtime_checkable
-class BrainRegionProtocol(Forwardable, Learnable, Resettable, Diagnosable, Protocol):
-    """Full protocol for brain regions.
+class NeuralComponentProtocol(Forwardable, Learnable, Resettable, Diagnosable, Protocol):
+    """Full protocol for neural components (regions, pathways, populations).
     
-    Brain regions should be able to:
+    Neural components should be able to:
     - Process inputs (forward)
     - Learn from experience (learn)
     - Reset state (reset/reset_state)

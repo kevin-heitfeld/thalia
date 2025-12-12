@@ -53,25 +53,23 @@ import torch
 import torch.nn as nn
 
 from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-
-import torch
-import torch.nn as nn
-
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 
-from thalia.core.utils import clamp_weights, cosine_similarity_safe
+from thalia.config.base import NeuralComponentConfig
+
+from thalia.core.utils import cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
 from thalia.core.learning_constants import LEARNING_RATE_STDP
-from thalia.regions.base import (
-    NeuralComponent,
-    RegionConfig,
-    RegionState,
-    LearningRule,
-)
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.neuron_constants import NE_GAIN_RANGE
+
+from thalia.regions.base import (
+    NeuralComponent,
+    NeuralComponentState,
+    LearningRule,
+)
 
 if TYPE_CHECKING:
     from thalia.regions.prefrontal_hierarchy import Goal, GoalHierarchyManager, GoalHierarchyConfig
@@ -79,7 +77,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class PrefrontalConfig(RegionConfig):
+class PrefrontalConfig(NeuralComponentConfig):
     """Configuration specific to prefrontal cortex.
 
     PFC implements DOPAMINE-GATED STDP:
@@ -105,9 +103,7 @@ class PrefrontalConfig(RegionConfig):
     wm_lr: float = 0.1  # Learning rate for WM update weights
     rule_lr: float = LEARNING_RATE_STDP  # Learning rate for rule weights
     # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
-    # are inherited from NeuralComponentConfig
-
-    heterosynaptic_ratio: float = 0.3  # LTD for non-active synapses
+    # and heterosynaptic_ratio (0.3) are inherited from NeuralComponentConfig
 
     # Recurrent connections for WM maintenance
     recurrent_strength: float = 0.8  # Self-excitation for persistence
@@ -118,8 +114,9 @@ class PrefrontalConfig(RegionConfig):
     # =========================================================================
     # PFC pyramidal neurons show adaptation. This helps prevent runaway
     # activity during sustained working memory maintenance.
-    pfc_adapt_increment: float = 0.2  # Adaptation per spike
-    pfc_adapt_tau: float = 150.0      # Adaptation time constant (ms)
+    # Inherited from base, with PFC-specific overrides:
+    adapt_increment: float = 0.2  # Moderate (maintains WM while adapting)
+    adapt_tau: float = 150.0      # Slower decay (longer timescale for WM)
 
     # =========================================================================
     # SHORT-TERM PLASTICITY (STP) for recurrent connections
@@ -162,7 +159,7 @@ class PrefrontalConfig(RegionConfig):
 
 
 @dataclass
-class PrefrontalState(RegionState):
+class PrefrontalState(NeuralComponentState):
     """State for prefrontal cortex region."""
     # Working memory contents
     working_memory: Optional[torch.Tensor] = None
@@ -414,8 +411,8 @@ class Prefrontal(NeuralComponent):
             g_L=0.02,  # Slower leak (τ_m ≈ 50ms with C_m=1.0)
             tau_E=10.0,  # Slower excitatory (for integration)
             tau_I=15.0,  # Slower inhibitory
-            adapt_increment=cfg.pfc_adapt_increment,  # SFA enabled!
-            tau_adapt=cfg.pfc_adapt_tau,
+            adapt_increment=cfg.adapt_increment,  # SFA enabled!
+            tau_adapt=cfg.adapt_tau,
         )
         neurons = ConductanceLIF(cfg.n_output, neuron_config)
 
@@ -440,7 +437,7 @@ class Prefrontal(NeuralComponent):
 
     def reset_state(self) -> None:
         """Reset state for new episode."""
-        # Don't call super().reset_state() because it creates RegionState
+        # Don't call super().reset_state() because it creates NeuralComponentState
         # Instead, create PrefrontalState directly with proper tensor shapes
         self.state = PrefrontalState(
             working_memory=torch.zeros(self.config.n_output, device=self.device),
@@ -463,7 +460,7 @@ class Prefrontal(NeuralComponent):
         sparsity: float,
     ) -> None:
         """Expand prefrontal cortex weights.
-        
+
         PFC has a single weight matrix for input→neurons connections.
         """
         self.weights = self._expand_weights(
@@ -477,14 +474,14 @@ class Prefrontal(NeuralComponent):
     def _update_config_after_growth(self, new_n_output: int) -> None:
         """Update PFC configuration after neuron growth."""
         from dataclasses import replace
-        
+
         self.config = replace(self.config, n_output=new_n_output)
         if hasattr(self, 'pfc_config'):
             self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
 
     def _expand_state_tensors_after_growth(self, n_new: int) -> None:
         """Reset PFC state after growth.
-        
+
         Note: We reset state rather than expand because PFC working memory
         should start fresh after growth (no partial state preservation).
         """

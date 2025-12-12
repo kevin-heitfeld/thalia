@@ -47,17 +47,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.regions.base import NeuralComponent, RegionConfig, LearningRule
+from thalia.config.base import NeuralComponentConfig
 from thalia.core.neuron_constants import NE_GAIN_RANGE
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
+from thalia.core.utils import ensure_1d, clamp_weights
+from thalia.core.traces import update_trace
+from thalia.regions.base import NeuralComponent, LearningRule
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig, STDPStrategy, STDPConfig
-from thalia.core.utils import ensure_1d, clamp_weights
-from thalia.core.traces import update_trace
 from thalia.learning.ei_balance import LayerEIBalance
 from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
@@ -108,7 +109,7 @@ class LayeredCortex(NeuralComponent):
         - check_weight_health(weights, name) → WeightHealth
         - detect_runaway_excitation(spikes) → bool
 
-    From BrainRegion (abstract base):
+    From NeuralComponent (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
@@ -132,7 +133,7 @@ class LayeredCortex(NeuralComponent):
         actual_output = self.l23_size + self.l5_size
 
         # Create modified config for parent
-        parent_config = RegionConfig(
+        parent_config = NeuralComponentConfig(
             n_input=config.n_input,
             n_output=actual_output,
             dt_ms=config.dt_ms,
@@ -250,8 +251,8 @@ class LayeredCortex(NeuralComponent):
             tau_E=5.0,
             tau_I=10.0,
             v_threshold=1.0,
-            adapt_increment=cfg.l23_adapt_increment,  # SFA to prevent frozen attractors
-            tau_adapt=cfg.l23_adapt_tau,
+            adapt_increment=cfg.adapt_increment,  # SFA to prevent frozen attractors
+            tau_adapt=cfg.adapt_tau,
             E_E=3.0,
             E_I=-0.5,
         )
@@ -606,8 +607,8 @@ class LayeredCortex(NeuralComponent):
         self.l23_size = new_l23_size
         l23_config = ConductanceLIFConfig(
             tau_E=5.0, tau_I=10.0, v_threshold=1.0, E_E=3.0, E_I=-0.5,
-            adapt_increment=self.layer_config.l23_adapt_increment,
-            tau_adapt=self.layer_config.l23_adapt_tau,
+            adapt_increment=self.layer_config.adapt_increment,
+            tau_adapt=self.layer_config.adapt_tau,
         )
         self.l23_neurons = ConductanceLIF(self.l23_size, l23_config)
 

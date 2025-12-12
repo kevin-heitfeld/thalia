@@ -111,7 +111,7 @@ from thalia.core.protocols import (
     Diagnosable,
     WeightContainer,
     Configurable,
-    BrainRegionProtocol,
+    NeuralComponentProtocol,
 )
 from thalia.core.pathway_protocol import (
     NeuralPathway,
@@ -221,7 +221,7 @@ __all__ = [
     "Diagnosable",
     "WeightContainer",
     "Configurable",
-    "BrainRegionProtocol",
+    "NeuralComponentProtocol",
     # Pathway protocols
     "NeuralPathway",
     # Note: BaseNeuralPathway was consolidated into NeuralComponent (ADR-008)

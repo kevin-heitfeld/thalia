@@ -42,7 +42,7 @@ class BrainComponent(Protocol):
     Both regions and pathways implement this interface to ensure feature parity.
     When adding new functionality:
     1. Add it to this protocol first
-    2. Implement for BrainRegion
+    2. Implement for NeuralComponent
     3. Implement for BaseNeuralPathway
     4. Update tests for both
 

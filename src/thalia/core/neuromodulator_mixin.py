@@ -93,14 +93,14 @@ Usage Example:
     class MyRegion(NeuromodulatorMixin, NeuralComponent):
         def forward(self, input, dt=1.0):
             output = self._compute_output(input)
-            
+
             # NO LONGER NEEDED - Brain handles decay:
             # self.decay_neuromodulators(dt_ms=dt)  # ❌ Don't do this!
-            
+
             # Just use dopamine-modulated learning rate:
             lr = self.get_effective_learning_rate(base_lr=0.01)
             self._apply_plasticity(lr=lr)
-            
+
             # Optionally use ACh for encoding/retrieval mode:
             if self.state.acetylcholine > 0.5:
                 # Encoding mode
@@ -108,7 +108,7 @@ Usage Example:
             else:
                 # Retrieval mode
                 pass
-            
+
             return output
 
 Author: Thalia Project
@@ -121,27 +121,27 @@ from typing import Optional
 
 class NeuromodulatorMixin:
     """Mixin providing standardized neuromodulator handling for brain regions.
-    
+
     This mixin assumes the class has a `self.state` attribute with:
     - state.dopamine: float
     - state.acetylcholine: float
     - state.norepinephrine: float
-    
-    These are initialized in RegionState (base.py).
+
+    These are initialized in NeuralComponentState (base.py).
     """
-    
+
     # Default time constants (can be overridden in subclasses)
     DEFAULT_DOPAMINE_TAU_MS: float = 200.0
     DEFAULT_ACETYLCHOLINE_TAU_MS: float = 50.0
     DEFAULT_NOREPINEPHRINE_TAU_MS: float = 100.0
-    
+
     def set_dopamine(self, level: float) -> None:
         """Set dopamine level (modulates plasticity rate).
-        
+
         .. deprecated::
             Use :meth:`set_neuromodulators` instead for atomic updates.
             Individual setters are kept for backward compatibility only.
-        
+
         Args:
             level: Dopamine level, typically in [-1, 1].
                    Positive = reward, consolidate current patterns
@@ -149,35 +149,35 @@ class NeuromodulatorMixin:
                    Zero = baseline learning rate
         """
         self.state.dopamine = level
-    
+
     def set_acetylcholine(self, level: float) -> None:
         """Set acetylcholine level (modulates attention/encoding).
-        
+
         .. deprecated::
             Use :meth:`set_neuromodulators` instead for atomic updates.
             Individual setters are kept for backward compatibility only.
-        
+
         Args:
             level: ACh level, typically in [0, 1].
                    High = encoding mode, enhance sensory processing
                    Low = retrieval mode, suppress interference
         """
         self.state.acetylcholine = level
-    
+
     def set_norepinephrine(self, level: float) -> None:
         """Set norepinephrine level (modulates arousal/gain).
-        
+
         .. deprecated::
             Use :meth:`set_neuromodulators` instead for atomic updates.
             Individual setters are kept for backward compatibility only.
-        
+
         Args:
             level: NE level, typically in [0, 1].
                    High = arousal, increase neural gain
                    Low = baseline gain
         """
         self.state.norepinephrine = level
-    
+
     def set_neuromodulators(
         self,
         dopamine: float,
@@ -185,15 +185,15 @@ class NeuromodulatorMixin:
         acetylcholine: float
     ) -> None:
         """Set all neuromodulator levels atomically (efficient broadcast).
-        
+
         This consolidated method is more efficient than calling individual setters
         when updating multiple neuromodulators simultaneously (3x reduction in
         function calls and hasattr checks).
-        
+
         Args:
             dopamine: DA level, typically in [-1, 1].
                       Positive = reward, consolidate current patterns
-                      Negative = punishment, reduce current patterns  
+                      Negative = punishment, reduce current patterns
                       Zero = baseline learning rate
             norepinephrine: NE level, typically in [0, 1].
                            High = arousal, increase neural gain
@@ -201,7 +201,7 @@ class NeuromodulatorMixin:
             acetylcholine: ACh level, typically in [0, 1].
                           High = encoding mode, enhance sensory processing
                           Low = retrieval mode, suppress interference
-        
+
         Note:
             For biological plausibility, all three neuromodulator systems
             should be updated together to maintain consistent brain state.
@@ -210,14 +210,14 @@ class NeuromodulatorMixin:
         self.state.dopamine = dopamine
         self.state.norepinephrine = norepinephrine
         self.state.acetylcholine = acetylcholine
-    
+
     def set_neuromodulator(self, name: str, level: float) -> None:
         """Generic setter for any neuromodulator.
-        
+
         Args:
             name: Neuromodulator name ('dopamine', 'acetylcholine', 'norepinephrine')
             level: Level to set
-            
+
         Raises:
             ValueError: If name is not a recognized neuromodulator
         """
@@ -228,7 +228,7 @@ class NeuromodulatorMixin:
                 f"Valid names: {valid_names}"
             )
         setattr(self.state, name, level)
-    
+
     def decay_neuromodulators(
         self,
         dt_ms: float = 1.0,
@@ -237,16 +237,16 @@ class NeuromodulatorMixin:
         norepinephrine_tau_ms: Optional[float] = None,
     ) -> None:
         """Decay neuromodulator levels toward baseline (zero).
-        
+
         Call this at each timestep for realistic dynamics. Uses exponential
         decay: level(t+dt) = level(t) * exp(-dt/tau).
-        
+
         Args:
             dt_ms: Time step in milliseconds
             dopamine_tau_ms: Dopamine decay time constant (default: DEFAULT_DOPAMINE_TAU_MS)
             acetylcholine_tau_ms: ACh decay time constant (default: DEFAULT_ACETYLCHOLINE_TAU_MS)
             norepinephrine_tau_ms: NE decay time constant (default: DEFAULT_NOREPINEPHRINE_TAU_MS)
-        
+
         Note:
             Subclasses can override DEFAULT_TAU_* class attributes for region-specific
             decay rates, or pass custom tau values to this method.
@@ -255,48 +255,48 @@ class NeuromodulatorMixin:
         dopamine_tau_ms = dopamine_tau_ms or self.DEFAULT_DOPAMINE_TAU_MS
         acetylcholine_tau_ms = acetylcholine_tau_ms or self.DEFAULT_ACETYLCHOLINE_TAU_MS
         norepinephrine_tau_ms = norepinephrine_tau_ms or self.DEFAULT_NOREPINEPHRINE_TAU_MS
-        
+
         # Exponential decay toward zero
         self.state.dopamine *= math.exp(-dt_ms / dopamine_tau_ms)
         self.state.acetylcholine *= math.exp(-dt_ms / acetylcholine_tau_ms)
         self.state.norepinephrine *= math.exp(-dt_ms / norepinephrine_tau_ms)
-    
+
     def get_effective_learning_rate(
-        self, 
+        self,
         base_lr: Optional[float] = None,
         dopamine_sensitivity: float = 1.0,
     ) -> float:
         """Compute learning rate modulated by dopamine.
-        
+
         The effective learning rate is:
             base_lr * (1 + dopamine_sensitivity * dopamine)
-        
+
         This means:
             - dopamine = 0: baseline learning
             - dopamine = 1: (1 + sensitivity)x learning rate (strong consolidation)
             - dopamine = -0.5: (1 - 0.5*sensitivity)x learning rate (reduced learning)
             - dopamine = -1: (1 - sensitivity)x learning rate (suppressed if sensitivity=1)
-        
+
         Args:
             base_lr: Base learning rate (uses self.base_learning_rate if None)
             dopamine_sensitivity: How much dopamine affects learning (0-1)
                                   1.0 = full modulation, 0.0 = no modulation
-        
+
         Returns:
             Modulated learning rate
         """
         if base_lr is None:
             base_lr = getattr(self, 'base_learning_rate', 0.01)
-        
+
         modulation = 1.0 + dopamine_sensitivity * self.state.dopamine
         # Clamp to non-negative (can't have negative learning rate)
         modulation = max(0.0, modulation)
-        
+
         return base_lr * modulation
-    
+
     def get_neuromodulator_state(self) -> dict:
         """Get current neuromodulator levels for diagnostics.
-        
+
         Returns:
             Dict with dopamine, acetylcholine, norepinephrine levels
         """

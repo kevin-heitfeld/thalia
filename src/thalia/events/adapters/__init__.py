@@ -36,18 +36,19 @@ from .hippocampus import EventDrivenHippocampus
 from .pfc import EventDrivenPFC
 from .striatum import EventDrivenStriatum
 from .cerebellum import EventDrivenCerebellum
+from .thalamus import EventDrivenThalamus
 from .factory import create_event_driven_brain
 
 __all__ = [
     # Base classes
     "EventRegionConfig",
     "EventDrivenRegionBase",
-    "SimpleLIFRegion",
     # Region adapters
     "EventDrivenCortex",
     "EventDrivenHippocampus",
     "EventDrivenPFC",
     "EventDrivenStriatum",
+    "EventDrivenThalamus",
     "EventDrivenCerebellum",
     # Factory
     "create_event_driven_brain",

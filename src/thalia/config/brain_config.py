@@ -132,6 +132,9 @@ class RegionSizes:
     input_size: int = 256
     """Size of input to the brain (e.g., from sensory encoding)."""
 
+    thalamus_size: int = 256
+    """Size of thalamus relay output (typically matches input for 1:1 relay)."""
+
     cortex_size: int = 128
     """Output size of cortex. L2/3 and L5 layers will be sized relative to this."""
 

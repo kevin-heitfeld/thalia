@@ -55,7 +55,7 @@ Usage:
     combined_input = torch.cat([visual_spikes, auditory_spikes])
 
     bound_output = binder(combined_input)
-    
+
     # Check binding quality via diagnostics
     diagnostics = binder.get_diagnostics()
     coherence = diagnostics['last_coherence']
@@ -115,7 +115,7 @@ class CrossModalGammaBinding(NeuralComponent):
 
     Implements the biological mechanism where different sensory modalities
     are bound together via synchronized gamma oscillations.
-    
+
     Accepts concatenated input: [visual_spikes | auditory_spikes]
     The pathway internally splits this to process each modality separately.
 
@@ -167,14 +167,14 @@ class CrossModalGammaBinding(NeuralComponent):
         if device is not None:
             config.device = device
 
-        # Create RegionConfig for NeuralComponent base class
+        # Create NeuralComponentConfig for NeuralComponent base class
         from thalia.regions.base import RegionConfig
         region_config = RegionConfig(
             n_input=config.visual_size + config.auditory_size,
             n_output=config.output_size,
             device=torch.device(config.device),
         )
-        
+
         super().__init__(region_config)
         self.config = config  # Store pathway-specific config
         self.device = torch.device(config.device)
@@ -191,7 +191,7 @@ class CrossModalGammaBinding(NeuralComponent):
 
         # Initialize weights (modality-specific projections)
         self._initialize_weights()
-        
+
         # Track last coherence for diagnostics
         self._last_coherence = 0.0
 
@@ -243,7 +243,7 @@ class CrossModalGammaBinding(NeuralComponent):
         # Split concatenated input into visual and auditory
         visual_spikes = input_spikes[:self.config.visual_size]
         auditory_spikes = input_spikes[self.config.visual_size:]
-        
+
         # Ensure correct device
         visual_spikes = visual_spikes.to(self.device)
         auditory_spikes = auditory_spikes.to(self.device)
@@ -279,7 +279,7 @@ class CrossModalGammaBinding(NeuralComponent):
 
         # Store coherence for diagnostics
         self._last_coherence = coherence
-        
+
         return bound_output
 
     def _compute_gamma_gate(self, gamma_phase: float, width: float = 0.3) -> float:
@@ -476,11 +476,11 @@ class CrossModalGammaBinding(NeuralComponent):
             "visual_gamma_freq": self.visual_gamma.frequency_hz,
             "auditory_gamma_freq": self.auditory_gamma.frequency_hz,
         }
-        
+
         # Use mixin helpers for weight statistics
         diagnostics.update(self.weight_diagnostics(self.visual_weights, prefix="visual"))
         diagnostics.update(self.weight_diagnostics(self.auditory_weights, prefix="auditory"))
-        
+
         # Configuration
         diagnostics["config"] = {
             "gamma_freq_hz": self.config.gamma_freq_hz,
@@ -488,7 +488,7 @@ class CrossModalGammaBinding(NeuralComponent):
             "gate_threshold": self.config.gate_threshold,
             "phase_coupling_strength": self.config.phase_coupling_strength,
         }
-        
+
         return diagnostics
 
     def get_state(self) -> Dict[str, Any]:
