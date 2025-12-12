@@ -18,7 +18,7 @@ import torch.nn as nn
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.protocols.component import BrainComponentBase, BrainComponentMixin
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
-from thalia.core.diagnostics_mixin import DiagnosticsMixin
+from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.components.coding.spike_utils import compute_firing_rate

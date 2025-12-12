@@ -85,7 +85,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.core.diagnostics_mixin import DiagnosticsMixin
+from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 
 
 class ErrorType(Enum):

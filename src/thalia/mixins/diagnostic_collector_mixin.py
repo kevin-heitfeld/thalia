@@ -1,8 +1,8 @@
 """
-Common Mixins for Thalia Components.
+Diagnostic Collection Mixin for Thalia Components.
 
-This module provides reusable mixin classes that can be composed into
-various components to add common functionality.
+Provides helper methods to collect and format diagnostics in a
+consistent way across components.
 
 Author: Thalia Project
 Date: December 2025
@@ -10,185 +10,8 @@ Date: December 2025
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Optional
 import torch
-
-
-class DeviceMixin:
-    """Mixin for standardized device management.
-
-    Provides a consistent interface for setting and using devices across
-    all components, reducing boilerplate code.
-
-    Usage:
-        class MyComponent(DeviceMixin, nn.Module):
-            def __init__(self, device: str = "cpu"):
-                super().__init__()
-                self.init_device(device)
-
-            def forward(self, x):
-                x = self.to_device(x)
-                # ... rest of forward pass
-    """
-
-    def init_device(
-        self,
-        device: Union[str, torch.device],
-    ) -> None:
-        """Initialize device from string or torch.device.
-
-        Args:
-            device: Device specification ('cpu', 'cuda', 'cuda:0', etc.)
-        """
-        if isinstance(device, str):
-            self._device = torch.device(device)
-        else:
-            self._device = device
-
-    @property
-    def device(self) -> torch.device:
-        """Get the current device."""
-        if not hasattr(self, "_device"):
-            self._device = torch.device("cpu")
-        return self._device
-
-    @device.setter
-    def device(self, value: Union[str, torch.device]) -> None:
-        """Set the device."""
-        self.init_device(value)
-
-    def to_device(
-        self,
-        tensor: torch.Tensor,
-        non_blocking: bool = False,
-    ) -> torch.Tensor:
-        """Move tensor to this component's device.
-
-        Args:
-            tensor: Tensor to move
-            non_blocking: Whether to use non-blocking transfer
-
-        Returns:
-            Tensor on the correct device
-        """
-        if tensor.device != self.device:
-            return tensor.to(self.device, non_blocking=non_blocking)
-        return tensor
-
-    def ensure_device(
-        self,
-        *tensors: torch.Tensor,
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, ...]]:
-        """Ensure multiple tensors are on the correct device.
-
-        Args:
-            *tensors: Tensors to move
-
-        Returns:
-            Single tensor or tuple of tensors on correct device
-        """
-        result = tuple(self.to_device(t) for t in tensors)
-        if len(result) == 1:
-            return result[0]
-        return result
-
-    def get_device_type(self) -> str:
-        """Get device type string ('cpu', 'cuda', etc.)."""
-        return self.device.type
-
-    def is_cuda(self) -> bool:
-        """Check if using CUDA device."""
-        return self.device.type == "cuda"
-
-
-class ResettableMixin:
-    """Mixin for components with resettable state.
-
-    Provides a standard interface for resetting component state, reducing
-    inconsistencies in reset behavior across the codebase.
-
-    Usage:
-        class MyComponent(ResettableMixin, nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.state = None
-
-            def reset_state(self) -> None:
-                '''Reset internal state for new sequence.'''
-                self.state = torch.zeros(1, self.n_neurons, device=self.device)
-    """
-
-    def reset_state(self) -> None:
-        """Reset internal state for new sequence/episode.
-
-        Resets dynamic state (membrane potentials, traces, working memory)
-        while preserving learned parameters. Always initializes to batch_size=1
-        per THALIA's single-instance architecture.
-
-        Note:
-            Subclasses should override this method to reset their
-            specific state variables.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement reset_state()"
-        )
-
-
-class ConfigurableMixin:
-    """Mixin for components that can be created from ThaliaConfig.
-    
-    Provides standard factory method pattern for instantiating components
-    from the unified configuration system, eliminating boilerplate.
-    
-    Subclasses must define CONFIG_CONVERTER_METHOD which specifies the
-    ThaliaConfig method to call to get the component-specific config.
-    
-    Usage:
-        class SequenceMemory(ConfigurableMixin):
-            CONFIG_CONVERTER_METHOD = "to_sequence_memory_config"
-            
-            def __init__(self, config: SequenceMemoryConfig):
-                ...
-        
-        # Automatically provides:
-        memory = SequenceMemory.from_thalia_config(thalia_config)
-    """
-    
-    CONFIG_CONVERTER_METHOD: Optional[str] = None
-    
-    @classmethod
-    def from_thalia_config(cls, config: "ThaliaConfig", **kwargs):
-        """Create instance from unified ThaliaConfig.
-        
-        Automatically extracts the appropriate component config by calling
-        the method specified in CONFIG_CONVERTER_METHOD.
-        
-        Args:
-            config: ThaliaConfig with all settings
-            **kwargs: Additional arguments passed to constructor
-            
-        Returns:
-            Component instance
-            
-        Raises:
-            NotImplementedError: If CONFIG_CONVERTER_METHOD not defined
-        """
-        if cls.CONFIG_CONVERTER_METHOD is None:
-            raise NotImplementedError(
-                f"{cls.__name__} must define CONFIG_CONVERTER_METHOD "
-                f"(e.g., 'to_sequence_memory_config')"
-            )
-        
-        # Get the converter method from ThaliaConfig
-        converter = getattr(config, cls.CONFIG_CONVERTER_METHOD, None)
-        if converter is None:
-            raise AttributeError(
-                f"ThaliaConfig has no method '{cls.CONFIG_CONVERTER_METHOD}'"
-            )
-        
-        # Convert and instantiate
-        component_config = converter()
-        return cls(component_config, **kwargs)
 
 
 class DiagnosticCollectorMixin:
@@ -407,8 +230,4 @@ class DiagnosticCollectorMixin:
         return diag
 
 
-__all__ = [
-    "DeviceMixin",
-    "ResettableMixin",
-    "DiagnosticCollectorMixin",
-]
+__all__ = ["DiagnosticCollectorMixin"]

@@ -54,7 +54,7 @@ from thalia.core.protocols.component import (
     BrainComponentBase,
     BrainComponentMixin,
 )
-from thalia.core.mixins import (
+from thalia.mixins import (
     DeviceMixin,
     ResettableMixin,
     ConfigurableMixin,
@@ -133,7 +133,7 @@ from thalia.pathways.protocol import (
     Pathway,
 )
 from thalia.pathways.manager import PathwayManager
-from thalia.core.diagnostics_mixin import DiagnosticsMixin
+from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.components.synapses.traces import (
     SpikeTrace,
     PairedTraces,

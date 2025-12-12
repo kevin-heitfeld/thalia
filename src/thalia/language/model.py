@@ -59,7 +59,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.core.mixins import ConfigurableMixin
+from thalia.mixins import ConfigurableMixin
 
 # Import encoding/decoding components
 from thalia.language.encoder import (
