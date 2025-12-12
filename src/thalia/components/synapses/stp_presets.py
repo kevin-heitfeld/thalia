@@ -10,7 +10,7 @@ Usage:
 
     # Use a preset directly
     config = STP_PRESETS["mossy_fiber"].configure(dt=1.0)
-    
+
     # Or use the helper function
     config = get_stp_config("mossy_fiber", dt=1.0)
 
@@ -32,7 +32,7 @@ from thalia.components.synapses.stp import STPConfig
 @dataclass(frozen=True)
 class STPPreset:
     """Immutable preset for STP configuration with biological documentation.
-    
+
     Attributes:
         name: Human-readable name of the preset
         U: Baseline release probability (0-1)
@@ -47,13 +47,13 @@ class STPPreset:
     tau_x: float  # Depression recovery (tau_d in STPConfig)
     description: str
     references: str
-    
+
     def configure(self, dt: float = 1.0) -> STPConfig:
         """Create STPConfig with this preset's parameters.
-        
+
         Args:
             dt: Simulation timestep in milliseconds
-            
+
         Returns:
             Configured STPConfig instance
         """
@@ -259,17 +259,17 @@ STP_PRESETS: Dict[str, STPPreset] = {
     "schaffer_collateral": SCHAFFER_COLLATERAL_PRESET,
     "ec_ca1": EC_CA1_PRESET,
     "ca3_recurrent": CA3_RECURRENT_PRESET,
-    
+
     # Cortical pathways
     "cortical_ff": CORTICAL_FF_PRESET,
     "cortical_recurrent": CORTICAL_RECURRENT_PRESET,
     "cortical_fb": CORTICAL_FB_PRESET,
     "cortical_pyr_int": CORTICAL_PYRAMIDAL_INTERNEURON_PRESET,
-    
+
     # Striatal pathways
     "corticostriatal": CORTICOSTRIATAL_PRESET,
     "thalamostriatal": THALAMO_STRIATAL_PRESET,
-    
+
     # Prefrontal pathways
     "pfc_recurrent": PFC_RECURRENT_PRESET,
     "pfc_striatum": PFC_TO_STRIATUM_PRESET,
@@ -278,17 +278,17 @@ STP_PRESETS: Dict[str, STPPreset] = {
 
 def get_stp_config(pathway_type: str, dt: float = 1.0) -> STPConfig:
     """Get standard STP configuration for a pathway type.
-    
+
     Args:
         pathway_type: Name of the pathway (see STP_PRESETS keys)
         dt: Simulation timestep in milliseconds
-        
+
     Returns:
         Configured STPConfig instance
-        
+
     Raises:
         KeyError: If pathway_type is not recognized
-        
+
     Example:
         >>> config = get_stp_config("mossy_fiber", dt=1.0)
         >>> print(f"U={config.U}, tau_d={config.tau_d}, tau_f={config.tau_f}")
@@ -300,13 +300,13 @@ def get_stp_config(pathway_type: str, dt: float = 1.0) -> STPConfig:
             f"Unknown pathway type: {pathway_type}. "
             f"Available presets: {available}"
         )
-    
+
     return STP_PRESETS[pathway_type].configure(dt=dt)
 
 
 def list_presets() -> Dict[str, str]:
     """List all available STP presets with descriptions.
-    
+
     Returns:
         Dictionary mapping preset names to descriptions
     """

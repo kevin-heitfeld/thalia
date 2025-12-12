@@ -60,7 +60,7 @@ from thalia.core.mixins import (
     ConfigurableMixin,
     DiagnosticCollectorMixin,
 )
-from thalia.core.spike_coding import (
+from thalia.components.coding.spike_coding import (
     CodingStrategy,
     SpikeCodingConfig,
     SpikeEncoder,
@@ -68,6 +68,13 @@ from thalia.core.spike_coding import (
     RateEncoder,
     RateDecoder,
     compute_spike_similarity,
+)
+from thalia.components.coding.spike_utils import (
+    compute_firing_rate,
+    compute_spike_count,
+    compute_spike_density,
+    is_silent,
+    is_saturated,
 )
 from thalia.core.eligibility_utils import (
     EligibilityTraceManager,
@@ -246,6 +253,12 @@ __all__ = [
     "RateEncoder",
     "RateDecoder",
     "compute_spike_similarity",
+    # Spike Utils
+    "compute_firing_rate",
+    "compute_spike_count",
+    "compute_spike_density",
+    "is_silent",
+    "is_saturated",
     # Eligibility Traces
     "EligibilityTraceManager",
     "STDPConfig",

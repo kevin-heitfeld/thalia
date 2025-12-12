@@ -59,7 +59,7 @@ import torch.nn as nn
 
 from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
 from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
-from thalia.core.spike_coding import CodingStrategy
+from thalia.components.coding.spike_coding import CodingStrategy
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.core.utils import cosine_similarity_safe
 from thalia.core.mixins import ConfigurableMixin, DiagnosticCollectorMixin

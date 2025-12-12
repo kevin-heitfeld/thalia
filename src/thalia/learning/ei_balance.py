@@ -44,7 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 
-from thalia.core.spike_utils import compute_firing_rate
+from thalia.components.coding.spike_utils import compute_firing_rate
 
 from thalia.diagnostics import auto_diagnostics
 

@@ -51,7 +51,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.core.spike_coding import (
+from thalia.components.coding.spike_coding import (
     CodingStrategy,
     SpikeCodingConfig,
     SpikeDecoder as BaseSpikeDecoder,

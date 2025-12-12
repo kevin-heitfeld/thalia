@@ -49,7 +49,7 @@ import math
 import torch
 import torch.nn as nn
 
-from thalia.core.spike_coding import (
+from thalia.components.coding.spike_coding import (
     CodingStrategy,
     SpikeCodingConfig,
     SpikeEncoder as BaseSpikeEncoder,

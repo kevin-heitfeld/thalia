@@ -29,7 +29,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
-from thalia.core.spike_utils import compute_firing_rate
+from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.training.visualization.constants import (
     TEXT_POSITION_CENTER,
     ALPHA_SEMI_TRANSPARENT,

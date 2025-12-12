@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from thalia.core.spike_utils import compute_firing_rate
+from thalia.components.coding.spike_utils import compute_firing_rate
 
 
 @dataclass

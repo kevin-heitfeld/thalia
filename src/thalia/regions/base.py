@@ -21,7 +21,7 @@ from thalia.core.neuromodulator_mixin import NeuromodulatorMixin
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.growth_mixin import GrowthMixin
-from thalia.core.spike_utils import compute_firing_rate
+from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.diagnostics.health_monitor import HealthReport
 from thalia.core.growth import CapacityMetrics
 
