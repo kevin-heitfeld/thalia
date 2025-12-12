@@ -35,6 +35,12 @@ from thalia.components.neurons.neuron_constants import (
     STANDARD_PYRAMIDAL,
     FAST_SPIKING_INTERNEURON,
 )
+from thalia.components.neurons.neuron_factory import (
+    create_pyramidal_neurons,
+    create_relay_neurons,
+    create_trn_neurons,
+    create_cortical_layer_neurons,
+)
 from thalia.components.neurons.dendritic import (
     DendriticBranch,
     DendriticBranchConfig,
@@ -71,6 +77,11 @@ __all__ = [
     "ADAPT_INCREMENT_CORTEX_L23",
     "STANDARD_PYRAMIDAL",
     "FAST_SPIKING_INTERNEURON",
+    # Neuron factory functions
+    "create_pyramidal_neurons",
+    "create_relay_neurons",
+    "create_trn_neurons",
+    "create_cortical_layer_neurons",
     # Dendritic computation
     "DendriticBranch",
     "DendriticBranchConfig",

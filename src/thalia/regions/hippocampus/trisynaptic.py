@@ -1,4 +1,5 @@
-"""Trisynaptic Hippocampus - Biologically-Accurate DG→CA3→CA1 Episodic Memory Circuit.
+"""
+Trisynaptic Hippocampus - Biologically-Accurate DG→CA3→CA1 Episodic Memory Circuit.
 
 This implements the classic hippocampal trisynaptic circuit for episodic memory:
 - **Dentate Gyrus (DG)**: Pattern SEPARATION via sparse coding (~2-5% active)
@@ -72,14 +73,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons import create_pyramidal_neurons
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
 from thalia.core.errors import CheckpointError, ComponentError
 from thalia.components.neurons.neuron_constants import (
-    G_LEAK_STANDARD,
-    TAU_SYN_EXCITATORY,
-    TAU_SYN_INHIBITORY,
     NE_GAIN_RANGE,
 )
 from thalia.components.synapses.stp import ShortTermPlasticity
@@ -179,24 +177,17 @@ class TrisynapticHippocampus(NeuralComponent):
         # Override weights with trisynaptic circuit weights
         self._init_circuit_weights()
 
-        # Create LIF neurons for each layer
-        # Convert to ConductanceLIF for proper E/I balance
-        base_neuron_config = ConductanceLIFConfig(
-            g_L=G_LEAK_STANDARD,  # Standard leak (τ_m ≈ 20ms)
-            tau_E=TAU_SYN_EXCITATORY,  # Fast excitatory (AMPA)
-            tau_I=TAU_SYN_INHIBITORY,  # Slower inhibitory (GABA_A)
-        )
+        # Create LIF neurons for each layer using factory functions
+        # DG and CA1: Standard pyramidal neurons
+        self.dg_neurons = create_pyramidal_neurons(self.dg_size, self.device)
         # CA3 gets spike-frequency adaptation to prevent frozen attractors
-        ca3_neuron_config = ConductanceLIFConfig(
-            g_L=G_LEAK_STANDARD,
-            tau_E=TAU_SYN_EXCITATORY,
-            tau_I=TAU_SYN_INHIBITORY,
+        self.ca3_neurons = create_pyramidal_neurons(
+            self.ca3_size,
+            self.device,
             adapt_increment=config.adapt_increment,  # SFA enabled!
             tau_adapt=config.adapt_tau,
         )
-        self.dg_neurons = ConductanceLIF(self.dg_size, base_neuron_config)
-        self.ca3_neurons = ConductanceLIF(self.ca3_size, ca3_neuron_config)
-        self.ca1_neurons = ConductanceLIF(self.ca1_size, base_neuron_config)
+        self.ca1_neurons = create_pyramidal_neurons(self.ca1_size, self.device)
 
         # Feedforward inhibition module
         self.feedforward_inhibition = FeedforwardInhibition(
@@ -707,28 +698,20 @@ class TrisynapticHippocampus(NeuralComponent):
         # Update main weights reference (for base class compatibility)
         self.weights = self.w_ca3_ca1
 
-        # 5. Expand neurons for all layers (must match __init__ - ConductanceLIF)
-        base_config = ConductanceLIFConfig(
-            g_L=G_LEAK_STANDARD,  # τ_m ≈ 20ms
-            tau_E=TAU_SYN_EXCITATORY,
-            tau_I=TAU_SYN_INHIBITORY,
-        )
-        ca3_config = ConductanceLIFConfig(
-            g_L=G_LEAK_STANDARD,
-            tau_E=TAU_SYN_EXCITATORY,
-            tau_I=TAU_SYN_INHIBITORY,
+        # 5. Expand neurons for all layers using factory functions
+        self.dg_size = new_dg_size
+        self.dg_neurons = create_pyramidal_neurons(self.dg_size, self.device)
+
+        self.ca3_size = new_ca3_size
+        self.ca3_neurons = create_pyramidal_neurons(
+            self.ca3_size,
+            self.device,
             adapt_increment=self.tri_config.adapt_increment,
             tau_adapt=self.tri_config.adapt_tau,
         )
 
-        self.dg_size = new_dg_size
-        self.dg_neurons = ConductanceLIF(self.dg_size, base_config)
-
-        self.ca3_size = new_ca3_size
-        self.ca3_neurons = ConductanceLIF(self.ca3_size, ca3_config)
-
         self.ca1_size = new_ca1_size
-        self.ca1_neurons = ConductanceLIF(self.ca1_size, base_config)
+        self.ca1_neurons = create_pyramidal_neurons(self.ca1_size, self.device)
 
         # 6. Update config
         self.config = replace(self.config, n_output=new_ca1_size)

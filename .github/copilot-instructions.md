@@ -17,26 +17,6 @@ Implements multiple brain regions with specialized learning rules to achieve:
 - **Is**: Neuroscience-inspired spiking networks with local learning rules and neuromodulation
 - **Goal**: Match or exceed LLM capabilities using biologically-plausible mechanisms
 
-## ⭐ CRITICAL: Component Parity Principle
-
-**Pathways are just as important as regions!**
-
-When implementing features:
-1. Add to `BrainComponent` protocol first (`src/thalia/core/component_protocol.py`)
-2. Implement for `BrainRegion` base class
-3. Implement for `BaseNeuralPathway` base class
-4. Write tests for BOTH regions AND pathways
-5. Update documentation mentioning both
-
-**Why this matters:**
-- Pathways are active learning components, not just "glue code"
-- They learn via STDP/BCM during forward passes
-- They need growth when connected regions grow
-- They can become pathological (silent, saturated)
-- Forgetting pathways breaks curriculum learning
-
-**See**: `docs/patterns/component-parity.md` for detailed guidance.
-
 ## Architecture Principles
 
 ### 1. Brain Regions AND Pathways are Specialized
@@ -85,7 +65,7 @@ input_data = batch["input"].to(self.device)
 ## Key Files
 
 ### Documentation
-- `docs/patterns/component-parity.md` - ⭐ **START HERE** - Regions and pathways parity
+- `docs/patterns/component-parity.md` - Regions and pathways parity
 - `docs/patterns/state-management.md` - When to use RegionState vs attributes
 - `docs/patterns/mixins.md` - Available mixins and their methods
 - `docs/design/checkpoint_format.md` - Checkpoint format specification

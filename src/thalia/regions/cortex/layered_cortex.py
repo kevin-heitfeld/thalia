@@ -80,7 +80,7 @@ import torch.nn.functional as F
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
 from thalia.core.errors import CheckpointError
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons import create_cortical_layer_neurons
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.managers.component_registry import register_region
@@ -301,38 +301,16 @@ class LayeredCortex(NeuralComponent):
         """
         cfg = self.layer_config
 
-        # L4: Fast integration, sensitive to sensory input
-        l4_config = ConductanceLIFConfig(
-            tau_E=5.0,   # Fast excitation (AMPA-like)
-            tau_I=10.0,  # Slower inhibition (GABA-like)
-            v_threshold=1.0,
-            E_E=3.0,     # Excitatory reversal (well above threshold)
-            E_I=-0.5,    # Inhibitory reversal (hyperpolarizing)
-        )
-
-        # L2/3: Recurrent processing with adaptation
-        l23_config = ConductanceLIFConfig(
-            tau_E=5.0,
-            tau_I=10.0,
-            v_threshold=1.0,
+        # Create layer-specific neurons using factory functions
+        self.l4_neurons = create_cortical_layer_neurons(self.l4_size, "L4", self.device)
+        self.l23_neurons = create_cortical_layer_neurons(
+            self.l23_size,
+            "L2/3",
+            self.device,
             adapt_increment=cfg.adapt_increment,  # SFA to prevent frozen attractors
             tau_adapt=cfg.adapt_tau,
-            E_E=3.0,
-            E_I=-0.5,
         )
-
-        # L5: Output layer, slightly lower threshold
-        l5_config = ConductanceLIFConfig(
-            tau_E=5.0,
-            tau_I=10.0,
-            v_threshold=0.9,
-            E_E=3.0,
-            E_I=-0.5,
-        )
-
-        self.l4_neurons = ConductanceLIF(self.l4_size, l4_config)
-        self.l23_neurons = ConductanceLIF(self.l23_size, l23_config)
-        self.l5_neurons = ConductanceLIF(self.l5_size, l5_config)
+        self.l5_neurons = create_cortical_layer_neurons(self.l5_size, "L5", self.device)
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for L2/3 recurrent connections
@@ -669,22 +647,21 @@ class LayeredCortex(NeuralComponent):
         # Update main weights reference (for base class compatibility)
         self.weights = self.w_l23_l5
 
-        # 5. Expand neurons for all layers
+        # 5. Expand neurons for all layers using factory functions
         self.l4_size = new_l4_size
-        l4_config = ConductanceLIFConfig(tau_E=5.0, tau_I=10.0, v_threshold=1.0, E_E=3.0, E_I=-0.5)
-        self.l4_neurons = ConductanceLIF(self.l4_size, l4_config)
+        self.l4_neurons = create_cortical_layer_neurons(self.l4_size, "L4", self.device)
 
         self.l23_size = new_l23_size
-        l23_config = ConductanceLIFConfig(
-            tau_E=5.0, tau_I=10.0, v_threshold=1.0, E_E=3.0, E_I=-0.5,
+        self.l23_neurons = create_cortical_layer_neurons(
+            self.l23_size,
+            "L2/3",
+            self.device,
             adapt_increment=self.layer_config.adapt_increment,
             tau_adapt=self.layer_config.adapt_tau,
         )
-        self.l23_neurons = ConductanceLIF(self.l23_size, l23_config)
 
         self.l5_size = new_l5_size
-        l5_config = ConductanceLIFConfig(tau_E=5.0, tau_I=10.0, v_threshold=0.9, E_E=3.0, E_I=-0.5)
-        self.l5_neurons = ConductanceLIF(self.l5_size, l5_config)
+        self.l5_neurons = create_cortical_layer_neurons(self.l5_size, "L5", self.device)
 
         # 6. Update configs
         new_total_output = new_l23_size + new_l5_size

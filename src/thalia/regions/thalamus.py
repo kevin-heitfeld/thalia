@@ -1,4 +1,5 @@
-"""Thalamus - Sensory Relay, Gating, and Attentional Modulation.
+"""
+Thalamus - Sensory Relay, Gating, and Attentional Modulation.
 
 The thalamus is the brain's "sensory switchboard" and attention controller:
 - **Relays sensory information** to appropriate cortical areas
@@ -82,14 +83,9 @@ import math
 import torch
 import torch.nn as nn
 
+from thalia.components.neurons.neuron_factory import create_relay_neurons, create_trn_neurons
 from thalia.regions.base import NeuralComponent, NeuralComponentConfig, NeuralComponentState
 from thalia.managers.component_registry import register_region
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.neurons.neuron_constants import (
-    V_THRESHOLD_STANDARD, V_RESET_STANDARD, E_LEAK,
-    E_EXCITATORY, E_INHIBITORY, G_LEAK_STANDARD,
-    TAU_MEM_STANDARD,
-)
 from thalia.components.synapses.weight_init import WeightInitializer
 
 
@@ -217,35 +213,13 @@ class ThalamicRelay(NeuralComponent):
         # =====================================================================
         # RELAY NEURONS (Excitatory, glutamatergic)
         # =====================================================================
-        relay_config = ConductanceLIFConfig(
-            v_threshold=V_THRESHOLD_STANDARD,
-            v_reset=V_RESET_STANDARD,
-            E_L=E_LEAK,
-            E_E=E_EXCITATORY,
-            E_I=E_INHIBITORY,
-            g_L=G_LEAK_STANDARD,
-            tau_mem=TAU_MEM_STANDARD,
-            tau_E=5.0,  # Fast excitatory
-            tau_I=10.0,  # Slower inhibitory (from TRN)
-        )
-        self.relay_neurons = ConductanceLIF(n_neurons=self.n_relay, config=relay_config)
+        self.relay_neurons = create_relay_neurons(self.n_relay, self.device)
         self.relay_neurons.to(self.device)
 
         # =====================================================================
         # TRN NEURONS (Inhibitory, GABAergic)
         # =====================================================================
-        trn_config = ConductanceLIFConfig(
-            v_threshold=V_THRESHOLD_STANDARD,
-            v_reset=V_RESET_STANDARD,
-            E_L=E_LEAK,
-            E_E=E_EXCITATORY,
-            E_I=E_INHIBITORY,
-            g_L=G_LEAK_STANDARD * 1.2,  # Slightly faster dynamics
-            tau_mem=TAU_MEM_STANDARD * 0.8,
-            tau_E=4.0,  # Very fast excitatory
-            tau_I=8.0,  # Fast inhibitory
-        )
-        self.trn_neurons = ConductanceLIF(n_neurons=self.n_trn, config=trn_config)
+        self.trn_neurons = create_trn_neurons(self.n_trn, self.device)
         self.trn_neurons.to(self.device)
 
         # =====================================================================
@@ -600,46 +574,63 @@ class ThalamicRelay(NeuralComponent):
         self._alpha_amplitude = 1.0
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get thalamic diagnostic information."""
-        diagnostics = super().get_diagnostics()
+        """Get thalamic diagnostic information using DiagnosticsMixin helpers."""
+        # Custom metrics specific to thalamus
+        custom = {
+            "n_relay": self.n_relay,
+            "n_trn": self.n_trn,
+            "alpha_phase": self._alpha_phase,
+            "alpha_amplitude": self._alpha_amplitude,
+        }
 
-        # Relay neuron stats (ADR-004: convert bool to float for mean)
+        # Relay neuron stats using spike_diagnostics helper
         if self.state.relay_spikes is not None:
-            diagnostics['thalamus_relay_firing_rate'] = (
-                self.state.relay_spikes.float().mean().item()
-            )
+            custom.update(self.spike_diagnostics(self.state.relay_spikes, "relay"))
 
-        if self.state.relay_membrane is not None:
-            diagnostics['thalamus_relay_membrane_mean'] = (
-                self.state.relay_membrane.mean().item()
-            )
-
-        # TRN stats (ADR-004: convert bool to float for mean)
+        # TRN stats using spike_diagnostics helper
         if self.state.trn_spikes is not None:
-            diagnostics['thalamus_trn_firing_rate'] = (
-                self.state.trn_spikes.float().mean().item()
-            )
+            custom.update(self.spike_diagnostics(self.state.trn_spikes, "trn"))
 
-        # Mode distribution
+        # Relay membrane using membrane_diagnostics helper
+        if self.state.relay_membrane is not None:
+            custom.update(self.membrane_diagnostics(
+                self.state.relay_membrane, threshold=1.0, prefix="relay"
+            ))
+
+        # TRN membrane using membrane_diagnostics helper
+        if self.state.trn_membrane is not None:
+            custom.update(self.membrane_diagnostics(
+                self.state.trn_membrane, threshold=1.0, prefix="trn"
+            ))
+
+        # Mode distribution (thalamus-specific)
         if self.state.current_mode is not None:
             burst_fraction = (self.state.current_mode < 0.5).float().mean().item()
-            diagnostics['thalamus_burst_mode_fraction'] = burst_fraction
-            diagnostics['thalamus_tonic_mode_fraction'] = 1.0 - burst_fraction
+            custom["burst_mode_fraction"] = burst_fraction
+            custom["tonic_mode_fraction"] = 1.0 - burst_fraction
 
-        # Gating
+        # Alpha gating (thalamus-specific)
         if self.state.alpha_gate is not None:
-            diagnostics['thalamus_alpha_gate_mean'] = (
-                self.state.alpha_gate.mean().item()
-            )
-
-        diagnostics['thalamus_alpha_phase'] = self._alpha_phase
+            custom["alpha_gate_mean"] = self.state.alpha_gate.mean().item()
+            custom["alpha_gate_std"] = self.state.alpha_gate.std().item()
 
         # Neuromodulator levels
-        diagnostics['thalamus_dopamine'] = self.state.dopamine
-        diagnostics['thalamus_norepinephrine'] = self.state.norepinephrine
-        diagnostics['thalamus_acetylcholine'] = self.state.acetylcholine
+        custom["dopamine"] = self.state.dopamine
+        custom["norepinephrine"] = self.state.norepinephrine
+        custom["acetylcholine"] = self.state.acetylcholine
 
-        return diagnostics
+        # Use collect_standard_diagnostics for weights
+        return self.collect_standard_diagnostics(
+            region_name="thalamus",
+            weight_matrices={
+                "relay_gain": self.relay_gain.data,
+                "input_to_trn": self.input_to_trn.data,
+                "relay_to_trn": self.relay_to_trn.data,
+                "trn_to_relay": self.trn_to_relay.data,
+                "trn_recurrent": self.trn_recurrent.data,
+            },
+            custom_metrics=custom,
+        )
 
     def learn(
         self,
