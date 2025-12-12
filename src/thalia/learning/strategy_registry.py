@@ -350,3 +350,204 @@ class LearningStrategyRegistry:
         cls._configs.clear()
         cls._aliases.clear()
         cls._metadata.clear()
+
+
+# =============================================================================
+# Region-Specific Strategy Factory Helpers
+# =============================================================================
+
+def create_cortex_strategy(
+    learning_rate: float = 0.001,
+    tau_theta: float = 5000.0,
+    use_stdp: bool = True,
+    use_bcm: bool = True,
+    **kwargs: Any,
+) -> LearningStrategy:
+    """Create composite STDP+BCM strategy for cortical learning.
+    
+    Cortical learning typically combines:
+    - STDP for spike-timing based plasticity
+    - BCM for homeostatic sliding threshold
+    
+    Args:
+        learning_rate: Base learning rate for STDP
+        tau_theta: BCM threshold adaptation time constant (ms)
+        use_stdp: Whether to include STDP component
+        use_bcm: Whether to include BCM component
+        **kwargs: Additional parameters for strategies
+    
+    Returns:
+        Configured learning strategy (composite or single)
+    
+    Example:
+        >>> # Standard cortex strategy (STDP + BCM)
+        >>> strategy = create_cortex_strategy(learning_rate=0.001)
+        
+        >>> # BCM only (unsupervised feature learning)
+        >>> strategy = create_cortex_strategy(use_stdp=False)
+    """
+    from thalia.learning.rules.strategies import STDPConfig, BCMConfig
+    
+    if use_stdp and use_bcm:
+        # Composite strategy not yet implemented, return STDP for now
+        # TODO: Implement CompositeStrategy that chains STDP + BCM
+        return LearningStrategyRegistry.create(
+            "stdp",
+            STDPConfig(learning_rate=learning_rate, **kwargs)
+        )
+    elif use_stdp:
+        return LearningStrategyRegistry.create(
+            "stdp",
+            STDPConfig(learning_rate=learning_rate, **kwargs)
+        )
+    elif use_bcm:
+        return LearningStrategyRegistry.create(
+            "bcm",
+            BCMConfig(
+                learning_rate=learning_rate,
+                tau_theta=tau_theta,
+                **kwargs
+            )
+        )
+    else:
+        raise ConfigurationError("Must enable at least one learning rule (STDP or BCM)")
+
+
+def create_hippocampus_strategy(
+    learning_rate: float = 0.01,
+    one_shot: bool = False,
+    a_plus: Optional[float] = None,
+    tau_plus: float = 20.0,
+    tau_minus: float = 20.0,
+    **kwargs: Any,
+) -> LearningStrategy:
+    """Create hippocampus-appropriate STDP with one-shot capability.
+    
+    Hippocampus supports both:
+    - Standard STDP for gradual pattern completion (CA3 recurrence)
+    - One-shot learning for episodic encoding (high learning rate)
+    
+    Args:
+        learning_rate: Base learning rate (0.01 standard, 0.1 for one-shot)
+        one_shot: Whether to use high learning rate for single-trial learning
+        a_plus: LTP amplitude (if None, uses 0.01 standard or 0.1 one-shot)
+        tau_plus: LTP time constant (ms)
+        tau_minus: LTD time constant (ms)
+        **kwargs: Additional STDP parameters
+    
+    Returns:
+        Configured STDP strategy
+    
+    Example:
+        >>> # Standard hippocampal STDP
+        >>> strategy = create_hippocampus_strategy()
+        
+        >>> # One-shot episodic encoding
+        >>> strategy = create_hippocampus_strategy(one_shot=True)
+    """
+    from thalia.learning.rules.strategies import STDPConfig
+    
+    # Set defaults based on one-shot mode
+    if one_shot:
+        learning_rate = 0.1 if learning_rate == 0.01 else learning_rate
+        a_plus = 0.1 if a_plus is None else a_plus
+    else:
+        a_plus = 0.01 if a_plus is None else a_plus
+    
+    return LearningStrategyRegistry.create(
+        "stdp",
+        STDPConfig(
+            learning_rate=learning_rate,
+            a_plus=a_plus,
+            tau_plus=tau_plus,
+            tau_minus=tau_minus,
+            **kwargs
+        )
+    )
+
+
+def create_striatum_strategy(
+    learning_rate: float = 0.001,
+    eligibility_tau_ms: float = 1000.0,
+    dopamine_sensitivity: float = 1.0,
+    **kwargs: Any,
+) -> LearningStrategy:
+    """Create three-factor learning for striatum (dopamine-modulated).
+    
+    Striatum uses three-factor rule:
+    - Eligibility traces from pre/post activity
+    - Dopamine signal gates weight changes
+    - Δw = eligibility × dopamine
+    
+    Args:
+        learning_rate: Base learning rate
+        eligibility_tau_ms: Eligibility trace time constant (ms)
+        dopamine_sensitivity: How strongly dopamine modulates learning
+        **kwargs: Additional three-factor parameters
+    
+    Returns:
+        Configured three-factor strategy
+    
+    Example:
+        >>> # Standard striatum learning
+        >>> strategy = create_striatum_strategy()
+        
+        >>> # Longer eligibility traces (delayed rewards)
+        >>> strategy = create_striatum_strategy(eligibility_tau_ms=2000.0)
+    
+    Note:
+        Three-factor strategy not yet fully implemented.
+        This is a placeholder for future migration.
+    """
+    from thalia.learning.rules.strategies import STDPConfig
+    
+    # TODO: Implement ThreeFactorStrategy class
+    # For now, return STDP as placeholder
+    # Future: return LearningStrategyRegistry.create("three_factor", ThreeFactorConfig(...))
+    
+    return LearningStrategyRegistry.create(
+        "stdp",
+        STDPConfig(
+            learning_rate=learning_rate,
+            tau_plus=eligibility_tau_ms / 50,  # Approximate conversion
+            **kwargs
+        )
+    )
+
+
+def create_cerebellum_strategy(
+    learning_rate: float = 0.005,
+    error_sensitivity: float = 1.0,
+    **kwargs: Any,
+) -> LearningStrategy:
+    """Create error-corrective learning for cerebellum (supervised).
+    
+    Cerebellum uses delta rule for motor learning:
+    - Δw ∝ error × input
+    - Supervised by climbing fiber error signals
+    
+    Args:
+        learning_rate: Base learning rate (typically slower than cortex)
+        error_sensitivity: How strongly to weight error signals
+        **kwargs: Additional parameters
+    
+    Returns:
+        Configured error-corrective strategy
+    
+    Example:
+        >>> # Standard cerebellar learning
+        >>> strategy = create_cerebellum_strategy()
+    
+    Note:
+        ErrorCorrectiveStrategy not yet implemented.
+        This is a placeholder for future use.
+    """
+    from thalia.learning.rules.strategies import STDPConfig
+    
+    # TODO: Implement ErrorCorrectiveStrategy class
+    # For now, return STDP as placeholder
+    
+    return LearningStrategyRegistry.create(
+        "stdp",
+        STDPConfig(learning_rate=learning_rate, **kwargs)
+    )

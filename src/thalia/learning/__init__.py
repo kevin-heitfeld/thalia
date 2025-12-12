@@ -73,6 +73,10 @@ from thalia.learning.rules.strategies import (
 )
 from thalia.learning.strategy_registry import (
     LearningStrategyRegistry,
+    create_cortex_strategy,
+    create_hippocampus_strategy,
+    create_striatum_strategy,
+    create_cerebellum_strategy,
 )
 from thalia.learning.strategy_mixin import (
     LearningStrategyMixin,
@@ -125,6 +129,11 @@ __all__ = [
     "create_strategy",
     # Strategy Registry
     "LearningStrategyRegistry",
+    # Region-Specific Strategy Factories
+    "create_cortex_strategy",
+    "create_hippocampus_strategy",
+    "create_striatum_strategy",
+    "create_cerebellum_strategy",
     # Strategy Mixin for Regions
     "LearningStrategyMixin",
 ]

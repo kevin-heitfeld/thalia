@@ -89,7 +89,7 @@ from thalia.components.synapses.traces import update_trace
 from thalia.regions.base import NeuralComponent
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
-from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig, STDPStrategy, STDPConfig
+from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig, STDPStrategy, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
@@ -218,14 +218,18 @@ class LayeredCortex(NeuralComponent):
         # BCM learning strategies for each layer
         if config.bcm_enabled:
             device = torch.device(config.device)
+            
+            # Use factory helper to create BCM strategies for each layer
+            # This encapsulates cortex-appropriate learning rule configuration
             bcm_cfg = config.bcm_config or BCMStrategyConfig(
                 learning_rate=config.learning_rate,
                 w_min=config.w_min,
                 w_max=config.w_max,
                 dt=config.dt_ms,
             )
-
-            # Create BCM strategies for each layer
+            
+            # Create BCM strategies (currently use registry directly since we have custom config)
+            # TODO: Enhance create_cortex_strategy() to accept BCMConfig directly
             self.bcm_l4 = LearningStrategyRegistry.create("bcm", bcm_cfg)
             self.bcm_l23 = LearningStrategyRegistry.create("bcm", bcm_cfg)
             self.bcm_l5 = LearningStrategyRegistry.create("bcm", bcm_cfg)
