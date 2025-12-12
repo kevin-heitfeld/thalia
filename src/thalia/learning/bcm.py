@@ -56,6 +56,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from thalia.core.errors import ComponentError
 from thalia.core.learning_constants import (
     LEARNING_RATE_BCM,
     TAU_BCM_THRESHOLD,
@@ -317,7 +318,10 @@ class BCMRule(nn.Module):
     def get_threshold(self) -> torch.Tensor:
         """Get current sliding threshold."""
         if self.theta is None:
-            raise RuntimeError("BCM state not initialized. Call reset_state() first.")
+            raise ComponentError(
+                "BCM",
+                "BCM state not initialized. Call reset_state() first."
+            )
         return self.theta.clone()
 
     def get_state(self) -> dict[str, Optional[torch.Tensor]]:

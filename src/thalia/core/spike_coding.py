@@ -31,6 +31,8 @@ from typing import Any
 import torch
 import torch.nn as nn
 
+from thalia.core.errors import ConfigurationError
+
 
 class CodingStrategy(Enum):
     """Spike coding strategies (shared across encoders/decoders)."""
@@ -222,16 +224,16 @@ class SpikeEncoder(nn.Module, ABC):
                 batch, seq_len, self.config.n_timesteps, n_neurons,
                 device=self.device,
             )
-            
+
             for b in range(batch):
                 for s in range(seq_len):
                     # Normalize activations to [0, 1]
                     act = features[b, s]
                     act_norm = (act - act.min()) / (act.max() - act.min() + 1e-8)
-                    
+
                     # Convert to spike times: higher value = earlier spike
                     spike_times = ((1.0 - act_norm) * (self.config.n_timesteps - 1)).long()
-                    
+
                     # Create spikes at calculated times
                     for n in range(n_neurons):
                         t = int(spike_times[n].item())
@@ -300,7 +302,7 @@ class SpikeDecoder(nn.Module, ABC):
 
         Returns:
             output: Modality-specific output
-            
+
         Note:
             This provides a default rate-code implementation.
             Subclasses should override for better strategies.
@@ -439,7 +441,7 @@ def compute_spike_similarity(
         similarity: [batch, seq_len]
     """
     from thalia.core.utils import cosine_similarity_safe
-    
+
     # Flatten temporal dimension
     flat1 = spikes1.reshape(*spikes1.shape[:2], -1)
     flat2 = spikes2.reshape(*spikes2.shape[:2], -1)
@@ -465,6 +467,6 @@ def compute_spike_similarity(
         similarity = intersection / (union + 1e-6)
 
     else:
-        raise ValueError(f"Unknown similarity method: {method}")
+        raise ConfigurationError(f"Unknown similarity method: {method}")
 
     return similarity

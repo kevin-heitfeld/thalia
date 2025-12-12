@@ -62,6 +62,7 @@ from __future__ import annotations
 from typing import Dict, Type, Optional, List, Callable, Any
 import inspect
 
+from thalia.core.errors import ConfigurationError
 from thalia.learning.strategies import LearningStrategy, LearningConfig
 
 
@@ -137,11 +138,11 @@ class LearningStrategyRegistry:
         def decorator(strategy_class: Type[LearningStrategy]) -> Type[LearningStrategy]:
             # Validate strategy class
             if not inspect.isclass(strategy_class):
-                raise ValueError(f"Strategy must be a class, got {type(strategy_class)}")
+                raise ConfigurationError(f"Strategy must be a class, got {type(strategy_class)}")
 
             # Check if name already registered
             if name in cls._registry:
-                raise ValueError(
+                raise ConfigurationError(
                     f"Strategy '{name}' already registered as {cls._registry[name].__name__}"
                 )
 
@@ -156,7 +157,7 @@ class LearningStrategyRegistry:
             if aliases:
                 for alias in aliases:
                     if alias in cls._aliases:
-                        raise ValueError(
+                        raise ConfigurationError(
                             f"Alias '{alias}' already registered for '{cls._aliases[alias]}'"
                         )
                     cls._aliases[alias] = name
@@ -214,7 +215,7 @@ class LearningStrategyRegistry:
         # Check if strategy exists
         if canonical_name not in cls._registry:
             available = cls.list_strategies(include_aliases=True)
-            raise ValueError(
+            raise ConfigurationError(
                 f"Unknown learning strategy: '{name}'. "
                 f"Available strategies: {', '.join(available)}"
             )
@@ -226,7 +227,7 @@ class LearningStrategyRegistry:
         if canonical_name in cls._configs:
             expected_config = cls._configs[canonical_name]
             if not isinstance(config, expected_config):
-                raise ValueError(
+                raise ConfigurationError(
                     f"Strategy '{canonical_name}' expects config type {expected_config.__name__}, "
                     f"got {type(config).__name__}"
                 )
@@ -235,7 +236,7 @@ class LearningStrategyRegistry:
         try:
             return strategy_class(config, **kwargs)
         except Exception as e:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Failed to create strategy '{canonical_name}': {e}"
             ) from e
 
@@ -288,7 +289,7 @@ class LearningStrategyRegistry:
         canonical_name = cls._aliases.get(name, name)
 
         if canonical_name not in cls._metadata:
-            raise ValueError(f"Unknown strategy: '{name}'")
+            raise ConfigurationError(f"Unknown strategy: '{name}'")
 
         return cls._metadata[canonical_name]
 

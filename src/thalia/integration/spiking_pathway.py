@@ -33,6 +33,7 @@ import torch.nn as nn
 import numpy as np
 
 from thalia.core.component_config import PathwayConfig
+from thalia.core.errors import CheckpointError
 from thalia.core.utils import clamp_weights
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig
@@ -1006,7 +1007,7 @@ class SpikingPathway(NeuralComponent):
         """
         # Verify class matches
         if state.get('class_name') != self.__class__.__name__:
-            raise ValueError(
+            raise CheckpointError(
                 f"State class mismatch: expected {self.__class__.__name__}, "
                 f"got {state.get('class_name')}"
             )

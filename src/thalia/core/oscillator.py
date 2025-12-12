@@ -61,6 +61,8 @@ import math
 
 import torch.nn as nn
 
+from thalia.core.errors import ConfigurationError
+
 
 @dataclass
 class OscillatorConfig:
@@ -252,16 +254,16 @@ class SinusoidalOscillator(BrainOscillator):
     - Alpha (8-13 Hz): Attention gating, inhibitory control
     - Beta (13-30 Hz): Motor control, active thinking
     - Gamma (30-100 Hz): Feature binding, local processing
-    
+
     The only difference between oscillator types is their frequency.
     Use OSCILLATOR_DEFAULTS dict for standard biological frequencies.
-    
+
     Example:
         ```python
         # Create oscillators with biological defaults
         theta = SinusoidalOscillator(frequency_hz=OSCILLATOR_DEFAULTS['theta'])  # 8 Hz
         gamma = SinusoidalOscillator(frequency_hz=OSCILLATOR_DEFAULTS['gamma'])  # 40 Hz
-        
+
         # Or specify custom frequency
         fast_gamma = SinusoidalOscillator(frequency_hz=60.0)
         ```
@@ -394,15 +396,15 @@ class OscillatorCoupling:
     def __post_init__(self):
         """Validate coupling parameters."""
         if not 0.0 <= self.coupling_strength <= 1.0:
-            raise ValueError(f"coupling_strength must be in [0, 1], got {self.coupling_strength}")
+            raise ConfigurationError(f"coupling_strength must be in [0, 1], got {self.coupling_strength}")
         if not 0.0 <= self.min_amplitude <= 1.0:
-            raise ValueError(f"min_amplitude must be in [0, 1], got {self.min_amplitude}")
+            raise ConfigurationError(f"min_amplitude must be in [0, 1], got {self.min_amplitude}")
         if self.modulation_type not in ('cosine', 'sine'):
-            raise ValueError(f"modulation_type must be 'cosine' or 'sine', got {self.modulation_type}")
+            raise ConfigurationError(f"modulation_type must be 'cosine' or 'sine', got {self.modulation_type}")
         if self.per_oscillator_strength is not None:
             for strength in self.per_oscillator_strength.values():
                 if not 0.0 <= strength <= 1.0:
-                    raise ValueError(f"per_oscillator_strength values must be in [0, 1], got {strength}")
+                    raise ConfigurationError(f"per_oscillator_strength values must be in [0, 1], got {strength}")
 
     def get_strength_for(self, slow_oscillator: str) -> float:
         """Get coupling strength for a specific slow oscillator.

@@ -244,7 +244,7 @@ class ShortTermPlasticity(nn.Module):
         assert pre_spikes.shape[0] == self.n_pre, (
             f"STP.forward: pre_spikes has {pre_spikes.shape[0]} neurons, expected {self.n_pre}"
         )
-        
+
         if self.u is None:
             self.reset_state()
 
@@ -315,7 +315,7 @@ class ShortTermPlasticity(nn.Module):
 
     def load_state(self, state: dict[str, Optional[torch.Tensor]]) -> None:
         """Restore STP state from checkpoint.
-        
+
         Args:
             state: Dictionary from get_state()
         """
