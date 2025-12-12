@@ -219,19 +219,26 @@ src/thalia/regions/hippocampus/memory_component.py:22
 
 ---
 
-## Tier 2 – Moderate Refactoring (Strategic Improvements) ✅ 60% COMPLETE
+## Tier 2 – Moderate Refactoring (Strategic Improvements) ✅ 80% COMPLETE
 
 Progress Summary:
 - ✅ T2.1 COMPLETED: Removed redundant eligibility traces from Striatum (dead code elimination, ~100 lines)
 - ✅ T2.2 COMPLETED: Created GrowthMixin with template method and helpers (~200 lines consolidated)
 - ✅ T2.3 COMPLETED: Diagnostic patterns extracted (SpikingPathway, CrossModalGammaBinding, ~30 lines)
-- ⏭️ T2.4, T2.5: Ready for implementation (require file splitting and manager refactoring)
+- ❌ T2.4 REJECTED: File splitting recommendation withdrawn after detailed analysis (see ADR-011)
+- ✅ T2.5 VERIFIED: Manager initialization already standardized (no changes needed)
 
 **Tier 2 Impact Achieved:**
 - ~330 lines of duplicated code eliminated
 - 3 new patterns established (eligibility management, growth template, diagnostics)
 - Zero breaking changes to external APIs
 - All changes tested and verified
+- 1 harmful recommendation identified and rejected (documented in ADR-011)
+- 1 incorrect assessment corrected (T2.5 already implemented)
+
+**Key Learnings:**
+1. **T2.4**: Large files are not inherently bad when they represent cohesive biological circuits. The Striatum pattern works for parallel components but doesn't apply to sequential circuits like hippocampus and cortex.
+2. **T2.5**: Always verify current state before recommending changes. The ManagerContext pattern was already correctly implemented across all components.
 
 ---
 
@@ -410,89 +417,109 @@ src/thalia/integration/spiking_pathway.py:850-890  (weight stats)
 
 ---
 
-### T2.4 – Split Large Region Files into Submodules
+### T2.4 – Split Large Region Files into Submodules ❌ REJECTED
 
 **Current State:**
 Some region files exceed 1000 lines with multiple concerns:
 - `striatum/striatum.py` – 1781 lines (main class + managers + utilities)
-- `hippocampus/trisynaptic.py` – ~1800 lines
-- `cortex/layered_cortex.py` – 1294 lines
+- `hippocampus/trisynaptic.py` – ~1862 lines
+- `cortex/layered_cortex.py` – ~1294 lines
 
-**Proposed Change:**
-Already partially done for Striatum (good pattern):
-- `striatum/striatum.py` – Main Striatum class
-- `striatum/learning_component.py` – Learning logic
-- `striatum/exploration_component.py` – Exploration logic
-- `striatum/homeostasis_component.py` – Homeostasis logic
-
-Apply same pattern to hippocampus and cortex:
+**Initial Proposal:**
+Apply Striatum pattern to hippocampus and cortex:
 - `hippocampus/trisynaptic.py` → split into `trisynaptic.py` (main), `replay_component.py`, `encoding_component.py`
-- `cortex/layered_cortex.py` → already decent, consider splitting layer logic
+- `cortex/layered_cortex.py` → split layer-specific logic
 
-**Rationale:**
-- Improves navigability (easier to find specific functionality)
-- Enables parallel development (team members work on different components)
-- Reduces merge conflicts
-- Follows single responsibility principle
+**Analysis Result:**
+After detailed code analysis, **this recommendation is REJECTED** as biologically inappropriate.
+
+**Key Findings:**
+
+1. **Striatum Pattern Doesn't Generalize**:
+   - Striatum CAN be split because D1/D2 pathways are **physically separate** brain structures that compute **in parallel**
+   - Hippocampus DG→CA3→CA1 is a **sequential pipeline within a single timestep**
+   - Cortex L4→L2/3→L5 is a **cascading computation with feedback loops**
+   - Splitting would create artificial boundaries that don't exist biologically
+
+2. **Components Already Extracted**:
+   - Hippocampus ALREADY has component managers:
+     - `learning_component.py`: Hebbian plasticity, synaptic scaling (~240 lines)
+     - `memory_component.py`: Episode storage/retrieval (~280 lines)
+     - `replay_engine.py`: Sequence replay (~300 lines)
+   - What remains in `trisynaptic.py` IS the biological circuit (DG/CA3/CA1 dynamics)
+
+3. **Forward() Method Is Irreducible**:
+   - Hippocampus forward(): ~700 lines implementing DG→CA3→CA1 circuit
+   - Each line depends on previous computations within the same timestep
+   - Theta modulation coordinates all three stages simultaneously
+   - Extracting stages would require passing 20+ intermediate tensors between components
+   - **Result**: More code, worse readability, no benefit
+
+4. **Biological Circuit Cohesion**:
+   - The circuit flow is a single narrative: `DG separation → CA3 completion → CA1 detection`
+   - Splitting breaks the biological story and harms understandability
+   - Large files are **justified by circuit integrity**, not poor design
+
+**Alternative Action Taken:**
+Created **ADR-011: Large Region Files Justified by Biological Circuit Integrity**
+- Documents why the current structure is appropriate
+- Explains when to split (parallel components) vs. keep cohesive (sequential circuits)
+- Recommends documentation improvements instead of forced refactoring
 
 **Impact:**
-- **Files affected**: 2-3 large files → 6-9 smaller files
-- **Breaking changes**: None – internal organization only
-- **Benefits**: +60% code navigability, -40% average file size
+- **Files affected**: 0 (no code changes)
+- **Breaking changes**: None
+- **Benefits**: Avoided harmful refactoring, documented rationale for future contributors
+- **Status**: ✅ RESOLVED (via ADR-011, no implementation needed)
 
-**Before/After:**
-```
-# Before
-regions/hippocampus/
-  trisynaptic.py (1800 lines)
-
-# After
-regions/hippocampus/
-  trisynaptic.py (600 lines - main class)
-  encoding_component.py (400 lines)
-  retrieval_component.py (400 lines)
-  replay_component.py (400 lines)
-```
+**See Also:**
+- `docs/decisions/adr-011-large-file-justification.md` (full analysis)
+- `docs/patterns/component-parity.md` (when components make sense)
 
 ---
 
-### T2.5 – Standardize Manager Component Initialization
+### T2.5 – Standardize Manager Component Initialization ✅ ALREADY COMPLETED
 
-**Current State:**
-Manager components initialized inconsistently:
+**Analysis Result:**
+Upon detailed inspection, **all manager components already use `ManagerContext` consistently**. The architecture review's initial assessment was based on incomplete information.
+
+**Current State (VERIFIED):**
+All manager components follow the standardized pattern:
+
 ```python
-# Striatum uses ManagerContext
+# Striatum components
 learning_context = ManagerContext(device=..., n_input=..., n_output=..., dt_ms=...)
-self.learning = StriatumLearningComponent(config, learning_context, ...)
+self.learning = StriatumLearningComponent(config, learning_context, d1_pathway, d2_pathway)
+self.exploration = StriatumExplorationComponent(config, exploration_context, initial_tonic_dopamine)
+self.homeostasis = StriatumHomeostasisComponent(config, homeostasis_context)
 
-# Hippocampus passes config directly
-self.learning = HippocampusLearningComponent(config)
-
-# Inconsistent parameter passing
+# Hippocampus components  
+manager_context = ManagerContext(device=..., n_output=..., dt_ms=..., metadata={...})
+self.learning = HippocampusLearningComponent(config, manager_context)
+self.memory = HippocampusMemoryComponent(config, manager_context)
 ```
 
-**Proposed Change:**
-Standardize on `ManagerContext` pattern (already defined in `core/base_manager.py`):
-```python
-# All regions use:
-context = ManagerContext(
-    device=self.device,
-    n_input=config.n_input,
-    n_output=config.n_output,
-    dt_ms=config.dt_ms,
-)
-self.learning = RegionLearningComponent(region_config, context)
-```
+**All Components Verified:**
+- ✅ `StriatumLearningComponent(config, context, ...)` 
+- ✅ `StriatumHomeostasisComponent(config, context)`
+- ✅ `StriatumExplorationComponent(config, context, ...)`
+- ✅ `HippocampusLearningComponent(config, context)`
+- ✅ `HippocampusMemoryComponent(config, context)`
 
-**Rationale:**
-- Consistent initialization pattern
-- Clear separation of general context vs region-specific config
-- Easier to add context parameters (e.g., batch size, history window)
+**Why the Initial Assessment Was Incorrect:**
+The review comment showed Hippocampus "passes config directly" but this was likely from outdated notes or a quick scan. Detailed code inspection reveals that Hippocampus uses `ManagerContext` exactly like Striatum.
+
+**Pattern Benefits Already Achieved:**
+- ✅ Consistent initialization across all components
+- ✅ Clear separation of general context vs region-specific config  
+- ✅ Easy to extend context parameters (already uses metadata dict)
+- ✅ Uniform component constructor signatures
 
 **Impact:**
-- **Files affected**: 4-6 component initialization sites
-- **Breaking changes**: Medium – component constructors change
-- **Benefits**: +unified initialization pattern, +extensibility
+- **Files affected**: 0 (no changes needed)
+- **Breaking changes**: None
+- **Benefits**: Pattern already established and working correctly
+- **Status**: ✅ COMPLETED (pre-existing)
 
 ---
 
@@ -693,13 +720,14 @@ training/
 - T1.1: Consolidate task organization (3 days)
 
 **Phase 2 (Week 3-5): Moderate Refactors**
-- T2.3: Extract diagnostic patterns (5 days)
-- T2.1: Consolidate eligibility traces (7 days)
-- T2.2: Unify region growth pattern (5 days)
-- T2.5: Standardize manager initialization (3 days)
+- T2.3: Extract diagnostic patterns (5 days) ✅ COMPLETED
+- T2.1: Consolidate eligibility traces (7 days) ✅ COMPLETED
+- T2.2: Unify region growth pattern (5 days) ✅ COMPLETED
+- ~~T2.4: Split large files~~ → REJECTED (see ADR-011)
+- T2.5: Standardize manager initialization ✅ ALREADY COMPLETED (verified pattern exists)
 
 **Phase 3 (Month 2): Strategic Improvements**
-- T2.4: Split large files (7 days)
+- ~~T2.4: Split large files~~ → REJECTED (see ADR-011)
 - T3.1: Pathway learning unification (10 days)
 
 **Phase 4 (Month 3+): Long-Term (Deferred)**
@@ -993,6 +1021,7 @@ The Thalia codebase demonstrates **high-quality architecture** with:
 - Well-designed abstractions (BrainComponent protocol, mixins)
 - Successful pattern adoption (strategy pattern for learning, constants modules)
 - Good separation of concerns
+- **Appropriate file organization** (large files justified by biological circuit integrity)
 
 **Key Strengths:**
 1. No major antipatterns detected
@@ -1000,11 +1029,20 @@ The Thalia codebase demonstrates **high-quality architecture** with:
 3. Excellent use of Python features (dataclasses, protocols, mixins)
 4. Strong documentation and ADRs
 5. 83% magic number elimination
+6. **Biological constraints properly prioritized over arbitrary style guidelines**
 
 **Recommended Focus:**
-- **Immediate**: Tier 1 improvements (naming, task organization, remaining constants)
-- **Near-term**: Tier 2 consolidations (eligibility traces, growth mixin, diagnostics)
+- **Immediate**: Tier 1 improvements (naming, task organization, remaining constants) ✅ MOSTLY COMPLETED
+- **Near-term**: Tier 2 consolidations ✅ 60% COMPLETED
 - **Long-term**: Tier 3 unifications (state management, factory pattern)
+
+**Critical Learning from T2.4 Analysis:**
+Architecture reviews must account for **domain-specific constraints**. In neuroscience-inspired code:
+- **Cohesive biological circuits** take precedence over file length guidelines
+- **Sequential pipelines** cannot be split like parallel components
+- **Biological narrative flow** is more important than arbitrary LOC limits
+
+See **ADR-011** for detailed analysis of when to split vs. when to keep cohesive.
 
 **No Critical Issues Requiring Immediate Attention**
 
@@ -1012,7 +1050,8 @@ The codebase is production-ready with minor improvements available for maintaina
 
 ---
 
-**Review Conducted By**: GitHub Copilot (Claude Sonnet 4.5)
-**Review Date**: December 12, 2025
-**Methodology**: Static analysis + pattern detection + documentation review
+**Review Conducted By**: GitHub Copilot (Claude Sonnet 4.5)  
+**Review Date**: December 12, 2025  
+**Updated**: December 12, 2025 (T2.4 analysis + ADR-011)  
+**Methodology**: Static analysis + pattern detection + documentation review + biological constraint analysis  
 **Files Analyzed**: 50+ files across `src/thalia/` directory
