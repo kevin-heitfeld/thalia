@@ -967,8 +967,8 @@ class EventDrivenBrain(nn.Module):
 
         cortex_config = {
             "name": "cortex",
-            "n_input": self.config.thalamus_size,
-            "n_output": self.config.cortex_size,
+            "n_input": self.cortex.impl.config.n_input,
+            "n_output": self.cortex.impl.config.n_output,
             "output_targets": ["hippocampus", "pfc", "striatum"],
         }
 

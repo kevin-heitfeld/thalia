@@ -192,6 +192,7 @@ class TestParallelExecution:
             brain=BrainConfig(
                 sizes=RegionSizes(
                     input_size=784,
+                    thalamus_size=784,  # Must match input_size for proper relay
                     cortex_size=128,
                     hippocampus_size=100,
                     pfc_size=64,
@@ -213,6 +214,7 @@ class TestParallelExecution:
             brain=BrainConfig(
                 sizes=RegionSizes(
                     input_size=784,
+                    thalamus_size=784,  # Must match input_size for proper relay
                     cortex_size=128,
                     hippocampus_size=100,
                     pfc_size=64,

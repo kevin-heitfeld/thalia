@@ -69,6 +69,7 @@ Date: December 2025
 
 from __future__ import annotations
 
+import atexit
 import multiprocessing
 from multiprocessing import Process, Queue
 from multiprocessing.synchronize import Event as MPEvent
@@ -178,8 +179,22 @@ class RegionWorker:
     def run(self) -> None:
         """Main event loop for the worker."""
         while self._running:
-            # Wait for control event (signals batch ready)
-            self.control_event.wait()
+            # Wait for control event with timeout (signals batch ready or allows checking shutdown)
+            triggered = self.control_event.wait(timeout=0.1)
+            if not triggered:
+                # Timeout - check for shutdown signal
+                try:
+                    event = self.input_queue.get_nowait()
+                    if event is None:
+                        self._running = False
+                        break
+                    else:
+                        # Put it back, we'll process it when control event is set
+                        self.input_queue.put(event)
+                except Empty:
+                    pass
+                continue
+
             self.control_event.clear()
 
             # Process all events in input queue
@@ -207,8 +222,9 @@ class RegionWorker:
             for event in output_events:
                 self.output_queue.put(event)
 
-            # Signal that we're done with this batch
-            self.output_queue.put(("DONE", self.name, events_processed))
+            # Signal that we're done with this batch (only if still running)
+            if self._running:
+                self.output_queue.put(("DONE", self.name, events_processed))
 
 
 def worker_process(
@@ -222,9 +238,22 @@ def worker_process(
 
     Creates the region inside the process to avoid pickle issues.
     """
+    import logging
+    import traceback
+
+    # Set up logging for this worker
+    logging.basicConfig(
+        level=logging.WARNING,
+        format=f'%(asctime)s - {name} - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(name)
+
     try:
+        logger.info(f"Worker {name} starting...")
+
         # Create region inside the worker process
         region = region_creator()
+        logger.info(f"Worker {name} created region: {type(region).__name__}")
 
         worker = RegionWorker(
             name=name,
@@ -233,13 +262,19 @@ def worker_process(
             control_event=control_event,
             region=region,
         )
+        logger.info(f"Worker {name} entering event loop...")
         worker.run()
+        logger.info(f"Worker {name} exiting normally")
 
     except Exception as e:
-        import sys
-        import traceback
-        print(f"[{name}] ERROR: {e}", file=sys.stderr, flush=True)
-        traceback.print_exc()
+        logger.error(f"Worker {name} crashed: {e}")
+        logger.error(traceback.format_exc())
+        # Put error in output queue so main process knows
+        try:
+            output_queue.put(("ERROR", name, str(e)))
+        except:
+            pass
+        raise
 
 
 class ParallelExecutor:
@@ -302,6 +337,9 @@ class ParallelExecutor:
         # Monitoring
         self._spike_counts: Dict[str, int] = {name: 0 for name in self.region_names}
         self._events_processed = 0
+
+        # Register cleanup handler to ensure workers are stopped
+        atexit.register(self.stop)
 
     def start(self) -> None:
         """Start all worker processes."""
@@ -373,33 +411,37 @@ class ParallelExecutor:
 
         # Collect output events from all workers
         output_events = []
-        done_count = 0
+        done_regions = set()
 
-        while done_count < len(regions_with_work):
+        # Wait for each region to signal done (with timeout)
+        timeout_per_region = 5.0  # 5 seconds per region
+
+        while len(done_regions) < len(regions_with_work):
             for name in regions_with_work:
+                if name in done_regions:
+                    continue
+
                 try:
-                    result = self.output_queues[name].get(timeout=0.01)
+                    result = self.output_queues[name].get(timeout=timeout_per_region)
 
                     if isinstance(result, tuple) and result[0] == "DONE":
-                        done_count += 1
+                        done_regions.add(name)
+                    elif isinstance(result, tuple) and result[0] == "ERROR":
+                        # Worker crashed
+                        error_msg = result[2] if len(result) > 2 else "Unknown error"
+                        raise RuntimeError(f"Worker process {name} crashed: {error_msg}")
                     else:
                         # Deserialize event (move tensors to target device)
                         deserialized_event = deserialize_event(result, self.device)
                         output_events.append(deserialized_event)
 
                 except Empty:
+                    # Timeout - check if worker is still alive
+                    worker = self.processes.get(name)
+                    if worker and not worker.is_alive():
+                        raise RuntimeError(f"Worker process {name} died unexpectedly")
+                    # Otherwise, continue waiting
                     continue
-
-        # Drain remaining output events
-        for name in regions_with_work:
-            while True:
-                try:
-                    result = self.output_queues[name].get_nowait()
-                    if isinstance(result, Event):
-                        deserialized_event = deserialize_event(result, self.device)
-                        output_events.append(deserialized_event)
-                except Empty:
-                    break
 
         return output_events
 
