@@ -15,10 +15,10 @@ import torch
 import torch.nn as nn
 
 from thalia.core.component_config import PathwayConfig
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
-from thalia.core.neuron_constants import (
+from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
     E_LEAK,

@@ -22,7 +22,8 @@ Internal Development:
 
 Internal code should use explicit imports for clarity:
 
-    from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+    # Neuron Models
+    from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
     from thalia.regions.striatum import Striatum, StriatumConfig
     from thalia.learning.bcm import BCMRule, BCMConfig
 

@@ -64,8 +64,8 @@ from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
 from thalia.core.learning_constants import LEARNING_RATE_STDP
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.core.neuron_constants import NE_GAIN_RANGE
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
 
 from thalia.regions.base import (
     NeuralComponent,

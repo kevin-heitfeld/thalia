@@ -1,9 +1,14 @@
 """
 Core components: neurons, synapses, layers, and networks.
+
+MIGRATION NOTE: Many components have been moved to specialized modules.
+Imports below provide backward compatibility during the transition period.
+New code should import from the new locations.
 """
 
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.core.neuron_constants import (
+# Backward compatibility: Import from new locations
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron_constants import (
     # Membrane time constants
     TAU_MEM_STANDARD, TAU_MEM_FAST, TAU_MEM_SLOW,
     # Synaptic time constants
@@ -17,7 +22,7 @@ from thalia.core.neuron_constants import (
     # Presets
     STANDARD_PYRAMIDAL, FAST_SPIKING_INTERNEURON,
 )
-from thalia.core.dendritic import (
+from thalia.components.neurons.dendritic import (
     DendriticBranch,
     DendriticBranchConfig,
     DendriticNeuron,

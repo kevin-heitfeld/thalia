@@ -95,14 +95,14 @@ import torch.nn as nn
 from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.base_manager import ManagerContext
-from thalia.core.neuron_constants import (
+from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
     E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
 )
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.component_registry import register_region
 from thalia.core.utils import clamp_weights
 from thalia.regions.base import (

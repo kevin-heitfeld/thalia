@@ -72,11 +72,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.base_manager import ManagerContext
 from thalia.core.component_registry import register_region
 from thalia.core.errors import CheckpointError, ComponentError
-from thalia.core.neuron_constants import (
+from thalia.components.neurons.neuron_constants import (
     G_LEAK_STANDARD,
     TAU_SYN_EXCITATORY,
     TAU_SYN_INHIBITORY,

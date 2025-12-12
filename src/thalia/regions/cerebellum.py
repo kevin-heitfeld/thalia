@@ -57,8 +57,8 @@ from thalia.core.weight_init import WeightInitializer
 from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.core.component_registry import register_region
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.core.neuron_constants import (
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
     E_LEAK,

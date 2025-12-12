@@ -18,7 +18,7 @@ from typing import Optional, TYPE_CHECKING
 import torch
 import torch.nn as nn
 
-from thalia.core.neuron_constants import (
+from thalia.components.neurons.neuron_constants import (
     THETA_BASELINE_MIN,
     THETA_BASELINE_RANGE,
     THETA_CONTRAST_MIN,
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from .d1_pathway import D1Pathway
     from .d2_pathway import D2Pathway
     from .homeostasis_component import StriatumHomeostasisComponent
-    from thalia.core.neuron import ConductanceLIF
+    from thalia.components.neurons.neuron import ConductanceLIF
 
 
 class ForwardPassCoordinator:

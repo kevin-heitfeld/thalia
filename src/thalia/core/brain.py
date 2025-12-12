@@ -112,11 +112,11 @@ from thalia.integration.pathways.spiking_replay import SpikingReplayPathwayConfi
 from thalia.sensory.pathways import VisualConfig
 from thalia.sensory.pathways import AuditoryConfig
 from thalia.sensory.pathways import LanguageConfig
+from thalia.components.neurons.neuron_constants import INTRINSIC_LEARNING_THRESHOLD
 
 from .oscillator import OscillatorManager
 from .pathway_manager import PathwayManager
 from .neuromodulator_manager import NeuromodulatorManager
-from .neuron_constants import INTRINSIC_LEARNING_THRESHOLD
 from .spike_utils import compute_firing_rate
 from .errors import ConfigurationError, CheckpointError
 from .diagnostics import (

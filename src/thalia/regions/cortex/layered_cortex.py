@@ -78,9 +78,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.core.component_config import NeuralComponentConfig
-from thalia.core.neuron_constants import NE_GAIN_RANGE
+from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
 from thalia.core.errors import CheckpointError
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region

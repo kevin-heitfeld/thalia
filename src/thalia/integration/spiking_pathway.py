@@ -35,7 +35,7 @@ import numpy as np
 from thalia.core.component_config import PathwayConfig
 from thalia.core.errors import CheckpointError
 from thalia.core.utils import clamp_weights
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig

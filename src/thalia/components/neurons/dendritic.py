@@ -30,7 +30,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 @dataclass

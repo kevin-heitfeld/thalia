@@ -84,8 +84,8 @@ import torch.nn as nn
 
 from thalia.regions.base import NeuralComponent, NeuralComponentConfig, NeuralComponentState
 from thalia.core.component_registry import register_region
-from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.core.neuron_constants import (
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD, V_RESET_STANDARD, E_LEAK,
     E_EXCITATORY, E_INHIBITORY, G_LEAK_STANDARD,
     TAU_MEM_STANDARD,
