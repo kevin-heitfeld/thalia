@@ -33,6 +33,36 @@ Architecture (based on canonical cortical microcircuit):
     │   - Burst-capable neurons         │
     └───────────────────────────────────┘
 
+FILE ORGANIZATION (1295 lines)
+===============================
+Lines 1-150:     Module docstring, imports, class registration
+Lines 151-350:   __init__() and layer initialization
+Lines 351-500:   L4 forward pass (input processing)
+Lines 501-700:   L2/3 forward pass (recurrent processing)
+Lines 701-850:   L5 forward pass (output generation)
+Lines 851-1000:  Learning (BCM + STDP for inter-layer connections)
+Lines 1001-1150: Growth and homeostasis
+Lines 1151-1295: Diagnostics and utility methods
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) or collapse
+regions (Ctrl+K Ctrl+0) to navigate between layers.
+
+WHY THIS FILE IS LARGE
+======================
+The L4→L2/3→L5 cascade is a single biological computation within one timestep.
+Splitting by layer would:
+1. Require passing 15+ intermediate tensors (spikes, membrane, conductances)
+2. Break the canonical microcircuit structure
+3. Duplicate inter-layer connection management
+4. Obscure the feedforward/feedback balance
+
+Components ARE extracted where orthogonal:
+- Learning strategies: BCM and STDP in learning/strategies.py
+- FeedforwardInhibition: Stimulus-triggered inhibition (shared with hippocampus)
+- LayerEIBalance: E/I balance (shared concern)
+
+See: docs/decisions/adr-011-large-file-justification.md
+
 Author: Thalia Project
 Date: December 2025
 """
@@ -520,6 +550,8 @@ class LayeredCortex(NeuralComponent):
         else:
             self.state._gamma_amplitude = 1.0
 
+    # region Growth and Neurogenesis
+
     def add_neurons(
         self,
         n_new: int,
@@ -621,6 +653,10 @@ class LayeredCortex(NeuralComponent):
 
         self.config = replace(self.config, n_output=new_total_output)
         self.layer_config = replace(self.layer_config, n_output=new_total_output)
+
+    # endregion
+
+    # region Forward Pass (L4→L2/3→L5)
 
     def forward(
         self,
@@ -1110,6 +1146,10 @@ class LayeredCortex(NeuralComponent):
         """Get L5 output (for subcortical pathways)."""
         return self.state.l5_spikes
 
+    # endregion
+
+    # region Diagnostics and Health Monitoring
+
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get layer-specific diagnostics using DiagnosticsMixin helpers.
 
@@ -1289,6 +1329,9 @@ class LayeredCortex(NeuralComponent):
 
         # Restore neuromodulators
         neuromod = state["neuromodulator_state"]
+
         self.state.dopamine = neuromod["dopamine"]
         self.state.norepinephrine = neuromod["norepinephrine"]
         self.state.acetylcholine = neuromod["acetylcholine"]
+
+    # endregion

@@ -22,6 +22,38 @@ Key biological features:
 
 All processing is spike-based (no rate accumulation).
 
+FILE ORGANIZATION (2182 lines)
+===============================
+Lines 1-150:     Module docstring, imports, class registration
+Lines 151-400:   __init__() and weight initialization
+Lines 401-650:   DG forward pass (pattern separation)
+Lines 651-900:   CA3 forward pass (pattern completion + recurrence)
+Lines 901-1100:  CA1 forward pass (comparison and output)
+Lines 1101-1350: Learning methods (STDP, acetylcholine modulation)
+Lines 1351-1600: Episodic memory (store, retrieve, replay)
+Lines 1601-1850: Growth and neurogenesis
+Lines 1851-2050: Diagnostics and health checks
+Lines 2051-2182: Utility methods and state management
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) or collapse
+regions (Ctrl+K Ctrl+0) to navigate this file efficiently.
+
+WHY THIS FILE IS LARGE
+======================
+The DG→CA3→CA1 circuit is a single biological computation that must execute
+within one theta cycle (~100-150ms). Splitting would:
+1. Require passing ~20 intermediate tensors between files
+2. Break the narrative flow of the biological computation
+3. Obscure the theta-phase-dependent coordination
+4. Duplicate device/config management across files
+
+Components ARE extracted where orthogonal:
+- HippocampusMemoryComponent: Episodic storage/retrieval (shared concern)
+- ReplayEngine: Sequence replay (shared with sleep system)
+- FeedforwardInhibition: Stimulus-triggered inhibition (used by multiple regions)
+
+See: docs/decisions/adr-011-large-file-justification.md
+
 References:
 - Marr (1971): Simple memory model
 - Treves & Rolls (1994): Pattern separation in DG
@@ -569,6 +601,8 @@ class TrisynapticHippocampus(NeuralComponent):
             ffi_strength=0.0,
         )
 
+    # region Growth and Neurogenesis
+
     def add_neurons(
         self,
         n_new: int,
@@ -682,6 +716,10 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # 6. Update config
         self.config = replace(self.config, n_output=new_ca1_size)
+
+    # endregion
+
+    # region Forward Pass (DG→CA3→CA1)
 
     # =========================================================================
     # BACKWARDS COMPATIBILITY PROPERTIES
@@ -1509,6 +1547,10 @@ class TrisynapticHippocampus(NeuralComponent):
             # Lower excitability → higher threshold (subtract negative offset)
             self._ca3_threshold_offset = (1.0 - excitability_mod).clamp(-0.5, 0.5)
 
+    # endregion
+
+    # region Episodic Memory
+
     def get_state(self) -> HippocampusState:
         """Get current state."""
         return self.state
@@ -1826,6 +1868,10 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # Scale by gating strength
         return 1.0 - cfg.gamma_gating_strength * (1.0 - gating)
+
+    # endregion
+
+    # region Diagnostics and Health Monitoring
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics using DiagnosticsMixin helpers.
@@ -2179,3 +2225,5 @@ class TrisynapticHippocampus(NeuralComponent):
                 sequence=[s.to(self.device) for s in ep_state["sequence"]] if ep_state["sequence"] is not None else None,
             )
             self.episode_buffer.append(episode)
+
+    # endregion

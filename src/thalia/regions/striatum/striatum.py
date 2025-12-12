@@ -28,6 +28,40 @@ Key Features:
    - Selected action's synapses become eligible
    - Dopamine retroactively credits/blames the action
 
+FILE ORGANIZATION (1761 lines)
+===============================
+Lines 1-150:     Module docstring, imports, class registration
+Lines 151-400:   __init__() and pathway initialization (D1/D2)
+Lines 401-650:   Forward pass coordination (D1/D2 integration)
+Lines 651-850:   Action selection logic (winner-take-all)
+Lines 851-1050:  Three-factor learning (eligibility × dopamine)
+Lines 1051-1250: Exploration (UCB-based) and homeostasis
+Lines 1251-1450: Growth and neurogenesis
+Lines 1451-1650: Diagnostics and health monitoring
+Lines 1651-1761: Utility methods and state management
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) or collapse
+regions (Ctrl+K Ctrl+0) to navigate efficiently.
+
+WHY THIS FILE IS LARGE
+======================
+The striatum coordinates two opponent pathways (D1 "Go", D2 "No-Go") that
+must interact every timestep for action selection. Splitting would:
+1. Require passing D1/D2 votes, eligibility, action selection state
+2. Duplicate dopamine broadcast logic
+3. Obscure the opponent pathway interaction
+4. Break action selection coherence
+
+Components ARE extracted where appropriate:
+- D1Pathway, D2Pathway: Parallel pathway implementations (extracted because
+  they compute independently, ADR-011)
+- StriatumLearningComponent: Three-factor learning logic
+- StriatumHomeostasisComponent: E/I balance
+- StriatumExplorationComponent: UCB exploration
+- ActionSelectionMixin: Winner-take-all logic
+
+See: docs/decisions/adr-011-large-file-justification.md
+
 Biological Basis:
 =================
 - Medium Spiny Neurons (MSNs) in striatum
@@ -764,6 +798,8 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # Return max value (best action from this state)
         return action_values.max().item()
 
+    # region Growth and Neurogenesis
+
     def add_neurons(
         self,
         n_new: int,
@@ -1240,6 +1276,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         neurons.to(self.device)
         return neurons
 
+    # endregion
+
+    # region Forward Pass (D1/D2 Integration and Action Selection)
+
     def forward(
         self,
         input_spikes: torch.Tensor,
@@ -1586,6 +1626,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             self.td_lambda_d1.reset_episode()
             self.td_lambda_d2.reset_episode()
 
+    # endregion
+
+    # region Diagnostics and Health Monitoring
+
     # =========================================================================
     # DIAGNOSTIC METHODS
     # =========================================================================
@@ -1755,6 +1799,9 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self.checkpoint_manager.load_full_state(state)
 
         # Restore tonic dopamine if present in neuromodulator state
+
         if "neuromodulator_state" in state:
             if "tonic_dopamine" in state["neuromodulator_state"]:
                 self.tonic_dopamine = state["neuromodulator_state"]["tonic_dopamine"]
+
+    # endregion
