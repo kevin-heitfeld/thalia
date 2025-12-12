@@ -392,3 +392,233 @@ class GrowthManager:
         """
         self.region_name = state["region_name"]
         self.load_history(state.get("history", []))
+
+
+# =============================================================================
+# Growth Coordination - Synchronized Region and Pathway Growth
+# =============================================================================
+
+class GrowthCoordinator:
+    """Coordinates growth across multiple brain regions and their connected pathways.
+
+    When a region grows, its input and output pathways must also grow to maintain
+    connectivity. This coordinator ensures synchronized, coordinated growth to
+    prevent dimensional mismatches.
+
+    Responsibilities:
+    1. Identify all pathways connected to a growing region
+    2. Grow pathways to match new region dimensions
+    3. Log coordinated growth events
+    4. Prevent broken connectivity after growth
+
+    Example:
+        >>> coordinator = GrowthCoordinator(brain)
+        >>>
+        >>> # Grow cortex by 100 neurons
+        >>> events = coordinator.coordinate_growth(
+        ...     region_name='cortex',
+        ...     n_new_neurons=100,
+        ...     reason="Curriculum stage transition"
+        ... )
+        >>>
+        >>> # events contains:
+        >>> # - cortex growth event
+        >>> # - visual_to_cortex pathway growth event (input pathway)
+        >>> # - cortex_to_hippocampus pathway growth event (output pathway)
+
+    Biological Justification:
+        In biology, neurogenesis is coupled with synaptogenesis:
+        - New neurons form connections with existing neurons
+        - New dendrites and axons extend to integrate new capacity
+        - Growth is coordinated at circuit level, not just local
+    """
+
+    def __init__(self, brain: Any):
+        """Initialize growth coordinator.
+
+        Args:
+            brain: EventDrivenBrain instance
+        """
+        self.brain = brain
+        self.pathway_manager = brain.pathway_manager
+        self.history: List[Dict[str, Any]] = []
+
+    def coordinate_growth(
+        self,
+        region_name: str,
+        n_new_neurons: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+        reason: str = "",
+    ) -> List[GrowthEvent]:
+        """Grow a region and all its connected pathways.
+
+        This is the main coordination method. It:
+        1. Grows the specified region
+        2. Identifies all pathways connected to that region
+        3. Grows input pathways (pre-synaptic connections)
+        4. Grows output pathways (post-synaptic connections)
+        5. Returns all growth events
+
+        Args:
+            region_name: Name of region to grow
+            n_new_neurons: Number of neurons to add to region
+            initialization: Weight initialization strategy
+            sparsity: Sparsity for new connections
+            reason: Human-readable reason for growth
+
+        Returns:
+            List of GrowthEvent records (region + pathways)
+
+        Raises:
+            KeyError: If region_name not found in brain
+            AttributeError: If region doesn't support growth
+        """
+        if region_name not in self.brain.regions:
+            raise KeyError(f"Region '{region_name}' not found in brain")
+
+        region = self.brain.regions[region_name]
+        events = []
+
+        # 1. Grow the region itself
+        if hasattr(region, 'growth_manager'):
+            region_event = region.growth_manager.add_neurons(
+                component=region,
+                n_new=n_new_neurons,
+                initialization=initialization,
+                sparsity=sparsity,
+                reason=reason,
+                component_type='region',
+            )
+            events.append(region_event)
+        else:
+            raise AttributeError(
+                f"Region '{region_name}' does not have growth_manager. "
+                f"Add GrowthManager to region's __init__."
+            )
+
+        # 2. Identify connected pathways
+        input_pathways = self._find_input_pathways(region_name)
+        output_pathways = self._find_output_pathways(region_name)
+
+        # 3. Grow input pathways (pre-synaptic → new post-synaptic)
+        # These pathways send spikes TO the growing region
+        # Need to add columns to weight matrices (new post neurons)
+        for pathway_name, pathway in input_pathways:
+            if hasattr(pathway, 'add_neurons'):
+                pathway_event = pathway.add_neurons(
+                    n_new_pre=0,  # Pre side unchanged
+                    n_new_post=n_new_neurons,  # Post side grows
+                    initialization=initialization,
+                    sparsity=sparsity,
+                )
+                # Convert to GrowthEvent if needed
+                if not isinstance(pathway_event, GrowthEvent):
+                    from datetime import timezone
+                    pathway_event = GrowthEvent(
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        component_name=pathway_name,
+                        component_type='pathway',
+                        event_type='add_neurons',
+                        n_neurons_added=n_new_neurons,
+                        n_synapses_added=0,  # Estimated below
+                        reason=f"Coordinated growth: {region_name} input pathway",
+                        metrics_before={},
+                        metrics_after={},
+                    )
+                events.append(pathway_event)
+
+        # 4. Grow output pathways (new pre-synaptic → existing post-synaptic)
+        # These pathways receive spikes FROM the growing region
+        # Need to add rows to weight matrices (new pre neurons)
+        for pathway_name, pathway in output_pathways:
+            if hasattr(pathway, 'add_neurons'):
+                pathway_event = pathway.add_neurons(
+                    n_new_pre=n_new_neurons,  # Pre side grows
+                    n_new_post=0,  # Post side unchanged
+                    initialization=initialization,
+                    sparsity=sparsity,
+                )
+                if not isinstance(pathway_event, GrowthEvent):
+                    from datetime import timezone
+                    pathway_event = GrowthEvent(
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        component_name=pathway_name,
+                        component_type='pathway',
+                        event_type='add_neurons',
+                        n_neurons_added=n_new_neurons,
+                        n_synapses_added=0,
+                        reason=f"Coordinated growth: {region_name} output pathway",
+                        metrics_before={},
+                        metrics_after={},
+                    )
+                events.append(pathway_event)
+
+        # 5. Record coordinated growth in history
+        coordinated_event = {
+            'timestamp': datetime.now().isoformat(),
+            'region': region_name,
+            'n_neurons_added': n_new_neurons,
+            'reason': reason,
+            'events': [e.to_dict() for e in events],
+        }
+        self.history.append(coordinated_event)
+
+        return events
+
+    def _find_input_pathways(self, region_name: str) -> List[tuple]:
+        """Find all pathways that send spikes TO this region.
+
+        Args:
+            region_name: Target region name
+
+        Returns:
+            List of (pathway_name, pathway) tuples
+        """
+        input_pathways = []
+        for name, pathway in self.pathway_manager.pathways.items():
+            if pathway.target_name == region_name:
+                input_pathways.append((name, pathway))
+        return input_pathways
+
+    def _find_output_pathways(self, region_name: str) -> List[tuple]:
+        """Find all pathways that receive spikes FROM this region.
+
+        Args:
+            region_name: Source region name
+
+        Returns:
+            List of (pathway_name, pathway) tuples
+        """
+        output_pathways = []
+        for name, pathway in self.pathway_manager.pathways.items():
+            if pathway.source_name == region_name:
+                output_pathways.append((name, pathway))
+        return output_pathways
+
+    def get_growth_history(self) -> List[Dict[str, Any]]:
+        """Get coordinated growth history.
+
+        Returns:
+            List of coordinated growth events
+        """
+        return self.history
+
+    def get_state(self) -> Dict[str, Any]:
+        """Get coordinator state for checkpointing.
+
+        Returns:
+            State dict with growth history
+        """
+        return {
+            'history': self.history,
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Load coordinator state from checkpoint.
+
+        Args:
+            state: State dict from get_state()
+        """
+        self.history = state.get('history', [])
+

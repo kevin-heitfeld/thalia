@@ -15,6 +15,7 @@ from thalia.coordination.growth import (
     GrowthManager,
     GrowthEvent,
     CapacityMetrics,
+    GrowthCoordinator,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "GrowthManager",
     "GrowthEvent",
     "CapacityMetrics",
+    "GrowthCoordinator",
 ]
