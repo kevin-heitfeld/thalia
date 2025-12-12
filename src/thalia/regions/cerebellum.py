@@ -50,6 +50,7 @@ from typing import Optional, Dict, Any
 import torch
 
 from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.errors import CheckpointError
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
@@ -770,9 +771,9 @@ class Cerebellum(NeuralComponent):
         # Validate config compatibility
         config = state.get("config", {})
         if config.get("n_input") != self.config.n_input:
-            raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
+            raise CheckpointError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
         if config.get("n_output") != self.config.n_output:
-            raise ValueError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
+            raise CheckpointError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
 
         # Restore weights
         weights = state["weights"]

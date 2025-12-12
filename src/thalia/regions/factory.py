@@ -44,6 +44,7 @@ from typing import Dict, Type, Optional, List, Callable, Any
 import inspect
 
 from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.errors import ConfigurationError, ComponentError
 from thalia.regions.base import NeuralComponent
 
 
@@ -78,19 +79,19 @@ class RegionRegistry:
         if name in cls._registry:
             existing = cls._registry[name]
             if existing != region_class:
-                raise ValueError(
+                raise ConfigurationError(
                     f"Region name '{name}' already registered to {existing.__name__}"
                 )
             return  # Same class, already registered
 
         # Validate region_class is a NeuralComponent subclass
         if not inspect.isclass(region_class):
-            raise ValueError(
+            raise ConfigurationError(
                 f"Region class must be a class, got {region_class}"
             )
 
         if not issubclass(region_class, NeuralComponent):
-            raise ValueError(
+            raise ConfigurationError(
                 f"Region class must be a NeuralComponent subclass, got {region_class}"
             )
 
@@ -101,7 +102,7 @@ class RegionRegistry:
         if aliases:
             for alias in aliases:
                 if alias in cls._registry or alias in cls._aliases:
-                    raise ValueError(f"Alias '{alias}' already registered")
+                    raise ConfigurationError(f"Alias '{alias}' already registered")
                 cls._aliases[alias] = name
 
     @classmethod
@@ -205,7 +206,7 @@ class RegionFactory:
 
         if region_class is None:
             available = RegionRegistry.list_regions()
-            raise ValueError(
+            raise ConfigurationError(
                 f"Unknown region '{name}'. Available regions: {available}"
             )
 
@@ -213,9 +214,9 @@ class RegionFactory:
         try:
             return region_class(config, **kwargs)
         except Exception as e:
-            raise TypeError(
-                f"Failed to instantiate {region_class.__name__} with config "
-                f"{type(config).__name__}: {e}"
+            raise ComponentError(
+                region_class.__name__,
+                f"Failed to instantiate with config {type(config).__name__}: {e}"
             ) from e
 
     @staticmethod

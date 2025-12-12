@@ -72,6 +72,7 @@ import torch.nn.functional as F
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.base_manager import ManagerContext
 from thalia.core.component_registry import register_region
+from thalia.core.errors import CheckpointError, ComponentError
 from thalia.core.neuron_constants import (
     G_LEAK_STANDARD,
     TAU_SYN_EXCITATORY,
@@ -1804,8 +1805,10 @@ class TrisynapticHippocampus(NeuralComponent):
                 - replayed_patterns: List of replayed pattern tensors
         """
         if self.replay_engine is None:
-            raise RuntimeError("Replay engine not available. "
-                               "Set theta_gamma_enabled=True in config.")
+            raise ComponentError(
+                "Hippocampus",
+                "Replay engine not available. Set theta_gamma_enabled=True in config."
+            )
 
         # Update compression factor if different from config
         if compression_factor != self.replay_engine.config.compression_factor:
@@ -2127,12 +2130,12 @@ class TrisynapticHippocampus(NeuralComponent):
         # Validate configuration compatibility
         saved_config = state["config"]
         if saved_config.n_input != self.tri_config.n_input:
-            raise ValueError(
+            raise CheckpointError(
                 f"Input dimension mismatch: saved={saved_config.n_input}, "
                 f"current={self.tri_config.n_input}"
             )
         if saved_config.n_output != self.tri_config.n_output:
-            raise ValueError(
+            raise CheckpointError(
                 f"Output dimension mismatch: saved={saved_config.n_output}, "
                 f"current={self.tri_config.n_output}"
             )

@@ -60,6 +60,7 @@ from typing import Dict, Type, Optional, List, Callable, Any, Tuple
 import inspect
 
 from thalia.core.component_protocol import BrainComponent
+from thalia.core.errors import ConfigurationError
 
 
 class ComponentRegistry:
@@ -139,7 +140,7 @@ class ComponentRegistry:
         """
         # Validate component type
         if component_type not in cls._registry:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Invalid component_type '{component_type}'. "
                 f"Must be one of: {list(cls._registry.keys())}"
             )
@@ -147,7 +148,7 @@ class ComponentRegistry:
         def decorator(component_class: Type[BrainComponent]) -> Type[BrainComponent]:
             # Validate component class
             if not inspect.isclass(component_class):
-                raise ValueError(
+                raise ConfigurationError(
                     f"Component must be a class, got {component_class}"
                 )
 
@@ -156,7 +157,7 @@ class ComponentRegistry:
             if name in type_registry:
                 existing = type_registry[name]
                 if existing != component_class:
-                    raise ValueError(
+                    raise ConfigurationError(
                         f"{component_type.capitalize()} name '{name}' already "
                         f"registered to {existing.__name__}"
                     )
@@ -170,7 +171,7 @@ class ComponentRegistry:
                 alias_registry = cls._aliases[component_type]
                 for alias in aliases:
                     if alias in type_registry or alias in alias_registry:
-                        raise ValueError(
+                        raise ConfigurationError(
                             f"Alias '{alias}' already registered for {component_type}"
                         )
                     alias_registry[alias] = name

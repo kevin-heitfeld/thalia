@@ -103,6 +103,7 @@ from .pathway_manager import PathwayManager
 from .neuromodulator_manager import NeuromodulatorManager
 from .neuron_constants import INTRINSIC_LEARNING_THRESHOLD
 from .spike_utils import compute_firing_rate
+from .errors import ConfigurationError, CheckpointError
 from .diagnostics import (
     DiagnosticsManager,
     StriatumDiagnostics,
@@ -777,7 +778,7 @@ class EventDrivenBrain(nn.Module):
             # Get the appropriate config class from registry metadata
             region_class = ComponentRegistry.get("region", region_type)
             if region_class is None:
-                raise ValueError(f"Region type '{region_type}' not registered")
+                raise ConfigurationError(f"Region type '{region_type}' not registered")
 
             # Try to find the config class
             if region_type == "cortex" or region_type == "layered_cortex":
@@ -792,7 +793,7 @@ class EventDrivenBrain(nn.Module):
                 config_obj = CerebellumConfig(**region_config)
             else:
                 # Generic fallback - create config from dict
-                raise ValueError(
+                raise ConfigurationError(
                     f"Unknown region type '{region_type}'. "
                     f"Supported types: cortex, hippocampus, prefrontal, striatum, cerebellum"
                 )
@@ -814,7 +815,7 @@ class EventDrivenBrain(nn.Module):
             # Get pathway class from registry
             pathway_class = ComponentRegistry.get("pathway", pathway_type)
             if pathway_class is None:
-                raise ValueError(f"Pathway type '{pathway_type}' not registered")
+                raise ConfigurationError(f"Pathway type '{pathway_type}' not registered")
 
             # Determine config class based on pathway type
             # Most pathways use PathwayConfig or specialized subclasses
@@ -1578,15 +1579,15 @@ class EventDrivenBrain(nn.Module):
         # Validate config compatibility
         config = state_dict.get("config", {})
         if config.get("input_size") != self.config.input_size:
-            raise ValueError(f"Config mismatch: input_size {config.get('input_size')} != {self.config.input_size}")
+            raise CheckpointError(f"Config mismatch: input_size {config.get('input_size')} != {self.config.input_size}")
         if config.get("cortex_size") != self.config.cortex_size:
-            raise ValueError(f"Config mismatch: cortex_size {config.get('cortex_size')} != {self.config.cortex_size}")
+            raise CheckpointError(f"Config mismatch: cortex_size {config.get('cortex_size')} != {self.config.cortex_size}")
         if config.get("hippocampus_size") != self.config.hippocampus_size:
-            raise ValueError(f"Config mismatch: hippocampus_size {config.get('hippocampus_size')} != {self.config.hippocampus_size}")
+            raise CheckpointError(f"Config mismatch: hippocampus_size {config.get('hippocampus_size')} != {self.config.hippocampus_size}")
         if config.get("pfc_size") != self.config.pfc_size:
-            raise ValueError(f"Config mismatch: pfc_size {config.get('pfc_size')} != {self.config.pfc_size}")
+            raise CheckpointError(f"Config mismatch: pfc_size {config.get('pfc_size')} != {self.config.pfc_size}")
         if config.get("n_actions") != self.config.n_actions:
-            raise ValueError(f"Config mismatch: n_actions {config.get('n_actions')} != {self.config.n_actions}")
+            raise CheckpointError(f"Config mismatch: n_actions {config.get('n_actions')} != {self.config.n_actions}")
 
         # Restore region states
         regions = state_dict["regions"]

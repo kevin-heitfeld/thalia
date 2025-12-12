@@ -79,6 +79,7 @@ import torch.nn.functional as F
 
 from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.neuron_constants import NE_GAIN_RANGE
+from thalia.core.errors import CheckpointError
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
@@ -1274,15 +1275,15 @@ class LayeredCortex(NeuralComponent):
         # Validate config compatibility
         config = state.get("config", {})
         if config.get("n_input") != self.config.n_input:
-            raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
+            raise CheckpointError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
         if config.get("n_output") != self.config.n_output:
-            raise ValueError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
+            raise CheckpointError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
         if config.get("l4_size") != self.l4_size:
-            raise ValueError(f"Config mismatch: l4_size {config.get('l4_size')} != {self.l4_size}")
+            raise CheckpointError(f"Config mismatch: l4_size {config.get('l4_size')} != {self.l4_size}")
         if config.get("l23_size") != self.l23_size:
-            raise ValueError(f"Config mismatch: l23_size {config.get('l23_size')} != {self.l23_size}")
+            raise CheckpointError(f"Config mismatch: l23_size {config.get('l23_size')} != {self.l23_size}")
         if config.get("l5_size") != self.l5_size:
-            raise ValueError(f"Config mismatch: l5_size {config.get('l5_size')} != {self.l5_size}")
+            raise CheckpointError(f"Config mismatch: l5_size {config.get('l5_size')} != {self.l5_size}")
 
         # Restore weights
         weights = state["weights"]

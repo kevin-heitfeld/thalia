@@ -57,6 +57,7 @@ from thalia.learning import LearningStrategyRegistry, STDPConfig
 
 from thalia.core.component_config import NeuralComponentConfig
 
+from thalia.core.errors import CheckpointError, ConfigurationError
 from thalia.core.utils import cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
@@ -908,7 +909,7 @@ class Prefrontal(NeuralComponent):
             pfc.set_goal_hierarchy(essay_goal)
         """
         if self.goal_manager is None:
-            raise ValueError("Hierarchical goals not enabled. Set use_hierarchical_goals=True in config.")
+            raise ConfigurationError("Hierarchical goals not enabled. Set use_hierarchical_goals=True in config.")
         self.goal_manager.set_root_goal(root_goal)
 
     def debug_get_current_goal(self) -> Optional["Goal"]:
@@ -1073,9 +1074,9 @@ class Prefrontal(NeuralComponent):
         # Validate config compatibility
         config = state.get("config", {})
         if config.get("n_input") != self.config.n_input:
-            raise ValueError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
+            raise CheckpointError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
         if config.get("n_output") != self.config.n_output:
-            raise ValueError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
+            raise CheckpointError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
 
         # Restore weights
         weights = state["weights"]
