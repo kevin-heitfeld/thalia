@@ -38,7 +38,7 @@ Biology:
 Usage:
 ======
 
-    from thalia.memory.advanced_consolidation import (
+    from thalia.memory.consolidation.advanced_consolidation import (
         SchemaExtractionConsolidation,
         SemanticReorganization,
         InterferenceResolution,

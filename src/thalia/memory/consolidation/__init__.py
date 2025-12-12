@@ -1,29 +1,10 @@
-"""
-Memory Module for THALIA.
+"""Memory Consolidation.
 
-This module provides higher-level memory abstractions built on the
-hippocampal circuit for sequence and context memory.
-
-Components:
-- SequenceMemory: Token sequence storage and recall
-- ContextBuffer: Working memory for recent context
-- EpisodicStore: Long-term episodic memory storage
-- Consolidation: Memory pressure detection and sleep-based replay
-- Advanced Consolidation: Schema extraction, semantic reorganization, interference resolution
-
-Configuration:
-- Use ``thalia.config.SequenceMemoryConfig`` for new code
-- Legacy ``SequenceMemoryConfig`` here is deprecated
+Mechanisms for detecting memory pressure, triggering consolidation,
+and advanced consolidation processes including schema extraction,
+semantic reorganization, and interference resolution.
 """
 
-from thalia.memory.sequence import (
-    SequenceMemory,
-    SequenceContext,
-)
-from thalia.memory.context import (
-    ContextBuffer,
-    ContextBufferConfig,
-)
 from thalia.memory.consolidation.consolidation import (
     MemoryPressureDetector,
     MemoryPressureConfig,
@@ -45,16 +26,11 @@ from thalia.memory.consolidation.advanced_consolidation import (
     InterferenceResolutionConfig,
     run_advanced_consolidation,
 )
-
-# Re-export from canonical location for backwards compatibility
-from thalia.config import SequenceMemoryConfig
+from thalia.memory.consolidation.manager import (
+    ConsolidationManager,
+)
 
 __all__ = [
-    "SequenceMemory",
-    "SequenceMemoryConfig",
-    "SequenceContext",
-    "ContextBuffer",
-    "ContextBufferConfig",
     # Basic Consolidation
     "MemoryPressureDetector",
     "MemoryPressureConfig",
@@ -74,4 +50,6 @@ __all__ = [
     "InterferenceResolution",
     "InterferenceResolutionConfig",
     "run_advanced_consolidation",
+    # Manager
+    "ConsolidationManager",
 ]

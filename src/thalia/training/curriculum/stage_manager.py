@@ -157,7 +157,7 @@ from thalia.training.curriculum import (
     TestingPhaseProtocol,
     StageTransitionProtocol,
 )
-from thalia.memory.consolidation import (
+from thalia.memory.consolidation.consolidation import (
     MemoryPressureDetector,
     SleepStageController,
 )

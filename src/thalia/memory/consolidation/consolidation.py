@@ -53,7 +53,7 @@ for transferring hippocampal memories to neocortex during sleep:
 Usage:
 ======
 
-    from thalia.memory.consolidation import (
+    from thalia.memory.consolidation.consolidation import (
         MemoryPressureDetector,
         SleepStageController,
         ConsolidationMetrics,

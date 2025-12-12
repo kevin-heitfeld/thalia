@@ -635,7 +635,7 @@ class EventDrivenBrain(nn.Module):
         # =====================================================================
         # Manages memory consolidation and offline replay
         # Follows existing manager pattern to reduce god object complexity
-        from .consolidation_manager import ConsolidationManager
+        from thalia.memory.consolidation.manager import ConsolidationManager
 
         # Create mutable container for shared last_action state
         self._last_action_container = [None]
