@@ -18,6 +18,8 @@ from enum import Enum
 
 import torch
 
+from thalia import __version__ as THALIA_VERSION
+
 from .binary_format import (
     BinaryWriter,
     BinaryReader,
@@ -142,7 +144,8 @@ class BrainCheckpoint:
 
         metadata.update({
             "timestamp": datetime.utcnow().isoformat(),
-            "thalia_version": "0.2.0",
+            "thalia_version": THALIA_VERSION,
+            "checkpoint_format_version": f"{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION}",
             "pytorch_version": torch.__version__,
             "device": str(getattr(brain, 'device', getattr(brain.config, 'device', 'unknown'))),
             "training_steps": state.get("training_steps", 0),
@@ -383,10 +386,44 @@ class BrainCheckpoint:
         # Read header
         header = reader.read_header()
 
+        # Validate version compatibility
+        checkpoint_version = (header.major_version, header.minor_version, header.patch_version)
+        current_version = (MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION)
+        
+        # Major version must match (breaking changes)
+        if checkpoint_version[0] != current_version[0]:
+            raise ValueError(
+                f"Incompatible checkpoint format version: "
+                f"checkpoint is v{checkpoint_version[0]}.{checkpoint_version[1]}.{checkpoint_version[2]}, "
+                f"but current Thalia supports v{current_version[0]}.{current_version[1]}.{current_version[2]}. "
+                f"Major version mismatch indicates breaking changes."
+            )
+        
+        # Warn if minor/patch versions differ (non-breaking changes)
+        if checkpoint_version[1:] != current_version[1:]:
+            import warnings
+            warnings.warn(
+                f"Checkpoint format version mismatch: "
+                f"checkpoint is v{checkpoint_version[0]}.{checkpoint_version[1]}.{checkpoint_version[2]}, "
+                f"current Thalia uses v{current_version[0]}.{current_version[1]}.{current_version[2]}. "
+                f"Minor/patch differences are usually compatible.",
+                UserWarning
+            )
+
         # Read metadata
         f.seek(header.metadata_offset)
         metadata_bytes = f.read(header.metadata_length)
         metadata = json.loads(metadata_bytes.decode('utf-8'))
+        
+        # Log version info from metadata for debugging
+        saved_thalia_version = metadata.get('thalia_version', 'unknown')
+        if saved_thalia_version != THALIA_VERSION:
+            import warnings
+            warnings.warn(
+                f"Checkpoint was saved with Thalia v{saved_thalia_version}, "
+                f"loading with v{THALIA_VERSION}. API changes may cause issues.",
+                UserWarning
+            )
 
         # Read region index
         f.seek(header.region_index_offset)
