@@ -23,6 +23,11 @@ Date: December 10, 2025
 """
 
 from typing import Dict, Any, Optional
+from collections import deque
+
+import numpy as np
+import matplotlib.pyplot as plt
+import torch
 
 from thalia.core.spike_utils import compute_firing_rate
 from thalia.training.visualization.constants import (
@@ -32,10 +37,6 @@ from thalia.training.visualization.constants import (
     PERFORMANCE_GOOD,
     PERFORMANCE_ACCEPTABLE,
 )
-from collections import deque
-import numpy as np
-import matplotlib.pyplot as plt
-import torch
 
 
 class LiveDiagnostics:

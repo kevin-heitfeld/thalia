@@ -22,6 +22,8 @@ from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.core.spike_utils import compute_firing_rate
+from thalia.diagnostics.health_monitor import HealthReport
+from thalia.core.growth import CapacityMetrics
 
 
 class LearningRule(Enum):
@@ -182,9 +184,6 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
         # Initialize state
         self.state = NeuralComponentState()
 
-        # Learning rule for this region
-        self.learning_rule = self._get_learning_rule()
-
         # =================================================================
         # CONTINUOUS PLASTICITY SETTINGS
         # =================================================================
@@ -216,11 +215,6 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
         # delay_buffer and delay_buffer_idx will be initialized on first forward() call
 
     @abstractmethod
-    def _get_learning_rule(self) -> LearningRule:
-        """Return the primary learning rule for this region."""
-        pass
-
-    @abstractmethod
     def _initialize_weights(self) -> Optional[torch.Tensor]:
         """Initialize the weight matrix for this region.
 
@@ -231,7 +225,6 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
             Weights tensor, or None for composition-based regions that
             defer weight initialization until after super().__init__()
         """
-        pass
 
     @abstractmethod
     def _create_neurons(self) -> Optional[Any]:
@@ -241,7 +234,6 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
         composition-based regions that defer neuron creation until after
         super().__init__().
         """
-        pass
 
     @abstractmethod
     def forward(
@@ -266,7 +258,6 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
             Theta modulation and timestep (dt_ms) are computed internally from
             self._theta_phase and self.config.dt_ms (both set by Brain)
         """
-        pass
 
     def _reset_tensors(self, *tensor_names: str) -> None:
         """Helper to zero multiple tensors by name.
@@ -681,7 +672,6 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
             >>> new_region.load_full_state(state)
             >>> # new_region now has identical state to original
         """
-        pass
 
     # =========================================================================
     # GROWTH HELPERS - Provided by GrowthMixin
@@ -724,4 +714,3 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
             >>> region.load_full_state(state)
             >>> # Region continues from exact state where checkpoint was saved
         """
-        pass

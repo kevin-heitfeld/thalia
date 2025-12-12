@@ -85,7 +85,7 @@ from thalia.core.utils import clamp_weights, cosine_similarity_safe
 from thalia.core.traces import update_trace
 from thalia.core.weight_init import WeightInitializer
 from thalia.learning.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.regions.base import NeuralComponent, LearningRule
+from thalia.regions.base import NeuralComponent
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
@@ -264,6 +264,22 @@ class TrisynapticHippocampus(NeuralComponent):
             self.stp_ec_ca1 = None
             self.stp_ca3_recurrent = None
 
+        # =====================================================================
+        # INTER-LAYER AXONAL DELAYS
+        # =====================================================================
+        # Create delay buffers for biological signal propagation within circuit
+        # DG→CA3 delay: Mossy fiber transmission (~3ms biologically)
+        # CA3→CA1 delay: Schaffer collateral transmission (~3ms biologically)
+        # Uses circular buffer mechanism from AxonalDelaysMixin
+        self._dg_ca3_delay_steps = int(config.dg_to_ca3_delay_ms / config.dt_ms)
+        self._ca3_ca1_delay_steps = int(config.ca3_to_ca1_delay_ms / config.dt_ms)
+
+        # Initialize delay buffers (lazily initialized on first use)
+        self._dg_ca3_delay_buffer: Optional[torch.Tensor] = None
+        self._dg_ca3_delay_ptr: int = 0
+        self._ca3_ca1_delay_buffer: Optional[torch.Tensor] = None
+        self._ca3_ca1_delay_ptr: int = 0
+
         # Episode buffer for sleep consolidation
         self.episode_buffer: List[Episode] = []
 
@@ -370,9 +386,6 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # State
         self.state = HippocampusState()
-
-    def _get_learning_rule(self) -> LearningRule:
-        return LearningRule.THETA_PHASE
 
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights created in _init_circuit_weights."""
@@ -807,7 +820,7 @@ class TrisynapticHippocampus(NeuralComponent):
         # Detect theta trough transition (encoding_mod > 0.8) for reset logic
         # This is biologically realistic: theta rhythm naturally segments
         # sequences, and new_trial() just schedules reset for next theta trough.
-        at_theta_trough = (encoding_mod > 0.8)
+        at_theta_trough = encoding_mod > 0.8
 
         if at_theta_trough:
             # Check if new_trial() requested a full reset
@@ -860,6 +873,33 @@ class TrisynapticHippocampus(NeuralComponent):
         )
         self.state.dg_spikes = dg_spikes
 
+        # =====================================================================
+        # APPLY DG→CA3 AXONAL DELAY
+        # =====================================================================
+        # Apply biological transmission delay for DG→CA3 mossy fiber pathway
+        # If delay is 0, dg_spikes_delayed = dg_spikes (instant, backward compatible)
+        if self._dg_ca3_delay_steps > 0:
+            # Initialize buffer on first use
+            if self._dg_ca3_delay_buffer is None:
+                max_delay_steps = max(1, self._dg_ca3_delay_steps * 2 + 1)
+                self._dg_ca3_delay_buffer = torch.zeros(
+                    max_delay_steps, self.dg_size,
+                    device=dg_spikes.device, dtype=torch.bool
+                )
+                self._dg_ca3_delay_ptr = 0
+
+            # Store current spikes in circular buffer
+            self._dg_ca3_delay_buffer[self._dg_ca3_delay_ptr] = dg_spikes
+
+            # Retrieve delayed spikes
+            read_idx = (self._dg_ca3_delay_ptr - self._dg_ca3_delay_steps) % self._dg_ca3_delay_buffer.shape[0]
+            dg_spikes_delayed = self._dg_ca3_delay_buffer[read_idx]
+
+            # Advance pointer
+            self._dg_ca3_delay_ptr = (self._dg_ca3_delay_ptr + 1) % self._dg_ca3_delay_buffer.shape[0]
+        else:
+            dg_spikes_delayed = dg_spikes
+
         # Inter-stage shape check: DG output → CA3 input
         assert dg_spikes.shape == (self.dg_size,), (
             f"TrisynapticHippocampus: DG spikes have shape {dg_spikes.shape} "
@@ -903,16 +943,17 @@ class TrisynapticHippocampus(NeuralComponent):
         rec_gate = 0.2 + 0.8 * retrieval_mod  # Range: 0.2 (encoding) to 1.0 (retrieval)
 
         # Feedforward from DG (mossy fibers, theta-gated) with optional STP
+        # NOTE: Use delayed DG spikes for biological accuracy
         if self.stp_mossy is not None:
             # Get STP efficacy for mossy fiber synapses
             # Mossy fibers are FACILITATING - repeated DG spikes progressively
             # enhance transmission to CA3
-            stp_efficacy = self.stp_mossy(dg_spikes.float())
+            stp_efficacy = self.stp_mossy(dg_spikes_delayed.float())
             # Apply STP to weights: (n_post, n_pre) * (n_pre, n_post).T
             effective_w_dg_ca3 = self.w_dg_ca3 * stp_efficacy.T
-            ca3_from_dg = torch.matmul(effective_w_dg_ca3, dg_spikes.float()) * dg_ca3_gate  # [ca3_size]
+            ca3_from_dg = torch.matmul(effective_w_dg_ca3, dg_spikes_delayed.float()) * dg_ca3_gate  # [ca3_size]
         else:
-            ca3_from_dg = torch.matmul(self.w_dg_ca3, dg_spikes.float()) * dg_ca3_gate  # [ca3_size]
+            ca3_from_dg = torch.matmul(self.w_dg_ca3, dg_spikes_delayed.float()) * dg_ca3_gate  # [ca3_size]
 
         # Direct perforant path from EC (provides retrieval cues)
         # Strong during retrieval to seed the CA3 attractor from partial cues
@@ -1221,15 +1262,43 @@ class TrisynapticHippocampus(NeuralComponent):
 
         cfg = self.tri_config
 
+        # =====================================================================
+        # APPLY CA3→CA1 AXONAL DELAY
+        # =====================================================================
+        # Apply biological transmission delay for CA3→CA1 Schaffer collateral pathway
+        # If delay is 0, ca3_spikes_delayed = ca3_spikes (instant, backward compatible)
+        if self._ca3_ca1_delay_steps > 0:
+            # Initialize buffer on first use
+            if self._ca3_ca1_delay_buffer is None:
+                max_delay_steps = max(1, self._ca3_ca1_delay_steps * 2 + 1)
+                self._ca3_ca1_delay_buffer = torch.zeros(
+                    max_delay_steps, self.ca3_size,
+                    device=ca3_spikes.device, dtype=torch.bool
+                )
+                self._ca3_ca1_delay_ptr = 0
+
+            # Store current spikes in circular buffer
+            self._ca3_ca1_delay_buffer[self._ca3_ca1_delay_ptr] = ca3_spikes
+
+            # Retrieve delayed spikes
+            read_idx = (self._ca3_ca1_delay_ptr - self._ca3_ca1_delay_steps) % self._ca3_ca1_delay_buffer.shape[0]
+            ca3_spikes_delayed = self._ca3_ca1_delay_buffer[read_idx]
+
+            # Advance pointer
+            self._ca3_ca1_delay_ptr = (self._ca3_ca1_delay_ptr + 1) % self._ca3_ca1_delay_buffer.shape[0]
+        else:
+            ca3_spikes_delayed = ca3_spikes
+
         # Feedforward from CA3 (retrieved/encoded memory) with optional STP
         # Schaffer collaterals are DEPRESSING - high-frequency CA3 activity
         # causes progressively weaker transmission to CA1
+        # NOTE: Use delayed CA3 spikes for biological accuracy
         if self.stp_schaffer is not None:
-            stp_efficacy = self.stp_schaffer(ca3_spikes.float())
+            stp_efficacy = self.stp_schaffer(ca3_spikes_delayed.float())
             effective_w_ca3_ca1 = self.w_ca3_ca1 * stp_efficacy.T
-            ca1_from_ca3 = torch.matmul(effective_w_ca3_ca1, ca3_spikes.float())  # [ca1_size]
+            ca1_from_ca3 = torch.matmul(effective_w_ca3_ca1, ca3_spikes_delayed.float())  # [ca1_size]
         else:
-            ca1_from_ca3 = torch.matmul(self.w_ca3_ca1, ca3_spikes.float())  # [ca1_size]
+            ca1_from_ca3 = torch.matmul(self.w_ca3_ca1, ca3_spikes_delayed.float())  # [ca1_size]
 
         # Direct from EC (current input) - use ec_direct_input if provided
         # ec_direct_input models EC layer III which carries raw sensory info
@@ -2010,6 +2079,11 @@ class TrisynapticHippocampus(NeuralComponent):
             "ca3_activity_history": self._ca3_activity_history.detach().clone() if self._ca3_activity_history is not None else None,
             # Gamma slot assignment
             "ca3_slot_assignment": self._ca3_slot_assignment.detach().clone() if self._ca3_slot_assignment is not None else None,
+            # Inter-layer axonal delay buffers
+            "dg_ca3_delay_buffer": self._dg_ca3_delay_buffer.detach().clone() if self._dg_ca3_delay_buffer is not None else None,
+            "dg_ca3_delay_pointer": self._dg_ca3_delay_pointer,
+            "ca3_ca1_delay_buffer": self._ca3_ca1_delay_buffer.detach().clone() if self._ca3_ca1_delay_buffer is not None else None,
+            "ca3_ca1_delay_pointer": self._ca3_ca1_delay_pointer,
             "trisynaptic_state": {
                 "dg_spikes": self.state.dg_spikes.detach().clone() if self.state.dg_spikes is not None else None,
                 "ca3_spikes": self.state.ca3_spikes.detach().clone() if self.state.ca3_spikes is not None else None,
@@ -2128,6 +2202,14 @@ class TrisynapticHippocampus(NeuralComponent):
             self._ca3_activity_history = region_state["ca3_activity_history"].to(self.device)
         if region_state["ca3_slot_assignment"] is not None:
             self._ca3_slot_assignment = region_state["ca3_slot_assignment"].to(self.device)
+
+        # Restore inter-layer delay buffers (if present in checkpoint)
+        if "dg_ca3_delay_buffer" in region_state and region_state["dg_ca3_delay_buffer"] is not None:
+            self._dg_ca3_delay_buffer = region_state["dg_ca3_delay_buffer"].to(self.device)
+            self._dg_ca3_delay_pointer = region_state["dg_ca3_delay_pointer"]
+        if "ca3_ca1_delay_buffer" in region_state and region_state["ca3_ca1_delay_buffer"] is not None:
+            self._ca3_ca1_delay_buffer = region_state["ca3_ca1_delay_buffer"].to(self.device)
+            self._ca3_ca1_delay_pointer = region_state["ca3_ca1_delay_pointer"]
 
         # Restore HippocampusState
         tri_state = region_state["trisynaptic_state"]

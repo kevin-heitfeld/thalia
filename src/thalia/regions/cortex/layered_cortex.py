@@ -86,7 +86,7 @@ from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
 from thalia.core.utils import ensure_1d, clamp_weights
 from thalia.core.traces import update_trace
-from thalia.regions.base import NeuralComponent, LearningRule
+from thalia.regions.base import NeuralComponent
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig, STDPStrategy, STDPConfig
@@ -243,10 +243,6 @@ class LayeredCortex(NeuralComponent):
         self._init_robustness_mechanisms()
         self._init_gamma_attention()
 
-    def _get_learning_rule(self) -> LearningRule:
-        """Cortex uses unsupervised Hebbian learning."""
-        return LearningRule.HEBBIAN
-
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights in _init_weights."""
         return nn.Parameter(
@@ -315,6 +311,22 @@ class LayeredCortex(NeuralComponent):
             per_synapse=True,
         )
         self.stp_l23_recurrent.to(device)
+
+        # =====================================================================
+        # INTER-LAYER AXONAL DELAYS
+        # =====================================================================
+        # Create delay buffers for biological signal propagation within layers
+        # L4→L2/3 delay: Short vertical projection (~2ms biologically)
+        # L2/3→L5: Longer vertical projection (~2ms biologically)
+        # Uses circular buffer mechanism from AxonalDelaysMixin
+        self._l4_l23_delay_steps = int(cfg.l4_to_l23_delay_ms / cfg.dt_ms)
+        self._l23_l5_delay_steps = int(cfg.l23_to_l5_delay_ms / cfg.dt_ms)
+
+        # Initialize delay buffers (lazily initialized on first use)
+        self._l4_l23_delay_buffer: Optional[torch.Tensor] = None
+        self._l4_l23_delay_ptr: int = 0
+        self._l23_l5_delay_buffer: Optional[torch.Tensor] = None
+        self._l23_l5_delay_ptr: int = 0
 
     def _init_robustness_mechanisms(self) -> None:
         """Initialize robustness mechanisms from RobustnessConfig.
@@ -784,9 +796,37 @@ class LayeredCortex(NeuralComponent):
             f"Check L4 sparsity or input→L4 weights shape."
         )
 
+        # =====================================================================
+        # APPLY L4→L2/3 AXONAL DELAY
+        # =====================================================================
+        # Apply biological transmission delay for L4→L2/3 vertical projection
+        # If delay is 0, l4_spikes_delayed = l4_spikes (instant, backward compatible)
+        if self._l4_l23_delay_steps > 0:
+            # Initialize buffer on first use
+            if self._l4_l23_delay_buffer is None:
+                max_delay_steps = max(1, self._l4_l23_delay_steps * 2 + 1)
+                self._l4_l23_delay_buffer = torch.zeros(
+                    max_delay_steps, self.l4_size,
+                    device=l4_spikes.device, dtype=torch.bool
+                )
+                self._l4_l23_delay_ptr = 0
+
+            # Store current spikes in circular buffer
+            self._l4_l23_delay_buffer[self._l4_l23_delay_ptr] = l4_spikes
+
+            # Retrieve delayed spikes
+            read_idx = (self._l4_l23_delay_ptr - self._l4_l23_delay_steps) % self._l4_l23_delay_buffer.shape[0]
+            l4_spikes_delayed = self._l4_l23_delay_buffer[read_idx]
+
+            # Advance pointer
+            self._l4_l23_delay_ptr = (self._l4_l23_delay_ptr + 1) % self._l4_l23_delay_buffer.shape[0]
+        else:
+            l4_spikes_delayed = l4_spikes
+
         # L2/3: Processing with recurrence
+        # NOTE: Use delayed L4 spikes for biological accuracy
         l23_ff = (
-            torch.matmul(l4_spikes.float(), self.w_l4_l23.t())
+            torch.matmul(l4_spikes_delayed.float(), self.w_l4_l23.t())
             * cfg.l4_to_l23_strength
         )
 
@@ -904,9 +944,37 @@ class LayeredCortex(NeuralComponent):
         else:
             self.state.l23_recurrent_activity = l23_spikes.float()
 
+        # =====================================================================
+        # APPLY L2/3→L5 AXONAL DELAY
+        # =====================================================================
+        # Apply biological transmission delay for L2/3→L5 vertical projection
+        # If delay is 0, l23_spikes_delayed = l23_spikes (instant, backward compatible)
+        if self._l23_l5_delay_steps > 0:
+            # Initialize buffer on first use
+            if self._l23_l5_delay_buffer is None:
+                max_delay_steps = max(1, self._l23_l5_delay_steps * 2 + 1)
+                self._l23_l5_delay_buffer = torch.zeros(
+                    max_delay_steps, self.l23_size,
+                    device=l23_spikes.device, dtype=torch.bool
+                )
+                self._l23_l5_delay_ptr = 0
+
+            # Store current spikes in circular buffer
+            self._l23_l5_delay_buffer[self._l23_l5_delay_ptr] = l23_spikes
+
+            # Retrieve delayed spikes
+            read_idx = (self._l23_l5_delay_ptr - self._l23_l5_delay_steps) % self._l23_l5_delay_buffer.shape[0]
+            l23_spikes_delayed = self._l23_l5_delay_buffer[read_idx]
+
+            # Advance pointer
+            self._l23_l5_delay_ptr = (self._l23_l5_delay_ptr + 1) % self._l23_l5_delay_buffer.shape[0]
+        else:
+            l23_spikes_delayed = l23_spikes
+
         # L5: Subcortical output (conductance-based)
+        # NOTE: Use delayed L2/3 spikes for biological accuracy
         l5_g_exc = (
-            torch.matmul(self.w_l23_l5, l23_spikes.float())
+            torch.matmul(self.w_l23_l5, l23_spikes_delayed.float())
             * cfg.l23_to_l5_strength
         )
 
@@ -1234,6 +1302,11 @@ class LayeredCortex(NeuralComponent):
                 "l23_trace": self.state.l23_trace.clone() if self.state.l23_trace is not None else None,
                 "l5_trace": self.state.l5_trace.clone() if self.state.l5_trace is not None else None,
                 "l23_recurrent_activity": self.state.l23_recurrent_activity.clone() if self.state.l23_recurrent_activity is not None else None,
+                # Inter-layer axonal delay buffers
+                "l4_l23_delay_buffer": self._l4_l23_delay_buffer.clone() if self._l4_l23_delay_buffer is not None else None,
+                "l4_l23_delay_ptr": self._l4_l23_delay_ptr,
+                "l23_l5_delay_buffer": self._l23_l5_delay_buffer.clone() if self._l23_l5_delay_buffer is not None else None,
+                "l23_l5_delay_ptr": self._l23_l5_delay_ptr,
             },
             "learning_state": {},
             "neuromodulator_state": {
@@ -1314,6 +1387,14 @@ class LayeredCortex(NeuralComponent):
             self.state.l5_trace = region_state["l5_trace"].to(self.device)
         if region_state["l23_recurrent_activity"] is not None:
             self.state.l23_recurrent_activity = region_state["l23_recurrent_activity"].to(self.device)
+
+        # Restore inter-layer delay buffers (if present in checkpoint)
+        if "l4_l23_delay_buffer" in region_state and region_state["l4_l23_delay_buffer"] is not None:
+            self._l4_l23_delay_buffer = region_state["l4_l23_delay_buffer"].to(self.device)
+            self._l4_l23_delay_ptr = region_state["l4_l23_delay_ptr"]
+        if "l23_l5_delay_buffer" in region_state and region_state["l23_l5_delay_buffer"] is not None:
+            self._l23_l5_delay_buffer = region_state["l23_l5_delay_buffer"].to(self.device)
+            self._l23_l5_delay_ptr = region_state["l23_l5_delay_ptr"]
 
         # Restore BCM thresholds
         learning_state = state["learning_state"]

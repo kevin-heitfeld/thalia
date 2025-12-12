@@ -125,6 +125,19 @@ class LayeredCortexConfig(NeuralComponentConfig):
     ffi_strength: float = 0.8  # How much FFI suppresses L2/3 recurrent activity
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
 
+    # =========================================================================
+    # INTER-LAYER AXONAL DELAYS
+    # =========================================================================
+    # Biological signal propagation times within cortical laminae:
+    # - L4→L2/3: ~2ms (short vertical projection)
+    # - L2/3→L5: ~2ms (longer vertical projection)
+    # Total laminar processing: ~4ms (much faster than processing timescales)
+    #
+    # Set to 0.0 for instant processing (current behavior, backward compatible)
+    # Set to biological values for realistic temporal dynamics and STDP timing
+    l4_to_l23_delay_ms: float = 0.0  # L4→L2/3 axonal delay (0=instant)
+    l23_to_l5_delay_ms: float = 0.0  # L2/3→L5 axonal delay (0=instant)
+
     # Gamma-based attention (spike-native phase gating for L2/3)
     # Always enabled for spike-native attention
     gamma_attention_width: float = 0.3     # Phase window width

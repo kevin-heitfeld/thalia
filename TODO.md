@@ -1,15 +1,10 @@
 # TODO
 
+- `docs\design\circuit_modeling_plan.md`
+
 ---
 
-> The DG→CA3→CA1 circuit is a single biological computation that must execute
-> within one theta cycle (~100-150ms). Splitting would require passing ~20
-> intermediate tensors between files and break the narrative flow of the
-> biological computation.
-
 ## Architecture & Infrastructure
-
-- TODO's in the codebase
 
 - [ ] Sleep/Wake System 🟢 **LOW PRIORITY**
   - Already partially handled by oscillator frequency modulation

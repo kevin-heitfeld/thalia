@@ -87,11 +87,17 @@ Date: December 2025
 
 from __future__ import annotations
 
+from datetime import datetime
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Dict, Optional, Any
+
 import torch
 import torch.nn as nn
 
+from thalia.config import validate_thalia_config
+from thalia.core.component_config import PathwayConfig
+from thalia.core.growth import GrowthManager
 from thalia.events import (
     EventType, EventScheduler,
     SpikePayload,
@@ -101,6 +107,13 @@ from thalia.events.adapters import (
     EventDrivenCerebellum, EventDrivenThalamus, EventRegionConfig,
 )
 from thalia.events.parallel import ParallelExecutor
+from thalia.integration.pathways.spiking_attention import SpikingAttentionPathwayConfig
+from thalia.integration.pathways.spiking_replay import SpikingReplayPathwayConfig
+from thalia.sensory.pathways import VisualConfig
+from thalia.sensory.pathways import AuditoryConfig
+from thalia.sensory.pathways import LanguageConfig
+
+from .oscillator import OscillatorManager
 from .pathway_manager import PathwayManager
 from .neuromodulator_manager import NeuromodulatorManager
 from .neuron_constants import INTRINSIC_LEARNING_THRESHOLD
@@ -191,7 +204,6 @@ class EventDrivenBrain(nn.Module):
             ConfigValidationError: If configuration is invalid
         """
         # Validate configuration before initialization
-        from thalia.config import validate_thalia_config
         validate_thalia_config(config)
 
         super().__init__()
@@ -199,7 +211,6 @@ class EventDrivenBrain(nn.Module):
         # Store ThaliaConfig directly
         self.thalia_config = config
         # Create a simple namespace for backwards compatibility with code that accesses self.config
-        from types import SimpleNamespace
         self.config = SimpleNamespace(
             input_size=config.brain.sizes.input_size,
             thalamus_size=config.brain.sizes.thalamus_size,
@@ -438,7 +449,6 @@ class EventDrivenBrain(nn.Module):
         # 2. Efficiency (single oscillator per frequency)
         # 3. Consistent with dopamine architecture (centralized broadcast)
         # 4. Easy phase-amplitude coupling across regions
-        from thalia.core.oscillator import OscillatorManager
         self.oscillators = OscillatorManager(
             dt_ms=self.config.dt_ms,
             device=self.config.device,
@@ -672,7 +682,6 @@ class EventDrivenBrain(nn.Module):
             brain = EventDrivenBrain.from_thalia_config(config)
         """
         # Validate configuration before creation
-        from thalia.config import validate_thalia_config
         validate_thalia_config(config)
 
         # Create brain via __init__ (which also validates, but this provides early feedback)
@@ -824,31 +833,24 @@ class EventDrivenBrain(nn.Module):
             # Most pathways use PathwayConfig or specialized subclasses
             if pathway_type in ["spiking", "spiking_stdp"]:
                 # Base spiking pathway
-                from thalia.core.component_config import PathwayConfig
                 config_obj = PathwayConfig(**pathway_config)
             elif pathway_type == "attention" or pathway_type == "spiking_attention":
                 # Attention pathway with specialized config
-                from thalia.integration.pathways.spiking_attention import SpikingAttentionPathwayConfig
                 config_obj = SpikingAttentionPathwayConfig(**pathway_config)
             elif pathway_type == "replay" or pathway_type == "spiking_replay":
                 # Replay pathway with specialized config
-                from thalia.integration.pathways.spiking_replay import SpikingReplayPathwayConfig
                 config_obj = SpikingReplayPathwayConfig(**pathway_config)
             elif pathway_type == "visual":
                 # Visual sensory pathway
-                from thalia.sensory.pathways import VisualConfig
                 config_obj = VisualConfig(**pathway_config)
             elif pathway_type == "auditory":
                 # Auditory sensory pathway
-                from thalia.sensory.pathways import AuditoryConfig
                 config_obj = AuditoryConfig(**pathway_config)
             elif pathway_type == "language":
                 # Language sensory pathway
-                from thalia.sensory.pathways import LanguageConfig
                 config_obj = LanguageConfig(**pathway_config)
             else:
                 # Generic fallback - try PathwayConfig
-                from thalia.core.component_config import PathwayConfig
                 try:
                     config_obj = PathwayConfig(**pathway_config)
                 except Exception as e:
@@ -1772,8 +1774,6 @@ class EventDrivenBrain(nn.Module):
         Returns:
             Dictionary with region names as keys and growth recommendations
         """
-        from thalia.core.growth import GrowthManager
-
         growth_report = {}
 
         # Check each major region
@@ -1807,8 +1807,6 @@ class EventDrivenBrain(nn.Module):
         Returns:
             Dictionary mapping region names to number of neurons added
         """
-        from datetime import datetime
-
         growth_actions = {}
         report = self.check_growth_needs()
 

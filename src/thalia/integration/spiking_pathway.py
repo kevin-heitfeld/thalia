@@ -40,7 +40,7 @@ from thalia.core.stp import ShortTermPlasticity, STPConfig
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.core.component_registry import register_pathway
-from thalia.regions.base import NeuralComponent, LearningRule
+from thalia.regions.base import NeuralComponent
 from thalia.learning.bcm import BCMRule, BCMConfig
 from thalia.learning.strategies import STDPConfig as StrategySTDPConfig
 from thalia.learning.strategy_registry import LearningStrategyRegistry
@@ -312,14 +312,6 @@ class SpikingPathway(NeuralComponent):
         neurons = ConductanceLIF(n_neurons=cfg.n_output, config=neuron_config)
         return neurons
 
-    def _get_learning_rule(self) -> LearningRule:
-        """Return the primary learning rule for this pathway.
-
-        SpikingPathway uses STDP (spike-timing dependent plasticity)
-        as its primary learning mechanism.
-        """
-        return LearningRule.STDP
-
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize weights with optional topographic structure."""
         cfg = self.config
@@ -508,16 +500,6 @@ class SpikingPathway(NeuralComponent):
 
         return target_spikes
 
-    # NOTE: _apply_stdp() method removed - now using strategy pattern
-    # Learning handled by self.apply_strategy_learning() from LearningStrategyMixin
-    # The old custom _apply_stdp() included advanced features that need to be
-    # re-implemented in the strategy system:
-    #   - BCM metaplasticity modulation
-    #   - Neuromodulator modulation (DA, ACh, NE)
-    #   - Phase-locked STDP (for phase coding)
-    #   - Dopamine-STDP and Replay-STDP learning rules
-    # These features are marked as TODOs in the forward() method above.
-
     def _apply_synaptic_scaling(self) -> None:
         """Apply homeostatic synaptic scaling.
 
@@ -528,7 +510,6 @@ class SpikingPathway(NeuralComponent):
                 self.weights.data,
                 dim=1,  # Normalize rows (per-neuron)
             )
-
 
     def reset_state(self) -> None:
         """Reset all state (call between trials)."""
@@ -542,77 +523,6 @@ class SpikingPathway(NeuralComponent):
     def reset_traces(self) -> None:
         """Reset eligibility traces (alias for reset_state for compatibility)."""
         self.reset_state()
-
-    def learn(
-        self,
-        source_activity: Optional[torch.Tensor] = None,
-        target_activity: Optional[torch.Tensor] = None,
-        dopamine: float = 0.0,
-        **kwargs,
-    ) -> Dict[str, float]:
-        """
-        External learning interface for compatibility with non-spiking pathways.
-
-        In spiking pathways, learning happens continuously via STDP during
-        forward passes. This method allows triggering additional learning
-        updates with dopamine modulation.
-
-        Args:
-            source_activity: Pre-synaptic activity [n_input] (uses traces if None)
-            target_activity: Post-synaptic activity [n_output] (uses traces if None)
-            dopamine: Dopamine signal for modulated learning
-            **kwargs: Additional arguments (ignored)
-
-        Returns:
-            Dict with learning metrics
-        """
-        # Set dopamine level for modulated STDP
-        self.set_dopamine(dopamine)
-
-        # If activities provided, run a learning step
-        if source_activity is not None and target_activity is not None:
-            cfg = self.config
-
-            # Ensure correct shapes
-            pre_trace = torch.clamp(source_activity.flatten(), 0, 1)
-            post_trace = torch.clamp(target_activity.flatten(), 0, 1)
-
-            # Resize to match weight dimensions if needed
-            if pre_trace.shape[0] != cfg.n_input:
-                pre_resized = torch.zeros(cfg.n_input, device=pre_trace.device)
-                pre_resized[:min(pre_trace.shape[0], cfg.n_input)] = pre_trace[:cfg.n_input]
-                pre_trace = pre_resized
-            if post_trace.shape[0] != cfg.n_output:
-                post_resized = torch.zeros(cfg.n_output, device=post_trace.device)
-                post_resized[:min(post_trace.shape[0], cfg.n_output)] = post_trace[:cfg.n_output]
-                post_trace = post_resized
-
-            # STDP update: weights are [target_size, source_size]
-            # LTP: post-before-pre → strengthen (post outer pre)
-            # LTD: pre-before-post → weaken (pre outer post)^T = (post outer pre) negated
-            # For simplicity, use Hebbian: strengthen when both active
-            ltp = torch.outer(post_trace, pre_trace)  # [target, source]
-
-            lr = cfg.stdp_lr
-
-            # Dopamine modulation (convert string to enum if needed)
-            learning_rule_enum = cfg.learning_rule
-            if isinstance(learning_rule_enum, str):
-                learning_rule_enum = SpikingLearningRule[learning_rule_enum]
-
-            if learning_rule_enum == SpikingLearningRule.DOPAMINE_STDP:
-                lr *= (1.0 + dopamine)
-
-            # Update weights - simple Hebbian with dopamine gating
-            dw = lr * cfg.a_plus * ltp * (1.0 + dopamine)
-
-            # Apply update with hard bounds
-            self.weights.data += dw
-            clamp_weights(self.weights.data, cfg.w_min, cfg.w_max)
-
-            self.total_ltp += ltp.sum().item()
-
-        return self.get_learning_metrics()
 
     def set_neuromodulators(self, dopamine: float, norepinephrine: float, acetylcholine: float) -> None:
         """Set all neuromodulator levels for modulated learning.

@@ -79,7 +79,7 @@ import math
 import torch
 import torch.nn as nn
 
-from thalia.regions.base import NeuralComponent, LearningRule, NeuralComponentConfig, NeuralComponentState
+from thalia.regions.base import NeuralComponent, NeuralComponentConfig, NeuralComponentState
 from thalia.core.component_registry import register_region
 from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.neuron_constants import (
@@ -312,10 +312,6 @@ class ThalamicRelay(NeuralComponent):
         self._alpha_phase: float = 0.0
         self._alpha_amplitude: float = 1.0
 
-    def _get_learning_rule(self) -> LearningRule:
-        """Thalamus primarily relays - minimal learning."""
-        return LearningRule.HEBBIAN  # Minimal plasticity
-
     def _initialize_weights(self) -> Optional[torch.Tensor]:
         """Weights initialized in __init__, return None."""
         return None
@@ -525,7 +521,7 @@ class ThalamicRelay(NeuralComponent):
         current_mode = self._determine_mode(relay_membrane)  # [n_relay]
 
         # In burst mode, amplify spikes (convert bool to float temporarily)
-        burst_mask = (current_mode < 0.5)  # Burst mode, [n_relay]
+        burst_mask = current_mode < 0.5  # Burst mode, [n_relay]
         burst_amplified = relay_spikes.float()  # [n_relay]
 
         if burst_mask.any():
@@ -537,7 +533,7 @@ class ThalamicRelay(NeuralComponent):
             )
 
         # Binarize and convert to bool (ADR-004)
-        relay_output = (burst_amplified > 0.5)  # [n_relay], bool
+        relay_output = burst_amplified > 0.5  # [n_relay], bool
 
         # =====================================================================
         # 5. TRN NEURONS: Input collaterals + Relay collaterals

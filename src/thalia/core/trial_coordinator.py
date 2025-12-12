@@ -484,7 +484,11 @@ class TrialCoordinator:
         counterfactual_reward = -total_reward * 0.5  # Weaker signal (50% of actual)
 
         striatum = self.regions["striatum"]
-        striatum.impl.update_value_estimate(counterfactual_action, counterfactual_reward)
+        striatum.impl.deliver_counterfactual_reward(
+            reward=counterfactual_reward,
+            action=counterfactual_action,
+            counterfactual_scale=0.5,
+        )
 
     def get_last_action(self) -> Optional[int]:
         """Get the last selected action."""

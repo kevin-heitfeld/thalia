@@ -46,8 +46,8 @@ When to Use:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Dict, Any, List
+from dataclasses import dataclass, replace
+from typing import Optional, Dict, Any, List
 
 import torch
 import torch.nn as nn
@@ -58,7 +58,6 @@ from thalia.learning import LearningStrategyRegistry, STDPConfig
 from thalia.core.component_config import NeuralComponentConfig
 
 from thalia.core.errors import CheckpointError, ConfigurationError
-from thalia.core.utils import cosine_similarity_safe
 from thalia.core.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.core.weight_init import WeightInitializer
 from thalia.core.component_registry import register_region
@@ -69,12 +68,14 @@ from thalia.core.neuron_constants import NE_GAIN_RANGE
 from thalia.regions.base import (
     NeuralComponent,
     NeuralComponentState,
-    LearningRule,
 )
-
-if TYPE_CHECKING:
-    from thalia.regions.prefrontal_hierarchy import Goal, GoalHierarchyManager, GoalHierarchyConfig
-    from thalia.regions.prefrontal_hierarchy import HyperbolicDiscounter, HyperbolicDiscountingConfig
+from thalia.regions.prefrontal_hierarchy import (
+    Goal,
+    GoalHierarchyManager,
+    GoalHierarchyConfig,
+    HyperbolicDiscounter,
+    HyperbolicDiscountingConfig,
+)
 
 
 @dataclass
@@ -371,27 +372,13 @@ class Prefrontal(NeuralComponent):
         self.discounter: Optional["HyperbolicDiscounter"] = None
 
         if config.use_hierarchical_goals:
-            from thalia.regions.prefrontal_hierarchy import (
-                GoalHierarchyManager,
-                GoalHierarchyConfig,
-            )
-
             gh_config = config.goal_hierarchy_config or GoalHierarchyConfig()
             self.goal_manager = GoalHierarchyManager(gh_config)
 
             # Hyperbolic discounting
             if config.use_hyperbolic_discounting:
-                from thalia.regions.prefrontal_hierarchy import (
-                    HyperbolicDiscounter,
-                    HyperbolicDiscountingConfig,
-                )
-
                 hd_config = config.hyperbolic_config or HyperbolicDiscountingConfig()
                 self.discounter = HyperbolicDiscounter(hd_config)
-
-    def _get_learning_rule(self) -> LearningRule:
-        """PFC uses dopamine-gated STDP learning."""
-        return LearningRule.HEBBIAN
 
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize feedforward weights."""
@@ -474,8 +461,6 @@ class Prefrontal(NeuralComponent):
 
     def _update_config_after_growth(self, new_n_output: int) -> None:
         """Update PFC configuration after neuron growth."""
-        from dataclasses import replace
-
         self.config = replace(self.config, n_output=new_n_output)
         if hasattr(self, 'pfc_config'):
             self.pfc_config = replace(self.pfc_config, n_output=new_n_output)

@@ -90,6 +90,19 @@ class HippocampusConfig(NeuralComponentConfig):
     ffi_strength: float = 0.8        # How much FFI suppresses activity
     ffi_tau: float = 5.0             # FFI decay time constant (ms)
 
+    # =========================================================================
+    # INTER-LAYER AXONAL DELAYS
+    # =========================================================================
+    # Biological signal propagation times within hippocampal circuit:
+    # - DG→CA3 (mossy fibers): ~3ms
+    # - CA3→CA1 (Schaffer collaterals): ~3ms
+    # Total circuit latency: ~6ms (much faster than theta cycle ~100-150ms)
+    #
+    # Set to 0.0 for instant processing (current behavior, backward compatible)
+    # Set to biological values for realistic temporal dynamics and STDP timing
+    dg_to_ca3_delay_ms: float = 0.0  # DG→CA3 axonal delay (0=instant)
+    ca3_to_ca1_delay_ms: float = 0.0  # CA3→CA1 axonal delay (0=instant)
+
     # CA3 Bistable Neuron Parameters
     # Real CA3 pyramidal neurons have intrinsic bistability via I_NaP (persistent
     # sodium) and I_CAN (calcium-activated nonspecific cation) currents. These

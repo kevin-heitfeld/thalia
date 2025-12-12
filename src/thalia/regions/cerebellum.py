@@ -44,7 +44,7 @@ When to Use:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Dict, Any
 
 import torch
@@ -70,7 +70,6 @@ from thalia.core.learning_constants import (
 from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.regions.base import (
     NeuralComponent,
-    LearningRule,
 )
 
 
@@ -267,9 +266,6 @@ class Cerebellum(NeuralComponent):
         """STDP eligibility (delegated to trace manager)."""
         return self._trace_manager.eligibility
 
-    def _get_learning_rule(self) -> LearningRule:
-        return LearningRule.ERROR_CORRECTIVE
-
     def _initialize_weights(self) -> torch.Tensor:
         """Initialize weights with small uniform values plus noise."""
         # Small initial weights (10% of max) with slight variation
@@ -381,8 +377,6 @@ class Cerebellum(NeuralComponent):
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        from dataclasses import replace
-
         old_n_output = self.config.n_output
         new_n_output = old_n_output + n_new
 

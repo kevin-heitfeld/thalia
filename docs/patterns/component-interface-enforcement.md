@@ -1,7 +1,7 @@
 # Component Interface Enforcement
 
-**Date**: December 11, 2025  
-**Status**: Implemented  
+**Date**: December 11, 2025
+**Status**: Implemented
 **Related**: ADR-008 (Neural Component Consolidation), component-parity.md
 
 ## Overview
@@ -127,53 +127,50 @@ from thalia.config.base import RegionConfig
 
 class MyNewRegion(NeuralComponent):
     """My new brain region."""
-    
+
     def __init__(self, config: RegionConfig):
         super().__init__(config)
         # NeuralComponent sets device and dtype automatically
         # Just initialize your weights and neurons
         self.weights = self._initialize_weights()
         self.neurons = self._create_neurons()
-    
-    def _get_learning_rule(self) -> LearningRule:
-        return LearningRule.STDP
-    
+
     def _initialize_weights(self) -> torch.Tensor:
         return WeightInitializer.sparse_random(...)
-    
+
     def _create_neurons(self):
         return LIFNeuron(...)
-    
+
     def forward(self, input_spikes: torch.Tensor) -> torch.Tensor:
         # Process input and apply learning
         ...
-    
+
     def reset_state(self) -> None:
         super().reset_state()  # Reset base state
         # Reset any additional state
-    
+
     def get_diagnostics(self) -> Dict[str, Any]:
         return {
             'firing_rate': self.get_firing_rate(),
             'weight_mean': self.weights.mean().item(),
             ...
         }
-    
+
     def get_full_state(self) -> Dict[str, Any]:
         return {
             'weights': self.weights.detach().cpu(),
             'config': self.config,
             'version': '1.0',
         }
-    
+
     def load_full_state(self, state: Dict[str, Any]) -> None:
         self.weights.data.copy_(state['weights'].to(self.device))
-    
+
     # Optional: Override defaults from BrainComponentMixin
     def add_neurons(self, n_new: int, initialization: str, sparsity: float):
         # Custom growth implementation
         ...
-    
+
     def check_health(self) -> HealthReport:
         # Custom health checks
         ...
@@ -398,6 +395,6 @@ See: `docs/patterns/learning-strategy-pattern.md`
 
 ---
 
-**Implementation Date**: December 11, 2025  
-**Status**: ✅ Complete - All regions and pathways compliant  
+**Implementation Date**: December 11, 2025
+**Status**: ✅ Complete - All regions and pathways compliant
 **Next Steps**: Monitor for any edge cases as new components are added

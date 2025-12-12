@@ -56,7 +56,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Dict, Any, Tuple
 
 import torch
@@ -64,7 +64,8 @@ import torch.nn as nn
 
 from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.component_registry import register_region
-from thalia.regions.base import NeuralComponent, NeuralComponentState, LearningRule
+from thalia.regions.cortex.config import calculate_layer_sizes
+from thalia.regions.base import NeuralComponent, NeuralComponentState
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
 from thalia.core.predictive_coding import (
     PredictiveCodingLayer,
@@ -195,7 +196,6 @@ class PredictiveCortex(NeuralComponent):
         self.predictive_config = config
 
         # Calculate layer sizes from config
-        from thalia.regions.cortex.config import calculate_layer_sizes
         l4_size, l23_size, l5_size = calculate_layer_sizes(
             config.n_output, config.l4_ratio, config.l23_ratio, config.l5_ratio
         )
@@ -291,10 +291,6 @@ class PredictiveCortex(NeuralComponent):
     # ABSTRACT METHOD IMPLEMENTATIONS (from NeuralComponent)
     # =========================================================================
 
-    def _get_learning_rule(self) -> LearningRule:
-        """Predictive cortex uses predictive STDP (local errors + spike timing)."""
-        return LearningRule.PREDICTIVE_STDP
-
     def _initialize_weights(self) -> Optional[torch.Tensor]:
         """Weights are managed by internal LayeredCortex (initialized after super().__init__).
 
@@ -382,8 +378,6 @@ class PredictiveCortex(NeuralComponent):
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        from dataclasses import replace
-
         # =====================================================================
         # 1. DELEGATE TO LAYERED CORTEX (handles all weight/neuron expansion)
         # =====================================================================

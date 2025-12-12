@@ -100,7 +100,6 @@ from thalia.core.component_registry import register_region
 from thalia.core.utils import clamp_weights
 from thalia.regions.base import (
     NeuralComponent,
-    LearningRule,
 )
 
 from .config import StriatumConfig
@@ -265,7 +264,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             w_max=config.w_max,
             eligibility_tau_ms=self.striatum_config.eligibility_tau_ms,
             stdp_lr=self.striatum_config.stdp_lr,
-            stdp_tau_ms=self.striatum_config.stdp_tau_ms,
             device=self.device,
         )
 
@@ -464,6 +462,16 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self._last_d1_spikes = None
         self._last_d2_spikes = None
         self._last_pfc_goal_context = None  # For goal-conditioned learning
+        
+        # Initialize recent_spikes tensor for trial activity tracking
+        self.recent_spikes = torch.zeros(config.n_output, device=self.device)
+        
+        # Initialize rpe_trace if RPE is enabled
+        self.rpe_trace = (
+            torch.zeros(self.n_actions, device=self.device)
+            if self.striatum_config.rpe_enabled
+            else None
+        )
 
         # =====================================================================
         # CHECKPOINT MANAGER
@@ -640,6 +648,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     def d2_output_trace(self, value: torch.Tensor) -> None:
         """Set D2 output STDP trace."""
         self.d2_pathway.output_trace = value
+
+    @property
+    def last_action(self) -> Optional[int]:
+        """Last selected action (delegates to state_tracker)."""
+        return self.state_tracker.last_action
 
     # =========================================================================
     # VALUE ESTIMATION (for centralized RPE computation in Brain/VTA)
@@ -871,19 +884,14 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         state_1d = {
             'd1_output_trace': self.d1_output_trace,
             'd2_output_trace': self.d2_output_trace,
+            'recent_spikes': self.recent_spikes,
         }
-        if hasattr(self, 'recent_spikes'):
-            state_1d['recent_spikes'] = self.recent_spikes
 
         # Expand all 1D state tensors at once
         expanded_1d = self._expand_state_tensors(state_1d, n_new_neurons)
         self.d1_output_trace = expanded_1d['d1_output_trace']
         self.d2_output_trace = expanded_1d['d2_output_trace']
-        if hasattr(self, 'recent_spikes'):
-            self.recent_spikes = expanded_1d['recent_spikes']
-        else:
-            # Initialize if it doesn't exist
-            self.recent_spikes = torch.zeros(new_n_output, device=self.device)
+        self.recent_spikes = expanded_1d['recent_spikes']
 
         # =====================================================================
         # 4. EXPAND NEURON POPULATIONS using base helper
@@ -927,8 +935,8 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
                 torch.zeros(n_new, device=self.device)
             ], dim=0)
 
-        # RPE traces for new actions (only if rpe_trace was already initialized)
-        if hasattr(self, 'rpe_trace') and self.rpe_trace is not None:
+        # RPE traces for new actions (only if rpe_trace is enabled)
+        if self.rpe_trace is not None:
             self.rpe_trace = torch.cat([
                 self.rpe_trace,
                 torch.zeros(n_new, device=self.device)
@@ -1088,9 +1096,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # Just call the existing method with chosen_action=None
         # which will update eligibility for all active neurons
         self._update_d1_d2_eligibility(input_spikes, d1_spikes, d2_spikes, chosen_action=None)
-
-    def _get_learning_rule(self) -> LearningRule:
-        return LearningRule.THREE_FACTOR
 
     def set_oscillator_phases(
         self,
@@ -1430,15 +1435,12 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         Args:
             reward: The counterfactual reward (what WOULD have happened)
-            action: The action to update (the one NOT taken)
+            action: The alternate action to evaluate (the one NOT taken)
             counterfactual_scale: How much to scale the learning (default 0.5)
 
         Returns:
             Metrics dict with weight changes
         """
-        # Compute expected value for counterfactual action
-        expected_cf = self.get_expected_value(action)
-
         # Update value estimate for counterfactual action
         if self.value_estimates is not None and 0 <= action < self.n_actions:
             cf_lr = self.striatum_config.rpe_learning_rate * counterfactual_scale
@@ -1448,8 +1450,14 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             )
 
         # Delegate to learning manager
+        # Pass the actually chosen action and the counterfactual action as alternate
+        # This allows the learning manager to boost eligibility for the alternate action
+        # if it would have led to better outcomes
+        chosen = self.last_action if self.last_action is not None else 0
         return self.learning_manager.apply_counterfactual_learning(
-            reward, action, expected_cf, counterfactual_scale
+            chosen_action=chosen,
+            alternate_actions=[action],
+            dopamine=reward,
         )
 
     def reset_eligibility(self, action_only: bool = True) -> None:
