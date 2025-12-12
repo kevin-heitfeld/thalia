@@ -113,14 +113,15 @@ class BrainComponent(Protocol):
     # Core Processing
     # =========================================================================
 
+    @abstractmethod
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """
         Process input and update state (standard PyTorch convention).
-        
+
         **Standard PyTorch Method** (ADR-007):
         All components use forward() to enable callable syntax:
         >>> output = component(input)  # Calls forward() automatically
-        
+
         Signatures:
         - **Regions**: forward(spikes: Tensor) -> Tensor
         - **Pathways**: forward(spikes: Tensor) -> Tensor
@@ -133,7 +134,6 @@ class BrainComponent(Protocol):
         Returns:
             Output spikes or activations (region/pathway specific)
         """
-        ...
 
     # =========================================================================
     # State Management
@@ -156,7 +156,6 @@ class BrainComponent(Protocol):
         - Long-term configuration
         - Growth history
         """
-        ...
 
     # =========================================================================
     # Neuromodulation & Oscillators
@@ -212,7 +211,6 @@ class BrainComponent(Protocol):
             >>> beta_amp = coupled_amplitudes.get('beta', 1.0)
             >>> transmission_gain = 1.0 + (beta_amp - 1.0) * attention_strength
         """
-        ...
 
     # =========================================================================
     # Growth (Curriculum Learning)
@@ -249,7 +247,6 @@ class BrainComponent(Protocol):
         Raises:
             NotImplementedError: If component doesn't support growth yet
         """
-        ...
 
     @abstractmethod
     def get_capacity_metrics(self) -> Any:  # Returns CapacityMetrics
@@ -270,7 +267,6 @@ class BrainComponent(Protocol):
                 print(f"Growing: {metrics.growth_reason}")
                 component.add_neurons(n_new=100)
         """
-        ...
 
     # =========================================================================
     # Diagnostics
@@ -293,7 +289,6 @@ class BrainComponent(Protocol):
         - Detecting pathologies
         - Logging to tensorboard/wandb
         """
-        ...
 
     @abstractmethod
     def check_health(self) -> Any:  # Returns HealthReport
@@ -315,7 +310,6 @@ class BrainComponent(Protocol):
             if not health.is_healthy:
                 print(f"Issues: {health.issues}")
         """
-        ...
 
     # =========================================================================
     # Checkpointing
@@ -339,7 +333,6 @@ class BrainComponent(Protocol):
         Returns:
             Dictionary that can be saved to disk and restored later
         """
-        ...
 
     @abstractmethod
     def load_full_state(self, state: Dict[str, Any]) -> None:
@@ -357,7 +350,6 @@ class BrainComponent(Protocol):
         After loading, component should be functionally identical to
         when checkpoint was saved.
         """
-        ...
 
     # =========================================================================
     # Properties
@@ -366,12 +358,10 @@ class BrainComponent(Protocol):
     @property
     def device(self) -> torch.device:
         """Device where tensors are stored (CPU or CUDA)."""
-        ...
 
     @property
     def dtype(self) -> torch.dtype:
         """Data type for floating point tensors."""
-        ...
 
 
 # =============================================================================
@@ -414,11 +404,10 @@ class BrainComponentBase(ABC):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """
         Process input and update state (standard PyTorch convention).
-        
+
         REQUIRED for all components. Must be implemented by all subclasses.
         See BrainComponent protocol for full documentation.
         """
-        pass
 
     # =========================================================================
     # State Management (REQUIRED)
@@ -428,11 +417,10 @@ class BrainComponentBase(ABC):
     def reset_state(self) -> None:
         """
         Reset temporal state to initial conditions.
-        
+
         REQUIRED for all components. Must be implemented by all subclasses.
         See BrainComponent protocol for full documentation.
         """
-        pass
 
     # =========================================================================
     # Neuromodulation & Oscillators (REQUIRED)
@@ -448,41 +436,26 @@ class BrainComponentBase(ABC):
     ) -> None:
         """
         Receive oscillator phases and amplitudes from brain broadcast.
-        
+
         REQUIRED for all components. Default implementation available in
         BrainComponentMixin. See BrainComponent protocol for full documentation.
         """
-        pass
 
     # =========================================================================
     # Growth (REQUIRED for curriculum learning)
     # =========================================================================
 
-    @abstractmethod
-    def add_neurons(
-        self,
-        n_new: int,
-        initialization: str = 'sparse_random',
-        sparsity: float = 0.1,
-    ) -> None:
-        """
-        Add neurons/capacity to component without disrupting existing circuits.
-        
-        REQUIRED for all components (curriculum learning depends on growth).
-        Can raise NotImplementedError with helpful message if not yet supported.
-        See BrainComponent protocol for full documentation.
-        """
-        pass
+    # NOTE: add_neurons() is NOT defined here to allow mixin-based implementations.
+    # GrowthMixin provides the template method, BrainComponentMixin provides default.
 
     @abstractmethod
     def get_capacity_metrics(self) -> Any:
         """
         Compute utilization metrics to guide growth decisions.
-        
+
         REQUIRED for all components. Default implementation available in
         BrainComponentMixin. See BrainComponent protocol for full documentation.
         """
-        pass
 
     # =========================================================================
     # Diagnostics (REQUIRED)
@@ -492,21 +465,19 @@ class BrainComponentBase(ABC):
     def get_diagnostics(self) -> Dict[str, Any]:
         """
         Get current activity and health metrics.
-        
+
         REQUIRED for all components. Must be implemented by all subclasses.
         See BrainComponent protocol for full documentation.
         """
-        pass
 
     @abstractmethod
     def check_health(self) -> Any:
         """
         Check for pathological states.
-        
+
         REQUIRED for all components. Default implementation available in
         BrainComponentMixin. See BrainComponent protocol for full documentation.
         """
-        pass
 
     # =========================================================================
     # Checkpointing (REQUIRED)
@@ -516,21 +487,19 @@ class BrainComponentBase(ABC):
     def get_full_state(self) -> Dict[str, Any]:
         """
         Serialize complete component state for checkpointing.
-        
+
         REQUIRED for all components. Must be implemented by all subclasses.
         See BrainComponent protocol for full documentation.
         """
-        pass
 
     @abstractmethod
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """
         Restore component from checkpoint.
-        
+
         REQUIRED for all components. Must be implemented by all subclasses.
         See BrainComponent protocol for full documentation.
         """
-        pass
 
     # =========================================================================
     # Properties (REQUIRED)
@@ -540,13 +509,11 @@ class BrainComponentBase(ABC):
     @abstractmethod
     def device(self) -> torch.device:
         """Device where tensors are stored (CPU or CUDA). REQUIRED."""
-        pass
 
     @property
     @abstractmethod
     def dtype(self) -> torch.dtype:
         """Data type for floating point tensors. REQUIRED."""
-        pass
 
 
 # =============================================================================
@@ -618,7 +585,7 @@ class BrainComponentMixin:
             self._oscillator_signals: Dict[str, float] = {}
             self._oscillator_theta_slot: int = 0
             self._coupled_amplitudes: Dict[str, float] = {}
-        
+
         self._oscillator_phases = phases
         self._oscillator_signals = signals or {}
         self._oscillator_theta_slot = theta_slot

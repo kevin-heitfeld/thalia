@@ -452,29 +452,20 @@ class Prefrontal(NeuralComponent):
         # Reset subsystems using helper
         self._reset_subsystems('neurons', 'dopamine_system', 'stp_recurrent')
 
-    def add_neurons(
+    # =========================================================================
+    # GROWTH IMPLEMENTATION - Uses GrowthMixin template method
+    # =========================================================================
+
+    def _expand_layer_weights(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
-        sparsity: float = 0.1,
+        initialization: str,
+        sparsity: float,
     ) -> None:
-        """Add neurons to prefrontal cortex.
-
-        Expands working memory capacity by adding neurons.
-
-        Args:
-            n_new: Number of neurons to add
-            initialization: Weight initialization strategy
-            sparsity: Sparsity for new connections
+        """Expand prefrontal cortex weights.
+        
+        PFC has a single weight matrix for input→neurons connections.
         """
-        from dataclasses import replace
-
-        old_n_output = self.config.n_output
-        new_n_output = old_n_output + n_new
-
-        # =====================================================================
-        # 1. EXPAND WEIGHTS using base helper
-        # =====================================================================
         self.weights = self._expand_weights(
             current_weights=self.weights,
             n_new=n_new,
@@ -483,29 +474,25 @@ class Prefrontal(NeuralComponent):
             scale=1.0,  # Default scale for PFC
         )
 
-        # =====================================================================
-        # 2. UPDATE CONFIG
-        # =====================================================================
+    def _update_config_after_growth(self, new_n_output: int) -> None:
+        """Update PFC configuration after neuron growth."""
+        from dataclasses import replace
+        
         self.config = replace(self.config, n_output=new_n_output)
         if hasattr(self, 'pfc_config'):
             self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
 
-        # =====================================================================
-        # 3. EXPAND NEURON POPULATION using base helper
-        # =====================================================================
-        self.neurons = self._recreate_neurons_with_state(
-            neuron_factory=self._create_neurons,
-            old_n_output=old_n_output,
-        )
-
-        # =====================================================================
-        # 4. RESET STATE AND LEARNING
-        # =====================================================================
+    def _expand_state_tensors_after_growth(self, n_new: int) -> None:
+        """Reset PFC state after growth.
+        
+        Note: We reset state rather than expand because PFC working memory
+        should start fresh after growth (no partial state preservation).
+        """
         # Reset learning strategy state (traces, eligibility)
         if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
             self.learning_strategy.reset_state()
 
-        # All state tensors are 1D [n_output] (ADR-005: No Batch Dimension)
+        # Reset all state tensors to new size
         self.state = PrefrontalState(
             membrane=torch.zeros(self.config.n_output, device=self.device),
             spikes=torch.zeros(self.config.n_output, dtype=torch.bool, device=self.device),

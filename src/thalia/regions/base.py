@@ -20,12 +20,12 @@ from thalia.core.component_protocol import BrainComponentBase, BrainComponentMix
 from thalia.core.neuromodulator_mixin import NeuromodulatorMixin
 from thalia.core.diagnostics_mixin import DiagnosticsMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
+from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.core.homeostasis_constants import (
     TARGET_FIRING_RATE_STANDARD,
     HOMEOSTATIC_TAU_STANDARD,
 )
 from thalia.core.spike_utils import compute_firing_rate
-from thalia.core.utils import clamp_weights
 
 
 class LearningRule(Enum):
@@ -107,7 +107,7 @@ class RegionState:
     t: int = 0
 
 
-class NeuralComponent(BrainComponentBase, nn.Module, BrainComponentMixin, NeuromodulatorMixin, LearningStrategyMixin, DiagnosticsMixin):
+class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, LearningStrategyMixin, DiagnosticsMixin, GrowthMixin, BrainComponentMixin):
     """Abstract base class for ALL neural components (regions, pathways, populations).
 
     This unified base class reflects a key biological insight:
@@ -507,37 +507,8 @@ class NeuralComponent(BrainComponentBase, nn.Module, BrainComponentMixin, Neurom
         """Set dtype (allows assignment from __init__)."""
         self._dtype = value
 
-    def add_neurons(
-        self,
-        n_new: int,
-        initialization: str = 'sparse_random',
-        sparsity: float = 0.1,
-    ) -> None:
-        """Add neurons to region for growth and capacity expansion.
-
-        This is a default implementation that should be overridden by
-        specific region implementations for proper weight matrix expansion.
-
-        Growth Strategy:
-        1. Expand weight matrix: [n_output, n_input] → [n_output+n_new, n_input]
-        2. Initialize new rows with sparse random connections
-        3. Preserve existing weights exactly (no reinitialization)
-        4. Update config.n_output and capacity metrics
-        5. Expand neuron state arrays if needed
-        6. Maintain functional continuity during growth
-
-        Args:
-            n_new: Number of neurons to add
-            initialization: Weight initialization strategy
-            sparsity: Sparsity for new connections
-
-        Raises:
-            NotImplementedError: If region doesn't support growth
-        """
-        raise NotImplementedError(
-            f"Region {self.__class__.__name__} does not implement add_neurons(). "
-            "Growth support requires region-specific implementation."
-        )
+    # Growth methods (add_neurons) are provided by GrowthMixin
+    # See src/thalia/mixins/growth_mixin.py for template method and helpers
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get current activity and health metrics.
@@ -741,177 +712,14 @@ class NeuralComponent(BrainComponentBase, nn.Module, BrainComponentMixin, Neurom
         pass
 
     # =========================================================================
-    # GROWTH HELPERS - Extract common add_neurons() logic
+    # GROWTH HELPERS - Provided by GrowthMixin
     # =========================================================================
-    # These methods extract the duplication found across 6+ regions in add_neurons()
-    # implementations. See Tier 2.1 in architecture review for details.
-
-    def _expand_weights(
-        self,
-        current_weights: nn.Parameter,
-        n_new: int,
-        initialization: str = 'xavier',
-        sparsity: float = 0.1,
-        scale: Optional[float] = None,
-    ) -> nn.Parameter:
-        """Expand weight matrix by adding n_new output neurons.
-
-        This helper consolidates weight expansion logic that was duplicated
-        across 6+ regions. Handles initialization strategies and clamping.
-
-        Args:
-            current_weights: Existing weight matrix [n_output, n_input]
-            n_new: Number of new output neurons to add
-            initialization: Strategy ('xavier', 'sparse_random', 'uniform')
-            sparsity: Connection sparsity for sparse_random (0.0-1.0)
-            scale: Optional scale factor for new weights (defaults to w_max * 0.2)
-
-        Returns:
-            Expanded weight matrix [n_output + n_new, n_input]
-
-        Example:
-            >>> # In a region's add_neurons() method:
-            >>> self.weights = self._expand_weights(
-            ...     self.weights, n_new=10, initialization='xavier'
-            ... )
-        """
-        from thalia.core.weight_init import WeightInitializer
-
-        n_input = current_weights.shape[1]
-        device = current_weights.device
-
-        # Default scale: 20% of w_max (common across regions)
-        if scale is None:
-            scale = self.config.w_max * 0.2
-
-        # Initialize new weights using specified strategy
-        if initialization == 'xavier':
-            new_weights = WeightInitializer.xavier(
-                n_output=n_new,
-                n_input=n_input,
-                gain=0.2,
-                device=device,
-            ) * self.config.w_max
-        elif initialization == 'sparse_random':
-            new_weights = WeightInitializer.sparse_random(
-                n_output=n_new,
-                n_input=n_input,
-                sparsity=sparsity,
-                scale=scale,
-                device=device,
-            )
-        else:  # uniform
-            new_weights = WeightInitializer.uniform(
-                n_output=n_new,
-                n_input=n_input,
-                low=0.0,
-                high=scale,
-                device=device,
-            )
-
-        # Clamp to config bounds
-        new_weights = clamp_weights(new_weights, self.config.w_min, self.config.w_max, inplace=False)
-
-        # Concatenate with existing weights
-        expanded = torch.cat([current_weights.data, new_weights], dim=0)
-        return nn.Parameter(expanded)
-
-    def _expand_state_tensors(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        n_new: int,
-    ) -> Dict[str, torch.Tensor]:
-        """Expand 1D state tensors (membrane, traces, etc.) by n_new neurons.
-
-        This helper consolidates state expansion logic that was duplicated
-        across regions. Handles any 1D tensor (membrane, eligibility, traces).
-
-        Args:
-            state_dict: Dict of tensors to expand {name: tensor[n_neurons]}
-            n_new: Number of new neurons to add
-
-        Returns:
-            Dict with expanded tensors {name: tensor[n_neurons + n_new]}
-            New neuron entries are initialized to zero.
-
-        Example:
-            >>> # In a region's add_neurons() method:
-            >>> expanded = self._expand_state_tensors({
-            ...     'eligibility': self.eligibility,
-            ...     'output_trace': self.output_trace,
-            ... }, n_new=10)
-            >>> self.eligibility = expanded['eligibility']
-            >>> self.output_trace = expanded['output_trace']
-        """
-        expanded = {}
-        for name, tensor in state_dict.items():
-            if tensor is None:
-                expanded[name] = None
-                continue
-
-            device = tensor.device
-
-            # Handle 1D tensors [n_neurons]
-            if tensor.dim() == 1:
-                new_values = torch.zeros(n_new, device=device, dtype=tensor.dtype)
-                expanded[name] = torch.cat([tensor, new_values], dim=0)
-            # Handle 2D tensors [n_neurons, dim]
-            elif tensor.dim() == 2:
-                new_values = torch.zeros(n_new, tensor.shape[1], device=device, dtype=tensor.dtype)
-                expanded[name] = torch.cat([tensor, new_values], dim=0)
-            else:
-                raise ValueError(f"Cannot expand tensor '{name}' with {tensor.dim()} dimensions")
-
-        return expanded
-
-    def _recreate_neurons_with_state(
-        self,
-        neuron_factory,
-        old_n_output: int,
-    ) -> Any:
-        """Recreate neuron population with larger size, preserving old state.
-
-        This helper consolidates neuron recreation logic that was duplicated
-        across regions. Handles state preservation for ConductanceLIF neurons.
-
-        Args:
-            neuron_factory: Callable that creates new neurons (e.g., self._create_neurons)
-            old_n_output: Number of neurons before growth
-
-        Returns:
-            New neuron population with old state preserved in first old_n_output neurons
-
-        Example:
-            >>> # In a region's add_neurons() method:
-            >>> self.neurons = self._recreate_neurons_with_state(
-            ...     self._create_neurons,
-            ...     old_n_output=self.config.n_output
-            ... )
-        """
-        # Save old state
-        old_state = {}
-        if hasattr(self, 'neurons') and self.neurons is not None:
-            if hasattr(self.neurons, 'membrane') and self.neurons.membrane is not None:
-                old_state['membrane'] = self.neurons.membrane[:old_n_output].clone()
-            if hasattr(self.neurons, 'g_E') and self.neurons.g_E is not None:
-                old_state['g_E'] = self.neurons.g_E[:old_n_output].clone()
-            if hasattr(self.neurons, 'g_I') and self.neurons.g_I is not None:
-                old_state['g_I'] = self.neurons.g_I[:old_n_output].clone()
-            if hasattr(self.neurons, 'refractory') and self.neurons.refractory is not None:
-                old_state['refractory'] = self.neurons.refractory[:old_n_output].clone()
-            if hasattr(self.neurons, 'adaptation') and self.neurons.adaptation is not None:
-                old_state['adaptation'] = self.neurons.adaptation[:old_n_output].clone()
-
-        # Create new neurons with larger size
-        new_neurons = neuron_factory()
-        new_neurons.reset_state()
-
-        # Restore old state in first old_n_output positions
-        for key, value in old_state.items():
-            if hasattr(new_neurons, key):
-                getattr(new_neurons, key)[:old_n_output] = value
-
-        return new_neurons
+    # Growth utilities (_expand_weights, _expand_state_tensors,
+    # _recreate_neurons_with_state, and template method add_neurons) are now
+    # provided by GrowthMixin. See src/thalia/mixins/growth_mixin.py.
+    #
+    # Multi-layer regions (Hippocampus, LayeredCortex) override add_neurons()
+    # entirely but use the helper methods for weight/state expansion.
 
     @abstractmethod
     def load_full_state(self, state: Dict[str, Any]) -> None:

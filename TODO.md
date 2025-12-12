@@ -2,8 +2,9 @@
 
 ## Architecture & Infrastructure
 
-- Review public brain API (`new_trial()`, etc. necessary?)
+- Remove `RegionConfig`
 - See `PathwayConfig.bidirectional`, should those be split into two pathways (with own weight matrices)?
+- Review public brain API (`new_trial()`, etc. necessary?)
 - Add learning mechanisms to `CrossModalGammaBinding`
 
 - [ ] Sleep/Wake System 🟢 **LOW PRIORITY**

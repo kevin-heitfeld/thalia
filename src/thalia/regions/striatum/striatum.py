@@ -1344,7 +1344,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         if self.td_lambda_d1 is not None:
             # Convert bool spikes to float for gradient computation
             input_spikes_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
-            
+
             # Update TD(λ) eligibility for D1 pathway
             # Note: We update for ALL neurons here; masking to chosen action
             # happens in deliver_reward() using last_action
@@ -1514,7 +1514,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             }
 
         return self.learning_manager.apply_dopamine_learning(da_level, goal_context)
-
 
 
     def deliver_counterfactual_reward(
