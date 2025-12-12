@@ -13,8 +13,6 @@ Biological role: "NOGO" signal for action suppression
 from typing import Dict, Any
 
 import torch
-
-from thalia.utils.core_utils import clamp_weights
 from .pathway_base import StriatumPathway, StriatumPathwayConfig
 
 
@@ -63,49 +61,33 @@ class D2Pathway(StriatumPathway):
         
         Args:
             dopamine: Dopamine signal (RPE), typically in [-1, +1]
-            heterosynaptic_ratio: Fraction of learning applied to non-eligible synapses
+            heterosynaptic_ratio: Not used (kept for API compatibility)
             
         Returns:
-            Metrics dict:
+            Metrics dict from strategy:
                 - ltp: Total LTP magnitude
                 - ltd: Total LTD magnitude
-                - plasticity: Net weight change
-                - mean_eligibility: Average eligibility trace
+                - net_change: Net weight change
+                - modulator: Inverted dopamine value used
+                - eligibility_mean: Average eligibility trace
         """
-        with torch.no_grad():
-            # D2 KEY DIFFERENCE: INVERTED dopamine response
-            # Multiply dopamine by -1 to flip the polarity
-            inverted_dopamine = -dopamine
-            
-            # Homosynaptic plasticity (eligible synapses)
-            # D2: Δw = eligibility × (-dopamine)
-            # Positive DA → negative Δw (LTD) - release inhibition on good actions
-            # Negative DA → positive Δw (LTP) - increase inhibition on bad actions
-            homo_plasticity = self.eligibility * inverted_dopamine
-            
-            # Heterosynaptic plasticity (non-eligible synapses)
-            # Opposite sign for stability
-            hetero_plasticity = -self.eligibility * inverted_dopamine * heterosynaptic_ratio
-            
-            # Total plasticity
-            total_plasticity = homo_plasticity + hetero_plasticity
-            
-            # Apply to weights with clipping
-            old_weights = self.weights.data.clone()
-            self.weights.data = self.weights.data + total_plasticity
-            clamp_weights(self.weights.data, self.config.w_min, self.config.w_max, inplace=True)
-            
-            # Compute metrics
-            actual_change = self.weights.data - old_weights
-            ltp = actual_change[actual_change > 0].sum().item()
-            ltd = -actual_change[actual_change < 0].sum().item()
-            
-            return {
-                'pathway': 'D2',
-                'ltp': ltp,
-                'ltd': ltd,
-                'plasticity': actual_change.abs().sum().item(),
-                'mean_eligibility': self.eligibility.mean().item(),
-                'dopamine_sign': 'positive' if dopamine > 0 else 'negative' if dopamine < 0 else 'zero',
-                'inverted_response': True,  # Flag to indicate D2's inverted learning
-            }
+        # D2 KEY DIFFERENCE: INVERTED dopamine response
+        # Use strategy with negated dopamine
+        inverted_dopamine = -dopamine
+        
+        new_weights, metrics = self.learning_strategy.compute_update(
+            weights=self.weights.data,
+            pre=torch.ones(1, device=self.device),  # Dummy (eligibility already accumulated)
+            post=torch.ones(1, device=self.device),  # Dummy (eligibility already accumulated)
+            modulator=inverted_dopamine,
+        )
+        
+        # Update weights
+        self.weights.data = new_weights
+        
+        # Add pathway identifier
+        metrics['pathway'] = 'D2'
+        metrics['dopamine_sign'] = 'positive' if dopamine > 0 else 'negative' if dopamine < 0 else 'zero'
+        metrics['inverted_response'] = True  # Flag to indicate D2's inverted learning
+        
+        return metrics

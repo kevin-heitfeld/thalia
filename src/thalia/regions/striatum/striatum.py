@@ -595,46 +595,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         return self.d2_pathway.neurons
 
     @property
-    def d1_input_trace(self) -> torch.Tensor:
-        """D1 input STDP trace (delegates to d1_pathway)."""
-        return self.d1_pathway.input_trace
-
-    @d1_input_trace.setter
-    def d1_input_trace(self, value: torch.Tensor) -> None:
-        """Set D1 input STDP trace."""
-        self.d1_pathway.input_trace = value
-
-    @property
-    def d2_input_trace(self) -> torch.Tensor:
-        """D2 input STDP trace (delegates to d2_pathway)."""
-        return self.d2_pathway.input_trace
-
-    @d2_input_trace.setter
-    def d2_input_trace(self, value: torch.Tensor) -> None:
-        """Set D2 input STDP trace."""
-        self.d2_pathway.input_trace = value
-
-    @property
-    def d1_output_trace(self) -> torch.Tensor:
-        """D1 output STDP trace (delegates to d1_pathway)."""
-        return self.d1_pathway.output_trace
-
-    @d1_output_trace.setter
-    def d1_output_trace(self, value: torch.Tensor) -> None:
-        """Set D1 output STDP trace."""
-        self.d1_pathway.output_trace = value
-
-    @property
-    def d2_output_trace(self) -> torch.Tensor:
-        """D2 output STDP trace (delegates to d2_pathway)."""
-        return self.d2_pathway.output_trace
-
-    @d2_output_trace.setter
-    def d2_output_trace(self, value: torch.Tensor) -> None:
-        """Set D2 output STDP trace."""
-        self.d2_pathway.output_trace = value
-
-    @property
     def last_action(self) -> Optional[int]:
         """Last selected action (delegates to state_tracker)."""
         return self.state_tracker.last_action
@@ -1033,29 +993,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             d1_output_1d = d1_output_1d * action_mask
             d2_output_1d = d2_output_1d * action_mask
 
-        # Update traces and eligibility using pathway managers
-        # Note: D1 and D2 pathways have separate trace managers
-        self.d1_pathway._trace_manager.update_traces(input_1d, d1_output_1d, dt)
-        self.d2_pathway._trace_manager.update_traces(input_1d, d2_output_1d, dt)
-
-        # Compute STDP eligibility with pathway-specific learning rate scaling
-        d1_eligibility_update = self.d1_pathway._trace_manager.compute_stdp_eligibility_separate_ltd(
-            input_spikes=input_1d,
-            output_spikes=d1_output_1d,
-            weights=self.d1_weights,
-            lr_scale=cfg.d1_lr_scale,
-        )
-
-        d2_eligibility_update = self.d2_pathway._trace_manager.compute_stdp_eligibility_separate_ltd(
-            input_spikes=input_1d,
-            output_spikes=d2_output_1d,
-            weights=self.d2_weights,
-            lr_scale=cfg.d2_lr_scale,
-        )
-
-        # Accumulate into eligibility traces with decay
-        self.d1_pathway._trace_manager.accumulate_eligibility(d1_eligibility_update, dt)
-        self.d2_pathway._trace_manager.accumulate_eligibility(d2_eligibility_update, dt)
+        # Update eligibility traces using pathway strategies
+        # Note: D1 and D2 pathways have separate learning strategies
+        self.d1_pathway.update_eligibility(input_1d, d1_output_1d)
+        self.d2_pathway.update_eligibility(input_1d, d2_output_1d)
 
     def _update_d1_d2_eligibility_all(
         self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor

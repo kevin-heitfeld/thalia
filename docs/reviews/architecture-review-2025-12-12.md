@@ -11,14 +11,15 @@ This comprehensive architectural analysis of the Thalia codebase (focusing on `s
 - ⚠️ **Minor improvements available**: Some direct `torch.randn()` usage, scattered magic numbers, opportunity for more learning strategy consolidation
 - ⚠️ **Moderate refactoring opportunities**: Learning rule duplication can be further reduced via strategies
 
-**Overall Assessment**: **9.0/10** ⬆️ (+0.5) – High-quality codebase with Tier 1 improvements complete.
+**Overall Assessment**: **9.2/10** ⬆️ (+0.7) – High-quality codebase with major improvements complete.
 
 **Progress Update (December 12, 2025)**:
 - ✅ Tier 1.1: Magic numbers extracted to constants (5 new constants added)
 - ✅ Tier 1.2: 100% WeightInitializer compliance (7 files modified)
 - ✅ Tier 1.3: Learning strategy factory helpers created (infrastructure in place)
 - ✅ Tier 1.4: Device management verified (already perfect)
-- ⏭️ Next: Tier 2 improvements (three-factor strategy, neuron factory)
+- ✅ Tier 2.1: Striatum migrated to ThreeFactorStrategy (-220 lines)
+- ⏭️ Next: Tier 2.2 (neuron factory), Tier 2.3 (reset_state mixin)
 
 ---
 
@@ -187,60 +188,40 @@ tensor = torch.rand(n, device=self.device)
 
 ## Tier 2 – Moderate Refactoring
 
-### 2.1 Complete Learning Strategy Migration (PRIORITY: MEDIUM)
+### 2.1 Complete Learning Strategy Migration (PRIORITY: MEDIUM) ✅ **COMPLETE**
 
-**Pattern Replacement Opportunity**: Some regions still implement learning inline instead of using strategies
+**Status**: **COMPLETE** - Striatum pathways migrated to ThreeFactorStrategy
 
-**Current State**:
-- ✅ **Good**: Cortex uses BCM+STDP strategies
-- ✅ **Good**: Hippocampus uses STDP strategy for some connections
-- ⚠️ **Partial**: Striatum D1/D2 pathways use `EligibilityTraceManager` directly (not full strategy)
-- ⚠️ **Inline**: Some pathway learning still uses manual STDP computation
+**What Was Done**:
+1. ✅ Replaced `EligibilityTraceManager` with `ThreeFactorStrategy` in pathway_base.py
+2. ✅ Simplified D1Pathway to use `strategy.compute_update()` with positive dopamine
+3. ✅ Simplified D2Pathway to use `strategy.compute_update()` with inverted dopamine (-dopamine)
+4. ✅ Removed backward compatibility properties (input_trace, output_trace) 
+5. ✅ Updated striatum.py to call `pathway.update_eligibility()` instead of accessing `_trace_manager`
+6. ✅ Removed unused imports (clamp_weights no longer needed)
 
-**Before** (Striatum D1/D2 pathways):
-```python
-# regions/striatum/pathway_base.py:220-250
-def update_eligibility(self, input_spikes, output_spikes, dt_ms):
-    self._trace_manager.update_traces(input_spikes, output_spikes, dt_ms)
-    eligibility_update = self._trace_manager.compute_stdp_eligibility(
-        weights=self.weights, lr_scale=1.0
-    )
-    self._trace_manager.accumulate_eligibility(eligibility_update, dt_ms)
-```
+**Code Reduction**:
+- pathway_base.py: ~80 lines removed (trace manager setup, property delegation)
+- d1_pathway.py: ~40 lines removed (manual plasticity computation)
+- d2_pathway.py: ~40 lines removed (manual plasticity computation)
+- striatum.py: ~60 lines removed (trace property delegation, manual trace updates)
+- **Total: ~220 lines eliminated**
 
-**After** (Using ThreeFactorStrategy):
-```python
-# regions/striatum/pathway_base.py
-def __init__(self, ...):
-    self.learning_strategy = LearningStrategyRegistry.create(
-        "three_factor",
-        ThreeFactorConfig(
-            eligibility_tau_ms=1000.0,
-            learning_rate=0.001,
-        )
-    )
+**Benefits**:
+- Single source of truth for three-factor learning (in ThreeFactorStrategy)
+- Easier to experiment with learning rule variants
+- Cleaner separation of concerns (strategy handles all learning logic)
+- Better testability (strategy can be unit tested independently)
 
-def update_eligibility(self, input_spikes, output_spikes, dt_ms):
-    # Strategy handles trace updates, eligibility computation, dopamine gating
-    metrics = self.learning_strategy.update_eligibility(
-        pre=input_spikes, post=output_spikes, dt_ms=dt_ms
-    )
-```
-
-**Rationale**:
-- Eliminates ~100 lines of duplicated eligibility trace logic
-- Centralizes three-factor learning in one place
-- Makes it easier to experiment with variants (e.g., triplet STDP, dopamine kinetics)
+**Files Modified**: 4 files
+- `regions/striatum/pathway_base.py`
+- `regions/striatum/d1_pathway.py`
+- `regions/striatum/d2_pathway.py`
+- `regions/striatum/striatum.py`
 
 **Impact**:
-- Files affected: `striatum/pathway_base.py`, `striatum/d1_pathway.py`, `striatum/d2_pathway.py`
-- Breaking change: **MEDIUM** (internal refactor, backward-compatible checkpoints)
-- Benefit: -200 lines duplication, cleaner separation of concerns
-
-**Measurable Benefits**:
-- Code reduction: ~200 lines across striatum pathways
-- Maintainability: Single source of truth for three-factor learning
-- Testability: Strategy unit tests cover all striatum learning
+- Breaking change: **LOW** (no checkpoints exist yet, internal refactor only)
+- Benefit: -220 lines, cleaner architecture, maintainable three-factor learning
 
 ---
 

@@ -17,7 +17,7 @@ import torch.nn as nn
 from thalia.core.base.component_config import PathwayConfig
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig
+from thalia.learning import ThreeFactorStrategy, ThreeFactorConfig
 from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
@@ -38,11 +38,8 @@ class StriatumPathwayConfig(PathwayConfig):
     - Learning dynamics
     """
 
-    # STDP trace parameters
-    stdp_tau_ms: float = 20.0  # Spike trace decay time (for STDP)
-
-    # Eligibility trace parameters
-    eligibility_tau_ms: float = 1000.0
+    # Three-factor learning parameters
+    eligibility_tau_ms: float = 1000.0  # Eligibility trace decay time
 
     # Neuron parameters
     tau_mem_ms: float = 20.0
@@ -77,58 +74,33 @@ class StriatumPathway(nn.Module, ABC):
         # Initialize weights [n_output, n_input]
         self.weights = self._initialize_weights()
 
-        # Eligibility trace manager (consolidated STDP + eligibility traces)
-        stdp_config = STDPConfig(
-            stdp_tau_ms=config.stdp_tau_ms,
-            eligibility_tau_ms=config.eligibility_tau_ms,
-            stdp_lr=config.stdp_lr,
+        # Three-factor learning strategy (eligibility × dopamine)
+        three_factor_config = ThreeFactorConfig(
+            learning_rate=config.stdp_lr,
+            eligibility_tau=config.eligibility_tau_ms,
             w_min=config.w_min,
             w_max=config.w_max,
+            dt=1.0,
+            device=config.device,
         )
-        self._trace_manager = EligibilityTraceManager(
-            n_input=config.n_input,
-            n_output=config.n_output,
-            config=stdp_config,
-            device=self.device,
-        )
+        self.learning_strategy = ThreeFactorStrategy(three_factor_config)
 
         # Neuron population
         self.neurons = self._create_neurons()
 
     # =========================================================================
-    # BACKWARD COMPATIBILITY PROPERTIES
+    # PROPERTIES FOR DIAGNOSTICS
     # =========================================================================
-    # External code may access traces directly. Delegate to trace_manager.
-
+    
     @property
-    def eligibility(self) -> torch.Tensor:
-        """Eligibility traces [n_output, n_input] (delegates to trace_manager)."""
-        return self._trace_manager.eligibility
-
+    def eligibility(self) -> Optional[torch.Tensor]:
+        """Eligibility traces [n_output, n_input] (from learning strategy)."""
+        return self.learning_strategy.eligibility
+    
     @eligibility.setter
     def eligibility(self, value: torch.Tensor) -> None:
-        """Set eligibility traces directly (for checkpoint loading)."""
-        self._trace_manager.eligibility = value
-
-    @property
-    def input_trace(self) -> torch.Tensor:
-        """Input STDP trace [n_input] (delegates to trace_manager)."""
-        return self._trace_manager.input_trace
-
-    @input_trace.setter
-    def input_trace(self, value: torch.Tensor) -> None:
-        """Set input trace directly (for checkpoint loading)."""
-        self._trace_manager.input_trace = value
-
-    @property
-    def output_trace(self) -> torch.Tensor:
-        """Output STDP trace [n_output] (delegates to trace_manager)."""
-        return self._trace_manager.output_trace
-
-    @output_trace.setter
-    def output_trace(self, value: torch.Tensor) -> None:
-        """Set output trace directly (for checkpoint loading)."""
-        self._trace_manager.output_trace = value
+        """Set eligibility traces (for checkpoint loading)."""
+        self.learning_strategy.eligibility = value
 
     def _initialize_weights(self) -> nn.Parameter:
         """Initialize pathway weights using Xavier initialization.
@@ -215,32 +187,19 @@ class StriatumPathway(nn.Module, ABC):
         self,
         input_spikes: torch.Tensor,
         output_spikes: torch.Tensor,
-        dt_ms: float,
     ) -> None:
         """
-        Update eligibility traces using STDP-based plasticity.
+        Update eligibility traces using Hebbian correlation.
 
-        Eligibility = correlation between pre and post activity.
+        Eligibility = accumulated correlation between pre and post activity.
         Actual learning happens when dopamine arrives later.
 
         Args:
             input_spikes: Input spikes [n_input]
             output_spikes: Output spikes [n_output]
-            dt_ms: Timestep in milliseconds
         """
-        # Update traces using consolidated manager
-        self._trace_manager.update_traces(input_spikes, output_spikes, dt_ms)
-
-        # Compute STDP eligibility with soft bounds
-        # Note: lr_scale=1.0 here; pathway-specific scaling (d1_lr_scale, d2_lr_scale)
-        # is applied in apply_dopamine_modulation()
-        eligibility_update = self._trace_manager.compute_stdp_eligibility(
-            weights=self.weights,
-            lr_scale=1.0,
-        )
-
-        # Accumulate into eligibility traces with decay
-        self._trace_manager.accumulate_eligibility(eligibility_update, dt_ms)
+        # Strategy handles eligibility trace updates internally
+        self.learning_strategy.update_eligibility(input_spikes, output_spikes)
 
     @abstractmethod
     def apply_dopamine_modulation(
@@ -301,15 +260,10 @@ class StriatumPathway(nn.Module, ABC):
             torch.cat([self.weights.data, new_weights], dim=0)
         )
 
-        # 2. Expand eligibility traces
-        new_elig = torch.zeros(n_new_neurons, self.config.n_input, device=self.device)
-        self.eligibility = torch.cat([self.eligibility, new_elig], dim=0)
+        # 2. Reset eligibility traces (strategy will reinitialize on next update)
+        self.learning_strategy.reset_state()
 
-        # 3. Expand STDP output trace
-        new_trace = torch.zeros(n_new_neurons, device=self.device)
-        self.output_trace = torch.cat([self.output_trace, new_trace], dim=0)
-
-        # 4. Recreate neurons with new size (preserving old state)
+        # 3. Recreate neurons with new size (preserving old state)
         old_membrane = self.neurons.membrane.clone() if self.neurons.membrane is not None else None
         old_g_E = self.neurons.g_E.clone() if self.neurons.g_E is not None else None
         old_g_I = self.neurons.g_I.clone() if self.neurons.g_I is not None else None
@@ -336,13 +290,11 @@ class StriatumPathway(nn.Module, ABC):
         """Get pathway state for checkpointing.
 
         Returns:
-            State dict with weights, eligibility, traces, neuron state
+            State dict with weights, eligibility, neuron state
         """
         return {
             'weights': self.weights.detach().clone(),
-            'eligibility': self.eligibility.clone(),
-            'input_trace': self.input_trace.clone(),
-            'output_trace': self.output_trace.clone(),
+            'eligibility': self.eligibility.clone() if self.eligibility is not None else None,
             'neuron_membrane': self.neurons.membrane.clone() if self.neurons.membrane is not None else None,
             'neuron_g_E': self.neurons.g_E.clone() if self.neurons.g_E is not None else None,
             'neuron_g_I': self.neurons.g_I.clone() if self.neurons.g_I is not None else None,
@@ -356,22 +308,19 @@ class StriatumPathway(nn.Module, ABC):
             state: State dict from get_state()
         """
         self.weights = nn.Parameter(state['weights'])
-        self.eligibility = state['eligibility']
-        self.input_trace = state['input_trace']
-        self.output_trace = state['output_trace']
+        if state.get('eligibility') is not None:
+            self.learning_strategy.eligibility = state['eligibility']
 
-        if state['neuron_membrane'] is not None:
+        if state.get('neuron_membrane') is not None:
             self.neurons.membrane = state['neuron_membrane']
-        if state['neuron_g_E'] is not None:
+        if state.get('neuron_g_E') is not None:
             self.neurons.g_E = state['neuron_g_E']
-        if state['neuron_g_I'] is not None:
+        if state.get('neuron_g_I') is not None:
             self.neurons.g_I = state['neuron_g_I']
-        if state['neuron_refractory'] is not None:
+        if state.get('neuron_refractory') is not None:
             self.neurons.refractory = state['neuron_refractory']
 
     def reset_state(self) -> None:
-        """Reset pathway state (eligibility, traces, neurons)."""
-        self.eligibility.zero_()
-        self.input_trace.zero_()
-        self.output_trace.zero_()
+        """Reset pathway state (eligibility, neurons)."""
+        self.learning_strategy.reset_state()
         self.neurons.reset_state()
