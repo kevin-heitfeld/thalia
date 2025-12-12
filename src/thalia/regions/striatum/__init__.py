@@ -18,7 +18,6 @@ Usage:
 """
 
 from .config import StriatumConfig
-from .eligibility import EligibilityTraces
 from .action_selection import ActionSelectionMixin
 from .striatum import Striatum
 from .td_lambda import (
@@ -32,7 +31,6 @@ from .td_lambda import (
 __all__ = [
     "Striatum",
     "StriatumConfig",
-    "EligibilityTraces",
     "ActionSelectionMixin",
     # TD(λ) components
     "TDLambdaConfig",

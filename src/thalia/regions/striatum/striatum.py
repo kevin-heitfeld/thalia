@@ -73,7 +73,6 @@ from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.core.component_registry import register_region
 
 from .config import StriatumConfig
-from .eligibility import EligibilityTraces
 from .action_selection import ActionSelectionMixin
 from .pathway_base import StriatumPathwayConfig
 from .d1_pathway import D1Pathway
@@ -163,14 +162,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             self.neurons_per_action = 1
 
         super().__init__(config)
-
-        # Eligibility traces (synapse-specific)
-        self.eligibility = EligibilityTraces(
-            n_pre=config.n_input,
-            n_post=config.n_output,
-            tau_ms=self.striatum_config.eligibility_tau_ms,
-            device=config.device,
-        )
 
         # NOTE: Dopamine is now managed centrally by Brain (acting as VTA).
         # The Brain computes RPE and broadcasts normalized dopamine via set_dopamine().
@@ -849,9 +840,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             'd1_eligibility': self.d1_eligibility,
             'd2_eligibility': self.d2_eligibility,
         }
-        # Add eligibility object traces if present
-        if hasattr(self, 'eligibility'):
-            state_2d['eligibility_traces'] = self.eligibility.traces
 
         # Add TD-lambda traces if present
         if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
@@ -863,9 +851,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         expanded_2d = self._expand_state_tensors(state_2d, n_new_neurons)
         self.d1_eligibility = expanded_2d['d1_eligibility']
         self.d2_eligibility = expanded_2d['d2_eligibility']
-        if hasattr(self, 'eligibility'):
-            self.eligibility.traces = expanded_2d['eligibility_traces']
-            self.eligibility.n_post = new_n_output
         if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
             self.td_lambda_d1.traces.traces = expanded_2d['td_lambda_d1_traces']
             self.td_lambda_d1.traces.n_output = new_n_output
@@ -1347,12 +1332,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         dt = self.config.dt_ms
 
         # =====================================================================
+        # Update D1/D2 STDP-style eligibility (always enabled)
         # Eligibility accumulates for ALL neurons that fire during the trial.
         # When reward arrives, deliver_reward() uses last_action (set by finalize_action)
         # to apply learning only to the chosen action's synapses.
-        self.eligibility.update(input_spikes, output_spikes, dt)
-
-        # Update D1/D2 STDP-style eligibility (always enabled)
         self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes)
 
         # UPDATE TD(λ) ELIGIBILITY (if enabled)

@@ -226,8 +226,8 @@ class StriatumLearningComponent(LearningComponent):
         """
         diag = super().get_learning_diagnostics()
         diag.update({
-            "d1_eligibility_mean": self.d1_pathway.eligibility.trace.mean().item(),
-            "d2_eligibility_mean": self.d2_pathway.eligibility.trace.mean().item(),
+            "d1_eligibility_mean": self.d1_pathway.eligibility.mean().item(),
+            "d2_eligibility_mean": self.d2_pathway.eligibility.mean().item(),
             "d1_weight_mean": self.d1_pathway.weights.mean().item(),
             "d2_weight_mean": self.d2_pathway.weights.mean().item(),
             "goal_conditioning_enabled": self.config.use_goal_conditioning,
