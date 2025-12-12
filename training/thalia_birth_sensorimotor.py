@@ -64,8 +64,9 @@ from thalia.config.curriculum_growth import (
 )
 from thalia.training.curriculum.stage_manager import (
     CurriculumTrainer,
-    StageConfig,
-    TaskConfig,
+)
+from thalia.training.curriculum.stage_configs import (
+    get_sensorimotor_config,
 )
 from thalia.tasks.sensorimotor import (
     SensorimotorTaskLoader,
@@ -226,56 +227,26 @@ def create_curriculum_trainer(
     return trainer
 
 
-def configure_stage_sensorimotor() -> StageConfig:
-    """Configure Stage 0 (Sensorimotor) training parameters.
+def configure_stage_sensorimotor():
+    """Configure Stage -0.5 (Sensorimotor) training parameters.
 
     Returns:
         StageConfig for sensorimotor training
     """
-    print("\n[4/4] Configuring Stage 0 (Sensorimotor)...")
+    print("\n[4/4] Configuring Stage -0.5 (Sensorimotor)...")
 
-    config = StageConfig(
-        # Duration (1 month simulated = 50k steps)
-        duration_steps=50,  # Short for testing
-        # duration_steps=50000,
+    # Use the pre-configured stage config with short duration for testing
+    config = get_sensorimotor_config(duration_steps=50)  # Short for testing
+    # config = get_sensorimotor_config(duration_steps=50000)  # Full duration
 
-        # Task mixing ratios (from curriculum strategy)
-        task_configs={
-            'motor_control': TaskConfig(weight=0.40, difficulty=0.5),
-            'reaching': TaskConfig(weight=0.35, difficulty=0.6),
-            'manipulation': TaskConfig(weight=0.20, difficulty=0.7),
-            'prediction': TaskConfig(weight=0.05, difficulty=0.5),
-        },
-
-        # Success criteria (must achieve ALL to progress)
-        success_criteria={
-            'motor_control_accuracy': 0.95,
-            'reaching_accuracy': 0.90,
-            'manipulation_success': 0.85,
-            'prediction_error': 0.05,
-            'stable_firing_rates': True,
-        },
-
-        # Curriculum principles
-        interleaved_practice=True,
-        spaced_repetition=True,
-        testing_frequency=0.15,
-        productive_failure_steps=5000,
-
-        # Growth and consolidation
-        enable_growth=True,
-        growth_check_interval=5000,
-        consolidation_interval=10000,
-
-        # Checkpointing
-        checkpoint_interval=10000,
-    )
-
-    print("  ✓ Stage configured")
+    print("  ✓ Stage configured (using stage_configs module)")
     print(f"    - Duration: {config.duration_steps:,} steps")
     print("    - Interleaved practice with spaced repetition")
     print(f"    - Productive failure: first {config.productive_failure_steps:,} steps")
     print(f"    - Growth checks every {config.growth_check_interval:,} steps")
+    print("    - Critical periods: motor (peak), face_recognition (peak)")
+    print(f"    - Tasks: {list(config.task_configs.keys())}")
+    print(f"    - Domain mappings: {len(config.domain_mappings)} tasks mapped to domains")
 
     return config
 

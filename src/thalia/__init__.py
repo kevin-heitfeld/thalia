@@ -62,7 +62,6 @@ from thalia.regions import (
 # Core Components (frequently needed)
 from thalia.core import (
     # Neurons
-    LIFNeuron,
     ConductanceLIF,
     # Weight Initialization
     WeightInitializer,
@@ -155,7 +154,6 @@ __all__ = [
     "Hippocampus",
     "HippocampusConfig",
     # Core Components
-    "LIFNeuron",
     "ConductanceLIF",
     "WeightInitializer",
     "InitStrategy",

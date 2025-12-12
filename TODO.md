@@ -12,7 +12,6 @@
 ## Architecture & Infrastructure
 
 - TODO's in the codebase
-- Integrate `src\thalia\learning\critical_periods.py` into curriculum trainer
 - `PredictiveCortex` not registered with `@register_region`
 - **Nothing** registered with `@register_module`
 - See `PathwayConfig.bidirectional`, should those be split into two pathways (with own weight matrices)?

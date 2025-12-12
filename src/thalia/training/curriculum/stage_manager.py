@@ -159,6 +159,9 @@ from thalia.memory.consolidation import (
 from thalia.io import CheckpointManager
 from thalia.training.visualization.live_diagnostics import LiveDiagnostics
 from thalia.regions.prefrontal_hierarchy import Goal
+from thalia.learning.critical_periods import (
+    CriticalPeriodGating,
+)
 
 
 # ============================================================================
@@ -545,6 +548,10 @@ class StageConfig:
     # Success criteria (milestone evaluation)
     success_criteria: Dict[str, float] = field(default_factory=dict)
 
+    # Critical period configuration
+    enable_critical_periods: bool = True  # Apply critical period gating
+    domain_mappings: Dict[str, List[str]] = field(default_factory=dict)  # task_name -> domains
+
     # Curriculum parameters
     interleaved_practice: bool = True  # Mix tasks within stage
     spaced_repetition: bool = True  # Review based on Leitner algorithm
@@ -650,6 +657,7 @@ class CurriculumTrainer:
         self.transition_protocol = StageTransitionProtocol()
         self.memory_pressure = MemoryPressureDetector()
         self.sleep_controller = SleepStageController()
+        self.critical_period_gating = CriticalPeriodGating()  # NEW: Critical period windows
 
         # Live diagnostics (optional)
         self.enable_live_diagnostics = enable_live_diagnostics
@@ -660,6 +668,9 @@ class CurriculumTrainer:
         self.current_stage: Optional[CurriculumStage] = None
         self.global_step = 0
         self.stage_start_step = 0
+
+        # Critical period tracking
+        self._last_phase: Dict[str, str] = {}  # domain -> last_phase
 
         # History
         self.training_history: List[TrainingResult] = []
@@ -728,12 +739,21 @@ class CurriculumTrainer:
                 # 2. Get task from loader
                 task_data = task_loader.get_task(task_name)
 
+                # 2.5. Apply critical period modulation (NEW)
+                if config.enable_critical_periods:
+                    self._apply_critical_period_modulation(
+                        task_name=task_name,
+                        domains=config.domain_mappings.get(task_name, []),
+                        age=self.global_step,
+                    )
+
                 # 3. Forward pass
                 # Learning happens AUTOMATICALLY during forward via:
                 # - STDP in pathways (spike-timing dependent plasticity)
                 # - BCM in cortex (Bienenstock-Cooper-Munro, competition)
                 # - Hebbian in hippocampus (one-shot episodic encoding)
                 # - Intrinsic rewards from prediction errors (continuous)
+                # MODULATED by critical period windows (plasticity_modulator)
                 _output = self.brain.forward(
                     task_data['input'],
                     n_timesteps=task_data.get('n_timesteps', 10),
@@ -1278,14 +1298,89 @@ class CurriculumTrainer:
 
         return self.save_checkpoint(name=name, metadata=milestone_metadata)
 
+    def _apply_critical_period_modulation(
+        self,
+        task_name: str,
+        domains: List[str],
+        age: int,
+    ) -> Dict[str, float]:
+        """Apply critical period gating to learning rates.
+
+        For each domain active in this task, compute the gating multiplier
+        and modulate learning rates in relevant regions.
+
+        Args:
+            task_name: Current task name
+            domains: List of domains this task trains (e.g., ['phonology'])
+            age: Current training step
+
+        Returns:
+            Dict of domain -> multiplier for logging
+        """
+        if not domains:
+            return {}
+
+        # Compute average multiplier across all domains for this task
+        multipliers = {}
+        total_multiplier = 0.0
+
+        for domain in domains:
+            try:
+                # Get window status for logging
+                status = self.critical_period_gating.get_window_status(domain, age)
+                multiplier = status['multiplier']
+                multipliers[domain] = multiplier
+                total_multiplier += multiplier
+
+                # Log if at critical transition points
+                last_phase = self._last_phase.get(domain)
+                if status['phase'] != last_phase:
+                    if self.verbose:
+                        print(f"  🧠 Critical period: {domain} entering {status['phase']} phase "
+                              f"(multiplier: {multiplier:.2f})")
+                    self._last_phase[domain] = status['phase']
+
+            except Exception as e:
+                if self.verbose:
+                    print(f"  ⚠️  Warning: Unknown domain '{domain}' for task '{task_name}': {e}")
+                continue
+
+        # Average multiplier for this task
+        if multipliers:
+            avg_multiplier = total_multiplier / len(multipliers)
+
+            # Apply to brain plasticity
+            # Set as global plasticity modulator
+            if hasattr(self.brain, 'set_plasticity_modulator'):
+                self.brain.set_plasticity_modulator(avg_multiplier)
+            elif hasattr(self.brain, 'state'):
+                # Alternative: Set via brain state
+                self.brain.state.plasticity_modulator = avg_multiplier
+
+        return multipliers
+
     def _collect_metrics(self) -> Dict[str, float]:
         """Collect current training metrics."""
         # Collect firing rates, capacity, performance, etc.
-        return {
+        metrics = {
             'global_step': float(self.global_step),
             'firing_rate': 0.0,  # Placeholder
             'capacity': 0.0,  # Placeholder
         }
+
+        # Add critical period status for all domains
+        for domain in self.critical_period_gating.get_all_domains():
+            status = self.critical_period_gating.get_window_status(
+                domain,
+                self.global_step
+            )
+            metrics[f'critical_period/{domain}_multiplier'] = status['multiplier']
+            metrics[f'critical_period/{domain}_progress'] = status['progress']
+            metrics[f'critical_period/{domain}_phase'] = float(
+                {'early': 0.0, 'peak': 1.0, 'late': 2.0}.get(status['phase'], -1.0)
+            )
+
+        return metrics
 
     def _log_progress(
         self,
