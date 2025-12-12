@@ -778,7 +778,14 @@ class SpikingPathway(NeuralComponent):
         self.register_buffer("synaptic_current", expanded_current)
 
         # Grow trace manager to match new target size
+        # add_neurons returns new manager, must reassign
+        # pre_trace and post_trace properties will automatically use new manager
         self._trace_manager = self._trace_manager.add_neurons(n_new)
+
+        # Update learning strategy's trace manager if using strategy-based learning
+        if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
+            if hasattr(self.learning_strategy, '_trace_manager'):
+                self.learning_strategy._trace_manager = self._trace_manager
 
         # Firing rate estimate
         new_firing_rate = torch.zeros(n_new, device=device) + cfg.activity_target

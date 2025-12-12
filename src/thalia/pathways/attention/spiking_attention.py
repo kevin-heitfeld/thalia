@@ -281,3 +281,70 @@ class SpikingAttentionPathway(SpikingPathway):
             gain = attention_state["gain_output"]
             self.gain_output.weight.data.copy_(gain["weight"].to(device))
             self.gain_output.bias.data.copy_(gain["bias"].to(device))
+
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to attention pathway (extends base implementation).
+
+        Grows the pathway's output dimension (cortex L2/3 size) and updates
+        attention-specific layers accordingly.
+
+        Args:
+            n_new: Number of output neurons to add
+            initialization: Weight init strategy for base pathway
+            sparsity: Connection sparsity for new neurons
+
+        Updates:
+            - Base pathway weights/delays/traces (via super())
+            - attention_encoder: [n_output, n_output] → [n_output+n_new, n_output+n_new]
+            - gain_output: [n_output, n_input] → [n_output+n_new, n_input] (stays)
+        """
+        old_output_size = self.config.n_output
+        device = self.weights.device
+
+        # 1. Grow base pathway (weights, delays, neurons, traces)
+        super().add_neurons(n_new, initialization, sparsity)
+
+        new_output_size = self.config.n_output  # Updated by super()
+
+        # 2. Expand attention_encoder: [old_output, old_output] → [new_output, new_output]
+        # Layer 0: Linear
+        old_weight = self.attention_encoder[0].weight.data.clone()  # [old, old]
+        old_bias = self.attention_encoder[0].bias.data.clone()      # [old]
+
+        # Create new layer with expanded size
+        self.attention_encoder[0] = nn.Linear(new_output_size, new_output_size).to(device)
+
+        # Copy old weights to top-left block, initialize new weights small
+        self.attention_encoder[0].weight.data[:old_output_size, :old_output_size] = old_weight
+        self.attention_encoder[0].weight.data[old_output_size:, :] *= 0.1  # Small init for new neurons
+        self.attention_encoder[0].weight.data[:, old_output_size:] *= 0.1
+        self.attention_encoder[0].bias.data[:old_output_size] = old_bias
+        self.attention_encoder[0].bias.data[old_output_size:].zero_()
+
+        # Layer 1: LayerNorm
+        self.attention_encoder[1] = nn.LayerNorm(new_output_size).to(device)
+
+        # 3. gain_output: [old_output, n_input] → [new_output, n_input]
+        # Note: n_input (PFC size) doesn't change, only output dimension grows
+        old_gain_weight = self.gain_output.weight.data.clone()  # [n_input, old_output] (transposed)
+        old_gain_bias = self.gain_output.bias.data.clone()      # [n_input]
+
+        # Linear layer stores weight as [out_features, in_features]
+        # gain_output(n_output → n_input) has weight shape [n_input, n_output]
+        self.gain_output = nn.Linear(new_output_size, self.config.n_input).to(device)
+        nn.init.zeros_(self.gain_output.weight)
+        nn.init.ones_(self.gain_output.bias)
+
+        # Copy old weights: weight shape is [n_input, n_output]
+        self.gain_output.weight.data[:, :old_output_size] = old_gain_weight
+        self.gain_output.bias.data = old_gain_bias
+
+        # 4. Expand current_attention if exists
+        if self.current_attention is not None:
+            new_attention = torch.zeros(n_new, device=device)
+            self.current_attention = torch.cat([self.current_attention, new_attention], dim=0)

@@ -131,7 +131,9 @@ class SpikingReplayPathway(SpikingPathway):
         if priority is None:
             with torch.no_grad():
                 # ADR-005: priority_network accepts 1D [n_neurons] directly
-                priority = self.priority_network(hippocampal_pattern).mean().item()
+                # Convert bool spikes to float for priority network
+                pattern_float = hippocampal_pattern.float()
+                priority = self.priority_network(pattern_float).mean().item()
 
         # Store pattern with priority
         pattern_entry = {
@@ -465,3 +467,55 @@ class SpikingReplayPathway(SpikingPathway):
         # Load base pathway state (which internally calls load_state())
         super().load_full_state(state)
         # Note: Replay-specific state is loaded via load_state() called by base class
+
+    def add_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Add neurons to replay pathway (extends base implementation).
+
+        Grows the pathway's output dimension (cortex size) and updates
+        replay-specific layers accordingly.
+
+        Args:
+            n_new: Number of output neurons to add
+            initialization: Weight init strategy for base pathway
+            sparsity: Connection sparsity for new neurons
+
+        Updates:
+            - Base pathway weights/delays/traces (via super())
+            - replay_projection: [n_input, n_output] → [n_input, n_output+n_new]
+            - priority_network: stays [n_input, n_input//2, 1] (input-only)
+            - replay_buffer: patterns stay [n_input] (hippocampus size unchanged)
+        """
+        old_output_size = self.config.n_output
+        device = self.weights.device
+
+        # 1. Grow base pathway (weights, delays, neurons, traces)
+        super().add_neurons(n_new, initialization, sparsity)
+
+        new_output_size = self.config.n_output  # Updated by super()
+
+        # 2. Expand replay_projection: [n_input, old_output] → [n_input, new_output]
+        # Layer 0: Linear
+        old_proj_weight = self.replay_projection[0].weight.data.clone()  # [old_output, n_input]
+        old_proj_bias = self.replay_projection[0].bias.data.clone()      # [old_output]
+
+        self.replay_projection[0] = nn.Linear(self.config.n_input, new_output_size).to(device)
+
+        # Copy old weights, initialize new outputs small
+        self.replay_projection[0].weight.data[:old_output_size, :] = old_proj_weight
+        self.replay_projection[0].weight.data[old_output_size:, :] *= 0.1  # Small init
+        self.replay_projection[0].bias.data[:old_output_size] = old_proj_bias
+        self.replay_projection[0].bias.data[old_output_size:].zero_()
+
+        # Layer 1: LayerNorm
+        self.replay_projection[1] = nn.LayerNorm(new_output_size).to(device)
+
+        # 3. priority_network stays unchanged (operates on input patterns only)
+        # No expansion needed - it scores which pattern to replay, not output size
+
+        # 4. replay_buffer patterns stay [n_input] - hippocampus size unchanged
+        # Buffer already stores correct-sized patterns, no modification needed
