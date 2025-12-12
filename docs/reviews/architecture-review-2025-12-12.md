@@ -219,13 +219,21 @@ src/thalia/regions/hippocampus/memory_component.py:22
 
 ---
 
-## Tier 2 – Moderate Refactoring (Strategic Improvements)
+## Tier 2 – Moderate Refactoring (Strategic Improvements) ⏳ IN PROGRESS
 
-These changes require coordination across multiple modules but provide significant architectural benefits.
+Progress Summary:
+- ✅ T2.3 COMPLETED: Diagnostic patterns extracted (SpikingPathway, CrossModalGammaBinding)
+- ⏭️ T2.1 DEFERRED: Striatum eligibility already uses manager (breaking change to remove redundant traces)
+- 🔄 T2.2, T2.4, T2.5: Ready for implementation (require multi-file coordination)
 
 ---
 
-### T2.1 – Consolidate Eligibility Trace Management
+### T2.1 – Consolidate Eligibility Trace Management ⏭️ DEFERRED
+
+**Analysis Update:**
+Investigation reveals Striatum D1/D2 pathways ALREADY use `EligibilityTraceManager` (since pathway_base.py refactor).
+The redundant `EligibilityTraces` in striatum.py line 168 is **dead code** - it updates every timestep but is never
+read for learning. Only D1/D2 pathway traces matter.
 
 **Current State:**
 Eligibility traces implemented inconsistently across regions:
@@ -234,49 +242,25 @@ Eligibility traces implemented inconsistently across regions:
 - **SpikingPathway**: Uses `EligibilityTraceManager`
 - **Duplication**: Similar trace update logic in multiple places
 
-**Proposed Change:**
-1. Migrate Striatum to use `EligibilityTraceManager` (already exists in `core/`)
-2. Deprecate `regions/striatum/eligibility.py`
-3. Extend `EligibilityTraceManager` with any Striatum-specific features (if needed)
+**Proposed Change (DEFERRED - Breaking):**
+Remove redundant `self.eligibility` from Striatum main class. This requires checkpoint migration (breaking change).
+Recommend deferring to next major version (0.3.0).
 
 **Rationale:**
-- Single source of truth for eligibility trace dynamics
-- Reduces code duplication (~150 lines)
-- Easier to test and maintain
-- Pattern already adopted by hippocampus and pathways
+- D1/D2 pathways already use EligibilityTraceManager correctly
+- Central eligibility is updated but never used for learning
+- Removing saves ~150 lines but breaks checkpoint compatibility
+- Low priority: not causing bugs, just memory overhead
 
 **Impact:**
-- **Files affected**: 4-5 files (Striatum, EligibilityTraceManager, tests)
-- **Breaking changes**: Medium – Striatum internal refactor, checkpoint format unchanged
-- **Benefits**: -150 lines duplicated code, +unified trace management
-
-**Duplication Evidence:**
-```python
-# src/thalia/regions/striatum/eligibility.py:30-70
-class EligibilityTraces:
-    def update(self, pre_spikes, post_spikes):
-        decay = torch.exp(-dt / tau)
-        self.traces *= decay
-        self.traces += torch.outer(post_spikes, pre_spikes)
-
-# src/thalia/core/eligibility_utils.py:80-120
-class EligibilityTraceManager:
-    def update_stdp_traces(self, pre_spikes, post_spikes):
-        decay = torch.exp(-dt / tau)
-        self.input_trace *= decay
-        self.output_trace *= decay
-        # Similar logic, different interface
-```
-
-**Migration Path:**
-1. Add `three_factor` mode to `EligibilityTraceManager`
-2. Update Striatum to use manager
-3. Verify checkpoint compatibility
-4. Deprecate old `EligibilityTraces` class
+- **Files affected**: 1 file (Striatum), checkpoint migration script needed
+- **Breaking changes**: HIGH – checkpoint format changes
+- **Benefits**: -150 lines, -redundant computation, +clarity
+- **Recommendation**: DEFER to v0.3.0
 
 ---
 
-### T2.2 – Unify Region Growth Pattern with Mixin
+### T2.2 – Unify Region Growth Pattern with Mixin ⏭️ READY
 
 **Current State:**
 `add_neurons()` duplicated across regions with similar logic:
@@ -331,7 +315,23 @@ src/thalia/regions/cortex/predictive_cortex.py:361-480
 
 ---
 
-### T2.3 – Extract Diagnostic Patterns into Base Class Methods
+### T2.3 – Extract Diagnostic Patterns into Base Class Methods ✅ COMPLETED
+
+**Completed State:**
+Updated SpikingPathway and CrossModalGammaBinding to use DiagnosticsMixin helpers.
+Most regions (Striatum, Hippocampus, Prefrontal, LayeredCortex) already use pattern.
+
+**Changes Made:**
+```python
+# Before (SpikingPathway):
+"weight_mean": self.weights.data.mean().item(),
+"weight_std": self.weights.data.std().item(),
+# ...manual stats
+
+# After:
+diagnostics.update(self.weight_diagnostics(self.weights.data, prefix=""))
+diagnostics.update(self.trace_diagnostics(self.pre_trace, prefix="pre"))
+```
 
 **Current State:**
 `get_diagnostics()` methods contain repeated metric calculation patterns:
