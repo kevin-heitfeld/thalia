@@ -47,28 +47,28 @@ Basic building blocks that implement biological neuron dynamics.
 
 #### Neurons
 - **`LIFNeuron`**: Leaky Integrate-and-Fire neuron
-  - File: `src/thalia/core/neuron.py`
+  - File: `src/thalia/components/neurons/neuron.py`
   - Implements: Membrane dynamics, spike threshold, refractory period
   - Use when: Simple rate-based computations
 
 - **`ConductanceLIF`**: Conductance-based LIF with E/I separation
-  - File: `src/thalia/core/neuron.py`
+  - File: `src/thalia/components/neurons/neuron.py`
   - Implements: Reversal potentials, shunting inhibition
   - Use when: Need realistic inhibition dynamics
 
 - **`DendriticNeuron`**: Neuron with nonlinear dendritic branches
-  - File: `src/thalia/core/dendritic.py`
+  - File: `src/thalia/components/neurons/dendritic.py`
   - Implements: Dendritic spikes, plateau potentials, branch independence
   - Use when: Need complex credit assignment
 
 #### Traces
 - **`SpikeTraces`**: Exponentially decaying spike history
-  - File: `src/thalia/core/traces.py`
+  - File: `src/thalia/components/coding/spike_coding.py`
   - Implements: Configurable time constants
   - Use when: Need temporal integration for learning rules
 
 - **`ShortTermPlasticity`**: Synaptic facilitation and depression
-  - File: `src/thalia/core/stp.py`
+  - File: `src/thalia/components/synapses/stp.py`
   - Implements: U (release probability), tau_fac, tau_rec
   - Use when: Need dynamic synapses
 
@@ -146,7 +146,7 @@ Prevent pathological dynamics (runaway excitation, activity collapse, weight exp
 - **Prevents**: Over-inhibition, under-inhibition
 
 #### Divisive Normalization
-- **File**: `src/thalia/core/normalization.py`
+- **File**: `src/thalia/regulation/normalization.py`
 - **Implements**: Gain control via pooled inhibition
 - **Parameters**: `semi_saturation`, `epsilon`
 - **Use when**: Need contrast invariance, gain control
@@ -328,7 +328,7 @@ Connect regions into a functioning brain with event-driven communication.
 - **Parameters**: `ThaliaConfig` (unified configuration system)
 
 #### Pathways
-- **File**: `src/thalia/integration/pathways/`
+- **File**: `src/thalia/pathways/`
 - **Implements**: Connections between regions
 - **Types**:
   - Sensory pathways (input → cortex)
@@ -338,7 +338,7 @@ Connect regions into a functioning brain with event-driven communication.
 - **Use when**: Connecting regions
 
 #### Spiking Pathways
-- **File**: `src/thalia/integration/spiking_pathway.py`
+- **File**: `src/thalia/pathways/spiking_pathway.py`
 - **Implements**: Spike-based inter-region communication
 - **Features**: Spike encoding/decoding, delays
 
@@ -365,14 +365,14 @@ Connect regions into a functioning brain with event-driven communication.
   - Level 4: Brain-wide dopamine broadcast
 
 ### Oscillations (Theta, Gamma)
-- **Files**: `src/thalia/core/oscillator.py`
+- **Files**: `src/thalia/coordination/oscillator.py`
 - **Implements**: Centralized oscillator management with theta-gamma coupling
 - **Affects**: Levels 3-4
   - Level 3: Regions receive oscillator phases via broadcast (set_oscillator_phases)
   - Level 4: Brain's OscillatorManager coordinates all rhythms
 
 ### Predictive Coding
-- **Files**: `src/thalia/core/predictive_coding.py`
+- **Files**: `src/thalia/regions/cortex/predictive_coding.py`
 - **Implements**: Top-down predictions, bottom-up errors
 - **Affects**: Levels 3-4
   - Level 3: Regions can implement predictive layers

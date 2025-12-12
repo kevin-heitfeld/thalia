@@ -151,7 +151,7 @@ encoding_strength = brain.nucleus_basalis.get_encoding_strength()
 ### Custom Configuration
 
 ```python
-from thalia.core.vta import VTAConfig
+from thalia.neuromodulation.systems.vta import VTAConfig
 from thalia.core.locus_coeruleus import LocusCoeruleusConfig
 from thalia.core.nucleus_basalis import NucleusBasalisConfig
 

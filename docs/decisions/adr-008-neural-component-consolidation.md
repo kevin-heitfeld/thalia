@@ -137,7 +137,7 @@ pathway.set_neuromodulators(da, ne, ach)  # Inherited - just works!
 ```python
 # Before (still works!)
 from thalia.regions.base import BrainRegion
-from thalia.core.pathway_protocol import BaseNeuralPathway
+from thalia.pathways import BaseNeuralPathway
 
 # After (recommended)
 from thalia.regions.base import NeuralComponent

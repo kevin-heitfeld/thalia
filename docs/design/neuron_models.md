@@ -253,7 +253,7 @@ See `docs/patterns/state-management.md` for details.
 Create neurons with explicit device specification:
 
 ```python
-from thalia.core.neuron import LIF, ConductanceLIF
+from thalia.components.neurons import LIF, ConductanceLIF
 
 # Pattern 1: Device at creation
 neuron = LIF(n_neurons=100, device=device)

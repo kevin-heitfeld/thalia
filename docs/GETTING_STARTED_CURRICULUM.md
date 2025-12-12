@@ -18,7 +18,7 @@ This demonstrates training a brain through:
 ### 2. Basic Usage Pattern
 
 ```python
-from thalia.core.brain import EventDrivenBrain
+from thalia.core import Brain  # EventDrivenBrain
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 from thalia.training import CurriculumTrainer, CurriculumStage, StageConfig
 from thalia.config.curriculum_growth import get_curriculum_growth_config

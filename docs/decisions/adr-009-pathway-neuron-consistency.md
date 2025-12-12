@@ -63,7 +63,7 @@ From `copilot-instructions.md`:
 
 1. **Imports**:
    ```python
-   from thalia.core.neuron import ConductanceLIF, ConductanceLIFConfig
+   from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
    ```
 
 2. **Neuron Creation**:

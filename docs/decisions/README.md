@@ -15,6 +15,7 @@ This directory contains Architecture Decision Records documenting important tech
 - **[ADR-009: Pathway-Neuron Consistency](./adr-009-pathway-neuron-consistency.md)** - Pathways inherit from NeuralComponent for parity
 - **[ADR-010: Region Axonal Delays](./adr-010-region-axonal-delays.md)** - Regions handle delays (not pathways)
 - **[ADR-011: Large Region Files Justified](./adr-011-large-file-justification.md)** - Biological circuit integrity prioritized over file size
+- **[ADR-012: Directory Restructuring](./adr-012-directory-restructuring.md)** - Domain-based organization for better maintainability
 
 ## ADR Format
 

@@ -27,10 +27,10 @@ Both are active learning components that:
 
 ## Solution: BrainComponent Protocol
 
-Created `src/thalia/core/component_protocol.py` defining the **unified interface** for all components:
+Created `src/thalia/core/protocols/component.py` defining the **unified interface** for all components:
 
 ```python
-from thalia.core.component_protocol import BrainComponent
+from thalia.core.protocols.component import BrainComponent
 
 # Both regions and pathways implement this protocol
 class BrainRegion(BrainComponent, ...):
