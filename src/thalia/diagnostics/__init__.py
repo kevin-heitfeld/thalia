@@ -5,7 +5,7 @@ This package provides monitoring and analysis tools for network health:
 
 - Criticality monitoring (branching ratio, avalanche analysis)
 - Health checks (activity levels, weight magnitudes, E/I balance)
-- Performance profiling
+- Performance profiling (timing, memory, throughput)
 - Interactive dashboard for real-time monitoring
 - Automatic diagnostic collection utilities
 - Metacognitive monitoring (confidence estimation, abstention)
@@ -23,6 +23,11 @@ from .health_monitor import (
     HealthReport,
     IssueReport,
     HealthIssue,
+)
+from .performance_profiler import (
+    PerformanceProfiler,
+    PerformanceStats,
+    quick_profile,
 )
 from .dashboard import Dashboard
 from .auto_collect import auto_diagnostics
@@ -46,6 +51,10 @@ __all__ = [
     "HealthReport",
     "IssueReport",
     "HealthIssue",
+    # Performance profiling
+    "PerformanceProfiler",
+    "PerformanceStats",
+    "quick_profile",
     # Dashboard
     "Dashboard",
     # Auto-collection utilities

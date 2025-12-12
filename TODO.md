@@ -1,5 +1,6 @@
 # TODO
 
+- Remove `theta_frequency_hz` and `gamma_frequency_hz` from `GlobalConfig`
 - `docs\design\circuit_modeling_plan.md`
 
 ---

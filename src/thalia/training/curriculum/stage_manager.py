@@ -134,7 +134,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple, Callable
 from pathlib import Path
 from enum import IntEnum
+from collections import deque, defaultdict
 import time
+
+import numpy as np
 
 from thalia.core.spike_utils import compute_firing_rate
 from thalia.core.growth import GrowthManager
@@ -163,6 +166,11 @@ from thalia.training.visualization.live_diagnostics import LiveDiagnostics
 from thalia.regions.prefrontal_hierarchy import Goal
 from thalia.learning.critical_periods import (
     CriticalPeriodGating,
+)
+from thalia.diagnostics import (
+    PerformanceProfiler,
+    HealthMonitor,
+    HealthConfig,
 )
 
 
@@ -665,6 +673,15 @@ class CurriculumTrainer:
         self.diagnostics_interval = diagnostics_interval
         self.live_diagnostics = LiveDiagnostics() if enable_live_diagnostics else None
 
+        # Performance profiler (always enabled)
+        self.profiler = PerformanceProfiler(window_size=100)
+
+        # Health monitor (always enabled)
+        self.health_monitor = HealthMonitor(HealthConfig())
+
+        # Task performance tracking (per-task accuracy buffers)
+        self.task_performance: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
+
         # State tracking
         self.current_stage: Optional[CurriculumStage] = None
         self.global_step = 0
@@ -672,6 +689,7 @@ class CurriculumTrainer:
 
         # Critical period tracking
         self._last_phase: Dict[str, str] = {}  # domain -> last_phase
+        self._last_milestone_results: Dict[str, bool] = {}  # Cached milestone results
 
         # History
         self.training_history: List[TrainingResult] = []
@@ -755,10 +773,14 @@ class CurriculumTrainer:
                 # - Hebbian in hippocampus (one-shot episodic encoding)
                 # - Intrinsic rewards from prediction errors (continuous)
                 # MODULATED by critical period windows (plasticity_modulator)
+
+                # Time the forward pass
+                self.profiler.start_forward()
                 _output = self.brain.forward(
                     task_data['input'],
                     n_timesteps=task_data.get('n_timesteps', 10),
                 )
+                self.profiler.end_forward()
 
                 # 4. External reward (ONLY for RL tasks)
                 # Modulates dopamine → affects striatum three-factor learning
@@ -777,6 +799,19 @@ class CurriculumTrainer:
                 # - Learning via unsupervised BCM/STDP
                 # - No external reward during training
                 # - Evaluation happens periodically via milestone checks
+
+                # Track task-specific performance (if available)
+                if 'accuracy' in task_data or 'reward' in task_data:
+                    task_type = task_data.get('task_type', 'unknown')
+                    perf_value = task_data.get('accuracy', task_data.get('reward', 0.0))
+                    self.task_performance[task_type].append(float(perf_value))
+
+                # Record step completion for profiler
+                self.profiler.record_step()
+
+                # Sample memory periodically (every 100 steps)
+                if step % 100 == 0:
+                    self.profiler.record_memory(self.brain, self.device)
 
                 # 5. Check for growth (every N steps)
                 if step % config.growth_check_interval == 0 and config.enable_growth:
@@ -837,6 +872,10 @@ class CurriculumTrainer:
             result.final_metrics = self._collect_metrics()
             result.total_steps = config.duration_steps
             result.training_time_seconds = time.time() - start_time
+
+            # Print performance summary
+            if self.verbose:
+                self.profiler.print_summary()
 
             # Report results
             self._report_stage_results(result)
@@ -1360,25 +1399,150 @@ class CurriculumTrainer:
         return multipliers
 
     def _collect_metrics(self) -> Dict[str, float]:
-        """Collect current training metrics."""
-        # Collect firing rates, capacity, performance, etc.
+        """Collect comprehensive training metrics.
+
+        Collects:
+        - Performance timing (steps/sec, forward time)
+        - Memory footprint (CPU/GPU usage)
+        - Firing rates per region
+        - Weight statistics per pathway
+        - Health status
+        - Task-specific performance
+        - Critical period status
+        """
         metrics = {
             'global_step': float(self.global_step),
-            'firing_rate': 0.0,  # Placeholder
-            'capacity': 0.0,  # Placeholder
         }
 
-        # Add critical period status for all domains
+        # =====================================================================
+        # 1. PERFORMANCE TIMING
+        # =====================================================================
+        perf_metrics = self.profiler.get_metrics_dict()
+        metrics.update(perf_metrics)
+
+        # =====================================================================
+        # 2. MEMORY FOOTPRINT
+        # =====================================================================
+        # Already included in perf_metrics
+
+        # =====================================================================
+        # 3. BRAIN DIAGNOSTICS
+        # =====================================================================
+        try:
+            brain_diag = self.brain.get_diagnostics()
+
+            # 3.1 Firing rates per region
+            spike_counts = brain_diag.get('spike_counts', {})
+            for region_name, spike_count in spike_counts.items():
+                # Normalize by rough neuron count estimate
+                # This is approximate; actual firing rate calculation would need neuron counts
+                metrics[f'firing_rate/{region_name}'] = spike_count / 100.0
+
+            # Overall average firing rate
+            if spike_counts:
+                metrics['firing_rate/average'] = sum(spike_counts.values()) / (len(spike_counts) * 100.0)
+            else:
+                metrics['firing_rate/average'] = 0.0
+
+            # 3.2 Weight statistics per pathway
+            pathway_diag = brain_diag.get('pathways', {})
+            for pathway_name, pathway_data in pathway_diag.items():
+                # Extract weight statistics if available
+                if isinstance(pathway_data, dict):
+                    if 'weights_mean' in pathway_data:
+                        metrics[f'weights/{pathway_name}_mean'] = float(pathway_data['weights_mean'])
+                    if 'weights_std' in pathway_data:
+                        metrics[f'weights/{pathway_name}_std'] = float(pathway_data['weights_std'])
+                    if 'weights_min' in pathway_data:
+                        metrics[f'weights/{pathway_name}_min'] = float(pathway_data['weights_min'])
+                    if 'weights_max' in pathway_data:
+                        metrics[f'weights/{pathway_name}_max'] = float(pathway_data['weights_max'])
+
+            # 3.3 Neuromodulator levels
+            dopamine = brain_diag.get('dopamine', {})
+            if dopamine:
+                metrics['neuromodulator/dopamine_global'] = float(dopamine.get('global', 0.0))
+                metrics['neuromodulator/dopamine_tonic'] = float(dopamine.get('tonic', 0.0))
+                metrics['neuromodulator/dopamine_phasic'] = float(dopamine.get('phasic', 0.0))
+
+            lc_state = brain_diag.get('locus_coeruleus', {})
+            if lc_state:
+                metrics['neuromodulator/norepinephrine'] = float(lc_state.get('norepinephrine', 0.0))
+                metrics['neuromodulator/arousal'] = float(lc_state.get('arousal', 0.0))
+
+            nb_state = brain_diag.get('nucleus_basalis', {})
+            if nb_state:
+                metrics['neuromodulator/acetylcholine'] = float(nb_state.get('acetylcholine', 0.0))
+
+            # 3.4 Oscillator state
+            metrics['oscillator/theta_phase'] = float(brain_diag.get('theta_phase', 0.0))
+            metrics['oscillator/theta_frequency'] = float(brain_diag.get('theta_frequency', 8.0))
+
+        except Exception as e:
+            # Graceful degradation if brain diagnostics fail
+            if self.verbose:
+                print(f"  ⚠️ Warning: Failed to collect brain diagnostics: {e}")
+            metrics['firing_rate/average'] = 0.0
+
+        # =====================================================================
+        # 4. HEALTH STATUS
+        # =====================================================================
+        try:
+            brain_diag = self.brain.get_diagnostics() if 'brain_diag' not in locals() else brain_diag
+            health_report = self.health_monitor.check_health(brain_diag)
+
+            metrics['health/is_healthy'] = 1.0 if health_report.is_healthy else 0.0
+            metrics['health/issue_count'] = float(len(health_report.issues))
+
+            # Maximum severity across all issues
+            if health_report.issues:
+                max_severity = max(issue.severity for issue in health_report.issues)
+                metrics['health/max_severity'] = float(max_severity)
+            else:
+                metrics['health/max_severity'] = 0.0
+
+            # Count by issue type
+            issue_counts = {}
+            for issue in health_report.issues:
+                issue_type = issue.issue_type.value
+                issue_counts[issue_type] = issue_counts.get(issue_type, 0) + 1
+
+            for issue_type, count in issue_counts.items():
+                metrics[f'health/issue_{issue_type}'] = float(count)
+
+        except Exception as e:
+            if self.verbose:
+                print(f"  ⚠️ Warning: Failed to check health: {e}")
+            metrics['health/is_healthy'] = 1.0  # Assume healthy if check fails
+            metrics['health/issue_count'] = 0.0
+            metrics['health/max_severity'] = 0.0
+
+        # =====================================================================
+        # 5. TASK-SPECIFIC PERFORMANCE
+        # =====================================================================
+        for task_name, perf_buffer in self.task_performance.items():
+            if perf_buffer:
+                # Recent average (last 100 samples)
+                metrics[f'task/{task_name}_accuracy'] = float(np.mean(list(perf_buffer)[-100:]))
+                # Overall average
+                metrics[f'task/{task_name}_accuracy_all'] = float(np.mean(perf_buffer))
+
+        # =====================================================================
+        # 6. CRITICAL PERIOD STATUS
+        # =====================================================================
         for domain in self.critical_period_gating.get_all_domains():
-            status = self.critical_period_gating.get_window_status(
-                domain,
-                self.global_step
-            )
-            metrics[f'critical_period/{domain}_multiplier'] = status['multiplier']
-            metrics[f'critical_period/{domain}_progress'] = status['progress']
-            metrics[f'critical_period/{domain}_phase'] = float(
-                {'early': 0.0, 'peak': 1.0, 'late': 2.0}.get(status['phase'], -1.0)
-            )
+            try:
+                status = self.critical_period_gating.get_window_status(
+                    domain,
+                    self.global_step
+                )
+                metrics[f'critical_period/{domain}_multiplier'] = float(status['multiplier'])
+                metrics[f'critical_period/{domain}_progress'] = float(status['progress'])
+                metrics[f'critical_period/{domain}_phase'] = float(
+                    {'early': 0.0, 'peak': 1.0, 'late': 2.0}.get(status['phase'], -1.0)
+                )
+            except Exception:
+                pass  # Skip unknown domains
 
         return metrics
 
@@ -1388,10 +1552,23 @@ class CurriculumTrainer:
         step: int,
         metrics: Dict[str, float],
     ) -> None:
-        """Log training progress."""
+        """Log training progress with key metrics highlighted."""
         if self.verbose and step % 5000 == 0:
-            print(f"[Stage {stage.name}] Step {step:,} | " +
-                  " | ".join(f"{k}={v:.3f}" for k, v in metrics.items()))
+            # Extract key metrics for clean display
+            steps_per_sec = metrics.get('performance/steps_per_sec', 0.0)
+            forward_ms = metrics.get('performance/avg_forward_ms', 0.0)
+            gpu_mb = metrics.get('memory/gpu_mb', 0.0)
+            cpu_mb = metrics.get('memory/cpu_mb', 0.0)
+            avg_fr = metrics.get('firing_rate/average', 0.0)
+            is_healthy = metrics.get('health/is_healthy', 1.0)
+
+            health_icon = "✅" if is_healthy > 0.5 else "⚠️"
+
+            print(f"[Stage {stage.name}] Step {step:,} | "
+                  f"{health_icon} {steps_per_sec:.1f} steps/s | "
+                  f"Forward: {forward_ms:.1f}ms | "
+                  f"GPU: {gpu_mb:.0f}MB | CPU: {cpu_mb:.0f}MB | "
+                  f"FR: {avg_fr:.3f}")
 
     def _default_evaluation(
         self,

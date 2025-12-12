@@ -38,6 +38,7 @@ dependencies = [
     "scipy>=1.7",
     "torch>=2.0",
     "tqdm",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]

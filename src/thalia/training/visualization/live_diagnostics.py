@@ -49,6 +49,9 @@ class LiveDiagnostics:
     - Weight evolution heatmaps
     - Firing rate distributions
     - Task performance tracking
+    - Performance timing (steps/sec, forward pass time)
+    - Memory usage (CPU/GPU)
+    - Weight distribution histograms
     """
 
     def __init__(self, history_size: int = 100, figsize: tuple = (16, 10)):
@@ -80,6 +83,18 @@ class LiveDiagnostics:
             'reaching': deque(maxlen=history_size),
             'manipulation': deque(maxlen=history_size),
         }
+        # NEW: Performance timing history
+        self.timing_history = {
+            'steps_per_sec': deque(maxlen=history_size),
+            'forward_ms': deque(maxlen=history_size),
+        }
+        # NEW: Memory history
+        self.memory_history = {
+            'cpu_mb': deque(maxlen=history_size),
+            'gpu_mb': deque(maxlen=history_size),
+        }
+        # NEW: Latest weight data
+        self.latest_weights: Dict[str, Any] = {}
 
         # Latest spike data for raster plot
         self.latest_spikes = {}
@@ -148,6 +163,28 @@ class LiveDiagnostics:
                 metrics.get('manipulation_success', 0.0)
             )
 
+            # NEW: Update timing metrics
+            self.timing_history['steps_per_sec'].append(
+                metrics.get('performance/steps_per_sec', 0.0)
+            )
+            self.timing_history['forward_ms'].append(
+                metrics.get('performance/avg_forward_ms', 0.0)
+            )
+
+            # NEW: Update memory metrics
+            self.memory_history['cpu_mb'].append(
+                metrics.get('memory/cpu_mb', 0.0)
+            )
+            self.memory_history['gpu_mb'].append(
+                metrics.get('memory/gpu_mb', 0.0)
+            )
+
+            # NEW: Extract weight statistics for distribution plots
+            self.latest_weights = {
+                k: v for k, v in metrics.items()
+                if k.startswith('weights/') and '_mean' in k
+            }
+
         # Store latest spikes for raster
         if spikes:
             self.latest_spikes = spikes
@@ -159,9 +196,9 @@ class LiveDiagnostics:
         Args:
             save_path: If provided, save figure to this path
         """
-        # Create figure with subplots
+        # Create figure with subplots (4 rows x 3 columns)
         fig = plt.figure(figsize=self.figsize)
-        gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+        gs = fig.add_gridspec(4, 3, hspace=0.4, wspace=0.3)
 
         # Row 1: Neural activity
         ax_spikes = fig.add_subplot(gs[0, :2])
@@ -170,12 +207,19 @@ class LiveDiagnostics:
         ax_firing_rates = fig.add_subplot(gs[0, 2])
         self._plot_firing_rate_distribution(ax_firing_rates)
 
-        # Row 2: Health metrics
-        ax_health = fig.add_subplot(gs[1, :])
+        # Row 2: Performance timing and memory
+        ax_timing = fig.add_subplot(gs[1, :2])
+        self._plot_performance_timing(ax_timing)
+
+        ax_memory = fig.add_subplot(gs[1, 2])
+        self._plot_memory_usage(ax_memory)
+
+        # Row 3: Health metrics
+        ax_health = fig.add_subplot(gs[2, :])
         self._plot_health_metrics(ax_health)
 
-        # Row 3: Performance
-        ax_performance = fig.add_subplot(gs[2, :])
+        # Row 4: Task performance
+        ax_performance = fig.add_subplot(gs[3, :])
         self._plot_performance(ax_performance)
 
         # Add title
@@ -330,6 +374,94 @@ class LiveDiagnostics:
         ax.set_title('📈 Task Performance', fontweight='bold')
         ax.legend(loc='lower right', fontsize=8, ncol=2)
         ax.grid(True, alpha=0.3)
+
+    def _plot_performance_timing(self, ax) -> None:
+        """Plot performance timing metrics (steps/sec, forward time)."""
+        if not self.step_history:
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No data yet', ha='center', va='center')
+            ax.axis('off')
+            return
+
+        steps = list(self.step_history)
+
+        # Create dual-axis plot
+        ax2 = ax.twinx()
+
+        line1 = []
+        line2 = []
+
+        # Steps per second (left axis)
+        if self.timing_history['steps_per_sec']:
+            steps_per_sec = list(self.timing_history['steps_per_sec'])
+            line1 = ax.plot(steps, steps_per_sec, color='#2E86AB', linewidth=2,
+                           marker='o', markersize=3, label='Steps/sec', alpha=0.8)
+
+        # Forward pass time (right axis)
+        if self.timing_history['forward_ms']:
+            forward_ms = list(self.timing_history['forward_ms'])
+            line2 = ax2.plot(steps, forward_ms, color='#A23B72', linewidth=2,
+                            marker='s', markersize=3, label='Forward (ms)', alpha=0.8)
+
+        # Styling
+        ax.set_xlabel('Step')
+        ax.set_ylabel('Steps per Second', color='#2E86AB')
+        ax.tick_params(axis='y', labelcolor='#2E86AB')
+        ax2.set_ylabel('Forward Pass (ms)', color='#A23B72')
+        ax2.tick_params(axis='y', labelcolor='#A23B72')
+        ax.set_title('⚡ Performance Timing', fontweight='bold')
+        ax.grid(True, alpha=0.3)
+
+        # Combined legend
+        if line1 and line2:
+            lines = line1 + line2
+            labels = [l.get_label() for l in lines]
+            ax.legend(lines, labels, loc='upper left', fontsize=9)
+
+    def _plot_memory_usage(self, ax) -> None:
+        """Plot memory usage (CPU/GPU)."""
+        if not self.step_history:
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No data yet', ha='center', va='center')
+            ax.axis('off')
+            return
+
+        # Get latest memory values
+        memory_types = []
+        memory_values = []
+        colors = []
+
+        if self.memory_history['cpu_mb']:
+            memory_types.append('CPU')
+            memory_values.append(self.memory_history['cpu_mb'][-1])
+            colors.append('#FF6B6B')
+
+        if self.memory_history['gpu_mb']:
+            memory_types.append('GPU')
+            memory_values.append(self.memory_history['gpu_mb'][-1])
+            colors.append('#4ECDC4')
+
+        if not memory_types:
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No memory data', ha='center', va='center')
+            ax.axis('off')
+            return
+
+        # Horizontal bar chart
+        y_pos = np.arange(len(memory_types))
+        _bars = ax.barh(y_pos, memory_values, color=colors, alpha=0.7)
+
+        # Add value labels on bars
+        for i, value in enumerate(memory_values):
+            ax.text(value, i, f' {value:.0f} MB', va='center', fontsize=9, fontweight='bold')
+
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(memory_types)
+        ax.set_xlabel('Memory (MB)')
+        ax.set_title('💾 Memory Usage', fontweight='bold', fontsize=10)
+        ax.grid(True, axis='x', alpha=0.3)
+
+        # Set reasonable x-limit
+        if memory_values:
+            max_mem = max(memory_values)
+            ax.set_xlim(0, max_mem * 1.3)
 
     def save_snapshot(self, path: str) -> None:
         """Save current diagnostics to file."""
