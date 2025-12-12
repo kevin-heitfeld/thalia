@@ -1,20 +1,29 @@
-"""
-Predictive Coding Layer - Hierarchical Prediction Error Minimization.
+"""Predictive Coding Layer - Hierarchical Prediction Error Minimization (Free Energy).
 
-This module implements predictive coding, a theory of cortical function where:
-1. Each layer generates predictions about the layer below
-2. Only prediction ERRORS propagate upward (sparse, efficient)
-3. Learning minimizes prediction error (no backprop needed!)
+This module implements predictive coding, a biologically-plausible theory of
+cortical function where perception and learning emerge from minimizing
+prediction errors rather than backpropagation.
 
-This is a fundamentally different approach to credit assignment:
-- Traditional: Errors backpropagate through layers (biologically implausible)
-- Predictive: Errors are computed LOCALLY, learning is LOCAL
+**The Core Idea**:
+==================
+1. Each layer generates **predictions** about the layer below
+2. Only **prediction ERRORS** propagate upward (sparse, efficient)
+3. Learning **minimizes prediction error** locally (no backprop needed!)
 
-Key insight: The brain may not need backprop because it uses a different
-objective - minimizing free energy / prediction error at each level.
+**Why This Matters**:
+=====================
+This is fundamentally different from traditional deep learning:
 
-Architecture:
-=============
+- **Traditional**: Errors backpropagate through layers (biologically implausible)
+- **Predictive Coding**: Errors computed LOCALLY, learning is LOCAL
+
+**Key Insight**: The brain may not need backprop because it uses a different
+objective function - minimizing free energy / prediction error at each hierarchical level.
+
+**Architecture**:
+=================
+
+.. code-block:: none
 
     Higher Cortical Areas
            │
@@ -41,13 +50,13 @@ Architecture:
            │ Bottom-up input
     Lower Areas / Sensory Input
 
-Key Features:
-=============
-1. LOCAL LEARNING: Each layer learns to predict its inputs
-2. ERROR SPARSITY: Only mismatches generate activity
-3. PRECISION WEIGHTING: Confidence modulates error propagation
-4. NATURAL HIERARCHY: Abstractions emerge from prediction
-5. ATTENTION via PRECISION: Top-down precision = attention
+**Key Features**:
+=================
+1. **LOCAL LEARNING**: Each layer learns to predict its inputs (no global error)
+2. **ERROR SPARSITY**: Only mismatches generate activity (efficient coding)
+3. **PRECISION WEIGHTING**: Confidence modulates error propagation
+4. **NATURAL HIERARCHY**: Abstractions emerge from prediction dynamics
+5. **ATTENTION VIA PRECISION**: Top-down precision modulation = attention
 
 Biological basis:
 - Superficial layers (L2/3): Error neurons, forward projections

@@ -1,40 +1,54 @@
-"""
-Locus Coeruleus (LC) - Norepinephrine Arousal System.
+"""Locus Coeruleus (LC) - Norepinephrine Arousal and Uncertainty Response System.
 
 The locus coeruleus is the brain's primary norepinephrine (NE) source, modulating
-arousal, attention, and neural gain across all brain regions.
+arousal, attention, and neural gain across all brain regions in response to
+novelty and unexpected events.
 
-This module implements centralized NE management following the same pattern as
-VTADopamineSystem and OscillatorManager.
+This module implements centralized NE management following the same architectural
+pattern as VTADopamineSystem and OscillatorManager.
 
-Biological Background:
-======================
-The LC is a small nucleus in the brainstem that:
-1. Projects to entire brain (cortex, hippocampus, cerebellum, striatum)
-2. Responds to novelty, uncertainty, and unexpected events
-3. Modulates neural gain (signal-to-noise ratio)
-4. Facilitates behavioral flexibility and task switching
-5. High NE → arousal, attention, reset dynamics
-6. Low NE → baseline processing
+**Biological Background**:
+==========================
+The LC is a small brainstem nucleus (~1,600 neurons in humans) that:
 
-Key Functions:
-==============
+1. **Projects everywhere**: Cortex, hippocampus, cerebellum, striatum, thalamus
+2. **Responds to novelty**: Unexpected events trigger phasic NE bursts
+3. **Modulates neural gain**: Increases signal-to-noise ratio (amplifies responses)
+4. **Facilitates flexibility**: Enables behavioral switching and belief updating
+5. **Arousal regulation**: High NE → alert/focused, Low NE → drowsy/diffuse
+
+**Key Functions**:
+==================
 - **Arousal**: Global alertness/wakefulness state
-- **Uncertainty response**: High uncertainty → high NE
-- **Gain modulation**: NE increases neural responsiveness
-- **Network reset**: High NE burst → clear working memory, update beliefs
-- **Stress response**: Task difficulty modulates arousal
+- **Uncertainty response**: High uncertainty → high NE (explore, update beliefs)
+- **Gain modulation**: NE increases neural responsiveness (stronger signals)
+- **Network reset**: High NE burst → clear working memory, abandon old beliefs
+- **Stress response**: Task difficulty/errors → arousal modulation
 
-Architecture Pattern:
-=====================
+**Norepinephrine Effects**:
+===========================
+- **High NE (novelty/uncertainty)**:
+  * Increased neural gain (amplified responses)
+  * Working memory reset (clear outdated info)
+  * Enhanced plasticity (faster learning)
+  * Exploratory behavior (try new strategies)
+
+- **Low NE (familiar/predictable)**:
+  * Baseline processing (no modulation)
+  * Stable working memory (maintain current state)
+  * Exploitative behavior (use known strategies)
+
+**Architecture Pattern**:
+=========================
 Follows centralized broadcast pattern:
-1. Brain creates LocusCoeruleusSystem (like VTA/OscillatorManager)
-2. System computes NE from uncertainty/novelty each timestep
-3. NE broadcast to regions (like dopamine/oscillators)
-4. Regions use for gain modulation (optional)
 
-Author: Thalia Project
-Date: December 2025
+1. Brain creates ``LocusCoeruleusSystem`` (like VTA/OscillatorManager)
+2. System computes NE from uncertainty/novelty each timestep
+3. NE broadcast to all regions (like dopamine/oscillators)
+4. Regions use NE for gain modulation (optional receptor density)
+
+**Author**: Thalia Project
+**Date**: December 2025
 """
 
 from dataclasses import dataclass

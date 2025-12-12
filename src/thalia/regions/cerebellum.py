@@ -1,30 +1,32 @@
-"""
-Cerebellum - Supervised Error-Corrective Learning
+"""Cerebellum - Supervised Error-Corrective Learning for Precise Motor Control.
 
-The cerebellum learns through supervised error signals provided by climbing
-fibers from the inferior olive. This enables precise, fast learning of
-input-output mappings without trial-and-error exploration.
+The cerebellum learns through supervised error signals from climbing fibers,
+enabling fast, precise learning of input-output mappings without trial-and-error.
 
-Key Features:
-=============
-1. ERROR-CORRECTIVE LEARNING (Delta Rule):
+**Key Features**:
+=================
+1. **ERROR-CORRECTIVE LEARNING** (Delta Rule):
    - Δw ∝ pre × (target - actual)
-   - Direct teaching signal, not reward/punishment
-   - Can learn arbitrary mappings in few trials
+   - Direct teaching signal (not reward/punishment like RL)
+   - Can learn arbitrary mappings in 1-10 trials (vs hundreds for RL)
 
-2. CLIMBING FIBER ERROR SIGNAL:
-   - Inferior olive computes mismatch between target and actual
+2. **CLIMBING FIBER ERROR SIGNAL**:
+   - Inferior olive computes mismatch between intended and actual movement
    - Climbing fiber activates Purkinje cell → LTD on active parallel fibers
-   - Absence of climbing fiber → maintain/strengthen active synapses
+   - Absence of climbing fiber → LTP (strengthen correct associations)
+   - Binary teacher: "correct" or "incorrect"
 
-3. PRECISE TIMING:
-   - Cerebellum is master of timing and coordination
-   - Can learn precise temporal patterns
-   - Sub-millisecond precision in motor control
+3. **PRECISE TIMING AND COORDINATION**:
+   - Cerebellum is master of temporal precision
+   - Can learn sub-millisecond timing patterns
+   - Critical for smooth, coordinated movements
+   - Predictive timing (anticipates sensory consequences)
 
-4. FAST LEARNING:
-   - Unlike RL (needs many trials), cerebellum can learn in 1-10 trials
+4. **FAST SUPERVISED LEARNING**:
+   - Unlike RL (needs many trials with delayed rewards)
+   - Cerebellum learns in 1-10 trials with immediate feedback
    - Supervised signal provides direct gradient information
+   - No exploration needed - direct instruction
 
 Biological Basis:
 =================

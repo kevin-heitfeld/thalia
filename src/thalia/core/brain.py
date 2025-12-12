@@ -11,10 +11,10 @@ Key Differences from BrainSystem:
 3. NATURAL RHYTHMS: Theta arrives at regions with phase offsets (via delays)
 4. ASYNCHRONOUS: No artificial synchronization barriers
 
-Architecture:
-=============
-
-All inter-region connections are EXPLICIT PATHWAYS (not just event routing):
+Brain Architecture
+==================
+**CRITICAL**: All inter-region connections are EXPLICIT PATHWAYS with their own
+neurons, learning rules, and dynamics. They are NOT passive event routing!
 
     Sensory Input
          │

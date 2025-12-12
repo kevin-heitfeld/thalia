@@ -23,10 +23,11 @@ Key Features:
    - Allows credit assignment for delayed rewards
    - Synaptic tag persists until dopamine arrives
 
-4. ACTION SELECTION:
-   - Winner-take-all competition via lateral inhibition
-   - Selected action's synapses become eligible
-   - Dopamine retroactively credits/blames the action
+4. **ACTION SELECTION** (Winner-Take-All):
+   - Lateral inhibition creates competition between action neurons
+   - Winning action's synapses become eligible for learning
+   - Dopamine retroactively credits (burst) or blames (dip) the winner
+   - Losers' eligibility decays without reinforcement
 
 FILE ORGANIZATION (1761 lines)
 ===============================
@@ -62,19 +63,25 @@ Components ARE extracted where appropriate:
 
 See: docs/decisions/adr-011-large-file-justification.md
 
-Biological Basis:
-=================
-- Medium Spiny Neurons (MSNs) in striatum
-- D1-MSNs (direct pathway): DA → LTP → "Go" signal
-- D2-MSNs (indirect pathway): DA → LTD → "No-Go" signal
-- Schultz et al. (1997): Dopamine as reward prediction error
+**Biological Basis**:
+====================
+- **Medium Spiny Neurons (MSNs)**: 95% of striatal neurons
+- **D1-MSNs (direct pathway)**: Express D1 receptors, DA → LTP → "Go" signal
+- **D2-MSNs (indirect pathway)**: Express D2 receptors, DA → LTD → "No-Go" signal
+- **Opponent Processing**: D1 promotes, D2 suppresses actions
+- **References**:
+  - Schultz et al. (1997): Dopamine reward prediction error hypothesis
+  - Yagishita et al. (2014): Direct evidence for synaptic tagging in vivo
+  - Frank (2005): Dynamic dopamine modulation in basal ganglia
 
-When to Use:
-============
-- Reinforcement learning (reward/punishment, not labels)
-- Action selection and habit learning
-- Delayed reward credit assignment
-- When you want to learn from trial and error
+**When to Use**:
+================
+- Reinforcement learning from rewards/punishments (not supervised labels)
+- Action selection and sequential decision-making
+- Habit learning and procedural memory
+- Delayed reward credit assignment (eligibility traces bridge temporal gaps)
+- Goal-directed behavior with value-based choice
+- Trial-and-error learning scenarios
 """
 
 from __future__ import annotations

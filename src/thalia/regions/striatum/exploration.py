@@ -1,17 +1,39 @@
-"""
-Exploration Management for Striatum
+"""Exploration Management - UCB and Adaptive Exploration for Striatal Learning.
 
 This module handles exploration strategies including UCB (Upper Confidence Bound)
-tracking and adaptive exploration based on recent performance.
+tracking and adaptive exploration based on recent performance history.
 
-Biological basis:
-- UCB exploration: Information-seeking behavior (try less-explored options)
-- Adaptive exploration: Adjust tonic DA based on performance
-  * Poor performance → higher tonic DA → more exploration (locus coeruleus stress response)
-  * Good performance → lower tonic DA → more exploitation
-- Tonic DA levels influence exploration probability and action selection
+**What This Module Does**:
+===========================
+1. Track action selection counts for UCB (Upper Confidence Bound)
+2. Adjust tonic dopamine based on performance (adaptive exploration)
+3. Modulate exploration probability via tonic DA levels
 
-Extracted from Striatum god object as part of architecture refactoring (Tier 2.1).
+**Biological Basis**:
+=====================
+
+1. **UCB EXPLORATION** (Information-Seeking Behavior):
+   - Try less-explored options to gather information
+   - Balance between trying known-good actions vs. exploring unknowns
+   - Implements "curiosity" or "novelty-seeking" behavior
+   - Maps to ventral striatum / nucleus accumbens activity
+
+2. **ADAPTIVE EXPLORATION** (Stress-Modulated Dopamine):
+   - **Poor performance** → higher tonic DA → more exploration
+     (Locus coeruleus stress response: "what I'm doing isn't working!")
+   - **Good performance** → lower tonic DA → more exploitation
+     ("Keep doing what works!")
+   - Tonic DA levels influence both learning rate and exploration probability
+
+3. **TONIC DOPAMINE EFFECTS**:
+   - High tonic DA → more random action selection (exploration)
+   - Low tonic DA → more deterministic selection (exploitation)
+   - Biological substrate: VTA tonic firing modulates striatal excitability
+
+**Context**:
+============
+Extracted from monolithic Striatum class as part of architecture refactoring (Tier 2.1).
+Now a standalone manager component for cleaner separation of concerns.
 """
 
 from __future__ import annotations

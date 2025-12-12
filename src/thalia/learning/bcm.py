@@ -1,14 +1,17 @@
-"""
-BCM (Bienenstock-Cooper-Munro) Learning Rule.
+"""BCM (Bienenstock-Cooper-Munro) Learning Rule - Homeostatic Synaptic Plasticity.
 
-The BCM rule provides a sliding threshold for synaptic modification that
-automatically adjusts based on postsynaptic activity history. This prevents
-runaway potentiation/depression and enables stable, competitive learning.
+The BCM rule provides a sliding threshold mechanism for synaptic modification
+that automatically adapts based on postsynaptic activity history. This implements
+metaplasticity - plasticity of plasticity - preventing runaway dynamics while
+enabling stable, competitive learning.
 
-Key features:
-1. SLIDING THRESHOLD (θ_M): Adapts based on recent postsynaptic activity
-   - θ_M increases when neuron is highly active → harder to potentiate
-   - θ_M decreases when neuron is quiet → easier to potentiate
+**Key Features**:
+=================
+1. **SLIDING THRESHOLD (θ_M)**: Adapts to recent postsynaptic activity
+   - θ_M = E[c²] (running average of squared postsynaptic activity)
+   - Highly active neuron → θ_M increases → harder to potentiate
+   - Quiet neuron → θ_M decreases → easier to potentiate
+   - This implements homeostatic regulation of firing rates
 
 2. BIDIRECTIONAL PLASTICITY:
    - Post > θ_M: LTP (strengthen active synapses)

@@ -1,48 +1,65 @@
-"""
-Nucleus Basalis (NB) - Acetylcholine Attention/Encoding System.
+"""Nucleus Basalis (NB) - Acetylcholine Attention, Encoding, and Novelty System.
 
 The nucleus basalis is the brain's primary acetylcholine (ACh) source for cortex
-and hippocampus, modulating attention, encoding strength, and novelty detection.
+and hippocampus, modulating attention, encoding strength, and novelty detection
+in response to prediction errors.
 
-This module implements centralized ACh management following the same pattern as
-VTADopamineSystem and LocusCoeruleusSystem.
+This module implements centralized ACh management following the same architectural
+pattern as VTADopamineSystem and LocusCoeruleusSystem.
 
-Biological Background:
-======================
-The nucleus basalis (specifically nucleus basalis of Meynert) is a group of neurons
-in the basal forebrain that:
-1. Projects primarily to cortex and hippocampus (widespread but selective)
-2. Releases acetylcholine in response to novelty/prediction error
-3. Modulates encoding vs retrieval mode
-4. High ACh → encoding mode (enhance sensory input, suppress recurrence)
-5. Low ACh → retrieval mode (enhance consolidation, pattern completion)
-6. Critical for attention, learning, and memory formation
+**Biological Background**:
+==========================
+The nucleus basalis (specifically nucleus basalis of Meynert in basal forebrain):
 
-Key Functions:
-==============
-- **Encoding mode**: High ACh → strong sensory processing, new memory formation
-- **Retrieval mode**: Low ACh → pattern completion, memory recall
-- **Novelty detection**: Prediction error → ACh burst → encoding boost
-- **Attention gating**: High ACh increases signal-to-noise for attended features
-- **Learning coordination**: ACh coordinates cortex-hippocampus encoding
+1. **Projection pattern**: Widespread to cortex and hippocampus (selective innervation)
+2. **Trigger**: Releases ACh in response to novelty/prediction error
+3. **Mode switching**: Controls encoding vs retrieval dynamics
+4. **Learning coordination**: Synchronizes cortex-hippocampus encoding
+5. **Attention**: Critical for selective attention and learning
 
-Architecture Pattern:
-=====================
+**Key Functions**:
+==================
+
+**ENCODING MODE** (High ACh):
+  - Strong sensory processing (enhance feedforward input)
+  - Suppress recurrent connections (reduce interference)
+  - New memory formation (hippocampal encoding)
+  - Enhanced plasticity (faster learning)
+
+**RETRIEVAL MODE** (Low ACh):
+  - Pattern completion (enhance recurrence)
+  - Memory recall (hippocampal retrieval)
+  - Consolidation (strengthen existing traces)
+  - Reduced plasticity (protect memories)
+
+**NOVELTY DETECTION**:
+  - Prediction error → ACh burst → encoding boost
+  - Familiar stimuli → low ACh → retrieval mode
+  - Adaptive: Learn from surprising events
+
+**ATTENTION GATING**:
+  - High ACh increases signal-to-noise for attended features
+  - Modulates cortical gain (amplifies relevant signals)
+  - Suppresses irrelevant information
+
+**Architecture Pattern**:
+=========================
 Follows centralized broadcast pattern:
-1. Brain creates NucleusBasalisSystem (like VTA/LC/OscillatorManager)
+
+1. Brain creates ``NucleusBasalisSystem`` (like VTA/LC/OscillatorManager)
 2. System computes ACh from prediction error each timestep
-3. ACh broadcast to regions (like dopamine/NE/oscillators)
-4. Regions use for encoding/retrieval gating (optional)
+3. ACh broadcast to all regions (like dopamine/NE/oscillators)
+4. Regions use ACh for encoding/retrieval gating (optional receptor density)
 
-Biological References:
-======================
-- Hasselmo & McGaughy (2004) - "High acetylcholine levels set circuit dynamics
-  for attention and encoding; low levels set dynamics for consolidation"
-- Hasselmo (2006) - "The role of acetylcholine in learning and memory"
-- Parikh et al. (2007) - "Prefrontal acetylcholine release controls cue detection"
+**Biological References**:
+==========================
+- Hasselmo & McGaughy (2004): "High ACh sets circuit dynamics for attention and
+  encoding; low ACh sets dynamics for consolidation"
+- Hasselmo (2006): "The role of acetylcholine in learning and memory"
+- Parikh et al. (2007): "Prefrontal acetylcholine release controls cue detection"
 
-Author: Thalia Project
-Date: December 2025
+**Author**: Thalia Project
+**Date**: December 2025
 """
 
 from dataclasses import dataclass

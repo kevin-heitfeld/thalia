@@ -1,26 +1,27 @@
-"""
-Brain Oscillator Base Classes
+"""Brain Oscillator System - Neural Rhythm Generation and Coordination.
 
 Neural oscillations are fundamental to brain function, coordinating activity
 across spatial and temporal scales. This module provides base classes for
-implementing oscillatory dynamics in spiking neural networks.
+implementing biologically realistic oscillatory dynamics.
 
-Biological Background:
-=====================
+**Biological Background**:
+=========================
+Brain oscillations span multiple frequency bands, each with distinct functions:
 
-Brain oscillations span multiple frequency bands:
-- Delta (0.5-4 Hz): Deep sleep, attention
-- Theta (4-10 Hz): Memory encoding, spatial navigation
-- Alpha (8-13 Hz): Attention, inhibitory control
-- Beta (13-30 Hz): Motor control, cognitive processing
-- Gamma (30-100 Hz): Binding, local processing
-- High-gamma (100-200 Hz): Rapid processing
+- **Delta (0.5-4 Hz)**: Deep sleep, large-scale synchronization
+- **Theta (4-10 Hz)**: Memory encoding, spatial navigation, sequence learning
+- **Alpha (8-13 Hz)**: Attention gating, inhibitory control, sensory suppression
+- **Beta (13-30 Hz)**: Motor control, active cognitive processing
+- **Gamma (30-100 Hz)**: Feature binding, local circuit processing
+- **High-Gamma (100-200 Hz)**: Rapid information processing
 
-Oscillations serve multiple functions:
-1. TEMPORAL COORDINATION: Phase-locking synchronizes distributed neurons
-2. INFORMATION ROUTING: Phase-amplitude coupling routes information
-3. WORKING MEMORY: Nested oscillations represent sequence positions
-4. PREDICTION: Phase provides temporal anticipation
+**Functional Roles**:
+====================
+1. **Temporal Coordination**: Phase-locking synchronizes distributed neurons
+2. **Information Routing**: Phase determines when information can pass
+3. **Working Memory**: Nested oscillations encode sequence positions
+4. **Prediction**: Phase provides temporal anticipation
+5. **Gating**: Oscillatory inhibition controls information flow
 
 Key Mechanisms:
 - Phase tracking: Current position in oscillation cycle

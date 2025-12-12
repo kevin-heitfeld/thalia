@@ -1,42 +1,42 @@
-"""
-Sensory Pathways - Multimodal input encoding for the spiking brain.
+"""Sensory Pathways - Multimodal Input Encoding for Spiking Neural Networks.
 
 This module provides the architecture for encoding different sensory modalities
-(vision, audition, language, etc.) into spike patterns that feed into the
+(vision, audition, language, touch) into spike patterns that feed into the
 unified brain architecture.
 
-How the Real Brain Does It:
-===========================
+**How the Real Brain Does It**:
+===============================
 
-1. SPECIALIZED RECEPTORS
-   Each modality has specialized receptor cells:
-   - Vision: Photoreceptors (rods/cones) in retina
-   - Audition: Hair cells in cochlea (frequency-tuned)
-   - Touch: Mechanoreceptors in skin
-   - Proprioception: Muscle spindles, joint receptors
+1. **SPECIALIZED RECEPTORS**:
+   Each modality has dedicated receptor cells:
+   - **Vision**: Photoreceptors (rods/cones) in retina
+   - **Audition**: Hair cells in cochlea (frequency-tuned)
+   - **Touch**: Mechanoreceptors in skin (pressure, temperature)
+   - **Proprioception**: Muscle spindles, joint receptors
 
-2. PRIMARY SENSORY CORTICES
+2. **PRIMARY SENSORY CORTICES**:
    Each modality has dedicated cortical areas:
-   - V1: Visual cortex (retinotopic, orientation columns)
-   - A1: Auditory cortex (tonotopic, frequency maps)
-   - S1: Somatosensory cortex (body maps/homunculus)
+   - **V1**: Visual cortex (retinotopic maps, orientation columns)
+   - **A1**: Auditory cortex (tonotopic maps, frequency analysis)
+   - **S1**: Somatosensory cortex (body maps/homunculus)
+   - **Language areas**: Wernicke's (comprehension), Broca's (production)
 
-3. HIERARCHICAL PROCESSING
-   Information flows through hierarchy:
-   - Vision: V1 → V2 → V4 → IT (increasingly abstract)
-   - Audition: A1 → belt → parabelt → STS
+3. **HIERARCHICAL PROCESSING**:
+   Information flows through processing hierarchy:
+   - Vision: V1 → V2 → V4 → IT (simple → complex → abstract features)
+   - Audition: A1 → belt → parabelt → STS (frequency → patterns → speech)
 
-4. MULTIMODAL CONVERGENCE
-   All modalities eventually converge:
-   - Association areas (parietal, temporal)
+4. **MULTIMODAL CONVERGENCE**:
+   All modalities eventually integrate:
+   - Association areas (parietal, temporal lobes)
    - Prefrontal cortex (executive integration)
-   - Hippocampus (episodic binding)
+   - Hippocampus (episodic binding across modalities)
 
-Key Insight:
-============
-Once information is converted to SPIKES, the brain processes all modalities
-similarly using the same circuitry. The magic is in the encoding - after that,
-it's all spikes flowing through the same neural circuits.
+**Key Insight**:
+================
+Once converted to SPIKES, the brain processes all modalities using the SAME
+circuits. The magic is in the encoding - after that, it's all just spikes
+flowing through unified neural architecture.
 
 Our Design:
 ===========

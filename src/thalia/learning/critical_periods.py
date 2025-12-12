@@ -1,34 +1,63 @@
-"""
-Critical Period Gating - Time-windowed plasticity modulation.
+"""Critical Period Gating - Developmentally-Timed Plasticity Windows.
 
 This module implements critical periods for language and skill acquisition,
-modulating learning rates based on developmental stage and age.
+modulating learning rates based on developmental stage and age to match
+human learning trajectories.
 
-Key Concepts:
-=============
+**Key Concepts**:
+=================
 
-1. CRITICAL PERIODS IN DEVELOPMENT
-   Human language acquisition has sensitive periods:
-   - Phonology: 0-6 months (native phoneme discrimination)
-   - Grammar: 1-7 years (syntax acquisition)
-   - Semantics: Extended window (1-18 years)
+1. **CRITICAL PERIODS IN DEVELOPMENT**:
+   Human language acquisition has biologically-determined sensitive periods:
 
-2. SIGMOIDAL DECLINE AFTER WINDOW
-   Learning doesn't stop abruptly, but becomes progressively harder:
-   - Before window: Immature (50% efficiency)
-   - During window: Peak plasticity (120% efficiency)
-   - After window: Declining (sigmoid decay to 20% floor)
+   - **Phonology** (0-6 months): Native phoneme discrimination
+   - **Grammar** (1-7 years): Syntax acquisition
+   - **Semantics** (1-18 years): Word learning (extended window)
 
-3. BIOLOGICAL BASIS
+2. **SIGMOIDAL DECLINE AFTER WINDOW**:
+   Learning doesn't stop abruptly at window close, but becomes progressively harder:
+
+   - **Before window**: Immature neural circuits (50% efficiency)
+   - **During window**: Peak plasticity (120% efficiency)
+   - **After window**: Declining plasticity (sigmoid decay to 20% floor)
+
+3. **BIOLOGICAL BASIS**:
    Neural plasticity is highest during critical periods due to:
-   - High NMDA receptor expression
-   - Low GABAergic inhibition
-   - Maximal dendritic spine turnover
 
-   After critical periods:
-   - Increased inhibition stabilizes circuits
-   - Reduced spine turnover
-   - Learning still possible but requires more samples
+   **During critical period**:
+   - High NMDA receptor expression (stronger LTP/LTD)
+   - Low GABAergic inhibition (more excitable, plastic)
+   - Maximal dendritic spine turnover (structural plasticity)
+
+   **After critical period**:
+   - Increased inhibition stabilizes circuits (protects knowledge)
+   - Reduced spine turnover (less structural change)
+   - Learning still possible but requires MORE SAMPLES
+
+**Real-World Examples**:
+========================
+- **Language**: Second language learners after age 12 rarely achieve native fluency
+- **Music**: Absolute pitch requires training before age 7
+- **Vision**: Monocular deprivation after critical period → permanent deficits
+
+**Computational Implementation**:
+=================================
+Each domain has a time window with Gaussian peak:
+
+.. code-block:: none
+
+    Efficiency
+       │
+    1.2├─────╭───╮        Peak plasticity
+       │    ╱     ╲
+    1.0├───┤       ├──────  Baseline
+       │  ╱         ╲╲
+    0.5├─╯           ╲╲    Immature/Declined
+       │              ╲╲___
+    0.2├───────────────╲___  Floor
+       │                 ╲
+       └──┬────┬────┬────┬──► Age
+         Before Peak After Far
 
 Usage:
 ======

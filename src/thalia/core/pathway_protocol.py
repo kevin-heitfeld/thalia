@@ -1,5 +1,4 @@
-"""
-Neural Pathway Protocol - Unified interface for all pathway types.
+"""Neural Pathway Protocol - Unified interface for all pathway types.
 
 This module defines the NeuralPathway protocol that standardizes the interface
 across sensory pathways, inter-region pathways, and specialized pathways.
@@ -8,44 +7,49 @@ IMPORTANT: All pathways implement the BrainComponent protocol!
 ===============================================================
 As of ADR-008 (Neural Component Consolidation), both brain regions and pathways
 inherit from NeuralComponent base class and implement the BrainComponent protocol
-defined in component_protocol.py.
+(defined in component_protocol.py).
 
 This unified architecture ensures component parity:
-- Both regions and pathways process information (forward)
-- Both learn continuously during forward passes
+- Both regions and pathways process information via forward()
+- Both learn continuously during forward passes (no separate learn())
 - Both maintain temporal state and support growth
 - Both provide diagnostics and health monitoring
 
 This file provides the NeuralPathway Protocol for additional pathway-specific
-type checking, while the core BrainComponent protocol defines the shared interface.
+type checking, while BrainComponent protocol defines the shared interface.
 
-Biological Motivation:
+Biological Motivation
 =====================
+Neural pathways in the brain are not passive "wires" - they are active
+processing units with their own dynamics and plasticity:
 
-Neural pathways in the brain share common computational patterns:
-1. **Transform Information**: Map input activity to output activity
-2. **Adapt Through Experience**: Learn continuously during forward passes (like regions)
-3. **Maintain State**: Track temporal dynamics and history
-4. **Provide Diagnostics**: Report health and activity metrics
+1. **Transform Information**: Pathways actively filter and route signals
+2. **Adapt Through Experience**: Learn via STDP/BCM during forward passes
+3. **Maintain State**: Track temporal dynamics (membrane potentials, traces)
+4. **Provide Diagnostics**: Monitor pathway health and activity metrics
 
-Types of Pathways:
+Pathways ARE mini-regions with neurons, synapses, and learning rules.
+
+Types of Pathways
 ==================
 
 1. **Sensory Pathways** (SensoryPathway):
    - Transform raw sensory input → spike patterns
-   - Examples: Visual (retina→V1), Auditory (cochlea→A1), Language (tokens→spikes)
-   - Primary method: forward() (standard PyTorch convention, ADR-007)
+   - Examples: VisualPathway (images→V1), AudioPathway (sounds→A1),
+               LanguagePathway (tokens→spikes)
+   - Method: forward(raw_input) → (spikes, metadata)
+   - Standard PyTorch convention (ADR-007)
 
-2. **Inter-Region Pathways** (SpikingComponent):
+2. **Inter-Region Pathways** (SpikingPathway):
    - Transform spikes between brain regions
-   - Examples: Cortex→Hippocampus, Hippocampus→Cortex
-   - Primary method: forward()
-   - Learning: Automatic STDP during every forward pass (always learning)
+   - Examples: Cortex→Hippocampus, Hippocampus→Cortex, Cortex→Striatum
+   - Method: forward(spikes) → spikes
+   - Learning: Automatic STDP during every forward pass
 
 3. **Specialized Pathways**:
    - SpikingAttentionPathway: PFC→Cortex attention modulation
    - SpikingReplayPathway: Hippocampus→Cortex memory consolidation
-   - Inherit from SpikingComponent with specialized forward() behavior
+   - Inherit from SpikingPathway with specialized forward() behavior
 
 Protocol Design:
 ================
@@ -56,22 +60,31 @@ The protocol allows for flexibility while ensuring consistency:
 - State management and diagnostics are required
 - Type hints enable static checking
 
-Usage Example:
+Usage Example
 ==============
+All pathways (regions too) inherit from NeuralComponent:
+
+.. code-block:: python
+
     from thalia.regions.base import NeuralComponent
 
-    # Define a pathway (inherits from NeuralComponent)
+    # Define an inter-region pathway
     class MyPathway(NeuralComponent):
         def forward(self, spikes):
+            # Transform spikes AND apply STDP (automatically)
             return self.transform(spikes)
 
         def reset_state(self):
             self.membrane.zero_()
+            self.input_trace.zero_()
 
         def get_diagnostics(self):
-            return {"spike_rate": self.spike_rate}
+            return {
+                "spike_rate": compute_firing_rate(self.spikes),
+                "weight_mean": self.weights.mean().item(),
+            }
 
-    # Define a region (also inherits from NeuralComponent)
+    # Define a region (same interface!)
     class MyCortex(NeuralComponent):
         def forward(self, input_spikes):
             return self.process_layers(input_spikes)

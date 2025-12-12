@@ -1,26 +1,30 @@
-"""
-Ventral Tegmental Area (VTA) - Dopamine Neuromodulator Manager.
+"""Ventral Tegmental Area (VTA) - Dopamine Reward Prediction Error System.
 
 The VTA is the brain's primary dopamine source, computing reward prediction errors
-and broadcasting dopamine signals to all brain regions for learning modulation.
+(RPE) and broadcasting dopamine signals globally to modulate learning across all
+brain regions.
 
-This module extracts VTA functionality from Brain class, following the same
-centralized pattern as OscillatorManager.
+**Biological Background**:
+=========================
+The VTA contains dopamine neurons that exhibit two distinct firing patterns:
 
-Biological Background:
-======================
-The VTA contains dopamine neurons that:
-1. Fire tonically at 4-5 Hz (baseline "mood"/motivation)
-2. Burst (5-20 spikes) for unexpected rewards → phasic increase
-3. Pause for unexpected punishments → phasic decrease
-4. Both components sum at target synapses across the brain
+1. **Tonic Firing** (4-5 Hz baseline):
+   - Represents background motivation/mood state
+   - Slow changes based on average prediction quality
+   - Sets baseline learning rate across brain
 
-Key Functions:
-==============
-- **Tonic dopamine**: Slow baseline from intrinsic prediction quality
-- **Phasic dopamine**: Fast bursts/dips from external rewards
-- **Adaptive normalization**: Prevents saturation by tracking RPE statistics
-- **Global broadcast**: Single dopamine signal to all regions (like EEG for oscillators)
+2. **Phasic Bursts/Pauses**:
+   - **Burst** (5-20 spikes): Unexpected rewards → DA increase → LTP
+   - **Pause** (silence): Unexpected punishments → DA decrease → LTD
+   - Fast (100-200ms) transient signals
+   - Both components sum at target synapses
+
+**Key Functions**:
+==================
+- **Reward Prediction Error**: δ = r + γV(s') - V(s)
+- **Adaptive Normalization**: Tracks RPE statistics to prevent saturation
+- **Global Broadcast**: Single dopamine level sent to all regions
+- **Homeostatic Regulation**: Maintains dopamine within physiological bounds
 
 Architecture Pattern:
 =====================

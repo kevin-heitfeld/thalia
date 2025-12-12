@@ -1,26 +1,29 @@
-"""
-Trisynaptic Hippocampus with biologically-accurate DG→CA3→CA1 circuit.
+"""Trisynaptic Hippocampus - Biologically-Accurate DG→CA3→CA1 Episodic Memory Circuit.
 
-This implements the classic hippocampal circuit:
-- Dentate Gyrus (DG): Pattern SEPARATION via very sparse coding (~2-5% active)
-- CA3: Pattern COMPLETION via recurrent connections (autoassociative memory)
-- CA1: Output/comparison layer that detects match between memory and input
+This implements the classic hippocampal trisynaptic circuit for episodic memory:
+- **Dentate Gyrus (DG)**: Pattern SEPARATION via sparse coding (~2-5% active)
+- **CA3**: Pattern COMPLETION via recurrent connections (autoassociative memory)
+- **CA1**: Output/comparison layer detecting match vs mismatch
 
-Key biological features:
-1. THETA MODULATION: 6-10 Hz oscillations separate encoding from retrieval
-   - Theta trough: Encoding phase (CA3 learning enabled)
-   - Theta peak: Retrieval phase (NMDA comparison enabled)
+**Key Biological Features**:
+===========================
+1. **THETA MODULATION** (6-10 Hz oscillations):
+   - Theta trough (0-π): Encoding phase (CA3 learning enabled)
+   - Theta peak (π-2π): Retrieval phase (comparison active)
+   - Phase separation prevents interference between encoding and retrieval
 
-2. FEEDFORWARD INHIBITION: Stimulus onset triggers transient inhibition
-   - Naturally clears residual activity (no explicit resets!)
+2. **FEEDFORWARD INHIBITION**:
+   - Stimulus onset triggers transient inhibition
+   - Naturally clears residual activity (no explicit resets needed!)
    - Fast-spiking interneuron-like dynamics
 
-3. CONTINUOUS DYNAMICS: Everything flows, no artificial resets
-   - Membrane potentials decay naturally via LIF dynamics
+3. **CONTINUOUS DYNAMICS**:
+   - Everything flows naturally - no artificial resets
+   - Membrane potentials decay via LIF dynamics
    - Theta phase advances continuously
-   - Activity transitions smoothly between phases
+   - Smooth transitions between encoding and retrieval phases
 
-All processing is spike-based (no rate accumulation).
+**All processing is spike-based** (no rate accumulation, ADR-004).
 
 FILE ORGANIZATION (2182 lines)
 ===============================

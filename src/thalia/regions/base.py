@@ -88,25 +88,25 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
     **There is no fundamental difference between "regions" and "pathways".**
 
     Both are populations of neurons with:
-    - Weights (synaptic connections)
-    - Dynamics (membrane potentials, spikes, traces)
+    - Synaptic connections (weights)
+    - Membrane dynamics (potentials, spikes, traces)
     - Learning rules (STDP, BCM, three-factor, etc.)
     - Neuromodulation (dopamine, acetylcholine, norepinephrine)
 
-    The distinction is semantic/organizational, not architectural:
-    - "Regions": Named functional populations (Cortex, Hippocampus, Striatum)
-    - "Pathways": Connection populations between regions (Cortex->Hippocampus)
-    - "Components": Generic term for any neural population
+    The distinction is organizational, not architectural:
+    - **Regions**: Named functional populations (Cortex, Hippocampus, Striatum)
+    - **Pathways**: Connection populations between regions (Cortex→Hippocampus)
+    - **Components**: Generic term for any neural population
 
     DESIGN PHILOSOPHY
     =================
-    Previously, we had separate hierarchies for regions and pathways.
-    This created artificial distinctions and code duplication. Now unified:
+    Previously, we had separate hierarchies for regions and pathways, creating
+    artificial distinctions and code duplication. Now unified:
 
     - LayeredCortex(NeuralComponent) - named functional unit
     - Striatum(NeuralComponent) - named functional unit
-    - SpikingComponent(NeuralComponent) - inter-region connections
-    - All inherit from same base, use same interfaces
+    - SpikingPathway(NeuralComponent) - inter-region connections
+    - All inherit from same base, implement same protocol
 
     COMPONENT PROTOCOL ENFORCEMENT
     ==============================
@@ -133,16 +133,20 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
 
     CONTINUOUS PLASTICITY
     =====================
-    Unlike traditional ML models, neural components learn CONTINUOUSLY during
-    forward passes. The learning rate is modulated by neuromodulators:
+    Unlike traditional ML models with separate training/inference phases,
+    neural components learn CONTINUOUSLY during forward passes.
 
-    - Dopamine: Modulates learning rate. High dopamine = consolidate good patterns.
-    - Acetylcholine: Modulates attention and novelty detection.
-    - Norepinephrine: Modulates arousal and flexibility.
+    **Biological Basis**: In real brains, synaptic plasticity occurs during
+    every spike pairing. There is no "training mode" vs "inference mode" -
+    learning IS dynamics.
 
-    The `forward()` method applies plasticity at each timestep, modulated by
-    neuromodulators. There is no separate `learn()` method - this is intentional!
-    In biological brains, learning IS dynamics, not a separate phase.
+    **Neuromodulation**: Learning rate is dynamically modulated by:
+    - **Dopamine**: High DA = consolidate patterns (reward), low DA = explore
+    - **Acetylcholine**: High ACh = encoding mode, low ACh = retrieval mode
+    - **Norepinephrine**: High NE = increase gain and flexibility
+
+    The forward() method processes input AND applies plasticity at each timestep.
+    There is no separate learn() method - this is intentional!
 
     NEUROMODULATION
     ===============

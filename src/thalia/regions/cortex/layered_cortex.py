@@ -104,51 +104,75 @@ from .config import LayeredCortexConfig, LayeredCortexState
     author="Thalia Project"
 )
 class LayeredCortex(NeuralComponent):
-    """
-    Multi-layer cortical microcircuit with proper layer separation.
+    """Multi-layer cortical microcircuit with proper layer separation and routing.
 
-    This implements a canonical cortical column with:
-    - L4: Input layer (receives external input)
-    - L2/3: Processing layer (recurrent, outputs to other cortex)
-    - L5: Output layer (outputs to subcortical structures)
+    Implements a canonical cortical column with distinct computational layers:
 
-    The key insight is that OUTPUT to next region comes from a different
-    layer than the one receiving RECURRENT feedback, solving the
-    contamination problem in single-layer models.
+    **Layer Architecture** (based on mammalian cortex):
+    - **L4**: Input layer - receives thalamic/sensory input, feedforward processing
+    - **L2/3**: Processing layer - recurrent computation, outputs to other cortex
+    - **L5**: Output layer - projects to subcortical structures (striatum, etc.)
 
-    Usage:
-        config = LayeredCortexConfig(n_input=256, n_output=64)
+    **Key Insight**:
+    Output to next cortical area comes from a DIFFERENT layer (L2/3) than the
+    one receiving recurrent feedback, solving the contamination problem in
+    single-layer models. L5 provides separate subcortical output pathway.
+
+    **Information Flow**:
+    1. External input → L4 (feedforward processing)
+    2. L4 → L2/3 (local integration)
+    3. L2/3 → L2/3 (recurrent processing, lateral connections)
+    4. L2/3 → L5 (deep projection)
+    5. L2/3 → Other cortex (cortico-cortical output)
+    6. L5 → Subcortical (striatum, thalamus, brainstem)
+
+    **Learning Mechanisms**:
+    - **Intra-layer**: BCM rule for homeostatic plasticity
+    - **Inter-layer**: STDP for connection refinement
+    - **Modulation**: Dopamine gates learning rate, ACh modulates encoding mode
+
+    **Output Format**:
+    Concatenated [L2/3_spikes, L5_spikes] for routing:
+    - First n_l23 neurons: Cortico-cortical pathway
+    - Last n_l5 neurons: Subcortical pathway
+
+    **Usage Example**:
+
+    .. code-block:: python
+
+        config = LayeredCortexConfig(
+            n_input=256,
+            n_output=128,  # Total output size (L2/3 + L5)
+            layer_ratio=(0.4, 0.4, 0.2),  # L4:L2/3:L5 proportions
+        )
         cortex = LayeredCortex(config)
 
         # Process input
-        output = cortex.forward(input_spikes)
+        output = cortex(input_spikes)
 
-        # Output contains both L2/3 (cortico-cortical) and L5 (subcortical)
-        l23_out = output[:, :cortex.l23_size]
-        l5_out = output[:, cortex.l23_size:]
+        # Route output by layer
+        l23_size = cortex.l23_size
+        cortico_output = output[:l23_size]  # To other cortex
+        subcortical_output = output[l23_size:]  # To striatum/thalamus
 
-    Mixins Provide:
-    ---------------
+    **Mixins Provide**:
+
     From LearningStrategyMixin:
-        - add_strategy(strategy) → None
-        - apply_learning(pre, post, **kwargs) → Dict
-        - Pluggable learning rules (Hebbian, STDP, BCM)
+        - add_strategy(), apply_learning() - Pluggable learning rules
 
     From DiagnosticsMixin:
-        - check_health() → HealthMetrics
-        - get_firing_rate(spikes) → float
-        - check_weight_health(weights, name) → WeightHealth
-        - detect_runaway_excitation(spikes) → bool
+        - check_health(), get_firing_rate() - Health monitoring
 
-    From NeuralComponent (abstract base):
-        - forward(input, **kwargs) → Tensor [must implement]
-        - reset_state() → None
-        - get_diagnostics() → Dict
-        - Neuromodulator control methods
+    From GrowthMixin:
+        - add_neurons(), get_capacity_metrics() - Curriculum learning
 
-    See Also:
-        docs/patterns/mixins.md for detailed mixin patterns
-        docs/patterns/state-management.md for LayeredCortexState
+    From NeuromodulatorMixin:
+        - set_dopamine(), get_effective_learning_rate() - DA modulation
+
+    **See Also**:
+    - docs/patterns/mixins.md - Detailed mixin patterns
+    - docs/decisions/adr-011-large-file-justification.md - Why single file
+    - docs/patterns/state-management.md - LayeredCortexState usage
     """
 
     def __init__(self, config: LayeredCortexConfig):

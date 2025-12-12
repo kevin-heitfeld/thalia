@@ -1,17 +1,39 @@
-"""Growth mechanisms for Thalia brain regions and pathways.
+"""Growth Mechanisms - Dynamic Capacity Expansion for Neural Circuits.
 
-Supports adding neurons and synapses without disrupting existing weights,
-enabling curriculum learning with capacity expansion.
+Supports adding neurons and synapses WITHOUT disrupting existing weights,
+enabling curriculum learning with capacity expansion at stage transitions.
 
-Design Philosophy:
-- CONSERVATIVE growth: Only add capacity when truly needed
-- PRESERVE existing knowledge: New neurons/synapses don't interfere with trained circuits
-- TRACK history: Log all growth events for analysis and debugging
-- CHECKPOINT compatible: Growth state serializable/restorable
-- COORDINATED growth: Regions and pathways can grow together
+**Design Philosophy**:
+======================
+1. **CONSERVATIVE GROWTH**: Only add capacity when truly needed (not proactive)
+2. **PRESERVE KNOWLEDGE**: New neurons/synapses don't interfere with trained circuits
+3. **TRACK HISTORY**: Log all growth events for analysis and debugging
+4. **CHECKPOINT COMPATIBLE**: Growth state fully serializable/restorable
+5. **COORDINATED GROWTH**: Regions and pathways can grow together
 
-Author: Thalia Team
-Date: December 7, 2025
+**When to Grow**:
+=================
+- **Saturation**: >80% of neurons consistently firing (no capacity left)
+- **Poor differentiation**: Neurons learning redundant features
+- **Stage transitions**: New task complexity requires more capacity
+- **Performance plateau**: Learning stalled despite continued training
+
+**How Growth Preserves Knowledge**:
+===================================
+1. **New neurons start weak**: Low initial weights → minimal disruption
+2. **Existing connections unchanged**: Keep trained circuit intact
+3. **Gradual integration**: New capacity slowly joins existing network
+4. **No catastrophic forgetting**: Old knowledge remains accessible
+
+**Architecture Pattern**:
+=========================
+Both regions AND pathways implement growth:
+- Regions: Add more neurons (increase population size)
+- Pathways: Add more synapses (increase connectivity)
+- Coordinated: Growing region → connected pathways also grow
+
+**Author**: Thalia Team
+**Date**: December 2025 (Updated from Dec 7, 2025)
 """
 
 from dataclasses import dataclass, field
@@ -58,12 +80,12 @@ class GrowthEvent:
 @dataclass
 class CapacityMetrics:
     """Standardized capacity metrics for growth decisions.
-    
+
     This dataclass provides a consistent interface for all brain components
     (regions and pathways) to report their capacity utilization. The growth
     manager uses these metrics to make informed decisions about when and how
     much to grow.
-    
+
     Core Metrics (always present):
         utilization: Overall capacity utilization (0.0 to 1.0)
             Combines firing rate, weight saturation, and synapse usage
@@ -71,7 +93,7 @@ class CapacityMetrics:
         active_neurons: Number of neurons that were recently active
         growth_recommended: Whether growth is advised
         growth_amount: Suggested number of neurons to add (if growing)
-    
+
     Optional Detailed Metrics:
         firing_rate: Average firing rate (0.0 to 1.0)
         silence_fraction: Fraction of neurons that never fire (0.0 to 1.0)
@@ -79,7 +101,7 @@ class CapacityMetrics:
         synapse_usage: Fraction of synapses actively used (0.0 to 1.0)
         synapse_count: Total number of synapses
         growth_reason: Human-readable explanation for growth recommendation
-    
+
     Usage:
         >>> metrics = region.get_capacity_metrics()
         >>> if metrics.growth_recommended:
@@ -92,7 +114,7 @@ class CapacityMetrics:
     active_neurons: int  # Recently active neurons
     growth_recommended: bool = False  # Should we grow?
     growth_amount: int = 0  # Suggested neurons to add
-    
+
     # Optional detailed metrics (for diagnostics)
     firing_rate: Optional[float] = None  # Average firing rate
     silence_fraction: Optional[float] = None  # Fraction never firing
@@ -100,13 +122,13 @@ class CapacityMetrics:
     synapse_usage: Optional[float] = None  # Active synapses fraction
     synapse_count: Optional[int] = None  # Total synapses
     growth_reason: str = ""  # Why growth is recommended
-    
+
     # Legacy aliases for backward compatibility
     @property
     def neuron_count(self) -> int:
         """Alias for total_neurons (backward compatibility)."""
         return self.total_neurons
-    
+
     @property
     def weight_saturation(self) -> float:
         """Alias for saturation_fraction (backward compatibility)."""
@@ -121,7 +143,7 @@ class CapacityMetrics:
             "growth_recommended": float(self.growth_recommended),
             "growth_amount": float(self.growth_amount),
         }
-        
+
         # Add optional metrics if present
         if self.firing_rate is not None:
             result["firing_rate"] = self.firing_rate
@@ -133,7 +155,7 @@ class CapacityMetrics:
             result["synapse_usage"] = self.synapse_usage
         if self.synapse_count is not None:
             result["synapse_count"] = float(self.synapse_count)
-        
+
         return result
 
 
@@ -227,7 +249,7 @@ class GrowthManager:
         if hasattr(component, 'state') and hasattr(component.state, 'spikes'):
             if component.state.spikes is not None:
                 active_neurons = (component.state.spikes > 0).sum().item()
-        
+
         # Compute overall utilization (weighted combination)
         # Weight: 40% firing rate, 40% weight saturation, 20% synapse usage
         utilization = (
@@ -235,7 +257,7 @@ class GrowthManager:
             0.4 * weight_saturation +
             0.2 * synapse_usage
         )
-        
+
         # Determine if growth is recommended
         growth_recommended = False
         growth_reason = ""

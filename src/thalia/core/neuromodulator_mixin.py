@@ -30,37 +30,46 @@ All decay is handled centrally by Brain._update_neuromodulators() which:
 3. Updates NB acetylcholine (encoding mode + phasic decay)
 4. Broadcasts all three to regions every timestep
 
-**Regional Specificity vs Global Broadcast**:
-The old architecture assumed ACh/NE had "regional specificity" requiring local decay.
-This was neuroanatomically incorrect:
-- Nucleus Basalis projects broadly (cortex + hippocampus)
-- Locus Coeruleus projects globally (entire brain)
-- Both are centralized nuclei like VTA
+**Regional Specificity via Receptor Density**:
+==============================================
+The architecture reflects neuroanatomical reality:
 
-However, regions CAN respond differently to the SAME global signal:
-- Different receptor densities (e.g., D1 vs D2 in striatum)
-- Different sensitivity parameters (e.g., dopamine_sensitivity in get_effective_learning_rate)
-- Region-specific gating (e.g., hippocampus uses ACh differently than cortex)
+**Global Projection**:
+- Nucleus Basalis projects broadly to cortex and hippocampus
+- Locus Coeruleus projects globally throughout entire brain
+- VTA projects widely to cortex, striatum, limbic system
+- All three are centralized nuclei with diffuse projections
 
-This is implemented via:
-1. **Global broadcast**: Same signal to all regions (biologically accurate)
-2. **Local interpretation**: Each region uses signal according to its receptor profile
-3. **Configurable sensitivity**: Regions can override sensitivity parameters
+**Regional Variability** comes from receptor density, not signal decay:
+- Striatum: High D1/D2 receptor density → strong DA sensitivity
+- Cortex: Moderate D1/D2 density → moderate DA sensitivity
+- Cerebellum: Low D1/D2 density → weak DA sensitivity
+- Hippocampus CA1: High M1/M2 ACh receptors → strong ACh effects
+- Hippocampus CA3: Moderate ACh receptors → moderate ACh effects
 
-Example - Dopamine sensitivity varies by region:
-```python
-# Striatum: highly dopamine-sensitive (rich D1/D2)
-striatum_lr = self.get_effective_learning_rate(base_lr=0.01, dopamine_sensitivity=2.0)
+Components respond differently to the SAME global signal via:
+1. **Receptor density parameters**: dopamine_sensitivity, ach_sensitivity
+2. **Gating logic**: Hippocampus uses ACh for encode/retrieve modes
+3. **Pathway-specific modulation**: Striatum D1 vs D2 pathways respond oppositely
 
-# Cortex: moderately dopamine-sensitive
-cortex_lr = self.get_effective_learning_rate(base_lr=0.01, dopamine_sensitivity=1.0)
+Example - Dopamine sensitivity varies by receptor density:
 
-# Cerebellum: less dopamine-sensitive
-cerebellum_lr = self.get_effective_learning_rate(base_lr=0.01, dopamine_sensitivity=0.5)
-```
+.. code-block:: python
 
-This matches biology: VTA broadcasts DA globally, but regions respond according to
-their D1/D2 receptor densities, not because DA "decays differently" per region.
+    # Striatum: High D1/D2 receptor density
+    striatum_lr = self.get_effective_learning_rate(
+        base_lr=0.01, dopamine_sensitivity=2.0
+    )
+
+    # Cortex: Moderate D1/D2 density
+    cortex_lr = self.get_effective_learning_rate(
+        base_lr=0.01, dopamine_sensitivity=1.0
+    )
+
+    # Cerebellum: Low D1/D2 density
+    cerebellum_lr = self.get_effective_learning_rate(
+        base_lr=0.01, dopamine_sensitivity=0.3
+    )
 
 Biological Basis:
 =================

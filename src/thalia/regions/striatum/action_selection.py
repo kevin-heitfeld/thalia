@@ -1,9 +1,49 @@
-"""
-Action Selection for Striatum
+"""Action Selection Mixin - Population Coding and UCB-Softmax Selection.
 
-This module provides action selection functionality as a mixin class.
-It handles population coding, UCB exploration, softmax selection,
-and vote accumulation across timesteps.
+This module provides action selection functionality as a mixin class for the
+striatum, handling the complex process of converting neural spikes into
+discrete action choices.
+
+**What This Provides**:
+=======================
+1. **Population coding**: Multiple neurons per action vote together
+2. **UCB exploration**: Upper Confidence Bound action bonuses
+3. **Softmax selection**: Temperature-based probabilistic choice
+4. **Vote accumulation**: Integrate spikes across timesteps
+
+**How Action Selection Works**:
+================================
+
+.. code-block:: none
+
+    Striatal Spikes        Population Coding       Action Selection
+    ───────────────        ─────────────────       ────────────────
+
+    [0,1,0,1,1,0,...]  →  [votes_action0,     →   softmax()
+                           votes_action1,      →   + UCB bonus
+                           votes_action2]      →   = chosen action
+
+**Population Coding**:
+======================
+Instead of 1 neuron = 1 action (brittle, noisy), we use:
+- N neurons per action (e.g., 10 neurons represent "move left")
+- Votes accumulated across neurons for each action
+- More robust to noise, biological plausibility
+
+**UCB Exploration**:
+====================
+Add bonus to under-explored actions:
+
+.. code-block:: python
+
+    bonus = c * sqrt(log(total_trials) / action_count)
+
+Encourages trying less-explored actions (information-seeking).
+
+**Context**:
+============
+Mixin design allows Striatum to stay focused on core functionality while
+delegating action selection logic to this specialized module.
 """
 
 from __future__ import annotations

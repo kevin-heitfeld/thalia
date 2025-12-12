@@ -1,22 +1,32 @@
-"""
-Conductance-Based Leaky Integrate-and-Fire (LIF) neuron model.
+"""Conductance-Based Leaky Integrate-and-Fire (LIF) Neuron Model.
 
-This module implements biologically realistic spiking neurons with
-conductance-based dynamics where currents depend on the difference
-between membrane potential and reversal potentials.
+This module implements biologically realistic spiking neurons using
+conductance-based membrane dynamics where synaptic currents depend on
+the driving force (difference between membrane potential and reversal potential).
 
-Membrane dynamics:
-    C_m * dV/dt = g_L(E_L - V) + g_E(E_E - V) + g_I(E_I - V)
+**Membrane Dynamics**:
+=====================
+.. math::
 
-Key advantages over current-based models:
-    - Natural saturation at reversal potentials
-    - Proper shunting inhibition (divisive, not subtractive)
-    - Realistic voltage-dependent current flow
+    C_m \\\\frac{dV}{dt} = g_L(E_L - V) + g_E(E_E - V) + g_I(E_I - V)
 
-When V >= V_threshold:
-    - Emit spike
-    - V = V_reset
-    - Enter refractory period
+Where:
+- V: membrane potential
+- g_L, g_E, g_I: leak, excitatory, inhibitory conductances
+- E_L, E_E, E_I: reversal potentials for each conductance
+
+**Key Advantages** over current-based LIF:
+==========================================
+1. **Natural Saturation**: Currents vanish as V approaches reversal potential
+2. **Shunting Inhibition**: Inhibition is divisive (not just subtractive)
+3. **Voltage-Dependent**: Current magnitude depends on driving force
+4. **Biological Realism**: Matches real neuron biophysics more closely
+
+**Spike Generation**:
+When V ≥ V_threshold:
+- Emit spike (binary: 0 or 1, per ADR-004)
+- Reset: V → V_reset
+- Enter refractory period (τ_ref ms, no spiking)
 """
 
 from __future__ import annotations

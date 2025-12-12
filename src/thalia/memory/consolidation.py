@@ -1,42 +1,54 @@
-"""
-Enhanced Consolidation - Memory pressure triggers and sleep-based replay.
+"""Enhanced Consolidation - Memory Pressure Detection and Sleep-Based Replay.
 
-This module implements biologically-inspired memory consolidation mechanisms:
-1. Memory pressure detection (when to trigger consolidation)
-2. Sleep-stage simulation (NREM/REM alternation)
-3. Hippocampal replay triggering
-4. Consolidation quality metrics
+This module implements biologically-inspired memory consolidation mechanisms
+for transferring hippocampal memories to neocortex during sleep:
 
-Key Concepts:
-=============
+**What This Module Provides**:
+===============================
+1. **Memory pressure detection**: When to trigger consolidation
+2. **Sleep-stage simulation**: NREM/REM alternation
+3. **Hippocampal replay triggering**: Coordinate replay events
+4. **Consolidation quality metrics**: Track effectiveness
 
-1. MEMORY PRESSURE
-   Hippocampus has limited capacity (~10k patterns). When full, consolidation needed:
-   - Pattern overlap → interference
-   - High activity → saturation
+**Key Biological Concepts**:
+=============================
+
+1. **MEMORY PRESSURE**:
+   Hippocampus has limited capacity (~10k patterns). When full → consolidate!
+
+   **Signs of pressure**:
+   - Pattern overlap → interference between memories
+   - High activity → neural saturation
    - Poor retrieval → forgetting
-   Evidence: McClelland et al. (1995) - complementary learning systems
 
-2. SLEEP STAGES
+   **Evidence**: McClelland et al. (1995) - Complementary Learning Systems theory
+
+2. **SLEEP STAGES**:
    Different stages serve different functions:
-   - NREM (slow-wave): Hippocampus → Cortex transfer (system consolidation)
-   - REM (paradoxical): Cortical reorganization, pruning
-   - Alternating cycles (~90 min each)
-   Evidence: Born & Wilhelm (2012) - system consolidation during sleep
 
-3. HIPPOCAMPAL REPLAY
+   - **NREM (slow-wave sleep)**: Hippocampus → Cortex transfer (system consolidation)
+   - **REM (paradoxical sleep)**: Cortical reorganization, synaptic pruning
+   - **Alternating cycles**: ~90 min each throughout night
+
+   **Evidence**: Born & Wilhelm (2012) - "System consolidation during sleep"
+
+3. **HIPPOCAMPAL REPLAY**:
    Compress experiences for efficient cortical encoding:
-   - 10-20× speed-up during replay
-   - Reverse replay for credit assignment
-   - Prioritize high-value/recent memories
-   Evidence: Diba & Buzsáki (2007) - forward/reverse replay
 
-4. CONSOLIDATION QUALITY
-   Track effectiveness of consolidation:
-   - How much was transferred?
-   - Is cortex learning?
+   - **10-20× speed-up** during replay (faster than real-time)
+   - **Reverse replay** for credit assignment (reward → earlier actions)
+   - **Prioritize** high-value/recent/surprising memories
+
+   **Evidence**: Diba & Buzsáki (2007) - "Forward and reverse hippocampal replay"
+
+4. **CONSOLIDATION QUALITY**:
+   Track effectiveness of consolidation process:
+
+   - How much was transferred to cortex?
+   - Is cortex actually learning?
    - Can we still retrieve from hippocampus?
-   Evidence: Dudai (2004) - consolidation metrics
+
+   **Evidence**: Dudai (2004) - "The neurobiology of consolidations"
 
 Usage:
 ======

@@ -1,13 +1,14 @@
-"""
-Sequence Memory for Language and Temporal Patterns.
+"""Sequence Memory - Hippocampal Learning of Temporal Patterns and Language.
 
-This module provides a hippocampus-based sequence memory that can:
-1. Store sequences of tokens/patterns with temporal order
-2. Recall previous context to predict next elements
-3. Learn associations between sequence elements
+This module provides a hippocampus-based sequence memory system that can:
+1. **Store sequences** of tokens/patterns with temporal order
+2. **Recall previous context** to predict next elements
+3. **Learn associations** between sequence elements via CA3 recurrence
 
-Architecture:
-=============
+**Architecture**:
+=================
+
+.. code-block:: none
 
     Token Sequence: [A, B, C, D, ?]
                      │  │  │  │
@@ -29,16 +30,19 @@ Architecture:
               │   Pattern Recall    │  Given [A,B,C,D] → predict [E]?
               └─────────────────────┘
 
-How it works:
+**How It Works**:
+=================
 1. Each token is encoded with its theta phase (position in sequence)
 2. CA3 recurrent connections learn: token_n → token_n+1
 3. During recall, partial cue activates full sequence via pattern completion
 4. Output is the predicted next token(s)
 
-Biological basis:
-- Theta sequences: place cells fire in sequence within each theta cycle
-- Hippocampal replay: sequences are replayed during rest/sleep
-- Temporal context: neurons encode not just WHAT but WHEN in sequence
+**Biological Basis**:
+=====================
+- **Theta sequences**: Place cells fire in sequence within each theta cycle
+- **Hippocampal replay**: Sequences are replayed during rest/sleep for consolidation
+- **Temporal context**: Neurons encode not just WHAT but WHEN in sequence
+- **Phase precession**: Position in sequence encoded by theta phase
 
 Author: Thalia Project
 Date: December 2025

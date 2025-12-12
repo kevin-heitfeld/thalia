@@ -72,46 +72,62 @@ class SpikingLearningRule(Enum):
     author="Thalia Project"
 )
 class SpikingPathway(NeuralComponent):
-    """
-    Fully spiking inter-region pathway with temporal dynamics.
+    """Fully spiking inter-region pathway with temporal dynamics and plasticity.
 
-    Inherits from NeuralComponent, implementing the NeuralPathway protocol
-    interface with a standardized API for inter-region connections.
+    Inherits from NeuralComponent, implementing the BrainComponent protocol
+    with standardized API for inter-region connections.
 
-    Unlike rate-based pathways, this implements actual spiking neurons with:
-    - Leaky integrate-and-fire dynamics
+    **Key Features**:
+    - Leaky integrate-and-fire (LIF) neuron dynamics
     - Synaptic currents with temporal filtering
-    - Axonal conduction delays
-    - **STDP learning (automatic during every forward pass)**
-    - Support for temporal coding schemes
+    - Axonal conduction delays (realistic transmission)
+    - **Continuous STDP learning** (automatic during every forward pass)
+    - Support for temporal coding schemes (rate, latency, phase, synchrony)
 
-    The pathway acts as a "mini-region" that transforms spikes
-    from source to target while maintaining temporal structure.
+    **Biological Reality**:
+    Pathways are NOT passive wires - they are active neural populations that:
+    - Filter and transform information
+    - Learn continuously via spike-timing dependent plasticity
+    - Introduce realistic delays (2-10ms for long-range projections)
+    - Maintain temporal structure critical for synchronization
 
-    Protocol Compliance:
-    - forward(): Process spikes through pathway (**learning happens automatically**)
-    - reset_state(): Clear membrane potentials, traces, delays
-    - get_diagnostics(): Report activity and learning metrics
+    **Protocol Compliance** (BrainComponent):
+    - forward(): Process spikes AND apply learning (standard PyTorch, ADR-007)
+    - reset_state(): Clear membrane potentials, traces, delay buffers
+    - get_diagnostics(): Report activity, health, and learning metrics
+    - add_neurons(): Grow pathway when connected regions grow
+    - check_health(): Detect pathologies (silence, saturation, etc.)
 
-    Note on Learning:
-    Like brain regions (Prefrontal, Hippocampus, etc.), this pathway
-    ALWAYS learns during forward passes via STDP. There is no separate
-    learn() method - plasticity happens continuously and automatically.
+    **Learning Design**:
+    Like brain regions, this pathway ALWAYS learns during forward passes.
+    There is no separate learn() method - plasticity is continuous and
+    automatic, modulated by neuromodulators (dopamine, etc.).
 
-    Example:
+    **Usage Example**:
+
+    .. code-block:: python
+
+        # Create pathway between cortex and hippocampus
         pathway = SpikingPathway(PathwayConfig(
-            n_input=64,
-            n_output=128,
-            temporal_coding=TemporalCoding.PHASE,
-            oscillation_freq_hz=8.0,  # Theta
+            n_input=256,   # Cortex output size
+            n_output=128,  # Hippocampus input size
+            axonal_delay_ms=5.0,  # Long-range delay
+            stdp_lr=0.001,
         ))
 
+        # Process spikes (learning happens automatically)
         for t in range(n_timesteps):
-            target_spikes = pathway(source_spikes[t], dt=1.0, time_ms=t)
-            # STDP learning happens automatically during forward pass!
+            hippo_input = pathway(cortex_output[t], dt=1.0)
+            # STDP applied automatically based on spike timing!
 
-        # Check learning metrics
-        metrics = pathway.get_learning_metrics()
+        # Monitor pathway health
+        health = pathway.check_health()
+        if not health.is_healthy:
+            print(f\"Pathway issues: {health.issues}\")
+
+        # Get learning metrics
+        diag = pathway.get_diagnostics()
+        print(f\"Weight change: {diag['learning']['weight_change']}\")
     """
 
     def __init__(self, config: PathwayConfig):

@@ -1,39 +1,43 @@
-"""
-Unified Homeostasis: Constraint-Based Stability for SNNs.
+"""Unified Homeostasis - Constraint-Based Stability for Spiking Neural Networks.
 
 This module replaces multiple biological homeostatic mechanisms with a
-simpler, mathematically-guaranteed approach using constraints instead
-of corrections.
+simpler, mathematically-guaranteed approach using CONSTRAINTS instead
+of CORRECTIONS.
 
-Philosophy:
-===========
+**Philosophy**:
+===============
 The brain has 10+ overlapping homeostatic mechanisms (BCM, synaptic scaling,
-intrinsic plasticity, etc.) because biology is messy and redundant. But we're
-not constrained by evolution - we can impose mathematical guarantees.
+intrinsic plasticity, heterosynaptic competition, etc.) because biology is
+messy and redundant - evolution stacked these over millions of years.
 
-Key Insight: CONSTRAINTS > CORRECTIONS
-- Correction: "If weights get too high, slow down learning" (might not work)
-- Constraint: "Weights MUST sum to X" (mathematically guaranteed)
+**But we're not constrained by evolution** - we can impose mathematical guarantees!
 
-Effects Captured:
-=================
-1. STABILITY: Weights and activity cannot explode or collapse
-   → Weight normalization, hard bounds
+**Key Insight: CONSTRAINTS > CORRECTIONS**:
+===========================================
+- **Correction approach**: "If weights get too high, slow down learning"
+  → Might not work, requires tuning, can still fail
+- **Constraint approach**: "Weights MUST sum to X"
+  → Mathematically guaranteed, no tuning needed
 
-2. DIFFERENTIATION: Neurons learn different things
+**Effects Captured**:
+=====================
+1. **STABILITY**: Weights and activity cannot explode or collapse
+   → Hard bounds, weight normalization
+
+2. **DIFFERENTIATION**: Neurons learn different features (no redundancy)
    → Competitive normalization (if one grows, others shrink)
 
-3. COMPETITION: Learning resources are finite
+3. **COMPETITION**: Learning resources are finite (zero-sum game)
    → Per-neuron or per-action budget constraints
 
-4. MEMORY: Learning persists appropriately
-   → Normalization preserves relative differences
+4. **MEMORY**: Learning persists appropriately over time
+   → Normalization preserves relative differences between weights
 
-5. ADAPTABILITY: Can still learn new things
-   → Constraints don't prevent learning, just bound it
+5. **ADAPTABILITY**: Can still learn new things
+   → Constraints bound learning but don't prevent it
 
-Replaces:
-=========
+**Biological Mechanisms Replaced**:
+===================================
 - BCM sliding threshold (metaplasticity)
 - Synaptic scaling (global weight adjustment)
 - Intrinsic plasticity (threshold adaptation)

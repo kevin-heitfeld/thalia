@@ -21,7 +21,7 @@ By having a unified protocol, we ensure:
 4. Documentation: Explicit that pathways = first-class citizens
 
 Author: Thalia Team
-Date: December 7, 2025
+Date: December 2025
 """
 
 from __future__ import annotations
@@ -87,26 +87,29 @@ class BrainComponent(Protocol):
 
     Usage Example
     =============
-    ```python
-    def analyze_component(component: BrainComponent) -> Dict[str, Any]:
-        '''Analyze any brain component (region or pathway).'''
-        # Check health
-        health = component.check_health()
+    The protocol enables uniform handling of both regions and pathways:
 
-        # Check capacity
-        metrics = component.get_capacity_metrics()
+    .. code-block:: python
 
-        # Grow if needed
-        if metrics.growth_recommended:
-            component.add_neurons(n_new=100)
+        def analyze_and_adapt_component(component: BrainComponent) -> Dict[str, Any]:
+            '''Analyze any brain component and adapt if needed.'''
+            # Check for pathologies
+            health = component.check_health()
+            if not health.is_healthy:
+                print(f"Component issues: {health.issues}")
 
-        # Get diagnostics
-        return component.get_diagnostics()
+            # Check if capacity is saturated
+            metrics = component.get_capacity_metrics()
+            if metrics.growth_recommended:
+                print(f"Growing: {metrics.growth_reason}")
+                component.add_neurons(n_new=100)
 
-    # Works uniformly for regions AND pathways
-    cortex_health = analyze_component(cortex)
-    pathway_health = analyze_component(cortex_to_hippo_pathway)
-    ```
+            # Return diagnostics
+            return component.get_diagnostics()
+
+        # Works identically for regions AND pathways
+        cortex_diag = analyze_and_adapt_component(cortex)
+        pathway_diag = analyze_and_adapt_component(cortex_to_hippo_pathway)
     """
 
     # =========================================================================
@@ -173,43 +176,49 @@ class BrainComponent(Protocol):
         Receive oscillator phases and amplitudes from brain broadcast.
 
         Brain oscillations coordinate activity across regions and pathways:
-        - **Delta (0.5-4 Hz)**: Deep sleep, attention
-        - **Theta (4-10 Hz)**: Memory encoding, spatial navigation
-        - **Alpha (8-13 Hz)**: Attention, inhibitory control
-        - **Beta (13-30 Hz)**: Motor control, cognitive processing
-        - **Gamma (30-100 Hz)**: Binding, local processing
+        - **Delta (0.5-4 Hz)**: Deep sleep, large-scale synchronization
+        - **Theta (4-10 Hz)**: Memory encoding, spatial navigation, sequence learning
+        - **Alpha (8-13 Hz)**: Attention gating, inhibitory control
+        - **Beta (13-30 Hz)**: Motor control, active cognitive processing
+        - **Gamma (30-100 Hz)**: Feature binding, local circuit processing
 
         Components use oscillators for:
-        - **Phase-dependent gating**: Theta encoding vs retrieval
-        - **Attention modulation**: Alpha suppression
-        - **Motor preparation**: Beta synchrony
-        - **Feature binding**: Gamma synchrony
-        - **Transmission efficiency**: Pathways can gate by oscillatory state
+        - **Phase-dependent gating**: Theta phase determines encode vs retrieve
+        - **Attention modulation**: Alpha power controls sensory suppression
+        - **Motor preparation**: Beta synchrony coordinates motor planning
+        - **Feature binding**: Gamma synchrony links distributed representations
+        - **Transmission efficiency**: Pathways gate information flow by oscillatory state
 
-        Called every timestep by Brain (similar to dopamine broadcast).
-        Default implementation stores phases but doesn't require usage.
-        Components can override to implement oscillator-dependent behavior.
+        Called every timestep by Brain (centralized broadcast, like neuromodulators).
+        Default implementation stores phases; components override for specialized behavior.
 
         Args:
             phases: Oscillator phases in radians [0, 2π)
-                   {'delta': 1.2, 'theta': 3.4, 'alpha': 0.5, ...}
-            signals: Oscillator signal values [-1, 1] (sin/cos waveforms)
-                    {'delta': 0.8, 'theta': -0.3, ...}
-            theta_slot: Current theta slot [0, n_slots-1] for sequence encoding
+                   Example: {'delta': 1.2, 'theta': 3.4, 'alpha': 0.5}
+            signals: Oscillator signal values in [-1, 1] (sin/cos waveforms)
+                    Example: {'delta': 0.8, 'theta': -0.3}
+            theta_slot: Current theta slot index [0, n_slots-1] for sequence encoding.
+                       Theta cycle is divided into slots for temporal coding.
             coupled_amplitudes: Effective amplitudes per oscillator (pre-computed)
-                               {'delta': 1.0, 'theta': 0.73, 'gamma': 0.48}
-                               Values reflect automatic multiplicative coupling.
+                               Example: {'delta': 1.0, 'theta': 0.73, 'gamma': 0.48}
+                               Values incorporate multiplicative coupling between bands.
 
-        Example (regions):
-            >>> # Hippocampus uses theta for encoding/retrieval
-            >>> theta_phase = phases['theta']
-            >>> is_encoding = 0 <= theta_phase < np.pi
-            >>> learning_rate = gamma_amplitude * base_lr
+        Example - Hippocampus theta-phase encoding:
 
-        Example (pathways):
-            >>> # Attention pathway uses beta for gain modulation
-            >>> beta_amp = coupled_amplitudes.get('beta', 1.0)
-            >>> transmission_gain = 1.0 + (beta_amp - 1.0) * attention_strength
+        .. code-block:: python
+
+            theta_phase = phases['theta']
+            is_encoding = 0 <= theta_phase < np.pi  # First half = encoding
+            gamma_amp = coupled_amplitudes.get('gamma', 1.0)
+            learning_rate = gamma_amp * self.base_learning_rate
+
+        Example - Attention pathway beta modulation:
+
+        .. code-block:: python
+
+            beta_amp = coupled_amplitudes.get('beta', 1.0)
+            attention_strength = self.attention_level  # From PFC
+            transmission_gain = 1.0 + (beta_amp - 1.0) * attention_strength
         """
 
     # =========================================================================

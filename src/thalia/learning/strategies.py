@@ -1,50 +1,86 @@
-"""
-Learning Rule Strategies: Pluggable Learning Algorithms for Brain Regions.
+"""Learning Rule Strategies: Pluggable Learning Algorithms for Brain Components.
 
 This module implements a Strategy pattern for learning rules, allowing regions
-to compose and switch between different learning algorithms without code duplication.
+and pathways to compose and switch between different learning algorithms without
+code duplication.
 
-Design Philosophy:
+Design Philosophy
 ==================
-Instead of each region implementing its own learn() method with duplicated
-STDP/BCM/three-factor logic, regions can compose strategies:
+Instead of each component implementing its own learning logic with duplicated
+STDP/BCM/three-factor code, components can compose strategies:
 
+.. code-block:: python
+
+    # Simple usage
     region.learning_strategy = STDPStrategy(config)
-    # or compose:
+
+    # Or compose multiple strategies
     region.learning_strategy = CompositeStrategy([
         STDPStrategy(stdp_config),
-        BCMModulationStrategy(bcm_config),
+        BCMModulationStrategy(bcm_config),  # Modulates STDP output
     ])
 
-Each strategy handles:
+Each strategy encapsulates:
 - Weight update computation
 - Trace management
 - Bounds enforcement
 - Metrics collection
 
-Supported Strategies:
+Supported Strategies
 =====================
-- HebbianStrategy: Basic Hebbian learning (Δw ∝ pre × post)
-- STDPStrategy: Spike-timing dependent plasticity
-- BCMStrategy: Bienenstock-Cooper-Munro with sliding threshold
-- ThreeFactorStrategy: RL eligibility × neuromodulator
-- ErrorCorrectiveStrategy: Supervised delta rule
-- CompositeStrategy: Compose multiple strategies
+- **HebbianStrategy**: Basic Hebbian learning (Δw ∝ pre × post)
+- **STDPStrategy**: Spike-timing dependent plasticity (causal vs anti-causal)
+- **BCMStrategy**: Bienenstock-Cooper-Munro with sliding threshold
+- **ThreeFactorStrategy**: RL eligibility × neuromodulator (dopamine)
+- **ErrorCorrectiveStrategy**: Supervised delta rule (cerebellum-style)
+- **CompositeStrategy**: Compose multiple strategies
 
-Usage:
-======
-    # Create strategy
-    stdp = STDPStrategy(STDPConfig(a_plus=0.01, a_minus=0.012))
+Strategy Interface
+==================
+All strategies implement:
 
-    # Apply in region's learn() method:
-    def learn(self, pre, post, **kwargs):
-        return stdp.apply(self.weights, pre, post)
+.. code-block:: python
 
-    # Or use composable modulation:
-    composite = CompositeStrategy([
-        STDPStrategy(stdp_config),
-        BCMModulationStrategy(bcm_config),  # Modulates STDP output
-    ])
+    class LearningStrategy(Protocol):
+        def apply(
+            self,
+            weights: Tensor,
+            pre_spikes: Tensor,
+            post_spikes: Tensor,
+            **kwargs
+        ) -> Dict[str, Any]:
+            '''Apply learning rule and return metrics.'''
+
+Usage in Components
+===================
+Components apply strategies during forward passes:
+
+.. code-block:: python
+
+    class MyRegion(NeuralComponent):
+        def __init__(self, config):
+            super().__init__(config)
+            self.learning_strategy = STDPStrategy(
+                STDPConfig(a_plus=0.01, a_minus=0.012)
+            )
+
+        def forward(self, input_spikes):
+            output = self._compute_output(input_spikes)
+
+            # Apply learning automatically during forward
+            if self.plasticity_enabled:
+                metrics = self.learning_strategy.apply(
+                    self.weights, input_spikes, output
+                )
+
+            return output
+
+Benefits
+========
+1. **Modularity**: Learning rules are independent, testable modules
+2. **Reusability**: Same strategy works for regions AND pathways
+3. **Composition**: Combine multiple rules (STDP + BCM + DA modulation)
+4. **Experimentation**: Easy to swap learning rules for ablation studies
 """
 
 from __future__ import annotations

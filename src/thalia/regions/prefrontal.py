@@ -1,33 +1,35 @@
-"""
-Prefrontal Cortex - Gated Working Memory and Executive Control
+"""Prefrontal Cortex - Gated Working Memory and Executive Control.
 
-The prefrontal cortex (PFC) is specialized for:
-- Working memory maintenance
-- Rule learning and flexible switching
-- Executive control and decision making
-- Goal-directed behavior
+The prefrontal cortex (PFC) specializes in cognitive control and flexible behavior:
+- **Working memory maintenance**: Actively maintain information over delays
+- **Rule learning**: Learn context-dependent stimulus-response mappings
+- **Executive control**: Top-down attention and behavioral inhibition
+- **Goal-directed behavior**: Plan and execute multi-step goal hierarchies
 
-Key Features:
-=============
-1. GATED WORKING MEMORY:
-   - Information can be actively maintained against decay
+**Key Features**:
+=================
+1. **GATED WORKING MEMORY**:
+   - Active maintenance against decay via recurrent excitation
    - Dopamine gates what enters/updates working memory
-   - Persistent activity through recurrent connections
+   - Similar to LSTM/GRU gating in deep learning, but biological
+   - Persistent activity emerges from network dynamics (not explicit state)
 
-2. DOPAMINE GATING:
-   - DA burst → "update gate open" → allow new info into WM
-   - DA dip → "maintain" → protect current WM contents
-   - Similar to LSTM/GRU gating mechanisms in deep learning
+2. **DOPAMINE GATING MECHANISM**:
+   - DA burst (>threshold) → "update gate open" → new info enters WM
+   - DA baseline → "maintain" → protect current WM contents
+   - DA dip → "clear" → allow WM to decay
+   - Gates both learning AND maintenance
 
-3. CONTEXT-DEPENDENT LEARNING:
-   - Rule neurons learn to represent abstract rules
-   - Same sensory input → different outputs based on context
-   - Supports flexible behavior switching
+3. **CONTEXT-DEPENDENT LEARNING**:
+   - Rule neurons represent abstract task rules
+   - Same input → different outputs based on context/rule
+   - Enables flexible behavior switching
+   - Supports cognitive flexibility and set-shifting
 
-4. SLOW INTEGRATION:
-   - Longer time constants than sensory areas
-   - Allows integration over longer timescales
-   - Supports temporal abstraction
+4. **SLOW INTEGRATION**:
+   - Longer time constants than sensory cortex (τ ~500ms)
+   - Integrates information over longer timescales
+   - Supports temporal abstraction and planning
 
 Biological Basis:
 =================

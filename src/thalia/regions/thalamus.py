@@ -1,33 +1,36 @@
-"""
-Thalamus - Sensory Relay and Gating
+"""Thalamus - Sensory Relay, Gating, and Attentional Modulation.
 
-The thalamus is the brain's "sensory switchboard" that:
-- Relays sensory information to cortex
-- Gates sensory input based on attention and arousal
-- Switches between burst and tonic modes
-- Modulates cortical excitability via oscillations
+The thalamus is the brain's "sensory switchboard" and attention controller:
+- **Relays sensory information** to appropriate cortical areas
+- **Gates sensory input** based on attention and arousal state
+- **Switches between burst and tonic modes** for different processing needs
+- **Modulates cortical excitability** via synchronized oscillations
 
-Key Features:
-=============
-1. SENSORY RELAY:
-   - All sensory modalities (except olfaction) pass through thalamus
-   - Selective routing to appropriate cortical areas
-   - Spatial filtering and preprocessing
+**Key Features**:
+=================
+1. **SENSORY RELAY**:
+   - All sensory modalities (except olfaction) pass through thalamus first
+   - Selective routing to appropriate cortical areas (LGN→V1, MGN→A1, etc.)
+   - Spatial filtering and preprocessing before cortical arrival
+   - Maintains topographic organization (retinotopy, tonotopy)
 
-2. ATTENTIONAL GATING:
-   - Alpha oscillations suppress irrelevant inputs
-   - Enhanced transmission for attended stimuli
-   - Norepinephrine modulates gain
+2. **ATTENTIONAL GATING**:
+   - Alpha oscillations (8-12 Hz) suppress IRRELEVANT inputs
+   - Enhanced transmission for ATTENDED stimuli (reduced inhibition)
+   - Norepinephrine modulates gain (arousal-dependent filtering)
+   - Implements "spotlight" attention via TRN inhibition
 
-3. MODE SWITCHING:
-   - Burst mode: Low input, creates sharp transients (alerting, attention capture)
-   - Tonic mode: Steady input, faithful relay (normal processing)
+3. **MODE SWITCHING**:
+   - **Burst mode**: Low input, creates sharp transients → alerting, attention capture
+   - **Tonic mode**: Steady input, faithful relay → normal processing
    - Mode controlled by membrane potential and oscillation phase
+   - T-type Ca²⁺ channels enable burst firing when hyperpolarized
 
-4. THALAMIC RETICULAR NUCLEUS (TRN):
-   - Inhibitory shell around thalamus
-   - Implements "searchlight" attention
-   - Coordinates coherent oscillations
+4. **THALAMIC RETICULAR NUCLEUS (TRN)**:
+   - Inhibitory shell surrounding thalamus (GABAergic)
+   - Implements "searchlight" attention mechanism
+   - Coordinates coherent oscillations across thalamic nuclei
+   - Winner-take-all competition between sensory streams
 
 Biological Basis:
 =================

@@ -1,17 +1,19 @@
-"""
-Weight Initialization Registry - Standardized weight initialization strategies.
+"""Weight Initialization Registry - Biologically-Motivated Initialization Strategies.
 
 This module provides a unified registry of weight initialization methods used
-across brain regions and pathways, eliminating scattered initialization logic.
+across brain regions and pathways, ensuring consistent and biologically-plausible
+initial synaptic weights.
 
-Biological Motivation:
-=====================
+**Biological Motivation**:
+=========================
+Initial synaptic weights critically influence network dynamics and learning:
 
-Initial synaptic weights influence network dynamics and learning:
-1. **Symmetry Breaking**: Random initialization prevents identical neuron behavior
-2. **Scale**: Proper scaling prevents saturation or silence
-3. **Sparsity**: Sparse connectivity mimics biological neural networks
-4. **Structure**: Topographic patterns reflect spatial organization
+1. **Symmetry Breaking**: Random initialization prevents identical neurons
+   (avoids "dead" or redundant units)
+2. **Proper Scale**: Prevents saturation (too large) or silence (too small)
+3. **Sparse Connectivity**: Mimics cortical connectivity (~5-15% connection probability)
+4. **Spatial Structure**: Topographic maps reflect biological organization
+5. **Balanced E/I**: Initial balance prevents runaway excitation
 
 Common Patterns in Thalia:
 ===========================

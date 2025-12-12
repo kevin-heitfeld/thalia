@@ -1,23 +1,23 @@
-"""
-Unified Replay Engine for Memory Consolidation
+"""Unified Replay Engine - Memory Consolidation via Hippocampal Replay.
 
-Consolidates replay logic used by both SleepSystemMixin and Hippocampus.
+Consolidates replay logic used by both sleep systems and hippocampal sequence
+replay into a single, well-tested implementation.
 
-Common elements across replay implementations:
-1. Time compression (replay 5-20x faster than encoding)
-2. Gamma oscillator-driven sequence reactivation
-3. Slot-by-slot pattern replay
-4. Sharp-wave ripple modulation
-5. Pattern prioritization and selection
+**Common Elements Across Replay Implementations**:
+===================================================
+1. **TIME COMPRESSION**: Replay 5-20x faster than real-time encoding
+2. **GAMMA-DRIVEN SEQUENCING**: Gamma oscillator coordinates replay slots
+3. **SLOT-BY-SLOT PATTERN REPLAY**: Sequential reactivation of memory patterns
+4. **SHARP-WAVE RIPPLE MODULATION**: High-frequency coordination signal
+5. **PATTERN PRIORITIZATION**: Replay important/recent experiences first
 
-This engine provides a single, configurable implementation that can be used
-by both sleep-based consolidation and hippocampal sequence replay.
-
-Biological basis:
-- During sleep/rest, hippocampus replays experiences at ~5-20x speed
-- Sharp-wave ripples (150-250 Hz) coordinate replay
-- Gamma oscillations (40-100 Hz) organize sequence slots
-- Replay strengthens hippocampus → cortex connections
+**Biological Basis**:
+=====================
+- **During sleep/rest**: Hippocampus replays experiences at ~5-20x speed
+- **Sharp-wave ripples** (150-250 Hz): Coordinate replay timing
+- **Gamma oscillations** (40-100 Hz): Organize sequence slots
+- **Function**: Strengthens hippocampus → cortex connections (consolidation)
+- **Priority**: Recent, surprising, or high-reward experiences replayed more
 
 Author: Thalia Project
 Date: December 2025
