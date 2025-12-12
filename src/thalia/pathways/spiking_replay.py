@@ -92,15 +92,15 @@ class SpikingReplayPathway(SpikingPathway):
 
         # Replay projection (to cortex space)
         self.replay_projection = nn.Sequential(
-            nn.Linear(config.source_size, config.target_size),
-            nn.LayerNorm(config.target_size),
+            nn.Linear(config.n_input, config.n_output),
+            nn.LayerNorm(config.n_output),
         )
 
         # Priority scoring for replay selection
         self.priority_network = nn.Sequential(
-            nn.Linear(config.source_size, config.source_size // 2),
+            nn.Linear(config.n_input, config.n_input // 2),
             nn.ReLU(),
-            nn.Linear(config.source_size // 2, 1),
+            nn.Linear(config.n_input // 2, 1),
         )
 
         # Track replay statistics
@@ -112,7 +112,7 @@ class SpikingReplayPathway(SpikingPathway):
         Store a hippocampal pattern for potential replay.
 
         Args:
-            hippocampal_pattern: Pattern to store [source_size] (1D)
+            hippocampal_pattern: Pattern to store [n_input] (1D)
             priority: Optional priority score (higher = more likely to replay)
         """
         # =====================================================================
@@ -122,9 +122,9 @@ class SpikingReplayPathway(SpikingPathway):
         if hippocampal_pattern.dim() != 1:
             hippocampal_pattern = hippocampal_pattern.squeeze()
 
-        assert hippocampal_pattern.shape[0] == self.config.source_size, (
+        assert hippocampal_pattern.shape[0] == self.config.n_input, (
             f"SpikingReplayPathway.store_pattern: hippocampal_pattern has shape {hippocampal_pattern.shape} "
-            f"but source_size={self.config.source_size}. Check hippocampus output size."
+            f"but n_input={self.config.n_input}. Check hippocampus output size."
         )
 
         # Compute priority if not provided
@@ -247,9 +247,9 @@ class SpikingReplayPathway(SpikingPathway):
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        assert pattern.shape[-1] == self.config.source_size, (
+        assert pattern.shape[-1] == self.config.n_input, (
             f"SpikingReplayPathway.replay_step: pattern has shape {pattern.shape} "
-            f"but source_size={self.config.source_size}. Replay buffer corrupted?"
+            f"but n_input={self.config.n_input}. Replay buffer corrupted?"
         )
 
         # Time-compress the replay (faster dynamics)
@@ -289,8 +289,8 @@ class SpikingReplayPathway(SpikingPathway):
         Full consolidation step: store, replay, and update.
 
         Args:
-            hippocampal_activity: Current hippocampal state [source_size] (1D)
-            cortical_activity: Current cortical state [target_size] (1D)
+            hippocampal_activity: Current hippocampal state [n_input] (1D)
+            cortical_activity: Current cortical state [n_output] (1D)
             dt: Time step in ms
 
         Returns:
@@ -322,7 +322,7 @@ class SpikingReplayPathway(SpikingPathway):
                 return replay_signal
 
         # No replay
-        return torch.zeros(self.config.target_size, device=device)
+        return torch.zeros(self.config.n_output, device=device)
 
     def get_diagnostics(self) -> dict:
         """Get replay-specific diagnostics."""

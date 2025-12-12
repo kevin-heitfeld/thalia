@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Any, TYPE_CHECKING
 
+import torch
 import torch.nn as nn
 
 from thalia.config.base import BaseConfig
@@ -30,6 +31,8 @@ class HomeostasisManagerConfig(BaseConfig):
 
     Extends UnifiedHomeostasisConfig with striatum-specific parameters.
     """
+    unified_homeostasis_enabled: bool = True
+    target_firing_rate_hz: float = 5.0
     weight_budget: float = 1.0
     normalization_rate: float = 0.1
     baseline_pressure_enabled: bool = True
@@ -165,6 +168,31 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
             "d1_weight_mean": d1_weights.mean().item(),
             "d2_weight_mean": d2_weights.mean().item(),
         }
+
+    def compute_excitability(self) -> tuple[float, float]:
+        """Compute excitability gain factors for D1 and D2 pathways.
+
+        Returns:
+            Tuple of (d1_gain, d2_gain) multipliers for pathway excitability.
+            Currently returns (1.0, 1.0) as homeostasis operates on weights directly.
+        """
+        # TODO: Implement dynamic excitability based on recent activity
+        # For now, return neutral gains since homeostasis works via weight normalization
+        return (1.0, 1.0)
+
+    def update_activity(self, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor) -> None:
+        """Update activity tracking for homeostatic regulation.
+
+        Args:
+            d1_spikes: D1 pathway spike output
+            d2_spikes: D2 pathway spike output
+
+        Note:
+            Activity tracking could be used to modulate excitability dynamically.
+            Currently a no-op as homeostasis operates on weights during learning.
+        """
+        # TODO: Track running average of firing rates for dynamic excitability
+        pass
 
     def get_homeostasis_diagnostics(self) -> Dict[str, Any]:
         """Get homeostasis-specific diagnostics."""

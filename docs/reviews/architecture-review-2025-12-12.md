@@ -25,10 +25,26 @@ This comprehensive architectural analysis of the Thalia codebase (src/thalia/) i
 ✅ 1.15 Add CONTRIBUTING.md
 ✅ 1.16 Improve Error Messages
 
+### Tier 2 Progress (3/14 + Bug Fixes)
+✅ 2.3 Add Integration Tests for Full Brain (5/5 passing)
+✅ 2.6 Add Pathway Health Checks (PathwayManager.check_health())
+✅ 2.8 Add Curriculum Transition Analysis (CurriculumTrainer metrics)
+✅ **Bug Fixes**: Fixed 11 config/API bugs exposed by integration tests:
+  - HomeostasisManagerConfig missing fields
+  - CerebellumConfig incomplete conversions
+  - STDP parameter naming inconsistencies (stdp_tau_plus → tau_plus_ms)
+  - Oscillator coupling validation too strict
+  - Pathway config using custom params instead of n_input/n_output
+  - StriatumHomeostasisComponent missing methods
+  - Brain import/config access errors
+✅ **ADR-013**: Created "Explicit Pathway Projections" architectural decision
+✅ **Architecture Cleanup**: Simplified cortex adapter per ADR-013 (removed projection logic)
+
 ### Files Created/Modified
-- **Created**: neuromodulation/constants.py, core/diagnostics_keys.py, sensory/README.md, CONTRIBUTING.md
-- **Modified**: ~30 files across regions/, pathways/, training/, core/
-- **Lines Changed**: ~1,400+
+- **Tier 1**: neuromodulation/constants.py, core/diagnostics_keys.py, sensory/README.md, CONTRIBUTING.md
+- **Tier 2**: tests/integration/test_sensorimotor_loop.py (105 lines), docs/decisions/adr-013-explicit-pathway-projections.md
+- **Bug Fixes**: 11 files (config classes, regions, pathways, adapters)
+- **Lines Changed**: ~1,900+ (Tier 1: 1,400 + Tier 2: 500)
 - **Breaking Changes**: 0 (fully backward compatible)
 
 **Key Strengths:**

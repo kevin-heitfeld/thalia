@@ -1,5 +1,9 @@
 # TODO
 
+- `StriatumHomeostasisComponent.compute_excitability()`
+- `StriatumHomeostasisComponent.update_activity()`
+- `EventDrivenCortex._accumulated_input` not used
+- Re-enable CriticalityMonitor in brain
 - Remove Compatibility Imports (`docs\design\directory_restructuring_plan.md`)
 - `docs\design\circuit_modeling_plan.md`
 

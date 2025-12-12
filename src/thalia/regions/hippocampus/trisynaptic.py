@@ -1417,9 +1417,9 @@ class TrisynapticHippocampus(NeuralComponent):
         # Update STDP Traces (for learning, not comparison)
         # =====================================================================
         if self.state.dg_trace is not None:
-            update_trace(self.state.dg_trace, dg_spikes, tau=self.tri_config.stdp_tau_plus, dt=dt)
+            update_trace(self.state.dg_trace, dg_spikes, tau=self.tri_config.tau_plus_ms, dt=dt)
         if self.state.ca3_trace is not None:
-            update_trace(self.state.ca3_trace, ca3_spikes, tau=self.tri_config.stdp_tau_plus, dt=dt)
+            update_trace(self.state.ca3_trace, ca3_spikes, tau=self.tri_config.tau_plus_ms, dt=dt)
 
         # Store spikes in base state for compatibility
         # CA1 spikes ARE the output - downstream learns from these patterns!

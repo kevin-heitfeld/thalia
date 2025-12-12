@@ -1,4 +1,5 @@
-"""Brain Oscillator System - Neural Rhythm Generation and Coordination.
+"""
+Brain Oscillator System - Neural Rhythm Generation and Coordination.
 
 Neural oscillations are fundamental to brain function, coordinating activity
 across spatial and temporal scales. This module provides base classes for
@@ -382,11 +383,11 @@ class OscillatorCoupling:
 
     Attributes:
         oscillator: Name of fast oscillator to modulate (e.g., 'gamma', 'beta')
-        coupling_strength: Base coupling strength [0, 1]. 0 = no coupling, 1 = full modulation
+        coupling_strength: Base coupling strength [-1, 1]. 0 = no coupling, positive = enhancement, negative = suppression
         min_amplitude: Minimum amplitude at unfavorable phases [0, 1]
         modulation_type: 'cosine' (max at trough/0) or 'sine' (max at peak/π/2)
         per_oscillator_strength: Optional dict to override strength per slow oscillator
-            e.g., {'theta': 0.8, 'beta': 0.6} for gamma coupling
+            e.g., {'theta': 0.8, 'beta': 0.6} for gamma coupling. Negative values suppress.
     """
     oscillator: str
     coupling_strength: float = 0.8
@@ -396,16 +397,16 @@ class OscillatorCoupling:
 
     def __post_init__(self):
         """Validate coupling parameters."""
-        if not 0.0 <= self.coupling_strength <= 1.0:
-            raise ConfigurationError(f"coupling_strength must be in [0, 1], got {self.coupling_strength}")
+        if not -1.0 <= self.coupling_strength <= 1.0:
+            raise ConfigurationError(f"coupling_strength must be in [-1, 1], got {self.coupling_strength}")
         if not 0.0 <= self.min_amplitude <= 1.0:
             raise ConfigurationError(f"min_amplitude must be in [0, 1], got {self.min_amplitude}")
         if self.modulation_type not in ('cosine', 'sine'):
             raise ConfigurationError(f"modulation_type must be 'cosine' or 'sine', got {self.modulation_type}")
         if self.per_oscillator_strength is not None:
             for strength in self.per_oscillator_strength.values():
-                if not 0.0 <= strength <= 1.0:
-                    raise ConfigurationError(f"per_oscillator_strength values must be in [0, 1], got {strength}")
+                if not -1.0 <= strength <= 1.0:
+                    raise ConfigurationError(f"per_oscillator_strength values must be in [-1, 1], got {strength}")
 
     def get_strength_for(self, slow_oscillator: str) -> float:
         """Get coupling strength for a specific slow oscillator.

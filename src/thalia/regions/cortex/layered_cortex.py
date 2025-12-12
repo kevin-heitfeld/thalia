@@ -1001,11 +1001,11 @@ class LayeredCortex(NeuralComponent):
 
         # Update STDP traces using utility function
         if self.state.l4_trace is not None:
-            update_trace(self.state.l4_trace, l4_spikes, tau=cfg.stdp_tau_plus, dt=dt)
+            update_trace(self.state.l4_trace, l4_spikes, tau=cfg.tau_plus_ms, dt=dt)
         if self.state.l23_trace is not None:
-            update_trace(self.state.l23_trace, l23_spikes, tau=cfg.stdp_tau_plus, dt=dt)
+            update_trace(self.state.l23_trace, l23_spikes, tau=cfg.tau_plus_ms, dt=dt)
         if self.state.l5_trace is not None:
-            update_trace(self.state.l5_trace, l5_spikes, tau=cfg.stdp_tau_plus, dt=dt)
+            update_trace(self.state.l5_trace, l5_spikes, tau=cfg.tau_plus_ms, dt=dt)
 
         self.state.spikes = l5_spikes
 

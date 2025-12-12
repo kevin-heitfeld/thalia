@@ -964,6 +964,9 @@ class CurriculumTrainer:
             print(f"Transition period: {weeks} weeks")
             print(f"{'='*80}\n")
 
+        # Analyze pre-transition state
+        pre_transition_metrics = self.analyze_transition(old_stage, new_stage, phase='before')
+
         # Extended consolidation before transition
         if self.verbose:
             print("Performing extended consolidation...")
@@ -987,8 +990,192 @@ class CurriculumTrainer:
                 print(f"  Old stage review: {config.old_stage_ratio:.1%}")
                 print(f"  Cognitive load: {config.cognitive_load.value}")
 
+        # Analyze post-transition state
+        post_transition_metrics = self.analyze_transition(old_stage, new_stage, phase='after')
+
+        # Log transition analysis
+        if self.verbose:
+            self._log_transition_analysis(pre_transition_metrics, post_transition_metrics)
+
         if self.verbose:
             print(f"\n✅ Transition complete: Now in Stage {new_stage.name}")
+
+    def analyze_transition(
+        self,
+        from_stage: CurriculumStage,
+        to_stage: CurriculumStage,
+        phase: str = 'after',
+    ) -> Dict[str, Any]:
+        """Analyze brain metrics before/after stage transition.
+
+        Captures capacity, performance, and stability metrics to understand
+        the effectiveness of curriculum transitions and detect potential issues
+        (catastrophic forgetting, capacity saturation, instability).
+
+        Args:
+            from_stage: Previous curriculum stage
+            to_stage: New curriculum stage
+            phase: 'before' or 'after' transition
+
+        Returns:
+            Dictionary with transition analysis metrics:
+                - capacity_metrics: Region sizes, pathway strengths
+                - performance_metrics: Task accuracies, firing rates
+                - stability_metrics: Weight variance, activity patterns
+                - health_status: Any detected issues
+
+        Example:
+            >>> pre = trainer.analyze_transition(old, new, phase='before')
+            >>> # ... perform transition ...
+            >>> post = trainer.analyze_transition(old, new, phase='after')
+            >>> capacity_growth = post['capacity']['total_neurons'] - pre['capacity']['total_neurons']
+        """
+        analysis = {
+            'from_stage': from_stage.name,
+            'to_stage': to_stage.name,
+            'phase': phase,
+            'global_step': self.global_step,
+            'timestamp': time.time(),
+        }
+
+        # 1. CAPACITY METRICS (region growth)
+        capacity_metrics = {}
+        if hasattr(self.brain, 'regions'):
+            for region_name, region in self.brain.regions.items():
+                if hasattr(region, 'config'):
+                    size = getattr(region.config, 'n_output', None) or getattr(region.config, 'n_neurons', None)
+                    if size:
+                        capacity_metrics[f'{region_name}_size'] = size
+
+            capacity_metrics['total_neurons'] = sum(capacity_metrics.values())
+
+        analysis['capacity'] = capacity_metrics
+
+        # 2. PERFORMANCE METRICS (task accuracy, firing rates)
+        performance_metrics = {}
+
+        # Get recent task performance from history
+        if self.task_performance:
+            for task_name, perf_buffer in self.task_performance.items():
+                if perf_buffer:
+                    recent_performance = list(perf_buffer)[-100:]  # Last 100 trials
+                    performance_metrics[f'{task_name}_accuracy'] = sum(recent_performance) / len(recent_performance)
+
+        # Get brain diagnostics (firing rates, etc.)
+        if hasattr(self.brain, 'get_diagnostics'):
+            brain_diag = self.brain.get_diagnostics()
+            for region_name, region_diag in brain_diag.items():
+                if isinstance(region_diag, dict):
+                    firing_rate = region_diag.get('firing_rate', region_diag.get('avg_firing_rate'))
+                    if firing_rate is not None:
+                        performance_metrics[f'{region_name}_firing_rate'] = firing_rate
+
+        analysis['performance'] = performance_metrics
+
+        # 3. STABILITY METRICS (weight variance, activity patterns)
+        stability_metrics = {}
+
+        # Weight statistics from regions
+        if hasattr(self.brain, 'regions'):
+            for region_name, region in self.brain.regions.items():
+                if hasattr(region, 'weights'):
+                    weights = region.weights.detach()
+                    stability_metrics[f'{region_name}_weight_mean'] = float(weights.mean())
+                    stability_metrics[f'{region_name}_weight_std'] = float(weights.std())
+
+        # Weight statistics from pathways
+        if hasattr(self.brain, 'pathway_manager'):
+            pathway_diag = self.brain.pathway_manager.get_diagnostics()
+            for pathway_name, pathway_stats in pathway_diag.items():
+                if isinstance(pathway_stats, dict) and 'weight_mean' in pathway_stats:
+                    stability_metrics[f'{pathway_name}_weight_mean'] = pathway_stats['weight_mean']
+                    stability_metrics[f'{pathway_name}_weight_std'] = pathway_stats.get('weight_std', 0.0)
+
+        analysis['stability'] = stability_metrics
+
+        # 4. HEALTH STATUS (detect issues)
+        health_status = {}
+        if hasattr(self.brain, 'check_health'):
+            try:
+                health_report = self.brain.check_health()
+                health_status['has_issues'] = bool(health_report.issues) if hasattr(health_report, 'issues') else False
+                health_status['issue_count'] = len(health_report.issues) if hasattr(health_report, 'issues') else 0
+            except Exception as e:
+                health_status['error'] = str(e)
+
+        analysis['health'] = health_status
+
+        return analysis
+
+    def _log_transition_analysis(
+        self,
+        pre_metrics: Dict[str, Any],
+        post_metrics: Dict[str, Any],
+    ) -> None:
+        """Log transition analysis comparing before/after metrics.
+
+        Args:
+            pre_metrics: Metrics captured before transition
+            post_metrics: Metrics captured after transition
+        """
+        print(f"\n{'='*80}")
+        print("TRANSITION ANALYSIS")
+        print(f"{'='*80}")
+
+        # Capacity growth
+        print("\n📈 Capacity Growth:")
+        pre_capacity = pre_metrics.get('capacity', {})
+        post_capacity = post_metrics.get('capacity', {})
+
+        if 'total_neurons' in pre_capacity and 'total_neurons' in post_capacity:
+            growth = post_capacity['total_neurons'] - pre_capacity['total_neurons']
+            growth_pct = (growth / pre_capacity['total_neurons'] * 100) if pre_capacity['total_neurons'] > 0 else 0
+            print(f"  Total neurons: {pre_capacity['total_neurons']:,} → {post_capacity['total_neurons']:,} (+{growth:,}, +{growth_pct:.1f}%)")
+
+        # Performance delta
+        print("\n📊 Performance Delta:")
+        pre_perf = pre_metrics.get('performance', {})
+        post_perf = post_metrics.get('performance', {})
+
+        for key in set(pre_perf.keys()) & set(post_perf.keys()):
+            if 'accuracy' in key:
+                delta = post_perf[key] - pre_perf[key]
+                print(f"  {key}: {pre_perf[key]:.2%} → {post_perf[key]:.2%} ({delta:+.2%})")
+
+        # Stability
+        print("\n🔄 Stability:")
+        pre_stability = pre_metrics.get('stability', {})
+        post_stability = post_metrics.get('stability', {})
+
+        # Check for weight drift
+        weight_drifts = []
+        for key in set(pre_stability.keys()) & set(post_stability.keys()):
+            if 'weight_mean' in key:
+                delta = abs(post_stability[key] - pre_stability[key])
+                if delta > 0.1:  # Significant drift
+                    weight_drifts.append((key, delta))
+
+        if weight_drifts:
+            print(f"  ⚠️  Weight drift detected in {len(weight_drifts)} components")
+        else:
+            print("  ✅ Weights stable across transition")
+
+        # Health status
+        print("\n🏥 Health Status:")
+        pre_health = pre_metrics.get('health', {})
+        post_health = post_metrics.get('health', {})
+
+        pre_issues = pre_health.get('issue_count', 0)
+        post_issues = post_health.get('issue_count', 0)
+
+        if post_issues > pre_issues:
+            print(f"  ⚠️  New health issues: {pre_issues} → {post_issues}")
+        elif post_issues < pre_issues:
+            print(f"  ✅ Health improved: {pre_issues} → {post_issues} issues")
+        else:
+            print(f"  ℹ️  Health unchanged: {post_issues} issues")
+
+        print(f"\n{'='*80}\n")
 
     def extend_stage(
         self,

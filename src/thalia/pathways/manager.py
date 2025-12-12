@@ -212,7 +212,7 @@ class PathwayManager:
         self.attention = SpikingAttentionPathway(
             SpikingAttentionPathwayConfig(
                 n_input=self._sizes['pfc'],
-                n_output=self._sizes['input'],
+                n_output=self._sizes['cortex_l23'],  # Top-down to L2/3
                 device=self.device,
             )
         )
@@ -388,3 +388,35 @@ class PathwayManager:
             pathway = self.get_all_pathways().get(name)
             if pathway is not None and hasattr(pathway, 'load_state'):
                 pathway.load_state(pathway_state)
+
+    def check_health(self) -> Dict[str, Any]:
+        """Check health of all managed pathways.
+
+        Aggregates health reports from all pathways to provide system-wide
+        diagnostics. Useful for detecting pathological states across the
+        entire inter-region connectivity.
+
+        Returns:
+            Dictionary mapping pathway names to their HealthReports.
+            Pathways without check_health() method are skipped.
+
+        Example:
+            >>> health = pathway_manager.check_health()
+            >>> for name, report in health.items():
+            ...     if report.has_issues():
+            ...         print(f"{name}: {len(report.issues)} issues found")
+        """
+        health_reports = {}
+
+        for name, pathway in self.get_all_pathways().items():
+            if hasattr(pathway, 'check_health'):
+                try:
+                    health_reports[name] = pathway.check_health()
+                except Exception as e:
+                    # Log error but continue checking other pathways
+                    health_reports[name] = {
+                        'error': str(e),
+                        'status': 'check_failed'
+                    }
+
+        return health_reports

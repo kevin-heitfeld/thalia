@@ -26,46 +26,24 @@ class EventDrivenCortex(EventDrivenRegionBase):
     - Layer-specific input routing
     - Membrane decay between events
     - Dual output: L2/3 → cortical targets, L5 → subcortical targets
-    - Top-down projection from PFC
+    - Top-down modulation from PFC (via attention pathway)
 
     Architecture:
         Sensory Input → L4 → L2/3 → L5
                               ↓      ↓
                           (hippocampus, pfc)  (striatum)
 
-        PFC → top-down projection → L2/3
+        PFC → attention pathway → L2/3 (top-down modulation)
     """
 
     def __init__(
         self,
         config: EventRegionConfig,
         cortex: Any,  # LayeredCortex instance
-        pfc_size: int = 0,  # Size of PFC output for top-down projection
     ):
         super().__init__(config)
         self.impl_module = cortex  # Register as public attribute for nn.Module
         self._cortex = cortex  # Keep reference for backwards compatibility
-        self._pfc_size = pfc_size
-
-        # Track pending top-down modulation
-        self._pending_top_down: Optional[torch.Tensor] = None
-
-        # Accumulated input (for handling multiple sources)
-        self._accumulated_input: Optional[torch.Tensor] = None
-
-        # Top-down projection from PFC to L2/3
-        # Only create if PFC size is provided
-        self._top_down_projection: Optional[torch.nn.Linear] = None
-        if pfc_size > 0 and hasattr(cortex, "l23_size"):
-            self._top_down_projection = torch.nn.Linear(
-                pfc_size, cortex.l23_size, bias=False
-            )
-            # Initialize with small weights (modulatory, not driving)
-            torch.nn.init.normal_(
-                self._top_down_projection.weight,
-                mean=0.0,
-                std=0.1 / pfc_size**0.5,
-            )
 
     @property
     def impl(self) -> Any:
@@ -108,28 +86,24 @@ class EventDrivenCortex(EventDrivenRegionBase):
         # input_spikes should be [n_neurons]
 
         # Handle top-down input from PFC
+        # ADR-013: Pathways handle all dimensional transformations
+        # PFC→Cortex attention pathway already projects to L2/3 size
+        top_down = None
         if source == "pfc":
-            # For projection, we need 2D [1, n_neurons] temporarily
-            input_2d = input_spikes.unsqueeze(0) if input_spikes.dim() == 1 else input_spikes
-            
-            # Project PFC spikes to L2/3 size if projection exists
-            if self._top_down_projection is not None:
-                projected = self._top_down_projection(input_2d.float())
-                # Convert to modulatory signal (between 0 and 1)
-                self._pending_top_down = torch.sigmoid(projected).squeeze(0)
-            else:
-                # No projection - skip top-down (sizes don't match)
-                self._pending_top_down = None
+            # Verify pathway transformed to correct size
+            assert input_spikes.shape[0] == getattr(self.impl, 'l23_size', 0), (
+                f"PFC input must match L2/3 size ({getattr(self.impl, 'l23_size', 0)}), "
+                f"got {input_spikes.shape[0]}. Check attention pathway configuration."
+            )
+            # Convert to modulatory signal (between 0 and 1)
+            top_down = torch.sigmoid(input_spikes.float())
             return None  # Top-down alone doesn't drive output
 
         # Forward through cortex (theta modulation computed internally)
         output = self.impl.forward(
             input_spikes,
-            top_down=self._pending_top_down,
+            top_down=top_down,
         )
-
-        # Clear pending top-down after use
-        self._pending_top_down = None
 
         # Output should be 1D
         return output.squeeze() if output.dim() > 1 else output

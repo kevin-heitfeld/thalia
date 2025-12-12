@@ -1,4 +1,5 @@
-"""Cerebellum - Supervised Error-Corrective Learning for Precise Motor Control.
+"""
+Cerebellum - Supervised Error-Corrective Learning for Precise Motor Control.
 
 The cerebellum learns through supervised error signals from climbing fibers,
 enabling fast, precise learning of input-output mappings without trial-and-error.
@@ -217,6 +218,10 @@ class Cerebellum(NeuralComponent):
                 target_firing_rate_hz=config.target_firing_rate_hz,
                 dt_ms=config.dt_ms,
                 device=config.device,
+                stdp_lr=config.stdp_lr,
+                eligibility_tau_ms=config.eligibility_tau_ms,
+                tau_plus_ms=config.tau_plus_ms,
+                tau_minus_ms=config.tau_minus_ms,
             )
 
         self.cerebellum_config: CerebellumConfig = config  # type: ignore
@@ -231,7 +236,7 @@ class Cerebellum(NeuralComponent):
         # ELIGIBILITY TRACE MANAGER for STDP
         # =====================================================================
         stdp_config = STDPConfig(
-            stdp_tau_ms=self.cerebellum_config.stdp_tau_ms,
+            stdp_tau_ms=self.cerebellum_config.tau_plus_ms,  # Use tau_plus_ms as STDP tau
             eligibility_tau_ms=self.cerebellum_config.eligibility_tau_ms,
             stdp_lr=self.cerebellum_config.stdp_lr,
             a_plus=1.0,

@@ -412,7 +412,6 @@ class EventDrivenBrain(nn.Module):
                 output_targets=["hippocampus", "pfc", "striatum"],
             ),
             _cortex_impl,
-            pfc_size=self.config.pfc_size,  # For top-down projection
         )
 
         self.hippocampus = EventDrivenHippocampus(
@@ -646,7 +645,7 @@ class EventDrivenBrain(nn.Module):
         # =====================================================================
         # Coordinates trial execution flow (forward, select_action, deliver_reward)
         # Follows existing manager pattern to reduce god object complexity
-        from .trial_coordinator import TrialCoordinator
+        from thalia.coordination.trial_coordinator import TrialCoordinator
 
         # Create mutable container for shared time state
         # This allows coordinator to update brain's _current_time
@@ -727,9 +726,9 @@ class EventDrivenBrain(nn.Module):
         # Create brain via __init__ (which also validates, but this provides early feedback)
         brain = cls(config)
 
-        # Initialize CriticalityMonitor if robustness config enables it
-        if config.robustness.enable_criticality:
-            brain.criticality_monitor = CriticalityMonitor(config.robustness.criticality)
+        # TODO: Initialize CriticalityMonitor when ThaliaConfig gets robustness field
+        # if hasattr(config, 'robustness') and config.robustness.enable_criticality:
+        #     brain.criticality_monitor = CriticalityMonitor(config.robustness.criticality)
 
         return brain
 
