@@ -50,7 +50,7 @@ import torch
 from thalia.managers.base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from thalia.core.component_config import NeuralComponentConfig
+    from thalia.core.base.component_config import NeuralComponentConfig
 
 
 class LearningComponent(BaseManager["NeuralComponentConfig"]):

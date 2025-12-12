@@ -32,9 +32,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from thalia.core.component_config import PathwayConfig
+from thalia.core.base.component_config import PathwayConfig
 from thalia.core.errors import CheckpointError
-from thalia.core.utils import clamp_weights
+from thalia.utils.core_utils import clamp_weights
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig
 from thalia.components.synapses.weight_init import WeightInitializer

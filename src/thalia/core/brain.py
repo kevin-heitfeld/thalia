@@ -96,7 +96,7 @@ import torch
 import torch.nn as nn
 
 from thalia.config import validate_thalia_config
-from thalia.core.component_config import PathwayConfig
+from thalia.core.base.component_config import PathwayConfig
 from thalia.coordination.growth import GrowthManager
 from thalia.events import (
     EventType, EventScheduler,

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.base.component_config import NeuralComponentConfig
 
 
 @dataclass

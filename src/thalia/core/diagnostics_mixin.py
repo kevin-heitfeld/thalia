@@ -222,7 +222,7 @@ class DiagnosticsMixin:
         Returns:
             Dict with similarity statistics
         """
-        from thalia.core.utils import cosine_similarity_safe
+        from thalia.utils.core_utils import cosine_similarity_safe
         
         prefix = f"{prefix}_" if prefix else ""
         

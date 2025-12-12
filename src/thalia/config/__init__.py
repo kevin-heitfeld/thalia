@@ -37,7 +37,7 @@ from thalia.regions.prefrontal import PrefrontalConfig
 from thalia.regions.cerebellum import CerebellumConfig
 
 # Re-export component configs from core/ for backward compatibility
-from thalia.core.component_config import (
+from thalia.core.base.component_config import (
     NeuralComponentConfig,
     LearningComponentConfig,
     PathwayConfig,

@@ -61,7 +61,7 @@ from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
 from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
 from thalia.components.coding.spike_coding import CodingStrategy
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
-from thalia.core.utils import cosine_similarity_safe
+from thalia.utils.core_utils import cosine_similarity_safe
 from thalia.core.mixins import ConfigurableMixin, DiagnosticCollectorMixin
 from thalia.config import SequenceMemoryConfig
 

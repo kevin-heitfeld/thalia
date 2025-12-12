@@ -29,7 +29,7 @@ Protocols Defined:
 
 Usage:
 ======
-    from thalia.core.protocols import Learnable, Diagnosable
+    from thalia.core.protocols.neural import Learnable, Diagnosable
 
     def train_region(region: Learnable, data: torch.Tensor) -> Dict:
         return region.learn(data, data)

@@ -93,8 +93,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from thalia.core.component_config import LearningComponentConfig
-from thalia.core.utils import clamp_weights
+from thalia.core.base.component_config import LearningComponentConfig
+from thalia.utils.core_utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig as CoreSTDPConfig
 
 

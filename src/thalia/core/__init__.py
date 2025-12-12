@@ -49,7 +49,7 @@ from thalia.managers.component_registry import (
     register_pathway,
     register_module,
 )
-from thalia.core.component_protocol import (
+from thalia.core.protocols.component import (
     BrainComponent,
     BrainComponentBase,
     BrainComponentMixin,
@@ -99,7 +99,7 @@ from thalia.core.predictive_coding import (
     HierarchicalPredictiveCoding,
     ErrorType,
 )
-from thalia.core.utils import (
+from thalia.utils.core_utils import (
     clamp_weights,
     cosine_similarity_safe,
     zeros_like_config,
@@ -119,7 +119,7 @@ from thalia.core.errors import (
     validate_probability,
     validate_temporal_causality,
 )
-from thalia.core.protocols import (
+from thalia.core.protocols.neural import (
     Resettable,
     Learnable,
     Forwardable,

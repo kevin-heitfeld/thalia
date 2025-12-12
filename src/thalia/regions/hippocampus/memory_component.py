@@ -13,7 +13,7 @@ import torch
 
 from thalia.core.region_components import MemoryComponent
 from thalia.managers.base_manager import ManagerContext
-from thalia.core.utils import cosine_similarity_safe
+from thalia.utils.core_utils import cosine_similarity_safe
 
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.config import Episode, HippocampusConfig

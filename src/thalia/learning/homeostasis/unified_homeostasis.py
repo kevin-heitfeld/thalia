@@ -60,7 +60,7 @@ import torch
 import torch.nn as nn
 
 from thalia.config.base import BaseConfig
-from thalia.core.utils import clamp_weights
+from thalia.utils.core_utils import clamp_weights
 
 
 @dataclass

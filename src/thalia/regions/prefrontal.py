@@ -57,7 +57,7 @@ import torch.nn as nn
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 
-from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.base.component_config import NeuralComponentConfig
 
 from thalia.core.errors import CheckpointError, ConfigurationError
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType

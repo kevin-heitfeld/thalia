@@ -92,7 +92,7 @@ from typing import Optional, Dict, Any, List
 import torch
 import torch.nn as nn
 
-from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.managers.base_manager import ManagerContext
 from thalia.components.neurons.neuron_constants import (
@@ -104,7 +104,7 @@ from thalia.components.neurons.neuron_constants import (
 )
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.managers.component_registry import register_region
-from thalia.core.utils import clamp_weights
+from thalia.utils.core_utils import clamp_weights
 from thalia.regions.base import (
     NeuralComponent,
 )

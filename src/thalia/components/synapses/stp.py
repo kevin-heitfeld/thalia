@@ -47,7 +47,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from thalia.core.utils import clamp_weights
+from thalia.utils.core_utils import clamp_weights
 
 
 class STPType(Enum):

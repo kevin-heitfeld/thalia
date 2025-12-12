@@ -77,14 +77,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
 from thalia.core.errors import CheckpointError
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.managers.component_registry import register_region
-from thalia.core.utils import ensure_1d, clamp_weights
+from thalia.utils.core_utils import ensure_1d, clamp_weights
 from thalia.components.synapses.traces import update_trace
 from thalia.regions.base import NeuralComponent
 from thalia.regions.cortex.config import calculate_layer_sizes

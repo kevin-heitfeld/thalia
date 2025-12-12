@@ -20,7 +20,7 @@ import torch
 import torch.nn as nn
 
 from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.core.utils import clamp_weights
+from thalia.utils.core_utils import clamp_weights
 
 
 class GrowthMixin:

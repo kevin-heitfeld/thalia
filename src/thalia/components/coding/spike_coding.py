@@ -440,7 +440,7 @@ def compute_spike_similarity(
     Returns:
         similarity: [batch, seq_len]
     """
-    from thalia.core.utils import cosine_similarity_safe
+    from thalia.utils.core_utils import cosine_similarity_safe
 
     # Flatten temporal dimension
     flat1 = spikes1.reshape(*spikes1.shape[:2], -1)

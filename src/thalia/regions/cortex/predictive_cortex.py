@@ -62,7 +62,7 @@ from typing import Optional, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 
-from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.managers.component_registry import register_region
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.base import NeuralComponent, NeuralComponentState

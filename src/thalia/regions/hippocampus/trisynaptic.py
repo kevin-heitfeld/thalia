@@ -84,7 +84,7 @@ from thalia.components.neurons.neuron_constants import (
 )
 from thalia.components.synapses.stp import ShortTermPlasticity
 from thalia.components.synapses.stp_presets import get_stp_config
-from thalia.core.utils import clamp_weights, cosine_similarity_safe
+from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
 from thalia.components.synapses.traces import update_trace
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.homeostasis.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig

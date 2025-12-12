@@ -69,7 +69,7 @@ Biological References:
 - Hippocampus: O'Keefe & Nadel (1978), Buzsáki (2002) - Theta and memory
 """
 
-from thalia.core.component_config import NeuralComponentConfig
+from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponent, LearningRule, NeuralComponentState
 from thalia.regions.factory import RegionFactory, RegionRegistry, register_region
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig

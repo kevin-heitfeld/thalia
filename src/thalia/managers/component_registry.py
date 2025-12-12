@@ -59,7 +59,7 @@ from __future__ import annotations
 from typing import Dict, Type, Optional, List, Callable, Any, Tuple
 import inspect
 
-from thalia.core.component_protocol import BrainComponent
+from thalia.core.protocols.component import BrainComponent
 from thalia.core.errors import ConfigurationError
 
 

@@ -14,7 +14,7 @@ from typing import Dict, Any
 
 import torch
 
-from thalia.core.utils import clamp_weights
+from thalia.utils.core_utils import clamp_weights
 from .pathway_base import StriatumPathway, StriatumPathwayConfig
 
 
