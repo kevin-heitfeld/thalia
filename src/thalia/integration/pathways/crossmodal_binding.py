@@ -460,42 +460,36 @@ class CrossModalGammaBinding(NeuralComponent):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """
-        Get pathway diagnostics (required by NeuralComponent).
+        Get pathway diagnostics using DiagnosticsMixin helpers.
 
         Returns:
             Dictionary containing:
             - Phase information for both modalities
-            - Weight statistics
+            - Weight statistics (using mixin helpers)
             - Oscillator frequencies
             - Last coherence measurement
         """
-        # Weight statistics
-        visual_weights_flat = self.visual_weights.detach().flatten()
-        auditory_weights_flat = self.auditory_weights.detach().flatten()
-
-        return {
+        diagnostics = {
             "last_coherence": self._last_coherence,
             "visual_gamma_phase": self.visual_gamma.phase,
             "auditory_gamma_phase": self.auditory_gamma.phase,
             "visual_gamma_freq": self.visual_gamma.frequency_hz,
             "auditory_gamma_freq": self.auditory_gamma.frequency_hz,
-            "weight_stats": {
-                "visual_mean": float(visual_weights_flat.mean()),
-                "visual_std": float(visual_weights_flat.std()),
-                "visual_min": float(visual_weights_flat.min()),
-                "visual_max": float(visual_weights_flat.max()),
-                "auditory_mean": float(auditory_weights_flat.mean()),
-                "auditory_std": float(auditory_weights_flat.std()),
-                "auditory_min": float(auditory_weights_flat.min()),
-                "auditory_max": float(auditory_weights_flat.max()),
-            },
-            "config": {
-                "gamma_freq_hz": self.config.gamma_freq_hz,
-                "coherence_window": self.config.coherence_window,
-                "gate_threshold": self.config.gate_threshold,
-                "phase_coupling_strength": self.config.phase_coupling_strength,
-            },
         }
+        
+        # Use mixin helpers for weight statistics
+        diagnostics.update(self.weight_diagnostics(self.visual_weights, prefix="visual"))
+        diagnostics.update(self.weight_diagnostics(self.auditory_weights, prefix="auditory"))
+        
+        # Configuration
+        diagnostics["config"] = {
+            "gamma_freq_hz": self.config.gamma_freq_hz,
+            "coherence_window": self.config.coherence_window,
+            "gate_threshold": self.config.gate_threshold,
+            "phase_coupling_strength": self.config.phase_coupling_strength,
+        }
+        
+        return diagnostics
 
     def get_state(self) -> Dict[str, Any]:
         """Get pathway state for checkpointing."""

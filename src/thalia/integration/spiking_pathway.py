@@ -693,23 +693,35 @@ class SpikingPathway(NeuralComponent):
         self.total_ltd = 0.0
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get comprehensive diagnostics."""
-        return {
-            "weight_mean": self.weights.data.mean().item(),
-            "weight_std": self.weights.data.std().item(),
-            "weight_min": self.weights.data.min().item(),
-            "weight_max": self.weights.data.max().item(),
-            "membrane_mean": self.neurons.membrane.mean().item(),
-            "membrane_std": self.neurons.membrane.std().item(),
-            "firing_rate_mean": self.firing_rate_estimate.mean().item(),
-            "pre_trace_norm": self.pre_trace.norm().item(),
-            "post_trace_norm": self.post_trace.norm().item(),
-            "oscillation_phase": self.oscillation_phase,
-            "dopamine_level": self.dopamine_level,
-            "replay_active": self.replay_active,
-            "total_ltp": self.total_ltp,
-            "total_ltd": self.total_ltd,
-        }
+        """Get comprehensive diagnostics using DiagnosticsMixin helpers.
+        
+        Returns pathway state including weight statistics, membrane dynamics,
+        eligibility traces, oscillation phase, and learning metrics.
+        """
+        diagnostics = {}
+        
+        # Weight statistics using mixin helper
+        diagnostics.update(self.weight_diagnostics(self.weights.data, prefix=""))
+        
+        # Membrane dynamics
+        diagnostics["membrane_mean"] = self.neurons.membrane.mean().item()
+        diagnostics["membrane_std"] = self.neurons.membrane.std().item()
+        diagnostics["firing_rate_mean"] = self.firing_rate_estimate.mean().item()
+        
+        # Eligibility traces using mixin helper
+        diagnostics.update(self.trace_diagnostics(self.pre_trace, prefix="pre"))
+        diagnostics.update(self.trace_diagnostics(self.post_trace, prefix="post"))
+        
+        # Oscillation and neuromodulation state
+        diagnostics["oscillation_phase"] = self.oscillation_phase
+        diagnostics["dopamine_level"] = self.dopamine_level
+        diagnostics["replay_active"] = self.replay_active
+        
+        # Learning metrics
+        diagnostics["total_ltp"] = self.total_ltp
+        diagnostics["total_ltd"] = self.total_ltd
+        
+        return diagnostics
 
     def add_neurons(
         self,
