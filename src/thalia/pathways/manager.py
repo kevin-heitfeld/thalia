@@ -18,6 +18,11 @@ from thalia.pathways.spiking_replay import (
     SpikingReplayPathway,
     SpikingReplayPathwayConfig,
 )
+from thalia.regulation.learning_constants import (
+    LEARNING_RATE_STDP,
+    LEARNING_RATE_STDP_MODERATE,
+    LEARNING_RATE_STDP_FAST,
+)
 
 
 class PathwayManager:
@@ -92,7 +97,7 @@ class PathwayManager:
                 n_output=self._sizes['thalamus'],  # Match cortex L4 input
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.LATENCY,  # Sensory timing matters
-                stdp_lr=0.001,
+                stdp_lr=LEARNING_RATE_STDP,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )
@@ -105,7 +110,7 @@ class PathwayManager:
                 n_output=self._sizes['cortex_l23'],  # Match hippo input
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.PHASE,  # Theta phase coding
-                stdp_lr=0.001,
+                stdp_lr=LEARNING_RATE_STDP,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )
@@ -118,7 +123,7 @@ class PathwayManager:
                 n_output=self._sizes['cortex_l5'],  # Match striatum input
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.RATE,
-                stdp_lr=0.002,
+                stdp_lr=LEARNING_RATE_STDP_FAST,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )
@@ -131,7 +136,7 @@ class PathwayManager:
                 n_output=self._sizes['cortex_l23'],  # PFC receives cortex + hippo
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.SYNCHRONY,  # Binding via synchrony
-                stdp_lr=0.0015,
+                stdp_lr=LEARNING_RATE_STDP_MODERATE,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )
@@ -144,7 +149,7 @@ class PathwayManager:
                 n_output=self._sizes['hippocampus'],
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.PHASE,  # Theta-coupled
-                stdp_lr=0.001,
+                stdp_lr=LEARNING_RATE_STDP,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )
@@ -157,7 +162,7 @@ class PathwayManager:
                 n_output=self._sizes['pfc'],
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.PHASE,  # Theta-coupled
-                stdp_lr=0.001,
+                stdp_lr=LEARNING_RATE_STDP,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )
@@ -170,7 +175,7 @@ class PathwayManager:
                 n_output=self._sizes['hippocampus'],
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.PHASE,
-                stdp_lr=0.0015,
+                stdp_lr=LEARNING_RATE_STDP_MODERATE,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )
@@ -183,7 +188,7 @@ class PathwayManager:
                 n_output=self._sizes['pfc'],
                 learning_rule=SpikingLearningRule.DOPAMINE_STDP,  # Reward-modulated
                 temporal_coding=TemporalCoding.RATE,
-                stdp_lr=0.002,
+                stdp_lr=LEARNING_RATE_STDP_FAST,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )
@@ -197,7 +202,7 @@ class PathwayManager:
                 n_output=striatum_size,
                 learning_rule=SpikingLearningRule.STDP,
                 temporal_coding=TemporalCoding.LATENCY,  # Precise timing for motor control
-                stdp_lr=0.001,
+                stdp_lr=LEARNING_RATE_STDP,
                 dt_ms=self.dt_ms,
                 device=self.device,
             )

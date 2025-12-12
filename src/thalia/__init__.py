@@ -79,6 +79,9 @@ from thalia.core import (
     clamp_weights,
 )
 
+# Diagnostics
+from thalia.core.diagnostics_keys import DiagnosticKeys
+
 # Oscillators (for working memory, consolidation)
 from thalia.coordination.oscillator import (
     SinusoidalOscillator,
@@ -165,6 +168,8 @@ __all__ = [
     "STPPreset",
     "get_stp_config",
     "clamp_weights",
+    # Diagnostics
+    "DiagnosticKeys",
     # Learning
     "BCMRule",
     "STDPStrategy",

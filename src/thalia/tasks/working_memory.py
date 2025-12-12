@@ -481,7 +481,7 @@ def create_n_back_sequence(
     matches = []
 
     for i in range(n_items):
-        if i >= n_back and torch.rand(1).item() < match_probability:
+        if i >= n_back and torch.rand(1, device=device).item() < match_probability:
             # Create match: copy item from N positions back
             stimulus = sequence[i - n_back].clone()
             is_match = True

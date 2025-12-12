@@ -109,8 +109,9 @@ class CalibrationSample:
 
     def __post_init__(self):
         """Validate sample parameters."""
-        if not 0.0 <= self.difficulty <= 1.0:
-            raise ValueError(f"Difficulty must be in [0, 1], got {self.difficulty}")
+        if not 0 <= self.difficulty <= 1:
+            from thalia.core.errors import ConfigurationError
+            raise ConfigurationError(f"Difficulty must be in [0, 1], got {self.difficulty}")
 
 
 @dataclass
@@ -135,8 +136,9 @@ class CalibrationPrediction:
 
     def __post_init__(self):
         """Validate prediction parameters."""
-        if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError(f"Confidence must be in [0, 1], got {self.confidence}")
+        if not 0 <= self.confidence <= 1:
+            from thalia.core.errors import ConfigurationError
+            raise ConfigurationError(f"Confidence must be in [0, 1], got {self.confidence}")
 
 
 @dataclass

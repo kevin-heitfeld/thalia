@@ -120,7 +120,7 @@ class ContextBuffer(nn.Module):
 
     def _compute_recency_weights(self) -> torch.Tensor:
         """Compute recency weights for attention."""
-        weights = torch.zeros(self.config.max_length)
+        weights = torch.zeros(self.config.max_length, device=self.device)
         for i in range(self.config.max_length):
             # More recent = higher weight
             weights[-(i+1)] = self.config.recency_decay ** i

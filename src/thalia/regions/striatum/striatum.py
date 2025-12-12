@@ -167,7 +167,28 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
     """
+
     def __init__(self, config: NeuralComponentConfig):
+        """Initialize Striatum with D1/D2 opponent pathways.
+
+        Args:
+            config: Neural component configuration. Will be converted to
+                   StriatumConfig if not already one.
+
+        Initialization Steps:
+            1. Convert config to StriatumConfig if needed
+            2. Setup population coding (n_actions → n_neurons)
+            3. Initialize D1/D2 pathways (opponent processing)
+            4. Create state tracker for votes/actions/trials
+            5. Setup exploration, learning, homeostasis components
+            6. Initialize neuromodulator state (dopamine)
+
+        Population Coding:
+            When enabled, each action is represented by multiple neurons:
+            - config.n_output = number of actions
+            - actual neurons = n_actions × neurons_per_action
+            - More robust to noise, biological plausibility
+        """
         if not isinstance(config, StriatumConfig):
             config = StriatumConfig(
                 n_input=config.n_input,

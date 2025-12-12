@@ -254,3 +254,11 @@ def create_cortical_layer_neurons(
 
     config = ConductanceLIFConfig(**layer_config)
     return ConductanceLIF(n_neurons=n_neurons, config=config)
+
+
+__all__ = [
+    "create_pyramidal_neurons",
+    "create_relay_neurons",
+    "create_trn_neurons",
+    "create_cortical_layer_neurons",
+]

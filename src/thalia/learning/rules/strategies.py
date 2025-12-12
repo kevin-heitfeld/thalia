@@ -1,4 +1,5 @@
-"""Learning Rule Strategies: Pluggable Learning Algorithms for Brain Components.
+"""
+Learning Rule Strategies: Pluggable Learning Algorithms for Brain Components.
 
 This module implements a Strategy pattern for learning rules, allowing regions
 and pathways to compose and switch between different learning algorithms without
@@ -911,7 +912,7 @@ def create_strategy(
 # Strategy Registration (at module load time)
 # =============================================================================
 
-def _register_builtin_strategies():
+def _register_builtin_strategies() -> None:
     """Register all built-in learning strategies with the registry.
 
     This function is called at module import time to populate the

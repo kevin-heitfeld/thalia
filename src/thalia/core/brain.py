@@ -81,6 +81,41 @@ All 10 pathways:
 9. PFC → Cortex (attention modulation) [SPECIALIZED]
 10. Hippocampus → Cortex (replay/consolidation) [SPECIALIZED]
 
+FILE ORGANIZATION (2108 lines)
+===============================
+Lines 1-150:      Module docstring, imports, architecture diagram
+Lines 151-664:    EventDrivenBrain.__init__() and component initialization
+Lines 665-909:    Factory methods (from_thalia_config, create_from_config)
+Lines 910-950:    Parallel executor setup and cleanup
+Lines 951-1015:   forward() - main timestep orchestration
+Lines 1016-1103:  select_action() and action selection logic
+Lines 1104-1245:  Reward computation (uncertainty, intrinsic, prediction error)
+Lines 1246-1388:  Neuromodulator updates (DA, NE, ACh dynamics)
+Lines 1389-1455:  Oscillator broadcasting (theta/alpha/gamma phases)
+Lines 1456-1519:  consolidate() - offline memory consolidation
+Lines 1520-1643:  State management (get_full_state, load_full_state, reset_state)
+Lines 1644-1775:  Counterfactual learning and novelty detection
+Lines 1776-1858:  Growth management (check_growth_needs, auto_grow)
+Lines 1859-2108:  Diagnostics collection (striatum, hippocampus, criticality)
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between
+methods. Collapse all regions (Ctrl+K Ctrl+0) for overview.
+
+WHY THIS FILE IS LARGE
+======================
+EventDrivenBrain orchestrates the entire brain system in a single timestep.
+Splitting would:
+1. Break the temporal coordination (all regions must process same timestep)
+2. Scatter neuromodulator state management across multiple files
+3. Duplicate event system plumbing and pathway routing
+4. Obscure the biological rhythm synchronization
+
+Components ARE extracted where orthogonal:
+- Regions: regions/cortex/*, regions/hippocampus/*, regions/striatum.py
+- Pathways: pathways/manager.py, pathways/spiking_pathway.py
+- Neuromodulators: neuromodulation/systems/*
+- Oscillators: oscillation/oscillator.py
+
 Author: Thalia Project
 Date: December 2025
 """
@@ -1730,7 +1765,7 @@ class EventDrivenBrain(nn.Module):
         """
         if sensory_input is not None:
             return sensory_input
-        return torch.zeros(self.config.input_size)
+        return torch.zeros(self.config.input_size, device=self.device)
 
     def _process_events_until(self, end_time: float) -> None:
         """Process all scheduled events up to end_time."""

@@ -63,7 +63,6 @@ class ThaliaError(Exception):
             # Handle other errors
             logger.error(f"Unexpected error: {e}")
     """
-    pass
 
 
 class ComponentError(ThaliaError):
@@ -94,7 +93,6 @@ class ConfigurationError(ThaliaError):
     Example:
         raise ConfigurationError("tau_mem must be positive, got -10.0")
     """
-    pass
 
 
 class BiologicalPlausibilityError(ThaliaError):
@@ -110,7 +108,6 @@ class BiologicalPlausibilityError(ThaliaError):
             "Spikes must be bool dtype (ADR-004), got float32"
         )
     """
-    pass
 
 
 class CheckpointError(ThaliaError):
@@ -122,7 +119,6 @@ class CheckpointError(ThaliaError):
     Example:
         raise CheckpointError("Checkpoint version 2.0 not compatible with 1.0 code")
     """
-    pass
 
 
 class IntegrationError(ThaliaError):
@@ -134,7 +130,6 @@ class IntegrationError(ThaliaError):
     Example:
         raise IntegrationError("Pathway V1→V2 dimensions incompatible: 256→512 expected 256→256")
     """
-    pass
 
 
 # =============================================================================
@@ -338,3 +333,21 @@ def validate_temporal_causality(
             f"{context} violates temporal causality: "
             f"cannot access t={reference_time} from t={current_time}"
         )
+
+
+__all__ = [
+    # Exception classes
+    "ThaliaError",
+    "ComponentError",
+    "ConfigurationError",
+    "BiologicalPlausibilityError",
+    "CheckpointError",
+    "IntegrationError",
+    # Validation utilities
+    "validate_spike_tensor",
+    "validate_device_consistency",
+    "validate_weight_matrix",
+    "validate_positive",
+    "validate_probability",
+    "validate_temporal_causality",
+]

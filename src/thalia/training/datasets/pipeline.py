@@ -299,8 +299,9 @@ class TextDataPipeline:
 
     def get_all_sequences(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Get all sequences as tensors (for small datasets)."""
-        if not self.sequences:
-            raise RuntimeError("No sequences loaded. Call load_text() first.")
+        if not self._sequences:
+            from thalia.core.errors import ComponentError
+            raise ComponentError("SequenceGenerator", "No sequences loaded. Call load_text() first.")
 
         inputs = torch.tensor([s[0] for s in self.sequences])
         targets = torch.tensor([s[1] for s in self.sequences])

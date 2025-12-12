@@ -15,9 +15,9 @@ Biologically relevant:
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict
+from enum import Enum
 import torch
 import numpy as np
-from enum import Enum
 
 
 class PatternType(Enum):
@@ -38,7 +38,7 @@ class SequenceConfig:
     violation_probability: float = 0.1  # Probability of pattern violation
     encoding: str = "one_hot"  # "one_hot" or "distributed"
     device: torch.device = torch.device("cpu")
-    
+
     def __post_init__(self):
         if self.pattern_types is None:
             self.pattern_types = [PatternType.ABC, PatternType.ABA, PatternType.AAB]
@@ -47,19 +47,19 @@ class SequenceConfig:
 class TemporalSequenceDataset:
     """
     Temporal sequence dataset for Stage 0 (Phonology).
-    
+
     Generates sequences with learnable patterns for testing:
     - Temporal prediction (hippocampus)
     - Pattern completion (cortex)
     - Violation detection (prediction error)
-    
+
     Usage:
         >>> config = SequenceConfig(n_symbols=5, sequence_length=10)
         >>> dataset = TemporalSequenceDataset(config)
         >>> sequence, targets, pattern_type = dataset.generate_sequence()
         >>> # sequence.shape = (sequence_length, n_symbols) for one-hot
     """
-    
+
     def __init__(self, config: SequenceConfig):
         self.config = config
         self.pattern_generators = {
@@ -69,7 +69,7 @@ class TemporalSequenceDataset:
             PatternType.ABAC: self._generate_abac,
             PatternType.RANDOM: self._generate_random,
         }
-        
+
     def generate_sequence(
         self,
         pattern_type: Optional[PatternType] = None,
@@ -77,11 +77,11 @@ class TemporalSequenceDataset:
     ) -> Tuple[torch.Tensor, torch.Tensor, PatternType]:
         """
         Generate a single sequence.
-        
+
         Args:
             pattern_type: Specific pattern to generate (random if None)
             include_violation: Whether to include pattern violation
-            
+
         Returns:
             sequence: Input sequence (length, n_symbols) if one-hot
             targets: Expected next symbols (length, n_symbols)
@@ -89,22 +89,22 @@ class TemporalSequenceDataset:
         """
         if pattern_type is None:
             pattern_type = np.random.choice(self.config.pattern_types)
-        
+
         # Generate base pattern
         symbol_sequence = self.pattern_generators[pattern_type]()
-        
+
         # Maybe add violation
         if include_violation or (np.random.random() < self.config.violation_probability):
             symbol_sequence = self._add_violation(symbol_sequence)
-        
+
         # Encode sequence
         sequence = self._encode_sequence(symbol_sequence)
-        
+
         # Generate targets (next symbol prediction)
         targets = self._generate_targets(symbol_sequence)
-        
+
         return sequence, targets, pattern_type
-    
+
     def generate_batch(
         self,
         batch_size: int,
@@ -112,11 +112,11 @@ class TemporalSequenceDataset:
     ) -> Tuple[torch.Tensor, torch.Tensor, List[PatternType]]:
         """
         Generate batch of sequences.
-        
+
         Args:
             batch_size: Number of sequences
             balance_patterns: Whether to balance pattern types
-            
+
         Returns:
             sequences: (batch_size, length, n_symbols)
             targets: (batch_size, length, n_symbols)
@@ -125,16 +125,16 @@ class TemporalSequenceDataset:
         sequences = []
         targets_list = []
         pattern_types = []
-        
+
         if balance_patterns:
             # Generate equal numbers of each pattern
             n_per_pattern = batch_size // len(self.config.pattern_types)
             remainder = batch_size % len(self.config.pattern_types)
-            
+
             for pattern_type in self.config.pattern_types:
                 n = n_per_pattern + (1 if remainder > 0 else 0)
                 remainder -= 1
-                
+
                 for _ in range(n):
                     seq, tgt, pt = self.generate_sequence(pattern_type=pattern_type)
                     sequences.append(seq)
@@ -147,96 +147,96 @@ class TemporalSequenceDataset:
                 sequences.append(seq)
                 targets_list.append(tgt)
                 pattern_types.append(pt)
-        
+
         return (
             torch.stack(sequences),
             torch.stack(targets_list),
             pattern_types,
         )
-    
+
     def _generate_abc(self) -> List[int]:
         """Generate A→B→C linear sequence pattern."""
         sequence = []
         n_triplets = self.config.sequence_length // 3
-        
+
         for _ in range(n_triplets):
             a, b, c = np.random.choice(self.config.n_symbols, size=3, replace=False)
             sequence.extend([a, b, c])
-        
+
         # Pad to exact length
         while len(sequence) < self.config.sequence_length:
             sequence.append(np.random.randint(0, self.config.n_symbols))
-        
+
         return sequence[:self.config.sequence_length]
-    
+
     def _generate_aba(self) -> List[int]:
         """Generate A→B→A repetition pattern."""
         sequence = []
         n_triplets = self.config.sequence_length // 3
-        
+
         for _ in range(n_triplets):
             a, b = np.random.choice(self.config.n_symbols, size=2, replace=False)
             sequence.extend([a, b, a])
-        
+
         while len(sequence) < self.config.sequence_length:
             sequence.append(np.random.randint(0, self.config.n_symbols))
-        
+
         return sequence[:self.config.sequence_length]
-    
+
     def _generate_aab(self) -> List[int]:
         """Generate A→A→B immediate repetition pattern."""
         sequence = []
         n_triplets = self.config.sequence_length // 3
-        
+
         for _ in range(n_triplets):
             a, b = np.random.choice(self.config.n_symbols, size=2, replace=False)
             sequence.extend([a, a, b])
-        
+
         while len(sequence) < self.config.sequence_length:
             sequence.append(np.random.randint(0, self.config.n_symbols))
-        
+
         return sequence[:self.config.sequence_length]
-    
+
     def _generate_abac(self) -> List[int]:
         """Generate A→B→A→C hierarchical pattern."""
         sequence = []
         n_quads = self.config.sequence_length // 4
-        
+
         for _ in range(n_quads):
             a, b, c = np.random.choice(self.config.n_symbols, size=3, replace=False)
             sequence.extend([a, b, a, c])
-        
+
         while len(sequence) < self.config.sequence_length:
             sequence.append(np.random.randint(0, self.config.n_symbols))
-        
+
         return sequence[:self.config.sequence_length]
-    
+
     def _generate_random(self) -> List[int]:
         """Generate random sequence (no structure)."""
         return [
             np.random.randint(0, self.config.n_symbols)
             for _ in range(self.config.sequence_length)
         ]
-    
+
     def _add_violation(self, sequence: List[int]) -> List[int]:
         """Add pattern violation at random position."""
         violation_pos = np.random.randint(1, len(sequence) - 1)
         sequence = sequence.copy()
-        
+
         # Replace with unexpected symbol
         possible_symbols = list(range(self.config.n_symbols))
         possible_symbols.remove(sequence[violation_pos])
         sequence[violation_pos] = np.random.choice(possible_symbols)
-        
+
         return sequence
-    
+
     def _encode_sequence(self, symbol_sequence: List[int]) -> torch.Tensor:
         """
         Encode symbol sequence as tensor.
-        
+
         Args:
             symbol_sequence: List of symbol indices
-            
+
         Returns:
             encoded: (length, n_symbols) for one-hot
                     or (length, embedding_dim) for distributed
@@ -259,19 +259,19 @@ class TemporalSequenceDataset:
             # Make each symbol have consistent representation
             for t, symbol in enumerate(symbol_sequence):
                 torch.manual_seed(symbol)  # Consistent per symbol
-                encoded[t] = torch.randn(self.config.n_symbols * 2)
+                encoded[t] = torch.randn(self.config.n_symbols * 2, device=self.device)
         else:
             raise ValueError(f"Unknown encoding: {self.config.encoding}")
-        
+
         return encoded
-    
+
     def _generate_targets(self, symbol_sequence: List[int]) -> torch.Tensor:
         """
         Generate target sequence (next symbol prediction).
-        
+
         Args:
             symbol_sequence: List of symbol indices
-            
+
         Returns:
             targets: (length, n_symbols) one-hot encoded
         """
@@ -280,16 +280,16 @@ class TemporalSequenceDataset:
             self.config.n_symbols,
             device=self.config.device,
         )
-        
+
         for t in range(len(symbol_sequence) - 1):
             next_symbol = symbol_sequence[t + 1]
             targets[t, next_symbol] = 1.0
-        
+
         # Last target is uniform (no next symbol)
         targets[-1] = 1.0 / self.config.n_symbols
-        
+
         return targets
-    
+
     def compute_prediction_error(
         self,
         predictions: torch.Tensor,
@@ -297,22 +297,22 @@ class TemporalSequenceDataset:
     ) -> float:
         """
         Compute prediction error (cross-entropy).
-        
+
         Args:
             predictions: (length, n_symbols) predicted probabilities
             targets: (length, n_symbols) target one-hot
-            
+
         Returns:
             error: Mean cross-entropy
         """
         # Add small epsilon to avoid log(0)
         predictions = torch.clamp(predictions, min=1e-7, max=1.0)
-        
+
         # Cross-entropy: -sum(target * log(pred))
         ce = -torch.sum(targets * torch.log(predictions), dim=-1)
-        
+
         return ce.mean().item()
-    
+
     def analyze_pattern_learning(
         self,
         brain,
@@ -320,38 +320,38 @@ class TemporalSequenceDataset:
     ) -> Dict[str, float]:
         """
         Analyze how well brain learned each pattern type.
-        
+
         Args:
             brain: Brain instance to test
             n_test_sequences: Number of sequences per pattern
-            
+
         Returns:
             results: Dict mapping pattern_type → prediction_accuracy
         """
         results = {}
-        
+
         for pattern_type in self.config.pattern_types:
             correct = 0
             total = 0
-            
+
             for _ in range(n_test_sequences):
                 seq, targets, _ = self.generate_sequence(
                     pattern_type=pattern_type,
                     include_violation=False,
                 )
-                
+
                 # Run brain on sequence
                 for t in range(len(seq) - 1):
                     brain_output = brain.forward(seq[t:t+1])  # Single timestep
                     predicted_symbol = torch.argmax(brain_output)
                     target_symbol = torch.argmax(targets[t])
-                    
+
                     if predicted_symbol == target_symbol:
                         correct += 1
                     total += 1
-            
+
             results[pattern_type.value] = correct / total if total > 0 else 0.0
-        
+
         return results
 
 
@@ -360,10 +360,10 @@ def create_stage0_temporal_dataset(
 ) -> TemporalSequenceDataset:
     """
     Create temporal sequence dataset for Stage 0.
-    
+
     Args:
         device: Device to place tensors on
-        
+
     Returns:
         dataset: TemporalSequenceDataset instance
     """

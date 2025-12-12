@@ -50,6 +50,18 @@ Integration with Attention:
 - High precision → attend to this input
 - Attention modulates precision (PFC → precision weights)
 
+FILE ORGANIZATION (790 lines)
+==============================
+Lines 1-80:    Module docstring, imports
+Lines 81-135:  PredictiveCortexConfig dataclass
+Lines 136-310: PredictiveCortex class __init__, layer setup
+Lines 311-450: Forward pass (prediction, error computation)
+Lines 451-580: Predictive learning (precision-weighted updates)
+Lines 581-700: Growth and diagnostics
+Lines 701-790: Utility methods (reset_state, checkpointing)
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between methods.
+
 Author: Thalia Project
 Date: December 2025
 """

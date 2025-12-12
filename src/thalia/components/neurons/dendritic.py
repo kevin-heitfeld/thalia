@@ -712,7 +712,7 @@ def create_clustered_input(
         Input pattern, shape (n_inputs,)
     """
     inputs_per_branch = n_inputs // n_branches
-    pattern = torch.zeros(n_inputs)
+    pattern = torch.zeros(n_inputs, device=device)
 
     start_idx = cluster_branch * inputs_per_branch
     end_idx = min(start_idx + n_active, start_idx + inputs_per_branch)
@@ -740,7 +740,7 @@ def create_scattered_input(
         Input pattern, shape (n_inputs,)
     """
     inputs_per_branch = n_inputs // n_branches
-    pattern = torch.zeros(n_inputs)
+    pattern = torch.zeros(n_inputs, device=device)
 
     for branch in range(n_branches):
         start_idx = branch * inputs_per_branch

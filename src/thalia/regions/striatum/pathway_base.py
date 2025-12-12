@@ -88,15 +88,22 @@ class StriatumPathway(nn.Module, ABC):
         # Neuron population
         self.neurons = self._create_neurons()
 
+    def _initialize_weights(self) -> nn.Parameter:
+        """Initialize weight matrix with sparse random connectivity.
+
+        Returns:
+            Parameter [n_output, n_input] with sparse random weights
+        """
+
     # =========================================================================
     # PROPERTIES FOR DIAGNOSTICS
     # =========================================================================
-    
+
     @property
     def eligibility(self) -> Optional[torch.Tensor]:
         """Eligibility traces [n_output, n_input] (from learning strategy)."""
         return self.learning_strategy.eligibility
-    
+
     @eligibility.setter
     def eligibility(self, value: torch.Tensor) -> None:
         """Set eligibility traces (for checkpoint loading)."""

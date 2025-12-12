@@ -23,6 +23,18 @@ Learning Rules:
 1. STDP: Spike-timing dependent plasticity (causal = LTP, anti-causal = LTD)
 2. PHASE-STDP: STDP modulated by oscillation phase
 3. BURST-STDP: Bursts trigger different plasticity than single spikes
+
+FILE ORGANIZATION (941 lines)
+==============================
+Lines 1-115:   Module docstring, imports, config classes
+Lines 116-250: SpikingPathway class __init__, neuron initialization
+Lines 251-400: Forward pass (spike propagation with delays)
+Lines 401-530: Learning (STDP, trace management)
+Lines 531-650: Growth (add_neurons for pathway expansion)
+Lines 651-800: Diagnostics and health monitoring
+Lines 801-941: Utility methods (reset_state, checkpoint support)
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between methods.
 """
 
 from enum import Enum, auto
@@ -43,8 +55,9 @@ from thalia.managers.component_registry import register_pathway
 from thalia.regions.base import NeuralComponent
 from thalia.learning.rules.bcm import BCMRule, BCMConfig
 from thalia.learning.rules.strategies import STDPConfig as StrategySTDPConfig
-from thalia.learning.strategy_registry import LearningStrategyRegistry, create_hippocampus_strategy
+from thalia.learning.strategy_registry import create_hippocampus_strategy
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.core.diagnostics_keys import DiagnosticKeys as DK
 
 
 class TemporalCoding(Enum):
@@ -490,7 +503,6 @@ class SpikingPathway(NeuralComponent):
                 pre_activity=source_spikes,
                 post_activity=target_spikes,
                 weights=self.weights,
-                # Neuromodulator modulation (passed to strategy)
                 dopamine=self.dopamine_level,
                 acetylcholine=self.acetylcholine_level,
                 norepinephrine=self.norepinephrine_level,
@@ -608,9 +620,9 @@ class SpikingPathway(NeuralComponent):
             "total_ltp": self.total_ltp,
             "total_ltd": self.total_ltd,
             "ltp_ltd_ratio": self.total_ltp / max(self.total_ltd, 1e-6),
-            "mean_weight": self.weights.data.mean().item(),
-            "weight_std": self.weights.data.std().item(),
-            "mean_firing_rate": self.firing_rate_estimate.mean().item(),
+            DK.WEIGHT_MEAN: self.weights.data.mean().item(),
+            DK.WEIGHT_STD: self.weights.data.std().item(),
+            DK.FIRING_RATE: self.firing_rate_estimate.mean().item(),
         }
 
     def reset_learning_metrics(self) -> None:

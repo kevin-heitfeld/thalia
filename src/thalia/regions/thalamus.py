@@ -41,6 +41,18 @@ Biological Basis:
 - Pulvinar: Visual attention and salience
 - Mediodorsal nucleus (MD): Prefrontal coordination
 
+FILE ORGANIZATION (680 lines)
+==============================
+Lines 1-95:    Module docstring, imports, ThalamicRelayConfig
+Lines 96-175:  ThalamicRelay class __init__, weight initialization
+Lines 176-320: Forward pass (relay neurons + TRN inhibition)
+Lines 321-450: Mode switching (burst vs tonic)
+Lines 451-550: Attentional gating (alpha oscillations)
+Lines 551-620: Diagnostics and health monitoring
+Lines 621-680: Utility methods (reset_state, get_full_state)
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between methods.
+
 When to Use:
 ============
 - Between sensory input and cortex

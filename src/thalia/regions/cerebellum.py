@@ -28,6 +28,19 @@ enabling fast, precise learning of input-output mappings without trial-and-error
    - Supervised signal provides direct gradient information
    - No exploration needed - direct instruction
 
+FILE ORGANIZATION (759 lines)
+==============================
+Lines 1-80:    Module docstring, imports
+Lines 81-170:  CerebellumConfig dataclass
+Lines 171-280: Cerebellum class __init__, weight initialization
+Lines 281-370: Forward pass (parallel fibers → Purkinje cells)
+Lines 371-500: Error learning (climbing fiber supervision, delta rule)
+Lines 501-650: Growth and neurogenesis (add_neurons)
+Lines 651-730: Diagnostics and health monitoring
+Lines 731-759: Utility methods (reset_state, get_full_state)
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between methods.
+
 Biological Basis:
 =================
 - Marr (1969) and Albus (1971): Cerebellar learning theory

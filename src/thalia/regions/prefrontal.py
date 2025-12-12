@@ -31,6 +31,19 @@ The prefrontal cortex (PFC) specializes in cognitive control and flexible behavi
    - Integrates information over longer timescales
    - Supports temporal abstraction and planning
 
+FILE ORGANIZATION (1072 lines)
+===============================
+Lines 1-85:    Module docstring, imports, PrefrontalConfig
+Lines 86-260:  Prefrontal class __init__, weight initialization
+Lines 261-430: Forward pass (input → WM update → output)
+Lines 431-590: Working memory gating logic (dopamine-modulated)
+Lines 591-760: Rule learning and context-dependent processing
+Lines 761-900: Growth and neurogenesis (add_neurons)
+Lines 901-1020: Diagnostics and health monitoring
+Lines 1021-1072: Utility methods (reset_state, get_full_state)
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between methods.
+
 Biological Basis:
 =================
 - Layer 2/3 recurrent circuits for WM maintenance
@@ -203,7 +216,7 @@ class DopamineGatingSystem:
 
         self.level = baseline  # Current DA level
 
-    def reset_state(self):
+    def reset_state(self) -> None:
         """Reset to baseline."""
         self.level = self.baseline
 

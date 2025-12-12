@@ -59,6 +59,9 @@ Date: December 11, 2025
 LEARNING_RATE_STDP = 0.001
 """Standard STDP learning rate for cortical synapses."""
 
+LEARNING_RATE_STDP_MODERATE = 0.0015
+"""Moderate STDP for pathways requiring slightly faster adaptation."""
+
 LEARNING_RATE_STDP_FAST = 0.005
 """Fast STDP for rapid adaptation (critical periods)."""
 
@@ -248,3 +251,37 @@ WM_NOISE_STD_DEFAULT = 0.02
 Adds stochasticity to working memory updates and predictions.
 Based on neural variability in prefrontal cortex.
 """
+
+
+__all__ = [
+    # Core learning rates
+    "LEARNING_RATE_STDP",
+    "LEARNING_RATE_STDP_MODERATE",
+    "LEARNING_RATE_STDP_FAST",
+    "LEARNING_RATE_STDP_SLOW",
+    "LEARNING_RATE_BCM",
+    "LEARNING_RATE_THREE_FACTOR",
+    "LEARNING_RATE_HEBBIAN",
+    "LEARNING_RATE_ERROR_CORRECTIVE",
+    "LEARNING_RATE_ONE_SHOT",
+    "LEARNING_RATE_DEFAULT",
+    # Plasticity time constants
+    "TAU_ELIGIBILITY_STANDARD",
+    "TAU_ELIGIBILITY_SHORT",
+    "TAU_ELIGIBILITY_LONG",
+    "TAU_BCM_THRESHOLD",
+    "TAU_BCM_THRESHOLD_FAST",
+    "TAU_BCM_THRESHOLD_SLOW",
+    "TAU_STDP_PLUS",
+    "TAU_STDP_MINUS",
+    # STDP parameters
+    "STDP_A_PLUS_CORTEX",
+    "STDP_A_MINUS_CORTEX",
+    "STDP_A_PLUS_HIPPOCAMPUS",
+    "STDP_A_MINUS_HIPPOCAMPUS",
+    # Activity tracking
+    "EMA_DECAY_FAST",
+    "EMA_DECAY_SLOW",
+    # Noise parameters
+    "WM_NOISE_STD_DEFAULT",
+]

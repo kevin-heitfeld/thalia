@@ -61,6 +61,17 @@ Our Design:
     │   Brain      │  Cortex → Hippocampus → PFC → Striatum
     └──────────────┘
 
+FILE ORGANIZATION (1058 lines)
+===============================
+Lines 1-85:    Module docstring, imports
+Lines 86-215:  SensoryPathwayConfig, VisualConfig classes
+Lines 216-505: VisualPathway implementation (retina-like)
+Lines 506-750: AuditoryPathway implementation (cochlea-like)
+Lines 751-950: LanguagePathway implementation (embedding-based)
+Lines 951-1058: Utility functions and sensory encoding helpers
+
+NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to navigate between modalities.
+
 Author: Thalia Project
 Date: December 2025
 """

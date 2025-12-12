@@ -74,7 +74,7 @@ All pathways (regions too) inherit from NeuralComponent:
             # Transform spikes AND apply STDP (automatically)
             return self.transform(spikes)
 
-        def reset_state(self):
+        def reset_state(self) -> None:
             self.membrane.zero_()
             self.input_trace.zero_()
 
