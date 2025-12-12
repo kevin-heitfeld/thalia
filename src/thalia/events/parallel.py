@@ -69,6 +69,7 @@ Date: December 2025
 
 from __future__ import annotations
 
+import multiprocessing
 from multiprocessing import Process, Queue
 from multiprocessing.synchronize import Event as MPEvent
 from queue import Empty
@@ -76,10 +77,69 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Any, Callable
 import torch
 
+# Ensure we use spawn method for consistency across platforms
+# This is required for Windows and makes the code more predictable
+if multiprocessing.get_start_method(allow_none=True) is None:
+    multiprocessing.set_start_method('spawn', force=False)
+
 from thalia.events.system import (
     Event, EventType, EventScheduler,
     SpikePayload, RegionInterface, get_axonal_delay,
 )
+
+
+# =============================================================================
+# Tensor Serialization for Multiprocessing
+# =============================================================================
+
+def serialize_event(event: Event) -> Event:
+    """Serialize event for multiprocessing (move GPU tensors to CPU).
+
+    Args:
+        event: Event with potential GPU tensors
+
+    Returns:
+        Event with CPU tensors that can be pickled
+    """
+    if isinstance(event.payload, SpikePayload):
+        # Move spikes to CPU for pickling
+        spikes = event.payload.spikes
+        if spikes.is_cuda:
+            event = Event(
+                time=event.time,
+                event_type=event.event_type,
+                source=event.source,
+                target=event.target,
+                payload=SpikePayload(
+                    spikes=spikes.cpu(),
+                    source_layer=event.payload.source_layer,
+                ),
+            )
+    return event
+
+
+def deserialize_event(event: Event, device: str) -> Event:
+    """Deserialize event and move tensors to target device.
+
+    Args:
+        event: Event with CPU tensors
+        device: Target device ("cpu" or "cuda")
+
+    Returns:
+        Event with tensors on target device
+    """
+    if isinstance(event.payload, SpikePayload) and device != "cpu":
+        event = Event(
+            time=event.time,
+            event_type=event.event_type,
+            source=event.source,
+            target=event.target,
+            payload=SpikePayload(
+                spikes=event.payload.spikes.to(device),
+                source_layer=event.payload.source_layer,
+            ),
+        )
+    return event
 
 
 @dataclass
@@ -196,6 +256,7 @@ class ParallelExecutor:
         self,
         region_creators: Dict[str, Callable[[], RegionInterface]],
         batch_tolerance_ms: float = 0.1,
+        device: str = "cpu",
     ):
         """Initialize parallel simulation.
 
@@ -204,9 +265,11 @@ class ParallelExecutor:
                             create RegionInterface instances. Using callables
                             avoids pickling the actual region objects.
             batch_tolerance_ms: Events within this tolerance are batched
+            device: Device for regions ("cpu" recommended for parallel mode)
         """
         self.region_names = list(region_creators.keys())
         self.batch_tolerance = batch_tolerance_ms
+        self.device = device
 
         # Event scheduling (in main process)
         self.scheduler = EventScheduler()
@@ -221,7 +284,7 @@ class ParallelExecutor:
         for name, creator in region_creators.items():
             self.input_queues[name] = Queue()
             self.output_queues[name] = Queue()
-            self.control_events[name] = MPEvent()
+            self.control_events[name] = multiprocessing.Event()  # Use factory function
 
             process = Process(
                 target=worker_process,
@@ -275,6 +338,8 @@ class ParallelExecutor:
             target=target,
             payload=SpikePayload(spikes=pattern),
         )
+        # Serialize before scheduling (in case pattern is on GPU)
+        event = serialize_event(event)
         self.scheduler.schedule(event)
 
     def _process_batch(self, events: List[Event]) -> List[Event]:
@@ -292,11 +357,13 @@ class ParallelExecutor:
             if event.target in events_by_region:
                 events_by_region[event.target].append(event)
 
-        # Put events in queues
+        # Put events in queues (serialize for pickling)
         regions_with_work = []
         for name, region_events in events_by_region.items():
             for event in region_events:
-                self.input_queues[name].put(event)
+                # Serialize event (move GPU tensors to CPU for pickling)
+                serialized_event = serialize_event(event)
+                self.input_queues[name].put(serialized_event)
             if region_events:
                 regions_with_work.append(name)
 
@@ -316,7 +383,9 @@ class ParallelExecutor:
                     if isinstance(result, tuple) and result[0] == "DONE":
                         done_count += 1
                     else:
-                        output_events.append(result)
+                        # Deserialize event (move tensors to target device)
+                        deserialized_event = deserialize_event(result, self.device)
+                        output_events.append(deserialized_event)
 
                 except Empty:
                     continue
@@ -327,7 +396,8 @@ class ParallelExecutor:
                 try:
                     result = self.output_queues[name].get_nowait()
                     if isinstance(result, Event):
-                        output_events.append(result)
+                        deserialized_event = deserialize_event(result, self.device)
+                        output_events.append(deserialized_event)
                 except Empty:
                     break
 
@@ -371,3 +441,303 @@ class ParallelExecutor:
             "final_time": self.scheduler.current_time,
             "spike_counts": self._spike_counts.copy(),
         }
+
+
+# =============================================================================
+# Module-Level Region Creator Functions (Pickle-able)
+# =============================================================================
+# These functions MUST be defined at module level (not inside a class or
+# function) so they can be pickled by multiprocessing on Windows (spawn mode).
+#
+# Each creator function:
+# 1. Imports the necessary region class
+# 2. Creates an EventDriven* adapter with the region
+# 3. Returns a RegionInterface that can process events
+#
+# NOTE: These functions take raw config dicts instead of config objects
+# to avoid pickling issues with complex config classes.
+# =============================================================================
+
+def create_thalamus_region(
+    config_dict: Dict[str, Any],
+    device: str = "cpu",
+) -> RegionInterface:
+    """Create event-driven thalamus region (module-level for pickling).
+
+    Args:
+        config_dict: Dictionary with thalamus configuration:
+            - name: Region name
+            - n_input: Input size
+            - n_output: Output size
+            - output_targets: List of target region names
+        device: Device to use
+
+    Returns:
+        EventDrivenThalamus instance
+    """
+    from thalia.events.adapters import EventDrivenThalamus, EventRegionConfig
+    from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+
+    # Build thalamus config
+    thalamus_config = ThalamicRelayConfig(
+        n_input=config_dict.get("n_input", 784),
+        n_output=config_dict.get("n_output", 256),
+        device=device,
+        dt_ms=1.0,
+    )
+
+    # Create thalamus
+    thalamus = ThalamicRelay(thalamus_config)
+
+    # Build event config
+    event_config = EventRegionConfig(
+        name=config_dict.get("name", "thalamus"),
+        output_targets=config_dict.get("output_targets", ["cortex"]),
+        device=device,
+    )
+
+    # Create and return adapter
+    return EventDrivenThalamus(config=event_config, thalamus=thalamus)
+
+
+def create_cortex_region(
+    config_dict: Dict[str, Any],
+    device: str = "cpu",
+) -> RegionInterface:
+    """Create event-driven cortex region (module-level for pickling).
+
+    Args:
+        config_dict: Dictionary with cortex configuration:
+            - name: Region name
+            - n_layers: Number of cortical layers
+            - layer_sizes: List of layer sizes
+            - output_targets: List of target region names
+        device: Device to use ("cpu" or "cuda")
+
+    Returns:
+        EventDrivenCortex instance
+    """
+    from thalia.events.adapters import EventDrivenCortex, EventRegionConfig
+    from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
+
+    # Build cortex config (LayeredCortexConfig uses n_input/n_output)
+    cortex_config = LayeredCortexConfig(
+        n_input=config_dict.get("n_input", 784),
+        n_output=config_dict.get("n_output", 256),
+        device=device,
+        dt_ms=1.0,
+    )    # Create cortex
+    cortex = LayeredCortex(cortex_config)
+
+    # Build event config
+    event_config = EventRegionConfig(
+        name=config_dict.get("name", "cortex"),
+        output_targets=config_dict.get("output_targets", ["hippocampus", "pfc", "striatum"]),
+        device=device,
+    )
+
+    # Create and return adapter
+    return EventDrivenCortex(config=event_config, cortex=cortex)
+
+
+def create_hippocampus_region(
+    config_dict: Dict[str, Any],
+    device: str = "cpu",
+) -> RegionInterface:
+    """Create event-driven hippocampus region (module-level for pickling).
+
+    Args:
+        config_dict: Dictionary with hippocampus configuration:
+            - name: Region name
+            - dg_size: Dentate gyrus size
+            - ca3_size: CA3 size
+            - ca1_size: CA1 size
+            - output_targets: List of target region names
+        device: Device to use
+
+    Returns:
+        EventDrivenHippocampus instance
+    """
+    from thalia.events.adapters import EventDrivenHippocampus, EventRegionConfig
+    from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
+
+    # Build hippocampus config
+    hc_config = HippocampusConfig(
+        n_input=config_dict.get("n_input", 256),
+        n_output=config_dict.get("ca1_size", 200),
+        ec_l3_input_size=config_dict.get("n_input", 256),
+        device=device,
+        dt_ms=1.0,
+    )
+
+    # Create hippocampus
+    hippocampus = Hippocampus(hc_config)    # Build event config
+    event_config = EventRegionConfig(
+        name=config_dict.get("name", "hippocampus"),
+        output_targets=config_dict.get("output_targets", ["pfc", "cortex"]),
+        device=device,
+    )
+
+    # Create and return adapter
+    return EventDrivenHippocampus(config=event_config, hippocampus=hippocampus)
+
+
+def create_pfc_region(
+    config_dict: Dict[str, Any],
+    device: str = "cpu",
+) -> RegionInterface:
+    """Create event-driven PFC region (module-level for pickling).
+
+    Args:
+        config_dict: Dictionary with PFC configuration:
+            - name: Region name
+            - n_neurons: Number of PFC neurons
+            - n_input: Input size
+            - output_targets: List of target region names
+        device: Device to use
+
+    Returns:
+        EventDrivenPFC instance
+    """
+    from thalia.events.adapters import EventDrivenPFC, EventRegionConfig
+    from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
+
+    # Build PFC config
+    pfc_config = PrefrontalConfig(
+        n_output=config_dict.get("n_neurons", 128),
+        n_input=config_dict.get("n_input", 256),
+        device=device,
+        dt_ms=1.0,
+    )
+
+    # Create PFC
+    pfc = Prefrontal(pfc_config)    # Build event config
+    event_config = EventRegionConfig(
+        name=config_dict.get("name", "pfc"),
+        output_targets=config_dict.get("output_targets", ["cortex", "striatum", "hippocampus"]),
+        device=device,
+    )
+
+    # Create and return adapter
+    return EventDrivenPFC(config=event_config, pfc=pfc)
+
+
+def create_striatum_region(
+    config_dict: Dict[str, Any],
+    device: str = "cpu",
+) -> RegionInterface:
+    """Create event-driven striatum region (module-level for pickling).
+
+    Args:
+        config_dict: Dictionary with striatum configuration:
+            - name: Region name
+            - n_actions: Number of actions
+            - n_input: Input size
+            - output_targets: List of target region names
+        device: Device to use
+
+    Returns:
+        EventDrivenStriatum instance
+    """
+    from thalia.events.adapters import EventDrivenStriatum, EventRegionConfig
+    from thalia.regions.striatum import Striatum, StriatumConfig
+
+    # Build striatum config (n_output is number of actions)
+    striatum_config = StriatumConfig(
+        n_output=config_dict.get("n_actions", 10),
+        n_input=config_dict.get("n_input", 256),
+        neurons_per_action=config_dict.get("neurons_per_action", 20),
+        device=device,
+        dt_ms=1.0,
+    )    # Create striatum
+    striatum = Striatum(striatum_config)
+
+    # Build event config
+    event_config = EventRegionConfig(
+        name=config_dict.get("name", "striatum"),
+        output_targets=config_dict.get("output_targets", []),
+        device=device,
+    )
+
+    # Create and return adapter
+    return EventDrivenStriatum(config=event_config, striatum=striatum)
+
+
+def create_cerebellum_region(
+    config_dict: Dict[str, Any],
+    device: str = "cpu",
+) -> RegionInterface:
+    """Create event-driven cerebellum region (module-level for pickling).
+
+    Args:
+        config_dict: Dictionary with cerebellum configuration:
+            - name: Region name
+            - n_purkinje: Number of Purkinje cells
+            - n_input: Input size
+            - output_targets: List of target region names
+        device: Device to use
+
+    Returns:
+        EventDrivenCerebellum instance
+    """
+    from thalia.events.adapters import EventDrivenCerebellum, EventRegionConfig
+    from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+
+    # Build cerebellum config
+    cerebellum_config = CerebellumConfig(
+        n_output=config_dict.get("n_purkinje", 100),
+        n_input=config_dict.get("n_input", 256),
+        device=device,
+        dt_ms=1.0,
+    )    # Create cerebellum
+    cerebellum = Cerebellum(cerebellum_config)
+
+    # Build event config
+    event_config = EventRegionConfig(
+        name=config_dict.get("name", "cerebellum"),
+        output_targets=config_dict.get("output_targets", []),
+        device=device,
+    )
+
+    # Create and return adapter
+    return EventDrivenCerebellum(config=event_config, cerebellum=cerebellum)
+
+
+def create_region_creator(
+    region_type: str,
+    config_dict: Dict[str, Any],
+    device: str = "cpu",
+) -> Callable[[], RegionInterface]:
+    """Create a region creator function for the specified region type.
+
+    This returns a reference to the appropriate module-level creator function,
+    with config bound via functools.partial (which IS picklable).
+
+    Args:
+        region_type: Type of region ("cortex", "hippocampus", etc.)
+        config_dict: Configuration dictionary for the region
+        device: Device to use
+
+    Returns:
+        Callable that creates the region when called
+
+    Example:
+        >>> creator = create_region_creator("cortex", {"n_layers": 3}, "cpu")
+        >>> region = creator()  # Creates the cortex
+    """
+    from functools import partial
+
+    creators = {
+        "thalamus": create_thalamus_region,
+        "cortex": create_cortex_region,
+        "hippocampus": create_hippocampus_region,
+        "pfc": create_pfc_region,
+        "striatum": create_striatum_region,
+        "cerebellum": create_cerebellum_region,
+    }
+
+    if region_type not in creators:
+        raise ValueError(f"Unknown region type: {region_type}. Valid types: {list(creators.keys())}")
+
+    # Return a partial application (which IS picklable)
+    return partial(creators[region_type], config_dict, device)

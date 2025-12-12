@@ -263,7 +263,6 @@ class RegionInterface(ABC):
     @abstractmethod
     def name(self) -> str:
         """Unique name for this region."""
-        pass
 
     @abstractmethod
     def process_event(self, event: Event) -> List[Event]:
@@ -275,18 +274,14 @@ class RegionInterface(ABC):
         3. Generate output spikes if threshold exceeded
         4. Return events to be scheduled (with appropriate delays)
         """
-        pass
 
     @abstractmethod
     def get_connections(self) -> List[Connection]:
         """Return list of outgoing connections from this region."""
-        pass
 
     @abstractmethod
     def get_state(self) -> Dict[str, Any]:
         """Return current state for monitoring/debugging."""
-        pass
 
     def reset_state(self) -> None:
         """Reset region to initial state."""
-        pass

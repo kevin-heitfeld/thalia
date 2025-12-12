@@ -944,29 +944,83 @@ class EventDrivenBrain(nn.Module):
     def _init_parallel_executor(self) -> None:
         """Initialize parallel executor with region creators.
 
-        Note: Parallel mode is experimental. On Windows, multiprocessing uses
-        "spawn" which requires pickleable region creators. This implementation
-        uses the existing module-level creator functions from parallel.py
-        for now. For full config customization in parallel mode, consider using
-        the sequential mode (parallel=False).
+        Note: Parallel mode requires CPU device for multiprocessing serialization.
+        GPU tensors are automatically moved to CPU for inter-process communication
+        and back to GPU in each worker process.
 
-        TODO: These creator functions need to be implemented in thalia.events.parallel
+        For best performance in parallel mode:
+        - Use device="cpu" in config
+        - Ensure regions are not too small (overhead from IPC)
+        - Consider sequential mode for small-scale experiments
         """
-        # TODO: Implement _create_real_* functions in thalia.events.parallel
-        # from thalia.events.parallel import (
-        #     _create_real_cortex, _create_real_hippocampus,
-        #     _create_real_pfc, _create_real_striatum,
-        # )
+        from thalia.events.parallel import create_region_creator
 
-        # Create parallel executor with module-level creators
-        # These are pickle-able because they're defined at module level
+        # Build configuration dictionaries for each region
+        # These will be pickled and sent to worker processes
+
+        thalamus_config = {
+            "name": "thalamus",
+            "n_input": self.config.input_size,
+            "n_output": self.config.thalamus_size,
+            "output_targets": ["cortex"],
+        }
+
+        cortex_config = {
+            "name": "cortex",
+            "n_input": self.config.thalamus_size,
+            "n_output": self.config.cortex_size,
+            "output_targets": ["hippocampus", "pfc", "striatum"],
+        }
+
+        hippocampus_config = {
+            "name": "hippocampus",
+            "n_input": self._cortex_l23_size,
+            "dg_size": self.hippocampus.impl.dg_size,
+            "ca3_size": self.hippocampus.impl.ca3_size,
+            "ca1_size": self.hippocampus.impl.ca1_size,
+            "output_targets": ["pfc", "striatum"],
+        }
+
+        pfc_config = {
+            "name": "pfc",
+            "n_neurons": self.config.pfc_size,
+            "n_input": self._cortex_l23_size + self.config.hippocampus_size,
+            "output_targets": ["striatum", "cortex"],
+        }
+
+        striatum_config = {
+            "name": "striatum",
+            "n_actions": self.config.n_actions,
+            "n_input": self._cortex_l5_size + self.config.hippocampus_size + self.config.pfc_size,
+            "neurons_per_action": self.config.neurons_per_action,
+            "output_targets": ["cerebellum"],
+        }
+
+        cerebellum_config = {
+            "name": "cerebellum",
+            "n_purkinje": self.config.n_actions,
+            "n_input": self.config.n_actions * self.config.neurons_per_action,
+            "output_targets": [],
+        }
+
+        # Create region creators (lambdas that can be pickled)
+        # Device is forced to "cpu" for parallel mode to avoid GPU serialization issues
+        device = "cpu"  # Force CPU for parallel mode
+
+        region_creators = {
+            "thalamus": create_region_creator("thalamus", thalamus_config, device),
+            "cortex": create_region_creator("cortex", cortex_config, device),
+            "hippocampus": create_region_creator("hippocampus", hippocampus_config, device),
+            "pfc": create_region_creator("pfc", pfc_config, device),
+            "striatum": create_region_creator("striatum", striatum_config, device),
+            "cerebellum": create_region_creator("cerebellum", cerebellum_config, device),
+        }
+
+        # Create parallel executor
         self._parallel_executor = ParallelExecutor(
-            region_creators={
-                # "cortex": _create_real_cortex,
-                # "hippocampus": _create_real_hippocampus,
-                # "pfc": _create_real_pfc,
-                # "striatum": _create_real_striatum,
-            },
+            region_creators=region_creators,
+            batch_tolerance_ms=0.1,  # Events within 0.1ms batched together
+            device=device,
         )
         self._parallel_executor.start()
 
