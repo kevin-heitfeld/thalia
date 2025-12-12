@@ -243,6 +243,24 @@ Strong spike-frequency adaptation for CA3 pyramidal neurons.
 Prevents runaway recurrent excitation in attractor networks.
 """
 
+ADAPT_INCREMENT_CORTEX_L23 = 0.30
+"""Very strong adaptation for cortical L2/3 pyramidal neurons.
+
+Cortical L2/3 pyramidal neurons show particularly strong spike-frequency
+adaptation, critical for:
+1. Preventing frozen attractors in recurrent networks
+2. Temporal decorrelation of neural responses  
+3. Maintaining response selectivity during sustained stimulation
+
+This strong adaptation works synergistically with short-term depression (STD)
+to enable pattern transitions and prevent network from getting "stuck" on
+the same representation.
+
+References:
+- McCormick et al. (1985): Comparative electrophysiology of pyramidal cells
+- Sanchez-Vives et al. (2000): Adaptation in neocortical neurons
+"""
+
 # =============================================================================
 # NOISE PARAMETERS
 # =============================================================================

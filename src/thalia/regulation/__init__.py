@@ -28,6 +28,10 @@ from thalia.regulation.learning_constants import (
     TAU_BCM_THRESHOLD,
     TAU_STDP_PLUS,
     TAU_STDP_MINUS,
+    STDP_A_PLUS_CORTEX,
+    STDP_A_MINUS_CORTEX,
+    STDP_A_PLUS_HIPPOCAMPUS,
+    STDP_A_MINUS_HIPPOCAMPUS,
     WEIGHT_INIT_SCALE_PREDICTIVE,
     WEIGHT_INIT_SCALE_RECURRENT,
     EMA_DECAY_FAST,
@@ -70,6 +74,11 @@ __all__ = [
     "TAU_BCM_THRESHOLD",
     "TAU_STDP_PLUS",
     "TAU_STDP_MINUS",
+    # Learning Constants - STDP Amplitudes
+    "STDP_A_PLUS_CORTEX",
+    "STDP_A_MINUS_CORTEX",
+    "STDP_A_PLUS_HIPPOCAMPUS",
+    "STDP_A_MINUS_HIPPOCAMPUS",
     # Learning Constants - Weight Initialization
     "WEIGHT_INIT_SCALE_PREDICTIVE",
     "WEIGHT_INIT_SCALE_RECURRENT",

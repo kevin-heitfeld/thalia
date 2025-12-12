@@ -26,6 +26,11 @@ from thalia.components.neurons.neuron_constants import (
     G_LEAK_STANDARD,
     G_LEAK_FAST,
     G_LEAK_SLOW,
+    # Adaptation constants
+    ADAPT_INCREMENT_NONE,
+    ADAPT_INCREMENT_MODERATE,
+    ADAPT_INCREMENT_STRONG,
+    ADAPT_INCREMENT_CORTEX_L23,
     # Presets
     STANDARD_PYRAMIDAL,
     FAST_SPIKING_INTERNEURON,
@@ -60,6 +65,10 @@ __all__ = [
     "G_LEAK_STANDARD",
     "G_LEAK_FAST",
     "G_LEAK_SLOW",
+    "ADAPT_INCREMENT_NONE",
+    "ADAPT_INCREMENT_MODERATE",
+    "ADAPT_INCREMENT_STRONG",
+    "ADAPT_INCREMENT_CORTEX_L23",
     "STANDARD_PYRAMIDAL",
     "FAST_SPIKING_INTERNEURON",
     # Dendritic computation

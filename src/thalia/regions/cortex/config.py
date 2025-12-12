@@ -18,6 +18,8 @@ import torch
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponentState
 from thalia.learning.rules.bcm import BCMConfig
+from thalia.regulation.learning_constants import STDP_A_PLUS_CORTEX, STDP_A_MINUS_CORTEX
+from thalia.components.neurons.neuron_constants import ADAPT_INCREMENT_CORTEX_L23
 from .robustness_config import RobustnessConfig
 
 
@@ -91,6 +93,9 @@ class LayeredCortexConfig(NeuralComponentConfig):
 
     # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
     # are inherited from NeuralComponentConfig
+    # Override with cortical values from constants:
+    a_plus: float = STDP_A_PLUS_CORTEX      # LTP amplitude
+    a_minus: float = STDP_A_MINUS_CORTEX    # LTD amplitude
 
     # Weight bounds for L2/3 recurrent connections (signed, compact E/I approximation)
     # Unlike feedforward connections, recurrent lateral connections use signed weights
@@ -105,7 +110,7 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # Cortical pyramidal neurons show strong spike-frequency adaptation.
     # Inherited from base: adapt_increment=0.0, adapt_tau=100.0
     # Override for L2/3 strong adaptation:
-    adapt_increment: float = 0.3  # L2/3 needs strong adaptation for decorrelation
+    adapt_increment: float = ADAPT_INCREMENT_CORTEX_L23  # Very strong adaptation for decorrelation
     # adapt_tau: 100.0 (use base default)
 
     # =========================================================================

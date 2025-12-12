@@ -123,6 +123,49 @@ Longer than synaptic plasticity time constants to provide stability.
 The threshold adapts slowly based on average postsynaptic activity squared.
 """
 
+# =============================================================================
+# STDP AMPLITUDE CONSTANTS (dimensionless)
+# =============================================================================
+
+STDP_A_PLUS_CORTEX = 0.01
+"""LTP amplitude for cortical STDP (potentiation when post follows pre).
+
+Biologically realistic value for cortical synapses. This controls the
+strength of long-term potentiation when postsynaptic spikes follow
+presynaptic spikes within the STDP time window.
+
+References:
+- Bi & Poo (1998): Values range 0.005-0.02 for cultured neurons
+- Clopath et al. (2010): 0.01 for cortical models
+"""
+
+STDP_A_MINUS_CORTEX = 0.012
+"""LTD amplitude for cortical STDP (depression when pre follows post).
+
+Slightly larger than A+ for stability (LTD > LTP prevents runaway
+potentiation). This controls the strength of long-term depression
+when presynaptic spikes follow postsynaptic spikes.
+
+Biologically, LTD is often slightly stronger than LTP to provide
+homeostatic balance and prevent saturation.
+
+References:
+- Bi & Poo (1998): Asymmetric STDP window
+- Sjöström et al. (2001): Spike-timing dependent plasticity in neocortex
+"""
+
+STDP_A_PLUS_HIPPOCAMPUS = 0.02
+"""LTP amplitude for hippocampal STDP (stronger than cortex).
+
+Hippocampus shows stronger STDP for rapid episodic memory formation.
+"""
+
+STDP_A_MINUS_HIPPOCAMPUS = 0.022
+"""LTD amplitude for hippocampal STDP (stronger than cortex).
+
+Hippocampus shows stronger plasticity for rapid episodic memory formation.
+"""
+
 TAU_BCM_THRESHOLD_FAST = 2000.0
 """Fast BCM threshold adaptation (2 seconds) for rapid environment changes."""
 

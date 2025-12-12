@@ -89,7 +89,7 @@ from thalia.components.synapses.traces import update_trace
 from thalia.regions.base import NeuralComponent
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
-from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig, STDPStrategy, STDPConfig, create_cortex_strategy
+from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
@@ -215,24 +215,33 @@ class LayeredCortex(NeuralComponent):
             decay_rate=1.0 - (1.0 / config.ffi_tau),
         )
 
-        # BCM learning strategies for each layer
+        # STDP+BCM learning strategies for each layer
         if config.bcm_enabled:
-            device = torch.device(config.device)
-            
-            # Use factory helper to create BCM strategies for each layer
-            # This encapsulates cortex-appropriate learning rule configuration
+
+            # Custom STDP config using biologically appropriate amplitudes from config
+            stdp_cfg = STDPConfig(
+                learning_rate=config.learning_rate,
+                a_plus=config.a_plus,
+                a_minus=config.a_minus,
+                tau_plus=config.tau_plus_ms,
+                tau_minus=config.tau_minus_ms,
+                dt_ms=config.dt_ms,
+                w_min=config.w_min,
+                w_max=config.w_max,
+            )
+
+            # BCM config for homeostatic modulation
             bcm_cfg = config.bcm_config or BCMStrategyConfig(
                 learning_rate=config.learning_rate,
                 w_min=config.w_min,
                 w_max=config.w_max,
                 dt=config.dt_ms,
             )
-            
-            # Create BCM strategies (currently use registry directly since we have custom config)
-            # TODO: Enhance create_cortex_strategy() to accept BCMConfig directly
-            self.bcm_l4 = LearningStrategyRegistry.create("bcm", bcm_cfg)
-            self.bcm_l23 = LearningStrategyRegistry.create("bcm", bcm_cfg)
-            self.bcm_l5 = LearningStrategyRegistry.create("bcm", bcm_cfg)
+
+            # Use create_cortex_strategy() factory helper for STDP+BCM composite
+            self.bcm_l4 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
+            self.bcm_l23 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
+            self.bcm_l5 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
         else:
             self.bcm_l4 = None
             self.bcm_l23 = None
@@ -497,20 +506,8 @@ class LayeredCortex(NeuralComponent):
 
         self.weights = self.w_input_l4
 
-        # Initialize learning strategy (STDP for cortical learning)
-        # We use a single STDP strategy instance that we'll apply to different
-        # weight matrices (input->L4, L4->L2/3, L2/3->L5, L2/3 recurrent)
-        stdp_config = STDPConfig(
-            learning_rate=cfg.stdp_lr,
-            a_plus=cfg.a_plus,
-            a_minus=cfg.a_minus,
-            tau_plus=cfg.tau_plus_ms,
-            tau_minus=cfg.tau_minus_ms,
-            dt_ms=cfg.dt_ms,
-            w_min=cfg.w_min,
-            w_max=cfg.w_max,
-        )
-        self.learning_strategy = STDPStrategy(stdp_config)
+        # Note: Learning strategies (STDP+BCM) are created in __init__ as
+        # self.bcm_l4, self.bcm_l23, self.bcm_l5 composite strategies
 
     def reset_state(self) -> None:
         """Reset all layer states.
@@ -1112,55 +1109,32 @@ class LayeredCortex(NeuralComponent):
 
         total_change = 0.0
 
-        # BCM modulation factors (scalars for layer-wide modulation)
-        l4_bcm_mod = 1.0
-        l23_bcm_mod = 1.0
-        l5_bcm_mod = 1.0
-
-        if self.bcm_l4 is not None:
-            # Update threshold with actual spike vector (per-neuron)
-            self.bcm_l4.update_threshold(l4_spikes.float())
-            # Compute BCM phi per-neuron, then take mean for layer modulation
-            l4_phi = self.bcm_l4.compute_phi(l4_spikes.float())
-            l4_bcm_mod = l4_phi.mean()  # Scalar for layer-wide scaling
-
-        if self.bcm_l23 is not None and l23_spikes is not None:
-            self.bcm_l23.update_threshold(l23_spikes.float())
-            l23_phi = self.bcm_l23.compute_phi(l23_spikes.float())
-            l23_bcm_mod = l23_phi.mean()
-
-        if self.bcm_l5 is not None and l5_spikes is not None:
-            self.bcm_l5.update_threshold(l5_spikes.float())
-            l5_phi = self.bcm_l5.compute_phi(l5_spikes.float())
-            l5_bcm_mod = l5_phi.mean()
-
-        def bcm_to_scale(mod: Any) -> float:
-            """Convert BCM modulation to learning rate scale factor."""
-            if isinstance(mod, torch.Tensor):
-                if mod.numel() == 1:  # Scalar tensor
-                    return float(1.0 + 0.5 * torch.tanh(mod).item())
-                else:  # Should not happen with mean(), but handle gracefully
-                    return float(1.0 + 0.5 * torch.tanh(mod.mean()).item())
-            return 1.0 + 0.5 * torch.tanh(torch.tensor(mod)).item()
-
+        # Use STDP+BCM composite strategies for proper spike-timing-dependent learning
         # Input → L4
-        dw = effective_lr * bcm_to_scale(l4_bcm_mod) * torch.outer(
-            l4_spikes.float(),
-            input_spikes.float(),
-        )
-        with torch.no_grad():
-            self.w_input_l4.data += dw
-            clamp_weights(self.w_input_l4.data, cfg.w_min, cfg.w_max)
-        total_change += dw.abs().mean().item()
+        if self.bcm_l4 is not None:
+            updated_weights, _ = self.bcm_l4.compute_update(
+                weights=self.w_input_l4.data,
+                pre=input_spikes,
+                post=l4_spikes,
+                learning_rate=effective_lr,
+            )
+            dw = updated_weights - self.w_input_l4.data
+            with torch.no_grad():
+                self.w_input_l4.data.copy_(updated_weights)
+                clamp_weights(self.w_input_l4.data, cfg.w_min, cfg.w_max)
+            total_change += dw.abs().mean().item()
 
         # L4 → L2/3
-        if l23_spikes is not None:
-            dw = effective_lr * bcm_to_scale(l23_bcm_mod) * torch.outer(
-                l23_spikes.float(),
-                l4_spikes.float(),
+        if l23_spikes is not None and self.bcm_l23 is not None:
+            updated_weights, _ = self.bcm_l23.compute_update(
+                weights=self.w_l4_l23.data,
+                pre=l4_spikes,
+                post=l23_spikes,
+                learning_rate=effective_lr,
             )
+            dw = updated_weights - self.w_l4_l23.data
             with torch.no_grad():
-                self.w_l4_l23.data += dw
+                self.w_l4_l23.data.copy_(updated_weights)
                 clamp_weights(self.w_l4_l23.data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
@@ -1168,23 +1142,22 @@ class LayeredCortex(NeuralComponent):
             # Uses dedicated bounds [l23_recurrent_w_min, l23_recurrent_w_max] to allow
             # both excitatory and inhibitory-like lateral connections.
             # This is a simplification of explicit E/I interneuron populations.
-            l23_activity = l23_spikes.float()
-            dw = effective_lr * 0.5 * bcm_to_scale(l23_bcm_mod) * torch.outer(
-                l23_activity, l23_activity
+            updated_weights, _ = self.bcm_l23.compute_update(
+                weights=self.w_l23_recurrent.data,
+                pre=l23_spikes,
+                post=l23_spikes,
+                learning_rate=effective_lr * 0.5,  # Reduced for recurrent stability
             )
-
-            # Heterosynaptic plasticity handled by UnifiedHomeostasis
+            dw = updated_weights - self.w_l23_recurrent.data
 
             with torch.no_grad():
-                self.w_l23_recurrent.data += dw
+                self.w_l23_recurrent.data.copy_(updated_weights)
                 self.w_l23_recurrent.data.fill_diagonal_(0.0)
                 clamp_weights(
                     self.w_l23_recurrent.data,
                     cfg.l23_recurrent_w_min,
                     cfg.l23_recurrent_w_max,
                 )
-
-                # Synaptic scaling handled by UnifiedHomeostasis
 
             total_change += dw.abs().mean().item()
 
@@ -1193,7 +1166,7 @@ class LayeredCortex(NeuralComponent):
             # =================================================================
             # Handled by UnifiedHomeostasis.compute_excitability_modulation()
             if cfg.homeostasis_enabled:
-                l23_spikes_1d = l23_activity
+                l23_spikes_1d = l23_spikes.float()
 
                 # Initialize if needed
                 if self._l23_activity_history is None:
@@ -1215,13 +1188,16 @@ class LayeredCortex(NeuralComponent):
                 self._l23_threshold_offset = threshold_mod.clamp(-0.5, 0.5)
 
             # L2/3 → L5
-            if l5_spikes is not None:
-                dw = effective_lr * bcm_to_scale(l5_bcm_mod) * torch.outer(
-                    l5_spikes.float(),
-                    l23_spikes.float(),
+            if l5_spikes is not None and self.bcm_l5 is not None:
+                updated_weights, _ = self.bcm_l5.compute_update(
+                    weights=self.w_l23_l5.data,
+                    pre=l23_spikes,
+                    post=l5_spikes,
+                    learning_rate=effective_lr,
                 )
+                dw = updated_weights - self.w_l23_l5.data
                 with torch.no_grad():
-                    self.w_l23_l5.data += dw
+                    self.w_l23_l5.data.copy_(updated_weights)
                     clamp_weights(self.w_l23_l5.data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 

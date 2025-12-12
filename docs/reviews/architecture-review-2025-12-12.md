@@ -42,7 +42,7 @@ This comprehensive architectural analysis of the Thalia codebase (focusing on `s
    - `cortex/layered_cortex.py` - Now uses `EMA_DECAY_FAST`
    - `prefrontal.py` - Now uses `WM_NOISE_STD_DEFAULT` (with backward compat fallback)
 
-**Impact**: 
+**Impact**:
 - Files affected: 4 files (1 new constants module, 3 updated usages)
 - Breaking change: **NONE** (backward compatible)
 - Benefit: Easier hyperparameter tuning, clearer biological motivation
@@ -120,12 +120,12 @@ def create_striatum_strategy(eligibility_tau: float = 1000.0, **kwargs):
     ))
 ```
 
-**Rationale**: 
+**Rationale**:
 - Reduces duplication in region initialization
 - Centralizes region-specific learning rule knowledge
 - Makes it easier to experiment with different learning rules per region
 
-**Status**: ✅ **COMPLETE**
+**Status**: ✅ **COMPLETE** - Factories implemented and adopted
 
 **What Was Done**:
 1. ✅ Created factory helper functions in `learning/strategy_registry.py`:
@@ -146,16 +146,21 @@ def create_striatum_strategy(eligibility_tau: float = 1000.0, **kwargs):
    - `create_cortex_strategy()` now returns `CompositeStrategy([STDP, BCM])` when both enabled
    - Properly chains STDP and BCM learning rules
 
+5. ✅ **Adopted by regions/pathways**:
+   - `cortex/layered_cortex.py` - Uses `create_cortex_strategy(use_stdp=False, bcm_config=...)`
+   - `pathways/spiking_pathway.py` - Uses `create_hippocampus_strategy(stdp_config=...)`
+
 **Benefits**:
 - Full flexibility: Can use simple defaults OR provide custom configs
 - CompositeStrategy enables multi-rule learning (STDP+BCM)
 - All region-specific strategies now fully implemented (no placeholders)
-- Infrastructure ready for immediate adoption by regions
+- Infrastructure ready AND actively used by components
+- Cleaner, more maintainable region initialization code
 
 **Impact**:
-- Files affected: 1 file modified (strategy_registry.py)
+- Files affected: 4 files (strategy_registry.py, layered_cortex.py, spiking_pathway.py, review doc)
 - Breaking change: **NONE** (backward compatible enhancements)
-- Benefit: Complete infrastructure for DRY improvements, all strategies operational
+- Benefit: Complete infrastructure with actual adoption, DRY principle in action
 
 ---
 
@@ -163,7 +168,7 @@ def create_striatum_strategy(eligibility_tau: float = 1000.0, **kwargs):
 
 **Status**: **VERIFIED** - No Pattern 2 violations found in production code
 
-**Investigation Results**: 
+**Investigation Results**:
 After comprehensive analysis of the codebase:
 - ✅ **100% Pattern 1 compliance** in `src/thalia/` production code
 - ✅ All tensor creations use `device=` parameter at creation time
@@ -201,7 +206,7 @@ tensor = torch.rand(n, device=self.device)
 1. ✅ Replaced `EligibilityTraceManager` with `ThreeFactorStrategy` in pathway_base.py
 2. ✅ Simplified D1Pathway to use `strategy.compute_update()` with positive dopamine
 3. ✅ Simplified D2Pathway to use `strategy.compute_update()` with inverted dopamine (-dopamine)
-4. ✅ Removed backward compatibility properties (input_trace, output_trace) 
+4. ✅ Removed backward compatibility properties (input_trace, output_trace)
 5. ✅ Updated striatum.py to call `pathway.update_eligibility()` instead of accessing `_trace_manager`
 6. ✅ Removed unused imports (clamp_weights no longer needed)
 
@@ -600,8 +605,8 @@ The codebase is production-ready with excellent pattern adherence. The biologica
 
 ---
 
-**Review Conducted**: December 12, 2025  
-**Reviewer**: GitHub Copilot (Claude Sonnet 4.5)  
-**Files Analyzed**: 209 Python files in `src/thalia/`  
-**Total Lines Reviewed**: ~50,000 LOC  
+**Review Conducted**: December 12, 2025
+**Reviewer**: GitHub Copilot (Claude Sonnet 4.5)
+**Files Analyzed**: 209 Python files in `src/thalia/`
+**Total Lines Reviewed**: ~50,000 LOC
 **Tier 1 Implementation**: December 12, 2025 (7 files modified, 5 constants added)

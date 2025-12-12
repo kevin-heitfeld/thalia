@@ -43,7 +43,7 @@ from thalia.managers.component_registry import register_pathway
 from thalia.regions.base import NeuralComponent
 from thalia.learning.rules.bcm import BCMRule, BCMConfig
 from thalia.learning.rules.strategies import STDPConfig as StrategySTDPConfig
-from thalia.learning.strategy_registry import LearningStrategyRegistry
+from thalia.learning.strategy_registry import LearningStrategyRegistry, create_hippocampus_strategy
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 
@@ -270,21 +270,19 @@ class SpikingPathway(NeuralComponent):
         # =====================================================================
         # LEARNING STRATEGY (Strategy Pattern)
         # =====================================================================
-        # Use STDPStrategy for spike-timing dependent plasticity
-        # This replaces the custom _apply_stdp() method
-        self.learning_strategy = LearningStrategyRegistry.create(
-            "stdp",
-            StrategySTDPConfig(
-                learning_rate=config.stdp_lr,
-                a_plus=config.a_plus,
-                a_minus=config.a_minus,
-                tau_plus=config.tau_plus_ms,
-                tau_minus=config.tau_minus_ms,
-                dt_ms=config.dt_ms,
-                w_min=config.w_min,
-                w_max=config.w_max,
-            )
+        # Use hippocampus-style STDP strategy via factory helper
+        # (Pathways use similar spike-timing rules as hippocampal connections)
+        stdp_cfg = StrategySTDPConfig(
+            learning_rate=config.stdp_lr,
+            a_plus=config.a_plus,
+            a_minus=config.a_minus,
+            tau_plus=config.tau_plus_ms,
+            tau_minus=config.tau_minus_ms,
+            dt_ms=config.dt_ms,
+            w_min=config.w_min,
+            w_max=config.w_max,
         )
+        self.learning_strategy = create_hippocampus_strategy(stdp_config=stdp_cfg)
 
         # =====================================================================
         # HOMEOSTASIS (UnifiedHomeostasis)
