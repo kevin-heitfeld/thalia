@@ -15,7 +15,7 @@ This module provides:
 5. Critical Period Gating - time-windowed plasticity modulation
 """
 
-from thalia.learning.bcm import (
+from thalia.learning.rules.bcm import (
     BCMRule,
     BCMConfig,
 )
@@ -31,7 +31,7 @@ from thalia.learning.social_learning import (
     SocialCueType,
     compute_shared_attention,
 )
-from thalia.learning.synaptic_homeostasis import (
+from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
     StriatumHomeostasis,
@@ -41,17 +41,17 @@ from thalia.learning.ei_balance import (
     EIBalanceRegulator,
     LayerEIBalance,
 )
-from thalia.learning.intrinsic_plasticity import (
+from thalia.learning.homeostasis.intrinsic_plasticity import (
     IntrinsicPlasticityConfig,
     IntrinsicPlasticity,
     PopulationIntrinsicPlasticity,
 )
-from thalia.learning.metabolic import (
+from thalia.learning.homeostasis.metabolic import (
     MetabolicConfig,
     MetabolicConstraint,
     RegionalMetabolicBudget,
 )
-from thalia.learning.strategies import (
+from thalia.learning.rules.strategies import (
     # Base classes
     LearningConfig,
     BaseStrategy,

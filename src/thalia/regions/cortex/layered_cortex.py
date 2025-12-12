@@ -91,7 +91,7 @@ from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from thalia.learning import LearningStrategyRegistry, BCMStrategyConfig, STDPStrategy, STDPConfig
 from thalia.learning.ei_balance import LayerEIBalance
-from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 from .config import LayeredCortexConfig, LayeredCortexState
 

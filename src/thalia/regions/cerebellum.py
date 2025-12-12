@@ -69,7 +69,7 @@ from thalia.components.neurons.neuron_constants import (
 from thalia.core.learning_constants import (
     LEARNING_RATE_ERROR_CORRECTIVE,
 )
-from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.regions.base import (
     NeuralComponent,
 )

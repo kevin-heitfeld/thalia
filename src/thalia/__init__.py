@@ -25,7 +25,7 @@ Internal code should use explicit imports for clarity:
     # Neuron Models
     from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
     from thalia.regions.striatum import Striatum, StriatumConfig
-    from thalia.learning.bcm import BCMRule, BCMConfig
+    from thalia.learning.rules.bcm import BCMRule, BCMConfig
 
 This helps with IDE navigation and makes dependencies explicit.
 """
@@ -99,7 +99,7 @@ from thalia.neuromodulation.systems.nucleus_basalis import (
     NucleusBasalisSystem,
     NucleusBasalisConfig,
 )
-from thalia.core.homeostatic_regulation import (
+from thalia.learning.homeostasis.homeostatic_regulation import (
     HomeostaticRegulator,
     HomeostaticConfig,
     NeuromodulatorCoordination,

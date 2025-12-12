@@ -17,7 +17,7 @@ import torch
 
 from thalia.core.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponentState
-from thalia.learning.bcm import BCMConfig
+from thalia.learning.rules.bcm import BCMConfig
 from .robustness_config import RobustnessConfig
 
 

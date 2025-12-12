@@ -53,7 +53,7 @@ from typing import Dict, Any, Optional
 
 import torch
 
-from thalia.learning.strategies import (
+from thalia.learning.rules.strategies import (
     BaseStrategy,
     create_strategy,
 )

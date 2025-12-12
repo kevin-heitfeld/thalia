@@ -63,7 +63,7 @@ from typing import Dict, Type, Optional, List, Callable, Any
 import inspect
 
 from thalia.core.errors import ConfigurationError
-from thalia.learning.strategies import LearningStrategy, LearningConfig
+from thalia.learning.rules.strategies import LearningStrategy, LearningConfig
 
 
 class LearningStrategyRegistry:

@@ -1,5 +1,6 @@
 # TODO
 
+- Delete `src\thalia\learning\homeostasis\unified_homeostasis.py`
 - `docs\design\circuit_modeling_plan.md`
 
 ---

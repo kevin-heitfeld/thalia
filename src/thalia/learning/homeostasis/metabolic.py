@@ -33,7 +33,7 @@ This penalty can be:
 
 Usage:
 ======
-    from thalia.learning.metabolic import MetabolicConstraint, MetabolicConfig
+    from thalia.learning.homeostasis.metabolic import MetabolicConstraint, MetabolicConfig
     
     metabolic = MetabolicConstraint(MetabolicConfig(energy_budget=1.0))
     

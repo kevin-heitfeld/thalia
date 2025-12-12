@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from thalia.learning.ei_balance import EIBalanceConfig
-from thalia.learning.metabolic import MetabolicConfig
+from thalia.learning.homeostasis.metabolic import MetabolicConfig
 from thalia.diagnostics.criticality import CriticalityConfig
 
 

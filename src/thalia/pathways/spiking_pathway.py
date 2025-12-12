@@ -41,10 +41,10 @@ from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
 from thalia.core.component_registry import register_pathway
 from thalia.regions.base import NeuralComponent
-from thalia.learning.bcm import BCMRule, BCMConfig
-from thalia.learning.strategies import STDPConfig as StrategySTDPConfig
+from thalia.learning.rules.bcm import BCMRule, BCMConfig
+from thalia.learning.rules.strategies import STDPConfig as StrategySTDPConfig
 from thalia.learning.strategy_registry import LearningStrategyRegistry
-from thalia.learning.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 
 class TemporalCoding(Enum):

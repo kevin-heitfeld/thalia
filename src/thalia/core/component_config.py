@@ -24,7 +24,7 @@ from thalia.config.base import BaseConfig
 
 if TYPE_CHECKING:
     from thalia.components.synapses.stp import STPConfig
-    from thalia.learning.bcm import BCMConfig
+    from thalia.learning.rules.bcm import BCMConfig
 
 
 @dataclass

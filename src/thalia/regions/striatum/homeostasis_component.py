@@ -15,7 +15,7 @@ import torch.nn as nn
 from thalia.config.base import BaseConfig
 from thalia.core.region_components import HomeostasisComponent
 from thalia.core.base_manager import ManagerContext
-from thalia.learning.synaptic_homeostasis import (
+from thalia.learning.homeostasis.unified_homeostasis import (
     StriatumHomeostasis,
     UnifiedHomeostasisConfig,
 )

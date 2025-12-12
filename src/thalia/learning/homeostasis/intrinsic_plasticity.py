@@ -50,7 +50,7 @@ Discretized update rule:
 
 Usage:
 ======
-    from thalia.learning.intrinsic_plasticity import (
+    from thalia.learning.homeostasis.intrinsic_plasticity import (
         IntrinsicPlasticityConfig,
         IntrinsicPlasticity,
     )

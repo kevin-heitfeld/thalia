@@ -54,7 +54,7 @@ from typing import Optional, Dict, Any, List
 import torch
 import torch.nn as nn
 
-from thalia.learning.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 
 from thalia.core.component_config import NeuralComponentConfig
