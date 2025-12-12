@@ -452,7 +452,12 @@ class EventDrivenBrain(nn.Module):
         self.oscillators = OscillatorManager(
             dt_ms=self.config.dt_ms,
             device=self.config.device,
-            theta_freq=self.config.theta_frequency_hz,
+            delta_freq=self.thalia_config.global_.delta_frequency_hz,
+            theta_freq=self.thalia_config.global_.theta_frequency_hz,
+            alpha_freq=self.thalia_config.global_.alpha_frequency_hz,
+            beta_freq=self.thalia_config.global_.beta_frequency_hz,
+            gamma_freq=self.thalia_config.global_.gamma_frequency_hz,
+            ripple_freq=self.thalia_config.global_.ripple_frequency_hz,
             couplings=self.config.oscillator_couplings,
         )
 
