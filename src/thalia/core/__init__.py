@@ -104,6 +104,20 @@ from thalia.core.utils import (
     zeros_like_config,
     ones_like_config,
 )
+from thalia.core.errors import (
+    ThaliaError,
+    ComponentError,
+    ConfigurationError,
+    BiologicalPlausibilityError,
+    CheckpointError,
+    IntegrationError,
+    validate_spike_tensor,
+    validate_device_consistency,
+    validate_weight_matrix,
+    validate_positive,
+    validate_probability,
+    validate_temporal_causality,
+)
 from thalia.core.protocols import (
     Resettable,
     Learnable,
@@ -214,6 +228,19 @@ __all__ = [
     "cosine_similarity_safe",
     "zeros_like_config",
     "ones_like_config",
+    # Error handling
+    "ThaliaError",
+    "ComponentError",
+    "ConfigurationError",
+    "BiologicalPlausibilityError",
+    "CheckpointError",
+    "IntegrationError",
+    "validate_spike_tensor",
+    "validate_device_consistency",
+    "validate_weight_matrix",
+    "validate_positive",
+    "validate_probability",
+    "validate_temporal_causality",
     # Protocols
     "Resettable",
     "Learnable",
