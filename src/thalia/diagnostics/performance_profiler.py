@@ -71,6 +71,8 @@ class PerformanceStats:
         gpu_memory_reserved_mb: GPU memory reserved by PyTorch (MB)
         tensor_count: Approximate number of tensors in brain
         total_parameters: Total trainable parameters
+        region_times_ms: Per-region average forward time (milliseconds)
+        spike_stats: Spike propagation statistics
     """
     steps_per_sec: float = 0.0
     avg_forward_ms: float = 0.0
@@ -81,6 +83,15 @@ class PerformanceStats:
     gpu_memory_reserved_mb: float = 0.0
     tensor_count: int = 0
     total_parameters: int = 0
+    region_times_ms: Dict[str, float] = None
+    spike_stats: Dict[str, Any] = None
+
+    def __post_init__(self):
+        """Initialize default mutable fields."""
+        if self.region_times_ms is None:
+            self.region_times_ms = {}
+        if self.spike_stats is None:
+            self.spike_stats = {}
 
 
 class PerformanceProfiler:
@@ -101,11 +112,20 @@ class PerformanceProfiler:
         self.forward_times: deque = deque(maxlen=window_size)
         self.step_times: deque = deque(maxlen=window_size)
 
+        # Per-region timing (region_name -> deque of times)
+        self.region_times: Dict[str, deque] = {}
+
+        # Spike propagation tracking
+        self.spike_counts: deque = deque(maxlen=window_size)
+        self.spike_rates: Dict[str, deque] = {}  # region_name -> firing rates
+
         # Memory buffers (sample less frequently)
         self.memory_samples: deque = deque(maxlen=window_size)
 
         # State
         self._forward_start: Optional[float] = None
+        self._region_start: Optional[float] = None
+        self._current_region: Optional[str] = None
         self._last_step_time: float = time.time()
         self._total_steps: int = 0
 
@@ -116,8 +136,12 @@ class PerformanceProfiler:
         """Reset all counters and buffers."""
         self.forward_times.clear()
         self.step_times.clear()
+        self.region_times.clear()
+        self.spike_counts.clear()
+        self.spike_rates.clear()
         self.memory_samples.clear()
         self._forward_start = None
+        self._region_start = None
         self._last_step_time = time.time()
         self._total_steps = 0
         self._last_stats = None
@@ -140,6 +164,52 @@ class PerformanceProfiler:
         duration = time.time() - self._forward_start
         self.forward_times.append(duration)
         self._forward_start = None
+
+    def start_region(self, region_name: str) -> None:
+        """Start timing a region's forward pass.
+
+        Args:
+            region_name: Name of the region being profiled
+        """
+        self._region_start = time.time()
+        self._current_region = region_name
+
+    def end_region(self, region_name: str) -> None:
+        """End timing a region's forward pass.
+
+        Args:
+            region_name: Name of the region (should match start_region())
+        """
+        if self._region_start is None:
+            return
+
+        duration = time.time() - self._region_start
+
+        # Initialize deque for this region if needed
+        if region_name not in self.region_times:
+            self.region_times[region_name] = deque(maxlen=self.window_size)
+
+        self.region_times[region_name].append(duration)
+        self._region_start = None
+
+    def record_spikes(self, region_name: str, spike_count: int, n_neurons: int) -> None:
+        """Record spike statistics for a region.
+
+        Args:
+            region_name: Name of the region
+            spike_count: Number of neurons that spiked
+            n_neurons: Total number of neurons in region
+        """
+        firing_rate = spike_count / n_neurons if n_neurons > 0 else 0.0
+
+        # Initialize deque for this region if needed
+        if region_name not in self.spike_rates:
+            self.spike_rates[region_name] = deque(maxlen=self.window_size)
+
+        self.spike_rates[region_name].append(firing_rate)
+
+        # Also track total spikes
+        self.spike_counts.append(spike_count)
 
     def record_step(self) -> None:
         """Record completion of a training step.
@@ -198,6 +268,24 @@ class PerformanceProfiler:
             stats.avg_forward_ms = np.mean(self.forward_times) * 1000.0
             stats.std_forward_ms = np.std(self.forward_times) * 1000.0
 
+        # Per-region timing
+        stats.region_times_ms = {}
+        for region_name, times in self.region_times.items():
+            if times:
+                stats.region_times_ms[region_name] = float(np.mean(times) * 1000.0)
+
+        # Spike statistics
+        stats.spike_stats = {}
+        for region_name, rates in self.spike_rates.items():
+            if rates:
+                stats.spike_stats[region_name] = {
+                    'avg_firing_rate': float(np.mean(rates)),
+                    'std_firing_rate': float(np.std(rates)),
+                }
+
+        if self.spike_counts:
+            stats.spike_stats['total_avg_spikes'] = float(np.mean(self.spike_counts))
+
         # Memory (latest sample)
         if self.memory_samples:
             latest = self.memory_samples[-1]
@@ -242,6 +330,26 @@ class PerformanceProfiler:
         print(f"  Forward pass:    {stats.avg_forward_ms:>8.2f} ± {stats.std_forward_ms:.2f} ms")
         print(f"  Total steps:     {self._total_steps:>8,d}")
         print()
+
+        # Per-region timing
+        if stats.region_times_ms:
+            print("  Region timing:")
+            for region_name, avg_time_ms in sorted(stats.region_times_ms.items()):
+                print(f"    {region_name:<20} {avg_time_ms:>8.2f} ms")
+            print()
+
+        # Spike statistics
+        if stats.spike_stats:
+            print("  Spike activity:")
+            for region_name, spike_info in sorted(stats.spike_stats.items()):
+                if region_name != 'total_avg_spikes' and isinstance(spike_info, dict):
+                    avg_rate = spike_info['avg_firing_rate']
+                    std_rate = spike_info['std_firing_rate']
+                    print(f"    {region_name:<20} {avg_rate*100:>6.2f}% ± {std_rate*100:.2f}%")
+            if 'total_avg_spikes' in stats.spike_stats:
+                print(f"    Total avg spikes:    {stats.spike_stats['total_avg_spikes']:>8.1f}")
+            print()
+
         print(f"  CPU memory:      {stats.cpu_memory_mb:>8.1f} MB")
         print(f"  GPU memory:      {stats.gpu_memory_mb:>8.1f} MB")
         print(f"  GPU allocated:   {stats.gpu_memory_allocated_mb:>8.1f} MB")

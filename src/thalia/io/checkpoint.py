@@ -106,35 +106,35 @@ class BrainCheckpoint:
 
         Returns:
             Summary dict with file info
-            
+
         Example:
             >>> # Uncompressed FP32
             >>> BrainCheckpoint.save(brain, "checkpoint.thalia")
-            
+
             >>> # FP16 with zstd compression (~75% total size reduction)
             >>> BrainCheckpoint.save(brain, "checkpoint.thalia.zst", precision_policy='fp16')
-            
+
             >>> # Custom precision policy
             >>> policy = PrecisionPolicy(weights='fp16', biases='fp32', membrane='fp32')
             >>> BrainCheckpoint.save(brain, "checkpoint.thalia", precision_policy=policy)
         """
         from .compression import detect_compression, compress_data
-        
+
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Auto-detect compression if not specified
         if compression is None:
             compression = detect_compression(path)
-        
+
         # Get brain state
         state = brain.get_full_state()
-        
+
         # Apply precision policy if specified
         policy = get_precision_policy(precision_policy)
         if precision_policy is not None:
             state = apply_precision_policy_to_state(state, policy, in_place=True)
-            
+
         # Get precision statistics for metadata
         precision_stats = get_precision_statistics(state)
 
@@ -257,21 +257,21 @@ class BrainCheckpoint:
             f.seek(header_pos)
             header_bytes = header.to_bytes()
             f.write(header_bytes)
-        
+
         # Apply compression if requested (BEFORE checksum)
         import hashlib
         if compression is not None:
             # Read uncompressed file
             with open(path, 'rb') as f:
                 uncompressed_data = f.read()
-            
+
             # Compress
             compressed_data = compress_data(uncompressed_data, compression, compression_level)
-            
+
             # Overwrite with compressed version
             with open(path, 'wb') as f:
                 f.write(compressed_data)
-            
+
             # Compute checksum on compressed data
             hasher = hashlib.sha256()
             hasher.update(compressed_data)
@@ -286,11 +286,11 @@ class BrainCheckpoint:
                         break
                     hasher.update(chunk)
                 checksum = hasher.digest()
-        
+
         # Append checksum at end of file (works for both compressed and uncompressed)
         with open(path, 'ab') as f:
             f.write(checksum)
-        
+
         file_size = path.stat().st_size
 
         return {
@@ -315,7 +315,7 @@ class BrainCheckpoint:
         regions_to_load: Optional[list] = None,
     ) -> Dict[str, Any]:
         """Load brain state from binary checkpoint file.
-        
+
         Automatically handles compressed checkpoints (.zst, .lz4) and delta checkpoints (.delta.thalia).
 
         Args:
@@ -325,52 +325,52 @@ class BrainCheckpoint:
 
         Returns:
             State dict suitable for brain.load_full_state()
-            
+
         Example:
             >>> # Load uncompressed
             >>> brain = BrainCheckpoint.load("checkpoint.thalia")
-            
+
             >>> # Load compressed (auto-detects)
             >>> brain = BrainCheckpoint.load("checkpoint.thalia.zst")
-            
+
             >>> # Load delta checkpoint (auto-reconstructs)
             >>> brain = BrainCheckpoint.load("stage3.delta.thalia")
         """
         from .compression import detect_compression, decompress_data
         from .delta import load_delta_checkpoint, DELTA_MAGIC
         import io
-        
+
         path = Path(path)
 
         if not path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {path}")
-        
+
         # Check for compression
         compression = detect_compression(path)
-        
+
         # Read file
         with open(path, 'rb') as f:
             raw_file_data = f.read()
-        
+
         # Validate checksum FIRST (on compressed or uncompressed data)
         # Checksum is always the last 32 bytes
         import hashlib
         if len(raw_file_data) < 32:
             raise ValueError("File too small to contain checksum")
-        
+
         data_to_validate = raw_file_data[:-32]
         stored_checksum = raw_file_data[-32:]
         computed_checksum = hashlib.sha256(data_to_validate).digest()
-        
+
         if computed_checksum != stored_checksum:
             raise ValueError("Checksum validation failed - file may be corrupted")
-        
+
         # Now decompress if needed (excluding checksum bytes)
         if compression is not None:
             file_data = decompress_data(data_to_validate, compression)
         else:
             file_data = data_to_validate
-        
+
         # Check if this is a delta checkpoint AFTER decompression (magic is 5 bytes: \xCE\x94THL)
         if file_data[:5] == DELTA_MAGIC:
             # This is a delta checkpoint - use special loader
@@ -378,7 +378,7 @@ class BrainCheckpoint:
             # But delta loader expects a path. We need to handle this differently.
             # The load_delta_checkpoint function will re-read and decompress, so pass the original path
             return load_delta_checkpoint(path, device=device)
-        
+
         # Now parse the decompressed data (checksum already validated)
         f = io.BytesIO(file_data)
         reader = BinaryReader(f)
@@ -389,7 +389,7 @@ class BrainCheckpoint:
         # Validate version compatibility
         checkpoint_version = (header.major_version, header.minor_version, header.patch_version)
         current_version = (MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION)
-        
+
         # Major version must match (breaking changes)
         if checkpoint_version[0] != current_version[0]:
             raise ValueError(
@@ -398,7 +398,7 @@ class BrainCheckpoint:
                 f"but current Thalia supports v{current_version[0]}.{current_version[1]}.{current_version[2]}. "
                 f"Major version mismatch indicates breaking changes."
             )
-        
+
         # Warn if minor/patch versions differ (non-breaking changes)
         if checkpoint_version[1:] != current_version[1:]:
             import warnings
@@ -414,7 +414,7 @@ class BrainCheckpoint:
         f.seek(header.metadata_offset)
         metadata_bytes = f.read(header.metadata_length)
         metadata = json.loads(metadata_bytes.decode('utf-8'))
-        
+
         # Log version info from metadata for debugging
         saved_thalia_version = metadata.get('thalia_version', 'unknown')
         if saved_thalia_version != THALIA_VERSION:
@@ -458,7 +458,7 @@ class BrainCheckpoint:
                 pathways[pathway_name] = region_state
             else:
                 regions[entry.region_name] = region_state
-        
+
         # Close BytesIO if we created it for decompression
         f.close()
 
@@ -475,7 +475,7 @@ class BrainCheckpoint:
 
         if pathways:
             state["pathways"] = pathways
-        
+
         # Restore FP16 tensors to FP32 for computation
         # (Checkpoint may have FP16 for storage, but we compute in FP32)
         if metadata.get("precision_policy") and metadata["precision_policy"] != 'fp32':
@@ -495,9 +495,9 @@ class BrainCheckpoint:
         precision_policy: Union[str, PrecisionPolicy, None] = None,
     ) -> Dict[str, Any]:
         """Save delta checkpoint (only weight changes from base).
-        
+
         Huge savings during curriculum learning - typically 80-95% file size reduction.
-        
+
         Args:
             brain: Brain instance
             path: Where to save delta checkpoint
@@ -507,17 +507,17 @@ class BrainCheckpoint:
             compression: Optional compression ('zstd', 'lz4', or None)
             compression_level: Compression level if compression is used
             precision_policy: Mixed precision policy (same as save())
-            
+
         Returns:
             Summary dict with statistics
-            
+
         Example:
             >>> # Save base checkpoint first
             >>> BrainCheckpoint.save(brain, "stage0.thalia")
-            
+
             >>> # Train to stage 1
             >>> train_stage(brain, stage=1)
-            
+
             >>> # Save delta with FP16 + compression (massive savings)
             >>> BrainCheckpoint.save_delta(
             ...     brain,
@@ -528,18 +528,18 @@ class BrainCheckpoint:
         """
         from .delta import save_delta_checkpoint
         from .compression import compress_file
-        
+
         path = Path(path)
         base_checkpoint = Path(base_checkpoint)
-        
+
         # Get current state
         current_state = brain.get_full_state()
-        
+
         # Apply precision policy if specified
         if precision_policy is not None:
             policy = get_precision_policy(precision_policy)
             current_state = apply_precision_policy_to_state(current_state, policy, in_place=True)
-        
+
         # Save delta checkpoint
         summary = save_delta_checkpoint(
             current_state=current_state,
@@ -548,35 +548,35 @@ class BrainCheckpoint:
             threshold=threshold,
             metadata=metadata,
         )
-        
+
         # Apply compression if requested
         if compression is not None:
             uncompressed_path = path
-            
+
             if compression == 'zstd':
                 compressed_path = path.with_suffix(path.suffix + '.zst')
             elif compression == 'lz4':
                 compressed_path = path.with_suffix(path.suffix + '.lz4')
             else:
                 raise ValueError(f"Unknown compression: {compression}")
-            
+
             compress_file(
                 uncompressed_path,
                 compressed_path,
                 compression=compression,
                 level=compression_level,
             )
-            
+
             # Remove uncompressed version
             uncompressed_path.unlink()
-            
+
             # Update summary
             compressed_size = compressed_path.stat().st_size
             summary['compressed_path'] = str(compressed_path)
             summary['compressed_size_mb'] = compressed_size / (1024 * 1024)
             summary['final_compression_ratio'] = compressed_size / summary['base_size_mb'] / (1024 * 1024)
             summary['final_savings_percent'] = (1 - summary['final_compression_ratio']) * 100
-        
+
         return summary
 
     @staticmethod
@@ -648,14 +648,14 @@ class BrainCheckpoint:
                 f.seek(0, 2)  # Seek to end
                 file_size = f.tell()
                 f.seek(0)  # Back to start
-                
+
                 # Read everything except the 32-byte checksum at the end
                 data_to_hash = f.read(file_size - 32)
                 computed_hash = hashlib.sha256(data_to_hash).digest()
-                
+
                 # Read stored checksum
                 stored_checksum = f.read(32)
-                
+
                 if computed_hash != stored_checksum:
                     issues.append("Checksum validation failed")
 
