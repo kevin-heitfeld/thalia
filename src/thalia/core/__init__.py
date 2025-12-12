@@ -76,7 +76,7 @@ from thalia.components.coding.spike_utils import (
     is_silent,
     is_saturated,
 )
-from thalia.core.eligibility_utils import (
+from thalia.learning.eligibility.trace_manager import (
     EligibilityTraceManager,
     STDPConfig,
 )
@@ -92,7 +92,7 @@ from thalia.core.diagnostics import (
     HippocampusDiagnostics,
     BrainSystemDiagnostics,
 )
-from thalia.core.predictive_coding import (
+from thalia.regions.cortex.predictive_coding import (
     PredictiveCodingLayer,
     PredictiveCodingConfig,
     PredictiveCodingState,

@@ -67,7 +67,7 @@ from thalia.managers.component_registry import register_region
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.base import NeuralComponent, NeuralComponentState
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
-from thalia.core.predictive_coding import (
+from thalia.regions.cortex.predictive_coding import (
     PredictiveCodingLayer,
     PredictiveCodingConfig,
 )

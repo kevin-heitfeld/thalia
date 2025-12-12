@@ -38,7 +38,7 @@ from thalia.utils.core_utils import clamp_weights
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig
 from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
+from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig
 from thalia.managers.component_registry import register_pathway
 from thalia.regions.base import NeuralComponent
 from thalia.learning.rules.bcm import BCMRule, BCMConfig

@@ -95,7 +95,7 @@ import torch.nn as nn
 
 from thalia.core.base.component_config import LearningComponentConfig
 from thalia.utils.core_utils import clamp_weights
-from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig as CoreSTDPConfig
+from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig as CoreSTDPConfig
 
 
 # =============================================================================

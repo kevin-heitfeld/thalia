@@ -55,7 +55,7 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.errors import CheckpointError
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.utils.core_utils import clamp_weights
-from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
+from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig
 from thalia.managers.component_registry import register_region
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.neurons.neuron_constants import (
