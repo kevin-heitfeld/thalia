@@ -158,3 +158,50 @@ TAU_TRACE_MEDIUM = 50.0
 
 TAU_TRACE_LONG = 200.0
 """Long-term trace for sustained activity patterns (200ms)."""
+
+# =============================================================================
+# WEIGHT INITIALIZATION SCALES
+# =============================================================================
+
+WEIGHT_INIT_SCALE_PREDICTIVE = 0.1
+"""Weight initialization scale for predictive coding pathways.
+
+Used for prediction and encoding weights in predictive coding networks.
+Small scale (0.1) ensures stable predictions initially.
+"""
+
+WEIGHT_INIT_SCALE_RECURRENT = 0.01
+"""Weight initialization scale for recurrent/associative connections.
+
+Used for sequence memory and pattern completion networks.
+Very small scale (0.01) prevents runaway recurrence.
+"""
+
+# =============================================================================
+# ACTIVITY TRACKING PARAMETERS
+# =============================================================================
+
+EMA_DECAY_FAST = 0.99
+"""Fast exponential moving average decay for activity history.
+
+Corresponds to ~100 timestep averaging window.
+Used for short-term activity tracking and homeostasis.
+"""
+
+EMA_DECAY_SLOW = 0.999
+"""Slow exponential moving average decay for long-term tracking.
+
+Corresponds to ~1000 timestep averaging window.
+Used for stable long-term statistics.
+"""
+
+# =============================================================================
+# NOISE PARAMETERS
+# =============================================================================
+
+WM_NOISE_STD_DEFAULT = 0.02
+"""Default working memory noise standard deviation.
+
+Adds stochasticity to working memory updates and predictions.
+Based on neural variability in prefrontal cortex.
+"""

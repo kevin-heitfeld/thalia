@@ -1198,8 +1198,9 @@ class LayeredCortex(NeuralComponent):
                     self._l23_threshold_offset = torch.zeros(self.l23_size, device=l23_spikes_1d.device)
 
                 # Update activity history (exponential moving average)
+                from thalia.regulation.learning_constants import EMA_DECAY_FAST
                 self._l23_activity_history = (
-                    0.99 * self._l23_activity_history + 0.01 * l23_spikes_1d
+                    EMA_DECAY_FAST * self._l23_activity_history + (1 - EMA_DECAY_FAST) * l23_spikes_1d
                 )
 
                 # Compute threshold modulation using UnifiedHomeostasis

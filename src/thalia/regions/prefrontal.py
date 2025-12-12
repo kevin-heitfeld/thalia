@@ -614,7 +614,9 @@ class Prefrontal(NeuralComponent):
         )
 
         # Add noise for stochasticity
-        noise = torch.randn_like(new_wm) * self.pfc_config.wm_noise_std
+        from thalia.regulation.learning_constants import WM_NOISE_STD_DEFAULT
+        wm_noise_std = getattr(self.pfc_config, 'wm_noise_std', WM_NOISE_STD_DEFAULT)
+        noise = torch.randn_like(new_wm) * wm_noise_std
         self.state.working_memory = (new_wm + noise).clamp(min=0, max=1)
 
         # Store state
@@ -791,7 +793,9 @@ class Prefrontal(NeuralComponent):
 
         # Add small amount of noise (stochastic prediction)
         if self.training:
-            noise = torch.randn_like(prediction) * self.pfc_config.wm_noise_std
+            from thalia.regulation.learning_constants import WM_NOISE_STD_DEFAULT
+            wm_noise_std = getattr(self.pfc_config, 'wm_noise_std', WM_NOISE_STD_DEFAULT)
+            noise = torch.randn_like(prediction) * wm_noise_std
             prediction = prediction + noise
 
         return prediction

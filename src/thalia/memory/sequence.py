@@ -164,8 +164,14 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
 
         # Association weights: next-token prediction
         # These learn which CA3 patterns predict which next CA3 patterns
+        from thalia.components.synapses.weight_init import WeightInitializer
+        from thalia.regulation.learning_constants import WEIGHT_INIT_SCALE_RECURRENT
         self.association_weights = nn.Parameter(
-            torch.randn(self.ca3_size, self.ca3_size, device=self.device) * 0.01
+            WeightInitializer.gaussian(
+                self.ca3_size, self.ca3_size,
+                mean=0.0, std=WEIGHT_INIT_SCALE_RECURRENT,
+                device=self.device
+            )
         )
 
         # Statistics

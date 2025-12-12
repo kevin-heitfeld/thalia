@@ -28,6 +28,11 @@ from thalia.regulation.learning_constants import (
     TAU_BCM_THRESHOLD,
     TAU_STDP_PLUS,
     TAU_STDP_MINUS,
+    WEIGHT_INIT_SCALE_PREDICTIVE,
+    WEIGHT_INIT_SCALE_RECURRENT,
+    EMA_DECAY_FAST,
+    EMA_DECAY_SLOW,
+    WM_NOISE_STD_DEFAULT,
 )
 from thalia.regulation.normalization import (
     DivisiveNormConfig,
@@ -65,6 +70,14 @@ __all__ = [
     "TAU_BCM_THRESHOLD",
     "TAU_STDP_PLUS",
     "TAU_STDP_MINUS",
+    # Learning Constants - Weight Initialization
+    "WEIGHT_INIT_SCALE_PREDICTIVE",
+    "WEIGHT_INIT_SCALE_RECURRENT",
+    # Learning Constants - Activity Tracking
+    "EMA_DECAY_FAST",
+    "EMA_DECAY_SLOW",
+    # Learning Constants - Noise Parameters
+    "WM_NOISE_STD_DEFAULT",
     # Normalization Classes
     "DivisiveNormConfig",
     "DivisiveNormalization",

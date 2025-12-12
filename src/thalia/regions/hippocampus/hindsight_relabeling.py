@@ -226,8 +226,13 @@ class HindsightRelabeler:
 
         elif self.config.strategy == HERStrategy.RANDOM:
             # Sample random goals (baseline - not very useful)
+            from thalia.components.synapses.weight_init import WeightInitializer
             return [
-                torch.randn(self.config.goal_dim, device=self.config.device)
+                WeightInitializer.gaussian(
+                    self.config.goal_dim, 1,
+                    mean=0.0, std=1.0,
+                    device=self.config.device
+                ).squeeze()
                 for _ in range(k)
             ]
 

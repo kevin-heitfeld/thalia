@@ -237,8 +237,15 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Learns to predict input from representation
         # W_pred: representation → predicted_input
 
+        from thalia.components.synapses.weight_init import WeightInitializer
+        from thalia.regulation.learning_constants import WEIGHT_INIT_SCALE_PREDICTIVE
+
         self.W_pred = nn.Parameter(
-            torch.randn(config.n_input, config.n_representation, device=self.device) * 0.1
+            WeightInitializer.gaussian(
+                config.n_input, config.n_representation,
+                mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                device=self.device
+            )
         )
 
         # Prediction bias (learned prior)
@@ -295,7 +302,11 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # =================================================================
         # Optional: learn a compact representation
         self.W_encode = nn.Parameter(
-            torch.randn(config.n_representation, config.n_input, device=self.device) * 0.1
+            WeightInitializer.gaussian(
+                config.n_representation, config.n_input,
+                mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                device=self.device
+            )
         )
 
         # =================================================================
@@ -303,7 +314,11 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # =================================================================
         if config.n_output != config.n_input:
             self.W_output = nn.Parameter(
-                torch.randn(config.n_output, config.n_input, device=self.device) * 0.1
+                WeightInitializer.gaussian(
+                    config.n_output, config.n_input,
+                    mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                    device=self.device
+                )
             )
         else:
             self.W_output = None
