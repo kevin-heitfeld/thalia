@@ -38,7 +38,7 @@ References:
 
 Usage:
 ======
-    from thalia.core.homeostasis_constants import (
+    from thalia.regulation.homeostasis_constants import (
         TARGET_FIRING_RATE_STANDARD,
         HOMEOSTATIC_TAU_STANDARD
     )

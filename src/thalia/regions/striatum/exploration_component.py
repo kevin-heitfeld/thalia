@@ -12,7 +12,7 @@ from typing import Dict, Any, List, TYPE_CHECKING
 import torch
 
 from thalia.core.region_components import ExplorationComponent
-from thalia.core.base_manager import ManagerContext
+from thalia.managers.base_manager import ManagerContext
 
 if TYPE_CHECKING:
     from thalia.regions.striatum.config import StriatumConfig

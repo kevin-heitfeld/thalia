@@ -78,7 +78,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.core.oscillator import SinusoidalOscillator
+from thalia.coordination.oscillator import SinusoidalOscillator
 from thalia.regions.base import NeuralComponent
 
 

@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 
 from thalia.core.region_components import LearningComponent
-from thalia.core.base_manager import ManagerContext
+from thalia.managers.base_manager import ManagerContext
 from thalia.learning.homeostasis.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 if TYPE_CHECKING:

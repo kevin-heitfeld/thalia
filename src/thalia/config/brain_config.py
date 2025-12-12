@@ -22,7 +22,7 @@ from thalia.regions.prefrontal import PrefrontalConfig
 from thalia.regions.cerebellum import CerebellumConfig
 
 if TYPE_CHECKING:
-    from thalia.core.oscillator import OscillatorCoupling
+    from thalia.coordination.oscillator import OscillatorCoupling
 
 
 class RegionType(Enum):

@@ -47,7 +47,7 @@ from typing import Dict, Any, TYPE_CHECKING
 
 import torch
 
-from thalia.core.base_manager import BaseManager
+from thalia.managers.base_manager import BaseManager
 
 if TYPE_CHECKING:
     from thalia.core.component_config import NeuralComponentConfig

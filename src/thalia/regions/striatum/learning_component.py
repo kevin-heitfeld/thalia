@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 
 from thalia.core.region_components import LearningComponent
-from thalia.core.base_manager import ManagerContext
+from thalia.managers.base_manager import ManagerContext
 from thalia.components.neurons.neuron_constants import WEIGHT_INIT_SCALE_SMALL
 from thalia.components.synapses.weight_init import WeightInitializer
 

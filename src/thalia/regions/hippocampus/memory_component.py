@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any, TYPE_CHECKING
 import torch
 
 from thalia.core.region_components import MemoryComponent
-from thalia.core.base_manager import ManagerContext
+from thalia.managers.base_manager import ManagerContext
 from thalia.core.utils import cosine_similarity_safe
 
 if TYPE_CHECKING:

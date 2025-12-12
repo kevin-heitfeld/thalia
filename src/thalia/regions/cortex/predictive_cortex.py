@@ -63,7 +63,7 @@ import torch
 import torch.nn as nn
 
 from thalia.core.component_config import NeuralComponentConfig
-from thalia.core.component_registry import register_region
+from thalia.managers.component_registry import register_region
 from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.base import NeuralComponent, NeuralComponentState
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig

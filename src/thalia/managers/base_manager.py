@@ -21,7 +21,7 @@ This standardization makes managers:
 
 Usage Example:
 ==============
-    from thalia.core.base_manager import BaseManager, ManagerContext
+    from thalia.managers.base_manager import BaseManager, ManagerContext
     
     class MyManagerConfig:
         learning_rate: float = 0.01

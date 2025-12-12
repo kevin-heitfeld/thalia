@@ -60,7 +60,7 @@ import torch
 import torch.nn as nn
 
 from thalia.core.errors import ComponentError
-from thalia.core.learning_constants import (
+from thalia.regulation.learning_constants import (
     LEARNING_RATE_BCM,
     TAU_BCM_THRESHOLD,
 )

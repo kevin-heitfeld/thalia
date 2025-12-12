@@ -44,7 +44,7 @@ from typing import List
 
 import torch
 
-from thalia.core.base_manager import BaseManager, ManagerContext
+from thalia.managers.base_manager import BaseManager, ManagerContext
 
 
 @dataclass

@@ -39,7 +39,7 @@ Key References:
 
 Usage:
 ======
-    from thalia.core.normalization import DivisiveNormalization, DivisiveNormConfig
+    from thalia.regulation.normalization import DivisiveNormalization, DivisiveNormConfig
     
     norm = DivisiveNormalization(DivisiveNormConfig(sigma=1.0))
     

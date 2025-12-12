@@ -79,7 +79,7 @@ import torch.nn.functional as F
 
 from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.regions.base import NeuralComponent
-from thalia.core.component_registry import register_pathway
+from thalia.managers.component_registry import register_pathway
 
 
 class Modality(Enum):

@@ -23,7 +23,7 @@ from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.diagnostics.health_monitor import HealthReport
-from thalia.core.growth import CapacityMetrics
+from thalia.coordination.growth import CapacityMetrics
 
 
 class LearningRule(Enum):

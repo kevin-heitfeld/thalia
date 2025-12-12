@@ -97,7 +97,7 @@ import torch.nn as nn
 
 from thalia.config import validate_thalia_config
 from thalia.core.component_config import PathwayConfig
-from thalia.core.growth import GrowthManager
+from thalia.coordination.growth import GrowthManager
 from thalia.events import (
     EventType, EventScheduler,
     SpikePayload,
@@ -116,8 +116,8 @@ from thalia.components.neurons.neuron_constants import INTRINSIC_LEARNING_THRESH
 from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.neuromodulation.manager import NeuromodulatorManager
 from thalia.pathways.manager import PathwayManager
+from thalia.coordination.oscillator import OscillatorManager
 
-from .oscillator import OscillatorManager
 from .errors import ConfigurationError, CheckpointError
 from .diagnostics import (
     DiagnosticsManager,
@@ -754,7 +754,7 @@ class EventDrivenBrain(nn.Module):
             ValueError: If region/pathway types are not registered
 
         Example:
-            >>> from thalia.core.component_registry import ComponentRegistry
+            >>> from thalia.managers.component_registry import ComponentRegistry
             >>> config = {
             ...     "global": {"device": "cpu", "dt_ms": 1.0},
             ...     "regions": {
@@ -768,7 +768,7 @@ class EventDrivenBrain(nn.Module):
             This is an advanced API for custom architectures. For standard
             brain configurations, prefer EventDrivenBrain.from_thalia_config().
         """
-        from thalia.core.component_registry import ComponentRegistry
+        from thalia.managers.component_registry import ComponentRegistry
         from thalia.config import (
             ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes,
             LayeredCortexConfig, PrefrontalConfig,

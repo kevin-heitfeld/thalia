@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 import torch
 import torch.nn as nn
-from thalia.core.component_registry import register_pathway
+from thalia.managers.component_registry import register_pathway
 from thalia.core.component_config import PathwayConfig
 from thalia.pathways.spiking_pathway import SpikingPathway
 

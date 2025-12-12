@@ -80,7 +80,7 @@ from thalia.core import (
 )
 
 # Oscillators (for working memory, consolidation)
-from thalia.core.oscillator import (
+from thalia.coordination.oscillator import (
     SinusoidalOscillator,
     OscillatorManager,
     OSCILLATOR_DEFAULTS,

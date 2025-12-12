@@ -563,7 +563,7 @@ class BrainComponentMixin:
 
     def get_capacity_metrics(self) -> Any:
         """Default: use GrowthManager to compute metrics."""
-        from thalia.core.growth import GrowthManager
+        from thalia.coordination.growth import GrowthManager
 
         # Use component name if available, otherwise class name
         name = getattr(self, 'name', self.__class__.__name__)

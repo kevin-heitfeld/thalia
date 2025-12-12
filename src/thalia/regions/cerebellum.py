@@ -56,7 +56,7 @@ from thalia.core.errors import CheckpointError
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.core.utils import clamp_weights
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
-from thalia.core.component_registry import register_region
+from thalia.managers.component_registry import register_region
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
@@ -66,7 +66,7 @@ from thalia.components.neurons.neuron_constants import (
     E_INHIBITORY,
     NE_GAIN_RANGE,
 )
-from thalia.core.learning_constants import (
+from thalia.regulation.learning_constants import (
     LEARNING_RATE_ERROR_CORRECTIVE,
 )
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig

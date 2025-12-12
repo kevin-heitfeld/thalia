@@ -39,7 +39,7 @@ from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfi
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.core.eligibility_utils import EligibilityTraceManager, STDPConfig
-from thalia.core.component_registry import register_pathway
+from thalia.managers.component_registry import register_pathway
 from thalia.regions.base import NeuralComponent
 from thalia.learning.rules.bcm import BCMRule, BCMConfig
 from thalia.learning.rules.strategies import STDPConfig as StrategySTDPConfig

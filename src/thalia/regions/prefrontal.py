@@ -62,8 +62,8 @@ from thalia.core.component_config import NeuralComponentConfig
 from thalia.core.errors import CheckpointError, ConfigurationError
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.core.component_registry import register_region
-from thalia.core.learning_constants import LEARNING_RATE_STDP
+from thalia.managers.component_registry import register_region
+from thalia.regulation.learning_constants import LEARNING_RATE_STDP
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
 

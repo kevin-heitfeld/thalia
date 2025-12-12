@@ -140,7 +140,7 @@ import time
 import numpy as np
 
 from thalia.components.coding.spike_utils import compute_firing_rate
-from thalia.core.growth import GrowthManager
+from thalia.coordination.growth import GrowthManager
 from thalia.training.constants import (
     FIRING_RATE_MINIMUM,
     CURRICULUM_LOAD_THRESHOLD,

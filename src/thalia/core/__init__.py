@@ -43,7 +43,7 @@ from thalia.components.synapses.stp_presets import (
     get_stp_config,
     list_presets,
 )
-from thalia.core.component_registry import (
+from thalia.managers.component_registry import (
     ComponentRegistry,
     register_region,
     register_pathway,
@@ -80,7 +80,7 @@ from thalia.core.eligibility_utils import (
     EligibilityTraceManager,
     STDPConfig,
 )
-from thalia.core.base_manager import (
+from thalia.managers.base_manager import (
     BaseManager,
     ManagerContext,
 )

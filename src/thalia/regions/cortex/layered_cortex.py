@@ -83,7 +83,7 @@ from thalia.core.errors import CheckpointError
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.core.component_registry import register_region
+from thalia.managers.component_registry import register_region
 from thalia.core.utils import ensure_1d, clamp_weights
 from thalia.components.synapses.traces import update_trace
 from thalia.regions.base import NeuralComponent

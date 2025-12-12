@@ -36,7 +36,7 @@ References:
 
 Usage:
 ======
-    from thalia.core.learning_constants import (
+    from thalia.regulation.learning_constants import (
         LEARNING_RATE_STDP,
         LEARNING_RATE_BCM,
         TAU_ELIGIBILITY_STANDARD
