@@ -44,7 +44,7 @@ from thalia.regions.base import NeuralComponent
 from thalia.learning.rules.bcm import BCMRule, BCMConfig
 from thalia.learning.rules.strategies import STDPConfig as StrategySTDPConfig
 from thalia.learning.strategy_registry import LearningStrategyRegistry
-from thalia.learning.homeostasis.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 
 class TemporalCoding(Enum):

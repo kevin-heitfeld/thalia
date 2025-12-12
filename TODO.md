@@ -1,6 +1,6 @@
 # TODO
 
-- Delete `src\thalia\learning\homeostasis\unified_homeostasis.py`
+- Remove Compatibility Imports (`docs\design\directory_restructuring_plan.md`)
 - `docs\design\circuit_modeling_plan.md`
 
 ---

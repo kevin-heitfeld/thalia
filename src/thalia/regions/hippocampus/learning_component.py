@@ -14,7 +14,7 @@ import torch.nn as nn
 
 from thalia.core.region_components import LearningComponent
 from thalia.managers.base_manager import ManagerContext
-from thalia.learning.homeostasis.unified_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.config import HippocampusConfig, HippocampusState
