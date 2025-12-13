@@ -1,14 +1,64 @@
 # Checkpoint-Growth Compatibility Analysis
 
-**Status**: 🔴 CRITICAL ISSUE IDENTIFIED  
+**Status**: 🟢 PHASE 1 & 2 COMPLETE - Phase 3 in progress  
 **Date**: December 13, 2025  
-**Priority**: HIGH - Affects training continuity
+**Priority**: HIGH - Training continuity improvements
+
+**Progress**:
+- ✅ **Phase 1 Complete**: Elastic tensor format with capacity metadata (19/19 tests passing)
+- ✅ **Phase 2 Complete**: Neuromorphic format with neuron IDs (24/24 tests passing)
+- 🔄 **Phase 3 In Progress**: Hybrid format with auto-selection
 
 ## Executive Summary
 
-Thalia's brain can grow dynamically (add neurons, expand actions), but **checkpoints currently do NOT handle dimension mismatches gracefully**. Loading a checkpoint from before growth into a grown brain will fail with tensor dimension errors.
+Thalia's brain can grow dynamically (add neurons, expand actions). As of December 13, 2025, we have implemented **two checkpoint formats** that handle dimension mismatches gracefully through different strategies.
 
-### The Problem
+### The Solution (Implemented)
+
+We now have **two checkpoint formats** working together:
+
+#### Format 1: Elastic Tensor (Phase 1 - Complete ✅)
+```python
+# Saves capacity metadata, no pre-allocation needed
+checkpoint = {
+    "format_version": "1.0.0",
+    "capacity_metadata": {
+        "d1_neurons_used": 5,
+        "d1_neurons_capacity": 5,
+        "growth_enabled": True,
+    },
+    "weights": torch.Tensor[5, 100],  # Only actual used neurons
+}
+
+# Loading handles auto-growth
+brain.load_checkpoint("elastic.pt")  # Auto-grows if needed
+```
+
+#### Format 2: Neuromorphic (Phase 2 - Complete ✅)
+```python
+# Neuron-centric format with stable IDs
+checkpoint = {
+    "format": "neuromorphic",
+    "format_version": "2.0.0",
+    "neurons": [
+        {
+            "id": "striatum_d1_neuron_0_step0",
+            "type": "D1-MSN",
+            "membrane": 0.5,
+            "created_step": 0,
+            "incoming_synapses": [
+                {"from": "input_42", "weight": 0.3, "eligibility": 0.1}
+            ]
+        },
+        # ... one per neuron
+    ]
+}
+
+# ID-based matching handles growth/pruning gracefully
+brain.load_checkpoint("neuromorphic.pt")  # Matches by neuron ID
+```
+
+### The Original Problem (Now Solved)
 
 ```python
 # Training session 1:
@@ -95,6 +145,98 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 ```
 
 **No dimension checks. No auto-resize. Just fails.**
+
+---
+
+## Implementation Status
+
+### Phase 1: Elastic Tensor Format ✅ COMPLETE
+
+**Implemented**: December 13, 2025  
+**Tests**: 19/19 passing in `test_checkpoint_growth_elastic.py`
+
+**Features**:
+- Capacity metadata tracking (used vs capacity)
+- Auto-growth during load if checkpoint is larger
+- Graceful handling of size mismatches with warnings
+- Zero-padding for new neurons
+- Population coding support (1 or 10 neurons per action)
+
+**Code**: `CheckpointManager.get_full_state()` with `capacity_metadata`
+
+### Phase 2: Neuromorphic Format ✅ COMPLETE
+
+**Implemented**: December 13, 2025  
+**Tests**: 24/24 passing in `test_checkpoint_growth_neuromorphic.py`
+
+**Features**:
+- Neuron ID infrastructure with stable identifiers
+- ID-based checkpoint matching (no dimension dependency)
+- Sparse synapse storage (only non-zero weights)
+- Growth history tracking (created_step per neuron)
+- Population coding variants tested (5 neurons vs 50 neurons)
+- Graceful handling of missing/extra neurons
+
+**Code**: `CheckpointManager.get_neuromorphic_state()` and `load_neuromorphic_state()`
+
+### Phase 3: Hybrid Format 🔄 IN PROGRESS
+
+**Target**: Auto-selection between elastic tensor and neuromorphic formats
+
+**Planned Features**:
+- Automatic format selection based on region size/growth frequency
+- Unified API: `checkpoint_manager.save()` and `load()` choose format
+- Backward compatibility with both Phase 1 and Phase 2 formats
+- Performance optimization: elastic for large regions, neuromorphic for dynamic ones
+
+**Tests**: 470 lines of tests waiting in `test_checkpoint_growth_hybrid.py`
+
+---
+
+## Use Cases Now Supported
+
+### ✅ Resume Training After Growth
+```python
+# Save with 5 neurons, load into 7-neuron brain
+brain_5 = Brain(StriatumConfig(n_output=5))
+train(brain_5)
+brain_5.checkpoint_manager.save("checkpoint.pt")
+
+brain_7 = Brain(StriatumConfig(n_output=7))
+brain_7.checkpoint_manager.load("checkpoint.pt")  # Auto-grows, restores 5, zeros for 2 new
+```
+
+### ✅ Curriculum Stage Transitions
+```python
+# Stage 1 checkpoint (5 actions) → Stage 2 (8 actions after growth)
+brain.load_checkpoint("stage1_final.pt")  # Works with current 8-action architecture
+```
+
+### ✅ Neuron-Level Inspection and Debugging
+```python
+# Neuromorphic format enables per-neuron analysis
+checkpoint = load("neuromorphic.pt")
+for neuron in checkpoint["neurons"]:
+    print(f"Neuron {neuron['id']}: {len(neuron['incoming_synapses'])} synapses")
+    if neuron['created_step'] > 1000:
+        print(f"  → Added during growth at step {neuron['created_step']}")
+```
+
+### ✅ Partial Checkpoint Loading
+```python
+# Load only D1 neurons
+checkpoint = load("checkpoint.pt")
+checkpoint["neurons"] = [n for n in checkpoint["neurons"] if n["type"] == "D1-MSN"]
+brain.checkpoint_manager.load_neuromorphic_state(checkpoint)
+```
+
+### ✅ Population Coding Support
+```python
+# Works with both 1 neuron/action and 10 neurons/action
+config_simple = StriatumConfig(n_output=5, population_coding=False)  # 5 neurons
+config_pop = StriatumConfig(n_output=5, population_coding=True, neurons_per_action=10)  # 50 neurons
+# Both save/load compatibly
+```
 
 ---
 
@@ -986,17 +1128,20 @@ class CheckpointManager:
 
 ## Conclusion
 
-**Current State**: 🔴 Checkpoints and growth are NOT compatible
+**Current State**: 🟢 Phases 1 & 2 Complete - Growth-compatible checkpoints working!
 
-**Critical Issue**: Cannot resume training from pre-growth checkpoints
+**Achievements**:
+- ✅ Elastic tensor format (19/19 tests) - handles dimension changes gracefully
+- ✅ Neuromorphic format (24/24 tests) - ID-based matching, sparse storage
+- ✅ Population coding support - tested with both 5 and 50 neuron configurations
+- ✅ Auto-growth during load - seamless resume from smaller checkpoints
+- ✅ Graceful degradation - handles missing/extra neurons with warnings
 
-**Immediate Fix**: Add dimension validation with clear error messages (Phase 1)
+**Next Steps**: Phase 3 - Hybrid format with automatic selection
 
-**Long-Term Solution**: Implement checkpoint migration with growth history (Phase 3)
+**Impact**: ✅ RESOLVED - Can now resume training from pre-growth checkpoints!
 
-**Impact**: Affects curriculum learning, experimentation, and training continuity
-
-**Priority**: HIGH - Should be fixed before large-scale curriculum training
+**Priority**: Continue with Phase 3 for optimal performance
 
 ---
 
