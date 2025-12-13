@@ -1419,12 +1419,12 @@ class CurriculumTrainer:
 
             # Grow connected pathways (automatic via PathwayManager)
             if hasattr(self.brain, 'pathway_manager'):
-                grown_pathways = self.brain.pathway_manager.grow_connected_pathways(
+                self.brain.pathway_manager.grow_connected_pathways(
                     region_name=region_name,
-                    new_size=region.n_output,
+                    growth_amount=n_new_neurons,
                 )
-                if self.verbose and grown_pathways:
-                    print(f"  🔗 Grew {len(grown_pathways)} connected pathways")
+                if self.verbose:
+                    print(f"  🔗 Grew connected pathways for {region_name}")
 
             # Consolidate after growth (if enabled)
             if trigger.consolidate_after:
@@ -1618,6 +1618,10 @@ class CurriculumTrainer:
         try:
             brain_diag = self.brain.get_diagnostics()
 
+            # Ensure brain_diag is not None
+            if brain_diag is None:
+                brain_diag = {}
+
             # 3.1 Firing rates per region
             spike_counts = brain_diag.get('spike_counts', {})
             for region_name, spike_count in spike_counts.items():
@@ -1668,14 +1672,21 @@ class CurriculumTrainer:
         except Exception as e:
             # Graceful degradation if brain diagnostics fail
             if self.verbose:
+                import traceback
                 print(f"  ⚠️ Warning: Failed to collect brain diagnostics: {e}")
+                traceback.print_exc()  # Always print traceback
             metrics['firing_rate/average'] = 0.0
 
         # =====================================================================
         # 4. HEALTH STATUS
         # =====================================================================
         try:
-            brain_diag = self.brain.get_diagnostics() if 'brain_diag' not in locals() else brain_diag
+            # Reuse brain_diag from previous block if available, otherwise fetch it
+            if 'brain_diag' not in locals() or brain_diag is None:
+                brain_diag = self.brain.get_diagnostics()
+                if brain_diag is None:
+                    brain_diag = {}
+
             health_report = self.health_monitor.check_health(brain_diag)
 
             metrics['health/is_healthy'] = 1.0 if health_report.is_healthy else 0.0
@@ -1699,7 +1710,9 @@ class CurriculumTrainer:
 
         except Exception as e:
             if self.verbose:
+                import traceback
                 print(f"  ⚠️ Warning: Failed to check health: {e}")
+                traceback.print_exc()  # Always print traceback
             metrics['health/is_healthy'] = 1.0  # Assume healthy if check fails
             metrics['health/issue_count'] = 0.0
             metrics['health/max_severity'] = 0.0

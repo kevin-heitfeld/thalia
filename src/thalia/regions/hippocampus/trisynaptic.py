@@ -2067,9 +2067,9 @@ class TrisynapticHippocampus(NeuralComponent):
             "ca3_slot_assignment": self._ca3_slot_assignment.detach().clone() if self._ca3_slot_assignment is not None else None,
             # Inter-layer axonal delay buffers
             "dg_ca3_delay_buffer": self._dg_ca3_delay_buffer.detach().clone() if self._dg_ca3_delay_buffer is not None else None,
-            "dg_ca3_delay_pointer": self._dg_ca3_delay_pointer,
+            "dg_ca3_delay_pointer": self._dg_ca3_delay_ptr,
             "ca3_ca1_delay_buffer": self._ca3_ca1_delay_buffer.detach().clone() if self._ca3_ca1_delay_buffer is not None else None,
-            "ca3_ca1_delay_pointer": self._ca3_ca1_delay_pointer,
+            "ca3_ca1_delay_pointer": self._ca3_ca1_delay_ptr,
             "trisynaptic_state": {
                 "dg_spikes": self.state.dg_spikes.detach().clone() if self.state.dg_spikes is not None else None,
                 "ca3_spikes": self.state.ca3_spikes.detach().clone() if self.state.ca3_spikes is not None else None,
@@ -2192,10 +2192,10 @@ class TrisynapticHippocampus(NeuralComponent):
         # Restore inter-layer delay buffers (if present in checkpoint)
         if "dg_ca3_delay_buffer" in region_state and region_state["dg_ca3_delay_buffer"] is not None:
             self._dg_ca3_delay_buffer = region_state["dg_ca3_delay_buffer"].to(self.device)
-            self._dg_ca3_delay_pointer = region_state["dg_ca3_delay_pointer"]
+            self._dg_ca3_delay_ptr = region_state["dg_ca3_delay_pointer"]
         if "ca3_ca1_delay_buffer" in region_state and region_state["ca3_ca1_delay_buffer"] is not None:
             self._ca3_ca1_delay_buffer = region_state["ca3_ca1_delay_buffer"].to(self.device)
-            self._ca3_ca1_delay_pointer = region_state["ca3_ca1_delay_pointer"]
+            self._ca3_ca1_delay_ptr = region_state["ca3_ca1_delay_pointer"]
 
         # Restore HippocampusState
         tri_state = region_state["trisynaptic_state"]

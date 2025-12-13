@@ -502,6 +502,14 @@ class OscillatorManager:
         self.dt_ms = dt_ms
         self.device = device
 
+        # Store frequencies for diagnostics
+        self.delta_freq = delta_freq
+        self.theta_freq = theta_freq
+        self.alpha_freq = alpha_freq
+        self.beta_freq = beta_freq
+        self.gamma_freq = gamma_freq
+        self.ripple_freq = ripple_freq
+
         # Create all oscillators
         self.delta = SinusoidalOscillator(frequency_hz=delta_freq, dt_ms=dt_ms)
         self.theta = SinusoidalOscillator(frequency_hz=theta_freq, dt_ms=dt_ms)

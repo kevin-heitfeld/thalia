@@ -116,8 +116,8 @@ def print_config(
     print(f"  L2/3 -> L5 strength: {cortex_cfg.l23_to_l5_strength}")
     print(f"  L2/3 recurrent strength: {cortex_cfg.l23_recurrent_strength}")
     print(f"  L2/3 recurrent decay: {cortex_cfg.l23_recurrent_decay}")
-    print(f"  FFI enabled: {cortex_cfg.ffi_enabled}")
     print(f"  FFI strength: {cortex_cfg.ffi_strength}")
+    print(f"  FFI threshold: {cortex_cfg.ffi_threshold}")
 
     # Weight bounds (cortex)
     print("\n--- CORTEX WEIGHT BOUNDS ---")
@@ -127,8 +127,8 @@ def print_config(
     # Cortex learning parameters
     print("\n--- CORTEX LEARNING ---")
     print(f"  STDP LR: {cortex_cfg.stdp_lr}")
-    print(f"  STDP tau+: {cortex_cfg.stdp_tau_plus} ms")
-    print(f"  STDP tau-: {cortex_cfg.stdp_tau_minus} ms")
+    print(f"  STDP tau+: {cortex_cfg.tau_plus_ms} ms")
+    print(f"  STDP tau-: {cortex_cfg.tau_minus_ms} ms")
     # BCM config if available
     if hasattr(cortex_cfg, 'bcm_config') and cortex_cfg.bcm_config is not None:
         bcm = cortex_cfg.bcm_config
@@ -142,7 +142,7 @@ def print_config(
     print(f"  CA3 sparsity: {hippo_cfg.ca3_sparsity}")
     print(f"  CA3 recurrent strength: {hippo_cfg.ca3_recurrent_strength}")
     print(f"  CA1 sparsity: {hippo_cfg.ca1_sparsity}")
-    print(f"  CA3 learning rate: {hippo_cfg.ca3_learning_rate}")
+    print(f"  CA3 recurrent LR: {hippo_cfg.ca3_recurrent_learning_rate}")
     print(f"  NMDA tau: {hippo_cfg.nmda_tau} ms")
 
     # Striatum
@@ -153,7 +153,7 @@ def print_config(
     print(f"  Learning rate: {striatum_cfg.learning_rate}")
     print(f"  Eligibility tau: {striatum_cfg.eligibility_tau_ms} ms")
     print(f"  STDP LR: {striatum_cfg.stdp_lr}")
-    print(f"  Homeostatic: {striatum_cfg.homeostatic_enabled}")
+    print(f"  Homeostasis: {striatum_cfg.homeostasis_enabled}")
 
     # PFC
     pfc_cfg = config.brain.pfc
@@ -161,7 +161,7 @@ def print_config(
     print(f"  WM decay tau: {pfc_cfg.wm_decay_tau_ms} ms")
     print(f"  Gate threshold: {pfc_cfg.gate_threshold}")
     print(f"  Gate strength: {pfc_cfg.gate_strength}")
-    print(f"  Sparsity: {pfc_cfg.sparsity}")
+    print(f"  Recurrent strength: {pfc_cfg.recurrent_strength}")
 
     # Cerebellum
     cereb_cfg = config.brain.cerebellum

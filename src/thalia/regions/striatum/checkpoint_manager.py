@@ -70,9 +70,7 @@ class CheckpointManager:
             "homeostatic_scaling_applied": s._homeostatic_scaling_applied,
 
             # Homeostasis manager state (if enabled)
-            "homeostasis_manager_state": s.homeostasis_manager.get_state() if s.homeostasis_manager is not None else None,
-            # Backward compatibility: also save as unified_homeostasis_state
-            "unified_homeostasis_state": s.homeostasis_manager.get_state() if s.homeostasis_manager is not None else None,
+            "homeostasis_manager_state": s.homeostasis_manager.unified_homeostasis.get_state() if (s.homeostasis_manager is not None and s.homeostasis_manager.unified_homeostasis is not None) else None,
         }
 
         # 4. EXPLORATION STATE (delegate to ExplorationManager)
@@ -162,9 +160,6 @@ class CheckpointManager:
             # Try new format first, fall back to old format
             if "homeostasis_manager_state" in learning_state and learning_state["homeostasis_manager_state"] is not None:
                 s.homeostasis_manager.load_state(learning_state["homeostasis_manager_state"])
-            elif "unified_homeostasis_state" in learning_state and learning_state["unified_homeostasis_state"] is not None:
-                # Backward compatibility: load old unified_homeostasis state
-                s.homeostasis_manager.load_state(learning_state["unified_homeostasis_state"])
 
         # 4. RESTORE EXPLORATION STATE (delegate to ExplorationManager)
         exploration_state = state["exploration_state"]

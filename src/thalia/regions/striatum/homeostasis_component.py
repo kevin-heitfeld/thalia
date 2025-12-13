@@ -194,6 +194,18 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
         # TODO: Track running average of firing rates for dynamic excitability
         pass
 
+    def grow(self, n_new_neurons: int) -> None:
+        """Grow the homeostasis component to support more neurons.
+
+        Args:
+            n_new_neurons: Number of new neurons to add
+        """
+        # Update internal neuron count
+        self.n_neurons += n_new_neurons
+
+        # Unified homeostasis automatically adapts to weight tensor size
+        # No explicit resizing needed as normalization is per-tensor operation
+
     def get_homeostasis_diagnostics(self) -> Dict[str, Any]:
         """Get homeostasis-specific diagnostics."""
         diag = super().get_homeostasis_diagnostics()

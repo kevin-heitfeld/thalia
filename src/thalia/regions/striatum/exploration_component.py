@@ -36,7 +36,7 @@ class StriatumExplorationComponent(ExplorationComponent):
     - **UCB (Upper Confidence Bound)**:
       bonus = coefficient * sqrt(log(total_trials) / action_count)
       Selects uncertain actions more often (information value)
-    
+
     - **Adaptive Tonic Dopamine**:
       High performance → reduce exploration (exploit)
       Low performance → increase exploration (explore alternatives)
@@ -59,14 +59,14 @@ class StriatumExplorationComponent(ExplorationComponent):
     Usage:
     ======
         exploration = StriatumExplorationComponent(config, context)
-        
+
         # Add exploration bonus to Q-values
         exploration_bonus = exploration.compute_exploration_bonus(q_values)
         action_values = q_values + exploration_bonus
-        
+
         # Update after trial
         exploration.update_exploration(action, reward, accuracy)
-        
+
         # Get current tonic dopamine level
         tonic_da = exploration.get_tonic_dopamine()
 
@@ -180,9 +180,26 @@ class StriatumExplorationComponent(ExplorationComponent):
         self._recent_rewards.clear()
         self._recent_accuracy = 0.0
 
+    def grow(self, n_actions: int) -> None:
+        """Grow the exploration component to support more actions.
+
+        Args:
+            n_actions: New total number of actions
+        """
+        if n_actions <= self.n_actions:
+            return  # No growth needed
+
+        # Expand action counts with zeros for new actions
+        new_counts = torch.zeros(n_actions, device=self.context.device)
+        new_counts[:self.n_actions] = self._action_counts
+        self._action_counts = new_counts
+
+        # Update n_actions
+        self.n_actions = n_actions
+
     def get_state(self) -> Dict[str, Any]:
         """Get exploration component state for checkpointing.
-        
+
         Returns:
             Dict containing all state needed to restore exploration
         """
@@ -196,7 +213,7 @@ class StriatumExplorationComponent(ExplorationComponent):
 
     def load_state(self, state: Dict[str, Any]) -> None:
         """Restore exploration component state from checkpoint.
-        
+
         Args:
             state: Dict from get_state()
         """

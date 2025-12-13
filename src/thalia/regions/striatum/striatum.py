@@ -848,15 +848,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         # Build state dict for all 1D tensors [n_neurons]
         state_1d = {
-            'd1_output_trace': self.d1_output_trace,
-            'd2_output_trace': self.d2_output_trace,
             'recent_spikes': self.recent_spikes,
         }
 
         # Expand all 1D state tensors at once
         expanded_1d = self._expand_state_tensors(state_1d, n_new_neurons)
-        self.d1_output_trace = expanded_1d['d1_output_trace']
-        self.d2_output_trace = expanded_1d['d2_output_trace']
         self.recent_spikes = expanded_1d['recent_spikes']
 
         # =====================================================================
@@ -1467,14 +1463,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         """
         self.learning_manager.reset_eligibility(self.last_action, action_only)
 
-        # Always reset the spike traces (these are per-timestep, not per-action)
-        self.d1_input_trace.zero_()
-        self.d2_input_trace.zero_()
-        self.d1_output_trace.zero_()
-        self.d2_output_trace.zero_()
-        self.input_trace.zero_()
-        self.output_trace.zero_()
-
     def reset_state(self) -> None:
         super().reset_state()
 
@@ -1483,12 +1471,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         # Reset managers and subsystems
         self._reset_subsystems('eligibility', 'd1_neurons', 'd2_neurons')
-
-        # Reset trace tensors (eligibility traces delegated to pathways)
-        self._reset_tensors(
-            'd1_input_trace', 'd2_input_trace',
-            'd1_output_trace', 'd2_output_trace'
-        )
 
         # Reset TD(λ) traces if enabled
         if self.td_lambda_d1 is not None:

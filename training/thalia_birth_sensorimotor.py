@@ -400,7 +400,8 @@ def main():
     print("="*80)
 
     # Device selection
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
 
     print(f"Device: {device}")
     if device == "cpu": # type: ignore

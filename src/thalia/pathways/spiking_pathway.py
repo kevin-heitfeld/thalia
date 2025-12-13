@@ -641,10 +641,18 @@ class SpikingPathway(NeuralComponent):
         # Weight statistics using mixin helper
         diagnostics.update(self.weight_diagnostics(self.weights.data, prefix=""))
 
-        # Membrane dynamics
-        diagnostics["membrane_mean"] = self.neurons.membrane.mean().item()
-        diagnostics["membrane_std"] = self.neurons.membrane.std().item()
-        diagnostics["firing_rate_mean"] = self.firing_rate_estimate.mean().item()
+        # Membrane dynamics - safe access
+        if self.neurons.membrane is not None:
+            diagnostics["membrane_mean"] = self.neurons.membrane.mean().item()
+            diagnostics["membrane_std"] = self.neurons.membrane.std().item()
+        else:
+            diagnostics["membrane_mean"] = 0.0
+            diagnostics["membrane_std"] = 0.0
+            
+        if self.firing_rate_estimate is not None:
+            diagnostics["firing_rate_mean"] = self.firing_rate_estimate.mean().item()
+        else:
+            diagnostics["firing_rate_mean"] = 0.0
 
         # Eligibility traces using mixin helper
         diagnostics.update(self.trace_diagnostics(self.pre_trace, prefix="pre"))

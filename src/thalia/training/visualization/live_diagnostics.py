@@ -224,7 +224,7 @@ class LiveDiagnostics:
 
         # Add title
         fig.suptitle(
-            f'🧠 Thalia Live Diagnostics (Step {self.current_step})',
+            f'Thalia Live Diagnostics (Step {self.current_step})',
             fontsize=16,
             fontweight='bold'
         )
@@ -265,7 +265,7 @@ class LiveDiagnostics:
 
         ax.set_xlabel('Time (ms)')
         ax.set_ylabel('Neuron ID')
-        ax.set_title('🔥 Spike Raster (Recent Activity)', fontweight='bold')
+        ax.set_title('Spike Raster (Recent Activity)', fontweight='bold')
         ax.legend(loc='upper right', fontsize=8)
         ax.grid(True, alpha=0.2)
 
@@ -339,7 +339,7 @@ class LiveDiagnostics:
 
         ax.set_xlabel('Step')
         ax.set_ylabel('Status / Count')
-        ax.set_title('🏥 Health Metrics', fontweight='bold')
+        ax.set_title('Health Metrics', fontweight='bold')
         ax.legend(loc='upper right', fontsize=9)
         ax.grid(True, alpha=0.3)
 
@@ -371,7 +371,7 @@ class LiveDiagnostics:
         ax.set_xlabel('Step')
         ax.set_ylabel('Performance')
         ax.set_ylim(0, 1.05)
-        ax.set_title('📈 Task Performance', fontweight='bold')
+        ax.set_title('Task Performance', fontweight='bold')
         ax.legend(loc='lower right', fontsize=8, ncol=2)
         ax.grid(True, alpha=0.3)
 
@@ -455,7 +455,7 @@ class LiveDiagnostics:
         ax.set_yticks(y_pos)
         ax.set_yticklabels(memory_types)
         ax.set_xlabel('Memory (MB)')
-        ax.set_title('💾 Memory Usage', fontweight='bold', fontsize=10)
+        ax.set_title('Memory Usage', fontweight='bold', fontsize=10)
         ax.grid(True, axis='x', alpha=0.3)
 
         # Set reasonable x-limit

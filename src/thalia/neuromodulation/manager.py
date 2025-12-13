@@ -214,12 +214,12 @@ class NeuromodulatorManager:
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get neuromodulator system diagnostics."""
         return {
-            'dopamine': self.vta.get_dopamine(),
+            'dopamine': self.vta.get_global_dopamine(),
             'norepinephrine': self.locus_coeruleus.get_norepinephrine(),
             'acetylcholine': self.nucleus_basalis.get_acetylcholine(),
-            'vta': self.vta.get_diagnostics() if hasattr(self.vta, 'get_diagnostics') else {},
-            'locus_coeruleus': self.locus_coeruleus.get_diagnostics() if hasattr(self.locus_coeruleus, 'get_diagnostics') else {},
-            'nucleus_basalis': self.nucleus_basalis.get_diagnostics() if hasattr(self.nucleus_basalis, 'get_diagnostics') else {},
+            'vta': self.vta.get_state(),
+            'locus_coeruleus': self.locus_coeruleus.get_state(),
+            'nucleus_basalis': self.nucleus_basalis.get_state(),
         }
 
     def get_state(self) -> Dict[str, Any]:

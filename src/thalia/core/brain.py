@@ -1947,6 +1947,9 @@ class EventDrivenBrain(nn.Module):
     def _collect_striatum_diagnostics(self) -> StriatumDiagnostics:
         """Collect structured diagnostics from striatum."""
         striatum = self.striatum
+        # Access underlying implementation if using event-driven wrapper
+        striatum_impl = getattr(striatum, 'impl', striatum)
+
         n_actions = self.config.n_actions
         neurons_per = self.config.neurons_per_action
 
@@ -1958,8 +1961,18 @@ class EventDrivenBrain(nn.Module):
         for a in range(n_actions):
             start = a * neurons_per
             end = start + neurons_per
-            d1_mean = striatum.d1_weights[start:end].mean().item()
-            d2_mean = striatum.d2_weights[start:end].mean().item()
+
+            # Safe access to weights (might be None)
+            if hasattr(striatum_impl, 'd1_weights') and striatum_impl.d1_weights is not None:
+                d1_mean = striatum_impl.d1_weights[start:end].mean().item()
+            else:
+                d1_mean = 0.0
+
+            if hasattr(striatum_impl, 'd2_weights') and striatum_impl.d2_weights is not None:
+                d2_mean = striatum_impl.d2_weights[start:end].mean().item()
+            else:
+                d2_mean = 0.0
+
             d1_per_action.append(d1_mean)
             d2_per_action.append(d2_mean)
             net_per_action.append(d1_mean - d2_mean)
@@ -1970,13 +1983,24 @@ class EventDrivenBrain(nn.Module):
         for a in range(n_actions):
             start = a * neurons_per
             end = start + neurons_per
-            d1_elig_per_action.append(striatum.d1_eligibility[start:end].abs().mean().item())
-            d2_elig_per_action.append(striatum.d2_eligibility[start:end].abs().mean().item())
+            # Safe access to eligibility traces (might be None)
+            if hasattr(striatum_impl, 'd1_eligibility') and striatum_impl.d1_eligibility is not None:
+                d1_elig_per_action.append(striatum_impl.d1_eligibility[start:end].abs().mean().item())
+            else:
+                d1_elig_per_action.append(0.0)
+            if hasattr(striatum_impl, 'd2_eligibility') and striatum_impl.d2_eligibility is not None:
+                d2_elig_per_action.append(striatum_impl.d2_eligibility[start:end].abs().mean().item())
+            else:
+                d2_elig_per_action.append(0.0)
 
-        # UCB and exploration
-        action_counts = [int(c) for c in striatum._action_counts.tolist()] if hasattr(striatum, '_action_counts') else []
-        total_trials = int(striatum._total_trials) if hasattr(striatum, '_total_trials') else 0
-        exploration_prob = getattr(striatum, '_last_exploration_prob', 0.0)
+        # UCB and exploration - safe access to potentially missing attributes
+        action_counts = []
+        total_trials = 0
+        if hasattr(striatum_impl, '_action_counts') and striatum_impl._action_counts is not None:
+            action_counts = [int(c) for c in striatum_impl._action_counts.tolist()]
+        if hasattr(striatum_impl, '_total_trials') and striatum_impl._total_trials is not None:
+            total_trials = int(striatum_impl._total_trials)
+        exploration_prob = getattr(striatum_impl, '_last_exploration_prob', 0.0)
 
         return StriatumDiagnostics(
             d1_per_action=d1_per_action,
@@ -1985,7 +2009,7 @@ class EventDrivenBrain(nn.Module):
             d1_elig_per_action=d1_elig_per_action,
             d2_elig_per_action=d2_elig_per_action,
             last_action=self.trial_coordinator.get_last_action(),
-            exploring=getattr(striatum, '_last_exploring', False),
+            exploring=getattr(striatum_impl, '_last_exploring', False),
             exploration_prob=exploration_prob,
             action_counts=action_counts,
             total_trials=total_trials,
@@ -1994,20 +2018,22 @@ class EventDrivenBrain(nn.Module):
     def _collect_hippocampus_diagnostics(self) -> HippocampusDiagnostics:
         """Collect structured diagnostics from hippocampus."""
         hippo = self.hippocampus
+        # Access underlying implementation if using event-driven wrapper
+        hippo_impl = getattr(hippo, 'impl', hippo)
 
         # CA1 activity (key for match/mismatch)
-        ca1_spikes = hippo.state.ca1_spikes
+        ca1_spikes = hippo_impl.state.ca1_spikes
         ca1_total = ca1_spikes.sum().item() if ca1_spikes is not None else 0.0
 
         # Normalize by hippocampus size
         ca1_normalized = ca1_total / max(1, self.config.hippocampus_size)
 
         # Layer activity
-        dg_spikes = hippo.state.dg_spikes.sum().item() if hippo.state.dg_spikes is not None else 0.0
-        ca3_spikes = hippo.state.ca3_spikes.sum().item() if hippo.state.ca3_spikes is not None else 0.0
+        dg_spikes = hippo_impl.state.dg_spikes.sum().item() if hippo_impl.state.dg_spikes is not None else 0.0
+        ca3_spikes = hippo_impl.state.ca3_spikes.sum().item() if hippo_impl.state.ca3_spikes is not None else 0.0
 
         # Memory metrics
-        n_stored = len(hippo.episode_buffer) if hasattr(hippo, 'episode_buffer') else 0
+        n_stored = len(hippo_impl.episode_buffer) if hasattr(hippo_impl, 'episode_buffer') else 0
 
         return HippocampusDiagnostics(
             ca1_total_spikes=ca1_total,
@@ -2032,6 +2058,29 @@ class EventDrivenBrain(nn.Module):
         self.diagnostics.record("striatum", striatum_diag.to_dict())
         self.diagnostics.record("hippocampus", hippo_diag.to_dict())
 
+        # Safely access neuromodulator values
+        try:
+            dopamine_global = self.vta.get_global_dopamine() if hasattr(self.vta, 'get_global_dopamine') else 0.0
+            dopamine_tonic = self.vta.get_tonic_dopamine() if hasattr(self.vta, 'get_tonic_dopamine') else 0.0
+            dopamine_phasic = self.vta.get_phasic_dopamine() if hasattr(self.vta, 'get_phasic_dopamine') else 0.0
+        except (AttributeError, TypeError):
+            dopamine_global = dopamine_tonic = dopamine_phasic = 0.0
+
+        try:
+            vta_state = self.vta.get_state() if hasattr(self.vta, 'get_state') else {}
+        except (AttributeError, TypeError):
+            vta_state = {}
+
+        try:
+            lc_state = self.locus_coeruleus.get_state() if hasattr(self.locus_coeruleus, 'get_state') else {}
+        except (AttributeError, TypeError):
+            lc_state = {}
+
+        try:
+            nb_state = self.nucleus_basalis.get_state() if hasattr(self.nucleus_basalis, 'get_state') else {}
+        except (AttributeError, TypeError):
+            nb_state = {}
+
         diag = {
             # Brain state
             "current_time": self._current_time,
@@ -2043,21 +2092,21 @@ class EventDrivenBrain(nn.Module):
 
             # VTA Dopamine System (centralized)
             "dopamine": {
-                "global": self.vta.get_global_dopamine(),  # Combined signal to regions
-                "tonic": self.vta.get_tonic_dopamine(),    # Slow baseline (intrinsic)
-                "phasic": self.vta.get_phasic_dopamine(),  # Fast bursts (external rewards)
+                "global": dopamine_global,
+                "tonic": dopamine_tonic,
+                "phasic": dopamine_phasic,
             },
             # VTA state for monitoring
-            "vta": self.vta.get_state(),
+            "vta": vta_state,
 
             # Locus Coeruleus (norepinephrine/arousal)
-            "locus_coeruleus": self.locus_coeruleus.get_state(),
+            "locus_coeruleus": lc_state,
 
             # Nucleus Basalis (acetylcholine/encoding)
-            "nucleus_basalis": self.nucleus_basalis.get_state(),
+            "nucleus_basalis": nb_state,
 
             # Legacy key for backwards compatibility
-            "global_dopamine": self.vta.get_global_dopamine(),
+            "global_dopamine": dopamine_global,
 
             # Structured component diagnostics
             "striatum": striatum_diag.to_dict(),
@@ -2073,14 +2122,14 @@ class EventDrivenBrain(nn.Module):
                 "exploring": striatum_diag.exploring,
                 "net_weight_means": striatum_diag.net_per_action,
                 "ca1_spikes": hippo_diag.ca1_spikes,
-                "dopamine_global": self.vta.get_global_dopamine(),
-                "dopamine_tonic": self.vta.get_tonic_dopamine(),
-                "dopamine_phasic": self.vta.get_phasic_dopamine(),
-                "norepinephrine": self.locus_coeruleus.get_norepinephrine(),
-                "arousal": self.locus_coeruleus.get_arousal(),
-                "acetylcholine": self.nucleus_basalis.get_acetylcholine(),
-                "encoding_mode": self.nucleus_basalis.is_encoding_mode(),
-                "encoding_strength": self.nucleus_basalis.get_encoding_strength(),
+                "dopamine_global": dopamine_global,
+                "dopamine_tonic": dopamine_tonic,
+                "dopamine_phasic": dopamine_phasic,
+                "norepinephrine": lc_state.get('norepinephrine', 0.0) if lc_state else 0.0,
+                "arousal": lc_state.get('arousal', 0.0) if lc_state else 0.0,
+                "acetylcholine": nb_state.get('acetylcholine', 0.0) if nb_state else 0.0,
+                "encoding_mode": nb_state.get('encoding_mode', False) if nb_state else False,
+                "encoding_strength": nb_state.get('encoding_strength', 0.0) if nb_state else 0.0,
             },
 
             # Robustness/Criticality diagnostics
