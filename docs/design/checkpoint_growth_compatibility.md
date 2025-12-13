@@ -890,6 +890,7 @@ checkpoint = {
 3. **Phase 3** (Long-term - when needed):
    - ✅ **COMPLETE**: Hybrid format for striatum with auto-selection
    - ✅ **COMPLETE**: Extend neuromorphic format to hippocampus (neurogenesis ready)
+   - ✅ **COMPLETE**: Extend neuromorphic format to prefrontal (working memory + growth)
    - Keep cortex/thalamus as elastic tensors (rarely grow)
 
 **Code Example**:

@@ -1,4 +1,5 @@
-"""Prefrontal Cortex - Gated Working Memory and Executive Control.
+"""
+Prefrontal Cortex - Gated Working Memory and Executive Control.
 
 The prefrontal cortex (PFC) specializes in cognitive control and flexible behavior:
 - **Working memory maintenance**: Actively maintain information over delays
@@ -84,6 +85,7 @@ from thalia.regions.base import (
     NeuralComponent,
     NeuralComponentState,
 )
+from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
 from thalia.regions.prefrontal_hierarchy import (
     Goal,
     GoalHierarchyManager,
@@ -341,6 +343,9 @@ class Prefrontal(NeuralComponent):
             threshold=config.gate_threshold,
             device=config.device,
         )
+
+        # Initialize checkpoint manager for neuromorphic format support
+        self.checkpoint_manager = PrefrontalCheckpointManager(self)
 
         # Initialize learning strategy (STDP with dopamine gating)
         # Using LearningStrategyRegistry for pluggable learning strategies

@@ -446,13 +446,13 @@ def _reset_tensor_state(
     tensor_dict: Dict[str, Tuple[torch.Size, torch.dtype]],
 ) -> Dict[str, torch.Tensor]:
     """Reset multiple state tensors to zeros.
-    
+
     Args:
         tensor_dict: Map of name → (shape, dtype)
-        
+
     Returns:
         Dict of name → zero tensor
-        
+
     Example:
         >>> state = self._reset_tensor_state({
         ...     'membrane': (self.n_output,), torch.float32),
@@ -467,7 +467,7 @@ def _reset_tensor_state(
 
 def _reset_component_state(self, components: List[Any]) -> None:
     """Reset state for all sub-components.
-    
+
     Args:
         components: List of components with reset_state() method
     """
@@ -517,20 +517,20 @@ Diagnostics implementations are similar but not identical:
 ```python
 def get_diagnostics(self) -> Dict[str, Any]:
     diag = {}
-    
+
     # Weight stats (duplicated logic)
     diag['weight_mean'] = self.weights.mean().item()
     diag['weight_std'] = self.weights.std().item()
     diag['weight_min'] = self.weights.min().item()
     diag['weight_max'] = self.weights.max().item()
-    
+
     # Spike stats (duplicated logic)
     diag['firing_rate'] = self.spikes.mean().item()
     diag['spike_count'] = self.spikes.sum().item()
-    
+
     # Region-specific metrics
     diag['region_specific'] = ...
-    
+
     return diag
 ```
 
@@ -638,7 +638,7 @@ class BrainComponent(Protocol):
         **kwargs: Any,  # Region-specific options
     ) -> None:
         """Add neurons to component (curriculum learning).
-        
+
         Args:
             n_new: Number of neurons to add
             initialization: Weight init strategy ('xavier', 'sparse_random', etc.)
@@ -730,14 +730,14 @@ Define standard `LearningComponent` interface and extract learning from all regi
 @runtime_checkable
 class LearningComponent(Protocol):
     """Standard interface for region learning components."""
-    
+
     def update_traces(
         self,
         pre_spikes: Tensor,
         post_spikes: Tensor,
     ) -> None:
         """Update eligibility/STDP traces."""
-    
+
     def apply_learning(
         self,
         weights: nn.Parameter,
@@ -747,7 +747,7 @@ class LearningComponent(Protocol):
         **kwargs: Any,
     ) -> Dict[str, float]:
         """Apply learning rule and return metrics."""
-    
+
     def reset_state(self) -> None:
         """Reset traces and learning state."""
 ```
@@ -792,10 +792,10 @@ Biological plausibility is well-documented but not automatically verified:
 # No tests like:
 def test_no_backpropagation(region):
     """Verify region doesn't use .backward()"""
-    
+
 def test_local_learning_only(region):
     """Verify learning rule only uses local signals"""
-    
+
 def test_binary_spikes(region):
     """Verify output spikes are {0, 1}"""
 ```
@@ -808,7 +808,7 @@ Create `tests/biological_constraints/` test suite:
 
 def test_learning_is_local(all_regions):
     """Verify all regions use only local learning signals.
-    
+
     Disallowed:
     - .backward() calls
     - Global error signals
@@ -817,11 +817,11 @@ def test_learning_is_local(all_regions):
     """
     for region_class in all_regions:
         region = region_class(config)
-        
+
         # Patch torch.Tensor.backward to detect backprop
         with detect_backward_calls():
             region.forward(test_input)
-        
+
         # Should not have been called
         assert not backward_was_called()
 
@@ -830,7 +830,7 @@ def test_spikes_are_binary(all_regions):
     for region_class in all_regions:
         region = region_class(config)
         spikes = region.forward(test_input)
-        
+
         # All spike values must be 0 or 1
         assert ((spikes == 0) | (spikes == 1)).all()
 
@@ -838,11 +838,11 @@ def test_weights_are_positive(all_regions):
     """Verify weights stay in valid range."""
     for region_class in all_regions:
         region = region_class(config)
-        
+
         # After learning
         for _ in range(100):
             region.forward(test_input)
-        
+
         # Check weight bounds
         assert (region.weights >= region.config.w_min).all()
         assert (region.weights <= region.config.w_max).all()
@@ -903,10 +903,10 @@ class ReceptorProfile:
     d2_density: float = 0.5  # D2 dopamine receptors
     m1_density: float = 0.5  # M1 muscarinic ACh receptors
     alpha1_density: float = 0.5  # α1 noradrenergic receptors
-    
+
 class BrainComponent:
     receptor_profile: ReceptorProfile = ReceptorProfile()
-    
+
     def set_dopamine(self, da_level: float) -> None:
         # Modulate by receptor density
         effective_da = da_level * self.receptor_profile.d1_density
@@ -1296,7 +1296,7 @@ The Thalia architecture is **fundamentally sound** with excellent biological pla
 
 ---
 
-**Review Date:** December 13, 2025  
-**Reviewer:** GitHub Copilot (Claude Sonnet 4.5)  
-**Files Analyzed:** 150+ source files in `src/thalia/`  
+**Review Date:** December 13, 2025
+**Reviewer:** GitHub Copilot (Claude Sonnet 4.5)
+**Files Analyzed:** 150+ source files in `src/thalia/`
 **Total LOC Reviewed:** ~50,000 lines
