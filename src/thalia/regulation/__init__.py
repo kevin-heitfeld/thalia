@@ -1,4 +1,5 @@
-"""Regulation Constants.
+"""
+Regulation Constants.
 
 Constants and utilities for homeostasis, learning, and normalization.
 """
@@ -37,6 +38,31 @@ from thalia.regulation.learning_constants import (
     EMA_DECAY_FAST,
     EMA_DECAY_SLOW,
     WM_NOISE_STD_DEFAULT,
+)
+from thalia.regulation.region_constants import (
+    # Thalamus - Mode Switching
+    THALAMUS_BURST_THRESHOLD,
+    THALAMUS_TONIC_THRESHOLD,
+    THALAMUS_BURST_SPIKE_COUNT,
+    THALAMUS_BURST_GAIN,
+    # Thalamus - Attention Gating
+    THALAMUS_ALPHA_SUPPRESSION,
+    THALAMUS_ALPHA_GATE_THRESHOLD,
+    # Thalamus - TRN
+    THALAMUS_TRN_RATIO,
+    THALAMUS_TRN_INHIBITION,
+    THALAMUS_TRN_RECURRENT,
+    # Thalamus - Spatial Filtering
+    THALAMUS_SPATIAL_FILTER_WIDTH,
+    THALAMUS_CENTER_EXCITATION,
+    THALAMUS_SURROUND_INHIBITION,
+    # Thalamus - Relay
+    THALAMUS_RELAY_STRENGTH,
+    # Striatum - TD(λ) Learning
+    STRIATUM_TD_LAMBDA,
+    STRIATUM_GAMMA,
+    STRIATUM_TD_MIN_TRACE,
+    STRIATUM_TD_ACCUMULATING,
 )
 from thalia.regulation.normalization import (
     DivisiveNormConfig,
@@ -87,6 +113,29 @@ __all__ = [
     "EMA_DECAY_SLOW",
     # Learning Constants - Noise Parameters
     "WM_NOISE_STD_DEFAULT",
+    # Region Constants - Thalamus Mode Switching
+    "THALAMUS_BURST_THRESHOLD",
+    "THALAMUS_TONIC_THRESHOLD",
+    "THALAMUS_BURST_SPIKE_COUNT",
+    "THALAMUS_BURST_GAIN",
+    # Region Constants - Thalamus Attention
+    "THALAMUS_ALPHA_SUPPRESSION",
+    "THALAMUS_ALPHA_GATE_THRESHOLD",
+    # Region Constants - Thalamus TRN
+    "THALAMUS_TRN_RATIO",
+    "THALAMUS_TRN_INHIBITION",
+    "THALAMUS_TRN_RECURRENT",
+    # Region Constants - Thalamus Spatial Filtering
+    "THALAMUS_SPATIAL_FILTER_WIDTH",
+    "THALAMUS_CENTER_EXCITATION",
+    "THALAMUS_SURROUND_INHIBITION",
+    # Region Constants - Thalamus Relay
+    "THALAMUS_RELAY_STRENGTH",
+    # Region Constants - Striatum TD(λ)
+    "STRIATUM_TD_LAMBDA",
+    "STRIATUM_GAMMA",
+    "STRIATUM_TD_MIN_TRACE",
+    "STRIATUM_TD_ACCUMULATING",
     # Normalization Classes
     "DivisiveNormConfig",
     "DivisiveNormalization",

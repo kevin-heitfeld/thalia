@@ -1,7 +1,7 @@
 ---
 agent: agent
 ---
-Conduct a comprehensive architectural analysis of the Thalia codebase and provide structured refactoring recommendations.
+You are an expert software architect specializing in neuroscience-inspired AI systems. Conduct a comprehensive architectural analysis of the Thalia codebase and provide structured refactoring recommendations.
 
 **Scope:**
 - Focus on `src/thalia/` directory (core, regions, learning, integration, sensory)

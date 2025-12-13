@@ -44,7 +44,7 @@ from thalia.training.constants import (
     REWARD_HIGH_SUCCESS,
     REWARD_MANIPULATION_BASE,
 )
-from thalia.sensory import (
+from thalia.pathways.sensory_pathways import (
     VisualConfig,
     RetinalEncoder,
 )

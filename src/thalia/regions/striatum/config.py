@@ -149,3 +149,15 @@ class StriatumConfig(NeuralComponentConfig):
     #   D2 "veto" arrives later. Explains action selection timing and impulsivity.
     d1_to_output_delay_ms: float = 15.0  # D1 direct pathway delay
     d2_to_output_delay_ms: float = 25.0  # D2 indirect pathway delay (slower!)
+
+    # =========================================================================
+    # ELASTIC TENSOR CHECKPOINT FORMAT (Phase 1 - Growth Support)
+    # =========================================================================
+    # Enable elastic tensor format for checkpoint-growth compatibility.
+    # Pre-allocates tensors with reserved capacity to enable fast growth.
+    # Biology: Analogous to neural reserve capacity in brain development.
+    growth_enabled: bool = True  # Enable elastic tensor format
+    reserve_capacity: float = 0.5  # Fraction of extra capacity (0.5 = 50% headroom)
+    # Example: 10 neurons with reserve_capacity=0.5 → allocate 15 neurons worth of memory
+    # Growth within reserved space requires no reallocation (fast)
+    # Growth beyond capacity triggers reallocation with new headroom (slower)

@@ -76,24 +76,31 @@ from typing import Optional, Dict, Any
 
 import torch
 
+from thalia.regulation.region_constants import (
+    STRIATUM_TD_LAMBDA,
+    STRIATUM_GAMMA,
+    STRIATUM_TD_MIN_TRACE,
+    STRIATUM_TD_ACCUMULATING,
+)
+
 
 @dataclass
 class TDLambdaConfig:
     """Configuration for TD(λ) learning."""
 
     # Trace decay rate (0-1)
-    lambda_: float = 0.9  # Bridge ~10 timesteps at dt=1ms
+    lambda_: float = STRIATUM_TD_LAMBDA  # Bridge ~10 timesteps at dt=1ms
 
     # Discount factor for future rewards (0-1)
-    gamma: float = 0.99  # Standard RL value
+    gamma: float = STRIATUM_GAMMA  # Standard RL value
 
     # Minimum trace value (below this, trace is zeroed for efficiency)
-    min_trace: float = 1e-6
+    min_trace: float = STRIATUM_TD_MIN_TRACE
 
     # Whether to use accumulating traces (True) or replacing traces (False)
     # Accumulating: e(t) = γλe(t-1) + ∇V(t)
     # Replacing: e(t) = max(γλe(t-1), ∇V(t))
-    accumulating: bool = True
+    accumulating: bool = STRIATUM_TD_ACCUMULATING
 
     # Device
     device: str = "cpu"

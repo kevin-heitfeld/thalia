@@ -1,8 +1,31 @@
-"""Sensory Pathways - Multimodal Input Encoding for Spiking Neural Networks.
+"""
+Sensory Pathways - Multimodal Input Encoding for Spiking Neural Networks.
 
 This module provides the architecture for encoding different sensory modalities
 (vision, audition, language, touch) into spike patterns that feed into the
 unified brain architecture.
+
+**ARCHITECTURE DECISION: Why Pathways, Not Separate Sensory Regions?**
+======================================================================
+
+Thalia implements sensory processing as **pathways** rather than standalone
+"sensory regions" because:
+
+1. **Biological Reality**: Sensory systems are **transformation pipelines**, not
+   isolated cortical regions. Information flows: Receptors → Thalamus → Primary
+   Cortex → Higher Areas. Each stage is a neural population with learning.
+
+2. **Pathway = Neural Population**: In Thalia, pathways ARE neural populations
+   with weights, plasticity, and dynamics - not just connection matrices. This
+   matches biology where LGN (thalamic relay) and V1 (primary visual cortex)
+   are both active, learning populations.
+
+3. **Import Clarity**: Sensory implementations live here in `pathways/`, not in
+   a separate `sensory/` module. Import directly: `from thalia.pathways.sensory_pathways import VisualPathway`
+
+**For Cortical Sensory Areas (V1, A1, S1):**
+Use `regions/cortex/` with sensory-specific configurations when modeling
+cortical sensory areas with full cortical microcircuits (L4→L2/3→L5).
 
 **How the Real Brain Does It**:
 ===============================
@@ -61,7 +84,7 @@ Our Design:
     │   Brain      │  Cortex → Hippocampus → PFC → Striatum
     └──────────────┘
 
-FILE ORGANIZATION (1058 lines)
+FILE ORGANIZATION (1058 lines):
 ===============================
 Lines 1-85:    Module docstring, imports
 Lines 86-215:  SensoryPathwayConfig, VisualConfig classes

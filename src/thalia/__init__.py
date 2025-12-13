@@ -118,7 +118,7 @@ from thalia.learning import (
 )
 
 # Pathways
-from thalia.integration import SpikingPathway
+from thalia.pathways.spiking_pathway import SpikingPathway
 
 # Visualization (optional - requires manim)
 # try:

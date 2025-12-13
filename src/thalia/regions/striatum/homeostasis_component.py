@@ -42,7 +42,6 @@ class HomeostasisManagerConfig(BaseConfig):
     w_max: float = 1.0
 
 
-
 class StriatumHomeostasisComponent(HomeostasisComponent):
     """Manages homeostatic regulation for striatal D1/D2 pathways.
 
@@ -215,7 +214,4 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
         return diag
 
 
-# Backwards compatibility alias
-HomeostasisManager = StriatumHomeostasisComponent
-
-__all__ = ["StriatumHomeostasisComponent", "HomeostasisManagerConfig", "HomeostasisManager"]
+__all__ = ["StriatumHomeostasisComponent", "HomeostasisManagerConfig"]

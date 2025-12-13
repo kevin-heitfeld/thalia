@@ -1,8 +1,47 @@
 """
-Checkpoint Manager for Striatum
+Striatum Checkpoint Manager - State Serialization and Restoration
 
-Handles state serialization and deserialization for checkpointing.
-Separates the complexity of state management from core Striatum logic.
+This component manages checkpoint serialization and deserialization for the
+Striatum region, extracted from the main Striatum class to improve separation
+of concerns and maintainability.
+
+**Responsibilities:**
+- Serialize complete striatum state (weights, eligibility, exploration, etc.)
+- Deserialize and restore state from checkpoints
+- Handle backward compatibility with older checkpoint formats
+- Manage version migration for checkpoint schema changes
+- Provide get_full_state() and restore_from_state() interface
+
+**Used By:**
+- `Striatum` (main region class)
+- Training scripts that save/load checkpoints
+- Curriculum learning system for stage transitions
+
+**Coordinates With:**
+- `D1Pathway` and `D2Pathway`: Serializes pathway weights and eligibility traces
+- `StriatumStateTracker`: Serializes vote accumulators and trial state
+- `ExplorationComponent`: Serializes exploration parameters
+- `LearningComponent`: Serializes learning history and statistics
+- `StriatumHomeostasisComponent`: Serializes homeostatic state
+
+**Why Extracted:**
+- Orthogonal concern: State management is separate from forward/learning logic
+- Complexity reduction: Checkpoint code is ~200 lines, cluttered main class
+- Testability: Can test serialization/deserialization independently
+- Maintainability: Checkpoint format changes isolated to single module
+- Backward compatibility: Version migration logic centralized
+
+**Checkpoint Format:**
+The full state dict contains:
+- `neuron_state`: Membrane potentials, dimensions
+- `pathway_state`: D1/D2 weights, eligibility traces
+- `learning_state`: Vote accumulators, trial statistics, homeostasis
+- `exploration_state`: Exploration parameters and history
+- `last_action`: Most recent action for credit assignment
+- `td_lambda_state`: TD(λ) eligibility traces (if enabled)
+
+Author: Thalia Project
+Date: December 9, 2025 (extracted during striatum refactoring)
 """
 
 from __future__ import annotations
@@ -49,6 +88,9 @@ class CheckpointManager:
             ),
             "n_output": s.config.n_output,
             "n_input": s.config.n_input,
+            # Elastic tensor capacity tracking (Phase 1)
+            "n_neurons_active": s.n_neurons_active,
+            "n_neurons_capacity": s.n_neurons_capacity,
         }
 
         # 2. PATHWAY STATE (D1/D2 weights, eligibility, etc.)
@@ -114,6 +156,7 @@ class CheckpointManager:
         }
 
         return {
+            "format_version": "1.0.0",  # Checkpoint format version
             "neuron_state": neuron_state,
             "pathway_state": pathway_state,
             "learning_state": learning_state,
@@ -127,15 +170,78 @@ class CheckpointManager:
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Restore complete striatum state from checkpoint.
 
+        Supports elastic tensor format (Phase 1):
+        - Auto-grows if checkpoint has more neurons than current brain
+        - Partial restore if checkpoint has fewer neurons
+        - Validates capacity metadata
+
         Args:
             state: Dict from get_full_state()
         """
         s = self.striatum
 
-        # 1. RESTORE NEURON STATE
+        # PHASE 1: ELASTIC TENSOR CAPACITY HANDLING
+        # Check if checkpoint has capacity metadata (new format)
         neuron_state = state["neuron_state"]
-        if s.d1_neurons is not None and neuron_state["membrane_potential"] is not None:
-            s.d1_neurons.membrane = neuron_state["membrane_potential"].to(s.device)
+
+        if "n_neurons_active" in neuron_state and "n_neurons_capacity" in neuron_state:
+            # New elastic tensor format
+            checkpoint_active = neuron_state["n_neurons_active"]
+            checkpoint_capacity = neuron_state["n_neurons_capacity"]
+
+            # Validate capacity
+            if checkpoint_capacity < checkpoint_active:
+                raise ValueError(
+                    f"Checkpoint capacity ({checkpoint_capacity}) less than active "
+                    f"neurons ({checkpoint_active}). Corrupted checkpoint?"
+                )
+
+            # Auto-grow if checkpoint has more neurons than current brain
+            if checkpoint_active > s.n_neurons_active:
+                n_grow_neurons = checkpoint_active - s.n_neurons_active
+
+                # Convert neuron count to action count (for population coding)
+                n_grow_actions = n_grow_neurons // s.neurons_per_action
+                if n_grow_neurons % s.neurons_per_action != 0:
+                    raise ValueError(
+                        f"Checkpoint neuron count ({checkpoint_active}) is not aligned with "
+                        f"population coding ({s.neurons_per_action} neurons/action). "
+                        f"Cannot auto-grow brain."
+                    )
+
+                import warnings
+                warnings.warn(
+                    f"Checkpoint has {checkpoint_active} neurons but brain has "
+                    f"{s.n_neurons_active}. Auto-growing by {n_grow_actions} actions "
+                    f"({n_grow_neurons} neurons).",
+                    UserWarning
+                )
+                s.add_neurons(n_new=n_grow_actions)
+
+            # Warn if checkpoint has fewer neurons
+            elif checkpoint_active < s.n_neurons_active:
+                import warnings
+                warnings.warn(
+                    f"Checkpoint has {checkpoint_active} neurons but brain has "
+                    f"{s.n_neurons_active}. Will restore {checkpoint_active} neurons, "
+                    f"remaining {s.n_neurons_active - checkpoint_active} keep current state.",
+                    UserWarning
+                )
+        else:
+            # Old format without capacity metadata - assume full restore
+            import warnings
+            warnings.warn(
+                "Loading checkpoint from old format without capacity metadata. "
+                "Assuming checkpoint size matches brain size.",
+                UserWarning
+            )
+
+        # 1. RESTORE NEURON STATE
+        if s.d1_neurons is not None and neuron_state.get("membrane_potential") is not None:
+            membrane = neuron_state["membrane_potential"].to(s.device)
+            # Partial restore: only copy up to checkpoint size
+            n_restore = min(membrane.shape[0], s.d1_neurons.membrane.shape[0])
+            s.d1_neurons.membrane[:n_restore] = membrane[:n_restore]
 
         # 2. RESTORE PATHWAY STATE
         pathway_state = state["pathway_state"]
@@ -159,7 +265,7 @@ class CheckpointManager:
         if s.homeostasis_manager is not None:
             # Try new format first, fall back to old format
             if "homeostasis_manager_state" in learning_state and learning_state["homeostasis_manager_state"] is not None:
-                s.homeostasis_manager.load_state(learning_state["homeostasis_manager_state"])
+                s.homeostasis_manager.unified_homeostasis.load_state(learning_state["homeostasis_manager_state"])
 
         # 4. RESTORE EXPLORATION STATE (delegate to ExplorationManager)
         exploration_state = state["exploration_state"]

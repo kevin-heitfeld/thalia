@@ -204,6 +204,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         self.striatum_config: StriatumConfig = config  # type: ignore
 
+        # Validate configuration
+        if config.n_output <= 0:
+            raise ValueError(f"n_output must be positive, got {config.n_output}")
+
         # =====================================================================
         # POPULATION CODING SETUP
         # =====================================================================
@@ -222,6 +226,21 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             self.neurons_per_action = 1
 
         super().__init__(config)
+
+        # =====================================================================
+        # ELASTIC TENSOR CAPACITY TRACKING (Phase 1 - Growth Support)
+        # =====================================================================
+        # Track active vs total capacity for elastic tensor checkpoint format
+        # n_neurons_active: Number of neurons currently in use
+        # n_neurons_capacity: Total allocated memory (includes reserved space)
+        self.n_neurons_active = config.n_output
+        if self.striatum_config.growth_enabled:
+            # Pre-allocate extra capacity for fast growth
+            reserve_multiplier = 1.0 + self.striatum_config.reserve_capacity
+            self.n_neurons_capacity = int(config.n_output * reserve_multiplier)
+        else:
+            # No reserved capacity
+            self.n_neurons_capacity = config.n_output
 
         # =====================================================================
         # STATE TRACKER - Temporal State Management
@@ -817,6 +836,17 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self.n_actions += n_new
         self.config = replace(self.config, n_output=new_n_output)
         self.striatum_config = replace(self.striatum_config, n_output=new_n_output)
+
+        # Update elastic tensor capacity tracking (Phase 1)
+        self.n_neurons_active = new_n_output
+        # Check if we need to expand capacity
+        if self.n_neurons_active > self.n_neurons_capacity:
+            # Growth exceeded reserved capacity - reallocate with new headroom
+            if self.striatum_config.growth_enabled:
+                reserve_multiplier = 1.0 + self.striatum_config.reserve_capacity
+                self.n_neurons_capacity = int(self.n_neurons_active * reserve_multiplier)
+            else:
+                self.n_neurons_capacity = self.n_neurons_active
 
         # =====================================================================
         # 3. EXPAND STATE TENSORS using base helper
@@ -1660,7 +1690,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self.checkpoint_manager.load_full_state(state)
 
         # Restore tonic dopamine if present in neuromodulator state
-
         if "neuromodulator_state" in state:
             if "tonic_dopamine" in state["neuromodulator_state"]:
                 self.tonic_dopamine = state["neuromodulator_state"]["tonic_dopamine"]

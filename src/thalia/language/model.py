@@ -11,11 +11,11 @@ Architecture:
     Text Input
          │
          ▼
-    ┌──────────────┐
-    │ LanguagePathway │  (from thalia.sensory)
+    ┌─────────────────┐
+    │ LanguagePathway │  (from thalia.pathways)
     │   Token → SDR   │
     │   → Spikes      │
-    └───────┬────────┘
+    └───────┬─────────┘
             │
             ▼
     ┌──────────────────┐

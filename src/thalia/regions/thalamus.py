@@ -99,6 +99,29 @@ from thalia.components.neurons.neuron_factory import create_relay_neurons, creat
 from thalia.regions.base import NeuralComponent, NeuralComponentConfig, NeuralComponentState
 from thalia.managers.component_registry import register_region
 from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.regulation.region_constants import (
+    THALAMUS_BURST_THRESHOLD,
+    THALAMUS_TONIC_THRESHOLD,
+    THALAMUS_BURST_SPIKE_COUNT,
+    THALAMUS_BURST_GAIN,
+    THALAMUS_ALPHA_SUPPRESSION,
+    THALAMUS_ALPHA_GATE_THRESHOLD,
+    THALAMUS_TRN_RATIO,
+    THALAMUS_TRN_INHIBITION,
+    THALAMUS_TRN_RECURRENT,
+    THALAMUS_SPATIAL_FILTER_WIDTH,
+    THALAMUS_CENTER_EXCITATION,
+    THALAMUS_SURROUND_INHIBITION,
+    THALAMUS_RELAY_STRENGTH,
+    THALAMUS_NE_GAIN_SCALE,
+    THALAMUS_MODE_THRESHOLD,
+    THALAMUS_RELAY_SPARSITY,
+    THALAMUS_RELAY_SCALE,
+    THALAMUS_TRN_FEEDBACK_SPARSITY,
+    THALAMUS_TRN_FEEDBACK_SCALE,
+    THALAMUS_TRN_FEEDFORWARD_SPARSITY,
+    THALAMUS_SPATIAL_CENTER_SPARSITY,
+)
 
 
 @dataclass
@@ -113,47 +136,47 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     """
 
     # Relay parameters
-    relay_strength: float = 1.2
+    relay_strength: float = THALAMUS_RELAY_STRENGTH
     """Base relay gain (thalamus amplifies weak inputs)."""
 
     # Mode switching
-    burst_threshold: float = -0.2
+    burst_threshold: float = THALAMUS_BURST_THRESHOLD
     """Membrane potential threshold for burst mode (hyperpolarized)."""
 
-    tonic_threshold: float = 0.3
+    tonic_threshold: float = THALAMUS_TONIC_THRESHOLD
     """Membrane potential threshold for tonic mode (depolarized)."""
 
-    burst_spike_count: int = 3
+    burst_spike_count: int = THALAMUS_BURST_SPIKE_COUNT
     """Number of spikes in a burst (typically 2-5)."""
 
-    burst_gain: float = 2.0
+    burst_gain: float = THALAMUS_BURST_GAIN
     """Amplification factor for burst mode (alerting signal)."""
 
     # Attention gating (alpha oscillation)
-    alpha_suppression_strength: float = 0.5
+    alpha_suppression_strength: float = THALAMUS_ALPHA_SUPPRESSION
     """How strongly alpha suppresses unattended inputs (0-1)."""
 
-    alpha_gate_threshold: float = 0.0
+    alpha_gate_threshold: float = THALAMUS_ALPHA_GATE_THRESHOLD
     """Alpha phase threshold for suppression (0 = trough, π = peak)."""
 
     # TRN (inhibitory shell) - simplified
-    trn_ratio: float = 0.2
+    trn_ratio: float = THALAMUS_TRN_RATIO
     """TRN neurons as fraction of relay neurons."""
 
-    trn_inhibition_strength: float = 0.3
+    trn_inhibition_strength: float = THALAMUS_TRN_INHIBITION
     """Strength of TRN → relay inhibition."""
 
-    trn_recurrent_strength: float = 0.4
+    trn_recurrent_strength: float = THALAMUS_TRN_RECURRENT
     """TRN recurrent inhibition (for oscillations)."""
 
     # Sensory filtering
-    spatial_filter_width: float = 0.15
+    spatial_filter_width: float = THALAMUS_SPATIAL_FILTER_WIDTH
     """Gaussian filter width for center-surround (as fraction of input)."""
 
-    center_excitation: float = 1.5
+    center_excitation: float = THALAMUS_CENTER_EXCITATION
     """Center enhancement in receptive field."""
 
-    surround_inhibition: float = 0.5
+    surround_inhibition: float = THALAMUS_SURROUND_INHIBITION
     """Surround suppression in receptive field."""
 
 
@@ -248,8 +271,8 @@ class ThalamicRelay(NeuralComponent):
             WeightInitializer.sparse_random(
                 n_output=self.n_trn,
                 n_input=config.n_input,
-                sparsity=0.3,
-                scale=0.3,
+                sparsity=THALAMUS_RELAY_SPARSITY,
+                scale=THALAMUS_RELAY_SCALE,
                 device=self.device,
             )
         )
@@ -259,8 +282,8 @@ class ThalamicRelay(NeuralComponent):
             WeightInitializer.sparse_random(
                 n_output=self.n_trn,
                 n_input=self.n_relay,
-                sparsity=0.2,
-                scale=0.4,
+                sparsity=THALAMUS_TRN_FEEDBACK_SPARSITY,
+                scale=THALAMUS_TRN_FEEDBACK_SCALE,
                 device=self.device,
             )
         )
@@ -270,7 +293,7 @@ class ThalamicRelay(NeuralComponent):
             WeightInitializer.sparse_random(
                 n_output=self.n_relay,
                 n_input=self.n_trn,
-                sparsity=0.3,
+                sparsity=THALAMUS_TRN_FEEDFORWARD_SPARSITY,
                 scale=config.trn_inhibition_strength,
                 device=self.device,
             )
@@ -281,7 +304,7 @@ class ThalamicRelay(NeuralComponent):
             WeightInitializer.sparse_random(
                 n_output=self.n_trn,
                 n_input=self.n_trn,
-                sparsity=0.2,
+                sparsity=THALAMUS_SPATIAL_CENTER_SPARSITY,
                 scale=config.trn_recurrent_strength,
                 device=self.device,
             )
@@ -390,7 +413,7 @@ class ThalamicRelay(NeuralComponent):
         # gate = 1 - strength × (1 + cos(phase)) / 2
         # This gives: phase=0 → gate=1-strength, phase=π → gate=1.0
 
-        alpha_modulation = 0.5 * (1.0 + math.cos(self._alpha_phase))
+        alpha_modulation = THALAMUS_ALPHA_SUPPRESSION * (1.0 + math.cos(self._alpha_phase))
         gate = 1.0 - self.thalamus_config.alpha_suppression_strength * alpha_modulation
 
         # Broadcast to all neurons (ADR-005: 1D)
@@ -485,7 +508,7 @@ class ThalamicRelay(NeuralComponent):
         relay_excitation = gated_input * self.relay_gain  # [n_relay]
 
         # Apply norepinephrine gain modulation (arousal)
-        ne_gain = 1.0 + 0.5 * self.state.norepinephrine  # [1.0, 1.5]
+        ne_gain = 1.0 + THALAMUS_NE_GAIN_SCALE * self.state.norepinephrine
         relay_excitation = relay_excitation * ne_gain
 
         # TRN inhibition of relay
@@ -510,7 +533,7 @@ class ThalamicRelay(NeuralComponent):
         current_mode = self._determine_mode(relay_membrane)  # [n_relay]
 
         # In burst mode, amplify spikes (convert bool to float temporarily)
-        burst_mask = current_mode < 0.5  # Burst mode, [n_relay]
+        burst_mask = current_mode < THALAMUS_MODE_THRESHOLD  # Burst mode, [n_relay]
         burst_amplified = relay_spikes.float()  # [n_relay]
 
         if burst_mask.any():
@@ -522,7 +545,7 @@ class ThalamicRelay(NeuralComponent):
             )
 
         # Binarize and convert to bool (ADR-004)
-        relay_output = burst_amplified > 0.5  # [n_relay], bool
+        relay_output = burst_amplified > THALAMUS_MODE_THRESHOLD  # [n_relay], bool
 
         # =====================================================================
         # 5. TRN NEURONS: Input collaterals + Relay collaterals
@@ -617,7 +640,7 @@ class ThalamicRelay(NeuralComponent):
 
         # Mode distribution (thalamus-specific)
         if self.state.current_mode is not None:
-            burst_fraction = (self.state.current_mode < 0.5).float().mean().item()
+            burst_fraction = (self.state.current_mode < THALAMUS_MODE_THRESHOLD).float().mean().item()
             custom["burst_mode_fraction"] = burst_fraction
             custom["tonic_mode_fraction"] = 1.0 - burst_fraction
 

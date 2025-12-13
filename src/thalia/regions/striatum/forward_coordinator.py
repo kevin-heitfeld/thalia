@@ -1,15 +1,53 @@
 """
-Striatum Forward Pass Coordinator - D1/D2 Pathway Coordination
+Striatum Forward Pass Coordinator - D1/D2 Pathway Orchestration
 
-Manages the complex forward pass logic for the striatum including:
-- D1/D2 pathway activation computation
-- Theta/beta oscillator modulation
-- Tonic dopamine and norepinephrine gain modulation
-- Goal-conditioned modulation (PFC → Striatum)
-- Activity-based excitability modulation (homeostasis)
+This component manages the complex forward pass logic for the striatum,
+extracted from the main Striatum class to isolate the ~300 lines of
+forward pass coordination into a focused, maintainable module.
 
-This extracts the ~300 lines of forward pass coordination logic
-from the main Striatum class into a focused coordinator.
+**Responsibilities:**
+- Compute D1/D2 pathway activations from cortical/thalamic inputs
+- Apply theta/beta oscillator modulation (action selection timing)
+- Apply neuromodulator gain modulation (tonic DA, norepinephrine)
+- Apply goal-conditioned modulation (PFC → Striatum gating)
+- Apply homeostatic excitability modulation (prevent silencing/runaway)
+- Run D1/D2 neurons to generate spikes
+- Update recent spike history for lateral inhibition
+- Coordinate between D1 pathway (Go) and D2 pathway (NoGo)
+
+**Used By:**
+- `Striatum.forward()` (main forward pass entry point)
+
+**Coordinates With:**
+- `D1Pathway`: Computes D1 activations, manages D1 weights/eligibility
+- `D2Pathway`: Computes D2 activations, manages D2 weights/eligibility
+- `ConductanceLIF`: D1/D2 neuron populations (membrane dynamics)
+- `StriatumHomeostasisComponent`: Provides excitability scaling factors
+- `StriatumStateTracker`: Updates recent_spikes and last spikes
+- PFC modulation weights: Goal-conditioned gating of striatal activity
+
+**Why Extracted:**
+- Complexity: Forward pass was ~300 lines in main class
+- Orthogonal concern: Activation computation separate from learning/decisions
+- Testability: Can test forward dynamics without learning logic
+- Maintainability: Oscillator/neuromodulator logic isolated
+- Reusability: Could be reused for different striatal configurations
+
+**Biological Context:**
+- Theta oscillations (4-8 Hz): Time action selection windows
+- Beta oscillations (15-30 Hz): Suppress premature actions (NoGo)
+- Tonic dopamine: Baseline motivation, higher DA → more D1 (Go) activity
+- Norepinephrine: Arousal-dependent gain modulation
+- PFC gating: Top-down goal selection (frontostriatal loops)
+
+**Key Methods:**
+- `forward()`: Main forward pass orchestration
+- `set_oscillator_phases()`: Update theta/beta phase from brain clock
+- `set_norepinephrine()`: Update NE level from neuromodulator system
+- `set_tonic_dopamine()`: Update baseline DA level
+
+Author: Thalia Project
+Date: December 9, 2025 (extracted during striatum refactoring)
 """
 
 from __future__ import annotations
