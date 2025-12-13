@@ -11,7 +11,13 @@ from thalia.regions.multisensory import MultimodalIntegration, MultimodalIntegra
 
 
 @pytest.fixture
-def multimodal_config():
+def device():
+    """Device for testing (CPU by default, can be parametrized for CUDA)."""
+    return torch.device("cpu")
+
+
+@pytest.fixture
+def multimodal_config(device):
     """Create test configuration."""
     return MultimodalIntegrationConfig(
         n_input=100,  # Not used (separate inputs)
@@ -23,7 +29,7 @@ def multimodal_config():
         auditory_pool_ratio=0.3,
         language_pool_ratio=0.2,
         integration_pool_ratio=0.2,
-        device="cpu",
+        device=str(device),
         dt_ms=1.0,
     )
 

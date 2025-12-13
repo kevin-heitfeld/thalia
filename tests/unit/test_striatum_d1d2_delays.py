@@ -22,13 +22,19 @@ from thalia.regions.striatum import Striatum, StriatumConfig
 
 
 @pytest.fixture
-def striatum_config_with_delays():
+def device():
+    """Device for testing (CPU by default, can be parametrized for CUDA)."""
+    return torch.device("cpu")
+
+
+@pytest.fixture
+def striatum_config_with_delays(device):
     """Striatum configuration with explicit D1/D2 pathway delays."""
     return StriatumConfig(
         n_input=50,
         n_output=4,  # 4 actions
         dt_ms=1.0,  # 1ms timesteps
-        device="cpu",
+        device=str(device),
         # Configure different delays for D1 and D2
         d1_to_output_delay_ms=15.0,  # D1 direct pathway: 15ms
         d2_to_output_delay_ms=25.0,  # D2 indirect pathway: 25ms (slower!)
@@ -38,13 +44,13 @@ def striatum_config_with_delays():
 
 
 @pytest.fixture
-def striatum_config_no_delays():
+def striatum_config_no_delays(device):
     """Striatum configuration with zero delays (backward compatibility)."""
     return StriatumConfig(
         n_input=50,
         n_output=4,
         dt_ms=1.0,
-        device="cpu",
+        device=str(device),
         d1_to_output_delay_ms=0.0,  # No delay
         d2_to_output_delay_ms=0.0,  # No delay
         population_coding=False,

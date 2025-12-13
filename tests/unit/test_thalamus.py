@@ -16,13 +16,19 @@ from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
 @pytest.fixture
-def thalamus_config():
+def device():
+    """Device for testing (CPU by default, can be parametrized for CUDA)."""
+    return torch.device("cpu")
+
+
+@pytest.fixture
+def thalamus_config(device):
     """Standard thalamus configuration."""
     return ThalamicRelayConfig(
         n_input=100,
         n_output=80,
         dt_ms=1.0,
-        device="cpu",
+        device=str(device),
     )
 
 
@@ -45,10 +51,10 @@ def test_thalamus_initialization(thalamus_config):
     assert thal.center_surround_filter.shape == (80, 100)
 
 
-def test_thalamus_forward(thalamus):
+def test_thalamus_forward(thalamus, device):
     """Test basic forward pass."""
     # Create input spikes (ADR-004: bool, ADR-005: 1D)
-    input_spikes = torch.rand(100) > 0.8  # 20% firing rate, [100], bool
+    input_spikes = torch.rand(100, device=device) > 0.8  # 20% firing rate, [100], bool
 
     # Forward pass
     output = thalamus(input_spikes)
@@ -65,10 +71,10 @@ def test_thalamus_forward(thalamus):
     assert thalamus.state.trn_spikes is not None
 
 
-def test_thalamus_alpha_gating(thalamus):
+def test_thalamus_alpha_gating(thalamus, device):
     """Test alpha oscillation attentional gating."""
     # ADR-004/005: 1D bool input
-    input_spikes = torch.rand(100) > 0.5  # 50% firing rate
+    input_spikes = torch.rand(100, device=device) > 0.5  # 50% firing rate
 
     # Test at alpha trough (phase=0) - weak suppression
     thalamus.set_oscillator_phases(

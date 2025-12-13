@@ -490,32 +490,61 @@ def __init__(self, config):
     self.membrane = torch.zeros(config.n_neurons).to(config.device)  # Wasteful
 ```
 
-### Pattern 2: Use WeightInitializer for Weights
+### Pattern 2: Use WeightInitializer for Weights ⭐ REQUIRED
 
 **Rule**: For weight matrices, ALWAYS use the `WeightInitializer` registry.
 
+**Why WeightInitializer?**
+- ✅ **Biological Accuracy**: Each method has documented biological rationale
+- ✅ **Consistency**: Same patterns across all regions and pathways
+- ✅ **Device Management**: Built-in device parameter
+- ✅ **Discoverability**: All initialization strategies in one place
+- ✅ **No Magic Numbers**: Parameters have clear biological meaning
+
 ```python
-from thalia.utils.weight_initializer import WeightInitializer
+from thalia.components.synapses.weight_init import WeightInitializer
 
 # ✅ CORRECT: Use WeightInitializer with device
 weights = WeightInitializer.gaussian(
     n_output=100,
     n_input=50,
-    mean=0.3,
-    std=0.1,
-    device=config.device  # Always pass device
+    mean=0.3,      # Initial synaptic strength
+    std=0.1,       # Variability
+    device=config.device
 )
 
 weights = WeightInitializer.xavier(n_output, n_input, device=device)
 weights = WeightInitializer.sparse_random(
     n_output, n_input,
-    sparsity=0.2,
+    sparsity=0.2,  # 20% connectivity (cortical ~5-15%)
+    device=device
+)
+
+# Topographic connections (e.g., visual cortex)
+weights = WeightInitializer.topographic(
+    n_output, n_input,
+    sigma=2.0,  # Spatial spread
     device=device
 )
 
 # ❌ INCORRECT: Direct torch initialization
 weights = torch.randn(100, 50) * 0.1  # No device, no biological meaning
+weights = torch.rand(100, 50)  # What distribution? What biological basis?
 ```
+
+**Available Initialization Strategies**:
+
+| **Method** | **Biological Use Case** | **Example** |
+|---|---|---|
+| `gaussian()` | General synaptic weights | Cortex, Cerebellum |
+| `xavier()` | Fan-in scaled weights | Prefrontal, deep networks |
+| `sparse_random()` | Biological connectivity (~5-15%) | Hippocampus DG→CA3 |
+| `topographic()` | Spatial maps | Visual/auditory cortex |
+| `orthogonal()` | Decorrelated representations | Attention pathways |
+| `uniform()` | Positive-only weights | Some striatal connections |
+| `zeros()` / `ones()` | Specific initialization | Bias terms |
+
+**Documentation**: See `src/thalia/components/synapses/weight_init.py` for detailed documentation of each method and its biological motivation.
 
 ### Pattern 3: Move External Data to Device
 
