@@ -91,6 +91,7 @@ from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
 from .memory_component import HippocampusMemoryComponent
+from .checkpoint_manager import HippocampusCheckpointManager
 
 
 @register_region(
@@ -380,6 +381,9 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # State
         self.state = HippocampusState()
+
+        # Checkpoint manager for neuromorphic format support
+        self.checkpoint_manager = HippocampusCheckpointManager(self)
 
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights created in _init_circuit_weights."""

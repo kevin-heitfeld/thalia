@@ -1,7 +1,7 @@
 # Checkpoint-Growth Compatibility Analysis
 
-**Status**: 🟢 PHASE 1 & 2 COMPLETE - Phase 3 in progress  
-**Date**: December 13, 2025  
+**Status**: 🟢 PHASE 1 & 2 COMPLETE - Phase 3 in progress
+**Date**: December 13, 2025
 **Priority**: HIGH - Training continuity improvements
 
 **Progress**:
@@ -133,13 +133,13 @@ From `CheckpointManager.load_full_state()`:
 def load_full_state(self, state: Dict[str, Any]) -> None:
     # NO dimension validation!
     # Directly assigns tensors assuming dimensions match
-    
+
     s.d1_neurons.membrane = state["neuron_state"]["membrane_potential"].to(s.device)
     # ❌ If checkpoint has n_output=5 but current has n_output=7, this crashes
-    
+
     s.d1_pathway.load_state(state["pathway_state"]["d1_state"])
     # ❌ Tries to load [5, n_input] weights into [7, n_input] parameters
-    
+
     s.state_tracker._d1_votes_accumulated = state["learning_state"]["d1_votes_accumulated"]
     # ❌ [5] tensor loaded into variable expecting [7]
 ```
@@ -152,7 +152,7 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 
 ### Phase 1: Elastic Tensor Format ✅ COMPLETE
 
-**Implemented**: December 13, 2025  
+**Implemented**: December 13, 2025
 **Tests**: 19/19 passing in `test_checkpoint_growth_elastic.py`
 
 **Features**:
@@ -166,7 +166,7 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 
 ### Phase 2: Neuromorphic Format ✅ COMPLETE
 
-**Implemented**: December 13, 2025  
+**Implemented**: December 13, 2025
 **Tests**: 24/24 passing in `test_checkpoint_growth_neuromorphic.py`
 
 **Features**:
@@ -249,27 +249,27 @@ From `Striatum.add_neurons()`:
 ```python
 def add_neurons(self, n_new: int, ...) -> None:
     """Add n_new actions (each action = neurons_per_action neurons)"""
-    
+
     # 1. Expand weight matrices
     self.d1_pathway.weights = self._expand_weights(
         current_weights=self.d1_pathway.weights,  # [old_n_output, n_input]
         n_new=n_new_neurons,
         initialization='xavier',
     )  # Returns [new_n_output, n_input]
-    
+
     # 2. Update config
     self.n_actions += n_new
     self.config = replace(self.config, n_output=new_n_output)
-    
+
     # 3. Expand state tensors
     self.d1_eligibility = torch.cat([
         self.d1_eligibility,
         torch.zeros(n_new_neurons, n_input, device=self.device)
     ])
-    
+
     # 4. Expand neurons (recreates with new size)
     self.d1_neurons = self._recreate_neurons_with_state(...)
-    
+
     # 5. Expand action-level tracking
     self._d1_votes_accumulated = torch.cat([
         self._d1_votes_accumulated,
@@ -413,7 +413,7 @@ This works for traditional deep learning (fixed architecture), but fails for **d
 def load_full_state(self, state: Dict[str, Any]) -> None:
     checkpoint_n_output = state["neuron_state"]["n_output"]
     current_n_output = self.striatum.config.n_output
-    
+
     if checkpoint_n_output != current_n_output:
         # Mismatch detected!
         if checkpoint_n_output < current_n_output:
@@ -431,7 +431,7 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
                 f"into brain with {current_n_output} neurons. "
                 f"Please grow brain first: add_neurons({checkpoint_n_output - current_n_output})"
             )
-    
+
     # Now dimensions match, proceed with normal loading
     ...
 ```
@@ -453,24 +453,24 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 def load_full_state(self, state: Dict[str, Any]) -> None:
     checkpoint_n_output = state["neuron_state"]["n_output"]
     current_n_output = self.striatum.config.n_output
-    
+
     if checkpoint_n_output > current_n_output:
         # Checkpoint from grown brain, current brain smaller
         n_growth = checkpoint_n_output - current_n_output
         logger.info(f"Auto-growing brain by {n_growth} neurons to match checkpoint")
-        
+
         # Grow current brain BEFORE loading checkpoint
         self.striatum.add_neurons(n_new=n_growth, initialization='zeros')
-        
+
     elif checkpoint_n_output < current_n_output:
         # Checkpoint from smaller brain, current brain grown
         # Option A: Pad checkpoint tensors with zeros
         logger.info(f"Padding checkpoint tensors to match grown brain")
         state = self._pad_checkpoint_tensors(state, current_n_output)
-        
+
         # Option B: Shrink current brain
         # (See Option 1)
-    
+
     # Now load as normal
     ...
 ```
@@ -502,17 +502,17 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 # During load
 def load_full_state(self, state: Dict[str, Any]) -> None:
     base_n_output = state["metadata"]["base_n_output"]
-    
+
     # 1. Shrink/grow brain to base architecture
     self._resize_to_base(base_n_output)
-    
+
     # 2. Replay growth history
     for growth_event in state["metadata"]["growth_history"]:
         self.striatum.add_neurons(
             n_new=growth_event["n_added"],
             initialization=growth_event["init"],
         )
-    
+
     # 3. Now dimensions match, load tensors
     self._load_tensors(state)
 ```
@@ -535,7 +535,7 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 def load_full_state(self, state: Dict[str, Any]) -> None:
     checkpoint_n_output = state["neuron_state"]["n_output"]
     current_n_output = self.striatum.config.n_output
-    
+
     if checkpoint_n_output != current_n_output:
         raise CheckpointDimensionMismatch(
             f"Checkpoint incompatible: checkpoint has {checkpoint_n_output} neurons, "
@@ -545,7 +545,7 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
             f"\n2. Use resize_brain_to_checkpoint() helper"
             f"\n3. Implement manual migration"
         )
-    
+
     # Proceed only if dimensions match
     ...
 ```
@@ -582,7 +582,7 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
        checkpoint_path: str
    ) -> Brain:
        """Recreate brain with dimensions from checkpoint.
-       
+
        WARNING: Discards current brain state!
        """
        metadata = load_checkpoint_metadata(checkpoint_path)
@@ -640,7 +640,7 @@ checkpoint = {
         },
         {
             "id": "striatum_d1_neuron_1",
-            # ... 
+            # ...
         },
         # ... one dict per neuron
     ]
@@ -650,7 +650,7 @@ checkpoint = {
 def load_checkpoint(brain, checkpoint):
     for neuron_data in checkpoint["neurons"]:
         neuron_id = neuron_data["id"]
-        
+
         if neuron_id in brain.neurons:
             # Existing neuron - restore state
             brain.neurons[neuron_id].membrane = neuron_data["membrane"]
@@ -698,7 +698,7 @@ checkpoint = {
     "synapses": [
         {
             "source": "cortex_l4_neuron_42",
-            "target": "striatum_d1_neuron_0", 
+            "target": "striatum_d1_neuron_0",
             "weight": 0.3,
             "eligibility": 0.1,
             "created_step": 0,
@@ -757,19 +757,19 @@ def load_checkpoint(brain, checkpoint):
     # 1. Load base checkpoint
     base = load_base_checkpoint(checkpoint["base_checkpoint_id"])
     brain.weights = base["base_weights"].clone()
-    
+
     # 2. Apply growth events
     for event in checkpoint["growth_events"]:
         brain.add_neurons(event["added_actions"], init=event["init"])
-    
+
     # 3. Apply weight deltas
     for (i, j), delta in checkpoint["weight_deltas"].items():
         brain.weights[i, j] += delta
-    
+
     # 4. Insert new neuron weights
     for neuron_id, weights in checkpoint["new_neuron_weights"].items():
         brain.weights[neuron_id] = weights
-    
+
     # 5. Restore state
     brain.load_state(checkpoint["state"])
 ```
@@ -814,7 +814,7 @@ checkpoint = {
 def load_checkpoint(brain, checkpoint):
     checkpoint_used = checkpoint["weights_used"]
     current_capacity = brain.weights.shape[0]
-    
+
     if checkpoint_used <= current_capacity:
         # Checkpoint fits in current brain
         brain.weights[:checkpoint_used] = checkpoint["weights"][:checkpoint_used]
@@ -845,7 +845,7 @@ def load_checkpoint(brain, checkpoint):
 ```python
 checkpoint = {
     "format_version": "2.0.0",
-    
+
     # Static regions (large, rarely grow) - use elastic tensors
     "cortex": {
         "format": "elastic_tensor",
@@ -853,7 +853,7 @@ checkpoint = {
         "weights_used": n_active,
         "weights_capacity": capacity,
     },
-    
+
     # Dynamic regions (small, frequently grow) - use neuromorphic
     "striatum": {
         "format": "neuromorphic",
@@ -866,7 +866,7 @@ checkpoint = {
             # ...
         ],
     },
-    
+
     # Hippocampus - neuromorphic (neurogenesis happens here!)
     "hippocampus": {
         "format": "neuromorphic",
@@ -888,9 +888,9 @@ checkpoint = {
    - Use as testbed for neuromorphic approach
 
 3. **Phase 3** (Long-term - when needed):
-   - Extend neuromorphic format to hippocampus (neurogenesis)
+   - ✅ **COMPLETE**: Hybrid format for striatum with auto-selection
+   - ✅ **COMPLETE**: Extend neuromorphic format to hippocampus (neurogenesis ready)
    - Keep cortex/thalamus as elastic tensors (rarely grow)
-   - Add automatic format selection based on region size/growth frequency
 
 **Code Example**:
 
@@ -904,14 +904,14 @@ class CheckpointManager:
                 for region_name, region in self.brain.regions.items()
             }
         }
-    
+
     def _get_region_state(self, region: NeuralComponent) -> Dict[str, Any]:
         # Auto-select format based on region properties
         if region.growth_frequency > 0.1:  # Grows often
             return self._neuromorphic_format(region)
         else:
             return self._elastic_tensor_format(region)
-    
+
     def _elastic_tensor_format(self, region) -> Dict[str, Any]:
         return {
             "format": "elastic_tensor",
@@ -919,7 +919,7 @@ class CheckpointManager:
             "used": region.n_neurons_active,
             "capacity": region.weights.shape[0],
         }
-    
+
     def _neuromorphic_format(self, region) -> Dict[str, Any]:
         return {
             "format": "neuromorphic",
@@ -932,34 +932,34 @@ class CheckpointManager:
                 for i in range(region.n_neurons_active)
             ],
         }
-    
+
     def load_full_state(self, state: Dict[str, Any]) -> None:
         for region_name, region_state in state["regions"].items():
             region = self.brain.regions[region_name]
-            
+
             if region_state["format"] == "elastic_tensor":
                 self._load_elastic_tensor(region, region_state)
             elif region_state["format"] == "neuromorphic":
                 self._load_neuromorphic(region, region_state)
-    
+
     def _load_elastic_tensor(self, region, state):
         checkpoint_used = state["used"]
-        
+
         if checkpoint_used > region.n_neurons_capacity:
             # Grow region to fit checkpoint
             region._expand_capacity(checkpoint_used)
-        
+
         # Load active weights
         region.weights[:checkpoint_used] = state["weights"][:checkpoint_used]
         region.n_neurons_active = checkpoint_used
-    
+
     def _load_neuromorphic(self, region, state):
         # Build ID -> index mapping for current brain
         current_neuron_ids = {n.id: i for i, n in enumerate(region.neurons)}
-        
+
         for neuron_data in state["neurons"]:
             neuron_id = neuron_data["id"]
-            
+
             if neuron_id in current_neuron_ids:
                 # Restore existing neuron
                 idx = current_neuron_ids[neuron_id]
@@ -985,8 +985,8 @@ class CheckpointManager:
 
 **Recommended**: **Hybrid Neuromorphic (Option 5 + 8)**
 
-**Phase 1** (this week): Elastic tensors everywhere (simple, fast)  
-**Phase 2** (next sprint): Neuromorphic for striatum (testbed)  
+**Phase 1** (this week): Elastic tensors everywhere (simple, fast)
+**Phase 2** (next sprint): Neuromorphic for striatum (testbed)
 **Phase 3** (as needed): Extend neuromorphic to other dynamic regions
 
 This gives us:
@@ -1008,9 +1008,9 @@ def test_load_checkpoint_after_growth():
     """Cannot load old checkpoint into grown brain (expect failure)"""
     brain = create_brain(n_actions=5)
     checkpoint = save_checkpoint(brain)
-    
+
     brain.striatum.add_neurons(n_new=2)  # Grow to 7 actions
-    
+
     with pytest.raises(CheckpointDimensionMismatch):
         load_checkpoint(brain, checkpoint)
 
@@ -1018,10 +1018,10 @@ def test_load_checkpoint_then_grow():
     """Can load checkpoint then grow (dimensions match at load)"""
     brain = create_brain(n_actions=5)
     checkpoint = save_checkpoint(brain)
-    
+
     brain2 = create_brain(n_actions=5)  # Same initial size
     load_checkpoint(brain2, checkpoint)  # OK
-    
+
     brain2.striatum.add_neurons(n_new=2)  # Grow after load
     # Should work fine
 
@@ -1029,10 +1029,10 @@ def test_resize_brain_to_checkpoint():
     """Helper function resets brain to checkpoint dimensions"""
     brain = create_brain(n_actions=7)  # Grown
     checkpoint = save_checkpoint_with_n_actions(5)  # Old checkpoint
-    
+
     brain = reset_brain_to_checkpoint_dimensions(brain, checkpoint)
     assert brain.striatum.n_actions == 5
-    
+
     load_checkpoint(brain, checkpoint)  # Now works
 
 def test_growth_history_preserved():
@@ -1040,7 +1040,7 @@ def test_growth_history_preserved():
     brain = create_brain(n_actions=5)
     brain.striatum.add_neurons(n_new=2, step=1000)
     checkpoint = save_checkpoint(brain)
-    
+
     metadata = load_checkpoint_metadata(checkpoint)
     assert len(metadata["growth_history"]) == 1
     assert metadata["growth_history"][0]["n_added"] == 2
@@ -1107,19 +1107,19 @@ class CheckpointManager:
     - Full state serialization (weights, eligibility, exploration, etc.)
     - State restoration with backward compatibility
     - Version migration for old checkpoint formats
-    
+
     **IMPORTANT - Growth Compatibility**:
     Checkpoints are tied to brain architecture dimensions (n_output, n_actions).
     Loading a checkpoint into a brain with different dimensions will fail.
-    
+
     Safe operations:
     - Save → Load (same architecture) ✅
     - Load → Grow ✅
-    
+
     Unsafe operations:
     - Grow → Load old checkpoint ❌ (dimension mismatch)
     - Load grown checkpoint into smaller brain ❌
-    
+
     See docs/design/checkpoint_growth_compatibility.md for details.
     """
 ```
