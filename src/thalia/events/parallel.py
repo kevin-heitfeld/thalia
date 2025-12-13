@@ -70,18 +70,18 @@ Date: December 2025
 from __future__ import annotations
 
 import atexit
-import multiprocessing
-from multiprocessing import Process, Queue
+import torch
+import torch.multiprocessing as mp
+from torch.multiprocessing import Process, Queue
 from multiprocessing.synchronize import Event as MPEvent
 from queue import Empty
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any, Callable
-import torch
 
 # Ensure we use spawn method for consistency across platforms
 # This is required for Windows and makes the code more predictable
-if multiprocessing.get_start_method(allow_none=True) is None:
-    multiprocessing.set_start_method('spawn', force=False)
+if mp.get_start_method(allow_none=True) is None:
+    mp.set_start_method('spawn', force=False)
 
 from thalia.events.system import (
     Event, EventType, EventScheduler,
@@ -319,7 +319,7 @@ class ParallelExecutor:
         for name, creator in region_creators.items():
             self.input_queues[name] = Queue()
             self.output_queues[name] = Queue()
-            self.control_events[name] = multiprocessing.Event()  # Use factory function
+            self.control_events[name] = mp.Event()  # Use factory function
 
             process = Process(
                 target=worker_process,
