@@ -233,7 +233,6 @@ config = get_curriculum_growth_config(conservative=False)
 ## Documentation
 
 - Full strategy: `docs/design/curriculum_strategy.md`
-- Implementation: `docs/design/curriculum_implementation.md`
 - Getting started: `docs/GETTING_STARTED_CURRICULUM.md`
 - Example: `examples/curriculum_training_example.py`
 - Checkpoints: `docs/design/checkpoint_format.md`

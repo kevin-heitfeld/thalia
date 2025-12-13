@@ -255,13 +255,13 @@ viz = BrainActivityVisualization("checkpoint.thalia")
 # Render different types of videos
 viz.render_architecture("brain_arch.mp4", quality="high_quality")
 viz.render_spikes("spikes.mp4", n_timesteps=100)
-viz.render_learning("learning.mp4", 
+viz.render_learning("learning.mp4",
                    checkpoint_before="step_1000.thalia",
                    checkpoint_after="step_10000.thalia")
 viz.render_growth("growth.mp4", checkpoints=[...])
 ```
 
-**See**: `docs/MANIM_QUICK_REFERENCE.md` for full guide.
+**Note**: Animation guide documentation is planned for future release.
 
 ---
 
@@ -312,7 +312,7 @@ for step in range(total_steps):
     # Train
     output = brain.forward(input_data)
     brain.learn(...)
-    
+
     # Check health every 100 steps
     if step % 100 == 0:
         health = health_monitor.check_brain(brain)

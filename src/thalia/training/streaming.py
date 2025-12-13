@@ -93,7 +93,7 @@ Strategies for Preventing Catastrophic Forgetting:
 References:
 ===========
 - docs/design/curriculum_strategy.md - Training philosophy
-- docs/architecture/NEUROMODULATOR_CENTRALIZATION_COMPLETE.md - Homeostasis
+- docs/architecture/CENTRALIZED_SYSTEMS.md - Current centralized systems
 
 Author: Thalia Project
 Date: December 12, 2025 (Tier 3 Implementation)

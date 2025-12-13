@@ -8,8 +8,6 @@ Design Pattern: Template Method + DRY
 - Reduces duplication of tau_mem, v_rest, v_reset, v_threshold, tau_ref
 - Single source of truth for common neuron parameters
 - Child configs inherit and add model-specific parameters
-
-See: docs/reviews/architecture-review-2025-12-11.md - Tier 1 Item 1.2
 """
 
 from dataclasses import dataclass

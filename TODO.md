@@ -17,7 +17,7 @@
   - Already partially handled by oscillator frequency modulation
   - Could extract if needed for specific tasks
   - Not urgent given current capabilities
-  - See: `docs/architecture/CENTRALIZATION_ANALYSIS.md` for analysis
+  - See: `docs/architecture/CENTRALIZED_SYSTEMS.md` for details
 
 ---
 

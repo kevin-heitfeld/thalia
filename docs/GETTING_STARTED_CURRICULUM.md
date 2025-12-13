@@ -405,6 +405,5 @@ brain.set_threshold_multiplier(0.8)
 ## References
 
 - Curriculum strategy: `docs/design/curriculum_strategy.md`
-- Implementation plan: `docs/design/curriculum_implementation.md`
 - Checkpoint format: `docs/design/checkpoint_format.md`
 - Example code: `examples/curriculum_training_example.py`
