@@ -1,0 +1,351 @@
+"""
+Unit tests for hybrid checkpoint format (Phase 3) - Striatum only.
+
+Tests automatic format selection and loading for Striatum region.
+"""
+
+import pytest
+
+import torch
+
+from thalia.regions.striatum import Striatum
+from thalia.regions.striatum.config import StriatumConfig
+
+
+@pytest.fixture
+def device():
+    """Return device for testing."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+@pytest.fixture
+def small_striatum(device):
+    """Small striatum (should use neuromorphic format, no population coding)."""
+    config = StriatumConfig(
+        n_output=5,  # Small: 5 actions
+        n_input=100,
+        growth_enabled=True,
+        population_coding=False,
+        device=device,
+    )
+    striatum = Striatum(config)
+    striatum.reset_state()
+    return striatum
+
+
+@pytest.fixture
+def small_striatum_population(device):
+    """Small striatum WITH population coding (should use neuromorphic format)."""
+    config = StriatumConfig(
+        n_output=5,  # 5 actions × 10 neurons/action = 50 neurons total
+        n_input=100,
+        growth_enabled=True,
+        population_coding=True,
+        neurons_per_action=10,
+        device=device,
+    )
+    striatum = Striatum(config)
+    striatum.reset_state()
+    return striatum
+
+
+@pytest.fixture
+def large_striatum(device):
+    """Large striatum (should use elastic tensor format, no population coding)."""
+    config = StriatumConfig(
+        n_output=150,  # Large: 150 actions
+        n_input=100,
+        growth_enabled=False,
+        population_coding=False,
+        device=device,
+    )
+    striatum = Striatum(config)
+    striatum.reset_state()
+    return striatum
+
+
+@pytest.fixture
+def large_striatum_population(device):
+    """Large striatum WITH population coding (should use elastic tensor format)."""
+    config = StriatumConfig(
+        n_output=150,  # 150 actions × 10 neurons/action = 1500 neurons total
+        n_input=100,
+        growth_enabled=False,
+        population_coding=True,
+        neurons_per_action=10,
+        device=device,
+    )
+    striatum = Striatum(config)
+    striatum.reset_state()
+    return striatum
+
+
+class TestFormatAutoSelection:
+    """Test automatic format selection."""
+
+    def test_small_region_uses_neuromorphic(self, small_striatum):
+        """Small regions should use neuromorphic format."""
+        manager = small_striatum.checkpoint_manager
+
+        should_use_neuro = manager._should_use_neuromorphic()
+        assert should_use_neuro is True
+
+    def test_small_region_uses_neuromorphic_population_coding(self, small_striatum_population):
+        """Small regions with population coding should use neuromorphic format."""
+        manager = small_striatum_population.checkpoint_manager
+
+        # 5 actions × 10 neurons = 50 neurons (still small, < 100)
+        should_use_neuro = manager._should_use_neuromorphic()
+        assert should_use_neuro is True
+
+    def test_large_region_uses_elastic(self, large_striatum):
+        """Large regions should use elastic tensor format."""
+        manager = large_striatum.checkpoint_manager
+
+        should_use_neuro = manager._should_use_neuromorphic()
+        assert should_use_neuro is False
+
+    def test_large_region_uses_elastic_population_coding(self, large_striatum_population):
+        """Large regions with population coding should use elastic tensor format."""
+        manager = large_striatum_population.checkpoint_manager
+
+        # 150 actions × 10 neurons = 1500 neurons (large, > 100)
+        should_use_neuro = manager._should_use_neuromorphic()
+        assert should_use_neuro is False
+
+    def test_growth_enabled_small_uses_neuromorphic(self, device):
+        """Small regions with growth enabled should use neuromorphic."""
+        config = StriatumConfig(
+            n_output=80,
+            n_input=100,
+            growth_enabled=True,
+            population_coding=False,
+            device=device,
+        )
+        striatum = Striatum(config)
+
+        should_use_neuro = striatum.checkpoint_manager._should_use_neuromorphic()
+        assert should_use_neuro is True  # Small + growth enabled
+
+    def test_threshold_boundary(self, device):
+        """Test format selection at size threshold."""
+        # Just under threshold (100) - should use neuromorphic
+        config_99 = StriatumConfig(n_output=99, n_input=100, device=device, population_coding=False)
+        striatum_99 = Striatum(config_99)
+        assert striatum_99.checkpoint_manager._should_use_neuromorphic() is True
+
+        # Just over threshold - should use elastic
+        config_101 = StriatumConfig(n_output=101, n_input=100, device=device, growth_enabled=False, population_coding=False)
+        striatum_101 = Striatum(config_101)
+        assert striatum_101.checkpoint_manager._should_use_neuromorphic() is False
+
+
+class TestHybridSaveLoad:
+    """Test save/load with automatic format selection."""
+
+    def test_save_small_creates_neuromorphic(self, small_striatum, tmp_path):
+        """Saving small region should create neuromorphic checkpoint."""
+        checkpoint_path = tmp_path / "small.ckpt"
+
+        info = small_striatum.checkpoint_manager.save(checkpoint_path)
+
+        assert info["format"] == "neuromorphic"
+        assert checkpoint_path.exists()
+
+        # Load and verify format
+        loaded = torch.load(checkpoint_path, weights_only=False)
+        assert loaded["format"] == "neuromorphic"
+        assert "neurons" in loaded
+
+    def test_save_small_creates_neuromorphic_population_coding(self, small_striatum_population, tmp_path):
+        """Saving small region with population coding should create neuromorphic checkpoint."""
+        checkpoint_path = tmp_path / "small_pop.ckpt"
+
+        info = small_striatum_population.checkpoint_manager.save(checkpoint_path)
+
+        assert info["format"] == "neuromorphic"
+        assert checkpoint_path.exists()
+
+        # Load and verify format
+        loaded = torch.load(checkpoint_path, weights_only=False)
+        assert loaded["format"] == "neuromorphic"
+        assert "neurons" in loaded
+        # Should have 50 neurons (5 actions × 10 neurons/action)
+        assert len(loaded["neurons"]) == 50
+
+    def test_save_large_creates_elastic(self, large_striatum, tmp_path):
+        """Saving large region should create elastic tensor checkpoint."""
+        checkpoint_path = tmp_path / "large.ckpt"
+
+        info = large_striatum.checkpoint_manager.save(checkpoint_path)
+
+        assert info["format"] == "elastic_tensor"
+        assert checkpoint_path.exists()
+
+        # Load and verify format
+        loaded = torch.load(checkpoint_path, weights_only=False)
+        assert loaded["format_version"] == "1.0.0"  # Elastic format version
+        assert "hybrid_metadata" in loaded  # Has hybrid metadata
+
+    def test_load_auto_detects_neuromorphic(self, small_striatum, tmp_path):
+        """load() should auto-detect neuromorphic format."""
+        checkpoint_path = tmp_path / "neuro.ckpt"
+
+        # Save neuromorphic
+        small_striatum.checkpoint_manager.save(checkpoint_path)
+
+        # Reset and load
+        small_striatum.reset_state()
+        small_striatum.checkpoint_manager.load(checkpoint_path)
+
+        # Should successfully load (no exceptions)
+
+    def test_load_auto_detects_neuromorphic_population_coding(self, small_striatum_population, tmp_path):
+        """load() should auto-detect neuromorphic format with population coding."""
+        checkpoint_path = tmp_path / "neuro_pop.ckpt"
+
+        # Save neuromorphic
+        small_striatum_population.checkpoint_manager.save(checkpoint_path)
+
+        # Reset and load
+        small_striatum_population.reset_state()
+        small_striatum_population.checkpoint_manager.load(checkpoint_path)
+
+        # Should successfully load (no exceptions)
+
+    def test_load_auto_detects_elastic(self, large_striatum, tmp_path):
+        """load() should auto-detect elastic tensor format."""
+        checkpoint_path = tmp_path / "elastic.ckpt"
+
+        # Save elastic
+        large_striatum.checkpoint_manager.save(checkpoint_path)
+
+        # Reset and load
+        large_striatum.reset_state()
+        large_striatum.checkpoint_manager.load(checkpoint_path)
+
+        # Should successfully load (no exceptions)
+
+    def test_hybrid_metadata_included(self, small_striatum, tmp_path):
+        """Hybrid checkpoints should include metadata about format selection."""
+        checkpoint_path = tmp_path / "metadata.ckpt"
+
+        small_striatum.checkpoint_manager.save(checkpoint_path)
+
+        loaded = torch.load(checkpoint_path, weights_only=False)
+
+        assert "hybrid_metadata" in loaded
+        assert loaded["hybrid_metadata"]["auto_selected"] is True
+        assert "selected_format" in loaded["hybrid_metadata"]
+        assert "selection_criteria" in loaded["hybrid_metadata"]
+
+    def test_state_preserved_across_format_change(self, device, tmp_path):
+        """State should be preserved when loading into different size (format)."""
+        checkpoint_path = tmp_path / "state_preserve.ckpt"
+
+        # Create small striatum (neuromorphic)
+        small_config = StriatumConfig(n_output=5, n_input=100, device=device, population_coding=False)
+        small = Striatum(small_config)
+        small.reset_state()
+
+        # Set distinctive weights
+        with torch.no_grad():
+            small.d1_pathway.weights.data[0, 10] = 0.777
+            small.d1_pathway.weights.data[1, 20] = 0.888
+
+        # Save
+        small.checkpoint_manager.save(checkpoint_path)
+
+        # Load into same small striatum
+        small2 = Striatum(small_config)
+        small2.reset_state()
+        small2.checkpoint_manager.load(checkpoint_path)
+
+        # Verify weights restored
+        assert abs(small2.d1_pathway.weights[0, 10].item() - 0.777) < 1e-6
+        assert abs(small2.d1_pathway.weights[1, 20].item() - 0.888) < 1e-6
+
+    def test_state_preserved_with_population_coding(self, device, tmp_path):
+        """State should be preserved with population coding enabled."""
+        checkpoint_path = tmp_path / "state_preserve_pop.ckpt"
+
+        # Create small striatum with population coding (neuromorphic)
+        config = StriatumConfig(
+            n_output=5,
+            n_input=100,
+            device=device,
+            population_coding=True,
+            neurons_per_action=10
+        )
+        striatum = Striatum(config)
+        striatum.reset_state()
+
+        # Set distinctive weights in first few neurons
+        with torch.no_grad():
+            striatum.d1_pathway.weights.data[0, 10] = 0.333
+            striatum.d1_pathway.weights.data[5, 20] = 0.444  # Different action's neurons
+
+        # Save
+        striatum.checkpoint_manager.save(checkpoint_path)
+
+        # Load into new instance
+        striatum2 = Striatum(config)
+        striatum2.reset_state()
+        striatum2.checkpoint_manager.load(checkpoint_path)
+
+        # Verify weights restored
+        assert abs(striatum2.d1_pathway.weights[0, 10].item() - 0.333) < 1e-6
+        assert abs(striatum2.d1_pathway.weights[5, 20].item() - 0.444) < 1e-6
+
+
+class TestBackwardCompatibility:
+    """Test loading old format checkpoints."""
+
+    def test_load_phase1_elastic_checkpoint(self, small_striatum, tmp_path):
+        """Should load Phase 1 elastic tensor checkpoints."""
+        checkpoint_path = tmp_path / "phase1.ckpt"
+
+        # Create Phase 1 format checkpoint (no hybrid_metadata)
+        state = small_striatum.checkpoint_manager.get_full_state()
+        torch.save(state, checkpoint_path)
+
+        # Load using new hybrid load() method
+        small_striatum.reset_state()
+        small_striatum.checkpoint_manager.load(checkpoint_path)
+
+        # Should work
+
+    def test_load_phase2_neuromorphic_checkpoint(self, small_striatum, tmp_path):
+        """Should load Phase 2 neuromorphic checkpoints."""
+        checkpoint_path = tmp_path / "phase2.ckpt"
+
+        # Create Phase 2 format checkpoint
+        state = small_striatum.checkpoint_manager.get_neuromorphic_state()
+        torch.save(state, checkpoint_path)
+
+        # Load using new hybrid load() method
+        small_striatum.reset_state()
+        small_striatum.checkpoint_manager.load(checkpoint_path)
+
+        # Should work
+
+    def test_save_includes_both_format_markers(self, small_striatum, tmp_path):
+        """Phase 3 checkpoints should work with both old and new loaders."""
+        checkpoint_path = tmp_path / "phase3.ckpt"
+
+        small_striatum.checkpoint_manager.save(checkpoint_path)
+
+        loaded = torch.load(checkpoint_path, weights_only=False)
+
+        # Should have neuromorphic format marker
+        assert "format" in loaded
+
+        # Should have hybrid metadata
+        assert "hybrid_metadata" in loaded
+
+        # Both old neuromorphic loader and new hybrid loader should work
+        small_striatum.reset_state()
+        small_striatum.checkpoint_manager.load_neuromorphic_state(loaded)  # Old way
+
+        small_striatum.reset_state()
+        small_striatum.checkpoint_manager.load(checkpoint_path)  # New way

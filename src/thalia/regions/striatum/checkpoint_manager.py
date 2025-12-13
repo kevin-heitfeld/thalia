@@ -544,3 +544,120 @@ class CheckpointManager:
                 f"Keeping their current state.",
                 UserWarning
             )
+
+    # =========================================================================
+    # Phase 3: Hybrid Format (Auto-Selection)
+    # =========================================================================
+
+    def _should_use_neuromorphic(self) -> bool:
+        """Determine if neuromorphic format should be used.
+
+        Decision criteria:
+        - Small regions (<100 neurons): Use neuromorphic (more inspectable)
+        - High growth frequency (>0.1): Use neuromorphic (ID-based matching)
+        - Growth enabled + small: Use neuromorphic
+        - Otherwise: Use elastic tensor (more efficient)
+
+        Returns:
+            bool: True if neuromorphic format should be used
+        """
+        s = self.striatum
+
+        # Count total neurons (D1 + D2)
+        n_neurons = s.config.n_output
+
+        # Threshold: small regions benefit from neuromorphic format
+        SIZE_THRESHOLD = 100
+
+        # If region is small, use neuromorphic for better inspectability
+        if n_neurons < SIZE_THRESHOLD:
+            return True
+
+        # If growth enabled and region not too large, use neuromorphic
+        if s.config.growth_enabled and n_neurons < SIZE_THRESHOLD * 2:
+            return True
+
+        # For large stable regions, elastic tensor is more efficient
+        return False
+
+    def save(self, path: str | Path) -> Dict[str, Any]:
+        """Save checkpoint with automatic format selection.
+
+        Automatically chooses between elastic tensor and neuromorphic formats
+        based on region size and properties.
+
+        Args:
+            path: Path where checkpoint will be saved
+
+        Returns:
+            Dict with checkpoint metadata
+        """
+        import torch
+        from pathlib import Path
+
+        path = Path(path)
+
+        # Auto-select format
+        use_neuromorphic = self._should_use_neuromorphic()
+
+        if use_neuromorphic:
+            state = self.get_neuromorphic_state()
+            format_name = "neuromorphic"
+        else:
+            state = self.get_full_state()
+            format_name = "elastic_tensor"
+
+        # Add hybrid format metadata
+        state["hybrid_metadata"] = {
+            "auto_selected": True,
+            "selected_format": format_name,
+            "selection_criteria": {
+                "n_neurons": self.striatum.config.n_output,
+                "growth_enabled": self.striatum.config.growth_enabled,
+            }
+        }
+
+        # Save to disk
+        torch.save(state, path)
+
+        return {
+            "path": str(path),
+            "format": format_name,
+            "n_neurons": self.striatum.config.n_output,
+            "file_size": path.stat().st_size if path.exists() else 0,
+        }
+
+    def load(self, path: str | Path) -> None:
+        """Load checkpoint with automatic format detection.
+
+        Automatically detects the checkpoint format and calls the appropriate
+        load method (load_full_state for elastic, load_neuromorphic_state for neuromorphic).
+
+        Args:
+            path: Path to checkpoint file
+        """
+        from pathlib import Path
+        import torch
+
+        path = Path(path)
+
+        # Load checkpoint
+        state = torch.load(path, weights_only=False)
+
+        # Detect format
+        if "format" in state and state["format"] == "neuromorphic":
+            # Neuromorphic format
+            self.load_neuromorphic_state(state)
+        elif "format_version" in state and state.get("format_version", "").startswith("1."):
+            # Elastic tensor format (Phase 1)
+            self.load_full_state(state)
+        elif "hybrid_metadata" in state:
+            # Hybrid format - check selected format
+            selected_format = state["hybrid_metadata"]["selected_format"]
+            if selected_format == "neuromorphic":
+                self.load_neuromorphic_state(state)
+            else:
+                self.load_full_state(state)
+        else:
+            # Legacy format or unknown - try elastic tensor
+            self.load_full_state(state)
