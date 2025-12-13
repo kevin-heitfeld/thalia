@@ -18,7 +18,7 @@ Thalia uses **mixins** to share functionality across brain regions without deep 
 ## Available Mixins
 
 ### 1. DiagnosticsMixin
-**File**: `src/thalia/core/diagnostics_mixin.py`  
+**File**: `src/thalia/mixins/diagnostics_mixin.py`  
 **Purpose**: Health monitoring and diagnostics
 
 **Provides**:
@@ -53,7 +53,7 @@ class MyRegion(BrainRegion, DiagnosticsMixin):
 ---
 
 ### 2. ActionSelectionMixin
-**File**: `src/thalia/regions/striatum/action_selection_mixin.py`  
+**File**: `src/thalia/regions/striatum/action_selection.py`  
 **Purpose**: Action selection strategies
 
 **Provides**:

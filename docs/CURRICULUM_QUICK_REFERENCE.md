@@ -5,7 +5,7 @@
 ### Initialize Trainer
 
 ```python
-from thalia.training import CurriculumTrainer
+from thalia.training.curriculum.stage_manager import CurriculumTrainer
 from thalia.config.curriculum_growth import get_curriculum_growth_config
 
 trainer = CurriculumTrainer(
@@ -18,7 +18,8 @@ trainer = CurriculumTrainer(
 ### Train a Stage
 
 ```python
-from thalia.training import CurriculumStage, StageConfig, TaskConfig
+from thalia.config.curriculum_growth import CurriculumStage
+from thalia.training.curriculum.stage_manager import StageConfig, TaskConfig
 
 result = trainer.train_stage(
     stage=CurriculumStage.SENSORIMOTOR,
@@ -57,16 +58,22 @@ trainer.transition_to_stage(
 ### Evaluation
 
 ```python
-from thalia.training import evaluate_stage_sensorimotor
+from thalia.training.curriculum.stage_evaluation import evaluate_stage_sensorimotor
 
 results = evaluate_stage_sensorimotor(brain, sensorimotor_wrapper)
 # Returns: {'criterion': True/False, ...}
+
+# Note: Each stage has its own evaluation function:
+# - evaluate_stage_sensorimotor()
+# - evaluate_stage_phonology()
+# - evaluate_stage_toddler()
+# - etc.
 ```
 
 ## Curriculum Stages
 
 ```python
-from thalia.training import CurriculumStage
+from thalia.config.curriculum_growth import CurriculumStage
 
 CurriculumStage.SENSORIMOTOR  # -1: Motor control
 CurriculumStage.PHONOLOGY     #  0: Sensory foundations
@@ -95,15 +102,15 @@ class MyTaskLoader:
 def my_evaluator(brain, task_loader) -> dict:
     """Return dict of {criterion: bool}"""
     results = {}
-    
+
     # Test performance
     accuracy = test_task(brain, task_loader)
     results['task_accuracy'] = accuracy > 0.90
-    
+
     # Check health
     from thalia.training import check_system_health
     results.update(check_system_health(brain))
-    
+
     return results
 ```
 

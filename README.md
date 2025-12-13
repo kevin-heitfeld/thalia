@@ -35,21 +35,36 @@ pip install -e ".[all]"
 ## Quick Start
 
 ```python
-from thalia.config import ThaliaConfig
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 from thalia.core.brain import EventDrivenBrain
+import torch
 
-# Initialize brain with default configuration
-config = ThaliaConfig()
+# Create configuration
+config = ThaliaConfig(
+    global_=GlobalConfig(device="cpu", dt_ms=1.0),
+    brain=BrainConfig(
+        sizes=RegionSizes(
+            input_size=784,      # 28x28 MNIST
+            cortex_size=1000,
+            hippocampus_size=500,
+            pfc_size=200,
+            n_actions=10,
+        ),
+    ),
+)
+
+# Initialize brain
 brain = EventDrivenBrain.from_thalia_config(config)
 
-# Process sensory input
-import torch
-visual_input = torch.rand(784, dtype=torch.float32)  # 28x28 image
-output = brain.forward(visual_input=visual_input)
+# Process sensory input (encoding phase)
+visual_input = torch.rand(784, dtype=torch.float32)
+output = brain.forward(sensory_input=visual_input, n_timesteps=15)
 
-# Select action
-action, value = brain.select_action(explore=True)
-brain.deliver_reward(reward=1.0)
+# Select action (decision-making)
+action, confidence = brain.select_action(explore=True)
+
+# Deliver reward (reinforcement learning)
+brain.deliver_reward(external_reward=1.0)
 ```
 
 ## Architecture Overview
@@ -74,19 +89,58 @@ graph TD
 ```
 
 **Key Features:**
-- **Spiking Pathways**: All connections use LIF neurons with axonal delays
-- **Learning Rules**: STDP, BCM, Hebbian, dopamine-modulated plasticity
-- **Neuromodulation**: DA (reward), ACh (attention), NE (arousal)
-- **Temporal Dynamics**: Theta/alpha/gamma oscillations coordinate processing
+- **Spiking Pathways**: ConductanceLIF neurons with realistic axonal delays (2-8ms)
+- **Learning Rules**: STDP, BCM, Hebbian, three-factor (dopamine-modulated)
+- **Neuromodulation**: Dopamine (reward), acetylcholine (encoding/retrieval), norepinephrine (arousal)
+- **Temporal Coordination**: Theta (8Hz), alpha (10Hz), gamma (40Hz) oscillations
+- **Planning Systems**: TD(λ) credit assignment, Dyna-style planning, hierarchical goals
+- **Memory Systems**: One-shot episodic (hippocampus), working memory (PFC), procedural (striatum)
+- **Circuit Modeling**: Laminar cortex (L4→L2/3→L5), trisynaptic hippocampus (DG→CA3→CA1), D1/D2 striatal pathways
 
 ## Documentation
 
+### Getting Started
 - **[Documentation Hub](docs/README.md)** — Complete documentation overview
+- **[Getting Started Guide](docs/GETTING_STARTED_CURRICULUM.md)** — Curriculum training tutorial
 - **[Contributing Guide](CONTRIBUTING.md)** — How to add regions, learning rules, tests
-- [Architecture](docs/architecture/) — System design and complexity layers
-- [Design Specs](docs/design/) — Checkpoint format, curriculum strategy, neuron models
-- [Implementation Patterns](docs/patterns/) — Configuration, state management, mixins
-- [Architecture Decisions](docs/decisions/) — ADRs for key technical choices
+
+### Reference Documentation
+- **[Architecture](docs/architecture/)** — System design, 5-level complexity hierarchy, component index
+- **[Design Specs](docs/design/)** — Checkpoint format, curriculum strategy, neuron models, circuit timing
+- **[Implementation Patterns](docs/patterns/)** — Learning strategies, state management, mixins, component parity
+- **[Architecture Decisions](docs/decisions/)** — ADRs documenting key technical choices
+
+### Quick References
+- [Curriculum Training](docs/CURRICULUM_QUICK_REFERENCE.md) — API reference for training pipeline
+- [Datasets](docs/DATASETS_QUICK_REFERENCE.md) — Stage-specific datasets (temporal, CIFAR, grammar, reading)
+- [Monitoring](docs/MONITORING_GUIDE.md) — Health checks, training visualization, diagnostics
+
+## Project Status
+
+**Current Version**: 0.1.0 (Pre-Alpha)  
+**Status**: Active Development
+
+### Implemented Features ✅
+- Core brain regions (Cortex, Hippocampus, Striatum, PFC, Cerebellum, Thalamus)
+- Event-driven simulation with axonal delays
+- Learning strategies (STDP, BCM, Hebbian, three-factor)
+- Neuromodulator systems (dopamine, acetylcholine, norepinephrine)
+- Planning systems (TD(λ), Dyna, hierarchical goals)
+- Curriculum training pipeline (Stages -0.5 through 4)
+- Checkpoint system (PyTorch format + optional binary format)
+- Parallel execution (multi-core CPU)
+- Comprehensive diagnostics and monitoring
+
+### In Progress 🔄
+- Stage 0 validation (sensory foundations)
+- Performance benchmarking
+- API stabilization
+
+### Planned 📋
+- Stages 5-6 (expert-level, LLM-level capabilities)
+- GPU optimization for large-scale networks
+- Neuromorphic hardware support
+- Interactive visualization dashboard
 
 ## Contributing
 

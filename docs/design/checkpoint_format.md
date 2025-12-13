@@ -2,7 +2,7 @@
 
 **Version**: 0.1.0  
 **Status**: Phase 1B Complete ✅  
-**Last Updated**: December 7, 2025
+**Last Updated**: December 13, 2025
 
 > **Related Document**: See [`curriculum_strategy.md`](curriculum_strategy.md) for training stages and curriculum design.
 
@@ -13,6 +13,29 @@ Custom binary format for persisting and restoring Thalia brain states across tra
 - **Versioning**: Forward/backward compatibility
 - **Incremental Growth**: Support adding neurons without full rewrite
 - **Portability**: Language-agnostic (can read from C++, Rust, etc.)
+
+## Implementation Status
+
+**Binary Format**: ✅ Fully implemented (`src/thalia/io/binary_format.py`, `src/thalia/io/checkpoint.py`)  
+**Usage**: Optional - PyTorch `.pt` format is the default for simplicity
+
+The binary format is available for advanced use cases:
+- Cross-language compatibility (C++, Rust, etc.)
+- Inspection with external tools
+- Custom checkpoint manipulation
+
+For most training scenarios, the standard PyTorch checkpoint system is used:
+```python
+# Standard approach (used by region checkpoint managers)
+torch.save(brain.checkpoint(), "brain_state.pt")
+state = torch.load("brain_state.pt")
+brain.restore(state)
+
+# Binary format (advanced users)
+from thalia.io import BrainCheckpoint
+BrainCheckpoint.save(brain, "brain_state.thalia")
+brain = BrainCheckpoint.load("brain_state.thalia")
+```
 
 ## Why Custom Format?
 

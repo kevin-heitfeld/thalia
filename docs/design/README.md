@@ -6,54 +6,80 @@ Technical design specifications for the Thalia framework.
 
 ### Core Systems
 - **[Checkpoint Format](checkpoint_format.md)** 🟢 — Binary checkpoint format and state serialization
-- **[Curriculum Strategy](curriculum_strategy.md)** 🟢 — Training stages and consolidation approach
+- **[Curriculum Strategy](curriculum_strategy.md)** 🟢 — Training stages and developmental progression (expert-reviewed)
 - **[Neuron Models](neuron_models.md)** 🟢 — LIF and conductance-based neuron implementations
-- **[Robustness Configuration](robustness_config_guide.md)** 🟢 — Stability mechanisms and configuration
+- **[Parallel Execution](parallel_execution.md)** 🟢 — Event-driven parallel processing architecture
+
+### Architecture & Planning
+- **[Architecture Reference](architecture.md)** 🟢 — Quick reference to comprehensive architecture docs
+- **[Circuit Modeling](circuit_modeling.md)** 🟢 — Biological circuit timing and implementation priorities
 
 ### Implementation Plans
-- **[Delayed Gratification Plan](delayed_gratification_plan.md)** 🚧 — Overview and curriculum stage analysis
-- **[Implementation Quick Start](IMPLEMENTATION_QUICK_START.md)** 🚧 — Quick reference for all three phases
-- **[Phase 1: TD(λ)](PHASE1_TD_LAMBDA.md)** 🚧 — Multi-step credit assignment (Weeks 1-3)
-- **[Phase 2: Model-Based Planning](PHASE2_MODEL_BASED.md)** 🚧 — Forward simulation and tree search (Weeks 4-7)
-- **[Phase 3: Hierarchical Goals](PHASE3_HIERARCHICAL.md)** 🚧 — Goal hierarchies and hyperbolic discounting (Weeks 8-11)
 
-### Additional Implementations
-- **[Cognitive Load Implementation](cognitive_load_implementation.md)** 🟡 — Cognitive load monitoring
-- **[Curriculum Implementation](curriculum_implementation.md)** 🟡 — Curriculum training details
-- **[Metacognition Implementation](metacognition_implementation.md)** 🟡 — Metacognitive monitoring
+#### Delayed Gratification (Planning Systems)
+- **[Delayed Gratification](delayed_gratification.md)** 🟢 — Implementation complete, integration testing in progress
+- **Phase 2: Model-Based Planning** 🟢 — **IMPLEMENTED** (`src/thalia/planning/`)
+  - `dyna.py` - Dyna-style background planning
+  - `coordinator.py` - Mental simulation coordinator
+- **Phase 3: Hierarchical Goals** 🟢 — **IMPLEMENTED** (`src/thalia/regions/prefrontal_hierarchy.py`)
+  - Goal decomposition and stack management
+  - Options learning and caching
+  - Hyperbolic temporal discounting
+  - See `../architecture/HIERARCHICAL_GOALS_COMPLETE.md` for details
 
-### Architecture Reference
-- **[Architecture Overview](architecture.md)** 🟡 — High-level system design (may be moved to `../architecture/`)
+**Status Update**: Phases 2 and 3 are now complete. Phase 1 (TD(λ)) may already be covered by existing eligibility traces.
+
+### Completed Implementations (Archive for Reference)
+These documents describe implementations that are now complete. Kept for historical context:
+- **[Checkpoint Growth Compatibility](checkpoint_growth_compatibility.md)** 🟢 — Checkpoint format evolution (v1.0 complete)
 
 ## Status Legend
 
 - 🟢 **Current** — Up to date with codebase
-- 🟡 **Partial** — Accurate but incomplete
-- 🔴 **Outdated** — Needs revision
-- 🚧 **Draft** — Work in progress
+- 🟡 **Needs Review** — Accurate but may need updating or consolidation
+- 🔴 **Outdated** — Needs significant revision
+- 🚧 **Draft** — Work in progress / Planning phase
 
 ## Related Documentation
 
+- **[Architecture](../architecture/)** — System-level architecture docs (primary reference for current architecture)
 - **[Patterns](../patterns/)** — Implementation patterns and best practices
 - **[Decisions](../decisions/)** — Architecture decision records (ADRs)
-- **[Architecture](../architecture/)** — System-level architecture docs
 
-## Implementation Plan Documents
+## Key Implementation Status
 
-The **Delayed Gratification** implementation plan spans three phases over 11 weeks:
+### ✅ Fully Implemented
+1. **Neuromodulator Systems** - VTA, LC, NB with coordination (`src/thalia/neuromodulation/`)
+2. **Oscillator System** - 5 rhythms + cross-frequency coupling (`src/thalia/coordination/oscillator.py`)
+3. **Goal Hierarchy** - Hierarchical planning with options learning (`src/thalia/regions/prefrontal_hierarchy.py`)
+4. **Memory Consolidation** - Replay and offline learning (`src/thalia/memory/consolidation/`)
+5. **Attention Systems** - Thalamus + attention pathways (`src/thalia/regions/thalamus.py`, `src/thalia/pathways/attention/`)
+6. **Language Processing** - Token encoding/decoding + brain integration (`src/thalia/language/`)
+7. **Social Learning** - Imitation, pedagogy, joint attention (`src/thalia/learning/social_learning.py`)
+8. **Metacognition** - Confidence calibration (`src/thalia/training/evaluation/metacognition.py`)
+9. **Mental Simulation** - Dyna-style planning (`src/thalia/planning/`)
 
-1. **Phase 1 (Weeks 1-3)**: Multi-step credit assignment via TD(λ) — extends temporal credit from 1 second to 5-10 seconds
-2. **Phase 2 (Weeks 4-7)**: Model-based planning — enables mental simulation of action sequences
-3. **Phase 3 (Weeks 8-11)**: Hierarchical goals — adds goal decomposition and context-dependent discounting
+### 🔨 In Progress / Planning
+1. **Amygdala Integration** - Emotional state processing (not yet implemented)
+2. **Advanced Prioritization** - Cognitive load-aware replay scheduling (partial)
 
-**Start Here**: Read [IMPLEMENTATION_QUICK_START.md](IMPLEMENTATION_QUICK_START.md) for overview, then dive into individual phase documents.
+### 📋 Planned Future Work
+1. **Theory of Mind** - Modeling others' mental states
+2. **Advanced Executive Functions** - Complex reasoning integration
+3. **Circadian Rhythms** - Sleep/wake cycle regulation
 
-**Why Important**: Enables true delayed gratification — the ability to pursue long-term goals despite short-term costs. Critical for:
-- Sensorimotor learning (Stage -0.5): Multi-step action→feedback delays
-- Grammar generation (Stage 2): Planning ahead multiple words
-- Essay writing (Stage 3): Maintaining coherence across paragraphs
-- Abstract reasoning (Stage 4+): Complex problem decomposition
+## Documentation Maintenance
+
+### When to Update
+- **Implementation complete**: Update status from 🚧 to 🟢
+- **Code refactored**: Verify docs match new structure
+- **New features added**: Add to implementation status list
+- **Architecture changed**: Update architecture.md or point to `../architecture/`
+
+### Consolidation Opportunities
+- ✅ `architecture.md` → **DONE** - Now a quick reference to comprehensive architecture docs
+- Phase documents → Consider archiving once integration testing is complete
 
 ---
 
-**Last Updated**: December 10, 2025
+**Last Updated**: December 13, 2025

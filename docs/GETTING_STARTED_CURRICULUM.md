@@ -20,8 +20,8 @@ This demonstrates training a brain through:
 ```python
 from thalia.core import Brain  # EventDrivenBrain
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
-from thalia.training import CurriculumTrainer, CurriculumStage, StageConfig
-from thalia.config.curriculum_growth import get_curriculum_growth_config
+from thalia.config.curriculum_growth import CurriculumStage, get_curriculum_growth_config
+from thalia.training.curriculum.stage_manager import CurriculumTrainer, StageConfig
 
 # 1. Create brain with ThaliaConfig
 config = ThaliaConfig(
@@ -150,28 +150,28 @@ from thalia.training import StageConfig, TaskConfig
 config = StageConfig(
     # Duration
     duration_steps=50000,
-    
+
     # Tasks with weights
     task_configs={
         'task1': TaskConfig(weight=0.4, difficulty=0.5),
         'task2': TaskConfig(weight=0.6, difficulty=0.7),
     },
-    
+
     # Success criteria (go/no-go)
     success_criteria={
         'task1_accuracy': 0.90,
         'task2_success': 0.85,
     },
-    
+
     # Review previous stages
     review_stages={
         0: 0.10,  # 10% review of Stage 0
     },
-    
+
     # Consolidation
     consolidation_interval=10000,
     consolidation_cycles=5,
-    
+
     # Checkpointing
     checkpoint_interval=5000,
 )
@@ -208,7 +208,7 @@ You need to implement task loaders for each stage. A task loader provides sample
 class MyTaskLoader:
     def get_task(self, task_name: str) -> dict:
         """Return a task sample.
-        
+
         Returns:
             dict with keys:
             - 'input': torch.Tensor (spike pattern)
@@ -260,16 +260,16 @@ else:
 def my_custom_evaluator(brain, task_loader):
     """Custom evaluation function."""
     results = {}
-    
+
     # Test task performance
     accuracy = test_my_task(brain, task_loader)
     results['my_task_accuracy'] = accuracy > 0.90
-    
+
     # Check system health
     from thalia.training import check_system_health
     health = check_system_health(brain)
     results.update(health)
-    
+
     return results
 
 # Use in training

@@ -1,5 +1,9 @@
 # Neuromodulator Centralization - COMPLETE ✅
 
+> **⚠️ ARCHIVED DOCUMENTATION**: This document is preserved for historical reference but contains **outdated file paths**. 
+> Systems are now in `src/thalia/neuromodulation/systems/` (not `src/thalia/core/`).
+> For current information, see **[CENTRALIZED_SYSTEMS.md](CENTRALIZED_SYSTEMS.md)**.
+
 **Date**: December 10, 2025  
 **Status**: All three neuromodulator systems implemented and integrated
 

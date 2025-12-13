@@ -1,6 +1,6 @@
 # Circuit Modeling Plan
 
-**Status**: Planning Document
+**Status**: 🟢 Current (Reviewed December 13, 2025)
 **Created**: December 12, 2025
 **Purpose**: Identify which biological circuits should be explicitly modeled and their relevance to curriculum stages
 
@@ -19,7 +19,7 @@ This document prioritizes biological circuit implementations based on:
 ## Currently Modeled Circuits
 
 ### ✅ Cortex: L4→L2/3→L5 Laminar Microcircuit
-**Status**: Fully implemented with inter-layer delays
+**Status**: Fully implemented with inter-layer delays (`src/thalia/regions/layered_cortex.py`)
 
 **Biological Timing**:
 - L4→L2/3: ~2ms (feedforward sensory)

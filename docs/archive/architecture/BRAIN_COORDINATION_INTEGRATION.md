@@ -1,7 +1,10 @@
 # Brain Integration of Homeostatic Regulation & Coordination - COMPLETE
 
+> **⚠️ ARCHIVED DOCUMENTATION**: This document is preserved for historical reference but contains **outdated file paths**. 
+> For current information, see **[CENTRALIZED_SYSTEMS.md](CENTRALIZED_SYSTEMS.md)** and **[ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md)**.
+
 **Date**: December 10, 2025  
-**Status**: ✅ FULLY INTEGRATED  
+**Status**: ✅ FULLY INTEGRATED (Implementation complete, paths updated)  
 
 ---
 

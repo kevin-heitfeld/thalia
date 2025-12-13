@@ -1,5 +1,8 @@
 # Oscillator Integration Complete! 🎉
 
+> **⚠️ ARCHIVED DOCUMENTATION**: This document is preserved for historical reference.
+> For current information, see **[CENTRALIZED_SYSTEMS.md](CENTRALIZED_SYSTEMS.md)**.
+
 **Date**: December 10, 2025
 **Status**: ✅ **ALL 5 OSCILLATORS + ALL 5 COUPLINGS INTEGRATED**
 

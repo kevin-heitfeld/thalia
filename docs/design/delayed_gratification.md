@@ -1,32 +1,63 @@
 # Delayed Gratification Implementation Plan
 
-**Version**: 1.0.0
-**Status**: Planning Phase
-**Date**: December 10, 2025
+**Version**: 2.0.0
+**Status**: ✅ **Phases 1-3 COMPLETE** (Updated December 13, 2025)
+**Original Date**: December 10, 2025
 **Priority**: High (Core capability for AGI)
 
 ## Executive Summary
 
-This document outlines the implementation plan for enhancing Thalia's delayed gratification capabilities - the ability to pursue long-term goals despite short-term costs. Current system can bridge ~1 second delays via eligibility traces. This plan extends temporal credit assignment to 5-10 seconds (Phase 1), enables mental simulation (Phase 2), and adds hierarchical goal decomposition (Phase 3).
+This document outlines the implementation plan for enhancing Thalia's delayed gratification capabilities - the ability to pursue long-term goals despite short-term costs. **UPDATE**: Most planned features are now implemented!
 
-**Current Capabilities:**
+### ✅ **Implemented Capabilities (December 2025)**
+
+**Phase 1: Multi-Step Credit Assignment**
+- ✅ **TD(λ) Learning** (`src/thalia/regions/striatum/td_lambda.py`)
+  - TDLambdaLearner with configurable λ and γ parameters
+  - Bridge ~10 timesteps (5-10 seconds at dt=1ms)
+  - Accumulating vs replacing trace modes
+  - Integrated with striatum three-factor rule
+
+**Phase 2: Model-Based Planning**
+- ✅ **Dyna-style Planning** (`src/thalia/planning/dyna.py`)
+  - DynaPlanner combines real experience with simulated planning
+  - World model learning (transition dynamics)
+  - Background planning sweeps (n_planning_steps configurable)
+  - Priority sweeps for efficient updates
+
+**Phase 3: Hierarchical Goals**
+- ✅ **Goal Hierarchy Manager** (`src/thalia/regions/prefrontal_hierarchy.py`)
+  - Goal stack with push/pop/peek operations
+  - Goal decomposition into subgoals
+  - Options learning and caching
+  - Hyperbolic temporal discounting
+  - Context-dependent value functions
+
+**Additional Systems:**
 - ✅ Eligibility traces (1000ms tau, ~1 second bridge)
 - ✅ Working memory (PFC goal maintenance)
-- ✅ Simple TD value estimation
 - ✅ VTA dopamine system (tonic + phasic)
 - ✅ Counterfactual learning (imagined outcomes)
-- ✅ Predictive coding (sensory predictions only)
+- ✅ Predictive coding (sensory predictions)
+- ✅ Mental simulation coordinator (`src/thalia/planning/coordinator.py`)
 
-**Critical Gaps:**
-- ❌ Multi-step returns (TD(λ)) - can't learn from 5+ second delays
-- ❌ Model-based planning - no forward simulation of action sequences
-- ❌ Hierarchical goals - no subgoal decomposition
-- ❌ Goal-conditioned value functions - can't learn multiple goals simultaneously
-- ❌ Realistic temporal discounting - uses exponential, not hyperbolic
+### 📋 **Remaining Work**
+
+**Performance Validation** (Implementation Complete ✅):
+- 🔄 Validate TD(λ) performance on sensorimotor tasks (Stage -0.5)
+- 🔄 Test Dyna planning on grammar tasks (Stage 2)
+- 🔄 Verify hierarchical goals on essay writing (Stage 3)
+- 🔄 Benchmark temporal credit assignment windows
+
+**Curriculum Integration** (Ready for Use ✅):
+- ✅ TD(λ) can be enabled via `use_td_lambda=True` in config
+- ✅ Dyna planning available via `src/thalia/planning/dyna.py`
+- ✅ Goal hierarchy available via `src/thalia/regions/prefrontal_hierarchy.py`
+- 🔄 Add explicit curriculum triggers for automated activation
 
 **Expected Impact:**
-- Marshmallow test: Currently FAIL → With improvements: PASS (in appropriate contexts)
-- Temporal horizon: 1 second → 5-10 seconds (Phase 1) → minutes/hours (Phase 2-3)
+- Marshmallow test: Currently FAIL → With implementations: PASS (in appropriate contexts)
+- Temporal horizon: 1 second → 10 seconds (TD(λ)) → minutes/hours (Dyna + Hierarchy)
 - Novel situations: Pure model-free → Hybrid model-based/model-free
 - Multi-goal learning: Sequential only → Parallel goal pursuit
 
