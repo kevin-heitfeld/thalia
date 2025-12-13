@@ -630,8 +630,7 @@ class CheckpointManager:
     def load(self, path: str | Path) -> None:
         """Load checkpoint with automatic format detection.
 
-        Automatically detects the checkpoint format and calls the appropriate
-        load method (load_full_state for elastic, load_neuromorphic_state for neuromorphic).
+        Detects format from hybrid_metadata and loads accordingly.
 
         Args:
             path: Path to checkpoint file
@@ -644,20 +643,13 @@ class CheckpointManager:
         # Load checkpoint
         state = torch.load(path, weights_only=False)
 
-        # Detect format
-        if "format" in state and state["format"] == "neuromorphic":
-            # Neuromorphic format
+        # Check hybrid metadata for format
+        if "hybrid_metadata" not in state:
+            raise ValueError("Checkpoint missing hybrid_metadata - not a valid hybrid format checkpoint")
+
+        # Load based on selected format
+        selected_format = state["hybrid_metadata"]["selected_format"]
+        if selected_format == "neuromorphic":
             self.load_neuromorphic_state(state)
-        elif "format_version" in state and state.get("format_version", "").startswith("1."):
-            # Elastic tensor format (Phase 1)
-            self.load_full_state(state)
-        elif "hybrid_metadata" in state:
-            # Hybrid format - check selected format
-            selected_format = state["hybrid_metadata"]["selected_format"]
-            if selected_format == "neuromorphic":
-                self.load_neuromorphic_state(state)
-            else:
-                self.load_full_state(state)
         else:
-            # Legacy format or unknown - try elastic tensor
             self.load_full_state(state)

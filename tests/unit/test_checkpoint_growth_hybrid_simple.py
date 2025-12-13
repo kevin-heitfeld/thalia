@@ -297,55 +297,14 @@ class TestHybridSaveLoad:
         assert abs(striatum2.d1_pathway.weights[0, 10].item() - 0.333) < 1e-6
         assert abs(striatum2.d1_pathway.weights[5, 20].item() - 0.444) < 1e-6
 
+    def test_load_rejects_checkpoint_without_metadata(self, small_striatum, tmp_path):
+        """Loading checkpoint without hybrid_metadata should raise error."""
+        checkpoint_path = tmp_path / "no_metadata.ckpt"
 
-class TestBackwardCompatibility:
-    """Test loading old format checkpoints."""
-
-    def test_load_phase1_elastic_checkpoint(self, small_striatum, tmp_path):
-        """Should load Phase 1 elastic tensor checkpoints."""
-        checkpoint_path = tmp_path / "phase1.ckpt"
-
-        # Create Phase 1 format checkpoint (no hybrid_metadata)
+        # Create checkpoint without hybrid_metadata
         state = small_striatum.checkpoint_manager.get_full_state()
         torch.save(state, checkpoint_path)
 
-        # Load using new hybrid load() method
-        small_striatum.reset_state()
-        small_striatum.checkpoint_manager.load(checkpoint_path)
-
-        # Should work
-
-    def test_load_phase2_neuromorphic_checkpoint(self, small_striatum, tmp_path):
-        """Should load Phase 2 neuromorphic checkpoints."""
-        checkpoint_path = tmp_path / "phase2.ckpt"
-
-        # Create Phase 2 format checkpoint
-        state = small_striatum.checkpoint_manager.get_neuromorphic_state()
-        torch.save(state, checkpoint_path)
-
-        # Load using new hybrid load() method
-        small_striatum.reset_state()
-        small_striatum.checkpoint_manager.load(checkpoint_path)
-
-        # Should work
-
-    def test_save_includes_both_format_markers(self, small_striatum, tmp_path):
-        """Phase 3 checkpoints should work with both old and new loaders."""
-        checkpoint_path = tmp_path / "phase3.ckpt"
-
-        small_striatum.checkpoint_manager.save(checkpoint_path)
-
-        loaded = torch.load(checkpoint_path, weights_only=False)
-
-        # Should have neuromorphic format marker
-        assert "format" in loaded
-
-        # Should have hybrid metadata
-        assert "hybrid_metadata" in loaded
-
-        # Both old neuromorphic loader and new hybrid loader should work
-        small_striatum.reset_state()
-        small_striatum.checkpoint_manager.load_neuromorphic_state(loaded)  # Old way
-
-        small_striatum.reset_state()
-        small_striatum.checkpoint_manager.load(checkpoint_path)  # New way
+        # Should raise error
+        with pytest.raises(ValueError, match="hybrid_metadata"):
+            small_striatum.checkpoint_manager.load(checkpoint_path)
