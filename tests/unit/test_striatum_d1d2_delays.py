@@ -45,7 +45,7 @@ def striatum_config_with_delays(device):
 
 @pytest.fixture
 def striatum_config_no_delays(device):
-    """Striatum configuration with zero delays (backward compatibility)."""
+    """Striatum configuration with zero delays."""
     return StriatumConfig(
         n_input=50,
         n_output=4,
@@ -74,46 +74,75 @@ def striatum_no_delays(striatum_config_no_delays):
     return striatum
 
 
-def test_delay_buffer_initialization(striatum_config_with_delays):
-    """Test that delay buffers are initialized correctly."""
+def test_delay_configuration_affects_temporal_competition(striatum_config_with_delays):
+    """Test that configured delays create temporal competition between D1 and D2."""
     striatum = Striatum(striatum_config_with_delays)
+    striatum.reset_state()
 
-    # Calculate expected delay steps
+    # Calculate expected delay difference from config
     dt_ms = striatum_config_with_delays.dt_ms
     d1_delay_steps = int(striatum_config_with_delays.d1_to_output_delay_ms / dt_ms)
     d2_delay_steps = int(striatum_config_with_delays.d2_to_output_delay_ms / dt_ms)
+    expected_delay_diff = d2_delay_steps - d1_delay_steps  # Should be ~10 steps
 
-    # Verify delay steps calculated correctly
-    assert striatum._d1_delay_steps == d1_delay_steps  # 15 steps
-    assert striatum._d2_delay_steps == d2_delay_steps  # 25 steps
+    # Provide strong consistent input to activate both pathways
+    input_spikes = torch.ones(50, dtype=torch.bool)
 
-    # Buffers should be None until first forward pass
-    assert striatum._d1_delay_buffer is None
-    assert striatum._d2_delay_buffer is None
-    assert striatum._d1_delay_ptr == 0
-    assert striatum._d2_delay_ptr == 0
+    # Track when each pathway first contributes votes
+    d1_first_vote_time = None
+    d2_first_vote_time = None
+
+    for t in range(50):
+        _ = striatum(input_spikes)
+        d1_votes, d2_votes = striatum.state_tracker.get_accumulated_votes()
+
+        if d1_first_vote_time is None and d1_votes.sum() > 0:
+            d1_first_vote_time = t
+        if d2_first_vote_time is None and d2_votes.sum() > 0:
+            d2_first_vote_time = t
+
+        if d1_first_vote_time and d2_first_vote_time:
+            break
+
+    # Behavioral contract: D1 arrives before D2
+    assert d1_first_vote_time is not None, "D1 should contribute votes"
+    assert d2_first_vote_time is not None, "D2 should contribute votes"
+    assert d1_first_vote_time < d2_first_vote_time, \
+        "D1 (Go) should arrive before D2 (No-Go)"
+
+    # Behavioral contract: delay difference matches configuration
+    actual_delay_diff = d2_first_vote_time - d1_first_vote_time
+    assert abs(actual_delay_diff - expected_delay_diff) <= 2, \
+        f"Expected ~{expected_delay_diff}ms delay, got {actual_delay_diff}ms"
 
 
-def test_delay_buffer_lazy_initialization(striatum_with_delays):
-    """Test that delay buffers are created on first forward pass."""
-    # Buffers should be None before first forward
-    assert striatum_with_delays._d1_delay_buffer is None
-    assert striatum_with_delays._d2_delay_buffer is None
+def test_delays_work_from_first_forward(striatum_with_delays):
+    """Test that delays take effect immediately from first forward pass."""
+    # First forward pass with input
+    input_spikes = torch.rand(50) > 0.8
+    output = striatum_with_delays(input_spikes)
 
-    # Run one forward pass
-    input_spikes = torch.rand(50) > 0.8  # Sparse input
-    _ = striatum_with_delays(input_spikes)
+    # Behavioral contract: output should be valid even on first pass
+    assert output is not None
+    assert not torch.isnan(output).any(), "No NaN in output"
 
-    # Buffers should now be initialized
-    assert striatum_with_delays._d1_delay_buffer is not None
-    assert striatum_with_delays._d2_delay_buffer is not None
+    # Behavioral contract: votes don't appear until delay passes
+    d1_votes, d2_votes = striatum_with_delays.state_tracker.get_accumulated_votes()
 
-    # Check buffer shapes (circular buffer for vote history)
-    # Buffer size should be at least 2 * delay_steps + 1
-    assert striatum_with_delays._d1_delay_buffer.shape[0] >= striatum_with_delays._d1_delay_steps
-    assert striatum_with_delays._d2_delay_buffer.shape[0] >= striatum_with_delays._d2_delay_steps
-    assert striatum_with_delays._d1_delay_buffer.shape[1] == striatum_with_delays.n_actions
-    assert striatum_with_delays._d2_delay_buffer.shape[1] == striatum_with_delays.n_actions
+    # On first pass, both should be zero (delays haven't passed yet)
+    assert d1_votes.sum() == 0, "D1 votes should be zero before delay passes"
+    assert d2_votes.sum() == 0, "D2 votes should be zero before delay passes"
+
+    # Run enough steps for D1 delay to pass
+    config = striatum_with_delays.striatum_config
+    d1_delay_steps = int(config.d1_to_output_delay_ms / config.dt_ms)
+
+    for _ in range(d1_delay_steps):
+        _ = striatum_with_delays(input_spikes)
+
+    # Now D1 should have some votes
+    d1_votes, d2_votes = striatum_with_delays.state_tracker.get_accumulated_votes()
+    assert d1_votes.sum() > 0, "D1 votes should appear after delay"
 
 
 def test_d1_arrives_before_d2(striatum_config_with_delays):
@@ -124,18 +153,18 @@ def test_d1_arrives_before_d2(striatum_config_with_delays):
     # Create strong input that will activate D1 and D2
     input_spikes = torch.ones(50, dtype=torch.bool)  # Strong input
 
-    # Run forward passes for delay_d1 + 1 timesteps
-    # At this point, D1 should have arrived but D2 should not yet
-    d1_delay_steps = striatum._d1_delay_steps  # 15
-    d2_delay_steps = striatum._d2_delay_steps  # 25
+    # Calculate delay steps from PUBLIC config (not internal state)
+    # This is the behavioral contract: delays configured via public API
+    config = striatum.striatum_config
+    d1_delay_steps = int(config.d1_to_output_delay_ms / config.dt_ms)  # 15
+    d2_delay_steps = int(config.d2_to_output_delay_ms / config.dt_ms)  # 25
 
     # Run until D1 delay has passed (D1 should have votes, D2 should not)
     for _ in range(d1_delay_steps + 1):
         _ = striatum(input_spikes)
 
-    # Get accumulated votes from state tracker
-    d1_accumulated_after_d1_delay = striatum.state_tracker._d1_votes_accumulated.clone()
-    d2_accumulated_after_d1_delay = striatum.state_tracker._d2_votes_accumulated.clone()
+    # Get accumulated votes via PUBLIC API (behavioral contract)
+    d1_accumulated_after_d1_delay, d2_accumulated_after_d1_delay = striatum.state_tracker.get_accumulated_votes()
 
     # D1 should have accumulated votes by now (arrived)
     # D2 should still be zero or very small (not arrived yet)
@@ -153,87 +182,102 @@ def test_d1_arrives_before_d2(striatum_config_with_delays):
     for _ in range(d2_delay_steps - d1_delay_steps):
         _ = striatum(input_spikes)
 
-    # Now both D1 and D2 should have accumulated votes
-    d1_accumulated_final = striatum.state_tracker._d1_votes_accumulated.clone()
-    d2_accumulated_final = striatum.state_tracker._d2_votes_accumulated.clone()
+    # Now both D1 and D2 should have accumulated votes (via PUBLIC API)
+    d1_accumulated_final, d2_accumulated_final = striatum.state_tracker.get_accumulated_votes()
 
     assert d1_accumulated_final.sum().item() > 0
     assert d2_accumulated_final.sum().item() > 0
 
 
-def test_no_delay_backward_compatibility(striatum_no_delays):
-    """Test that zero delays work correctly (backward compatibility)."""
-    # With zero delays, D1 and D2 should arrive simultaneously
+def test_zero_delays_produce_immediate_votes(striatum_no_delays):
+    """Test that zero delays allow immediate vote accumulation."""
+    # With zero delays, votes should appear immediately
     input_spikes = torch.ones(50, dtype=torch.bool)
 
-    # Run a few forward passes
-    for _ in range(5):
-        _ = striatum_no_delays(input_spikes)
+    # Run single forward pass
+    _ = striatum_no_delays(input_spikes)
 
-    # With zero delays, buffers should remain None (no buffering needed)
-    # OR if buffers are created, delay_steps should be 0
-    assert striatum_no_delays._d1_delay_steps == 0
-    assert striatum_no_delays._d2_delay_steps == 0
+    # Behavioral contract: both D1 and D2 votes appear immediately
+    d1_votes, d2_votes = striatum_no_delays.state_tracker.get_accumulated_votes()
+
+    # With zero delay, both should have votes after first pass
+    assert d1_votes.sum() > 0, "D1 votes should appear immediately with zero delay"
+    assert d2_votes.sum() > 0, "D2 votes should appear immediately with zero delay"
 
 
 def test_circular_buffer_wrapping(striatum_with_delays):
-    """Test that circular buffer correctly wraps around."""
+    """Test that circular buffer correctly wraps around.
+
+    BEHAVIORAL CONTRACT: After running for many timesteps (more than buffer size),
+    the striatum should still produce valid outputs with no crashes or NaN values.
+    This validates buffer wrapping without accessing internal buffer state.
+    """
     input_spikes = torch.rand(50) > 0.8
 
-    # Run for more than buffer size to force wrapping
-    buffer_size = max(
-        striatum_with_delays._d1_delay_steps * 2 + 1,
-        striatum_with_delays._d2_delay_steps * 2 + 1
-    )
+    # Calculate buffer size from PUBLIC config
+    config = striatum_with_delays.striatum_config
+    d1_delay_steps = int(config.d1_to_output_delay_ms / config.dt_ms)
+    d2_delay_steps = int(config.d2_to_output_delay_ms / config.dt_ms)
+    buffer_size = max(d1_delay_steps * 2 + 1, d2_delay_steps * 2 + 1)
 
+    # Run for more than buffer size to force wrapping
+    # BEHAVIORAL CONTRACT: No crashes, no NaN in outputs
     for _ in range(buffer_size + 10):
         _ = striatum_with_delays(input_spikes)
 
-    # Pointers should have wrapped around
-    assert 0 <= striatum_with_delays._d1_delay_ptr < striatum_with_delays._d1_delay_buffer.shape[0]
-    assert 0 <= striatum_with_delays._d2_delay_ptr < striatum_with_delays._d2_delay_buffer.shape[0]
+    # Validate behavior: votes should still be valid (no NaN/inf)
+    # This tests buffer health WITHOUT accessing internal buffer state
+    d1_votes, d2_votes = striatum_with_delays.state_tracker.get_accumulated_votes()
+    assert not torch.isnan(d1_votes).any(), "D1 votes contain NaN after buffer wrapping"
+    assert not torch.isnan(d2_votes).any(), "D2 votes contain NaN after buffer wrapping"
+    assert not torch.isinf(d1_votes).any(), "D1 votes contain Inf after buffer wrapping"
+    assert not torch.isinf(d2_votes).any(), "D2 votes contain Inf after buffer wrapping"
 
-    # Buffers should still be valid (no NaN or inf)
-    assert not torch.isnan(striatum_with_delays._d1_delay_buffer).any()
-    assert not torch.isnan(striatum_with_delays._d2_delay_buffer).any()
-    assert not torch.isinf(striatum_with_delays._d1_delay_buffer).any()
-    assert not torch.isinf(striatum_with_delays._d2_delay_buffer).any()
+    # Behavioral contract: striatum should still respond to new input
+    strong_input = torch.ones(50, dtype=torch.bool)
+    _ = striatum_with_delays(strong_input)
+    d1_after, d2_after = striatum_with_delays.state_tracker.get_accumulated_votes()
+    # After strong input, at least one pathway should show increased votes
+    assert d1_after.sum() > d1_votes.sum() or d2_after.sum() > d2_votes.sum(), \
+        "Striatum should still respond to input after buffer wrapping"
 
 
-def test_delay_buffer_checkpoint_save_restore(striatum_with_delays):
-    """Test that delay buffers are correctly saved and restored in checkpoints."""
-    # Run forward passes to initialize and populate delay buffers
-    input_spikes = torch.rand(50) > 0.8
+def test_checkpoint_preserves_delay_behavior(striatum_with_delays):
+    """Test that checkpointing preserves D1/D2 temporal competition behavior."""
+    # Run forward passes to build up delayed state
+    input_spikes = torch.ones(50, dtype=torch.bool)
     for _ in range(30):  # Run past both delays
         _ = striatum_with_delays(input_spikes)
 
-    # Get state before checkpoint
-    d1_buffer_before = striatum_with_delays._d1_delay_buffer.clone()
-    d2_buffer_before = striatum_with_delays._d2_delay_buffer.clone()
-    d1_ptr_before = striatum_with_delays._d1_delay_ptr
-    d2_ptr_before = striatum_with_delays._d2_delay_ptr
+    # Continue running to see future behavior
+    for _ in range(10):
+        _ = striatum_with_delays(input_spikes)
+    d1_votes_future, d2_votes_future = striatum_with_delays.state_tracker.get_accumulated_votes()
 
-    # Save checkpoint
-    checkpoint = striatum_with_delays.checkpoint_manager.get_full_state()
+    # Save checkpoint at the intermediate point
+    striatum_with_delays_copy = Striatum(striatum_with_delays.striatum_config)
+    for _ in range(30):
+        _ = striatum_with_delays_copy(input_spikes)
 
-    # Verify delay state is in checkpoint
-    assert "delay_state" in checkpoint
-    assert checkpoint["delay_state"]["d1_delay_buffer"] is not None
-    assert checkpoint["delay_state"]["d2_delay_buffer"] is not None
-    assert checkpoint["delay_state"]["d1_delay_ptr"] == d1_ptr_before
-    assert checkpoint["delay_state"]["d2_delay_ptr"] == d2_ptr_before
+    checkpoint = striatum_with_delays_copy.checkpoint_manager.get_full_state()
 
     # Create new striatum and restore checkpoint
     striatum_restored = Striatum(striatum_with_delays.striatum_config)
+    striatum_restored.reset_state()
     striatum_restored.checkpoint_manager.load_full_state(checkpoint)
 
-    # Verify buffers were restored correctly
-    assert striatum_restored._d1_delay_buffer is not None
-    assert striatum_restored._d2_delay_buffer is not None
-    assert torch.allclose(striatum_restored._d1_delay_buffer, d1_buffer_before)
-    assert torch.allclose(striatum_restored._d2_delay_buffer, d2_buffer_before)
-    assert striatum_restored._d1_delay_ptr == d1_ptr_before
-    assert striatum_restored._d2_delay_ptr == d2_ptr_before
+    # Behavioral contract: restored striatum should produce same future behavior
+    for _ in range(10):
+        _ = striatum_restored(input_spikes)
+    d1_votes_restored, d2_votes_restored = striatum_restored.state_tracker.get_accumulated_votes()
+
+    # Votes should be similar (accounting for slight randomness in learning)
+    # We check that the ratio of D1 to D2 is preserved, not exact values
+    d1_d2_ratio_expected = d1_votes_future.sum() / (d2_votes_future.sum() + 1e-6)
+    d1_d2_ratio_restored = d1_votes_restored.sum() / (d2_votes_restored.sum() + 1e-6)
+
+    assert abs(d1_d2_ratio_expected - d1_d2_ratio_restored) < 0.5, \
+        f"Checkpoint should preserve D1/D2 vote ratio: {d1_d2_ratio_expected:.2f} vs {d1_d2_ratio_restored:.2f}"
 
 
 def test_different_delay_values(striatum_config_with_delays):
@@ -264,12 +308,43 @@ def test_different_delay_values(striatum_config_with_delays):
     )
     striatum_large = Striatum(config_large_diff)
 
-    # Verify delay steps are computed correctly
-    assert striatum_small._d2_delay_steps - striatum_small._d1_delay_steps == 2
-    assert striatum_large._d2_delay_steps - striatum_large._d1_delay_steps == 20
+    # Test behavioral difference: larger delay difference creates longer competition window
+    input_spikes = torch.ones(50, dtype=torch.bool)
 
-    # The larger delay difference should create a longer temporal competition window
-    # This is the biological mechanism for impulsivity vs deliberation!
+    # For small difference: measure D1→D2 arrival gap
+    striatum_small.reset_state()
+    d1_time_small, d2_time_small = None, None
+    for t in range(50):
+        _ = striatum_small(input_spikes)
+        d1_votes, d2_votes = striatum_small.state_tracker.get_accumulated_votes()
+        if d1_time_small is None and d1_votes.sum() > 0:
+            d1_time_small = t
+        if d2_time_small is None and d2_votes.sum() > 0:
+            d2_time_small = t
+        if d1_time_small and d2_time_small:
+            break
+
+    # For large difference: measure D1→D2 arrival gap
+    striatum_large.reset_state()
+    d1_time_large, d2_time_large = None, None
+    for t in range(50):
+        _ = striatum_large(input_spikes)
+        d1_votes, d2_votes = striatum_large.state_tracker.get_accumulated_votes()
+        if d1_time_large is None and d1_votes.sum() > 0:
+            d1_time_large = t
+        if d2_time_large is None and d2_votes.sum() > 0:
+            d2_time_large = t
+        if d1_time_large and d2_time_large:
+            break
+
+    # Behavioral contract: larger configured delay produces larger temporal gap
+    small_gap = d2_time_small - d1_time_small
+    large_gap = d2_time_large - d1_time_large
+    assert large_gap > small_gap, \
+        f"Larger delay config should create larger temporal gap: {large_gap} vs {small_gap}"
+    # Expected: small_gap ≈ 2ms, large_gap ≈ 20ms
+    assert abs(small_gap - 2) <= 1, f"Small gap should be ~2ms, got {small_gap}"
+    assert abs(large_gap - 20) <= 2, f"Large gap should be ~20ms, got {large_gap}"
 
 
 def test_population_coding_with_delays(striatum_config_with_delays):
@@ -292,16 +367,17 @@ def test_population_coding_with_delays(striatum_config_with_delays):
     input_spikes = torch.rand(50) > 0.8
     _ = striatum_pop(input_spikes)
 
-    # Delay buffers should track action-level votes, not individual neurons
-    # (votes are aggregated per action via _count_population_votes)
-    assert striatum_pop._d1_delay_buffer is not None
-    assert striatum_pop._d2_delay_buffer is not None
-    assert striatum_pop._d1_delay_buffer.shape[1] == 4  # n_actions, not n_neurons
-    assert striatum_pop._d2_delay_buffer.shape[1] == 4
+    # Behavioral contract: population coding aggregates to action-level votes
+    # Verify votes are tracked per action (4 actions), not per neuron (40 neurons)
+    d1_votes, d2_votes = striatum_pop.state_tracker.get_accumulated_votes()
+
+    # Contract: vote tensors should be action-sized
+    assert d1_votes.shape == (4,), f"D1 votes should be per-action, got shape {d1_votes.shape}"
+    assert d2_votes.shape == (4,), f"D2 votes should be per-action, got shape {d2_votes.shape}"
 
 
-def test_delay_reset_on_state_reset():
-    """Test that delay buffers are properly reset when state is reset."""
+def test_reset_clears_delay_state():
+    """Test that state reset clears accumulated delay effects."""
     config = StriatumConfig(
         n_input=50,
         n_output=4,
@@ -314,23 +390,138 @@ def test_delay_reset_on_state_reset():
     )
     striatum = Striatum(config)
 
-    # Run forward passes to populate buffers
-    input_spikes = torch.rand(50) > 0.8
+    # Run forward passes to accumulate votes
+    input_spikes = torch.ones(50, dtype=torch.bool)
     for _ in range(30):
         _ = striatum(input_spikes)
 
-    # Buffers should be populated
-    assert striatum._d1_delay_buffer is not None
-    assert striatum._d2_delay_buffer.sum().item() > 0 or striatum._d1_delay_buffer.sum().item() > 0
+    # Votes should be accumulated
+    d1_votes_before, d2_votes_before = striatum.state_tracker.get_accumulated_votes()
+    assert d1_votes_before.sum() > 0 or d2_votes_before.sum() > 0, \
+        "Should have accumulated votes before reset"
 
     # Reset state
     striatum.reset_state()
 
-    # After reset, buffers should be cleared (set back to None or zeroed)
-    # NOTE: Current implementation keeps buffers allocated but this is acceptable
-    # The important thing is pointers are reset to 0
-    assert striatum._d1_delay_ptr == 0
-    assert striatum._d2_delay_ptr == 0
+    # Behavioral contract: reset should clear accumulated votes
+    d1_votes_after, d2_votes_after = striatum.state_tracker.get_accumulated_votes()
+    assert d1_votes_after.sum() == 0, "D1 votes should be cleared after reset"
+    assert d2_votes_after.sum() == 0, "D2 votes should be cleared after reset"
+
+
+def test_striatum_silent_input():
+    """Test striatum handles completely silent input (edge case)."""
+    config = StriatumConfig(
+        n_input=50,
+        n_output=4,
+        dt_ms=1.0,
+        device="cpu",
+        d1_to_output_delay_ms=15.0,
+        d2_to_output_delay_ms=25.0,
+        population_coding=False,
+    )
+    striatum = Striatum(config)
+
+    # All-zero input
+    input_spikes = torch.zeros(50, dtype=torch.bool)
+
+    # Run multiple steps
+    for _ in range(50):
+        output = striatum(input_spikes)
+
+    # Contract: should not crash, produce valid output
+    assert output.shape == (4,)
+    assert output.dtype == torch.bool
+
+    # Contract: votes remain valid (no NaN/Inf)
+    d1_votes, d2_votes = striatum.state_tracker.get_accumulated_votes()
+    assert not torch.isnan(d1_votes).any(), "D1 votes should not have NaN"
+    assert not torch.isnan(d2_votes).any(), "D2 votes should not have NaN"
+
+
+def test_striatum_saturated_input():
+    """Test striatum handles saturated input without corruption (edge case)."""
+    config = StriatumConfig(
+        n_input=50,
+        n_output=4,
+        dt_ms=1.0,
+        device="cpu",
+        d1_to_output_delay_ms=15.0,
+        d2_to_output_delay_ms=25.0,
+        population_coding=False,
+    )
+    striatum = Striatum(config)
+
+    # All neurons firing
+    input_spikes = torch.ones(50, dtype=torch.bool)
+
+    # Run multiple steps with maximum input
+    for _ in range(50):
+        output = striatum(input_spikes)
+
+    # Contract: should produce valid output without saturation
+    assert output.shape == (4,)
+    assert output.dtype == torch.bool
+
+    # Contract: votes remain valid
+    d1_votes, d2_votes = striatum.state_tracker.get_accumulated_votes()
+    assert not torch.isnan(d1_votes).any(), "D1 votes should not have NaN"
+    assert not torch.isnan(d2_votes).any(), "D2 votes should not have NaN"
+
+
+def test_striatum_extreme_dopamine():
+    """Test striatum handles extreme dopamine without NaN/Inf (edge case)."""
+    config = StriatumConfig(
+        n_input=50,
+        n_output=4,
+        dt_ms=1.0,
+        device="cpu",
+        d1_to_output_delay_ms=15.0,
+        d2_to_output_delay_ms=25.0,
+        population_coding=False,
+    )
+    striatum = Striatum(config)
+
+    input_spikes = torch.rand(50) > 0.5
+
+    # Set extreme dopamine
+    striatum.set_dopamine(10.0)
+
+    # Run forward pass
+    output = striatum(input_spikes)
+
+    # Contract: extreme neuromodulation shouldn't cause numerical issues
+    assert not torch.isnan(output.float()).any(), "Output should not have NaN"
+    d1_votes, d2_votes = striatum.state_tracker.get_accumulated_votes()
+    assert not torch.isnan(d1_votes).any(), "D1 votes should not have NaN"
+    assert not torch.isnan(d2_votes).any(), "D2 votes should not have NaN"
+
+
+def test_striatum_repeated_forward_numerical_stability():
+    """Test that repeated forward passes maintain numerical stability."""
+    config = StriatumConfig(
+        n_input=50,
+        n_output=4,
+        dt_ms=1.0,
+        device="cpu",
+        d1_to_output_delay_ms=15.0,
+        d2_to_output_delay_ms=25.0,
+        population_coding=False,
+    )
+    striatum = Striatum(config)
+
+    input_spikes = torch.rand(50) > 0.5
+
+    # Run many forward passes
+    for _ in range(200):
+        output = striatum(input_spikes)
+
+    # Contract: long-term operation shouldn't cause corruption
+    d1_votes, d2_votes = striatum.state_tracker.get_accumulated_votes()
+    assert not torch.isnan(d1_votes).any(), "D1 votes should not have NaN"
+    assert not torch.isnan(d2_votes).any(), "D2 votes should not have NaN"
+    assert not torch.isinf(d1_votes).any(), "D1 votes should not have Inf"
+    assert not torch.isinf(d2_votes).any(), "D2 votes should not have Inf"
 
 
 if __name__ == "__main__":

@@ -83,38 +83,78 @@ def large_striatum_population(device):
 class TestFormatAutoSelection:
     """Test automatic format selection."""
 
-    def test_small_region_uses_neuromorphic(self, small_striatum):
-        """Small regions should use neuromorphic format."""
-        manager = small_striatum.checkpoint_manager
+    def test_small_region_uses_neuromorphic(self, small_striatum, tmp_path):
+        """Small regions should use neuromorphic format.
 
-        should_use_neuro = manager._should_use_neuromorphic()
-        assert should_use_neuro is True
+        BEHAVIORAL CONTRACT: Test by saving checkpoint and inspecting
+        the selected_format in hybrid_metadata (public contract).
+        """
+        import torch
 
-    def test_small_region_uses_neuromorphic_population_coding(self, small_striatum_population):
-        """Small regions with population coding should use neuromorphic format."""
-        manager = small_striatum_population.checkpoint_manager
+        # Save checkpoint (format auto-selected)
+        checkpoint_path = tmp_path / "small_striatum.pt"
+        small_striatum.checkpoint_manager.save(checkpoint_path)
+
+        # Load checkpoint and inspect PUBLIC metadata
+        state = torch.load(checkpoint_path, weights_only=False)
+        assert "hybrid_metadata" in state, "Checkpoint should have hybrid_metadata"
+        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
+            "Small region should use neuromorphic format"
+
+    def test_small_region_uses_neuromorphic_population_coding(self, small_striatum_population, tmp_path):
+        """Small regions with population coding should use neuromorphic format.
+
+        BEHAVIORAL CONTRACT: Test actual saved format, not internal decision logic.
+        """
+        import torch
 
         # 5 actions × 10 neurons = 50 neurons (still small, < 100)
-        should_use_neuro = manager._should_use_neuromorphic()
-        assert should_use_neuro is True
+        checkpoint_path = tmp_path / "small_striatum_pop.pt"
+        small_striatum_population.checkpoint_manager.save(checkpoint_path)
 
-    def test_large_region_uses_elastic(self, large_striatum):
-        """Large regions should use elastic tensor format."""
-        manager = large_striatum.checkpoint_manager
+        # Inspect PUBLIC metadata
+        state = torch.load(checkpoint_path, weights_only=False)
+        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
+            "Small region with population coding should use neuromorphic format"
 
-        should_use_neuro = manager._should_use_neuromorphic()
-        assert should_use_neuro is False
+    def test_large_region_uses_elastic_tensor(self, large_striatum, tmp_path):
+        """Large regions should use elastic tensor format.
 
-    def test_large_region_uses_elastic_population_coding(self, large_striatum_population):
-        """Large regions with population coding should use elastic tensor format."""
-        manager = large_striatum_population.checkpoint_manager
+        BEHAVIORAL CONTRACT: Validate format from saved checkpoint metadata.
+        """
+        import torch
 
-        # 150 actions × 10 neurons = 1500 neurons (large, > 100)
-        should_use_neuro = manager._should_use_neuromorphic()
-        assert should_use_neuro is False
+        checkpoint_path = tmp_path / "large_striatum.pt"
+        large_striatum.checkpoint_manager.save(checkpoint_path)
 
-    def test_growth_enabled_small_uses_neuromorphic(self, device):
-        """Small regions with growth enabled should use neuromorphic."""
+        # Inspect PUBLIC metadata
+        state = torch.load(checkpoint_path, weights_only=False)
+        assert state["hybrid_metadata"]["selected_format"] == "elastic_tensor", \
+            "Large region should use elastic tensor format"
+
+    def test_large_region_uses_elastic_tensor_population_coding(self, large_striatum_population, tmp_path):
+        """Large regions with population coding should use elastic tensor format.
+
+        BEHAVIORAL CONTRACT: Test the actual format used, not decision method.
+        """
+        import torch
+
+        # 150 actions × 10 neurons = 1500 neurons (large, >> 100)
+        checkpoint_path = tmp_path / "large_striatum_pop.pt"
+        large_striatum_population.checkpoint_manager.save(checkpoint_path)
+
+        # Inspect PUBLIC metadata
+        state = torch.load(checkpoint_path, weights_only=False)
+        assert state["hybrid_metadata"]["selected_format"] == "elastic_tensor", \
+            "Large region with population coding should use elastic tensor format"
+
+    def test_growth_enabled_small_uses_neuromorphic(self, device, tmp_path):
+        """Small regions with growth enabled should use neuromorphic.
+
+        BEHAVIORAL CONTRACT: Test actual saved format.
+        """
+        import torch
+
         config = StriatumConfig(
             n_output=80,
             n_input=100,
@@ -124,20 +164,39 @@ class TestFormatAutoSelection:
         )
         striatum = Striatum(config)
 
-        should_use_neuro = striatum.checkpoint_manager._should_use_neuromorphic()
-        assert should_use_neuro is True  # Small + growth enabled
+        checkpoint_path = tmp_path / "growth_enabled.pt"
+        striatum.checkpoint_manager.save(checkpoint_path)
 
-    def test_threshold_boundary(self, device):
-        """Test format selection at size threshold."""
+        state = torch.load(checkpoint_path, weights_only=False)
+        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
+            "Small region with growth enabled should use neuromorphic format"
+
+    def test_threshold_boundary(self, device, tmp_path):
+        """Test format selection at size threshold.
+
+        BEHAVIORAL CONTRACT: Verify format from actual saved checkpoints.
+        """
+        import torch
+
         # Just under threshold (100) - should use neuromorphic
         config_99 = StriatumConfig(n_output=99, n_input=100, device=device, population_coding=False)
         striatum_99 = Striatum(config_99)
-        assert striatum_99.checkpoint_manager._should_use_neuromorphic() is True
+
+        checkpoint_99 = tmp_path / "threshold_99.pt"
+        striatum_99.checkpoint_manager.save(checkpoint_99)
+        state_99 = torch.load(checkpoint_99, weights_only=False)
+        assert state_99["hybrid_metadata"]["selected_format"] == "neuromorphic", \
+            "99 neurons should use neuromorphic"
 
         # Just over threshold - should use elastic
         config_101 = StriatumConfig(n_output=101, n_input=100, device=device, growth_enabled=False, population_coding=False)
         striatum_101 = Striatum(config_101)
-        assert striatum_101.checkpoint_manager._should_use_neuromorphic() is False
+
+        checkpoint_101 = tmp_path / "threshold_101.pt"
+        striatum_101.checkpoint_manager.save(checkpoint_101)
+        state_101 = torch.load(checkpoint_101, weights_only=False)
+        assert state_101["hybrid_metadata"]["selected_format"] == "elastic_tensor", \
+            "101 neurons should use elastic tensor"
 
 
 class TestHybridSaveLoad:

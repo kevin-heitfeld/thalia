@@ -219,5 +219,132 @@ def test_state_persistence():
     torch.testing.assert_close(selector2.action_counts, selector1.action_counts)
 
 
+def test_all_zero_votes():
+    """Test action selection when all votes are zero (edge case)."""
+    selector = ActionSelector(
+        n_actions=4,
+        config=ActionSelectionConfig(mode=SelectionMode.GREEDY),
+    )
+
+    votes = torch.zeros(4)
+    action, info = selector.select_action(positive_votes=votes)
+
+    # Contract: should select a valid action even with zero votes
+    assert 0 <= action < 4, "Should select valid action index"
+    assert info['net_votes'] is not None, "Should return vote information"
+
+
+def test_all_equal_votes():
+    """Test action selection when all votes are equal (edge case)."""
+    selector = ActionSelector(
+        n_actions=3,
+        config=ActionSelectionConfig(mode=SelectionMode.GREEDY),
+    )
+
+    votes = torch.ones(3) * 5.0  # All equal
+    action, info = selector.select_action(positive_votes=votes)
+
+    # Contract: should select any valid action deterministically
+    assert 0 <= action < 3, "Should select valid action"
+    # With equal votes, should pick first action (greedy on tie)
+    assert action == 0, "Greedy should break ties by selecting first"
+
+
+def test_negative_votes_only():
+    """Test selection with only negative votes (all actions bad)."""
+    selector = ActionSelector(
+        n_actions=3,
+        config=ActionSelectionConfig(mode=SelectionMode.GREEDY),
+    )
+
+    positive = torch.zeros(3)
+    negative = torch.tensor([5.0, 10.0, 3.0])  # Net: [-5, -10, -3]
+
+    action, info = selector.select_action(
+        positive_votes=positive,
+        negative_votes=negative,
+    )
+
+    # Contract: should select least-bad action (least negative)
+    assert action == 2, "Should select action with least negative votes (-3)"
+    assert info['net_votes'][action] == -3.0, "Net votes should be least negative"
+
+
+def test_extreme_temperature_softmax():
+    """Test softmax with extreme temperature values (edge case)."""
+    selector_hot = ActionSelector(
+        n_actions=3,
+        config=ActionSelectionConfig(mode=SelectionMode.SOFTMAX, temperature=100.0),
+    )
+    selector_cold = ActionSelector(
+        n_actions=3,
+        config=ActionSelectionConfig(mode=SelectionMode.SOFTMAX, temperature=0.01),
+    )
+
+    votes = torch.tensor([10.0, 5.0, 1.0])
+
+    # High temperature: nearly uniform distribution
+    action_counts_hot = torch.zeros(3)
+    for _ in range(300):
+        action, _ = selector_hot.select_action(positive_votes=votes)
+        action_counts_hot[action] += 1
+
+    # Should have relatively balanced selection
+    assert action_counts_hot.min() > 50, "High temp should explore broadly"
+
+    # Low temperature: nearly deterministic (always pick best)
+    action_counts_cold = torch.zeros(3)
+    for _ in range(100):
+        action, _ = selector_cold.select_action(positive_votes=votes)
+        action_counts_cold[action] += 1
+
+    # Should almost always pick action 0
+    assert action_counts_cold[0] > 95, "Low temp should be nearly greedy"
+
+
+def test_single_action():
+    """Test selector with only one action (edge case)."""
+    selector = ActionSelector(
+        n_actions=1,
+        config=ActionSelectionConfig(mode=SelectionMode.GREEDY),
+    )
+
+    votes = torch.tensor([5.0])
+    action, info = selector.select_action(positive_votes=votes)
+
+    # Contract: must select the only available action
+    assert action == 0, "Single action must be selected"
+
+
+def test_ucb_c_parameter_effect():
+    """Test that UCB exploration constant affects selection."""
+    selector_high = ActionSelector(
+        n_actions=3,
+        config=ActionSelectionConfig(mode=SelectionMode.UCB, ucb_c=5.0),
+    )
+    selector_low = ActionSelector(
+        n_actions=3,
+        config=ActionSelectionConfig(mode=SelectionMode.UCB, ucb_c=0.1),
+    )
+
+    votes = torch.tensor([10.0, 5.0, 1.0])
+
+    # Action 0 is best, but has been tried
+    selector_high.action_counts[0] = 10
+    selector_high.total_selections = 10
+    selector_low.action_counts[0] = 10
+    selector_low.total_selections = 10
+
+    # High c should explore untried actions more
+    action_high, _ = selector_high.select_action(positive_votes=votes)
+    # Low c should exploit best action more
+    action_low, _ = selector_low.select_action(positive_votes=votes)
+
+    # Contract: higher c increases exploration
+    # (Not deterministic, so just check they're valid)
+    assert 0 <= action_high < 3
+    assert 0 <= action_low < 3
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

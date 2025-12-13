@@ -145,13 +145,28 @@ class TestPrefrontalNeuromorphic:
 class TestPrefrontalHybrid:
     """Test hybrid format selection and metadata."""
 
-    def test_small_region_uses_neuromorphic(self, small_prefrontal):
-        """Small prefrontal (<200 neurons) should auto-select neuromorphic."""
-        manager = PrefrontalCheckpointManager(small_prefrontal)
-        assert manager._should_use_neuromorphic() is True
+    def test_small_region_uses_neuromorphic(self, small_prefrontal, tmp_path):
+        """Small prefrontal (<200 neurons) should auto-select neuromorphic.
 
-    def test_growth_enabled_uses_neuromorphic(self, device):
-        """Prefrontal with growth (has add_neurons) should use neuromorphic."""
+        BEHAVIORAL CONTRACT: Test actual saved format, not decision method.
+        """
+        import torch
+
+        manager = PrefrontalCheckpointManager(small_prefrontal)
+        checkpoint_path = tmp_path / "small_pfc_format.pt"
+        manager.save(checkpoint_path)
+
+        state = torch.load(checkpoint_path, weights_only=False)
+        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
+            "Small PFC should use neuromorphic format"
+
+    def test_growth_enabled_uses_neuromorphic(self, device, tmp_path):
+        """Prefrontal with growth (has add_neurons) should use neuromorphic.
+
+        BEHAVIORAL CONTRACT: Verify format via saved checkpoint.
+        """
+        import torch
+
         config = PrefrontalConfig(
             n_input=8,
             n_output=300,  # Large, but has growth capability
@@ -160,8 +175,15 @@ class TestPrefrontalHybrid:
         )
         prefrontal = Prefrontal(config)
         manager = PrefrontalCheckpointManager(prefrontal)
-        # Prefrontal inherits add_neurons from GrowthMixin, so always neuromorphic
-        assert manager._should_use_neuromorphic() is True
+
+        # Test actual format selection
+        checkpoint_path = tmp_path / "pfc_growth_format.pt"
+        manager.save(checkpoint_path)
+
+        state = torch.load(checkpoint_path, weights_only=False)
+        # Prefrontal inherits add_neurons from GrowthMixin, so should use neuromorphic
+        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
+            "PFC with growth should use neuromorphic format"
 
     def test_hybrid_metadata_included(self, small_prefrontal, tmp_path):
         """Saved checkpoint should include hybrid metadata."""

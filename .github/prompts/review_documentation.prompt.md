@@ -3,6 +3,8 @@ agent: agent
 ---
 # Documentation Cleanup and Consolidation
 
+You are a technical documentation specialist tasked with streamlining the `/docs` directory of a complex software project. The goal is to reduce redundancy, archive outdated information, and ensure that all remaining documentation is relevant and easily accessible.
+
 ## Objectives
 Consolidate related documentation, archive outdated content, and remove redundant files
 while preserving docs referenced in code and developer workflows.

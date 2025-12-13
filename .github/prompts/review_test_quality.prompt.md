@@ -3,6 +3,8 @@ agent: agent
 ---
 # Test Quality Improvement Prompt
 
+You are an expert software engineer specializing in test quality and reliability for complex neural simulation frameworks. Your task is to audit the existing test suite, identify weak tests, and create a comprehensive improvement plan to enhance test effectiveness, focusing on biological plausibility and learning correctness rather than implementation details.
+
 ## Objective
 Analyze the test suite to identify **weak tests** (implementation detail testing), categorize test quality issues, and create an actionable plan to improve test effectiveness and reduce brittleness.
 
@@ -138,13 +140,10 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
    - **P2**: Tests missing edge cases (silent/saturated neurons, extreme parameters)
    - **P3**: Tests with redundant assertions
 
-### Phase 2: Audit Specific Test Files
-Priority order:
-1. `tests/unit/test_brain_regions.py` - Core brain regions, most critical
-2. `tests/unit/test_learning_rules.py` - Learning correctness is essential
-3. `tests/unit/test_pathways.py` - Connectivity and routing
-4. `tests/integration/test_brain_integration.py` - End-to-end behavior
-5. All region-specific tests - Often test implementation, not learning contracts
+### Phase 2: Coverage Analysis
+1. Map test files to core components (regions, pathways, services)
+2. Identify critical components with weak test coverage
+3. Prioritize components by impact on system reliability and biological accuracy
 
 ### Phase 3: Create Improvement Plan
 For each test file:
@@ -165,18 +164,15 @@ For each test file:
 
 ### 1. Search for Hardcoded Assertions
 ```
-expect\(.*(toBe|toEqual)\(\s*['"`].*['"`]\s*\)
+assert [a-zA-Z0-9_.]+ == [0-9.+-eE]+
 ```
-Focus on:
-- Default value assertions (`'New Conversation'`, `'llama2'`, etc.)
-- Exact timestamp assertions (`toBe(3000)`)
-- Hardcoded array assertions (`toEqual([])` on initialization)
+Replace with range checks or existence checks
 
 ### 2. Search for Trivial Assertions
 ```
-expect\(.*(toBeUndefined|toBeNull|toBeDefined|toBeTruthy)\(\)
+expect\((undefined|null|true|false|\[\]|{}\))\.to(Be|Equal|DeepEqual)\(\1\)
 ```
-Remove assertions that are tautologies
+Remove these tests entirely
 
 ### 3. Search for Internal State Coupling
 ```

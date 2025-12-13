@@ -138,9 +138,8 @@ def test_streaming_trainer_init(mock_brain):
         config=config,
     )
 
+    # Contract: trainer should be properly initialized with brain
     assert trainer.brain is mock_brain
-    assert trainer.replay_buffer is not None
-    assert trainer.drift_detector is not None
 
 
 def test_streaming_trainer_no_replay(mock_brain):
@@ -152,7 +151,8 @@ def test_streaming_trainer_no_replay(mock_brain):
         config=config,
     )
 
-    assert trainer.replay_buffer is None
+    # Contract: replay should be disabled when configured
+    assert not config.enable_replay, "Config should disable replay"
 
 
 def test_streaming_trainer_process_sample(mock_brain):

@@ -13,9 +13,6 @@ Test Coverage:
 """
 
 import pytest
-import tempfile
-from pathlib import Path
-from typing import Dict, Any
 
 import torch
 
@@ -55,70 +52,152 @@ def hybrid_brain(device):
 class TestFormatAutoSelection:
     """Test automatic format selection based on region properties."""
 
-    def test_large_stable_uses_elastic_tensor(self, hybrid_brain):
-        """Large stable regions should use elastic tensor format."""
+    def test_large_stable_uses_elastic_tensor(self, hybrid_brain, tmp_path):
+        """Large stable regions should use elastic tensor format.
+
+        BEHAVIORAL CONTRACT: Test by saving brain and inspecting checkpoint structure.
+        """
+        import torch
+
         manager = CheckpointManager(hybrid_brain)
+        checkpoint_path = tmp_path / "hybrid_brain.pt"
+        manager.save(checkpoint_path)
 
-        state = manager._get_region_state(hybrid_brain.regions["cortex"])
+        # Load and inspect saved checkpoint structure
+        state = torch.load(checkpoint_path, weights_only=False)
 
-        assert state["format"] == "elastic_tensor"
-        assert "weights" in state
-        assert "used" in state
-        assert "capacity" in state
+        # Cortex (large stable) should be in elastic tensor format
+        assert "regions" in state
+        cortex_state = state["regions"]["cortex"]
+        assert cortex_state["format"] == "elastic_tensor"
+        assert "weights" in cortex_state
+        assert "used" in cortex_state
+        assert "capacity" in cortex_state
 
-    def test_small_dynamic_uses_neuromorphic(self, hybrid_brain):
-        """Small dynamic regions should use neuromorphic format."""
+    def test_small_dynamic_uses_neuromorphic(self, hybrid_brain, tmp_path):
+        """Small dynamic regions should use neuromorphic format.
+
+        BEHAVIORAL CONTRACT: Verify format from saved checkpoint.
+        """
         manager = CheckpointManager(hybrid_brain)
+        checkpoint_path = tmp_path / "hybrid_brain_neuro.pt"
+        manager.save(checkpoint_path)
 
-        state = manager._get_region_state(hybrid_brain.regions["striatum"])
+        state = torch.load(checkpoint_path, weights_only=False)
+        striatum_state = state["regions"]["striatum"]
 
-        assert state["format"] == "neuromorphic"
-        assert "neurons" in state
+        assert striatum_state["format"] == "neuromorphic"
+        assert "neurons" in striatum_state
 
         # Should have neuron-centric data
-        assert all("id" in n for n in state["neurons"])
+        assert all("id" in n for n in striatum_state["neurons"])
 
-    def test_neurogenesis_region_uses_neuromorphic(self, hybrid_brain):
-        """Regions with neurogenesis should use neuromorphic format."""
+    def test_neurogenesis_region_uses_neuromorphic(self, hybrid_brain, tmp_path):
+        """Regions with neurogenesis should use neuromorphic format.
+
+        BEHAVIORAL CONTRACT: Test actual saved format.
+        """
+        import torch
+
         manager = CheckpointManager(hybrid_brain)
+        checkpoint_path = tmp_path / "hybrid_brain_hippo.pt"
+        manager.save(checkpoint_path)
 
-        state = manager._get_region_state(hybrid_brain.regions["hippocampus"])
+        state = torch.load(checkpoint_path, weights_only=False)
+        hippocampus_state = state["regions"]["hippocampus"]
 
-        assert state["format"] == "neuromorphic"
+        assert hippocampus_state["format"] == "neuromorphic"
 
-    def test_format_selection_based_on_growth_frequency(self, device):
-        """Format selection should consider growth frequency."""
+    def test_format_selection_based_on_growth_frequency(self, device, tmp_path):
+        """Format selection should consider growth frequency.
+
+        BEHAVIORAL CONTRACT: Test by creating regions with different growth
+        frequencies and checking saved checkpoint format.
+        """
+        import torch
+        from thalia.regions.striatum import Striatum, StriatumConfig
+
         # High growth frequency -> neuromorphic
-        region_dynamic = Striatum(n_actions=100, device=device, growth_frequency=0.5)
+        config_dynamic = StriatumConfig(
+            n_output=100,
+            n_input=50,
+            device=device,
+            growth_enabled=True,
+        )
+        region_dynamic = Striatum(config_dynamic)
 
-        manager = CheckpointManager(None)
-        state_dynamic = manager._get_region_state(region_dynamic)
+        # Create brain with dynamic region and save
+        from thalia.core.brain import EventDrivenBrain
+        brain_dynamic = EventDrivenBrain()
+        brain_dynamic.add_region("striatum_dynamic", region_dynamic)
 
-        assert state_dynamic["format"] == "neuromorphic"
+        checkpoint_path_dynamic = tmp_path / "dynamic_region.pt"
+        CheckpointManager(brain_dynamic).save(checkpoint_path_dynamic)
 
-        # Low growth frequency -> elastic tensor
-        region_stable = Striatum(n_actions=100, device=device, growth_frequency=0.01)
+        state_dynamic = torch.load(checkpoint_path_dynamic, weights_only=False)
+        # Check if region uses neuromorphic format
+        assert state_dynamic["regions"]["striatum_dynamic"]["format"] == "neuromorphic"
 
-        state_stable = manager._get_region_state(region_stable)
+        # Low/no growth frequency -> elastic tensor
+        config_stable = StriatumConfig(
+            n_output=100,
+            n_input=50,
+            device=device,
+            growth_enabled=False,
+        )
+        region_stable = Striatum(config_stable)
 
-        assert state_stable["format"] == "elastic_tensor"
+        brain_stable = EventDrivenBrain()
+        brain_stable.add_region("striatum_stable", region_stable)
 
-    def test_format_selection_based_on_size(self, device):
-        """Small regions should prefer neuromorphic, large prefer elastic."""
+        checkpoint_path_stable = tmp_path / "stable_region.pt"
+        CheckpointManager(brain_stable).save(checkpoint_path_stable)
+
+        state_stable = torch.load(checkpoint_path_stable, weights_only=False)
+        assert state_stable["regions"]["striatum_stable"]["format"] == "elastic_tensor"
+
+    def test_format_selection_based_on_size(self, device, tmp_path):
+        """Small regions should prefer neuromorphic, large prefer elastic.
+
+        BEHAVIORAL CONTRACT: Test by saving and inspecting checkpoint format.
+        """
+        import torch
+        from thalia.regions.cortex.predictive_cortex import PredictiveCortex
+        from thalia.regions.cortex.config import PredictiveCortexConfig
+
         # Small region -> neuromorphic
-        region_small = Cortex(n_neurons=50, device=device)
+        config_small = PredictiveCortexConfig(
+            n_input=30,
+            n_output=50,
+            device=device,
+        )
+        region_small = PredictiveCortex(config_small)
 
-        manager = CheckpointManager(None)
-        state_small = manager._get_region_state(region_small)
+        brain_small = EventDrivenBrain()
+        brain_small.add_region("cortex_small", region_small)
 
-        assert state_small["format"] == "neuromorphic"
+        checkpoint_path_small = tmp_path / "small_region.pt"
+        CheckpointManager(brain_small).save(checkpoint_path_small)
+
+        state_small = torch.load(checkpoint_path_small, weights_only=False)
+        assert state_small["regions"]["cortex_small"]["format"] == "neuromorphic"
 
         # Large region -> elastic tensor
-        region_large = Cortex(n_neurons=10000, device=device)
+        config_large = PredictiveCortexConfig(
+            n_input=500,
+            n_output=10000,
+            device=device,
+        )
+        region_large = PredictiveCortex(config_large)
 
-        state_large = manager._get_region_state(region_large)
+        brain_large = EventDrivenBrain()
+        brain_large.add_region("cortex_large", region_large)
 
-        assert state_large["format"] == "elastic_tensor"
+        checkpoint_path_large = tmp_path / "large_region.pt"
+        CheckpointManager(brain_large).save(checkpoint_path_large)
+
+        state_large = torch.load(checkpoint_path_large, weights_only=False)
+        assert state_large["regions"]["cortex_large"]["format"] == "elastic_tensor"
 
 
 class TestMixedRegionCheckpoint:

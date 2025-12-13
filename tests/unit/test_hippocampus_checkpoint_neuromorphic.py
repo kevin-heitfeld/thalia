@@ -116,9 +116,14 @@ class TestHippocampusNeuromorphic:
 class TestHippocampusHybrid:
     """Test hybrid format auto-selection."""
 
-    def test_small_region_uses_neuromorphic(self, small_hippocampus):
+    def test_small_region_uses_neuromorphic(self, small_hippocampus, tmp_path):
         """Small hippocampus should default to neuromorphic."""
-        assert small_hippocampus.checkpoint_manager._should_use_neuromorphic() is True
+        checkpoint_path = tmp_path / "small_hippo_format.pt"
+        small_hippocampus.checkpoint_manager.save(checkpoint_path)
+
+        state = torch.load(checkpoint_path, weights_only=False)
+        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
+            "Small hippocampus should use neuromorphic format"
 
     def test_hybrid_metadata_included(self, small_hippocampus, tmp_path):
         """Hybrid checkpoints should include metadata about format selection."""

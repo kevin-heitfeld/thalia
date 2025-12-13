@@ -58,7 +58,7 @@ def test_multimodal_config_validation():
         device="cpu",
     )
     region = MultimodalIntegration(config)
-    assert region is not None
+    # Contract: should successfully create region with valid config
 
     # Should fail (ratios don't sum to 1)
     bad_config = MultimodalIntegrationConfig(
@@ -79,11 +79,28 @@ def test_multimodal_config_validation():
 
 
 def test_multimodal_pool_sizes(multimodal_region, multimodal_config):
-    """Test pool size calculations."""
-    assert multimodal_region.visual_pool_size == 30
-    assert multimodal_region.auditory_pool_size == 30
-    assert multimodal_region.language_pool_size == 20
-    assert multimodal_region.integration_pool_size == 20
+    """Test pool size calculations match configured ratios."""
+    # Contract: pool sizes should match configured ratios of n_output
+    expected_visual = int(multimodal_config.n_output * multimodal_config.visual_pool_ratio)
+    expected_auditory = int(multimodal_config.n_output * multimodal_config.auditory_pool_ratio)
+    expected_language = int(multimodal_config.n_output * multimodal_config.language_pool_ratio)
+    expected_integration = (
+        multimodal_config.n_output - expected_visual - expected_auditory - expected_language
+    )
+
+    assert multimodal_region.visual_pool_size == expected_visual
+    assert multimodal_region.auditory_pool_size == expected_auditory
+    assert multimodal_region.language_pool_size == expected_language
+    assert multimodal_region.integration_pool_size == expected_integration
+
+    # Contract: pools should sum to total output
+    total_pool = (
+        multimodal_region.visual_pool_size +
+        multimodal_region.auditory_pool_size +
+        multimodal_region.language_pool_size +
+        multimodal_region.integration_pool_size
+    )
+    assert total_pool == multimodal_config.n_output
 
 
 def test_multimodal_forward_visual_only(multimodal_region):
