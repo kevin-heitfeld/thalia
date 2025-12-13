@@ -316,3 +316,231 @@ class CheckpointManager:
             if delay_state["d2_delay_buffer"] is not None:
                 s._d2_delay_buffer = delay_state["d2_delay_buffer"].to(s.device)
                 s._d2_delay_ptr = delay_state["d2_delay_ptr"]
+
+    # =========================================================================
+    # NEUROMORPHIC FORMAT (Phase 2) - Neuron-Centric Checkpoints
+    # =========================================================================
+
+    def _extract_synapses_for_neuron(self, neuron_idx: int, weights: torch.Tensor, eligibility: torch.Tensor, source_prefix: str) -> list[Dict[str, Any]]:
+        """Extract synapses for a single neuron.
+        
+        Args:
+            neuron_idx: Index of target neuron
+            weights: Weight matrix [n_output, n_input]
+            eligibility: Eligibility traces [n_output, n_input]
+            source_prefix: Prefix for source neuron IDs (e.g., "cortex_l4_neuron")
+            
+        Returns:
+            List of synapse dicts with {from, weight, eligibility}
+        """
+        synapses = []
+        neuron_weights = weights[neuron_idx]
+        neuron_eligibility = eligibility[neuron_idx] if eligibility is not None else torch.zeros_like(neuron_weights)
+        
+        # Only store non-zero synapses (sparse format)
+        nonzero_mask = neuron_weights.abs() > 1e-8
+        nonzero_indices = torch.nonzero(nonzero_mask, as_tuple=True)[0]
+        
+        for input_idx in nonzero_indices:
+            synapse = {
+                "from": f"{source_prefix}_{input_idx.item()}",
+                "weight": neuron_weights[input_idx].item(),
+                "eligibility": neuron_eligibility[input_idx].item(),
+            }
+            synapses.append(synapse)
+        
+        return synapses
+
+    def get_neuromorphic_state(self, source_prefix: str = "input") -> Dict[str, Any]:
+        """Get striatum state in neuromorphic (neuron-centric) format.
+        
+        Instead of weight matrices, stores per-neuron data with explicit synapses.
+        This format is ID-based, supporting growth/pruning gracefully.
+        
+        Args:
+            source_prefix: Prefix for input neuron IDs (defaults to "input")
+            
+        Returns:
+            Dict with format: {
+                "format": "neuromorphic",
+                "neurons": [
+                    {
+                        "id": "striatum_d1_neuron_0_step0",
+                        "type": "D1-MSN",
+                        "region": "striatum",
+                        "created_step": 0,
+                        "membrane": 0.5,
+                        "incoming_synapses": [
+                            {"from": "input_0", "weight": 0.3, "eligibility": 0.1}
+                        ]
+                    }
+                ]
+            }
+        """
+        s = self.striatum
+        
+        neurons = []
+        
+        # Extract D1 pathway neurons
+        d1_weights = s.d1_pathway.weights
+        d1_eligibility = s.d1_pathway.eligibility if s.d1_pathway.eligibility is not None else torch.zeros_like(d1_weights)
+        
+        n_d1 = d1_weights.shape[0] // 2  # Half are D1
+        
+        for i in range(n_d1):
+            neuron_id = s.neuron_ids[i] if i < len(s.neuron_ids) else f"striatum_d1_neuron_{i}_step0"
+            
+            # Extract creation step from ID (format: "..._step{N}")
+            created_step = 0
+            if "_step" in neuron_id:
+                created_step = int(neuron_id.split("_step")[1])
+            
+            neuron_data = {
+                "id": neuron_id,
+                "type": "D1-MSN",
+                "region": "striatum",
+                "created_step": created_step,
+                "membrane": s.d1_pathway.neurons.membrane[i].item() if s.d1_pathway.neurons.membrane is not None else 0.0,
+                "incoming_synapses": self._extract_synapses_for_neuron(i, d1_weights, d1_eligibility, source_prefix),
+            }
+            neurons.append(neuron_data)
+        
+        # Extract D2 pathway neurons
+        d2_weights = s.d2_pathway.weights
+        d2_eligibility = s.d2_pathway.eligibility if s.d2_pathway.eligibility is not None else torch.zeros_like(d2_weights)
+        
+        n_d2 = d2_weights.shape[0] - n_d1  # Remaining are D2
+        
+        for i in range(n_d2):
+            neuron_idx = n_d1 + i
+            neuron_id = s.neuron_ids[neuron_idx] if neuron_idx < len(s.neuron_ids) else f"striatum_d2_neuron_{i}_step0"
+            
+            # Extract creation step from ID
+            created_step = 0
+            if "_step" in neuron_id:
+                created_step = int(neuron_id.split("_step")[1])
+            
+            neuron_data = {
+                "id": neuron_id,
+                "type": "D2-MSN",
+                "region": "striatum",
+                "created_step": created_step,
+                "membrane": s.d2_pathway.neurons.membrane[i].item() if s.d2_pathway.neurons.membrane is not None else 0.0,
+                "incoming_synapses": self._extract_synapses_for_neuron(i, d2_weights, d2_eligibility, source_prefix),
+            }
+            neurons.append(neuron_data)
+        
+        return {
+            "format": "neuromorphic",
+            "format_version": "2.0.0",
+            "neurons": neurons,
+            # Also store global state (exploration, action selection, etc.)
+            "exploration_state": {
+                "manager_state": s.exploration_manager.get_state(),
+            },
+            "action_state": {
+                "last_action": s.state_tracker.last_action,
+            },
+        }
+
+    def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:
+        """Load striatum state from neuromorphic format.
+        
+        Matches neurons by ID and restores state. Handles:
+        - Missing neurons (checkpoint has neurons brain doesn't) → skip with warning
+        - Extra neurons (brain has neurons checkpoint doesn't) → keep current state
+        - Orphaned synapses (source neuron deleted) → skip
+        
+        Args:
+            state: Dict from get_neuromorphic_state()
+        """
+        s = self.striatum
+        
+        if state.get("format") != "neuromorphic":
+            raise ValueError(f"Expected neuromorphic format, got {state.get('format')}")
+        
+        # Build ID → neuron data mapping
+        neurons_by_id = {n["id"]: n for n in state["neurons"]}
+        
+        # Counters for logging
+        restored_count = 0
+        missing_count = 0
+        
+        # Build ID → index mapping for current brain
+        current_neuron_indices = {neuron_id: idx for idx, neuron_id in enumerate(s.neuron_ids)}
+        
+        # Restore each neuron from checkpoint
+        for neuron_data in state["neurons"]:
+            neuron_id = neuron_data["id"]
+            
+            # Check if this neuron exists in current brain
+            if neuron_id not in current_neuron_indices:
+                missing_count += 1
+                continue  # Skip neurons not in current brain
+            
+            idx = current_neuron_indices[neuron_id]
+            neuron_type = neuron_data["type"]
+            
+            # Restore membrane potential
+            if neuron_type == "D1-MSN":
+                if idx < s.d1_pathway.neurons.membrane.shape[0]:
+                    s.d1_pathway.neurons.membrane[idx] = neuron_data["membrane"]
+            elif neuron_type == "D2-MSN":
+                d2_idx = idx - (s.d1_pathway.neurons.membrane.shape[0] // 2)
+                if d2_idx < s.d2_pathway.neurons.membrane.shape[0]:
+                    s.d2_pathway.neurons.membrane[d2_idx] = neuron_data["membrane"]
+            
+            # Restore synapses (weights and eligibility)
+            for synapse in neuron_data["incoming_synapses"]:
+                # Parse source neuron ID to get input index
+                source_id = synapse["from"]
+                if "_" in source_id:
+                    try:
+                        input_idx = int(source_id.split("_")[-1])
+                        
+                        # Restore weight
+                        if neuron_type == "D1-MSN" and idx < s.d1_pathway.weights.shape[0]:
+                            if input_idx < s.d1_pathway.weights.shape[1]:
+                                s.d1_pathway.weights[idx, input_idx] = synapse["weight"]
+                                if s.d1_pathway.eligibility is not None:
+                                    s.d1_pathway.eligibility[idx, input_idx] = synapse["eligibility"]
+                        elif neuron_type == "D2-MSN":
+                            d2_idx = idx - (s.d1_pathway.weights.shape[0] // 2)
+                            if d2_idx < s.d2_pathway.weights.shape[0] and input_idx < s.d2_pathway.weights.shape[1]:
+                                s.d2_pathway.weights[d2_idx, input_idx] = synapse["weight"]
+                                if s.d2_pathway.eligibility is not None:
+                                    s.d2_pathway.eligibility[d2_idx, input_idx] = synapse["eligibility"]
+                    except (ValueError, IndexError):
+                        # Invalid source ID format, skip
+                        pass
+            
+            restored_count += 1
+        
+        # Restore global state
+        if "exploration_state" in state and "manager_state" in state["exploration_state"]:
+            s.exploration_manager.load_state(state["exploration_state"]["manager_state"])
+        
+        if "action_state" in state:
+            s.state_tracker.last_action = state["action_state"]["last_action"]
+        
+        # Log warnings
+        if missing_count > 0:
+            import warnings
+            warnings.warn(
+                f"Checkpoint has {missing_count} neurons not in current brain. "
+                f"Skipped those neurons. Restored {restored_count} neurons.",
+                UserWarning
+            )
+        
+        # Check for extra neurons in brain
+        checkpoint_ids = set(neurons_by_id.keys())
+        current_ids = set(s.neuron_ids)
+        extra_ids = current_ids - checkpoint_ids
+        
+        if len(extra_ids) > 0:
+            import warnings
+            warnings.warn(
+                f"Brain has {len(extra_ids)} neurons not in checkpoint. "
+                f"Keeping their current state.",
+                UserWarning
+            )
