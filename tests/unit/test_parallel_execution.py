@@ -332,6 +332,7 @@ class TestParallelEdgeCases:
             brain=BrainConfig(
                 sizes=RegionSizes(
                     input_size=784,
+                    thalamus_size=784,  # Must match input_size
                     cortex_size=128,
                     hippocampus_size=100,
                     pfc_size=64,
@@ -355,6 +356,7 @@ class TestParallelEdgeCases:
             brain=BrainConfig(
                 sizes=RegionSizes(
                     input_size=784,
+                    thalamus_size=784,  # Must match input_size
                     cortex_size=128,
                     hippocampus_size=100,
                     pfc_size=64,
