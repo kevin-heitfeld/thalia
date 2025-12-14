@@ -784,22 +784,22 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
     def _initialize_neuron_ids(self) -> None:
         """Initialize neuron IDs for initial neurons.
-        
+
         Creates unique IDs for all neurons at initialization (step 0).
         IDs follow format: "striatum_{d1|d2}_neuron_{index}_step{step}"
         """
         self.neuron_ids = []
         n_neurons = self.config.n_output
-        
+
         # Half D1, half D2 (for ID purposes, even if pathways are separate)
         n_d1 = n_neurons // 2
         n_d2 = n_neurons - n_d1
-        
+
         # D1 neuron IDs
         for i in range(n_d1):
             neuron_id = f"striatum_d1_neuron_{i}_step{self._current_step}"
             self.neuron_ids.append(neuron_id)
-        
+
         # D2 neuron IDs
         for i in range(n_d2):
             neuron_id = f"striatum_d2_neuron_{i}_step{self._current_step}"
@@ -807,22 +807,22 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
     def _generate_new_neuron_ids(self, n_new: int, pathway_type: str = "d1") -> List[str]:
         """Generate unique IDs for new neurons.
-        
+
         Args:
             n_new: Number of new neurons to create
             pathway_type: "d1" or "d2" for pathway identification
-            
+
         Returns:
             List of new neuron IDs
         """
         new_ids = []
         # Count existing neurons of this type for indexing
         existing_count = sum(1 for id in self.neuron_ids if f"_{pathway_type}_" in id)
-        
+
         for i in range(n_new):
             neuron_id = f"striatum_{pathway_type}_neuron_{existing_count + i}_step{self._current_step}"
             new_ids.append(neuron_id)
-        
+
         return new_ids
 
     # region Growth and Neurogenesis
@@ -1492,6 +1492,9 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         self.state.spikes = output_spikes
         self.state.t += 1
+
+        # Increment step counter for neuromorphic checkpoint creation timestamps
+        self._current_step += 1
 
         # Apply axonal delay (biological reality: ALL neural connections have delays)
         delayed_spikes = self._apply_axonal_delay(output_spikes, dt)

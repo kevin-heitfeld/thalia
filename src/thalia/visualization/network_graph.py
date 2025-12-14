@@ -244,11 +244,9 @@ def export_topology_to_graphviz(
 
         f.write("\n")
 
-        # Write edges
+        # Write edges - use pathway_map which has (source, target) keys
         pathway_manager = brain.pathway_manager
-        for pathway_name, pathway in pathway_manager.pathways.items():
-            source = pathway.source_name
-            target = pathway.target_name
+        for (source, target), pathway in pathway_manager._pathway_map.items():
             strength = _get_pathway_strength(pathway)
 
             if include_weights:
@@ -281,10 +279,10 @@ def plot_connectivity_matrix(
     matrix = np.zeros((n_regions, n_regions))
 
     pathway_manager = brain.pathway_manager
-    for pathway_name, pathway in pathway_manager.pathways.items():
+    for (source, target), pathway in pathway_manager._pathway_map.items():
         try:
-            source_idx = region_names.index(pathway.source_name)
-            target_idx = region_names.index(pathway.target_name)
+            source_idx = region_names.index(source)
+            target_idx = region_names.index(target)
             strength = _get_pathway_strength(pathway)
             matrix[source_idx, target_idx] = strength
         except ValueError:
@@ -292,7 +290,7 @@ def plot_connectivity_matrix(
             continue
 
     # Plot
-    fig, ax = plt.subplots(figsize=figsize)
+    _fig, ax = plt.subplots(figsize=figsize)
     im = ax.imshow(matrix, cmap=cmap, aspect='auto')
 
     # Axis labels
@@ -318,7 +316,11 @@ def plot_connectivity_matrix(
 # =============================================================================
 
 def _get_neuron_count(region: Any) -> int:
-    """Get neuron count from region."""
+    """Get neuron count from region (handles EventDrivenRegion adapters)."""
+    # If this is an EventDrivenRegion adapter, unwrap to get implementation
+    if hasattr(region, 'impl'):
+        region = region.impl
+
     # Try various attributes
     if hasattr(region, 'n_neurons'):
         return region.n_neurons

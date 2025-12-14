@@ -1032,6 +1032,15 @@ class EventDrivenBrain(nn.Module):
             except Exception:
                 pass  # Ignore errors during cleanup
 
+    @property
+    def regions(self) -> Dict[str, "EventDrivenRegionBase"]:
+        """Get region adapters dict (for compatibility with visualization/diagnostics).
+
+        Returns:
+            Dict mapping region names to EventDrivenRegion adapters
+        """
+        return self.adapters
+
     # =========================================================================
     # HIGH-LEVEL APIs
     # =========================================================================

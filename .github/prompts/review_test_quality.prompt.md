@@ -205,19 +205,12 @@ Verify each positive test has corresponding edge case test
 - Categorized by issue type (hardcoded values, trivial tests, missing edge cases, etc.)
 - Severity ratings
 - Impact assessment
-
-### 2. **Improvement Plan Document**
 - Priority-ordered list of files to improve
 - Specific recommendations for each test
 - Patterns to follow going forward
 - Estimated effort per file
 
-### 3. **Test Improvement Examples**
-- For each category of problem, show BEFORE/AFTER examples
-- Document new patterns for edge case testing
-- Document contract-based assertion patterns
-
-### 4. **Updated Testing Guidelines**
+### 2. **Updated Testing Guidelines**
 - Add to `tests/WRITING_TESTS.md`
 - Include examples of good vs bad tests
 - Include patterns for:
@@ -245,7 +238,6 @@ Verify each positive test has corresponding edge case test
 3. **Document**: Create comprehensive audit report
 4. **Recommend**: Propose specific improvements with examples
 5. **Prioritize**: Rank improvements by impact and effort
-6. **Provide Examples**: Show BEFORE/AFTER code for each improvement type
 
 Use semantic search across the test suite to understand:
 - What services/utils are most critical

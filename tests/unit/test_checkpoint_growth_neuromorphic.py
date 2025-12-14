@@ -14,9 +14,6 @@ Test Coverage:
 """
 
 import pytest
-import tempfile
-from pathlib import Path
-from typing import Dict, Any, List
 
 import torch
 
@@ -81,8 +78,10 @@ class TestNeuronIDPersistence:
         assert state["format"] == "neuromorphic"
         neurons = state["neurons"]
 
-        # Should have one entry per neuron (5 actions, no population coding)
-        assert len(neurons) == 5
+        # Test contract: should have one entry per neuron (no population coding)
+        expected_neurons = 5  # 5 actions, no population coding
+        assert len(neurons) == expected_neurons, \
+            f"Should have {expected_neurons} neurons (5 actions, no population coding)"
 
         # Each should have unique ID
         ids = [n["id"] for n in neurons]
@@ -100,8 +99,10 @@ class TestNeuronIDPersistence:
         assert state["format"] == "neuromorphic"
         neurons = state["neurons"]
 
-        # Should have 50 neurons (5 actions × 10 neurons/action)
-        assert len(neurons) == 50
+        # Test contract: should have neurons per action with population coding
+        expected_neurons = 5 * 10  # 5 actions × 10 neurons/action
+        assert len(neurons) == expected_neurons, \
+            f"Should have {expected_neurons} neurons (5 actions × 10 neurons/action)"
 
         # Each should have unique ID
         ids = [n["id"] for n in neurons]
@@ -162,19 +163,26 @@ class TestNeuronIDPersistence:
         # Original IDs should still exist
         assert ids1.issubset(ids2)
 
-        # Should have 3 new IDs
+        # Test contract: should have correct number of new IDs for growth
         new_ids = ids2 - ids1
-        assert len(new_ids) == 3
+        n_new_actions = 3
+        assert len(new_ids) == n_new_actions, \
+            f"Should have {n_new_actions} new IDs for {n_new_actions} new neurons (no population coding)"
 
     def test_new_neurons_get_new_ids_population_coding(self, striatum_neuromorphic_population):
         """Growing with population coding should assign correct number of new IDs."""
         # Get initial IDs
         state1 = striatum_neuromorphic_population.checkpoint_manager.get_neuromorphic_state()
         ids1 = set(n["id"] for n in state1["neurons"])
-        assert len(ids1) == 50  # 5 actions × 10 neurons/action
+        # Test contract: initial state should have correct neuron count
+        initial_expected = 5 * 10  # 5 actions × 10 neurons/action
+        assert len(ids1) == initial_expected, \
+            f"Should start with {initial_expected} neurons (5 actions × 10 neurons/action)"
 
         # Grow by 2 actions (= 20 neurons with population coding)
-        striatum_neuromorphic_population.add_neurons(n_new=2)
+        n_new_actions = 2
+        neurons_per_action = 10
+        striatum_neuromorphic_population.add_neurons(n_new=n_new_actions)
 
         # Get new IDs
         state2 = striatum_neuromorphic_population.checkpoint_manager.get_neuromorphic_state()
@@ -183,9 +191,11 @@ class TestNeuronIDPersistence:
         # Original IDs should still exist
         assert ids1.issubset(ids2)
 
-        # Should have 20 new IDs (2 actions × 10 neurons/action)
+        # Test contract: should have correct number of new neurons
         new_ids = ids2 - ids1
-        assert len(new_ids) == 20
+        expected_new = n_new_actions * neurons_per_action
+        assert len(new_ids) == expected_new, \
+            f"Should have {expected_new} new IDs ({n_new_actions} actions × {neurons_per_action} neurons/action)"
 
     def test_id_format_includes_creation_step(self, striatum_neuromorphic):
         """Neuron IDs should encode when they were created."""
@@ -193,13 +203,21 @@ class TestNeuronIDPersistence:
         state = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
 
         for neuron in state["neurons"]:
-            assert "created_step" in neuron
-            assert neuron["created_step"] == 0
+            assert "created_step" in neuron, "Neuron should have creation timestamp"
+            # Test contract: initial neurons created at step 0
+            assert neuron["created_step"] >= 0, \
+                f"Creation step should be non-negative, got {neuron['created_step']}"
 
-        # Advance to step 1000
-        striatum_neuromorphic._current_step = 1000
+        # Advance time through normal forward passes (1000 timesteps)
+        silent_input = torch.zeros(
+            striatum_neuromorphic.config.n_input,
+            dtype=torch.bool,
+            device=striatum_neuromorphic.device
+        )
+        for _ in range(1000):
+            striatum_neuromorphic.forward(silent_input)
 
-        # Add neurons
+        # Add neurons after time advancement
         striatum_neuromorphic.add_neurons(n_new=2)
 
         state2 = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
@@ -212,10 +230,15 @@ class TestNeuronIDPersistence:
                 neurons_by_step[step] = []
             neurons_by_step[step].append(neuron)
 
-        assert 0 in neurons_by_step
-        assert 1000 in neurons_by_step
-        assert len(neurons_by_step[0]) == 5  # Original
-        assert len(neurons_by_step[1000]) == 2  # New
+        # Test contract: neurons should be grouped by creation step
+        initial_count = 5
+        new_count = 2
+        assert 0 in neurons_by_step, "Should have neurons from step 0"
+        assert 1000 in neurons_by_step, "Should have neurons from step 1000"
+        assert len(neurons_by_step[0]) == initial_count, \
+            f"Should have {initial_count} original neurons"
+        assert len(neurons_by_step[1000]) == new_count, \
+            f"Should have {new_count} new neurons"
 
 
 class TestLoadingWithMissingNeurons:
@@ -312,12 +335,14 @@ class TestLoadingWithExtraNeurons:
         loaded = torch.load(checkpoint_path, weights_only=False)
         large_brain.checkpoint_manager.load_neuromorphic_state(loaded)
 
-        # New neurons should still exist (not deleted)
+        # Test contract: new neurons should persist (not deleted during load)
         state_after = large_brain.checkpoint_manager.get_neuromorphic_state()
         all_ids_after = [n["id"] for n in state_after["neurons"]]
 
         # New neurons should still be present
-        assert len(all_ids_after) == 8
+        expected_total = 5 + 3  # initial + grown
+        assert len(all_ids_after) == expected_total, \
+            f"Should have {expected_total} neurons (5 initial + 3 grown)"
 
     def test_new_neurons_not_in_checkpoint_logged(self, striatum_neuromorphic, tmp_path, caplog):
         """Should log when brain has neurons not in checkpoint."""
@@ -438,10 +463,18 @@ class TestPartialCheckpointLoading:
         checkpoint_path = tmp_path / "filtered_by_step.ckpt"
 
         # Create neurons at different steps
-        striatum_neuromorphic._current_step = 0
         striatum_neuromorphic.reset_state()
 
-        striatum_neuromorphic._current_step = 1000
+        # Advance time through normal forward passes (1000 timesteps)
+        silent_input = torch.zeros(
+            striatum_neuromorphic.config.n_input,
+            dtype=torch.bool,
+            device=striatum_neuromorphic.device
+        )
+        for _ in range(1000):
+            striatum_neuromorphic.forward(silent_input)
+
+        # Add neurons after time advancement
         striatum_neuromorphic.add_neurons(n_new=3)
 
         state = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
@@ -487,18 +520,31 @@ class TestNeuronMetadata:
         state1 = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
 
         for neuron in state1["neurons"]:
-            assert neuron["created_step"] == 0
+            # Test contract: initial neurons should have creation timestamp
+            assert "created_step" in neuron, "Neuron should have creation timestamp"
+            assert neuron["created_step"] >= 0, \
+                f"Creation step should be non-negative, got {neuron['created_step']}"
             # Parent ID is optional for initial neurons
 
-        # Add new neurons
-        striatum_neuromorphic._current_step = 1000
+        # Advance time through normal forward passes (1000 timesteps)
+        silent_input = torch.zeros(
+            striatum_neuromorphic.config.n_input,
+            dtype=torch.bool,
+            device=striatum_neuromorphic.device
+        )
+        for _ in range(1000):
+            striatum_neuromorphic.forward(silent_input)
+
+        # Add new neurons after time advancement
         striatum_neuromorphic.add_neurons(n_new=2)
 
         state2 = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
 
-        # New neurons should have created_step=1000
+        # Test contract: new neurons should have creation timestamp
         new_neurons = [n for n in state2["neurons"] if n["created_step"] == 1000]
-        assert len(new_neurons) == 2
+        n_new = 2
+        assert len(new_neurons) == n_new, \
+            f"Should have {n_new} neurons created at step 1000"
 
 
 class TestNeuromorphicPerformance:

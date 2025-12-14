@@ -23,10 +23,14 @@ class TestCriticalPeriodIntegration:
         brain = Mock()
         trainer = CurriculumTrainer(brain=brain, verbose=False)
 
+        # Test contract: trainer should have critical period gating
         assert hasattr(trainer, 'critical_period_gating')
         assert isinstance(trainer.critical_period_gating, CriticalPeriodGating)
-        assert hasattr(trainer, '_last_phase')
-        assert isinstance(trainer._last_phase, dict)
+
+        # Test contract: gating should be functional (can get status)
+        status = trainer.critical_period_gating.get_window_status('phonology', age=0)
+        assert 'phase' in status, "Critical period gating should provide phase status"
+        assert 'multiplier' in status, "Critical period gating should provide multiplier"
 
     def test_stage_config_has_critical_period_fields(self):
         """Test that StageConfig includes critical period configuration."""

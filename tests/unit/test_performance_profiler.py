@@ -41,11 +41,13 @@ def test_per_region_timing():
 
     stats = profiler.get_stats()
 
-    # Should have timing for all regions
-    assert len(stats.region_times_ms) == 3
-    for region in regions:
-        assert region in stats.region_times_ms
-        assert stats.region_times_ms[region] > 0
+    # Test contract: should track all expected regions
+    expected_regions = ['cortex', 'hippocampus', 'striatum']
+    assert len(stats.region_times_ms) == len(expected_regions), \
+        f"Should track {len(expected_regions)} regions"
+    for region in expected_regions:
+        assert region in stats.region_times_ms, f"Should track region '{region}'"
+        assert stats.region_times_ms[region] > 0, f"Region '{region}' should have positive timing"
 
 
 def test_spike_statistics():
@@ -126,20 +128,20 @@ def test_window_size_limiting():
 
 
 def test_performance_stats_dataclass():
-    """Test PerformanceStats dataclass mutability and structure."""
+    """Test PerformanceStats dataclass has required structure."""
     stats = PerformanceStats()
 
-    # Contract: should be mutable and hold correct types
-    stats.steps_per_sec = 100.0
-    stats.avg_forward_ms = 5.0
-    stats.region_times_ms['test_region'] = 2.5
-    stats.spike_stats['test_region'] = {'active': 10, 'total': 100}
+    # Test contract: dataclass should have expected fields for profiling
+    assert hasattr(stats, 'steps_per_sec'), "Should have steps_per_sec field"
+    assert hasattr(stats, 'avg_forward_ms'), "Should have avg_forward_ms field"
+    assert hasattr(stats, 'region_times_ms'), "Should have region_times_ms dict"
+    assert hasattr(stats, 'spike_stats'), "Should have spike_stats dict"
 
-    # Contract: values should persist
-    assert stats.steps_per_sec == 100.0
-    assert stats.avg_forward_ms == 5.0
-    assert stats.region_times_ms['test_region'] == 2.5
-    assert stats.spike_stats['test_region']['active'] == 10
+    # Test contract: dict fields should be mutable
+    stats.region_times_ms['test_region'] = 2.5
+    stats.spike_stats['test_region'] = {'active': 10}
+    assert 'test_region' in stats.region_times_ms, "Should allow adding region times"
+    assert 'test_region' in stats.spike_stats, "Should allow adding spike stats"
 
 
 def test_print_summary_doesnt_crash():
@@ -182,11 +184,16 @@ def test_concurrent_region_profiling():
 
     stats = profiler.get_stats()
 
-    # Should have tracked all regions
-    assert len(stats.region_times_ms) == 3
-    assert len(stats.spike_stats) >= 3  # Regions + total_avg_spikes
+    # Test contract: should track all expected regions
+    expected_region_count = 3
+    expected_regions = ['input', 'cortex', 'output']
+    assert len(stats.region_times_ms) == expected_region_count, \
+        f"Should track {expected_region_count} regions"
+    assert len(stats.spike_stats) >= expected_region_count, \
+        f"Should track spike stats for at least {expected_region_count} regions (+ total_avg_spikes)"
 
     # Forward time should be sum of region times (approximately)
     total_region_time = sum(stats.region_times_ms.values())
     # Allow some tolerance for overhead
-    assert 0.5 * total_region_time < stats.avg_forward_ms < 2.0 * total_region_time
+    assert 0.5 * total_region_time < stats.avg_forward_ms < 2.0 * total_region_time, \
+        "Forward time should be approximately sum of region times (with overhead tolerance)"

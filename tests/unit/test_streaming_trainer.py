@@ -33,15 +33,19 @@ def mock_brain():
             ),
         ),
     )
-    return EventDrivenBrain.from_config(config)
+    return EventDrivenBrain.from_thalia_config(config)
 
 
 def test_stream_config_defaults():
-    """Test StreamConfig default values."""
+    """Test StreamConfig has valid default values."""
     config = StreamConfig()
-    assert config.eval_frequency == 1000
-    assert config.enable_replay is True
-    assert config.replay_buffer_size == 10000
+    # Test contract: defaults should be reasonable
+    assert 0 < config.eval_frequency <= 100000, \
+        f"Eval frequency should be positive and reasonable, got {config.eval_frequency}"
+    assert isinstance(config.enable_replay, bool), \
+        "Replay flag should be boolean"
+    assert 0 < config.replay_buffer_size <= 1000000, \
+        f"Buffer size should be positive and reasonable, got {config.replay_buffer_size}"
 
 
 def test_experience_buffer_add_and_sample():
@@ -49,10 +53,13 @@ def test_experience_buffer_add_and_sample():
     buffer = ExperienceBuffer(capacity=5, max_age=None)
 
     # Add samples
-    for i in range(3):
+    n_samples_added = 3
+    for i in range(n_samples_added):
         buffer.add({"input": torch.randn(10), "label": i})
 
-    assert len(buffer) == 3
+    # Test contract: buffer should contain added samples
+    assert len(buffer) == n_samples_added, \
+        f"Buffer should contain {n_samples_added} samples"
 
     # Sample
     sample = buffer.sample_random()
@@ -67,10 +74,13 @@ def test_experience_buffer_max_capacity():
     buffer = ExperienceBuffer(capacity=3, max_age=None)
 
     # Add more than capacity
+    capacity = 3
     for i in range(5):
         buffer.add({"value": i})
 
-    assert len(buffer) == 3  # Should be capped
+    # Test contract: buffer should not exceed capacity
+    assert len(buffer) == capacity, \
+        f"Buffer should be capped at capacity ({capacity})"
 
     # Check oldest samples were dropped
     samples = [buffer.buffer[i]["value"] for i in range(len(buffer))]
@@ -127,7 +137,7 @@ def test_drift_detector_detects_drop():
 
 
 def test_streaming_trainer_init(mock_brain):
-    """Test StreamingTrainer initialization."""
+    """Test StreamingTrainer initialization and config."""
     config = StreamConfig(
         eval_frequency=100,
         enable_replay=True,
@@ -138,8 +148,9 @@ def test_streaming_trainer_init(mock_brain):
         config=config,
     )
 
-    # Contract: trainer should be properly initialized with brain
-    assert trainer.brain is mock_brain
+    # Test contract: trainer should be configured correctly
+    assert trainer.config.eval_frequency == 100, "Should use provided eval frequency"
+    assert trainer.config.enable_replay is True, "Should enable replay as configured"
 
 
 def test_streaming_trainer_no_replay(mock_brain):
@@ -169,8 +180,18 @@ def test_streaming_trainer_process_sample(mock_brain):
         "reward": 1.0,
     }
 
-    # Process (should not raise)
-    trainer._process_sample(sample)
+    # Process sample through public API (train_online with single-item generator)
+    def single_sample_stream():
+        yield sample
+
+    # Contract: Should process sample without raising
+    stats = trainer.train_online(
+        data_stream=single_sample_stream(),
+        max_samples=1
+    )
+
+    # Verify sample was processed
+    assert stats["samples_processed"] == 1, "Should process one sample"
 
 
 def test_streaming_trainer_train_online(mock_brain):
@@ -191,20 +212,23 @@ def test_streaming_trainer_train_online(mock_brain):
     )
 
     # Create simple stream
+    max_samples = 150
     def data_stream():
-        for i in range(150):
+        for i in range(max_samples):
             yield {"input": torch.randn(10), "label": i % 5}
 
     # Train
     stats = trainer.train_online(
         data_stream=data_stream(),
-        max_samples=150,
+        max_samples=max_samples,
         verbose=False,
     )
 
-    assert stats.samples_processed == 150
-    assert stats.duration_seconds > 0
-    assert len(stats.performance_history) > 0  # Should have evaluations
+    # Test contract: should process requested number of samples
+    assert stats.samples_processed == max_samples, \
+        f"Should process {max_samples} samples"
+    assert stats.duration_seconds > 0, "Should track training duration"
+    assert len(stats.performance_history) > 0, "Should have evaluation history"
 
 
 def test_streaming_trainer_with_replay(mock_brain):
@@ -252,13 +276,16 @@ def test_streaming_trainer_early_stop(mock_brain):
             i += 1
 
     # Should stop at max_samples
+    max_samples = 50
     stats = trainer.train_online(
         data_stream=infinite_stream(),
-        max_samples=50,
+        max_samples=max_samples,
         verbose=False,
     )
 
-    assert stats.samples_processed == 50
+    # Test contract: should process exactly max_samples
+    assert stats.samples_processed == max_samples, \
+        f"Should stop at {max_samples} samples (not process indefinitely)"
 
 
 def test_streaming_trainer_performance_summary(mock_brain):

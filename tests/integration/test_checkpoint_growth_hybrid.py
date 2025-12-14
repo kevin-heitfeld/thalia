@@ -313,25 +313,37 @@ class TestCrossFormatCompatibility:
 
     def test_format_conversion_preserves_state(self, device, tmp_path):
         """Format conversion should preserve all neural state."""
-        # Set distinctive state
-        region = Striatum(n_actions=10, device=device, checkpoint_format="elastic_tensor")
-        region.reset()
-        region.membrane[:10] = torch.arange(10, dtype=torch.float32, device=device)
+        # Set distinctive state in elastic format region
+        region_elastic = Striatum(n_actions=10, device=device, checkpoint_format="elastic_tensor")
+        region_elastic.reset()
+        region_elastic.membrane[:10] = torch.arange(10, dtype=torch.float32, device=device)
 
-        # Save elastic
-        state_elastic = region.get_full_state()
+        # Save state
+        original_state = region_elastic.get_full_state()
+        checkpoint_path = tmp_path / "conversion_test.ckpt"
+        torch.save(original_state, checkpoint_path)
 
-        # Convert to neuromorphic
-        state_neuro = region._convert_format(state_elastic, target_format="neuromorphic")
+        # Load into neuromorphic format region (tests elastic -> neuromorphic conversion)
+        region_neuro = Striatum(n_actions=10, device=device, checkpoint_format="neuromorphic")
+        loaded_state = torch.load(checkpoint_path, weights_only=False)
+        region_neuro.load_full_state(loaded_state, auto_convert=True)
 
-        # Convert back to elastic
-        state_elastic2 = region._convert_format(state_neuro, target_format="elastic_tensor")
+        # Save from neuromorphic
+        neuro_state = region_neuro.get_full_state()
+        checkpoint_path2 = tmp_path / "conversion_test2.ckpt"
+        torch.save(neuro_state, checkpoint_path2)
 
-        # Should match original
+        # Load back into elastic format (tests neuromorphic -> elastic conversion)
+        region_elastic2 = Striatum(n_actions=10, device=device, checkpoint_format="elastic_tensor")
+        loaded_state2 = torch.load(checkpoint_path2, weights_only=False)
+        region_elastic2.load_full_state(loaded_state2, auto_convert=True)
+
+        # Contract: Round-trip conversion should preserve membrane state
+        final_state = region_elastic2.get_full_state()
         assert torch.allclose(
-            state_elastic["neuron_state"]["membrane"],
-            state_elastic2["neuron_state"]["membrane"]
-        )
+            original_state["neuron_state"]["membrane"],
+            final_state["neuron_state"]["membrane"]
+        ), "Round-trip format conversion should preserve neural state"
 
 
 class TestPerformanceComparison:
