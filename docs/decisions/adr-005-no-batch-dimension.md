@@ -1,8 +1,8 @@
 # ADR-005: Remove Batch Dimension from Tensors
 
-**Status**: ✅ COMPLETE  
-**Date**: December 8, 2025 (Completed)  
-**Authors**: Thalia Team  
+**Status**: ✅ COMPLETE
+**Date**: December 8, 2025 (Completed)
+**Authors**: Thalia Team
 **Related**: ADR-004 (Bool Spikes - Complete), ADR-007 (PyTorch Consistency)
 
 ## Migration Status Summary
@@ -11,10 +11,10 @@
 - **All Learning Strategies**: HebbianStrategy, STDPStrategy, BCMStrategy, ThreeFactorStrategy, ErrorCorrectiveStrategy
 - **All Core Brain Regions**: Prefrontal, LayeredCortex, PredictiveCortex, TrisynapticHippocampus, Striatum, Cerebellum
 - **Critical Infrastructure**: ShortTermPlasticity (STP), ThetaModulation, GammaDynamics
-- **Integration Pathways**: SpikingAttentionPathway, SpikingReplayPathway, BaseNeuralPathway
+- **Integration Pathways**: SpikingAttentionPathway, SpikingReplayPathway, SpikingPathway (all inherit from NeuralComponent)
 - **Sensory Pathways**: RetinalEncoder, AuditoryPathway, LanguagePathway (ADR-007: now use `forward()`)
 - **Cleanup Complete**: All squeeze(0)/unsqueeze(0) workarounds removed from core regions and pathways
-- **Growth System**: Striatum add_neurons() fixed for 1D neuron states (critical bug fixed)
+- **Growth System**: Unified grow_input/grow_output API implemented for 1D neuron states
 - **Core Neuron Models**: LIFNeuron, ConductanceLIF fully migrated to 1D (17/25 tests passing)
 - **Core Tests**: test_brain_regions.py (34/34), test_pathway_protocol.py (19/19), test_growth_comprehensive.py updated
 - **Deprecations**: ensure_batch_dim() and ensure_batch_dims() marked deprecated with warnings
@@ -22,7 +22,7 @@
 ### ⚠️ NON-CRITICAL EXCEPTIONS (Intentionally Kept)
 - **Dendritic Components**: DendriticBranch, DendriticNeuron use batch dimension internally
   - Complex multi-branch architecture with internal routing logic
-  - Used primarily in research experiments, not core brain regions  
+  - Used primarily in research experiments, not core brain regions
   - **Decision**: Keep as-is, these are experimental components
 - **Memory Systems**: SequenceMemory uses batching for sequence storage (not brain state)
 - **Validation Tests**: test_validation.py intentionally tests batch constraints
@@ -123,16 +123,16 @@ Since we're already doing the bool spike migration (ADR-004), combine both break
 
 ### Positive
 
-✅ **Clearer architecture** - Shape reflects single-brain design  
-✅ **Less boilerplate** - No more `.squeeze()` and `.unsqueeze(0)` everywhere  
-✅ **Better error messages** - Shape mismatches are obvious  
-✅ **Honest API** - Function signatures reflect actual usage  
+✅ **Clearer architecture** - Shape reflects single-brain design
+✅ **Less boilerplate** - No more `.squeeze()` and `.unsqueeze(0)` everywhere
+✅ **Better error messages** - Shape mismatches are obvious
+✅ **Honest API** - Function signatures reflect actual usage
 ✅ **Simpler tests** - No batch_size fixtures or [1, n] gymnastics
 
 ### Negative
 
-❌ **Breaking change** - All existing code must be updated  
-❌ **Less PyTorch-conventional** - Most PyTorch code uses batches  
+❌ **Breaking change** - All existing code must be updated
+❌ **Less PyTorch-conventional** - Most PyTorch code uses batches
 ❌ **Migration effort** - Need to update all regions, pathways, tests
 
 ### Migration Path
@@ -174,7 +174,7 @@ spikes = torch.zeros(1, 64)
 output = region.forward(spikes)
 ```
 
-**Pros**: PyTorch conventional, future batching possible  
+**Pros**: PyTorch conventional, future batching possible
 **Cons**: Batching makes no sense for Thalia, redundant dimension
 
 **Rejected**: The "future batching" argument is invalid - you can't batch stateful brains.
@@ -189,7 +189,7 @@ def forward(self, spikes):
     return output.squeeze(0) if input_was_1d else output
 ```
 
-**Pros**: Backward compatible  
+**Pros**: Backward compatible
 **Cons**: Confusing API, unclear which is canonical, more bugs
 
 **Rejected**: Ambiguity is worse than breaking change.
@@ -200,7 +200,7 @@ def forward(self, spikes):
 spikes = torch.zeros(64, names=['neurons'])
 ```
 
-**Pros**: Self-documenting, catches dimension errors  
+**Pros**: Self-documenting, catches dimension errors
 **Cons**: Limited PyTorch support, adds complexity
 
 **Rejected**: Premature - can revisit if named tensors mature.
@@ -227,5 +227,5 @@ Timeline:
 
 ---
 
-**Last Updated**: 2025-12-07  
+**Last Updated**: 2025-12-07
 **Next Review**: After implementation complete

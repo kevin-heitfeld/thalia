@@ -21,7 +21,7 @@ All neural populations (regions, pathways, components) now inherit from `NeuralC
 - Dynamics (membrane potentials, spikes, traces)
 - Learning rules (STDP, BCM, three-factor, etc.)
 - Neuromodulation (dopamine, acetylcholine, norepinephrine) via `NeuromodulatorMixin`
-- Growth support (add_neurons, capacity metrics)
+- Growth support (grow_input/grow_output, capacity metrics)
 - Diagnostics and health monitoring
 - Checkpointing
 

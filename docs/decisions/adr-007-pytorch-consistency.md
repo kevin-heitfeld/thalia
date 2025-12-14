@@ -1,7 +1,7 @@
 # ADR-007: PyTorch Consistency - Use forward() Instead of encode()/decode()
 
-**Date**: December 8, 2025  
-**Status**: Accepted  
+**Date**: December 8, 2025
+**Status**: Accepted
 **Context**: ADR-005 cleanup revealed non-standard method names
 
 ## Context
@@ -25,7 +25,7 @@ class LanguageDecoder(nn.Module):
 
 **Issues:**
 1. **Breaks PyTorch conventions**: `nn.Module` subclasses should use `forward()`
-2. **Inconsistent with regions**: `BrainRegion` uses `forward()`
+2. **Inconsistent with regions**: Neural components use `forward()`
 3. **Redundant code**: Decoder had both methods
 4. **Confusing for users**: Unclear which method to call
 
@@ -36,7 +36,7 @@ class LanguageDecoder(nn.Module):
 ### Rationale
 
 1. **PyTorch standard**: `forward()` enables `model(input)` callable syntax
-2. **Consistency**: All components (`BrainRegion`, `BaseNeuralPathway`, `SensoryPathway`) use `forward()`
+2. **Consistency**: All components (regions, pathways, sensory encoders) inherit from NeuralComponent and use `forward()`
 3. **Simplicity**: One method name across entire codebase
 4. **Type checking**: PyTorch's type system expects `forward()`
 
@@ -113,7 +113,7 @@ class LanguageDecoder(nn.Module):
         features = self._integrate_spikes(spikes)
         logits = self._decode_features(features)
         return logits / self.config.temperature
-    
+
     def forward(self, spikes, return_features=False):
         logits = self.decode(spikes)  # Just calls decode!
         if return_features:
@@ -128,7 +128,7 @@ class LanguageDecoder(nn.Module):
         features = self._integrate_spikes(spikes)
         logits = self._decode_features(features)
         logits = logits / self.config.temperature
-        
+
         if return_features:
             return logits, features
         return logits
@@ -164,8 +164,8 @@ spikes, metadata = encoder(image)  # Callable syntax!
 
 ```python
 # All components use forward():
-cortex_spikes = cortex(input_spikes)  # BrainRegion
-pathway_spikes = pathway(cortex_spikes)  # BaseNeuralPathway
+cortex_spikes = cortex(input_spikes)  # NeuralComponent (region)
+pathway_spikes = pathway(cortex_spikes)  # NeuralComponent (pathway)
 sensory_spikes = encoder(image)  # SensoryPathway
 logits = decoder(sensory_spikes)  # LanguageDecoder
 ```
@@ -208,7 +208,7 @@ All internal uses already updated. No action needed.
 Created `temp/test_sensory_pathways_adr005.py` to verify:
 
 - ✅ **RetinalEncoder**: `encoder(image)` works
-- ✅ **AuditoryPathway**: `pathway(audio)` works  
+- ✅ **AuditoryPathway**: `pathway(audio)` works
 - ✅ **LanguagePathway**: `pathway(token)` works
 - ✅ **All enforce ADR-005**: 1D inputs, 2D temporal outputs
 
@@ -225,5 +225,5 @@ This simplifies the API, improves consistency, and makes the codebase more maint
 
 ---
 
-**Approved by**: GitHub Copilot  
+**Approved by**: GitHub Copilot
 **Implemented**: December 8, 2025

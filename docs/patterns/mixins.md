@@ -1,6 +1,6 @@
 # Mixin Patterns Guide
 
-**Date**: December 7, 2025  
+**Date**: December 7, 2025
 **Purpose**: Understanding Thalia's mixin system
 
 ---
@@ -18,7 +18,7 @@ Thalia uses **mixins** to share functionality across brain regions without deep 
 ## Available Mixins
 
 ### 1. DiagnosticsMixin
-**File**: `src/thalia/mixins/diagnostics_mixin.py`  
+**File**: `src/thalia/mixins/diagnostics_mixin.py`
 **Purpose**: Health monitoring and diagnostics
 
 **Provides**:
@@ -32,28 +32,28 @@ check_weight_health(weights: torch.Tensor, name: str) -> WeightHealth
 detect_runaway_excitation(spikes: torch.Tensor) -> bool
 detect_silence(spikes: torch.Tensor) -> bool
 
-# Weight monitoring  
+# Weight monitoring
 check_gradient_health(param: torch.nn.Parameter) -> GradientHealth
 ```
 
 **Usage**:
 ```python
-class MyRegion(BrainRegion, DiagnosticsMixin):
+class MyRegion(NeuralComponent, DiagnosticsMixin):
     def forward(self, x):
         output = self._compute(x)
-        
+
         # Check health after computation
         health = self.check_health()
         if not health.is_healthy:
             logger.warning(f"Health issue: {health.issues}")
-        
+
         return output
 ```
 
 ---
 
 ### 2. ActionSelectionMixin
-**File**: `src/thalia/regions/striatum/action_selection.py`  
+**File**: `src/thalia/regions/striatum/action_selection.py`
 **Purpose**: Action selection strategies
 
 **Provides**:
@@ -70,10 +70,10 @@ add_exploration_noise(q_values: torch.Tensor, noise_std: float) -> torch.Tensor
 
 **Usage**:
 ```python
-class Striatum(BrainRegion, ActionSelectionMixin):
+class Striatum(NeuralComponent, ActionSelectionMixin):
     def select_action(self, state):
         q_values = self.compute_q_values(state)
-        
+
         # Use mixin method
         action = self.select_action_softmax(
             q_values,
@@ -85,7 +85,7 @@ class Striatum(BrainRegion, ActionSelectionMixin):
 ---
 
 ### 3. SpikingNeuronMixin
-**File**: `src/thalia/core/spiking_mixin.py`  
+**File**: `src/thalia/core/spiking_mixin.py`
 **Purpose**: Spiking neuron dynamics
 
 **Provides**:
@@ -104,7 +104,7 @@ apply_refractory(spikes: torch.Tensor, refractory_state: torch.Tensor) -> torch.
 
 **Usage**:
 ```python
-class MySpikingRegion(BrainRegion, SpikingNeuronMixin):
+class MySpikingRegion(NeuralComponent, SpikingNeuronMixin):
     def forward(self, input_current):
         # Use mixin method for LIF dynamics
         self.v_mem, spikes = self.lif_dynamics(
@@ -118,7 +118,7 @@ class MySpikingRegion(BrainRegion, SpikingNeuronMixin):
 ---
 
 ### 4. DendriticComputationMixin
-**File**: `src/thalia/core/dendritic_mixin.py`  
+**File**: `src/thalia/core/dendritic_mixin.py`
 **Purpose**: Dendritic integration and NMDA spikes
 
 **Provides**:
@@ -145,13 +145,13 @@ plateau_potential(
 
 **Usage**:
 ```python
-class L5Pyramidal(BrainRegion, DendriticComputationMixin):
+class L5Pyramidal(NeuralComponent, DendriticComputationMixin):
     def forward(self, proximal, distal, modulatory):
         # Use dendritic integration from mixin
         integrated = self.dendritic_integration(
             proximal, distal, modulatory
         )
-        
+
         # Check for NMDA spikes
         nmda_spikes = self.compute_nmda_spike(
             integrated,
@@ -169,17 +169,17 @@ class L5Pyramidal(BrainRegion, DendriticComputationMixin):
 ```python
 def check_health(self) -> HealthMetrics:
     """Check overall region health.
-    
+
     Returns:
         HealthMetrics with is_healthy, firing_rate, weight_stats, issues
     """
 
 def get_firing_rate(self, spikes: torch.Tensor) -> float:
     """Compute firing rate from spikes.
-    
+
     Args:
         spikes: Binary spike tensor [batch, neurons] or [batch, neurons, time]
-    
+
     Returns:
         Firing rate in Hz
     """
@@ -190,12 +190,12 @@ def check_weight_health(
     name: str = "weights"
 ) -> WeightHealth:
     """Check weight matrix for issues.
-    
+
     Checks:
         - NaN/Inf values
         - Dead neurons (all weights zero)
         - Extreme values (>5 std from mean)
-    
+
     Returns:
         WeightHealth with has_nan, has_inf, has_dead_neurons, extreme_count
     """
@@ -206,11 +206,11 @@ def detect_runaway_excitation(
     threshold: float = 0.9
 ) -> bool:
     """Detect if >90% of neurons are firing.
-    
+
     Args:
         spikes: Binary spike tensor
         threshold: Fraction of neurons firing to trigger alert
-    
+
     Returns:
         True if runaway excitation detected
     """
@@ -221,11 +221,11 @@ def detect_silence(
     threshold: float = 0.01
 ) -> bool:
     """Detect if <1% of neurons are firing.
-    
+
     Args:
         spikes: Binary spike tensor
         threshold: Minimum fraction of neurons that should fire
-    
+
     Returns:
         True if silence detected
     """
@@ -235,13 +235,13 @@ def check_gradient_health(
     param: torch.nn.Parameter
 ) -> GradientHealth:
     """Check parameter gradients for issues.
-    
+
     Checks:
         - Gradient norm
         - NaN/Inf in gradients
         - Vanishing gradients (norm < 1e-7)
         - Exploding gradients (norm > 10)
-    
+
     Returns:
         GradientHealth with gradient_norm, has_nan, is_vanishing, is_exploding
     """
@@ -258,11 +258,11 @@ def select_action_softmax(
     temperature: float = 1.0
 ) -> int:
     """Select action using softmax policy.
-    
+
     Args:
         q_values: Action values [n_actions]
         temperature: Softmax temperature (higher = more random)
-    
+
     Returns:
         Selected action index
     """
@@ -273,11 +273,11 @@ def select_action_greedy(
     epsilon: float = 0.1
 ) -> int:
     """Epsilon-greedy action selection.
-    
+
     Args:
         q_values: Action values [n_actions]
         epsilon: Probability of random action
-    
+
     Returns:
         Selected action index
     """
@@ -288,11 +288,11 @@ def select_action_thompson(
     uncertainty: torch.Tensor
 ) -> int:
     """Thompson sampling (sample from posterior).
-    
+
     Args:
         q_values: Mean action values [n_actions]
         uncertainty: Uncertainty estimates [n_actions]
-    
+
     Returns:
         Selected action index
     """
@@ -303,11 +303,11 @@ def compute_policy(
     temperature: float = 1.0
 ) -> torch.Tensor:
     """Compute softmax policy without sampling.
-    
+
     Args:
         q_values: Action values [n_actions]
         temperature: Softmax temperature
-    
+
     Returns:
         Action probabilities [n_actions]
     """
@@ -318,11 +318,11 @@ def add_exploration_noise(
     noise_std: float = 0.1
 ) -> torch.Tensor:
     """Add Gaussian exploration noise to Q-values.
-    
+
     Args:
         q_values: Action values [n_actions]
         noise_std: Standard deviation of noise
-    
+
     Returns:
         Noisy Q-values
     """
@@ -343,9 +343,9 @@ def lif_dynamics(
     v_reset: float = 0.0
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Leaky integrate-and-fire dynamics.
-    
+
     dV/dt = (-V + I) / tau_mem
-    
+
     Args:
         v_mem: Membrane voltage [batch, neurons]
         i_syn: Synaptic current [batch, neurons]
@@ -353,7 +353,7 @@ def lif_dynamics(
         tau_mem_ms: Membrane time constant
         v_threshold: Spike threshold
         v_reset: Reset voltage after spike
-    
+
     Returns:
         (new_v_mem, spikes) both [batch, neurons]
     """
@@ -369,7 +369,7 @@ def adaptive_lif_dynamics(
     adaptation_increment: float = 0.1
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Adaptive LIF with spike-frequency adaptation.
-    
+
     Returns:
         (new_v_mem, new_adaptation, spikes)
     """
@@ -380,11 +380,11 @@ def spike_from_voltage(
     threshold: float = 1.0
 ) -> torch.Tensor:
     """Generate binary spikes from voltage.
-    
+
     Args:
         v_mem: Membrane voltage
         threshold: Spike threshold
-    
+
     Returns:
         Binary spikes (0 or 1)
     """
@@ -396,12 +396,12 @@ def soft_spike(
     sharpness: float = 10.0
 ) -> torch.Tensor:
     """Differentiable soft spike function (sigmoid).
-    
+
     Args:
         v_mem: Membrane voltage
         threshold: Center of sigmoid
         sharpness: Slope of sigmoid
-    
+
     Returns:
         Soft spikes (0 to 1)
     """
@@ -421,14 +421,14 @@ def dendritic_integration(
     distal_weight: float = 0.3
 ) -> torch.Tensor:
     """Integrate inputs across dendritic compartments.
-    
+
     Args:
         proximal_input: Feed-forward input (near soma)
         distal_input: Feedback input (apical dendrite)
         modulatory_input: Optional neuromodulation
         proximal_weight: Weight for proximal input
         distal_weight: Weight for distal input
-    
+
     Returns:
         Integrated dendritic signal
     """
@@ -440,12 +440,12 @@ def compute_nmda_spike(
     sharpness: float = 10.0
 ) -> torch.Tensor:
     """Compute NMDA-mediated dendritic spike.
-    
+
     Args:
         dendritic_voltage: Voltage in apical dendrite
         threshold: NMDA spike threshold
         sharpness: Spike sharpness
-    
+
     Returns:
         NMDA spike strength (0 to 1)
     """
@@ -457,12 +457,12 @@ def plateau_potential(
     dt_ms: float = 1.0
 ) -> torch.Tensor:
     """Compute prolonged plateau potential after dendritic spike.
-    
+
     Args:
         dendritic_activity: Dendritic spike activity
         tau_ms: Plateau decay time constant
         dt_ms: Timestep
-    
+
     Returns:
         Plateau potential
     """
@@ -476,15 +476,15 @@ When a class inherits from multiple mixins, **method resolution order** matters.
 
 ### Example MRO:
 ```python
-class Striatum(BrainRegion, DiagnosticsMixin, ActionSelectionMixin):
+class Striatum(NeuralComponent, DiagnosticsMixin, ActionSelectionMixin):
     pass
 
-# MRO: Striatum → BrainRegion → DiagnosticsMixin → ActionSelectionMixin → object
+# MRO: Striatum → NeuralComponent → DiagnosticsMixin → ActionSelectionMixin → object
 ```
 
 **Method lookup**:
 1. Search `Striatum`
-2. Search `BrainRegion`
+2. Search `NeuralComponent`
 3. Search `DiagnosticsMixin`
 4. Search `ActionSelectionMixin`
 5. Search `object`
@@ -525,11 +525,11 @@ obj.process(5)  # Returns 10 (MixinA's version, first in MRO)
    class OscillationMixin:
        def generate_theta(self, freq_hz, phase): ...
        def generate_gamma(self, freq_hz): ...
-   
-   class Hippocampus(BrainRegion, OscillationMixin):
+
+   class Hippocampus(NeuralComponent, OscillationMixin):
        pass
-   
-   class PrefrontalCortex(BrainRegion, OscillationMixin):
+
+   class PrefrontalCortex(NeuralComponent, OscillationMixin):
        pass
    ```
 
@@ -596,13 +596,13 @@ class NeuronMixin:
 ```python
 class MyMixin:
     """Provides utility methods for brain regions.
-    
+
     This mixin assumes the class has:
         - self.state.spikes (torch.Tensor)
         - self.config.dt_ms (float)
-    
+
     Example:
-        class MyRegion(BrainRegion, MyMixin):
+        class MyRegion(NeuralComponent, MyMixin):
             pass
     """
 ```
@@ -647,29 +647,29 @@ class DiagnosticsMixin:
 
 ### Example 1: Striatum
 ```python
-class Striatum(BrainRegion, DiagnosticsMixin, ActionSelectionMixin):
+class Striatum(NeuralComponent, DiagnosticsMixin, ActionSelectionMixin):
     """Basal ganglia striatum with action selection.
-    
+
     Mixins Used:
         - DiagnosticsMixin: check_health(), detect_runaway_excitation()
         - ActionSelectionMixin: select_action_softmax()
     """
-    
+
     def forward(self, sensory_input, reward_signal):
         # Compute Q-values
         q_values = self._compute_q_values(sensory_input)
-        
+
         # Use ActionSelectionMixin
         action = self.select_action_softmax(
             q_values,
             temperature=self.config.softmax_temperature
         )
-        
+
         # Use DiagnosticsMixin
         health = self.check_health()
         if not health.is_healthy:
             logger.warning("Striatum health issue")
-        
+
         return action
 ```
 
@@ -677,28 +677,28 @@ class Striatum(BrainRegion, DiagnosticsMixin, ActionSelectionMixin):
 
 ### Example 2: Layer 5 Pyramidal Neurons
 ```python
-class L5Pyramidal(BrainRegion, SpikingNeuronMixin, DendriticComputationMixin):
+class L5Pyramidal(NeuralComponent, SpikingNeuronMixin, DendriticComputationMixin):
     """Layer 5 pyramidal neurons with dendritic computation.
-    
+
     Mixins Used:
         - SpikingNeuronMixin: lif_dynamics()
         - DendriticComputationMixin: dendritic_integration(), compute_nmda_spike()
     """
-    
+
     def forward(self, proximal_input, distal_feedback):
         # Use DendriticComputationMixin
         integrated = self.dendritic_integration(
             proximal_input,
             distal_feedback
         )
-        
+
         # Use SpikingNeuronMixin
         self.state.v_mem, spikes = self.lif_dynamics(
             self.state.v_mem,
             integrated,
             dt_ms=self.config.dt_ms
         )
-        
+
         return spikes
 ```
 
@@ -706,15 +706,15 @@ class L5Pyramidal(BrainRegion, SpikingNeuronMixin, DendriticComputationMixin):
 
 ### Example 3: Hippocampus (No Mixins)
 ```python
-class TrisynapticHippocampus(BrainRegion):
+class TrisynapticHippocampus(NeuralComponent):
     """Hippocampus with specialized circuit.
-    
+
     Mixins Used: None
-    
+
     Note: Hippocampus uses highly specialized computations
     that aren't shared with other regions, so mixins aren't needed.
     """
-    
+
     def forward(self, input_pattern):
         # Specialized DG→CA3→CA1 circuit
         dg_out = self._dentate_gyrus(input_pattern)
@@ -729,23 +729,23 @@ class TrisynapticHippocampus(BrainRegion):
 
 ### Recommended Pattern:
 ```python
-class Striatum(BrainRegion, DiagnosticsMixin, ActionSelectionMixin):
+class Striatum(NeuralComponent, DiagnosticsMixin, ActionSelectionMixin):
     """Basal ganglia striatum for action selection.
-    
+
     The striatum learns action values through dopamine-modulated
     plasticity and selects actions using softmax policy.
-    
+
     Mixins Provide:
         From DiagnosticsMixin:
             - check_health() → HealthMetrics
             - get_firing_rate(spikes) → float
             - detect_runaway_excitation(spikes) → bool
-        
+
         From ActionSelectionMixin:
             - select_action_softmax(q_values, temperature) → int
             - select_action_greedy(q_values, epsilon) → int
             - compute_policy(q_values, temperature) → torch.Tensor
-    
+
     Attributes:
         state (StriatumState): Mutable state (spikes, dopamine, eligibility)
         config (StriatumConfig): Configuration parameters
@@ -758,19 +758,19 @@ class Striatum(BrainRegion, DiagnosticsMixin, ActionSelectionMixin):
 
 ## FAQ
 
-**Q: Can mixins have `__init__`?**  
+**Q: Can mixins have `__init__`?**
 A: Yes, but be careful with `super().__init__()` to avoid MRO issues. Prefer stateless mixins.
 
-**Q: How do I know which methods come from mixins?**  
+**Q: How do I know which methods come from mixins?**
 A: Check the class docstring (should list mixin methods) or use `dir(obj)` and `type(obj).__mro__`.
 
-**Q: What if two mixins have the same method?**  
+**Q: What if two mixins have the same method?**
 A: First one in the inheritance list wins (left-to-right). Avoid name collisions with descriptive names.
 
-**Q: Should I create a mixin or use composition?**  
+**Q: Should I create a mixin or use composition?**
 A: **Mixin** for stateless utilities shared across many classes. **Composition** for stateful objects.
 
-**Q: Can a mixin inherit from another mixin?**  
+**Q: Can a mixin inherit from another mixin?**
 A: Yes, but keep the hierarchy shallow. Deep mixin hierarchies are hard to reason about.
 
 ---
@@ -796,7 +796,7 @@ A: Yes, but keep the hierarchy shallow. Deep mixin hierarchies are hard to reaso
 
 ---
 
-**Last Updated**: December 7, 2025  
+**Last Updated**: December 7, 2025
 **See Also**:
 - `docs/patterns/state-management.md` - State patterns
 - `docs/patterns/configuration.md` - Configuration guide

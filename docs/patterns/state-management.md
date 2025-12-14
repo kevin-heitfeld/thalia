@@ -1,6 +1,6 @@
 # State Management Pattern Guide
 
-**Date**: December 7, 2025  
+**Date**: December 7, 2025
 **Purpose**: Clarify when and how to use state management in Thalia brain regions
 
 ---
@@ -38,37 +38,37 @@ from thalia.regions.base import RegionState
 @dataclass
 class MyRegionState(RegionState):
     """Mutable state updated every forward pass.
-    
+
     All fields default to None and are initialized in reset_state().
     """
     # Spike outputs
     spikes: Optional[torch.Tensor] = None
-    
+
     # Internal dynamics
     voltage: Optional[torch.Tensor] = None
     current: Optional[torch.Tensor] = None
-    
+
     # Learning signals
     prediction: Optional[torch.Tensor] = None
     error: Optional[torch.Tensor] = None
-    
+
     # Scalar metrics
     free_energy: float = 0.0
 ```
 
 **Usage in Region**:
 ```python
-class MyRegion(BrainRegion):
+class MyRegion(NeuralComponent):
     def __init__(self, config):
         super().__init__(config)
         self.state = MyRegionState()  # Create state container
-    
+
     def forward(self, input_spikes):
         # Update state every forward pass
         self.state.spikes = self.neurons(input_spikes)
         self.state.voltage = self.neurons.v
         return self.state.spikes
-    
+
     def reset_state(self):
         """Initialize state with proper tensor shapes."""
         self.state = MyRegionState(
@@ -85,7 +85,7 @@ class MyRegion(BrainRegion):
 
 #### 1. Configuration (Immutable)
 ```python
-class MyRegion(BrainRegion):
+class MyRegion(NeuralComponent):
     def __init__(self, config: MyRegionConfig):
         super().__init__(config)
         self.config = config  # or self.my_config
@@ -98,7 +98,7 @@ class MyRegion(BrainRegion):
 
 #### 2. Learned Parameters (Mutable but Slow)
 ```python
-class MyRegion(BrainRegion):
+class MyRegion(NeuralComponent):
     def __init__(self, config):
         super().__init__(config)
         # Weights change during learning, but not every forward pass
@@ -117,7 +117,7 @@ class MyRegion(BrainRegion):
 
 #### 3. Sub-objects With Their Own State
 ```python
-class MyRegion(BrainRegion):
+class MyRegion(NeuralComponent):
     def __init__(self, config):
         super().__init__(config)
         # Objects manage their own internal state
@@ -137,7 +137,7 @@ class MyRegion(BrainRegion):
 
 #### 4. Accumulators and Metrics
 ```python
-class MyRegion(BrainRegion):
+class MyRegion(NeuralComponent):
     def __init__(self, config):
         super().__init__(config)
         # Diagnostic counters (not part of computational state)
@@ -182,25 +182,25 @@ class StriatumState(RegionState):
     chosen_action: Optional[int] = None
     dopamine: float = 0.0
 
-class Striatum(BrainRegion):
+class Striatum(NeuralComponent):
     def __init__(self, config: StriatumConfig):
         super().__init__(config)
-        
+
         # Mutable state (changes every forward)
         self.state = StriatumState()
-        
+
         # Configuration (immutable)
         self.config = config
         self.striatum_config = config
-        
+
         # Learned parameters (change during learn())
         self.d1_weights = nn.Parameter(self._initialize_pathway_weights())
         self.d2_weights = nn.Parameter(self._initialize_pathway_weights())
-        
+
         # Objects with internal state
         self.d1_neurons = ConductanceLIF(...)
         self.d2_neurons = ConductanceLIF(...)
-        
+
         # Eligibility traces (change every forward, but managed by object)
         self.eligibility = EligibilityTraces(...)
 ```
@@ -217,33 +217,33 @@ class PredictiveCortexState(RegionState):
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None
-    
+
     # Predictive coding signals
     prediction: Optional[torch.Tensor] = None
     error: Optional[torch.Tensor] = None
     precision: Optional[torch.Tensor] = None
-    
+
     # Attention
     attention_weights: Optional[torch.Tensor] = None
-    
+
     # Scalar metrics
     free_energy: float = 0.0
 
-class PredictiveCortex(BrainRegion):
+class PredictiveCortex(NeuralComponent):
     def __init__(self, config: PredictiveCortexConfig):
         super().__init__(config)
-        
+
         # Mutable state
         self.state = PredictiveCortexState()
-        
+
         # Configuration
         self.predictive_config = config
-        
+
         # Composition (cortex manages its own state)
         self.cortex = LayeredCortex(config)
         self.prediction_layer = PredictiveCodingLayer(...)
         self.attention = ScalableSpikingAttention(...)
-        
+
         # Diagnostic accumulators (not in state)
         self._total_free_energy = 0.0
         self._timesteps = 0
@@ -257,19 +257,19 @@ class PredictiveCortex(BrainRegion):
 ### Example 3: Delegation Pattern (PredictiveCortex)
 
 ```python
-class PredictiveCortex(BrainRegion):
+class PredictiveCortex(NeuralComponent):
     def forward(self, input_spikes):
         # Get outputs from composed cortex
         cortex_output = self.cortex.forward(input_spikes)
-        
+
         # Extract state from inner cortex
         self.state.l4_spikes = self.cortex.state.l4_spikes
         self.state.l23_spikes = self.cortex.state.l23_spikes
         self.state.l5_spikes = self.cortex.state.l5_spikes
-        
+
         # Compute own state
         self.state.prediction, self.state.error = self.prediction_layer(...)
-        
+
         return cortex_output
 ```
 
@@ -330,7 +330,7 @@ def reset_state(self):
 def __init__(self, config):
     super().__init__(config)
     self.state = MyRegionState()
-    
+
     # Trying to use state before it's initialized!
     self.something = self.state.spikes.shape[0]  # Error: spikes is None!
 ```
@@ -350,7 +350,7 @@ def reset_state(self):
         voltage=torch.zeros(self.n_output, device=self.device),
         current=torch.zeros(self.n_output, device=self.device),
     )
-    
+
     # Also reset sub-objects
     self.neurons.reset_state()
     self.stp.reset_state()
@@ -363,10 +363,10 @@ def reset_state(self):
 @dataclass
 class MyRegionState(RegionState):
     """Mutable state for MyRegion.
-    
+
     Updated every forward pass. Call reset_state() before starting
     a new sequence.
-    
+
     Fields:
         spikes: Binary spike output [n_output]
         voltage: Membrane potential [n_output]
@@ -404,12 +404,12 @@ class LayeredCortexState(RegionState):
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None
-    
+
     # Layer voltages
     l4_voltage: Optional[torch.Tensor] = None
     l23_voltage: Optional[torch.Tensor] = None
     l5_voltage: Optional[torch.Tensor] = None
-    
+
     # Plasticity signals
     eligibility: Optional[torch.Tensor] = None
 ```
@@ -420,26 +420,26 @@ class LayeredCortexState(RegionState):
 
 ## FAQ
 
-**Q: Why use dataclasses instead of regular classes?**  
+**Q: Why use dataclasses instead of regular classes?**
 A: Dataclasses give us:
 - Automatic `__init__` with all fields
 - Nice `__repr__` for debugging
 - Easy field defaults
 - Type hints enforced
 
-**Q: Can I add methods to RegionState?**  
+**Q: Can I add methods to RegionState?**
 A: Generally no. State should be pure data. Put methods in the region class.
 
-**Q: What if my region doesn't need state?**  
+**Q: What if my region doesn't need state?**
 A: You can skip the RegionState dataclass, but you still need `self.state = RegionState()` for the base class.
 
-**Q: Should I put numpy arrays in state?**  
+**Q: Should I put numpy arrays in state?**
 A: No, only torch tensors. Convert numpy → torch before storing in state.
 
-**Q: How do I access state from outside?**  
+**Q: How do I access state from outside?**
 A: `region.state.spikes`, `region.state.voltage`, etc. State is public API.
 
-**Q: Can state be batched?**  
+**Q: Can state be batched?**
 A: Currently Thalia enforces single-instance (no batching). State tensors are 1D.
 
 ---
@@ -458,8 +458,8 @@ A: Currently Thalia enforces single-instance (no batching). State tensors are 1D
 
 ---
 
-**Last Updated**: December 7, 2025  
-**See Also**: 
+**Last Updated**: December 7, 2025
+**See Also**:
 - `docs/patterns/configuration.md` - Configuration patterns
 - `docs/design/architecture.md` - Overall architecture
-- `thalia/regions/base.py` - BrainRegion base class
+- `thalia/regions/base.py` - NeuralComponent base class

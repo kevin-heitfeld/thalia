@@ -1,7 +1,7 @@
 # Thalia Checkpoint Format Specification
 
-**Version**: 0.1.0  
-**Status**: Phase 1B Complete ✅  
+**Version**: 0.1.0
+**Status**: Phase 1B Complete ✅
 **Last Updated**: December 13, 2025
 
 > **Related Document**: See [`curriculum_strategy.md`](curriculum_strategy.md) for training stages and curriculum design.
@@ -16,7 +16,7 @@ Custom binary format for persisting and restoring Thalia brain states across tra
 
 ## Implementation Status
 
-**Binary Format**: ✅ Fully implemented (`src/thalia/io/binary_format.py`, `src/thalia/io/checkpoint.py`)  
+**Binary Format**: ✅ Fully implemented (`src/thalia/io/binary_format.py`, `src/thalia/io/checkpoint.py`)
 **Usage**: Optional - PyTorch `.pt` format is the default for simplicity
 
 The binary format is available for advanced use cases:
@@ -242,9 +242,9 @@ Offset | Size | Type    | Field      | Description
 [SCALING_FACTORS]    n_neurons * 4 bytes (float32)
 
 Header:
-Offset | Size | Type    | Field              
+Offset | Size | Type    | Field
 -------|------|---------|-----------------------
-0x00   | 4    | uint32  | n_neurons          
+0x00   | 4    | uint32  | n_neurons
 0x04   | 4    | uint32  | flags (reserved)
 0x08   | 8    | uint64  | timestamp_updated
 ```
@@ -258,7 +258,7 @@ Offset | Size | Type    | Field
 [NEUROMODULATOR_STATE] Variable (current dopamine, acetylcholine, norepinephrine)
 
 Header:
-Offset | Size | Type    | Field              
+Offset | Size | Type    | Field
 -------|------|---------|-----------------------
 0x00   | 4    | uint32  | has_region_state   | 1 if RegionState present
 0x04   | 4    | uint32  | has_learning_state | 1 if learning rule state present
@@ -283,7 +283,7 @@ Inter-region connections:
 [CONNECTION_ENTRIES]   Multiple entries
 
 Header:
-Offset | Size | Type    | Field              
+Offset | Size | Type    | Field
 -------|------|---------|-----------------------
 0x00   | 4    | uint32  | num_connections
 0x04   | 4    | uint32  | reserved
@@ -295,7 +295,7 @@ Connection Entry (variable):
 [DELAY_MATRIX]     Variable (optional)
 
 Entry Header:
-Offset | Size | Type     | Field              
+Offset | Size | Type     | Field
 -------|------|----------|-----------------------
 0x00   | 32   | char[32] | source_region
 0x20   | 32   | char[32] | target_region
@@ -353,8 +353,8 @@ SHA-256 hash of all data from offset 0 to checksum_offset.
 **Completed Work**:
 
 1. **Abstract Base Class API** (`src/thalia/regions/base.py`):
-   - Added `get_full_state()` abstract method to BrainRegion
-   - Added `load_full_state()` abstract method to BrainRegion
+   - Added `get_full_state()` abstract method to NeuralComponent
+   - Added `load_full_state()` abstract method to NeuralComponent
    - Comprehensive docstrings specifying 6-component state structure
 
 2. **Region Implementations**:
@@ -460,13 +460,13 @@ class BrainCheckpoint:
     """High-level brain save/load API"""
     @staticmethod
     def save(brain: Brain, path: str, **kwargs) -> None
-    
+
     @staticmethod
     def load(path: str, device: str = 'cpu') -> Brain
-    
+
     @staticmethod
     def info(path: str) -> dict
-    
+
     @staticmethod
     def validate(path: str) -> tuple[bool, list]
 ```
@@ -477,9 +477,9 @@ class BrainCheckpoint:
 
 **Completed Work**:
 - ✅ `src/thalia/io/checkpoint.py` - Complete state serialization (integrated with binary format)
-- ✅ `src/thalia/core/growth.py` - GrowthManager with capacity metrics and history tracking
-- ✅ `src/thalia/regions/base.py` - BrainRegion.add_neurons() abstract method and get_capacity_metrics()
-- ✅ `src/thalia/regions/striatum/striatum.py` - Full add_neurons() implementation with population coding
+- ✅ `src/thalia/coordination/growth.py` - GrowthManager with capacity metrics and history tracking
+- ✅ `src/thalia/regions/base.py` - NeuralComponent.grow_input() and grow_output() abstract methods
+- ✅ `src/thalia/regions/striatum/striatum.py` - Full grow_input/grow_output implementation with population coding
 - ✅ `tests/unit/test_checkpoint_state.py` - 18 state roundtrip tests (all passing)
 - ✅ `tests/unit/test_growth_comprehensive.py` - 13 growth tests (all passing)
 - ✅ Growth history tracking in metadata
@@ -488,11 +488,11 @@ class BrainCheckpoint:
 
 **State Management API** (CRITICAL):
 ```python
-class BrainRegion:
+class NeuralComponent:
     def get_full_state(self) -> Dict[str, Any]:
         """
         Get complete state for checkpointing.
-        
+
         Returns:
             dict containing:
             - 'weights': Learnable parameters
@@ -501,11 +501,11 @@ class BrainRegion:
             - 'oscillator_state': Phases if applicable
             - 'neuromodulator_state': Current levels
         """
-        
+
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """
         Restore complete state from checkpoint.
-        
+
         Must restore:
         - Weight matrices
         - RegionState objects
@@ -517,15 +517,23 @@ class BrainRegion:
 
 **Growth API**:
 ```python
-class BrainRegion:
-    def add_neurons(
+class NeuralComponent:
+    def grow_input(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1
     ) -> None:
-        """Add neurons without disrupting existing weights"""
-        
+        """Expand input dimension (add weight matrix columns)"""
+
+    def grow_output(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1
+    ) -> None:
+        """Expand output dimension (add neurons/rows to weights)"""
+
     def prune_synapses(
         self,
         threshold: float = 0.01,
@@ -534,17 +542,17 @@ class BrainRegion:
     ) -> dict:
         """
         CONSERVATIVE pruning - only remove truly dead synapses.
-        
+
         Safety mechanisms:
         - Only prune synapses that have been consistently weak AND unused
         - Never prune recently created synapses (let them stabilize)
         - Track importance over long time windows (not just recent activity)
         - Return metadata about what was pruned for logging
-        
+
         Returns:
             dict with 'synapses_removed', 'neurons_removed', 'regions_affected'
         """
-        
+
     def remove_neurons(
         self,
         n_remove: int,
@@ -552,16 +560,16 @@ class BrainRegion:
     ) -> dict:
         """
         Remove truly unused neurons (RARELY needed, use with caution).
-        
+
         Only triggers when:
         - Neurons have been silent for extended periods (>100k steps)
         - No strong incoming or outgoing connections
         - Not part of critical circuits (checked via connectivity analysis)
-        
+
         Returns:
             dict with removed neuron indices and affected connections
         """
-        
+
     def get_capacity_metrics(self) -> dict:
         """Return utilization metrics for growth decisions"""
         return {
@@ -575,10 +583,10 @@ class BrainRegion:
 class Brain:
     def check_growth_needs(self) -> dict:
         """Determine which regions need capacity expansion"""
-        
+
     def auto_grow(self, threshold: float = 0.8) -> None:
         """Automatically grow regions based on need"""
-        
+
     def auto_prune(
         self,
         enable: bool = False,  # DISABLED by default
@@ -586,12 +594,12 @@ class Brain:
     ) -> None:
         """
         Automatically prune unused capacity (USE WITH EXTREME CAUTION).
-        
+
         Disabled by default because:
         - Risk of catastrophic forgetting
         - Temporary inactivity != permanent irrelevance
         - Curriculum learning causes natural activity fluctuations
-        
+
         If enabled, uses safety mechanisms:
         - Long observation windows (50k+ steps)
         - Never prune during task transitions
@@ -820,7 +828,7 @@ Format version: `MAJOR.MINOR.PATCH`
 ```python
 class FormatMigrator:
     """Migrate checkpoints between format versions"""
-    
+
     @staticmethod
     def migrate(
         source_path: str,
@@ -828,7 +836,7 @@ class FormatMigrator:
         target_version: str
     ) -> None:
         """Convert checkpoint to different format version"""
-        
+
     @staticmethod
     def can_migrate(
         from_version: str,
@@ -1087,24 +1095,24 @@ brain = BrainCheckpoint.load("checkpoints/stage3.delta.thalia.zst")
    - lz4: Use for frequent save/load cycles (fastest, ~1.5-2x compression)
    - Detection: Automatic based on file extension or header flag
    - Dependencies: `python-zstandard` and `lz4` packages (both lightweight)
-   
+
 2. **Mixed Precision**: ✅ **FP16 support**
    - Already planned in format (dtype field in tensor header)
    - Can mix FP32 and FP16 within same checkpoint
    - Strategy: FP16 for large weight matrices, FP32 for critical parameters
    - Expected savings: ~50% file size for weight-dominated checkpoints
-   
+
 3. **Distributed**: ⏸️ **Deferred**
    - Current scope: Single-device checkpoints
    - Future: Add multi-GPU sharding when needed
    - Format already supports extension via reserved fields
-   
+
 4. **Streaming/Lazy Loading**: ✅ **Planned for v1.1**
    - Implementation: Region index enables loading specific regions only
    - Use case: Load cortex layers on-demand as needed
    - Memory savings: Only load active regions (important for large brains)
    - API: `brain = BrainCheckpoint.load(path, regions=['cortex_l4', 'striatum'])`
-   
+
 5. **Delta Checkpoints**: ✅ **Planned for v2.0**
    - Store only weight differences from previous checkpoint
    - Huge savings during curriculum learning (most weights unchanged)
@@ -1149,7 +1157,7 @@ stage3.delta.thalia              # Only differences from stage2
 [REGION_DELTAS]     Multiple regions
 
 Delta Header:
-Offset | Size | Type     | Field              
+Offset | Size | Type     | Field
 -------|------|----------|-----------------------
 0x00   | 4    | char[4]  | magic ("ΔTHL")
 0x04   | 4    | uint32   | delta_version
@@ -1228,13 +1236,13 @@ brain = BrainCheckpoint.load("stage3.delta.thalia", resolve_deltas=True)
 
 **Phase 2 (✅ COMPLETE - December 7, 2025)**: Growth Support
 - ✅ RegionState management (integrated with checkpoint system)
-- ✅ Growth mechanisms (GrowthManager with add_neurons())
+- ✅ Growth mechanisms (unified grow_input/grow_output API)
 - ✅ Weight matrix expansion (preserves existing connections)
 - ✅ Neuron parameter expansion (all data structures expanded)
 - ✅ Growth history tracking (metadata['growth_history'])
 - ✅ Checkpoint validation for growth (n_actions vs n_output)
 - ✅ 13 comprehensive growth tests (all passing)
-- ✅ Striatum full implementation with population coding
+- ✅ All regions implement unified growth API
 
 **Phase 3 (✅ COMPLETE - Already Implemented)**: Consolidation
 - ✅ Sleep system with N2/SWS/REM stages (src/thalia/core/sleep.py)
@@ -1274,7 +1282,7 @@ brain = BrainCheckpoint.load("stage3.delta.thalia", resolve_deltas=True)
 
 ---
 
-**Current Status**: Phases 1-5 Complete ✅ (100%), Phase 4 In Progress 🔄  
-**Checkpoint System**: Production-ready with full optimization suite  
-**Next Steps**: Implement CurriculumTrainer wrapper for stage-based training (Phase 4)  
+**Current Status**: Phases 1-5 Complete ✅ (100%), Phase 4 In Progress 🔄
+**Checkpoint System**: Production-ready with full optimization suite
+**Next Steps**: Implement CurriculumTrainer wrapper for stage-based training (Phase 4)
 **Achievement**: Complete checkpoint system with compression, delta encoding, and mixed precision support

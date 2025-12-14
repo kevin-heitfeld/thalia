@@ -85,7 +85,7 @@ Both regions ALREADY extract orthogonal concerns into components:
 - `__init__` (circuit initialization): ~200 lines (cannot split - establishes connections)
 - `forward()` (biological circuit): ~700 lines (cannot split - cohesive narrative)
 - Component managers: Already extracted!
-- Utilities (`reset_state`, `add_neurons`, etc.): ~300 lines
+- Utilities (`reset_state`, `grow_input`, `grow_output`, etc.): ~300 lines
 - Properties/diagnostics: ~400 lines
 - **Total**: ~1862 lines
 

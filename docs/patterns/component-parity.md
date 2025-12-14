@@ -6,7 +6,7 @@
 
 ## Problem
 
-Pathways are easy to forget when implementing new features. Historically, we've added features to `BrainRegion` but forgotten to add them to `BaseNeuralPathway`, causing:
+Pathways are easy to forget when implementing new features. Historically, we've added features to regions but forgotten to add them to pathways, causing:
 
 1. **Feature asymmetry**: Regions can grow, pathways can't → curriculum learning breaks
 2. **API inconsistency**: Code works with regions but not pathways → confusion
@@ -27,18 +27,18 @@ Both are active learning components that:
 
 ## Solution: BrainComponent Protocol
 
-Created `src/thalia/core/protocols/component.py` defining the **unified interface** for all components:
+Both regions and pathways now inherit from `NeuralComponent`, a unified base class that implements the complete BrainComponent protocol (defined in `src/thalia/core/protocols/component.py`):
 
 ```python
-from thalia.core.protocols.component import BrainComponent
+from thalia.regions.base import NeuralComponent
 
-# Both regions and pathways implement this protocol
-class BrainRegion(BrainComponent, ...):
-    """Implements full BrainComponent interface."""
+# Both regions and pathways inherit from NeuralComponent
+class LayeredCortex(NeuralComponent):
+    """Region implementing full BrainComponent interface."""
     pass
 
-class BaseNeuralPathway(BrainComponent, ...):
-    """Implements full BrainComponent interface."""
+class SpikingPathway(NeuralComponent):
+    """Pathway implementing full BrainComponent interface."""
     pass
 ```
 
@@ -97,16 +97,16 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 ### When Adding New Features
 
 **OLD WAY** (easy to forget pathways):
-1. Implement feature in `BrainRegion`
+1. Implement feature in regions
 2. Write tests for regions
 3. Maybe remember pathways later
 
 **NEW WAY** (enforced parity):
 1. Add method to `BrainComponent` protocol
-2. Implement for `BrainRegion` base class
-3. Implement for `BaseNeuralPathway` base class
+2. Implement in `NeuralComponent` base class (used by both regions and pathways)
+3. Override in specialized subclasses as needed
 4. Write tests for both regions AND pathways
-5. Type checker fails if either is missing
+5. Type checker fails if implementation is missing
 
 ### Example: Unified Growth API
 
@@ -117,8 +117,8 @@ class BrainComponent(Protocol):
     def grow_output(self, n_new: int, ...) -> None: ...
     def get_capacity_metrics(self) -> CapacityMetrics: ...
 
-# Step 2: Regions implement both
-class BrainRegion(BrainComponent):
+# Step 2: NeuralComponent base implements for both regions and pathways
+class NeuralComponent(BrainComponent):
     def grow_input(self, n_new, initialization, sparsity):
         # Expand input weight columns when upstream grows
         ...
@@ -128,22 +128,17 @@ class BrainRegion(BrainComponent):
         ...
 
     def get_capacity_metrics(self):
-        from thalia.core.growth import GrowthManager
+        from thalia.coordination.growth import GrowthManager
         return GrowthManager(self.name).get_capacity_metrics(self)
 
-# Step 3: Pathways also implement both (REQUIRED by protocol)
-class BaseNeuralPathway(BrainComponent):
-    def grow_input(self, n_new, initialization, sparsity):
-        # Expand input dimension (pre-synaptic side)
-        ...
+# Step 3: Both regions and pathways inherit unified implementation
+class Striatum(NeuralComponent):
+    # Inherits growth methods from NeuralComponent
+    pass
 
-    def grow_output(self, n_new, initialization, sparsity):
-        # Expand output dimension (post-synaptic side)
-        ...
-
-    def get_capacity_metrics(self):
-        from thalia.core.growth import GrowthManager
-        return GrowthManager(self.name).get_capacity_metrics(self)
+class SpikingPathway(NeuralComponent):
+    # Inherits growth methods from NeuralComponent
+    pass
 
 # Step 4: Tests for both
 def test_region_growth(striatum): ...
@@ -176,8 +171,8 @@ def test_pathway_growth(cortex_to_hippo): ...
 
 When reviewing PRs, check:
 
-- [ ] Does this add new functionality to BrainRegion?
-- [ ] If yes, is it also added to BaseNeuralPathway?
+- [ ] Does this add new functionality to regions?
+- [ ] If yes, does it also work for pathways?
 - [ ] Are tests written for both regions AND pathways?
 - [ ] Is BrainComponent protocol updated?
 - [ ] Does documentation mention both regions and pathways?
@@ -190,8 +185,8 @@ If you find code that only works with regions:
 
 **Before:**
 ```python
-def analyze_learning(region: BrainRegion) -> Dict:
-    """Analyze learning in brain region."""
+def analyze_learning(region: NeuralComponent) -> Dict:
+    """Analyze learning in brain region only."""
     metrics = region.get_diagnostics()
     health = region.check_health()
     return {"metrics": metrics, "health": health}
@@ -199,8 +194,10 @@ def analyze_learning(region: BrainRegion) -> Dict:
 
 **After:**
 ```python
-def analyze_learning(component: BrainComponent) -> Dict:
-    """Analyze learning in brain component (region or pathway)."""
+from thalia.regions.base import NeuralComponent
+
+def analyze_learning(component: NeuralComponent) -> Dict:
+    """Analyze learning in any neural component (region or pathway)."""
     metrics = component.get_diagnostics()
     health = component.check_health()
     return {"metrics": metrics, "health": health}
@@ -254,12 +251,13 @@ for t in range(n_timesteps):
 
 ## References
 
-- `src/thalia/core/component_protocol.py` - Unified protocol definition
-- `src/thalia/regions/base.py` - BrainRegion implements protocol
-- `src/thalia/core/pathway_protocol.py` - BaseNeuralPathway implements protocol
-- `src/thalia/core/growth.py` - GrowthManager works with both
+- `src/thalia/core/protocols/component.py` - BrainComponent protocol definition
+- `src/thalia/regions/base.py` - NeuralComponent base class (used by regions and pathways)
+- `src/thalia/pathways/protocol.py` - Additional pathway-specific protocol
+- `src/thalia/coordination/growth.py` - GrowthManager works with all components
 - `docs/decisions/adr-006-temporal-coding.md` - Temporal/latency coding for sensory pathways
 - `docs/decisions/adr-007-pytorch-consistency.md` - Standard forward() convention
+- `docs/decisions/adr-008-neural-component-consolidation.md` - Unified NeuralComponent architecture
 
 ---
 

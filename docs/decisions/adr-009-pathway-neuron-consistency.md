@@ -1,7 +1,7 @@
 # ADR-009: Pathway Neuron Consistency
 
-**Date**: December 11, 2025  
-**Status**: Implemented  
+**Date**: December 11, 2025
+**Status**: Implemented
 **Context**: Component parity between regions and pathways
 
 ## Decision
@@ -14,7 +14,7 @@ SpikingPathway now uses `ConductanceLIF` neurons instead of manual LIF implement
 ```python
 # SpikingPathway manually implemented LIF dynamics:
 - Manual membrane potential updates
-- Manual refractory period tracking  
+- Manual refractory period tracking
 - Manual spike generation
 - Code duplication from neuron.py (~50 lines)
 - _create_neurons() returned None
@@ -88,7 +88,7 @@ From `copilot-instructions.md`:
    self.membrane = cfg.v_rest + (self.membrane - cfg.v_rest) * mem_decay + ...
    target_spikes = ((self.membrane >= effective_thresh) & can_spike).float()
    # ... manual reset, refractory, etc.
-   
+
    # After: Delegate to neuron object
    target_spikes, _ = self.neurons(self.synaptic_current)
    ```
@@ -104,13 +104,13 @@ From `copilot-instructions.md`:
 
 5. **Growth Support**:
    ```python
-   def add_neurons(self, n_new: int, ...):
+   def grow_output(self, n_new: int, ...):
        # Preserve old neuron state
        old_state = self.neurons.get_state()
-       
+
        # Create larger neuron object
        self.neurons = ConductanceLIF(n_neurons=new_size, config=...)
-       
+
        # Restore old state + initialize new neurons
        self.neurons.reset_state()
        self.neurons.membrane[:old_size] = old_state["membrane"]
@@ -136,7 +136,7 @@ New test suite (`test_spiking_pathway_neurons.py`) with 8 tests:
 2. ✅ `test_spiking_pathway_forward_with_neurons` - Forward pass works
 3. ✅ `test_spiking_pathway_phase_coding` - Phase modulation preserved
 4. ✅ `test_spiking_pathway_reset_resets_neurons` - State reset works
-5. ✅ `test_spiking_pathway_add_neurons_expands_neuron_object` - Growth works
+5. ✅ `test_spiking_pathway_grow_output_expands_neuron_object` - Growth works
 6. ✅ `test_spiking_pathway_state_includes_neuron_state` - Checkpointing works
 7. ✅ `test_spiking_pathway_learning_with_neurons` - STDP still works
 8. ✅ `test_spiking_pathway_diagnostics_use_neuron_state` - Diagnostics work

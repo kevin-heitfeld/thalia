@@ -1,8 +1,8 @@
 # ADR-004: Use Bool Tensors for Spike Representation
 
-**Status**: ✅ COMPLETE  
-**Date**: December 8, 2025 (Completed)  
-**Decision Makers**: Thalia Team  
+**Status**: ✅ COMPLETE
+**Date**: December 8, 2025 (Completed)
+**Decision Makers**: Thalia Team
 
 ## Context
 
@@ -24,16 +24,16 @@ Spikes in biological neural networks are discrete, all-or-nothing events. Curren
 
 ### Benefits
 
-✅ **Memory efficiency**: 8× less memory for spike trains  
-✅ **Biological accuracy**: Spikes are binary events (fire or don't fire)  
-✅ **Type safety**: `bool` dtype prevents accidental analog values  
-✅ **Code clarity**: `bool` signals discrete events vs continuous signals  
+✅ **Memory efficiency**: 8× less memory for spike trains
+✅ **Biological accuracy**: Spikes are binary events (fire or don't fire)
+✅ **Type safety**: `bool` dtype prevents accidental analog values
+✅ **Code clarity**: `bool` signals discrete events vs continuous signals
 
 ### Trade-offs
 
-❌ **Requires conversions**: Must call `.float()` before matmul, torch.sum, etc.  
-❌ **Migration effort**: Must update ~100+ locations in codebase  
-❌ **Slight overhead**: bool→float conversion cost (negligible vs memory savings)  
+❌ **Requires conversions**: Must call `.float()` before matmul, torch.sum, etc.
+❌ **Migration effort**: Must update ~100+ locations in codebase
+❌ **Slight overhead**: bool→float conversion cost (negligible vs memory savings)
 
 ## Implementation Status: ✅ COMPLETE
 
@@ -61,7 +61,7 @@ All phases complete. Core architecture (regions, pathways, learning rules) fully
 - [x] All sensory pathways use latency/temporal coding with 2D output [n_timesteps, output_size]
 
 ### Phase 4: Integration Pathways ✅ COMPLETE
-- [x] `BaseNeuralPathway` - Accepts/returns bool spikes (1D)
+- [x] `SpikingPathway` (base class) - Accepts/returns bool spikes (1D)
 - [x] `SpikingAttentionPathway` - Accepts/returns bool spikes
 - [x] `SpikingReplayPathway` - Accepts/returns bool spikes
 - [x] All pathway tests passing (19/19 in test_pathway_protocol.py)
@@ -86,10 +86,10 @@ All phases complete. Core architecture (regions, pathways, learning rules) fully
 ```python
 def forward(self, input_current: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     # ... membrane dynamics (float) ...
-    
+
     # Spike detection → bool
     spikes = self.membrane >= self.v_threshold  # bool tensor
-    
+
     return spikes, self.membrane  # spikes is bool, membrane is float
 ```
 
@@ -98,13 +98,13 @@ def forward(self, input_current: torch.Tensor) -> tuple[torch.Tensor, torch.Tens
 def forward(self, input_spikes: torch.Tensor) -> torch.Tensor:
     # Accept both bool and float for backward compatibility
     spikes_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
-    
+
     # Matmul requires float
     activation = torch.matmul(spikes_float, self.weights.T)
-    
+
     # Neuron dynamics
     output_spikes, _ = self.neurons(activation)
-    
+
     # Return bool
     return output_spikes  # Already bool from neurons
 ```
@@ -115,7 +115,7 @@ def update_weights(self, pre_spikes: torch.Tensor, post_spikes: torch.Tensor):
     # Convert bool→float for arithmetic
     pre = pre_spikes.float()
     post = post_spikes.float()
-    
+
     # STDP: Δw = pre ⊗ post
     delta_w = torch.outer(post, pre)
     self.weights += self.learning_rate * delta_w
@@ -152,10 +152,10 @@ For each file modified:
 
 ## Validation Criteria
 
-✅ **Memory test**: Spike tensors use 1/8th memory of equivalent float tensors  
-✅ **Correctness test**: All unit tests pass with bool spikes  
-✅ **Type test**: `assert spikes.dtype == torch.bool` in critical paths  
-✅ **Performance test**: No significant slowdown (< 5%) vs float spikes  
+✅ **Memory test**: Spike tensors use 1/8th memory of equivalent float tensors
+✅ **Correctness test**: All unit tests pass with bool spikes
+✅ **Type test**: `assert spikes.dtype == torch.bool` in critical paths
+✅ **Performance test**: No significant slowdown (< 5%) vs float spikes
 
 ## References
 
@@ -172,5 +172,5 @@ For each file modified:
 
 ---
 
-**Status Legend**:  
+**Status Legend**:
 ✅ Completed | 🔄 In Progress | 📝 Planned | ❌ Blocked
