@@ -695,6 +695,11 @@ class EventDrivenBrain(nn.Module):
             default_compression='zstd'
         )
 
+    @property
+    def device(self) -> torch.device:
+        """Get the device the brain is running on."""
+        return torch.device(self.config.device)
+
     @classmethod
     def from_thalia_config(cls, config: "ThaliaConfig") -> "EventDrivenBrain":
         """Create EventDrivenBrain from unified ThaliaConfig.

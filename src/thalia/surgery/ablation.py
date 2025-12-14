@@ -115,37 +115,42 @@ def restore_pathway(
 
 def _get_pathway(brain: "EventDrivenBrain", pathway_name: str):
     """Get pathway by name."""
-    # Access pathway manager
-    pathway_manager = brain.pathways
+    # Access pathways dict directly (brain.pathways is already the dict)
+    pathways = brain.pathways
 
     # Try to get pathway
-    if pathway_name in pathway_manager.pathways:
-        return pathway_manager.pathways[pathway_name]
+    if pathway_name in pathways:
+        return pathways[pathway_name]
 
     # Try alternative names
     pathway_map = {
         "thalamus_to_cortex": "thalamus_to_cortex",
-        "cortex_to_hippocampus": "cortex_to_hippocampus",
-        "cortex_to_hippo": "cortex_to_hippocampus",
+        "cortex_to_hippocampus": "cortex_to_hippo",
+        "cortex_to_hippo": "cortex_to_hippo",
         "cortex_to_pfc": "cortex_to_pfc",
         "cortex_to_prefrontal": "cortex_to_pfc",
         "cortex_to_striatum": "cortex_to_striatum",
-        "hippocampus_to_pfc": "hippocampus_to_pfc",
-        "hippo_to_pfc": "hippocampus_to_pfc",
+        "hippocampus_to_pfc": "hippo_to_pfc",
+        "hippo_to_pfc": "hippo_to_pfc",
+        "pfc_to_hippocampus": "pfc_to_hippo",
+        "pfc_to_hippo": "pfc_to_hippo",
+        "hippocampus_to_striatum": "hippo_to_striatum",
+        "hippo_to_striatum": "hippo_to_striatum",
         "pfc_to_striatum": "pfc_to_striatum",
         "prefrontal_to_striatum": "pfc_to_striatum",
         "striatum_to_cerebellum": "striatum_to_cerebellum",
-        "pfc_to_cortex": "pfc_to_cortex",  # Top-down attention
-        "hippocampus_to_cortex": "hippocampus_to_cortex",  # Replay
+        "pfc_to_cortex": "attention",  # Top-down attention
+        "hippocampus_to_cortex": "replay",  # Replay
+        "hippo_to_cortex": "replay",
     }
 
     if pathway_name in pathway_map:
         canonical_name = pathway_map[pathway_name]
-        if canonical_name in pathway_manager.pathways:
-            return pathway_manager.pathways[canonical_name]
+        if canonical_name in pathways:
+            return pathways[canonical_name]
 
     # Pathway not found
-    available = list(pathway_manager.pathways.keys())
+    available = list(pathways.keys())
     raise ValueError(
         f"Unknown pathway: {pathway_name}. "
         f"Available pathways: {available}"

@@ -197,6 +197,23 @@ class StriatumExplorationComponent(ExplorationComponent):
         # Update n_actions
         self.n_actions = n_actions
 
+    def compute_ucb_bonus(self) -> torch.Tensor:
+        """Compute UCB (Upper Confidence Bound) exploration bonus.
+
+        UCB formula: c * sqrt(ln(total_trials) / action_count)
+
+        Returns:
+            UCB bonus per action [n_actions]
+        """
+        if not self.config.ucb_exploration or self._total_trials == 0:
+            return torch.zeros(self.n_actions, device=self.context.device)
+
+        log_t = torch.log(torch.tensor(self._total_trials + 1, dtype=torch.float32, device=self.context.device))
+        ucb_bonus = self.config.ucb_coefficient * torch.sqrt(
+            log_t / (self._action_counts + 1.0)
+        )
+        return ucb_bonus
+
     def get_state(self) -> Dict[str, Any]:
         """Get exploration component state for checkpointing.
 

@@ -467,7 +467,7 @@ class STDPStrategy(BaseStrategy):
         pre: torch.Tensor,
         post: torch.Tensor,
     ) -> None:
-        """Initialize trace manager if needed.
+        """Initialize trace manager if needed or reinitialize if dimensions changed.
 
         Args:
             pre: Presynaptic spikes [n_pre] (1D)
@@ -477,7 +477,15 @@ class STDPStrategy(BaseStrategy):
         n_post = post.shape[0]
         device = pre.device
 
-        if self._trace_manager is None:
+        # Check if we need to (re)initialize
+        needs_init = (
+            self._trace_manager is None
+            or self._trace_manager.n_input != n_pre
+            or self._trace_manager.n_output != n_post
+            or self._trace_manager.input_trace.device != device
+        )
+
+        if needs_init:
             cfg = self.stdp_config
             self._trace_manager = EligibilityTraceManager(
                 n_input=n_pre,

@@ -145,6 +145,27 @@ class PerformanceProfiler:
         self._last_step_time = time.time()
         self._total_steps = 0
         self._last_stats = None
+        self._step_start = None
+
+    def start_step(self) -> None:
+        """Start timing a training step.
+
+        Call this before processing a sample.
+        """
+        self._step_start = time.time()
+
+    def end_step(self) -> None:
+        """End timing a training step.
+
+        Call this after processing a sample.
+        """
+        if self._step_start is None:
+            return
+
+        duration = time.time() - self._step_start
+        self.forward_times.append(duration)
+        self._step_start = None
+        self._total_steps += 1
 
     def start_forward(self) -> None:
         """Start timing a forward pass.

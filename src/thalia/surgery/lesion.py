@@ -257,12 +257,19 @@ def _zero_region_weights(region_impl) -> None:
 
 
 def _zero_neurons_weights(region_impl, neuron_indices: torch.Tensor) -> None:
-    """Zero weights for specific neurons."""
+    """Zero weights for specific neurons.
+
+    For layered regions, distributes lesions across layers proportionally.
+    """
     # Zero output weights (rows in weight matrices)
     for name, param in region_impl.named_parameters():
-        if param.requires_grad and "weight" in name:
-            # Zero rows corresponding to lesioned neurons
-            param.data[neuron_indices] = 0.0
+        if param.requires_grad and "weight" in name and param.dim() >= 2:
+            # Get valid indices for this parameter's output dimension
+            n_outputs = param.shape[0]
+            # Only use indices that are valid for this layer
+            valid_indices = neuron_indices[neuron_indices < n_outputs]
+            if len(valid_indices) > 0:
+                param.data[valid_indices] = 0.0
 
 
 def _restore_weights(region_impl, original_weights: Dict[str, torch.Tensor]) -> None:

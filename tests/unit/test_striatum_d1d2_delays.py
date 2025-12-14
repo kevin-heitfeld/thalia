@@ -234,12 +234,14 @@ def test_circular_buffer_wrapping(striatum_with_delays):
     assert not torch.isinf(d2_votes).any(), "D2 votes contain Inf after buffer wrapping"
 
     # Behavioral contract: striatum should still respond to new input
+    # Run multiple timesteps with strong input to allow delays to deliver spikes
     strong_input = torch.ones(50, dtype=torch.bool)
-    _ = striatum_with_delays(strong_input)
+    for _ in range(max(d1_delay_steps, d2_delay_steps) + 5):
+        _ = striatum_with_delays(strong_input)
     d1_after, d2_after = striatum_with_delays.state_tracker.get_accumulated_votes()
-    # After strong input, at least one pathway should show increased votes
+    # After strong input with sufficient delay time, at least one pathway should show increased votes
     assert d1_after.sum() > d1_votes.sum() or d2_after.sum() > d2_votes.sum(), \
-        "Striatum should still respond to input after buffer wrapping"
+        f"Striatum should still respond to input after buffer wrapping (d1: {d1_votes.sum():.1f} -> {d1_after.sum():.1f}, d2: {d2_votes.sum():.1f} -> {d2_after.sum():.1f})"
 
 
 def test_checkpoint_preserves_delay_behavior(striatum_with_delays):

@@ -48,10 +48,12 @@ class TestSilentInput:
         silent_input = torch.zeros(10, dtype=torch.bool, device=device)
 
         # Should not crash
-        output = test_brain.forward(silent_input, n_timesteps=5)
+        result = test_brain.forward(silent_input, n_timesteps=5)
 
-        # Validate output
-        assert output.dtype == torch.bool, "Output should be bool"
+        # Validate output (cortex_activity is the main output)
+        assert isinstance(result, dict), "Output should be a dict"
+        assert "cortex_activity" in result, "Result should contain cortex_activity"
+        output = result["cortex_activity"]
         assert not torch.isnan(output.float()).any(), "Output contains NaN"
 
     def test_brain_survives_extended_silence(self, test_brain, device):
@@ -60,9 +62,10 @@ class TestSilentInput:
 
         # Run 100 steps of silence
         for _ in range(100):
-            output = test_brain.forward(silent_input, n_timesteps=1)
+            result = test_brain.forward(silent_input, n_timesteps=1)
 
             # Should not crash or produce NaN
+            output = result["cortex_activity"]
             assert not torch.isnan(output.float()).any(), "Output contains NaN"
 
 
@@ -75,10 +78,10 @@ class TestSaturatedInput:
         saturated_input = torch.ones(10, dtype=torch.bool, device=device)
 
         # Should not crash or overflow
-        output = test_brain.forward(saturated_input, n_timesteps=5)
+        result = test_brain.forward(saturated_input, n_timesteps=5)
 
         # Validate output
-        assert output.dtype == torch.bool, "Output should be bool"
+        output = result["cortex_activity"]
         assert not torch.isnan(output.float()).any(), "Output contains NaN"
         assert not torch.isinf(output.float()).any(), "Output contains Inf"
 
@@ -88,7 +91,8 @@ class TestSaturatedInput:
 
         # Run 100 steps of saturation
         for step in range(100):
-            output = test_brain.forward(saturated_input, n_timesteps=1)
+            result = test_brain.forward(saturated_input, n_timesteps=1)
+            output = result["cortex_activity"]
 
             # Should not crash or produce NaN/Inf
             assert not torch.isnan(output.float()).any(), f"Output contains NaN at step {step}"
@@ -146,7 +150,7 @@ class TestNumericalStability:
                             f"Region {region_name} membrane contains Inf at step {step}"
 
                 # Check all pathway weights
-                for pathway_name, pathway in test_brain.pathway_manager.pathways.items():
+                for pathway_name, pathway in test_brain.pathway_manager.get_all_pathways().items():
                     if hasattr(pathway, 'weights'):
                         assert not torch.isnan(pathway.weights).any(), \
                             f"Pathway {pathway_name} weights contain NaN at step {step}"
@@ -160,7 +164,8 @@ class TestNumericalStability:
             sparsity = torch.rand(1).item() * 0.9 + 0.05  # 5% to 95%
             input_pattern = torch.rand(10, device=device) > (1.0 - sparsity)
 
-            output = test_brain.forward(input_pattern, n_timesteps=1)
+            result = test_brain.forward(input_pattern, n_timesteps=1)
+            output = result["cortex_activity"]
 
             # Should not crash or produce NaN
             assert not torch.isnan(output.float()).any(), "Output contains NaN"
@@ -181,7 +186,8 @@ class TestResetBehavior:
 
         # After reset, silent input should produce minimal activity
         silent_input = torch.zeros(10, dtype=torch.bool, device=device)
-        output_after_reset = test_brain.forward(silent_input, n_timesteps=5)
+        result_after_reset = test_brain.forward(silent_input, n_timesteps=5)
+        output_after_reset = result_after_reset["cortex_activity"]
 
         # Validate reset worked (should not crash)
         assert not torch.isnan(output_after_reset.float()).any(), "Output contains NaN after reset"
@@ -199,7 +205,8 @@ class TestResetBehavior:
             test_brain.reset_state()
 
         # Final forward pass should work
-        final_output = test_brain.forward(input_pattern, n_timesteps=1)
+        final_result = test_brain.forward(input_pattern, n_timesteps=1)
+        final_output = final_result["cortex_activity"]
         assert not torch.isnan(final_output.float()).any(), "Output contains NaN after multiple resets"
 
 

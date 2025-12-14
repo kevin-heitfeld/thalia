@@ -188,7 +188,6 @@ class MultimodalIntegration(NeuralComponent):
         # Create neurons for each pool
         self.neurons = create_pyramidal_neurons(
             n_neurons=config.n_output,
-            config=config,
             device=config.device,
         )
 
@@ -293,7 +292,7 @@ class MultimodalIntegration(NeuralComponent):
         if config.enable_hebbian:
             hebbian_config = HebbianConfig(
                 learning_rate=config.hebbian_lr,
-                weight_decay=0.0001,
+                decay_rate=0.0001,
             )
             self.hebbian_strategy = HebbianStrategy(hebbian_config)
         else:
@@ -410,15 +409,20 @@ class MultimodalIntegration(NeuralComponent):
         # STEP 3: Generate spikes for each pool
         # =====================================================================
 
-        # Concatenate currents for all pools
+        # Create integration current (initially zero, will be computed after pool spikes)
+        integration_current = torch.zeros(self.integration_pool_size, device=self.config.device)
+
+        # Concatenate currents for all pools (including integration placeholder)
         pool_currents = torch.cat([
             visual_current,
             auditory_current,
             language_current,
+            integration_current,  # Will be updated after we get pool spikes
         ])
 
-        # Get spikes from pool neurons
-        pool_spikes = self.neurons(pool_currents)
+        # Get spikes from pool neurons (visual, auditory, language)
+        pool_spikes, _ = self.neurons(pool_currents)  # Returns (spikes, membrane)
+        pool_spikes = pool_spikes.float()  # Convert bool spikes to float for downstream ops
 
         # Split into pools
         self.visual_pool_spikes = pool_spikes[:self.visual_pool_size]
@@ -430,35 +434,15 @@ class MultimodalIntegration(NeuralComponent):
             self.visual_pool_size + self.auditory_pool_size:
             self.visual_pool_size + self.auditory_pool_size + self.language_pool_size
         ]
+        self.integration_spikes = pool_spikes[
+            self.visual_pool_size + self.auditory_pool_size + self.language_pool_size:
+        ]
 
         # =====================================================================
-        # STEP 4: Integration neurons (bind modalities)
+        # STEP 4: Output (all pools including integration)
         # =====================================================================
 
-        # All pool spikes → integration neurons
-        integration_current = torch.mv(
-            self.integration_weights,
-            pool_spikes[:-self.integration_pool_size],  # Exclude integration neurons
-        )
-
-        # Get integration spikes
-        self.integration_spikes = self.neurons.generate_spikes(
-            integration_current,
-            neuron_indices=torch.arange(
-                self.config.n_output - self.integration_pool_size,
-                self.config.n_output,
-                device=self.config.device,
-            ),
-        )
-
-        # =====================================================================
-        # STEP 5: Output (all pools + integration)
-        # =====================================================================
-
-        output_spikes = torch.cat([
-            pool_spikes[:-self.integration_pool_size],
-            self.integration_spikes,
-        ])
+        output_spikes = pool_spikes  # Already includes all pools
 
         # =====================================================================
         # STEP 6: Learning (if enabled)
@@ -467,24 +451,24 @@ class MultimodalIntegration(NeuralComponent):
         if self.plasticity_enabled and self.hebbian_strategy:
             # Update cross-modal connections via Hebbian learning
             if visual_input is not None and auditory_input is not None:
-                self.visual_to_auditory = self.hebbian_strategy.apply(
+                self.visual_to_auditory, _ = self.hebbian_strategy.compute_update(
                     weights=self.visual_to_auditory,
-                    pre_spikes=self.visual_pool_spikes,
-                    post_spikes=self.auditory_pool_spikes,
+                    pre=self.visual_pool_spikes,
+                    post=self.auditory_pool_spikes,
                 )
 
             if visual_input is not None and language_input is not None:
-                self.visual_to_language = self.hebbian_strategy.apply(
+                self.visual_to_language, _ = self.hebbian_strategy.compute_update(
                     weights=self.visual_to_language,
-                    pre_spikes=self.visual_pool_spikes,
-                    post_spikes=self.language_pool_spikes,
+                    pre=self.visual_pool_spikes,
+                    post=self.language_pool_spikes,
                 )
 
             if auditory_input is not None and language_input is not None:
-                self.auditory_to_language = self.hebbian_strategy.apply(
+                self.auditory_to_language, _ = self.hebbian_strategy.compute_update(
                     weights=self.auditory_to_language,
-                    pre_spikes=self.auditory_pool_spikes,
-                    post_spikes=self.language_pool_spikes,
+                    pre=self.auditory_pool_spikes,
+                    post=self.language_pool_spikes,
                 )
 
         return output_spikes
@@ -588,7 +572,7 @@ class MultimodalIntegration(NeuralComponent):
         Returns:
             HealthReport with health status and issues
         """
-        from thalia.diagnostics.health_monitor import HealthReport, IssueReport
+        from thalia.diagnostics.health_monitor import HealthReport, IssueReport, HealthIssue
 
         issues = []
         max_severity = 0.0
@@ -596,64 +580,64 @@ class MultimodalIntegration(NeuralComponent):
         # Check for silence
         if self.visual_pool_spikes.mean() < 0.001:
             issues.append(IssueReport(
-                component="multimodal_integration.visual_pool",
-                issue="Visual pool silent",
-                severity="medium",
-                recommendation="Check visual input pathway",
-                metrics={"firing_rate": float(self.visual_pool_spikes.mean())},
+                issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                severity=50.0,
+                description="Visual pool silent - check visual input pathway",
+                recommendation="Verify visual input connectivity and strengths",
+                metrics={"visual_firing_rate": float(self.visual_pool_spikes.mean())},
             ))
-            max_severity = max(max_severity, 0.5)
+            max_severity = max(max_severity, 50.0)
 
         if self.auditory_pool_spikes.mean() < 0.001:
             issues.append(IssueReport(
-                component="multimodal_integration.auditory_pool",
-                issue="Auditory pool silent",
-                severity="medium",
-                recommendation="Check auditory input pathway",
-                metrics={"firing_rate": float(self.auditory_pool_spikes.mean())},
+                issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                severity=50.0,
+                description="Auditory pool silent - check auditory input pathway",
+                recommendation="Verify auditory input connectivity and strengths",
+                metrics={"auditory_firing_rate": float(self.auditory_pool_spikes.mean())},
             ))
-            max_severity = max(max_severity, 0.5)
+            max_severity = max(max_severity, 50.0)
 
         if self.language_pool_spikes.mean() < 0.001:
             issues.append(IssueReport(
-                component="multimodal_integration.language_pool",
-                issue="Language pool silent",
-                severity="medium",
-                recommendation="Check language input pathway",
-                metrics={"firing_rate": float(self.language_pool_spikes.mean())},
+                issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                severity=50.0,
+                description="Language pool silent - check language input pathway",
+                recommendation="Verify language input connectivity and strengths",
+                metrics={"language_firing_rate": float(self.language_pool_spikes.mean())},
             ))
-            max_severity = max(max_severity, 0.5)
+            max_severity = max(max_severity, 50.0)
 
         if self.integration_spikes.mean() < 0.001:
             issues.append(IssueReport(
-                component="multimodal_integration.integration_neurons",
-                issue="Integration neurons silent",
-                severity="high",
-                recommendation="Check cross-modal connections and integration weights",
-                metrics={"firing_rate": float(self.integration_spikes.mean())},
+                issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                severity=80.0,
+                description="Integration neurons silent - check cross-modal connections",
+                recommendation="Verify integration weights and cross-modal connectivity",
+                metrics={"integration_firing_rate": float(self.integration_spikes.mean())},
             ))
-            max_severity = max(max_severity, 0.8)
+            max_severity = max(max_severity, 80.0)
 
         # Check for saturation
         if self.visual_pool_spikes.mean() > 0.9:
             issues.append(IssueReport(
-                component="multimodal_integration.visual_pool",
-                issue="Visual pool saturated",
-                severity="high",
+                issue_type=HealthIssue.SEIZURE_RISK,
+                severity=80.0,
+                description="Visual pool saturated - excessive activity detected",
                 recommendation="Reduce visual input strength or add inhibition",
-                metrics={"firing_rate": float(self.visual_pool_spikes.mean())},
+                metrics={"visual_firing_rate": float(self.visual_pool_spikes.mean())},
             ))
-            max_severity = max(max_severity, 0.8)
+            max_severity = max(max_severity, 80.0)
 
         if self.auditory_pool_spikes.mean() > 0.9:
             issues.append(IssueReport(
-                component="multimodal_integration.auditory_pool",
-                issue="Auditory pool saturated",
-                severity="high",
-                recommendation="Reduce auditory input strength or add inhibition",
-                metrics={"firing_rate": float(self.auditory_pool_spikes.mean())},
+                issue_type=HealthIssue.SEIZURE_RISK,
+                severity=80.0,
+                description="Auditory pool saturated - excessive activity detected",
+                recommendation="Verify auditory input strength and inhibition",
+                metrics={"auditory_firing_rate": float(self.auditory_pool_spikes.mean())},
             ))
-            max_severity = max(max_severity, 0.8)
+            max_severity = max(max_severity, 80.0)
 
         is_healthy = len(issues) == 0
         summary = "Healthy" if is_healthy else f"{len(issues)} issue(s) detected"

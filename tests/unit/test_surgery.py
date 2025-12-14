@@ -39,7 +39,7 @@ def test_brain():
             ),
         ),
     )
-    return EventDrivenBrain.from_config(config)
+    return EventDrivenBrain.from_thalia_config(config)
 
 
 def test_lesion_region_silences_region(test_brain):
@@ -136,10 +136,10 @@ def test_restore_without_lesion_raises(test_brain):
 def test_ablate_pathway(test_brain):
     """Test pathway ablation."""
     # Get pathway
-    pathway = test_brain.pathways.pathways["cortex_to_hippocampus"]
+    pathway = test_brain.pathways["cortex_to_hippo"]
 
     # Ablate
-    ablate_pathway(test_brain, "cortex_to_hippocampus")
+    ablate_pathway(test_brain, "cortex_to_hippo")
 
     # Check weights zeroed
     for param in pathway.parameters():
@@ -152,15 +152,16 @@ def test_ablate_pathway(test_brain):
 
 def test_ablate_pathway_alternate_names(test_brain):
     """Test ablation with alternate pathway names."""
-    ablate_pathway(test_brain, "cortex_to_hippo")
-    pathway = test_brain.pathways.pathways["cortex_to_hippocampus"]
+    # Test that alternate name "cortex_to_hippocampus" works
+    ablate_pathway(test_brain, "cortex_to_hippocampus")
+    pathway = test_brain.pathways["cortex_to_hippo"]
     assert pathway.plasticity_enabled is False
 
 
 def test_restore_pathway(test_brain):
     """Test pathway restoration."""
     pathway_name = "cortex_to_pfc"
-    pathway = test_brain.pathways.pathways[pathway_name]
+    pathway = test_brain.pathways[pathway_name]
 
     # Save initial weights
     initial_weights = {
@@ -210,7 +211,7 @@ def test_unfreeze_region(test_brain):
 def test_freeze_pathway(test_brain):
     """Test freezing pathway plasticity."""
     pathway_name = "cortex_to_striatum"
-    pathway = test_brain.pathways.pathways[pathway_name]
+    pathway = test_brain.pathways[pathway_name]
 
     freeze_pathway(test_brain, pathway_name)
 
@@ -225,7 +226,7 @@ def test_freeze_pathway(test_brain):
 def test_unfreeze_pathway(test_brain):
     """Test unfreezing pathway plasticity."""
     pathway_name = "pfc_to_striatum"
-    pathway = test_brain.pathways.pathways[pathway_name]
+    pathway = test_brain.pathways[pathway_name]
 
     freeze_pathway(test_brain, pathway_name)
     unfreeze_pathway(test_brain, pathway_name)

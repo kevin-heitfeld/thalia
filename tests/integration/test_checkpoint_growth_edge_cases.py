@@ -12,17 +12,13 @@ Test Coverage:
 - Recovery strategies
 """
 
-import pytest
-import tempfile
-from pathlib import Path
-from typing import Dict, Any
 import threading
 
+import pytest
 import torch
 
 from thalia.regions.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
-from thalia.io.checkpoint_manager import CheckpointManager
 
 
 @pytest.fixture
@@ -35,8 +31,8 @@ def device():
 def base_config(device):
     """Create base striatum config."""
     return StriatumConfig(
-        n_actions=5,
         n_input=100,
+        n_output=5,  # Number of actions
         growth_enabled=True,
         device=device,
     )
@@ -46,7 +42,7 @@ def base_config(device):
 def striatum(base_config):
     """Create striatum instance."""
     region = Striatum(base_config)
-    region.reset()
+    region.reset_state()
     return region
 
 
@@ -212,7 +208,7 @@ class TestVersionMismatches:
         # Save on CPU
         cpu_striatum = Striatum(striatum.config)
         cpu_striatum.device = torch.device("cpu")
-        cpu_striatum.reset()
+        cpu_striatum.reset_state()
 
         state = cpu_striatum.get_full_state()
         torch.save(state, checkpoint_path)
@@ -239,7 +235,7 @@ class TestMemoryLimits:
         config.n_actions = 10000
 
         large_region = Striatum(config)
-        large_region.reset()
+        large_region.reset_state()
 
         # Save
         state = large_region.get_full_state()
@@ -282,7 +278,7 @@ class TestMemoryLimits:
         config.memory_limit_mb = 100  # Constrain memory
 
         region = Striatum(config)
-        region.reset()
+        region.reset_state()
 
         # Should automatically choose memory-efficient format
         state = region.get_full_state()
@@ -531,7 +527,7 @@ class TestValidationRules:
         config.checkpoint_format = "neuromorphic"
 
         region = Striatum(config)
-        region.reset()
+        region.reset_state()
 
         state = region.get_full_state()
 

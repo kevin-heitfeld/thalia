@@ -30,6 +30,7 @@ from thalia.learning import (
     ErrorCorrectiveConfig,
 )
 from thalia.regions import Prefrontal, PrefrontalConfig
+from thalia.core.errors import ConfigurationError
 
 
 class TestLearningStrategyBasics:
@@ -218,7 +219,7 @@ class TestStrategyRegistry:
 
     def test_registry_unknown_strategy(self):
         """Test error handling for unknown strategies."""
-        with pytest.raises(ValueError, match="Unknown learning strategy"):
+        with pytest.raises(ConfigurationError, match="Unknown learning strategy"):
             LearningStrategyRegistry.create(
                 "nonexistent",
                 HebbianConfig()

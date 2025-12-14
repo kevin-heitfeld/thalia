@@ -12,14 +12,14 @@ import pytest
 import torch
 
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
-from thalia.learning import BCMStrategy
+from thalia.learning import BCMStrategy, CompositeStrategy
 
 
 class TestLayeredCortexStrategyMigration:
     """Test LayeredCortex migration to BCMStrategy."""
 
     def test_layered_cortex_has_bcm_strategies(self):
-        """Test LayeredCortex instantiates BCMStrategy for each layer."""
+        """Test LayeredCortex instantiates CompositeStrategy (STDP+BCM) for each layer."""
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
@@ -32,14 +32,19 @@ class TestLayeredCortexStrategyMigration:
         assert hasattr(cortex, 'bcm_l23')
         assert hasattr(cortex, 'bcm_l5')
 
-        # Verify all are BCMStrategy instances
-        assert isinstance(cortex.bcm_l4, BCMStrategy)
-        assert isinstance(cortex.bcm_l23, BCMStrategy)
-        assert isinstance(cortex.bcm_l5, BCMStrategy)
+        # Verify all are CompositeStrategy instances
+        assert isinstance(cortex.bcm_l4, CompositeStrategy)
+        assert isinstance(cortex.bcm_l23, CompositeStrategy)
+        assert isinstance(cortex.bcm_l5, CompositeStrategy)
 
-        # Verify config matches
-        assert cortex.bcm_l4.bcm_config.tau_theta == 5000.0
-        assert cortex.bcm_l4.bcm_config.theta_init == 0.01
+        # Verify composite contains BCMStrategy (second strategy in the list)
+        assert len(cortex.bcm_l4.strategies) == 2
+        assert isinstance(cortex.bcm_l4.strategies[1], BCMStrategy)
+
+        # Verify BCM config matches
+        bcm_strategy = cortex.bcm_l4.strategies[1]
+        assert bcm_strategy.bcm_config.tau_theta == 5000.0
+        assert bcm_strategy.bcm_config.theta_init == 0.01
 
     def test_layered_cortex_bcm_disabled_works(self):
         """Test LayeredCortex works when BCM is disabled."""
@@ -63,7 +68,7 @@ class TestLayeredCortexStrategyMigration:
         assert output.shape[0] == expected_size
 
     def test_layered_cortex_bcm_compute_phi_works(self):
-        """Test BCMStrategy compute_phi() method works (backward compatibility)."""
+        """Test BCMStrategy compute_phi() method works via CompositeStrategy."""
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
@@ -71,33 +76,39 @@ class TestLayeredCortexStrategyMigration:
         )
         cortex = LayeredCortex(config)
 
+        # Get BCM strategy from composite (second strategy)
+        bcm_l4 = cortex.bcm_l4.strategies[1]
+
         # Test compute_phi on L4
         l4_activity = torch.rand(cortex.l4_size)
-        phi = cortex.bcm_l4.compute_phi(l4_activity)
+        phi = bcm_l4.compute_phi(l4_activity)
 
         # Verify phi shape
         assert phi.shape == l4_activity.shape
 
     def test_layered_cortex_bcm_update_threshold_works(self):
-        """Test BCMStrategy update_threshold() method works (backward compatibility)."""
+        """Test BCMStrategy update_threshold() method works via CompositeStrategy."""
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
             bcm_enabled=True,
         )
         cortex = LayeredCortex(config)
+
+        # Get BCM strategy from composite (second strategy)
+        bcm_l4 = cortex.bcm_l4.strategies[1]
 
         # Test update_threshold on L4
         l4_activity = torch.rand(cortex.l4_size) * 0.5
 
         # Update threshold multiple times
         for _ in range(10):
-            cortex.bcm_l4.update_threshold(l4_activity)
+            bcm_l4.update_threshold(l4_activity)
 
         # Verify theta exists and is reasonable
-        assert cortex.bcm_l4.theta is not None
-        assert cortex.bcm_l4.theta.shape == (cortex.l4_size,)
-        assert (cortex.bcm_l4.theta > 0).all()
+        assert bcm_l4.theta is not None
+        assert bcm_l4.theta.shape == (cortex.l4_size,)
+        assert (bcm_l4.theta > 0).all()
 
     def test_layered_cortex_forward_backward_compatible(self):
         """Test LayeredCortex forward pass works with BCMStrategy."""
