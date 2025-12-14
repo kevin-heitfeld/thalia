@@ -476,6 +476,24 @@ class SpikingReplayPathway(SpikingPathway):
     ) -> None:
         """Add neurons to replay pathway (extends base implementation).
 
+        DEPRECATED: Use grow_target() or grow_source() for clarity.
+        This method delegates to grow_target() for backward compatibility.
+
+        Args:
+            n_new: Number of output neurons to add
+            initialization: Weight init strategy for base pathway
+            sparsity: Connection sparsity for new neurons
+        """
+        self.grow_target(n_new=n_new, initialization=initialization, sparsity=sparsity)
+
+    def grow_target(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow replay pathway target dimension (cortex output).
+
         Grows the pathway's output dimension (cortex size) and updates
         replay-specific layers accordingly.
 
@@ -494,7 +512,7 @@ class SpikingReplayPathway(SpikingPathway):
         device = self.weights.device
 
         # 1. Grow base pathway (weights, delays, neurons, traces)
-        super().add_neurons(n_new, initialization, sparsity)
+        super().grow_target(n_new, initialization, sparsity)
 
         new_output_size = self.config.n_output  # Updated by super()
 
@@ -519,3 +537,87 @@ class SpikingReplayPathway(SpikingPathway):
 
         # 4. replay_buffer patterns stay [n_input] - hippocampus size unchanged
         # Buffer already stores correct-sized patterns, no modification needed
+
+    def grow_source(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow replay pathway source dimension (hippocampus input).
+
+        When hippocampus grows, replay pathways must expand their input dimension
+        and replay-related computations.
+
+        Args:
+            n_new: Number of source neurons to add
+            initialization: Weight init strategy for base pathway
+            sparsity: Connection sparsity for new neurons
+
+        Updates:
+            - Base pathway weights/delays/traces (via super())
+            - replay_projection: [n_input, n_output] → [n_input+n_new, n_output]
+            - priority_network: [n_input, n_input//2, 1] → [n_input+n_new, (n_input+n_new)//2, 1]
+            - replay_buffer: patterns [n_input] → [n_input+n_new]
+        """
+        old_input_size = self.config.n_input
+        device = self.weights.device
+
+        # 1. Grow base pathway (weights, delays, source-side traces)
+        super().grow_source(n_new, initialization, sparsity)
+
+        new_input_size = self.config.n_input  # Updated by super()
+
+        # 2. Expand replay_projection: [old_input, n_output] → [new_input, n_output]
+        # Layer 0: Linear [n_input → n_output]
+        old_proj_weight = self.replay_projection[0].weight.data.clone()  # [n_output, old_input]
+        old_proj_bias = self.replay_projection[0].bias.data.clone()      # [n_output]
+
+        self.replay_projection[0] = nn.Linear(new_input_size, self.config.n_output).to(device)
+
+        # Copy old weights and expand with small random values
+        self.replay_projection[0].weight.data[:, :old_input_size] = old_proj_weight
+        self.replay_projection[0].weight.data[:, old_input_size:] *= 0.1  # Small init for new inputs
+        self.replay_projection[0].bias.data = old_proj_bias
+
+        # Layer 1: LayerNorm stays same (normalizes over output, not input)
+
+        # 3. Expand priority_network: [old_input → old_input//2 → 1] → [new_input → new_input//2 → 1]
+        old_hidden_size = old_input_size // 2
+        new_hidden_size = new_input_size // 2
+
+        # Save old network state
+        old_layer0_weight = self.priority_network[0].weight.data.clone()  # [old_hidden, old_input]
+        old_layer0_bias = self.priority_network[0].bias.data.clone()      # [old_hidden]
+        old_layer2_weight = self.priority_network[2].weight.data.clone()  # [1, old_hidden]
+        old_layer2_bias = self.priority_network[2].bias.data.clone()      # [1]
+
+        # Rebuild network with new sizes
+        self.priority_network = nn.Sequential(
+            nn.Linear(new_input_size, new_hidden_size),
+            nn.ReLU(),
+            nn.Linear(new_hidden_size, 1),
+        ).to(device)
+
+        # Layer 0: [old_input → old_hidden] → [new_input → new_hidden]
+        self.priority_network[0].weight.data[:old_hidden_size, :old_input_size] = old_layer0_weight
+        self.priority_network[0].weight.data[:old_hidden_size, old_input_size:] *= 0.1
+        self.priority_network[0].weight.data[old_hidden_size:, :] *= 0.1
+        self.priority_network[0].bias.data[:old_hidden_size] = old_layer0_bias
+        self.priority_network[0].bias.data[old_hidden_size:].zero_()
+
+        # Layer 2: [old_hidden → 1] → [new_hidden → 1]
+        self.priority_network[2].weight.data[:, :old_hidden_size] = old_layer2_weight
+        self.priority_network[2].weight.data[:, old_hidden_size:] *= 0.1
+        self.priority_network[2].bias.data = old_layer2_bias
+
+        # 4. Expand replay_buffer patterns: [old_input] → [new_input]
+        # Each stored pattern needs to be extended with zeros
+        for i in range(len(self.replay_buffer)):
+            old_pattern = self.replay_buffer[i].clone()
+            new_pattern = torch.zeros(new_input_size, device=device)
+            new_pattern[:old_input_size] = old_pattern
+            self.replay_buffer[i] = new_pattern
+
+        # Expand priority_scores buffer (stays same length, but patterns now larger)
+        # No change needed - buffer length is based on max_buffer_size, not input size

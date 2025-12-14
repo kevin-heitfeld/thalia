@@ -290,6 +290,24 @@ class SpikingAttentionPathway(SpikingPathway):
     ) -> None:
         """Add neurons to attention pathway (extends base implementation).
 
+        DEPRECATED: Use grow_target() or grow_source() for clarity.
+        This method delegates to grow_target() for backward compatibility.
+
+        Args:
+            n_new: Number of output neurons to add
+            initialization: Weight init strategy for base pathway
+            sparsity: Connection sparsity for new neurons
+        """
+        self.grow_target(n_new=n_new, initialization=initialization, sparsity=sparsity)
+
+    def grow_target(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow attention pathway target dimension (cortex L2/3 output).
+
         Grows the pathway's output dimension (cortex L2/3 size) and updates
         attention-specific layers accordingly.
 
@@ -307,7 +325,7 @@ class SpikingAttentionPathway(SpikingPathway):
         device = self.weights.device
 
         # 1. Grow base pathway (weights, delays, neurons, traces)
-        super().add_neurons(n_new, initialization, sparsity)
+        super().grow_target(n_new, initialization, sparsity)
 
         new_output_size = self.config.n_output  # Updated by super()
 
@@ -348,3 +366,48 @@ class SpikingAttentionPathway(SpikingPathway):
         if self.current_attention is not None:
             new_attention = torch.zeros(n_new, device=device)
             self.current_attention = torch.cat([self.current_attention, new_attention], dim=0)
+
+    def grow_source(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow attention pathway source dimension (PFC input).
+
+        When PFC grows, attention pathways receiving PFC signals must expand
+        their input dimension and attention-related computations.
+
+        Args:
+            n_new: Number of source neurons to add
+            initialization: Weight init strategy for base pathway
+            sparsity: Connection sparsity for new neurons
+
+        Updates:
+            - Base pathway weights/delays/traces (via super())
+            - gain_output: [n_output, n_input] → [n_output, n_input+n_new]
+        """
+        old_input_size = self.config.n_input
+        device = self.weights.device
+
+        # 1. Grow base pathway (weights, delays, source-side traces)
+        super().grow_source(n_new, initialization, sparsity)
+
+        new_input_size = self.config.n_input  # Updated by super()
+
+        # 2. Expand gain_output: [n_output, old_input] → [n_output, new_input]
+        # gain_output maps cortex activity → PFC gain signal
+        # When PFC grows, need more gain output dimensions
+        old_gain_weight = self.gain_output.weight.data.clone()  # [old_input, n_output]
+        old_gain_bias = self.gain_output.bias.data.clone()      # [old_input]
+
+        # Linear layer: gain_output(n_output → n_input) has weight [n_input, n_output]
+        self.gain_output = nn.Linear(self.config.n_output, new_input_size).to(device)
+        nn.init.zeros_(self.gain_output.weight)
+        nn.init.ones_(self.gain_output.bias)
+
+        # Copy old weights and expand with zeros for new PFC neurons
+        self.gain_output.weight.data[:old_input_size, :] = old_gain_weight
+        self.gain_output.bias.data[:old_input_size] = old_gain_bias
+
+        # Note: attention_encoder operates on output dimension only, not affected by source growth

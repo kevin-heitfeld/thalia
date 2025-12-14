@@ -38,7 +38,7 @@ Both regions AND pathways implement growth:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from thalia.components.coding.spike_utils import compute_firing_rate
@@ -340,7 +340,6 @@ class GrowthManager:
         metrics_after = self.get_capacity_metrics(component)
 
         # Create growth event
-        from datetime import timezone
         event = GrowthEvent(
             timestamp=datetime.now(timezone.utc).isoformat(),
             component_name=self.region_name,
@@ -497,7 +496,6 @@ class GrowthCoordinator:
             )
 
             # Create growth event manually
-            from datetime import timezone
             region_event = GrowthEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 component_name=region_name,
@@ -522,19 +520,67 @@ class GrowthCoordinator:
 
         # 3. Grow input pathways (pre-synaptic → new post-synaptic)
         # These pathways send spikes TO the growing region
-        # Need to add neurons to match target region growth
-        # TODO: Currently pathways only support growing output (target) side
-        # For now, skip pathway growth - manual pathway coordination needed
-        # for pathway_name, pathway in input_pathways:
-        #     if hasattr(pathway, 'add_neurons'):
-        #         pathway.add_neurons(n_new=n_new_neurons, initialization=initialization, sparsity=sparsity)
+        # Need to add neurons to target side to match region growth
+        for pathway_name, pathway in input_pathways:
+            if hasattr(pathway, 'grow_target'):
+                # Get source size before growth to calculate synapses added
+                n_source = pathway.config.n_input if hasattr(pathway, 'config') else 0
+
+                pathway.grow_target(
+                    n_new=n_new_neurons,
+                    initialization=initialization,
+                    sparsity=sparsity,
+                )
+
+                # Calculate synapses added: new target neurons × source neurons
+                # Each new target neuron gets n_source incoming synapses
+                n_synapses_added = n_new_neurons * n_source
+
+                # Record pathway growth event
+                pathway_event = GrowthEvent(
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    component_name=pathway_name,
+                    component_type='pathway',
+                    event_type='grow_target',
+                    n_neurons_added=n_new_neurons,
+                    n_synapses_added=n_synapses_added,
+                    reason=f"Input pathway to {region_name}",
+                    metrics_before={},
+                    metrics_after={},
+                )
+                events.append(pathway_event)
 
         # 4. Grow output pathways (new pre-synaptic → existing post-synaptic)
         # These pathways receive spikes FROM the growing region
-        # TODO: Pathways need bidirectional growth support
-        # for pathway_name, pathway in output_pathways:
-        #     if hasattr(pathway, 'add_neurons'):
-        #         pathway.add_neurons(n_new=n_new_neurons, initialization=initialization, sparsity=sparsity)
+        # Need to add neurons to source side to match region growth
+        for pathway_name, pathway in output_pathways:
+            if hasattr(pathway, 'grow_source'):
+                # Get target size before growth to calculate synapses added
+                n_target = pathway.config.n_output if hasattr(pathway, 'config') else 0
+
+                pathway.grow_source(
+                    n_new=n_new_neurons,
+                    initialization=initialization,
+                    sparsity=sparsity,
+                )
+
+                # Calculate synapses added: new source neurons × target neurons
+                # Each target neuron gets n_new additional incoming synapses
+                n_synapses_added = n_new_neurons * n_target
+
+                # Record pathway growth event
+                pathway_event = GrowthEvent(
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    component_name=pathway_name,
+                    component_type='pathway',
+                    event_type='grow_source',
+                    n_neurons_added=n_new_neurons,
+                    n_synapses_added=n_synapses_added,
+                    reason=f"Output pathway from {region_name}",
+                    metrics_before={},
+                    metrics_after={},
+                )
+                events.append(pathway_event)
 
         # 5. Record coordinated growth in history
         coordinated_event = {

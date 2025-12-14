@@ -1,6 +1,5 @@
 # TODO
 
-- Source-side growth not yet implemented for pathways
 - `StriatumHomeostasisComponent.compute_excitability()`
 - `StriatumHomeostasisComponent.update_activity()`
 - `EventDrivenCortex._accumulated_input` not used
