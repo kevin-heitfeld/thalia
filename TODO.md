@@ -2,7 +2,6 @@
 
 - Sparse computations throughout?
 - Re-enable CriticalityMonitor in brain
-- Remove Compatibility Imports (`docs\design\directory_restructuring_plan.md`)
 - `docs\design\circuit_modeling_plan.md`
 
 ---

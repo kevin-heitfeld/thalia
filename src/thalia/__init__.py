@@ -61,23 +61,11 @@ from thalia.regions import (
 )
 
 # Core Components (frequently needed)
-from thalia.core import (
-    # Neurons
-    ConductanceLIF,
-    # Weight Initialization
-    WeightInitializer,
-    InitStrategy,
-    # Short-term plasticity
-    ShortTermPlasticity,
-    STPConfig,
-    STPType,
-    # STP Presets (new in Tier 2)
-    STP_PRESETS,
-    STPPreset,
-    get_stp_config,
-    # Utilities
-    clamp_weights,
-)
+from thalia.components.neurons.neuron import ConductanceLIF
+from thalia.components.synapses.weight_init import WeightInitializer, InitStrategy
+from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
+from thalia.components.synapses.stp_presets import STP_PRESETS, STPPreset, get_stp_config
+from thalia.utils.core_utils import clamp_weights
 
 # Diagnostics
 from thalia.core.diagnostics_keys import DiagnosticKeys
