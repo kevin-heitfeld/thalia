@@ -143,13 +143,16 @@ class TestLayeredCortexStrategyMigration:
             input_spikes = (torch.rand(32) < 0.5).bool()  # High activity
             cortex.forward(input_spikes)
 
-        # Thresholds should be initialized now
-        assert cortex.bcm_l4.theta is not None
-        assert cortex.bcm_l23.theta is not None
-        assert cortex.bcm_l5.theta is not None
+        # Thresholds should be initialized now (access BCM via .strategies[1])
+        bcm_l4 = cortex.bcm_l4.strategies[1]
+        bcm_l23 = cortex.bcm_l23.strategies[1]
+        bcm_l5 = cortex.bcm_l5.strategies[1]
+        assert bcm_l4.theta is not None
+        assert bcm_l23.theta is not None
+        assert bcm_l5.theta is not None
 
         # Store initial thresholds
-        initial_l4_theta = cortex.bcm_l4.theta.clone()
+        initial_l4_theta = bcm_l4.theta.clone()
 
         # Continue with high activity
         for _ in range(20):
@@ -157,7 +160,7 @@ class TestLayeredCortexStrategyMigration:
             cortex.forward(input_spikes)
 
         # Thresholds should increase with activity
-        assert cortex.bcm_l4.theta.mean() > initial_l4_theta.mean()
+        assert bcm_l4.theta.mean() > initial_l4_theta.mean()
 
 
 class TestStrategyStateManagement:
@@ -177,18 +180,21 @@ class TestStrategyStateManagement:
             input_spikes = (torch.rand(32) < 0.3).bool()
             cortex.forward(input_spikes)
 
-        # Store thetas
-        assert cortex.bcm_l4.theta is not None
+        # Store thetas (access BCM via .strategies[1])
+        bcm_l4 = cortex.bcm_l4.strategies[1]
+        bcm_l23 = cortex.bcm_l23.strategies[1]
+        bcm_l5 = cortex.bcm_l5.strategies[1]
+        assert bcm_l4.theta is not None
 
         # Reset BCM strategies explicitly
-        cortex.bcm_l4.reset_state()
-        cortex.bcm_l23.reset_state()
-        cortex.bcm_l5.reset_state()
+        bcm_l4.reset_state()
+        bcm_l23.reset_state()
+        bcm_l5.reset_state()
 
         # Thetas should be cleared
-        assert cortex.bcm_l4.theta is None
-        assert cortex.bcm_l23.theta is None
-        assert cortex.bcm_l5.theta is None
+        assert bcm_l4.theta is None
+        assert bcm_l23.theta is None
+        assert bcm_l5.theta is None
 
 
 if __name__ == "__main__":

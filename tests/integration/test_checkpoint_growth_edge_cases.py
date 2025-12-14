@@ -63,7 +63,7 @@ class TestCorruptedCheckpoints:
 
         torch.save(corrupted, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.raises(KeyError, match="neuron_state"):
             striatum.load_full_state(loaded)
@@ -86,7 +86,7 @@ class TestCorruptedCheckpoints:
 
         torch.save(bad_state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.raises(TypeError, match="dtype"):
             striatum.load_full_state(loaded)
@@ -108,7 +108,7 @@ class TestCorruptedCheckpoints:
 
         torch.save(bad_state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.raises(ValueError, match="negative"):
             striatum.load_full_state(loaded)
@@ -123,7 +123,7 @@ class TestCorruptedCheckpoints:
 
         torch.save(nan_state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         # Should either reject or warn
         with pytest.warns(UserWarning, match="NaN"):
@@ -139,7 +139,7 @@ class TestCorruptedCheckpoints:
 
         torch.save(inf_state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.warns(UserWarning, match="inf"):
             striatum.load_full_state(loaded, check_inf=True)
@@ -153,7 +153,7 @@ class TestCorruptedCheckpoints:
             f.write(b"this is not a valid checkpoint file")
 
         with pytest.raises(Exception, match="corrupted|invalid|cannot load"):
-            torch.load(checkpoint_path)
+            torch.load(checkpoint_path, weights_only=False)
 
 
 class TestVersionMismatches:
@@ -168,7 +168,7 @@ class TestVersionMismatches:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.raises(ValueError, match="incompatible.*version"):
             striatum.load_full_state(loaded)
@@ -182,7 +182,7 @@ class TestVersionMismatches:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.warns(UserWarning, match="old version"):
             striatum.load_full_state(loaded)
@@ -196,7 +196,7 @@ class TestVersionMismatches:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.warns(UserWarning, match="Thalia version"):
             striatum.load_full_state(loaded)
@@ -214,7 +214,7 @@ class TestVersionMismatches:
         torch.save(state, checkpoint_path)
 
         # Load on current device (might be CUDA)
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         # Should auto-convert device
         striatum.load_full_state(loaded)
@@ -243,7 +243,7 @@ class TestMemoryLimits:
 
         # Load with memory constraints
         # Should stream rather than load all at once
-        loaded = torch.load(checkpoint_path, map_location="cpu")
+        loaded = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         large_region.load_full_state(loaded, streaming=True)
 
     def test_out_of_memory_during_growth(self, striatum, tmp_path):
@@ -264,7 +264,7 @@ class TestMemoryLimits:
 
         torch.save(huge_state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         # Should raise clear OOM error, not crash
         with pytest.raises(RuntimeError, match="out of memory"):
@@ -300,7 +300,7 @@ class TestConcurrentOperations:
 
         # Load in one thread
         def load_thread():
-            loaded = torch.load(checkpoint_path)
+            loaded = torch.load(checkpoint_path, weights_only=False)
             striatum.load_full_state(loaded)
 
         # Grow in another thread
@@ -334,7 +334,7 @@ class TestConcurrentOperations:
         # All checkpoints should be valid
         for i in range(5):
             path = tmp_path / f"concurrent_{i}.ckpt"
-            loaded = torch.load(path)
+            loaded = torch.load(path, weights_only=False)
             assert loaded["format_version"] == "2.0.0"
 
 
@@ -351,7 +351,7 @@ class TestPartialFailures:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         # Should load neurons successfully, warn about pathway
         with pytest.warns(UserWarning, match="pathway"):
@@ -370,7 +370,7 @@ class TestPartialFailures:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         # Should load network, reinitialize learning state
         with pytest.warns(UserWarning, match="learning state"):
@@ -400,7 +400,7 @@ class TestPartialFailures:
 
         torch.save(invalid_state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         # Load should fail and rollback
         with pytest.raises(ValueError):
@@ -467,7 +467,7 @@ class TestRecoveryStrategies:
         assert success
 
         # Repaired checkpoint should load
-        repaired = torch.load(repaired_path)
+        repaired = torch.load(repaired_path, weights_only=False)
         striatum.load_full_state(repaired)
 
 
@@ -485,7 +485,7 @@ class TestValidationRules:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.raises(ValueError, match="dimension.*inconsistent"):
             striatum.load_full_state(loaded, validate=True)
@@ -500,7 +500,7 @@ class TestValidationRules:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.raises(ValueError, match="capacity.*less than.*active"):
             striatum.load_full_state(loaded, validate=True)
@@ -514,7 +514,7 @@ class TestValidationRules:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.warns(UserWarning, match="extreme weight"):
             striatum.load_full_state(loaded, validate=True, strict=False)
@@ -536,7 +536,7 @@ class TestValidationRules:
 
         torch.save(state, checkpoint_path)
 
-        loaded = torch.load(checkpoint_path)
+        loaded = torch.load(checkpoint_path, weights_only=False)
 
         with pytest.raises(ValueError, match="duplicate.*id"):
             region.load_full_state(loaded, validate=True)

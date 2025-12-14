@@ -111,6 +111,7 @@ media/
 *.pt
 *.pth
 *.ckpt
+checkpoints/
 training_runs/**/checkpoints/
 
 # Logs

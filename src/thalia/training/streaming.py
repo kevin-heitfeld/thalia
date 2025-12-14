@@ -370,7 +370,7 @@ class StreamingTrainer:
                         self._process_sample(replay_sample, is_replay=True)
 
                 # Add to replay buffer
-                if self.replay_buffer:
+                if self.replay_buffer is not None:
                     self.replay_buffer.add(sample)
 
                 # Periodic evaluation
@@ -430,8 +430,8 @@ class StreamingTrainer:
             reward = sample["reward"]
             if not isinstance(reward, (int, float)):
                 reward = float(reward)
-            # Modulate dopamine based on reward
-            self.brain.set_dopamine(reward)
+            # Deliver reward to VTA (computes RPE and broadcasts dopamine)
+            self.brain.deliver_reward(external_reward=reward)
 
     def _evaluate(self, sample_count: int, verbose: bool) -> None:
         """Evaluate current performance.

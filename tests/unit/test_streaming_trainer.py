@@ -191,7 +191,7 @@ def test_streaming_trainer_process_sample(mock_brain):
     )
 
     # Verify sample was processed
-    assert stats["samples_processed"] == 1, "Should process one sample"
+    assert stats.samples_processed == 1, "Should process one sample"
 
 
 def test_streaming_trainer_train_online(mock_brain):
@@ -247,10 +247,10 @@ def test_streaming_trainer_with_replay(mock_brain):
     # Create stream
     def data_stream():
         for i in range(20):
-            yield {"input": torch.randn(10)}
+            yield {"input": torch.randn(10), "reward": 1.0}
 
     # Train
-    stats = trainer.train_online(
+    _stats = trainer.train_online(
         data_stream=data_stream(),
         max_samples=20,
         verbose=False,
