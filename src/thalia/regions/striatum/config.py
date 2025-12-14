@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.regulation.learning_constants import EMA_DECAY_FAST
 
 
 @dataclass
@@ -56,6 +57,7 @@ class StriatumConfig(NeuralComponentConfig):
     # to automatically adapt to any architecture (population_coding, n_input, etc.)
     homeostatic_soft: bool = True
     homeostatic_rate: float = 0.1
+    activity_decay: float = EMA_DECAY_FAST  # EMA decay for activity tracking (~100 timestep window)
 
     # Note: heterosynaptic_competition and heterosynaptic_ratio inherited from base
     # Striatum-specific competition handled via baseline_pressure mechanism below

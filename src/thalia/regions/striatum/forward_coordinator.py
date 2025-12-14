@@ -362,6 +362,8 @@ class ForwardPassCoordinator:
 
         # Update homeostasis activity tracking
         if self.homeostasis_manager is not None:
-            self.homeostasis_manager.update_activity(d1_spikes, d2_spikes)
+            self.homeostasis_manager.update_activity(
+                d1_spikes, d2_spikes, decay=self.config.activity_decay
+            )
 
         return d1_spikes, d2_spikes, pfc_goal_context

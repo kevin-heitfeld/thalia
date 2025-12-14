@@ -66,6 +66,7 @@ import torch.nn as nn
 
 from thalia.config.base import BaseConfig
 from thalia.utils.core_utils import clamp_weights
+from thalia.regulation.learning_constants import EMA_DECAY_FAST
 
 
 @dataclass
@@ -411,7 +412,7 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         self,
         d1_spikes: torch.Tensor,
         d2_spikes: torch.Tensor,
-        decay: float = 0.99,
+        decay: float = EMA_DECAY_FAST,
     ) -> None:
         """Update running average of D1/D2 activity.
 
