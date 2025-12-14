@@ -389,14 +389,14 @@ class TestParallelEdgeCases:
             result = brain.forward(input_pattern, n_timesteps=3)
             assert "spike_counts" in result
 
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-    def test_parallel_gpu_warning(self):
-        """Parallel mode with GPU config should work on CPU backend."""
+    def test_parallel_cpu_backend(self):
+        """Parallel mode uses CPU backend even when GPU is available."""
         config = ThaliaConfig(
-            global_=GlobalConfig(device="cuda"),  # GPU requested
+            global_=GlobalConfig(device="cpu"),  # Parallel forces CPU backend
             brain=BrainConfig(
                 sizes=RegionSizes(
                     input_size=784,
+                    thalamus_size=784,  # Must match input_size for proper relay
                     cortex_size=128,
                     hippocampus_size=100,
                     pfc_size=64,
@@ -408,7 +408,7 @@ class TestParallelEdgeCases:
 
         brain = EventDrivenBrain.from_thalia_config(config)
 
-        # Behavioral contract: parallel execution should work even with GPU config
+        # Behavioral contract: parallel execution uses CPU backend
         input_pattern = torch.rand(784) > 0.5
         input_pattern = input_pattern.float()
         result = brain.forward(input_pattern, n_timesteps=5)

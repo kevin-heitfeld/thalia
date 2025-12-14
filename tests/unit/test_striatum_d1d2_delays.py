@@ -251,34 +251,32 @@ def test_checkpoint_preserves_delay_behavior(striatum_with_delays):
     for _ in range(30):  # Run past both delays
         _ = striatum_with_delays(input_spikes)
 
-    # Continue running to see future behavior
+    # Save checkpoint BEFORE seeing future behavior
+    checkpoint = striatum_with_delays.checkpoint_manager.get_full_state()
+
+    # Continue running original striatum to see future behavior
     for _ in range(10):
         _ = striatum_with_delays(input_spikes)
     d1_votes_future, d2_votes_future = striatum_with_delays.state_tracker.get_accumulated_votes()
 
-    # Save checkpoint at the intermediate point
-    striatum_with_delays_copy = Striatum(striatum_with_delays.striatum_config)
-    for _ in range(30):
-        _ = striatum_with_delays_copy(input_spikes)
-
-    checkpoint = striatum_with_delays_copy.checkpoint_manager.get_full_state()
-
-    # Create new striatum and restore checkpoint
+    # Create new striatum and restore checkpoint (back to 30-step state)
     striatum_restored = Striatum(striatum_with_delays.striatum_config)
     striatum_restored.reset_state()
     striatum_restored.checkpoint_manager.load_full_state(checkpoint)
 
-    # Behavioral contract: restored striatum should produce same future behavior
+    # Run restored striatum for same 10 steps
     for _ in range(10):
         _ = striatum_restored(input_spikes)
     d1_votes_restored, d2_votes_restored = striatum_restored.state_tracker.get_accumulated_votes()
 
-    # Votes should be similar (accounting for slight randomness in learning)
-    # We check that the ratio of D1 to D2 is preserved, not exact values
+    # Behavioral contract: restored striatum should produce same future behavior
+    # Votes should be similar (accounting for stochastic learning)
+    # We check that the ratio of D1 to D2 is preserved within reasonable bounds
     d1_d2_ratio_expected = d1_votes_future.sum() / (d2_votes_future.sum() + 1e-6)
     d1_d2_ratio_restored = d1_votes_restored.sum() / (d2_votes_restored.sum() + 1e-6)
 
-    assert abs(d1_d2_ratio_expected - d1_d2_ratio_restored) < 0.5, \
+    # Allow tolerance for stochastic learning behavior
+    assert abs(d1_d2_ratio_expected - d1_d2_ratio_restored) < 0.3, \
         f"Checkpoint should preserve D1/D2 vote ratio: {d1_d2_ratio_expected:.2f} vs {d1_d2_ratio_restored:.2f}"
 
 

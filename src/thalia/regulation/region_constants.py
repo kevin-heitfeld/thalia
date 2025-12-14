@@ -48,12 +48,12 @@ The striatum implements reward-based learning through dopamine modulation:
   - 0.9: Bridge ~10 timesteps (standard value, Sutton & Barto 2018)
   - 0.95: Bridge ~20 timesteps (longer horizon)
   - 1.0: Full episode returns (Monte Carlo)
-  
+
 **Discount Factor (γ/gamma)**:
 - Standard RL value: 0.99
 - Values 100 steps ahead worth 37% of immediate
 - Balances short-term and long-term rewards
-  
+
 **Eligibility Traces**:
 - Minimum trace: 1e-6 (computational efficiency)
 - Bridge between synaptic events (ms) and rewards (seconds)
@@ -91,7 +91,7 @@ Usage:
         burst_threshold=THALAMUS_BURST_THRESHOLD,
         alpha_suppression_strength=THALAMUS_ALPHA_SUPPRESSION
     )
-    
+
     td_config = TDLambdaConfig(
         lambda_=STRIATUM_TD_LAMBDA,
         gamma=STRIATUM_GAMMA
@@ -327,7 +327,7 @@ STRIATUM_TD_ACCUMULATING = True
 Accumulating traces: e(t) = γλe(t-1) + ∇V(t)
   - Traces accumulate over repeated state visits
   - Standard in RL theory
-  
+
 Replacing traces: e(t) = max(γλe(t-1), ∇V(t))
   - Most recent visit resets trace
   - Can be more efficient for certain tasks

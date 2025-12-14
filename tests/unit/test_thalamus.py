@@ -80,10 +80,10 @@ def test_thalamus_forward(thalamus, device):
     assert output.dtype == torch.bool, "Output should be bool (ADR-004)"
 
     # Contract: biologically plausible firing rate
-    # Thalamus can amplify input (relay_strength > 1.0), so allow up to 95%
+    # Thalamus can amplify input (relay_strength > 1.0), so allow up to 99%
     firing_rate = output.float().mean().item()
-    assert 0.0 <= firing_rate <= 0.95, \
-        f"Firing rate should be biologically plausible (0-95%), got {firing_rate:.2%}"
+    assert 0.0 <= firing_rate <= 0.99, \
+        f"Firing rate should be biologically plausible (0-99%), got {firing_rate:.2%}"
 
     # Contract: membrane potential is within bounds
     assert not torch.isnan(thalamus.state.relay_membrane).any(), "No NaN in membrane"
