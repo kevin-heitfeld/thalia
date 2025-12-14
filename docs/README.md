@@ -21,6 +21,13 @@ Detailed technical specifications for core systems.
 - **[Neuron Models](./design/neuron_models.md)** — LIF and conductance-based neurons
 - **[Robustness Config](./design/robustness_config_guide.md)** — Stability mechanisms
 
+### 🛡️ [Safety Systems](./CURRICULUM_SAFETY_SYSTEM.md)
+**CRITICAL**: Comprehensive safety systems for curriculum training.
+- **[Safety System Guide](./CURRICULUM_SAFETY_SYSTEM.md)** — Stage gates, monitoring, graceful degradation
+- **[Validation Summary](./CURRICULUM_VALIDATION_SUMMARY.md)** — Expert review + engineering consensus
+- **Stage 1 Survival Checklist** — Hard criteria for Stage 1→2 transition
+- **Kill-Switch Map** — Module criticality and failure handling
+
 ### 🔧 [Patterns](./patterns/)
 Common implementation patterns and best practices.
 - **[Configuration](./patterns/configuration.md)** — Config hierarchy and parameters
@@ -54,6 +61,7 @@ Historical documentation and completed planning documents.
 - **Adding a Region**: See [patterns/configuration.md](./patterns/configuration.md) and [patterns/mixins.md](./patterns/mixins.md)
 - **Testing**: See [../tests/README.md](../tests/README.md) and [../tests/WRITING_TESTS.md](../tests/WRITING_TESTS.md)
 - **Training**: See [design/curriculum_strategy.md](./design/curriculum_strategy.md)
+- **Safety Systems**: See [CURRICULUM_SAFETY_SYSTEM.md](./CURRICULUM_SAFETY_SYSTEM.md) (🛡️ **REQUIRED for Stage 1+**)
 - **Monitoring & Diagnostics**: See [MONITORING_GUIDE.md](./MONITORING_GUIDE.md) (⭐ start here)
 
 ### For Understanding Design
