@@ -1,4 +1,5 @@
-"""Growth Mechanisms - Dynamic Capacity Expansion for Neural Circuits.
+"""
+Growth Mechanisms - Dynamic Capacity Expansion for Neural Circuits.
 
 Supports adding neurons and synapses WITHOUT disrupting existing weights,
 enabling curriculum learning with capacity expansion at stage transitions.
@@ -480,21 +481,39 @@ class GrowthCoordinator:
         region = self.brain.regions[region_name]
         events = []
 
+        # Get the actual implementation (brain.regions returns adapters)
+        if hasattr(region, 'impl'):
+            region_impl = region.impl
+        else:
+            region_impl = region  # Direct access case
+
         # 1. Grow the region itself
-        if hasattr(region, 'growth_manager'):
-            region_event = region.growth_manager.add_neurons(
-                component=region,
+        if hasattr(region_impl, 'add_neurons'):
+            # Call add_neurons() directly on region implementation
+            region_impl.add_neurons(
                 n_new=n_new_neurons,
                 initialization=initialization,
                 sparsity=sparsity,
-                reason=reason,
+            )
+
+            # Create growth event manually
+            from datetime import timezone
+            region_event = GrowthEvent(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                component_name=region_name,
                 component_type='region',
+                event_type='add_neurons',
+                n_neurons_added=n_new_neurons,
+                n_synapses_added=0,  # Estimated from pathways
+                reason=reason,
+                metrics_before={},
+                metrics_after={},
             )
             events.append(region_event)
         else:
             raise AttributeError(
-                f"Region '{region_name}' does not have growth_manager. "
-                f"Add GrowthManager to region's __init__."
+                f"Region '{region_name}' does not have add_neurons() method. "
+                f"Growth not supported for this region type."
             )
 
         # 2. Identify connected pathways
@@ -503,56 +522,19 @@ class GrowthCoordinator:
 
         # 3. Grow input pathways (pre-synaptic → new post-synaptic)
         # These pathways send spikes TO the growing region
-        # Need to add columns to weight matrices (new post neurons)
-        for pathway_name, pathway in input_pathways:
-            if hasattr(pathway, 'add_neurons'):
-                pathway_event = pathway.add_neurons(
-                    n_new_pre=0,  # Pre side unchanged
-                    n_new_post=n_new_neurons,  # Post side grows
-                    initialization=initialization,
-                    sparsity=sparsity,
-                )
-                # Convert to GrowthEvent if needed
-                if not isinstance(pathway_event, GrowthEvent):
-                    from datetime import timezone
-                    pathway_event = GrowthEvent(
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                        component_name=pathway_name,
-                        component_type='pathway',
-                        event_type='add_neurons',
-                        n_neurons_added=n_new_neurons,
-                        n_synapses_added=0,  # Estimated below
-                        reason=f"Coordinated growth: {region_name} input pathway",
-                        metrics_before={},
-                        metrics_after={},
-                    )
-                events.append(pathway_event)
+        # Need to add neurons to match target region growth
+        # TODO: Currently pathways only support growing output (target) side
+        # For now, skip pathway growth - manual pathway coordination needed
+        # for pathway_name, pathway in input_pathways:
+        #     if hasattr(pathway, 'add_neurons'):
+        #         pathway.add_neurons(n_new=n_new_neurons, initialization=initialization, sparsity=sparsity)
 
         # 4. Grow output pathways (new pre-synaptic → existing post-synaptic)
         # These pathways receive spikes FROM the growing region
-        # Need to add rows to weight matrices (new pre neurons)
-        for pathway_name, pathway in output_pathways:
-            if hasattr(pathway, 'add_neurons'):
-                pathway_event = pathway.add_neurons(
-                    n_new_pre=n_new_neurons,  # Pre side grows
-                    n_new_post=0,  # Post side unchanged
-                    initialization=initialization,
-                    sparsity=sparsity,
-                )
-                if not isinstance(pathway_event, GrowthEvent):
-                    from datetime import timezone
-                    pathway_event = GrowthEvent(
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                        component_name=pathway_name,
-                        component_type='pathway',
-                        event_type='add_neurons',
-                        n_neurons_added=n_new_neurons,
-                        n_synapses_added=0,
-                        reason=f"Coordinated growth: {region_name} output pathway",
-                        metrics_before={},
-                        metrics_after={},
-                    )
-                events.append(pathway_event)
+        # TODO: Pathways need bidirectional growth support
+        # for pathway_name, pathway in output_pathways:
+        #     if hasattr(pathway, 'add_neurons'):
+        #         pathway.add_neurons(n_new=n_new_neurons, initialization=initialization, sparsity=sparsity)
 
         # 5. Record coordinated growth in history
         coordinated_event = {
@@ -576,9 +558,14 @@ class GrowthCoordinator:
             List of (pathway_name, pathway) tuples
         """
         input_pathways = []
-        for name, pathway in self.pathway_manager.pathways.items():
-            if pathway.target_name == region_name:
-                input_pathways.append((name, pathway))
+        for name, pathway in self.pathway_manager.get_all_pathways().items():
+            # Parse pathway name: "source_to_target" or special names
+            if '_to_' in name:
+                parts = name.split('_to_')
+                if len(parts) == 2:
+                    target = parts[1]
+                    if target == region_name:
+                        input_pathways.append((name, pathway))
         return input_pathways
 
     def _find_output_pathways(self, region_name: str) -> List[tuple]:
@@ -591,9 +578,14 @@ class GrowthCoordinator:
             List of (pathway_name, pathway) tuples
         """
         output_pathways = []
-        for name, pathway in self.pathway_manager.pathways.items():
-            if pathway.source_name == region_name:
-                output_pathways.append((name, pathway))
+        for name, pathway in self.pathway_manager.get_all_pathways().items():
+            # Parse pathway name: "source_to_target"
+            if '_to_' in name:
+                parts = name.split('_to_')
+                if len(parts) == 2:
+                    source = parts[0]
+                    if source == region_name:
+                        output_pathways.append((name, pathway))
         return output_pathways
 
     def get_growth_history(self) -> List[Dict[str, Any]]:
@@ -621,4 +613,3 @@ class GrowthCoordinator:
             state: State dict from get_state()
         """
         self.history = state.get('history', [])
-
