@@ -7,6 +7,7 @@ This module provides curriculum strategies and stage management:
 - Difficulty calibration
 - Stage transition protocols
 - Stage evaluation and milestone checking
+- Safety system (stage gates, monitoring, graceful degradation)
 
 Author: Thalia Project
 Date: December 12, 2025
@@ -48,6 +49,22 @@ from thalia.training.curriculum.logger import (
     LogLevel,
     StageLog,
 )
+from thalia.training.curriculum.safety_system import (
+    CurriculumSafetySystem,
+    SafetyStatus,
+)
+from thalia.training.curriculum.stage_gates import (
+    Stage1SurvivalGate,
+    GracefulDegradationManager,
+    GateResult,
+    GateDecision,
+)
+from thalia.training.curriculum.stage_monitoring import (
+    ContinuousMonitor,
+    Stage1Monitor,
+    InterventionType,
+    MonitoringMetrics,
+)
 
 __all__ = [
     # Curriculum mechanics
@@ -72,6 +89,17 @@ __all__ = [
     "MechanismPriority",
     "ActiveMechanism",
     "CognitiveLoadMonitor",
+    # Safety system (NEW)
+    "CurriculumSafetySystem",
+    "SafetyStatus",
+    "Stage1SurvivalGate",
+    "GracefulDegradationManager",
+    "GateResult",
+    "GateDecision",
+    "ContinuousMonitor",
+    "Stage1Monitor",
+    "InterventionType",
+    "MonitoringMetrics",
     # Stage evaluation
     "evaluate_stage_sensorimotor",
     "evaluate_stage_phonology",

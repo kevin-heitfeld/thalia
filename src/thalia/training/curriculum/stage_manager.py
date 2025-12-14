@@ -172,6 +172,14 @@ from thalia.diagnostics import (
     HealthMonitor,
     HealthConfig,
 )
+from thalia.training.curriculum.safety_system import (
+    CurriculumSafetySystem,
+    SafetyStatus,
+)
+from thalia.training.curriculum.stage_monitoring import (
+    InterventionType,
+    MonitoringMetrics,
+)
 
 
 # ============================================================================
@@ -629,6 +637,7 @@ class CurriculumTrainer:
         verbose: bool = True,
         enable_live_diagnostics: bool = False,
         diagnostics_interval: int = 100,
+        enable_safety_system: bool = True,  # NEW: Enable safety monitoring
     ):
         """Initialize curriculum trainer.
 
@@ -640,6 +649,7 @@ class CurriculumTrainer:
             verbose: Whether to print progress
             enable_live_diagnostics: Whether to enable real-time visualization
             diagnostics_interval: Steps between diagnostic updates (if enabled)
+            enable_safety_system: Whether to enable safety monitoring and gates
         """
         self.brain = brain
         self.device = device
@@ -667,6 +677,17 @@ class CurriculumTrainer:
         self.memory_pressure = MemoryPressureDetector()
         self.sleep_controller = SleepStageController()
         self.critical_period_gating = CriticalPeriodGating()  # NEW: Critical period windows
+
+        # Safety system (NEW: Comprehensive safety monitoring)
+        self.enable_safety_system = enable_safety_system
+        self.safety_system: Optional[CurriculumSafetySystem] = None
+        if enable_safety_system:
+            self.safety_system = CurriculumSafetySystem(
+                brain=brain,
+                current_stage=0,  # Will be updated when stage set
+                enable_auto_intervention=True,
+                checkpoint_callback=self._safety_checkpoint_callback,
+            )
 
         # Live diagnostics (optional)
         self.enable_live_diagnostics = enable_live_diagnostics
@@ -701,6 +722,22 @@ class CurriculumTrainer:
         # Goal hierarchy cache (for Stages 3+)
         self._goal_hierarchies: Dict[str, Goal] = {}
 
+    def _safety_checkpoint_callback(self, stage: int, reason: str):
+        """Callback for safety system to trigger checkpoints.
+
+        Args:
+            stage: Current stage number
+            reason: Reason for checkpoint (e.g., 'emergency_stop', 'stage_transition')
+        """
+        if self.current_stage is not None:
+            checkpoint_path = self._save_checkpoint(
+                self.current_stage,
+                self.global_step - self.stage_start_step,
+                reason=reason
+            )
+            if self.verbose:
+                print(f"Safety checkpoint saved: {checkpoint_path} (reason: {reason})")
+
     def train_stage(
         self,
         stage: CurriculumStage,
@@ -730,6 +767,13 @@ class CurriculumTrainer:
         self.current_stage = stage
         self.stage_start_step = self.global_step
         start_time = time.time()
+
+        # Update safety system for new stage
+        if self.safety_system:
+            self.safety_system.current_stage = stage.value
+            self.safety_system.stage_start_step = self.global_step
+            if self.verbose:
+                print(f"🛡️ Safety system active for Stage {stage.value}")
 
         # Setup goal hierarchies for stages that need them (3+)
         if stage in [CurriculumStage.READING, CurriculumStage.ABSTRACT]:
@@ -812,6 +856,34 @@ class CurriculumTrainer:
                 # Sample memory periodically (every 100 steps)
                 if step % 100 == 0:
                     self.profiler.record_memory(self.brain, self.device)
+
+                # 4.5. Safety monitoring (NEW: Check for interventions)
+                if self.safety_system:
+                    # Build task result for safety monitoring
+                    task_result = {
+                        'accuracy': task_data.get('accuracy', 0.0),
+                        'reward': task_data.get('reward', 0.0),
+                        'task_type': task_data.get('task_type', 'unknown'),
+                    }
+
+                    # Add n-back accuracy if available (critical for Stage 1)
+                    if 'n_back_accuracy' in task_data:
+                        task_result['n_back_accuracy'] = task_data['n_back_accuracy']
+
+                    # Add module-specific performances if available
+                    if hasattr(self.brain, 'get_module_performances'):
+                        task_result['module_performances'] = self.brain.get_module_performances()
+
+                    # Update safety monitoring
+                    intervention = self.safety_system.update(
+                        self.brain,
+                        self.global_step,
+                        task_result
+                    )
+
+                    # Handle intervention if triggered
+                    if intervention:
+                        self._handle_safety_intervention(intervention, stage, config)
 
                 # 5. Check for growth (every N steps)
                 if step % config.growth_check_interval == 0 and config.enable_growth:
@@ -916,6 +988,21 @@ class CurriculumTrainer:
             print(f"Evaluating readiness for Stage {stage.name}")
             print(f"{'='*80}\n")
 
+        # Safety system gate check (NEW: Hard gate for critical stages)
+        if self.safety_system:
+            can_advance, gate_result = self.safety_system.can_advance_stage()
+
+            if not can_advance:
+                if self.verbose:
+                    print(f"❌ SAFETY GATE FAILED for Stage {stage.name}")
+                    print(f"Failures: {gate_result.failures}")
+                    print(f"Recommendations: {gate_result.recommendations}")
+                    print(f"\nMust address these issues before proceeding.")
+                return False
+            elif self.verbose:
+                print(f"✅ Safety gate PASSED for Stage {stage.name}")
+                print(f"Gate metrics: {gate_result.metrics}")
+
         # Get last training result for this stage
         stage_results = [r for r in self.training_history if r.stage == stage]
         if not stage_results:
@@ -928,7 +1015,7 @@ class CurriculumTrainer:
         all_passed = all(last_result.milestone_results.values())
 
         if self.verbose:
-            print("Milestone Results:")
+            print("\nMilestone Results:")
             for criterion, passed in last_result.milestone_results.items():
                 status = "✅" if passed else "❌"
                 print(f"  {status} {criterion}: {passed}")
@@ -964,6 +1051,17 @@ class CurriculumTrainer:
             print(f"Transition period: {weeks} weeks")
             print(f"{'='*80}\n")
 
+        # Check safety gate before transition (CRITICAL)
+        if self.safety_system:
+            can_advance, gate_result = self.safety_system.can_advance_stage()
+            if not can_advance:
+                raise RuntimeError(
+                    f"Cannot transition from {old_stage.name} to {new_stage.name}: "
+                    f"Safety gate failures: {gate_result.failures}"
+                )
+            if self.verbose:
+                print(f"✅ Safety gate passed - proceeding with transition")
+
         # Analyze pre-transition state
         pre_transition_metrics = self.analyze_transition(old_stage, new_stage, phase='before')
 
@@ -972,6 +1070,12 @@ class CurriculumTrainer:
             print("Performing extended consolidation...")
 
         self._extended_consolidation(cycles=10)  # 2x normal
+
+        # Update safety system to new stage
+        if self.safety_system:
+            self.safety_system.advance_to_next_stage()
+            if self.verbose:
+                print(f"🛡️ Safety system updated to Stage {new_stage.value}")
 
         # Gradual difficulty ramps (4 weeks by default)
         for week in range(weeks):
@@ -1507,6 +1611,63 @@ class CurriculumTrainer:
         if self.verbose:
             print(f"  Replayed {stats['total_replayed']} total experiences")
 
+    def _handle_safety_intervention(
+        self,
+        intervention: InterventionType,
+        stage: CurriculumStage,
+        config: StageConfig,
+    ):
+        """Handle safety system intervention.
+
+        Args:
+            intervention: Type of intervention needed
+            stage: Current stage
+            config: Stage configuration
+        """
+        if self.verbose:
+            print(f"\n⚠️ SAFETY INTERVENTION: {intervention.value}")
+
+        actions = self.safety_system.handle_intervention(intervention, self.brain)
+
+        if intervention == InterventionType.EMERGENCY_STOP:
+            # Critical failure - halt training
+            print(f"❌ EMERGENCY STOP triggered")
+            print(f"Actions: {actions['actions']}")
+            print(f"System frozen. Manual investigation required.")
+            raise RuntimeError(f"Emergency stop triggered: {actions}")
+
+        elif intervention == InterventionType.CONSOLIDATE:
+            # Emergency consolidation needed
+            print(f"⏸️ Triggering emergency consolidation")
+            self._check_and_trigger_consolidation(
+                stage, config, None, force=True
+            )
+
+        elif intervention == InterventionType.REDUCE_LOAD:
+            # Reduce cognitive load
+            print(f"📉 Reducing cognitive load")
+            # Lower learning rates temporarily
+            if hasattr(self.brain, 'learning_rate'):
+                original_lr = self.brain.learning_rate
+                self.brain.learning_rate *= 0.5
+                if self.verbose:
+                    print(f"   Learning rate: {original_lr:.4f} → {self.brain.learning_rate:.4f}")
+            # TODO: Reduce task complexity if applicable
+
+        elif intervention == InterventionType.TEMPORAL_SEPARATION:
+            # Enable temporal separation of modalities
+            print(f"🔀 Enabling temporal separation of modalities")
+            # Set flag for subsequent training steps
+            if not hasattr(self, '_temporal_separation_active'):
+                self._temporal_separation_active = True
+                if self.verbose:
+                    print(f"   Will alternate modality training")
+
+        elif intervention == InterventionType.ROLLBACK:
+            # Rollback to previous checkpoint
+            print(f"⏪ Rollback triggered")
+            raise RuntimeError(f"Rollback requested: {actions}")
+
     def _save_checkpoint(
         self,
         stage: CurriculumStage,
@@ -1769,6 +1930,20 @@ class CurriculumTrainer:
                   f"Forward: {forward_ms:.1f}ms | "
                   f"GPU: {gpu_mb:.0f}MB | CPU: {cpu_mb:.0f}MB | "
                   f"FR: {avg_fr:.3f}")
+
+            # Safety system status (NEW)
+            if self.safety_system:
+                status = self.safety_system.get_status()
+                health_emoji = "🟢" if status.health_score >= 0.7 else "🟡" if status.health_score >= 0.5 else "🔴"
+                print(f"         🛡️ Safety: {health_emoji} Health={status.health_score:.2f} | "
+                      f"Alerts={len(status.active_alerts)} | "
+                      f"Interventions={status.interventions_triggered}")
+
+                if status.active_alerts:
+                    print(f"              Active alerts: {', '.join(status.active_alerts)}")
+
+                if status.degraded_modules:
+                    print(f"              Degraded modules: {', '.join(status.degraded_modules)}")
 
     def _default_evaluation(
         self,
