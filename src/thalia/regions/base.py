@@ -474,7 +474,7 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
         """Set dtype (allows assignment from __init__)."""
         self._dtype = value
 
-    # Growth methods (add_neurons) are provided by GrowthMixin
+    # Growth methods (grow_output) are provided by GrowthMixin
     # See src/thalia/mixins/growth_mixin.py for template method and helpers
 
     def get_diagnostics(self) -> Dict[str, Any]:
@@ -681,10 +681,10 @@ class NeuralComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Learni
     # GROWTH HELPERS - Provided by GrowthMixin
     # =========================================================================
     # Growth utilities (_expand_weights, _expand_state_tensors,
-    # _recreate_neurons_with_state, and template method add_neurons) are now
+    # _recreate_neurons_with_state, and template method grow_output) are now
     # provided by GrowthMixin. See src/thalia/mixins/growth_mixin.py.
     #
-    # Multi-layer regions (Hippocampus, LayeredCortex) override add_neurons()
+    # Multi-layer regions (Hippocampus, LayeredCortex) override grow_output()
     # entirely but use the helper methods for weight/state expansion.
 
     @abstractmethod

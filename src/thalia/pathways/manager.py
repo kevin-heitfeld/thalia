@@ -360,12 +360,12 @@ class PathwayManager:
             return
 
         for pathway, dimension_type in self.region_connections[region_name]:
-            if hasattr(pathway, 'add_neurons'):
-                # SpikingPathway.add_neurons() only accepts n_new (target expansion)
+            if hasattr(pathway, 'grow_output'):
+                # SpikingPathway.grow_output() expands the output dimension
                 # Only grow pathways where the region is the target
                 if dimension_type == 'target':
-                    pathway.add_neurons(n_new=growth_amount)
-                # Note: Source-side growth not yet implemented for pathways
+                    pathway.grow_output(n_new=growth_amount)
+                # Note: grow_input() for source-side growth not yet implemented for pathways
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get pathway diagnostics."""

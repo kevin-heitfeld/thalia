@@ -39,7 +39,7 @@ Lines 86-260:  Prefrontal class __init__, weight initialization
 Lines 261-430: Forward pass (input → WM update → output)
 Lines 431-590: Working memory gating logic (dopamine-modulated)
 Lines 591-760: Rule learning and context-dependent processing
-Lines 761-900: Growth and neurogenesis (add_neurons)
+Lines 761-900: Growth and neurogenesis (grow_output)
 Lines 901-1020: Diagnostics and health monitoring
 Lines 1021-1072: Utility methods (reset_state, get_full_state)
 
@@ -703,6 +703,107 @@ class Prefrontal(NeuralComponent):
                     cfg.recurrent_strength
                 )  # Maintain self-excitation
                 self.rec_weights.data.clamp_(0.0, 1.0)
+
+    def grow_input(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow prefrontal input dimension when upstream region grows.
+
+        Expands input weight matrix columns to accept larger input.
+
+        Args:
+            n_new: Number of input neurons to add
+            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
+            sparsity: Connection sparsity for new input neurons (if sparse_random)
+        """
+        old_n_input = self.config.n_input
+        new_n_input = old_n_input + n_new
+
+        # Helper to create new weights
+        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
+            if initialization == 'xavier':
+                return WeightInitializer.xavier(n_out, n_in, device=self.device)
+            elif initialization == 'sparse_random':
+                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
+            else:
+                return WeightInitializer.uniform(n_out, n_in, device=self.device)
+
+        # Expand self.weights [n_output, input] → [n_output, input+n_new]
+        new_input_cols = new_weights_for(self.config.n_output, n_new)
+        self.weights.data = torch.cat([self.weights.data, new_input_cols], dim=1)
+
+        # Update config
+        self.config = replace(self.config, n_input=new_n_input)
+        self.pfc_config = replace(self.pfc_config, n_input=new_n_input)
+
+    def grow_output(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow prefrontal output dimension (working memory capacity).
+
+        Expands working memory neuron population and all associated weights.
+
+        Args:
+            n_new: Number of neurons to add
+            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
+            sparsity: Connection sparsity for new neurons (if sparse_random)
+        """
+        old_n_output = self.config.n_output
+        new_n_output = old_n_output + n_new
+
+        # Helper to create new weights
+        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
+            if initialization == 'xavier':
+                return WeightInitializer.xavier(n_out, n_in, device=self.device)
+            elif initialization == 'sparse_random':
+                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
+            else:
+                return WeightInitializer.uniform(n_out, n_in, device=self.device)
+
+        # 1. Expand self.weights [n_output, input] → [n_output+n_new, input]
+        new_output_rows = new_weights_for(n_new, self.config.n_input)
+        self.weights.data = torch.cat([self.weights.data, new_output_rows], dim=0)
+
+        # 2. Expand rec_weights [n_output, n_output] → [n_output+n_new, n_output+n_new]
+        new_rec_rows = new_weights_for(n_new, old_n_output)
+        expanded_rec = torch.cat([self.rec_weights.data, new_rec_rows], dim=0)
+        new_rec_cols = new_weights_for(new_n_output, n_new)
+        self.rec_weights.data = torch.cat([expanded_rec, new_rec_cols], dim=1)
+        # Add self-excitation for new neurons
+        with torch.no_grad():
+            for i in range(n_new):
+                self.rec_weights.data[old_n_output + i, old_n_output + i] = self.pfc_config.recurrent_strength
+
+        # 3. Expand inhib_weights [n_output, n_output] → [n_output+n_new, n_output+n_new]
+        new_inhib_rows = torch.ones(n_new, old_n_output, device=self.device) * self.pfc_config.recurrent_inhibition
+        expanded_inhib = torch.cat([self.inhib_weights.data, new_inhib_rows], dim=0)
+        new_inhib_cols = torch.ones(new_n_output, n_new, device=self.device) * self.pfc_config.recurrent_inhibition
+        self.inhib_weights.data = torch.cat([expanded_inhib, new_inhib_cols], dim=1)
+        # Zero diagonal (no self-inhibition)
+        self.inhib_weights.data.fill_diagonal_(0.0)
+
+        # 4. Expand neurons
+        self.neurons = self._create_neurons()
+        self.neurons.to(self.device)
+
+        # 5. Update dopamine gating system
+        self.dopamine_system = DopamineGatingSystem(
+            n_neurons=new_n_output,
+            tau_ms=self.pfc_config.dopamine_tau_ms,
+            baseline=self.pfc_config.dopamine_baseline,
+            threshold=self.pfc_config.gate_threshold,
+            device=self.device,
+        )
+
+        # 6. Update configs
+        self.config = replace(self.config, n_output=new_n_output)
+        self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics using DiagnosticsMixin helpers.

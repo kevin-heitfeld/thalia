@@ -490,7 +490,7 @@ new_weights, metrics = self.learning_strategy.compute_update(
 Strategies automatically handle region growth:
 
 ```python
-def add_neurons(self, n_new: int):
+def grow_output(self, n_new: int):
     # Expand weights (region's responsibility)
     old_weights = self.weights
     new_weights = torch.cat([old_weights, new_connections], dim=0)

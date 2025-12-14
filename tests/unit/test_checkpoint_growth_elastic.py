@@ -150,7 +150,7 @@ class TestElasticTensorMetadata:
 
         # Add 2 more actions (= 20 more neurons with population coding)
         n_new_actions = 2
-        region.add_neurons(n_new=n_new_actions)
+        region.grow_output(n_new=n_new_actions)
 
         # Should now have 7 actions * 10 neurons = 70 neurons
         final_expected_actions = initial_actions + n_new_actions
@@ -368,7 +368,7 @@ class TestReservedSpaceUtilization:
         initial_membrane_ptr = striatum_small.d1_pathway.neurons.membrane.data_ptr()
 
         # Grow by 2 (should fit in reserved space)
-        striatum_small.add_neurons(n_new=2)
+        striatum_small.grow_output(n_new=2)
 
         # Capacity unchanged (no reallocation)
         assert striatum_small.n_neurons_capacity == initial_capacity
@@ -387,7 +387,7 @@ class TestReservedSpaceUtilization:
 
         # Grow beyond capacity
         n_grow = initial_capacity - striatum_small.n_neurons_active + 1
-        striatum_small.add_neurons(n_new=n_grow)
+        striatum_small.grow_output(n_new=n_grow)
 
         # Capacity should increase (reallocation happened)
         assert striatum_small.n_neurons_capacity > initial_capacity
@@ -401,7 +401,7 @@ class TestReservedSpaceUtilization:
         checkpoint_path = tmp_path / "after_growth.ckpt"
 
         # Grow
-        striatum_small.add_neurons(n_new=3)
+        striatum_small.grow_output(n_new=3)
 
         # Save
         state = striatum_small.get_full_state()

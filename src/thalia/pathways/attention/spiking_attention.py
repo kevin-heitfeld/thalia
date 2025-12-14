@@ -282,31 +282,13 @@ class SpikingAttentionPathway(SpikingPathway):
             self.gain_output.weight.data.copy_(gain["weight"].to(device))
             self.gain_output.bias.data.copy_(gain["bias"].to(device))
 
-    def add_neurons(
+    def grow_output(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to attention pathway (extends base implementation).
-
-        DEPRECATED: Use grow_target() or grow_source() for clarity.
-        This method delegates to grow_target() for backward compatibility.
-
-        Args:
-            n_new: Number of output neurons to add
-            initialization: Weight init strategy for base pathway
-            sparsity: Connection sparsity for new neurons
-        """
-        self.grow_target(n_new=n_new, initialization=initialization, sparsity=sparsity)
-
-    def grow_target(
-        self,
-        n_new: int,
-        initialization: str = 'sparse_random',
-        sparsity: float = 0.1,
-    ) -> None:
-        """Grow attention pathway target dimension (cortex L2/3 output).
+        """Grow attention pathway output dimension (cortex L2/3 output).
 
         Grows the pathway's output dimension (cortex L2/3 size) and updates
         attention-specific layers accordingly.
@@ -325,7 +307,7 @@ class SpikingAttentionPathway(SpikingPathway):
         device = self.weights.device
 
         # 1. Grow base pathway (weights, delays, neurons, traces)
-        super().grow_target(n_new, initialization, sparsity)
+        super().grow_output(n_new, initialization, sparsity)
 
         new_output_size = self.config.n_output  # Updated by super()
 
@@ -367,19 +349,19 @@ class SpikingAttentionPathway(SpikingPathway):
             new_attention = torch.zeros(n_new, device=device)
             self.current_attention = torch.cat([self.current_attention, new_attention], dim=0)
 
-    def grow_source(
+    def grow_input(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Grow attention pathway source dimension (PFC input).
+        """Grow attention pathway input dimension (PFC input).
 
         When PFC grows, attention pathways receiving PFC signals must expand
         their input dimension and attention-related computations.
 
         Args:
-            n_new: Number of source neurons to add
+            n_new: Number of input neurons to add
             initialization: Weight init strategy for base pathway
             sparsity: Connection sparsity for new neurons
 
@@ -391,7 +373,7 @@ class SpikingAttentionPathway(SpikingPathway):
         device = self.weights.device
 
         # 1. Grow base pathway (weights, delays, source-side traces)
-        super().grow_source(n_new, initialization, sparsity)
+        super().grow_input(n_new, initialization, sparsity)
 
         new_input_size = self.config.n_input  # Updated by super()
 

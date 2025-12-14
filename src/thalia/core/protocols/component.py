@@ -62,7 +62,8 @@ class BrainComponent(Protocol):
        - Maintain membrane potentials, spike history, traces
 
     3. **Growth** (Curriculum Learning):
-       - add_neurons(): Expand capacity without disrupting existing circuits
+       - grow_input(): Expand input dimension (pathways only)
+       - grow_output(): Expand output dimension (regions and pathways)
        - get_capacity_metrics(): Report utilization for growth decisions
 
     4. **Diagnostics**:
@@ -102,7 +103,7 @@ class BrainComponent(Protocol):
             metrics = component.get_capacity_metrics()
             if metrics.growth_recommended:
                 print(f"Growing: {metrics.growth_reason}")
-                component.add_neurons(n_new=100)
+                component.grow_output(n_new=100)
 
             # Return diagnostics
             return component.get_diagnostics()
@@ -222,39 +223,84 @@ class BrainComponent(Protocol):
         """
 
     # =========================================================================
-    # Growth (Curriculum Learning)
+    # Growth (Curriculum Learning) - Unified API
     # =========================================================================
 
     @abstractmethod
-    def add_neurons(
+    def grow_input(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
         """
-        Add neurons/capacity to component without disrupting existing circuits.
+        Grow component's input dimension without disrupting existing circuits.
 
-        **CRITICAL for curriculum learning**: As the system learns harder tasks,
-        it needs more capacity. Growing must preserve existing knowledge.
+        **CRITICAL for curriculum learning**: As upstream components grow, this
+        component must adapt to accept more input connections.
 
         For regions:
-        - Expands weight matrices [n_output, n_input] → [n_output + n_new, n_input]
-        - New neurons start with sparse random connections
+        - Expands input weights [n_output, n_input] → [n_output, n_input + n_new]
+        - New synapses start with sparse random connections
         - Existing weights unchanged
 
         For pathways:
-        - Expands transformation matrices to match connected region sizes
-        - Maintains connectivity when upstream/downstream regions grow
+        - Expands source dimension to match upstream region growth
+        - Maintains connectivity when source region grows
         - Preserves existing connection strengths
 
         Args:
-            n_new: Number of neurons/units to add
+            n_new: Number of input neurons/units to add
             initialization: Weight init strategy ('sparse_random', 'xavier', etc.)
             sparsity: Connection sparsity for new neurons (0.0 = none, 1.0 = all)
 
+        Example:
+            >>> # Upstream region grows
+            >>> cortex.grow_output(20)
+            >>> # Downstream components must adapt
+            >>> hippocampus.grow_input(20)
+            >>> cortex_to_hippo_pathway.grow_input(20)
+
         Raises:
-            NotImplementedError: If component doesn't support growth yet
+            NotImplementedError: If component doesn't support input growth yet
+        """
+
+    @abstractmethod
+    def grow_output(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """
+        Grow component's output dimension without disrupting existing circuits.
+
+        **CRITICAL for curriculum learning**: As the system learns harder tasks,
+        it needs more output capacity. Growing must preserve existing knowledge.
+
+        For regions:
+        - Expands neuron population [n_output] → [n_output + n_new]
+        - New neurons start with sparse random connections
+        - Existing neurons and weights unchanged
+
+        For pathways:
+        - Expands target dimension to match downstream region growth
+        - Maintains connectivity when target region grows
+        - Preserves existing connection strengths
+
+        Args:
+            n_new: Number of output neurons/units to add
+            initialization: Weight init strategy ('sparse_random', 'xavier', etc.')
+            sparsity: Connection sparsity for new neurons (0.0 = none, 1.0 = all)
+
+        Example:
+            >>> # Region grows its neuron population
+            >>> hippocampus.grow_output(15)
+            >>> # Downstream components must adapt
+            >>> hippo_to_cortex_pathway.grow_output(15)
+
+        Raises:
+            NotImplementedError: If component doesn't support output growth yet
         """
 
     @abstractmethod
@@ -274,7 +320,7 @@ class BrainComponent(Protocol):
             metrics = component.get_capacity_metrics()
             if metrics.growth_recommended:
                 print(f"Growing: {metrics.growth_reason}")
-                component.add_neurons(n_new=100)
+                component.grow_output(n_new=100)
         """
 
     # =========================================================================
@@ -365,10 +411,12 @@ class BrainComponent(Protocol):
     # =========================================================================
 
     @property
+    @abstractmethod
     def device(self) -> torch.device:
         """Device where tensors are stored (CPU or CUDA)."""
 
     @property
+    @abstractmethod
     def dtype(self) -> torch.dtype:
         """Data type for floating point tensors."""
 
@@ -451,11 +499,36 @@ class BrainComponentBase(ABC):
         """
 
     # =========================================================================
-    # Growth (REQUIRED for curriculum learning)
+    # Growth (REQUIRED for curriculum learning) - Unified API
     # =========================================================================
 
-    # NOTE: add_neurons() is NOT defined here to allow mixin-based implementations.
-    # GrowthMixin provides the template method, BrainComponentMixin provides default.
+    @abstractmethod
+    def grow_input(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """
+        Grow component's input dimension without disrupting existing circuits.
+
+        REQUIRED for all components. Must be implemented by all subclasses.
+        See BrainComponent protocol for full documentation.
+        """
+
+    @abstractmethod
+    def grow_output(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """
+        Grow component's output dimension without disrupting existing circuits.
+
+        REQUIRED for all components. Must be implemented by all subclasses.
+        See BrainComponent protocol for full documentation.
+        """
 
     @abstractmethod
     def get_capacity_metrics(self) -> Any:
@@ -548,7 +621,7 @@ class BrainComponentMixin:
             pass
     """
 
-    def add_neurons(
+    def grow_input(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
@@ -556,9 +629,22 @@ class BrainComponentMixin:
     ) -> None:
         """Default: raise NotImplementedError with helpful message."""
         raise NotImplementedError(
-            f"{self.__class__.__name__}.add_neurons() not yet implemented. "
-            f"Growth is essential for curriculum learning. "
-            f"See src/thalia/core/growth.py for implementation guide."
+            f"{self.__class__.__name__}.grow_input() not yet implemented. "
+            f"Input growth is essential for curriculum learning when upstream components grow. "
+            f"See docs/patterns/unified-growth-api.md for implementation guide."
+        )
+
+    def grow_output(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Default: raise NotImplementedError with helpful message."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__}.grow_output() not yet implemented. "
+            f"Output growth is essential for curriculum learning to expand capacity. "
+            f"See docs/patterns/unified-growth-api.md for implementation guide."
         )
 
     def get_capacity_metrics(self) -> Any:
@@ -567,17 +653,18 @@ class BrainComponentMixin:
 
         # Use component name if available, otherwise class name
         name = getattr(self, 'name', self.__class__.__name__)
-        manager = GrowthManager(component_name=name)
+        manager = GrowthManager(region_name=name)
         return manager.get_capacity_metrics(self)
 
     def check_health(self) -> Any:
         """Default: return healthy status with no issues."""
-        from thalia.diagnostics.health import HealthReport
+        from thalia.diagnostics.health_monitor import HealthReport
         return HealthReport(
-            component_name=getattr(self, 'name', self.__class__.__name__),
             is_healthy=True,
+            overall_severity=0.0,
             issues=[],
-            warnings=[],
+            summary="Component is healthy",
+            metrics={},
         )
 
     def set_oscillator_phases(

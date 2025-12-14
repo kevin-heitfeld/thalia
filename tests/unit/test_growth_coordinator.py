@@ -86,7 +86,7 @@ def test_coordinate_growth_with_real_brain():
     coordination works with actual EventDrivenBrain regions and pathways,
     not just mocks.
 
-    Cortex uses add_neurons() API for growth (not a separate growth_manager).
+    Cortex uses grow_output() API for growth (not a separate growth_manager).
     """
     import torch
     from thalia.core.brain import EventDrivenBrain

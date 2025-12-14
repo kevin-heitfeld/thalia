@@ -827,13 +827,13 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
     # region Growth and Neurogenesis
 
-    def add_neurons(
+    def grow_output(
         self,
         n_new: int,
         initialization: str = 'xavier',
         sparsity: float = 0.1,
     ) -> None:
-        """Add new action neurons to striatum without disrupting existing circuits.
+        """Grow output dimension by adding new action neurons to striatum.
 
         For Striatum with population coding, adds complete action populations.
         If n_new=1, adds neurons_per_action neurons total.
@@ -853,7 +853,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         Example:
             >>> striatum = Striatum(StriatumConfig(n_output=2, neurons_per_action=10))
             >>> # Currently: 2 actions × 10 neurons = 20 total neurons
-            >>> striatum.add_neurons(n_new=1)  # Add 1 action
+            >>> striatum.grow_output(n_new=1)  # Add 1 action
             >>> # Now: 3 actions × 10 neurons = 30 total neurons
         """
         # Calculate actual number of neurons to add (population coding)
@@ -1034,6 +1034,56 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
                 sparsity=0.3,
                 scale=1.0,  # Default scale for PFC modulation
             )
+
+    def grow_input(
+        self,
+        n_new: int,
+        initialization: str = 'xavier',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow striatum input dimension when upstream regions grow.
+
+        When upstream regions (cortex, hippocampus, PFC) add neurons, this
+        method expands the striatum's D1 and D2 pathway weights.
+
+        Args:
+            n_new: Number of input neurons to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity for new inputs
+
+        Example:
+            >>> cortex.grow_output(20)
+            >>> cortex_to_striatum.grow_output(20)
+            >>> striatum.grow_input(20)  # Expand D1/D2 input weights
+        """
+        old_n_input = self.config.n_input
+        new_n_input = old_n_input + n_new
+
+        # Expand D1 pathway weights [n_output, input] → [n_output, input+n_new]
+        new_d1_cols = WeightInitializer.xavier(
+            n_output=self.config.n_output,
+            n_input=n_new,
+            gain=0.2,  # Small gain to avoid disrupting learned patterns
+            device=self.device
+        )
+        # Use .data assignment (can't re-register nn.Parameter)
+        self.d1_weights.data = torch.cat([self.d1_weights.data, new_d1_cols], dim=1)
+
+        # Expand D2 pathway weights [n_output, input] → [n_output, input+n_new]
+        new_d2_cols = WeightInitializer.xavier(
+            n_output=self.config.n_output,
+            n_input=n_new,
+            gain=0.2,
+            device=self.device
+        )
+        # Use .data assignment (can't re-register nn.Parameter)
+        self.d2_weights.data = torch.cat([self.d2_weights.data, new_d2_cols], dim=1)
+
+        # Update generic weights reference (use d1_weights for compatibility)
+        self.weights = self.d1_weights
+
+        # Update config
+        self.config = replace(self.config, n_input=new_n_input)
 
     def _initialize_pathway_weights(self) -> torch.Tensor:
         """Initialize weights for D1 or D2 pathway with balanced, principled scaling.

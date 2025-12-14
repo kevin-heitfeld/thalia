@@ -374,13 +374,13 @@ class PredictiveCortex(NeuralComponent):
         self.state._oscillator_phases = phases
         self.state._oscillator_signals = signals
 
-    def add_neurons(
+    def grow_output(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to predictive cortex by delegating to internal LayeredCortex.
+        """Grow output dimension by delegating to base LayeredCortex.
 
         This expands all layers (L4, L2/3, L5) proportionally while also
         updating the prediction layer and attention modules.
@@ -393,7 +393,7 @@ class PredictiveCortex(NeuralComponent):
         # =====================================================================
         # 1. DELEGATE TO LAYERED CORTEX (handles all weight/neuron expansion)
         # =====================================================================
-        self.cortex.add_neurons(n_new, initialization, sparsity)
+        self.cortex.grow_output(n_new, initialization, sparsity)
 
         # =====================================================================
         # 2. UPDATE SIZES AND CONFIG
@@ -431,7 +431,7 @@ class PredictiveCortex(NeuralComponent):
                 )
             )
 
-        # Note: Gamma attention resizing handled by base LayeredCortex.add_neurons()
+        # Note: Gamma attention resizing handled by base LayeredCortex.grow_output()
 
     def forward(
         self,

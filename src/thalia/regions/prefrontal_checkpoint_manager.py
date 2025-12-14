@@ -14,7 +14,7 @@ Prefrontal cortex region, supporting both elastic tensor and neuromorphic format
 
 **Why Neuromorphic for Prefrontal:**
 The prefrontal cortex benefits from neuromorphic checkpoints because:
-1. **Growth Support**: Has add_neurons() for expanding working memory capacity
+1. **Growth Support**: Has grow_output() for expanding working memory capacity
 2. **Small Scale**: Typically 50-200 neurons (working memory slots)
 3. **Semantic Neurons**: Rule neurons and WM slots have meaningful identities
 4. **Inspectability**: Can track which neurons encode which rules/memories
@@ -363,7 +363,7 @@ class PrefrontalCheckpointManager:
             return True
 
         # If growth enabled, use neuromorphic
-        if hasattr(pfc, 'add_neurons'):  # Has growth capability
+        if hasattr(pfc, 'grow_output'):  # Has growth capability
             return True
 
         # For large stable regions, elastic tensor is more efficient
@@ -403,7 +403,7 @@ class PrefrontalCheckpointManager:
             "selected_format": format_name,
             "selection_criteria": {
                 "n_neurons": pfc.config.n_output,
-                "has_growth": hasattr(pfc, 'add_neurons'),
+                "has_growth": hasattr(pfc, 'grow_output'),
             }
         }
 

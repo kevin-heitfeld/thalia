@@ -51,7 +51,7 @@ class GrowthEvent:
     timestamp: str
     component_name: str  # Region or pathway name
     component_type: str  # 'region' or 'pathway'
-    event_type: str  # 'add_neurons', 'add_synapses'
+    event_type: str  # 'grow_output', 'grow_input', 'add_synapses'
     n_neurons_added: int = 0
     n_synapses_added: int = 0
     reason: str = ""
@@ -106,7 +106,7 @@ class CapacityMetrics:
     Usage:
         >>> metrics = region.get_capacity_metrics()
         >>> if metrics.growth_recommended:
-        ...     region.add_neurons(n_new=metrics.growth_amount)
+        ...     region.grow_output(n_new=metrics.growth_amount)
     """
 
     # Core metrics (required)
@@ -174,7 +174,7 @@ class GrowthManager:
         metrics = growth.get_capacity_metrics(region)
 
         if metrics.growth_recommended:
-            growth.add_neurons(region, n_new=100)
+            growth.grow_component(region, n_new=100)
     """
 
     def __init__(self, region_name: str):
@@ -293,7 +293,7 @@ class GrowthManager:
             growth_reason=growth_reason,
         )
 
-    def add_neurons(
+    def grow_component(
         self,
         component: Any,  # NeuralComponent (region or pathway)
         n_new: int,
@@ -302,11 +302,11 @@ class GrowthManager:
         reason: str = "",
         component_type: str = "region",
     ) -> GrowthEvent:
-        """Add neurons to component (region or pathway) without disrupting existing weights.
+        """Grow component output dimension without disrupting existing weights.
 
         Strategy:
         1. Measure capacity before growth
-        2. Call component.add_neurons() to expand weights
+        2. Call component.grow_output() to expand weights
         3. Measure capacity after growth
         4. Record growth event in history
 
@@ -325,12 +325,12 @@ class GrowthManager:
         metrics_before = self.get_capacity_metrics(component)
 
         # Perform growth (component-specific implementation)
-        if not hasattr(component, 'add_neurons'):
+        if not hasattr(component, 'grow_output'):
             raise NotImplementedError(
-                f"Component {self.region_name} does not implement add_neurons()"
+                f"Component {self.region_name} does not implement grow_output()"
             )
 
-        component.add_neurons(
+        component.grow_output(
             n_new=n_new,
             initialization=initialization,
             sparsity=sparsity,
@@ -344,7 +344,7 @@ class GrowthManager:
             timestamp=datetime.now(timezone.utc).isoformat(),
             component_name=self.region_name,
             component_type=component_type,
-            event_type='add_neurons',
+            event_type='grow_output',
             n_neurons_added=n_new,
             n_synapses_added=metrics_after.synapse_count - metrics_before.synapse_count,
             reason=reason or metrics_before.growth_reason,
@@ -487,9 +487,9 @@ class GrowthCoordinator:
             region_impl = region  # Direct access case
 
         # 1. Grow the region itself
-        if hasattr(region_impl, 'add_neurons'):
-            # Call add_neurons() directly on region implementation
-            region_impl.add_neurons(
+        if hasattr(region_impl, 'grow_output'):
+            # Call grow_output() directly on region implementation
+            region_impl.grow_output(
                 n_new=n_new_neurons,
                 initialization=initialization,
                 sparsity=sparsity,
@@ -500,7 +500,7 @@ class GrowthCoordinator:
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 component_name=region_name,
                 component_type='region',
-                event_type='add_neurons',
+                event_type='grow_output',
                 n_neurons_added=n_new_neurons,
                 n_synapses_added=0,  # Estimated from pathways
                 reason=reason,
@@ -510,7 +510,7 @@ class GrowthCoordinator:
             events.append(region_event)
         else:
             raise AttributeError(
-                f"Region '{region_name}' does not have add_neurons() method. "
+                f"Region '{region_name}' does not have grow_output() method. "
                 f"Growth not supported for this region type."
             )
 
@@ -522,11 +522,11 @@ class GrowthCoordinator:
         # These pathways send spikes TO the growing region
         # Need to add neurons to target side to match region growth
         for pathway_name, pathway in input_pathways:
-            if hasattr(pathway, 'grow_target'):
+            if hasattr(pathway, 'grow_output'):
                 # Get source size before growth to calculate synapses added
                 n_source = pathway.config.n_input if hasattr(pathway, 'config') else 0
 
-                pathway.grow_target(
+                pathway.grow_output(
                     n_new=n_new_neurons,
                     initialization=initialization,
                     sparsity=sparsity,
@@ -541,7 +541,7 @@ class GrowthCoordinator:
                     timestamp=datetime.now(timezone.utc).isoformat(),
                     component_name=pathway_name,
                     component_type='pathway',
-                    event_type='grow_target',
+                    event_type='grow_output',
                     n_neurons_added=n_new_neurons,
                     n_synapses_added=n_synapses_added,
                     reason=f"Input pathway to {region_name}",
@@ -554,11 +554,11 @@ class GrowthCoordinator:
         # These pathways receive spikes FROM the growing region
         # Need to add neurons to source side to match region growth
         for pathway_name, pathway in output_pathways:
-            if hasattr(pathway, 'grow_source'):
+            if hasattr(pathway, 'grow_input'):
                 # Get target size before growth to calculate synapses added
                 n_target = pathway.config.n_output if hasattr(pathway, 'config') else 0
 
-                pathway.grow_source(
+                pathway.grow_input(
                     n_new=n_new_neurons,
                     initialization=initialization,
                     sparsity=sparsity,
@@ -573,7 +573,7 @@ class GrowthCoordinator:
                     timestamp=datetime.now(timezone.utc).isoformat(),
                     component_name=pathway_name,
                     component_type='pathway',
-                    event_type='grow_source',
+                    event_type='grow_input',
                     n_neurons_added=n_new_neurons,
                     n_synapses_added=n_synapses_added,
                     reason=f"Output pathway from {region_name}",
@@ -581,6 +581,36 @@ class GrowthCoordinator:
                     metrics_after={},
                 )
                 events.append(pathway_event)
+
+                # ============================================================
+                # CRITICAL: Grow target region's input dimension!
+                # ============================================================
+                # When pathway grows its source (input), the downstream target
+                # region must also expand its input weights to handle the larger
+                # input dimension.
+                target_region_name = self._get_pathway_target(pathway_name)
+                if target_region_name and target_region_name in self.brain.regions:
+                    target_region = self.brain.regions[target_region_name]
+                    if hasattr(target_region, 'grow_input'):
+                        target_region.grow_input(
+                            n_new=n_new_neurons,
+                            initialization=initialization,
+                            sparsity=sparsity,
+                        )
+
+                        # Record region input growth event
+                        region_input_event = GrowthEvent(
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                            component_name=target_region_name,
+                            component_type='region',
+                            event_type='grow_input',
+                            n_neurons_added=0,  # No new neurons, just input expansion
+                            n_synapses_added=n_new_neurons * target_region.config.n_output,
+                            reason=f"Input dimension growth due to {region_name} expansion",
+                            metrics_before={},
+                            metrics_after={},
+                        )
+                        events.append(region_input_event)
 
         # 5. Record coordinated growth in history
         coordinated_event = {
@@ -633,6 +663,21 @@ class GrowthCoordinator:
                     if source == region_name:
                         output_pathways.append((name, pathway))
         return output_pathways
+
+    def _get_pathway_target(self, pathway_name: str) -> Optional[str]:
+        """Extract target region name from pathway name.
+
+        Args:
+            pathway_name: Pathway name in format "source_to_target"
+
+        Returns:
+            Target region name, or None if not parseable
+        """
+        if '_to_' in pathway_name:
+            parts = pathway_name.split('_to_')
+            if len(parts) == 2:
+                return parts[1]
+        return None
 
     def get_growth_history(self) -> List[Dict[str, Any]]:
         """Get coordinated growth history.

@@ -1408,7 +1408,7 @@ class CurriculumTrainer:
                 self.brain.consolidate(n_cycles=5, batch_size=32, verbose=False)
 
             # Perform growth
-            _growth_event = growth_manager.add_neurons(
+            _growth_event = growth_manager.grow_component(
                 component=region,
                 n_new=n_new_neurons,
                 initialization='sparse_random',

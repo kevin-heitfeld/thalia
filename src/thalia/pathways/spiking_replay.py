@@ -468,31 +468,13 @@ class SpikingReplayPathway(SpikingPathway):
         super().load_full_state(state)
         # Note: Replay-specific state is loaded via load_state() called by base class
 
-    def add_neurons(
+    def grow_output(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to replay pathway (extends base implementation).
-
-        DEPRECATED: Use grow_target() or grow_source() for clarity.
-        This method delegates to grow_target() for backward compatibility.
-
-        Args:
-            n_new: Number of output neurons to add
-            initialization: Weight init strategy for base pathway
-            sparsity: Connection sparsity for new neurons
-        """
-        self.grow_target(n_new=n_new, initialization=initialization, sparsity=sparsity)
-
-    def grow_target(
-        self,
-        n_new: int,
-        initialization: str = 'sparse_random',
-        sparsity: float = 0.1,
-    ) -> None:
-        """Grow replay pathway target dimension (cortex output).
+        """Grow replay pathway output dimension (cortex output).
 
         Grows the pathway's output dimension (cortex size) and updates
         replay-specific layers accordingly.
@@ -512,7 +494,7 @@ class SpikingReplayPathway(SpikingPathway):
         device = self.weights.device
 
         # 1. Grow base pathway (weights, delays, neurons, traces)
-        super().grow_target(n_new, initialization, sparsity)
+        super().grow_output(n_new, initialization, sparsity)
 
         new_output_size = self.config.n_output  # Updated by super()
 
@@ -538,19 +520,19 @@ class SpikingReplayPathway(SpikingPathway):
         # 4. replay_buffer patterns stay [n_input] - hippocampus size unchanged
         # Buffer already stores correct-sized patterns, no modification needed
 
-    def grow_source(
+    def grow_input(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Grow replay pathway source dimension (hippocampus input).
+        """Grow replay pathway input dimension (hippocampus input).
 
         When hippocampus grows, replay pathways must expand their input dimension
         and replay-related computations.
 
         Args:
-            n_new: Number of source neurons to add
+            n_new: Number of input neurons to add
             initialization: Weight init strategy for base pathway
             sparsity: Connection sparsity for new neurons
 
@@ -564,7 +546,7 @@ class SpikingReplayPathway(SpikingPathway):
         device = self.weights.device
 
         # 1. Grow base pathway (weights, delays, source-side traces)
-        super().grow_source(n_new, initialization, sparsity)
+        super().grow_input(n_new, initialization, sparsity)
 
         new_input_size = self.config.n_input  # Updated by super()
 

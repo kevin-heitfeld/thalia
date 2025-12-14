@@ -36,7 +36,7 @@ Lines 81-170:  CerebellumConfig dataclass
 Lines 171-280: Cerebellum class __init__, weight initialization
 Lines 281-370: Forward pass (parallel fibers → Purkinje cells)
 Lines 371-500: Error learning (climbing fiber supervision, delta rule)
-Lines 501-650: Growth and neurogenesis (add_neurons)
+Lines 501-650: Growth and neurogenesis (grow_output)
 Lines 651-730: Diagnostics and health monitoring
 Lines 731-759: Utility methods (reset_state, get_full_state)
 
@@ -382,13 +382,13 @@ class Cerebellum(NeuralComponent):
         neurons.to(self.device)
         return neurons
 
-    def add_neurons(
+    def grow_output(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to cerebellum (Purkinje cells).
+        """Grow output dimension by adding Purkinje cells.
 
         Expands motor learning capacity by adding neurons.
 
@@ -427,7 +427,7 @@ class Cerebellum(NeuralComponent):
         # =====================================================================
         # 4. GROW TRACE MANAGER
         # =====================================================================
-        self._trace_manager = self._trace_manager.add_neurons(n_new, dimension='output')
+        self._trace_manager = self._trace_manager.grow_dimension(n_new, dimension='output')
 
     def forward(
         self,
@@ -667,6 +667,59 @@ class Cerebellum(NeuralComponent):
 
         # Reset subsystems (trace manager handles its own traces)
         self._reset_subsystems('_trace_manager', 'climbing_fiber')
+
+    def grow_input(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow cerebellum input dimension (parallel fibers).
+
+        Expands input weight matrix columns to accept larger input.
+
+        Args:
+            n_new: Number of input neurons to add
+            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
+            sparsity: Connection sparsity for new input neurons (if sparse_random)
+        """
+        old_n_input = self.config.n_input
+        new_n_input = old_n_input + n_new
+
+        # Helper to create new weights
+        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
+            if initialization == 'xavier':
+                return WeightInitializer.xavier(n_out, n_in, device=self.device)
+            elif initialization == 'sparse_random':
+                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
+            else:
+                return WeightInitializer.uniform(n_out, n_in, device=self.device)
+
+        # Expand self.weights [n_output, input] → [n_output, input+n_new]
+        new_input_cols = new_weights_for(self.config.n_output, n_new)
+        self.weights.data = torch.cat([self.weights.data, new_input_cols], dim=1)
+
+        # Update trace manager for new input size
+        stdp_config = STDPConfig(
+            stdp_tau_ms=self.cerebellum_config.tau_plus_ms,
+            eligibility_tau_ms=self.cerebellum_config.eligibility_tau_ms,
+            stdp_lr=self.cerebellum_config.stdp_lr,
+            a_plus=1.0,
+            a_minus=self.cerebellum_config.heterosynaptic_ratio,
+            w_min=self.config.w_min,
+            w_max=self.config.w_max,
+            heterosynaptic_ratio=self.cerebellum_config.heterosynaptic_ratio,
+        )
+        self._trace_manager = EligibilityTraceManager(
+            n_input=new_n_input,
+            n_output=self.config.n_output,
+            config=stdp_config,
+            device=self.device,
+        )
+
+        # Update config
+        self.config = replace(self.config, n_input=new_n_input)
+        self.cerebellum_config = replace(self.cerebellum_config, n_input=new_n_input)
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics using DiagnosticsMixin helpers.

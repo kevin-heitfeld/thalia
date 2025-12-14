@@ -309,7 +309,7 @@ class TestConcurrentOperations:
 
         # Grow in another thread
         def grow_thread():
-            striatum.add_neurons(n_new=2)
+            striatum.grow_output(n_new=2)
 
         t1 = threading.Thread(target=load_thread)
         t2 = threading.Thread(target=grow_thread)

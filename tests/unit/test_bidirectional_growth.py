@@ -22,14 +22,14 @@ def simple_pathway():
     return SpikingPathway(config)
 
 
-def test_grow_target_expands_output_dimension(simple_pathway):
-    """Test that grow_target() expands the pathway's output dimension."""
+def test_grow_output_expands_output_dimension(simple_pathway):
+    """Test that grow_output() expands the pathway's output dimension."""
     initial_output_size = simple_pathway.config.n_output
     initial_input_size = simple_pathway.config.n_input
     initial_weights = simple_pathway.weights.data.clone()
 
-    # Grow target by 20 neurons
-    simple_pathway.grow_target(n_new=20)
+    # Grow output by 20 neurons
+    simple_pathway.grow_output(n_new=20)
 
     # Verify output dimension expanded
     assert simple_pathway.config.n_output == initial_output_size + 20, \
@@ -54,14 +54,14 @@ def test_grow_target_expands_output_dimension(simple_pathway):
     ), "Old weights should be preserved in top rows"
 
 
-def test_grow_source_expands_input_dimension(simple_pathway):
-    """Test that grow_source() expands the pathway's input dimension."""
+def test_grow_input_expands_input_dimension(simple_pathway):
+    """Test that grow_input() expands the pathway's input dimension."""
     initial_output_size = simple_pathway.config.n_output
     initial_input_size = simple_pathway.config.n_input
     initial_weights = simple_pathway.weights.data.clone()
 
-    # Grow source by 30 neurons
-    simple_pathway.grow_source(n_new=30)
+    # Grow input by 30 neurons
+    simple_pathway.grow_input(n_new=30)
 
     # Verify input dimension expanded
     assert simple_pathway.config.n_input == initial_input_size + 30, \
@@ -86,17 +86,17 @@ def test_grow_source_expands_input_dimension(simple_pathway):
 
 
 def test_bidirectional_growth_sequence(simple_pathway):
-    """Test growing both source and target in sequence."""
+    """Test growing both input and output in sequence."""
     initial_input = simple_pathway.config.n_input
     initial_output = simple_pathway.config.n_output
 
-    # Grow target first
-    simple_pathway.grow_target(n_new=10)
+    # Grow output first
+    simple_pathway.grow_output(n_new=10)
     assert simple_pathway.config.n_output == initial_output + 10
     assert simple_pathway.config.n_input == initial_input
 
-    # Then grow source
-    simple_pathway.grow_source(n_new=15)
+    # Then grow input
+    simple_pathway.grow_input(n_new=15)
     assert simple_pathway.config.n_output == initial_output + 10
     assert simple_pathway.config.n_input == initial_input + 15
 
@@ -105,24 +105,12 @@ def test_bidirectional_growth_sequence(simple_pathway):
         "Weight matrix should match final dimensions"
 
 
-def test_add_neurons_delegates_to_grow_target(simple_pathway):
-    """Test that add_neurons() delegates to grow_target() for backward compatibility."""
-    initial_output_size = simple_pathway.config.n_output
-
-    # Call legacy add_neurons()
-    simple_pathway.add_neurons(n_new=25)
-
-    # Should behave like grow_target()
-    assert simple_pathway.config.n_output == initial_output_size + 25, \
-        "add_neurons() should delegate to grow_target()"
-
-
-def test_grow_target_preserves_traces(simple_pathway):
-    """Test that grow_target() expands post-synaptic traces."""
+def test_grow_output_preserves_traces(simple_pathway):
+    """Test that grow_output() expands post-synaptic traces."""
     initial_output_size = simple_pathway.config.n_output
     initial_post_trace = simple_pathway.post_trace.clone()
 
-    simple_pathway.grow_target(n_new=10)
+    simple_pathway.grow_output(n_new=10)
 
     # Verify post_trace expanded
     assert simple_pathway.post_trace.shape[0] == initial_output_size + 10, \
@@ -136,12 +124,12 @@ def test_grow_target_preserves_traces(simple_pathway):
     ), "Old post-synaptic traces should be preserved"
 
 
-def test_grow_source_preserves_traces(simple_pathway):
-    """Test that grow_source() expands pre-synaptic traces."""
+def test_grow_input_preserves_traces(simple_pathway):
+    """Test that grow_input() expands pre-synaptic traces."""
     initial_input_size = simple_pathway.config.n_input
     initial_pre_trace = simple_pathway.pre_trace.clone()
 
-    simple_pathway.grow_source(n_new=15)
+    simple_pathway.grow_input(n_new=15)
 
     # Verify pre_trace expanded
     assert simple_pathway.pre_trace.shape[0] == initial_input_size + 15, \
@@ -158,8 +146,8 @@ def test_grow_source_preserves_traces(simple_pathway):
 def test_forward_after_bidirectional_growth(simple_pathway):
     """Test that pathway forward pass still works after bidirectional growth."""
     # Grow both dimensions
-    simple_pathway.grow_source(n_new=10)
-    simple_pathway.grow_target(n_new=5)
+    simple_pathway.grow_input(n_new=10)
+    simple_pathway.grow_output(n_new=5)
 
     # Create input spikes matching new source size
     input_spikes = torch.zeros(simple_pathway.config.n_input)
@@ -180,19 +168,19 @@ def test_growth_with_different_initializations():
     # Test xavier initialization
     pathway1 = SpikingPathway(config)
     initial_size1 = pathway1.config.n_output
-    pathway1.grow_target(n_new=10, initialization='xavier')
+    pathway1.grow_output(n_new=10, initialization='xavier')
     assert pathway1.config.n_output == initial_size1 + 10
 
     # Test uniform initialization
     pathway2 = SpikingPathway(config)
     initial_size2 = pathway2.config.n_output
-    pathway2.grow_target(n_new=10, initialization='uniform')
+    pathway2.grow_output(n_new=10, initialization='uniform')
     assert pathway2.config.n_output == initial_size2 + 10
 
     # Test sparse_random initialization (default)
     pathway3 = SpikingPathway(config)
     initial_size3 = pathway3.config.n_output
-    pathway3.grow_target(n_new=10, initialization='sparse_random', sparsity=0.2)
+    pathway3.grow_output(n_new=10, initialization='sparse_random', sparsity=0.2)
     assert pathway3.config.n_output == initial_size3 + 10
 
 

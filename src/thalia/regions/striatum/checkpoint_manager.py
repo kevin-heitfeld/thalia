@@ -216,7 +216,7 @@ class CheckpointManager:
                     f"({n_grow_neurons} neurons).",
                     UserWarning
                 )
-                s.add_neurons(n_new=n_grow_actions)
+                s.grow_output(n_new=n_grow_actions)
 
             # Warn if checkpoint has fewer neurons
             elif checkpoint_active < s.n_neurons_active:

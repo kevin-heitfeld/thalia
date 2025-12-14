@@ -349,7 +349,7 @@ class EligibilityTraceManager:
         self.eligibility = self.eligibility.to(device)
         return self
 
-    def add_neurons(self, n_new: int, dimension: str = 'output') -> 'EligibilityTraceManager':
+    def grow_dimension(self, n_new: int, dimension: str = 'output') -> 'EligibilityTraceManager':
         """
         Grow traces to accommodate new neurons.
 

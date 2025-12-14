@@ -1925,7 +1925,7 @@ class EventDrivenBrain(nn.Module):
                 growth_amount = max(int(current_size * 0.1), 8)  # 10% or minimum 8
 
                 # Add neurons to region
-                region.add_neurons(n_new=growth_amount)
+                region.grow_output(n_new=growth_amount)
                 growth_actions[region_name] = growth_amount
 
                 # Update all pathways connected to this region

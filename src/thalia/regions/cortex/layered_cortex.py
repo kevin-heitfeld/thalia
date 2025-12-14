@@ -164,7 +164,7 @@ class LayeredCortex(NeuralComponent):
         - check_health(), get_firing_rate() - Health monitoring
 
     From GrowthMixin:
-        - add_neurons(), get_capacity_metrics() - Curriculum learning
+        - grow_output(), get_capacity_metrics() - Curriculum learning
 
     From NeuromodulatorMixin:
         - set_dopamine(), get_effective_learning_rate() - DA modulation
@@ -568,13 +568,13 @@ class LayeredCortex(NeuralComponent):
 
     # region Growth and Neurogenesis
 
-    def add_neurons(
+    def grow_output(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to cortex, expanding all layers proportionally.
+        """Grow output dimension by expanding all layers proportionally.
 
         This expands L4, L2/3, and L5 while maintaining layer ratios:
         - L4 expands by (l4_ratio * n_new)
@@ -635,6 +635,15 @@ class LayeredCortex(NeuralComponent):
             torch.cat([expanded_recurrent_rows, new_l23_recurrent_cols], dim=1)
         )
 
+        # 3b. Expand L2/3 inhibitory weights [l23, l23]
+        # Same structure as recurrent, but negative weights for inhibition
+        new_l23_inhib_rows = -torch.abs(new_weights_for(l23_growth, old_l23_size))
+        expanded_inhib_rows = torch.cat([self.w_l23_inhib.data, new_l23_inhib_rows], dim=0)
+        new_l23_inhib_cols = -torch.abs(new_weights_for(new_l23_size, l23_growth))
+        self.w_l23_inhib.data = torch.cat([expanded_inhib_rows, new_l23_inhib_cols], dim=1)
+        # Zero out diagonal (no self-inhibition)
+        self.w_l23_inhib.data.fill_diagonal_(0.0)
+
         # 4. Expand L2/3→L5 weights [l5, l23]
         # Add rows for new L5 neurons, columns for new L2/3 neurons
         new_l5_rows = new_weights_for(l5_growth, old_l23_size)
@@ -663,11 +672,79 @@ class LayeredCortex(NeuralComponent):
         self.l5_size = new_l5_size
         self.l5_neurons = create_cortical_layer_neurons(self.l5_size, "L5", self.device)
 
-        # 6. Update configs
+        # 6. Update STP module to match L2/3 growth
+        self.stp_l23_recurrent = ShortTermPlasticity(
+            n_pre=new_l23_size,
+            n_post=new_l23_size,
+            config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=self.config.dt_ms),
+            per_synapse=True,
+        )
+        self.stp_l23_recurrent.to(self.device)
+
+        # 6b. Expand L2/3 phase preferences for gamma attention
+        new_phase_prefs = torch.rand(l23_growth, device=self.device) * 2 * torch.pi
+        self.l23_phase_prefs.data = torch.cat([self.l23_phase_prefs.data, new_phase_prefs])
+
+        # 7. Update configs
         new_total_output = new_l23_size + new_l5_size
 
         self.config = replace(self.config, n_output=new_total_output)
         self.layer_config = replace(self.layer_config, n_output=new_total_output)
+
+    def grow_input(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow cortex input dimension when upstream region grows.
+
+        When an upstream region (e.g., thalamus, sensory pathway) adds neurons,
+        this method expands the cortex's input weights to accommodate the larger
+        input dimension.
+
+        This is the CRITICAL missing piece that enables full dynamic growth!
+
+        Args:
+            n_new: Number of input neurons to add
+            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
+            sparsity: Connection sparsity for new input neurons (if sparse_random)
+
+        Example:
+            >>> # Visual pathway grows from 784 → 804 neurons
+            >>> visual_pathway.grow_output(20)
+            >>> # Cortex must expand input dimension
+            >>> cortex.grow_input(20)  # w_input_l4: [l4, 784] → [l4, 804]
+
+        Implementation:
+            Expands w_input_l4 weight matrix by adding COLUMNS:
+            - Old: [l4_size, old_n_input]
+            - New: [l4_size, old_n_input + n_new]
+            - Preserves existing learned weights in left columns
+            - Initializes new input weights small to avoid disruption
+        """
+        old_n_input = self.layer_config.n_input
+        new_n_input = old_n_input + n_new
+
+        # Helper to create new weights
+        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
+            if initialization == 'xavier':
+                return WeightInitializer.xavier(n_out, n_in, device=self.device)
+            elif initialization == 'sparse_random':
+                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
+            else:
+                return WeightInitializer.uniform(n_out, n_in, device=self.device)
+
+        # Expand input→L4 weights [l4, input] → [l4, input+n_new]
+        # Add COLUMNS for new input neurons
+        new_input_cols = new_weights_for(self.l4_size, n_new)
+        self.w_input_l4 = nn.Parameter(
+            torch.cat([self.w_input_l4.data, new_input_cols], dim=1)  # Add columns
+        )
+
+        # Update config
+        self.layer_config = replace(self.layer_config, n_input=new_n_input)
+        self.config = replace(self.config, n_input=new_n_input)
 
     # endregion
 

@@ -614,13 +614,13 @@ class TrisynapticHippocampus(NeuralComponent):
 
     # region Growth and Neurogenesis
 
-    def add_neurons(
+    def grow_output(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to hippocampus, expanding all layers proportionally.
+        """Grow output dimension by expanding all hippocampal layers proportionally.
 
         This expands DG, CA3, and CA1 while maintaining the circuit ratios:
         - DG expands by (dg_expansion * n_new)
@@ -719,6 +719,54 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # 6. Update config
         self.config = replace(self.config, n_output=new_ca1_size)
+
+    def grow_input(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow hippocampus input dimension when upstream region grows.
+
+        When upstream regions (e.g., cortex) add neurons, this method expands
+        the hippocampus's input weights to accommodate the larger input.
+
+        Args:
+            n_new: Number of input neurons to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity for new inputs
+
+        Example:
+            >>> cortex.grow_output(20)
+            >>> cortex_to_hippocampus.grow_output(20)
+            >>> hippocampus.grow_input(20)  # Expand EC input weights
+        """
+        old_n_input = self.config.n_input
+        new_n_input = old_n_input + n_new
+
+        # Helper for weight initialization
+        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
+            if initialization == 'xavier':
+                return WeightInitializer.xavier(n_out, n_in, device=self.device)
+            elif initialization == 'sparse_random':
+                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
+            else:
+                return WeightInitializer.uniform(n_out, n_in, device=self.device)
+
+        # Expand EC→DG weights [dg, input] → [dg, input+n_new]
+        new_input_cols = new_weights_for(self.dg_size, n_new)
+        self.w_ec_dg = nn.Parameter(
+            torch.cat([self.w_ec_dg.data, new_input_cols], dim=1)
+        )
+
+        # Expand EC→CA3 direct perforant path [ca3, input] → [ca3, input+n_new]
+        new_perforant_cols = new_weights_for(self.ca3_size, n_new)
+        self.w_ec_ca3 = nn.Parameter(
+            torch.cat([self.w_ec_ca3.data, new_perforant_cols], dim=1)
+        )
+
+        # Update config
+        self.config = replace(self.config, n_input=new_n_input)
 
     # endregion
 

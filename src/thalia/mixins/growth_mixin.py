@@ -1,6 +1,6 @@
 """Growth mixin for region neuron expansion.
 
-This mixin provides utilities and template methods for adding neurons to brain
+This mixin provides utilities and template methods for growing output dimension of brain
 regions. It consolidates growth patterns that were duplicated across regions.
 
 Design Philosophy:
@@ -9,7 +9,7 @@ Design Philosophy:
 - All regions benefit from standardized weight/state expansion utilities
 
 Historical Context:
-- Prior to this mixin, add_neurons() was duplicated across 4+ regions (~320 lines)
+- Prior to this mixin, grow_output() was duplicated across 4+ regions (~320 lines)
 - Base class had _expand_weights() and _recreate_neurons_with_state() helpers
 - This mixin consolidates all growth utilities and adds template method for simple cases
 """
@@ -30,7 +30,7 @@ class GrowthMixin:
 
     Pattern 1 - Template Method (for single-layer regions):
         Override _expand_layer_weights() and optionally _update_config_after_growth().
-        The base add_neurons() handles orchestration.
+        The base grow_output() handles orchestration.
 
         Example:
             class SimpleRegion(NeuralComponent, GrowthMixin):
@@ -41,11 +41,11 @@ class GrowthMixin:
                     self.config = replace(self.config, n_output=new_n_output)
 
     Pattern 2 - Helper Methods (for multi-layer regions):
-        Implement custom add_neurons() but use helper methods for weight expansion.
+        Implement custom grow_output() but use helper methods for weight expansion.
 
         Example:
             class MultiLayerRegion(NeuralComponent, GrowthMixin):
-                def add_neurons(self, n_new, **kwargs):
+                def grow_output(self, n_new, **kwargs):
                     # Custom multi-layer orchestration
                     for layer in self.layers:
                         layer.weights = self._expand_weights(layer.weights, growth)
@@ -82,7 +82,7 @@ class GrowthMixin:
             Expanded weight matrix [n_output + n_new, n_input]
 
         Example:
-            >>> # In a region's add_neurons() method:
+            >>> # In a region's grow_output() method:
             >>> self.weights = self._expand_weights(
             ...     self.weights, n_new=10, initialization='xavier'
             ... )
@@ -145,7 +145,7 @@ class GrowthMixin:
             New neuron entries are initialized to zero.
 
         Example:
-            >>> # In a region's add_neurons() method:
+            >>> # In a region's grow_output() method:
             >>> expanded = self._expand_state_tensors({
             ...     'output_trace': self.output_trace,
             ...     'working_memory': self.working_memory,
@@ -192,7 +192,7 @@ class GrowthMixin:
             New neuron population with old state preserved in first old_n_output neurons
 
         Example:
-            >>> # In a region's add_neurons() method:
+            >>> # In a region's grow_output() method:
             >>> self.neurons = self._recreate_neurons_with_state(
             ...     self._create_neurons,
             ...     old_n_output=self.config.n_output
@@ -227,13 +227,13 @@ class GrowthMixin:
     # Template Method Pattern (for simple single-layer regions)
     # =========================================================================
 
-    def add_neurons(
+    def grow_output(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Template method for adding neurons to single-layer regions.
+        """Template method for growing output dimension of single-layer regions.
 
         This provides standard orchestration for simple regions:
         1. Expand weights via _expand_layer_weights()
@@ -245,7 +245,7 @@ class GrowthMixin:
         entirely and use the helper methods instead.
 
         Args:
-            n_new: Number of neurons to add
+            n_new: Number of neurons to add to output dimension
             initialization: Weight initialization strategy
             sparsity: Connection sparsity for sparse_random
 

@@ -57,7 +57,7 @@ def test_base_pathway_growth(base_pathway):
 
     # Grow pathway
     n_new = 16
-    base_pathway.add_neurons(n_new)
+    base_pathway.grow_output(n_new)
 
     # Verify dimensions updated
     assert base_pathway.config.n_output == initial_output_size + n_new
@@ -87,7 +87,7 @@ def test_attention_pathway_growth(attention_pathway):
 
     # Grow pathway
     n_new = 24
-    attention_pathway.add_neurons(n_new)
+    attention_pathway.grow_output(n_new)
 
     new_output_size = initial_output_size + n_new
 
@@ -127,7 +127,7 @@ def test_replay_pathway_growth(replay_pathway):
 
     # Grow pathway
     n_new = 32
-    replay_pathway.add_neurons(n_new)
+    replay_pathway.grow_output(n_new)
 
     new_output_size = initial_output_size + n_new
 
@@ -167,7 +167,7 @@ def test_growth_preserves_forward_pass(base_pathway):
         _ = base_pathway.forward(input_spikes)
 
     # Grow pathway
-    base_pathway.add_neurons(16)
+    base_pathway.grow_output(16)
 
     # Verify forward pass still works
     input_spikes = torch.rand(input_size) < 0.2
@@ -188,7 +188,7 @@ def test_coordinated_growth_scenario(attention_pathway):
     cortex_growth = 24  # L2/3 grows to 120
 
     # Attention pathway must grow to match new cortex size
-    attention_pathway.add_neurons(cortex_growth)
+    attention_pathway.grow_output(cortex_growth)
 
     # Verify pathway now matches new cortex size
     assert attention_pathway.config.n_output == cortex_l23_size + cortex_growth

@@ -161,7 +161,7 @@ class TestPrefrontalHybrid:
             "Small PFC should use neuromorphic format"
 
     def test_growth_enabled_uses_neuromorphic(self, device, tmp_path):
-        """Prefrontal with growth (has add_neurons) should use neuromorphic.
+        """Prefrontal with growth (has grow_output) should use neuromorphic.
 
         BEHAVIORAL CONTRACT: Verify format via saved checkpoint.
         """
@@ -181,7 +181,7 @@ class TestPrefrontalHybrid:
         manager.save(checkpoint_path)
 
         state = torch.load(checkpoint_path, weights_only=False)
-        # Prefrontal inherits add_neurons from GrowthMixin, so should use neuromorphic
+        # Prefrontal inherits grow_output from GrowthMixin, so should use neuromorphic
         assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
             "PFC with growth should use neuromorphic format"
 

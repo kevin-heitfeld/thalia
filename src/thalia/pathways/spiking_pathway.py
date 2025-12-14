@@ -30,7 +30,7 @@ Lines 1-115:   Module docstring, imports, config classes
 Lines 116-250: SpikingPathway class __init__, neuron initialization
 Lines 251-400: Forward pass (spike propagation with delays)
 Lines 401-530: Learning (STDP, trace management)
-Lines 531-650: Growth (add_neurons for pathway expansion)
+Lines 531-650: Growth (grow_output/grow_input for pathway expansion)
 Lines 651-800: Diagnostics and health monitoring
 Lines 801-941: Utility methods (reset_state, checkpoint support)
 
@@ -108,7 +108,8 @@ class SpikingPathway(NeuralComponent):
     - forward(): Process spikes AND apply learning (standard PyTorch, ADR-007)
     - reset_state(): Clear membrane potentials, traces, delay buffers
     - get_diagnostics(): Report activity, health, and learning metrics
-    - add_neurons(): Grow pathway when connected regions grow
+    - grow_output(): Grow pathway when target region grows
+    - grow_input(): Grow pathway when source region grows
     - check_health(): Detect pathologies (silence, saturation, etc.)
 
     **Learning Design**:
@@ -669,203 +670,31 @@ class SpikingPathway(NeuralComponent):
 
         return diagnostics
 
-    def add_neurons(
+    # =========================================================================
+    # UNIFIED GROWTH API
+    # =========================================================================
+
+    def grow_input(
         self,
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """Add neurons to pathway (expands target dimension).
-
-        DEPRECATED: Use grow_target() or grow_source() for clarity.
-        This method delegates to grow_target() for backward compatibility.
-
-        Args:
-            n_new: Number of target neurons to add
-            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
-            sparsity: Connection sparsity for new neurons (if sparse_random)
-        """
-        self.grow_target(n_new=n_new, initialization=initialization, sparsity=sparsity)
-
-    def grow_target(
-        self,
-        n_new: int,
-        initialization: str = 'sparse_random',
-        sparsity: float = 0.1,
-    ) -> None:
-        """Grow pathway target dimension (post-synaptic side).
-
-        When the target region grows, pathways sending spikes TO that region
-        must also grow their output dimension to maintain connectivity.
-
-        Example:
-            If cortex grows from 256→300 neurons, then visual_to_cortex
-            pathway must grow its target from 256→300.
-
-        Args:
-            n_new: Number of target neurons to add
-            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
-            sparsity: Connection sparsity for new neurons (if sparse_random)
-
-        Implementation:
-            1. Expand weight matrix: [target, source] → [target+n_new, source]
-            2. Expand all target-side state tensors (membrane, traces, etc.)
-            3. Expand axonal delays and connectivity mask
-            4. Update config
-        """
-        cfg = self.config
-        device = self.weights.device
-        old_target_size = cfg.n_output
-        new_target_size = old_target_size + n_new
-
-        # 1. Expand weight matrix [target, source] → [target+n_new, source]
-        old_weights = self.weights.data.clone()
-
-        # Initialize new weights for added neurons
-        if initialization == 'xavier':
-            new_weights = WeightInitializer.xavier(
-                n_output=n_new,
-                n_input=cfg.n_input,
-                device=device
-            )
-        elif initialization == 'uniform':
-            new_weights = WeightInitializer.uniform(
-                n_output=n_new,
-                n_input=cfg.n_input,
-                low=cfg.w_min,
-                high=cfg.w_max,
-                device=device
-            )
-        else:  # sparse_random (default)
-            new_weights = WeightInitializer.sparse_random(
-                n_output=n_new,
-                n_input=cfg.n_input,
-                sparsity=sparsity,
-                mean=cfg.init_mean,
-                std=cfg.init_std,
-                device=device
-            )
-
-        # Clamp to weight bounds
-        new_weights = clamp_weights(new_weights, cfg.w_min, cfg.w_max, inplace=False)
-
-        # Concatenate old and new weights
-        expanded_weights = torch.cat([old_weights, new_weights], dim=0)
-        self.weights = nn.Parameter(expanded_weights, requires_grad=False)
-
-        # 2. Expand axonal delays [target, source] → [target+n_new, source]
-        new_delays = WeightInitializer.gaussian(
-            n_output=n_new,
-            n_input=cfg.n_input,
-            mean=cfg.axonal_delay_ms,
-            std=cfg.delay_variability * cfg.axonal_delay_ms,
-            device=device
-        ).clamp(min=0.1)
-        expanded_delays = torch.cat([self.axonal_delays, new_delays], dim=0)
-        self.register_buffer("axonal_delays", expanded_delays)
-
-        # 3. Expand connectivity mask if present
-        if self.connectivity_mask is not None:
-            new_mask = WeightInitializer.sparse_random(
-                n_output=n_new,
-                n_input=cfg.n_input,
-                sparsity=cfg.sparsity,
-                device=device
-            )
-            expanded_mask = torch.cat([self.connectivity_mask, new_mask], dim=0)
-            self.register_buffer("connectivity_mask", expanded_mask)
-
-        # 4. Expand neuron object (preserve old state)
-        old_neuron_state = self.neurons.get_state()
-
-        neuron_config = ConductanceLIFConfig(
-            tau_mem=cfg.tau_mem_ms,
-            v_rest=cfg.v_rest,
-            v_reset=cfg.v_reset,
-            v_threshold=cfg.v_thresh,
-            tau_ref=cfg.refractory_ms,
-            dt_ms=cfg.dt_ms,
-            device=device,
-        )
-        self.neurons = ConductanceLIF(n_neurons=new_target_size, config=neuron_config)
-
-        # Restore old state + initialize new neurons to rest
-        self.neurons.reset_state()  # Initialize all to rest
-        if old_neuron_state.get("membrane") is not None:
-            self.neurons.membrane[:old_target_size] = old_neuron_state["membrane"].to(device)
-        if old_neuron_state.get("refractory") is not None:
-            self.neurons.refractory[:old_target_size] = old_neuron_state["refractory"].to(device)
-        if old_neuron_state.get("g_E") is not None:
-            self.neurons.g_E[:old_target_size] = old_neuron_state["g_E"].to(device)
-        if old_neuron_state.get("g_I") is not None:
-            self.neurons.g_I[:old_target_size] = old_neuron_state["g_I"].to(device)
-        if old_neuron_state.get("g_adapt") is not None:
-            self.neurons.g_adapt[:old_target_size] = old_neuron_state["g_adapt"].to(device)
-
-        # Synaptic current
-        new_current = torch.zeros(n_new, device=device)
-        expanded_current = torch.cat([self.synaptic_current, new_current], dim=0)
-        self.register_buffer("synaptic_current", expanded_current)
-
-        # Grow trace manager to match new target size
-        # add_neurons returns new manager, must reassign
-        # pre_trace and post_trace properties will automatically use new manager
-        self._trace_manager = self._trace_manager.add_neurons(n_new)
-
-        # Update learning strategy's trace manager if using strategy-based learning
-        if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
-            if hasattr(self.learning_strategy, '_trace_manager'):
-                self.learning_strategy._trace_manager = self._trace_manager
-
-        # Firing rate estimate
-        new_firing_rate = torch.zeros(n_new, device=device) + cfg.activity_target
-        expanded_firing_rate = torch.cat([self.firing_rate_estimate, new_firing_rate], dim=0)
-        self.register_buffer("firing_rate_estimate", expanded_firing_rate)
-
-        # 5. Update STP if enabled
-        if self.stp is not None:
-            # STP tracks post-synaptic resources
-            self.stp = ShortTermPlasticity(
-                n_pre=cfg.n_input,
-                n_post=new_target_size,
-                config=self.stp.config,
-                per_synapse=True,
-            )
-            self.stp.to(device)
-
-        # 6. Update BCM if enabled
-        if self.bcm is not None:
-            # BCM tracks sliding threshold per target neuron
-            old_bcm_config = self.bcm.config
-            self.bcm = BCMRule(
-                n_post=new_target_size,
-                config=old_bcm_config,
-            )
-            self.bcm.to(device)
-
-        # 7. Update config
-        self.config.n_output = new_target_size
-        self.config.n_neurons = new_target_size  # Keep n_neurons in sync
-
-    def grow_source(
-        self,
-        n_new: int,
-        initialization: str = 'sparse_random',
-        sparsity: float = 0.1,
-    ) -> None:
-        """Grow pathway source dimension (pre-synaptic side).
+        """Grow pathway input dimension (pre-synaptic side).
 
         When the source region grows, pathways receiving spikes FROM that region
         must also grow their input dimension to maintain connectivity.
 
-        Example:
-            If cortex grows from 256→300 neurons, then cortex_to_hippocampus
-            pathway must grow its source from 256→300.
-
         Args:
-            n_new: Number of source neurons to add
+            n_new: Number of input neurons to add
             initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
             sparsity: Connection sparsity for new neurons (if sparse_random)
+
+        Example:
+            >>> # Source region grows
+            >>> cortex.grow_output(20)  # Add 20 neurons
+            >>> # Pathway must adapt to new source size
+            >>> cortex_to_hippocampus.grow_input(20)
 
         Implementation:
             1. Expand weight matrix: [target, source] → [target, source+n_new]
@@ -874,7 +703,7 @@ class SpikingPathway(NeuralComponent):
             4. Update config
 
         Note:
-            Unlike grow_target(), this does NOT expand neurons (they belong to target).
+            Unlike grow_output(), this does NOT expand neurons (they belong to target).
             Only synaptic weights and source-side traces are expanded.
         """
         cfg = self.config
@@ -981,7 +810,7 @@ class SpikingPathway(NeuralComponent):
         new_delay_buffer[:, :old_source_size] = old_delay_buffer
         self._buffers["delay_buffer"] = new_delay_buffer
 
-        # 5. Update STP if enabled
+        # 6. Update STP if enabled
         if self.stp is not None:
             # STP must track new pre-synaptic neurons
             self.stp = ShortTermPlasticity(
@@ -992,8 +821,170 @@ class SpikingPathway(NeuralComponent):
             )
             self.stp.to(device)
 
-        # 6. Update config
+        # 7. Update config
         self.config.n_input = new_source_size
+
+    def grow_output(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow pathway output dimension (post-synaptic side).
+
+        When the target region grows, pathways sending spikes TO that region
+        must also grow their output dimension to maintain connectivity.
+
+        Args:
+            n_new: Number of output neurons to add
+            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
+            sparsity: Connection sparsity for new neurons (if sparse_random)
+
+        Example:
+            >>> # Target region grows
+            >>> hippocampus.grow_output(15)  # Add 15 neurons
+            >>> # Pathway must adapt to new target size
+            >>> cortex_to_hippocampus.grow_output(15)
+
+        Implementation:
+            1. Expand weight matrix: [target, source] → [target+n_new, source]
+            2. Expand all target-side state tensors (membrane, traces, etc.)
+            3. Expand axonal delays and connectivity mask
+            4. Update config
+        """
+        cfg = self.config
+        device = self.weights.device
+        old_target_size = cfg.n_output
+        new_target_size = old_target_size + n_new
+
+        # 1. Expand weight matrix [target, source] → [target+n_new, source]
+        old_weights = self.weights.data.clone()
+
+        # Initialize new weights for added neurons
+        if initialization == 'xavier':
+            new_weights = WeightInitializer.xavier(
+                n_output=n_new,
+                n_input=cfg.n_input,
+                device=device
+            )
+        elif initialization == 'uniform':
+            new_weights = WeightInitializer.uniform(
+                n_output=n_new,
+                n_input=cfg.n_input,
+                low=cfg.w_min,
+                high=cfg.w_max,
+                device=device
+            )
+        else:  # sparse_random (default)
+            new_weights = WeightInitializer.sparse_random(
+                n_output=n_new,
+                n_input=cfg.n_input,
+                sparsity=sparsity,
+                mean=cfg.init_mean,
+                std=cfg.init_std,
+                device=device
+            )
+
+        # Clamp to weight bounds
+        new_weights = clamp_weights(new_weights, cfg.w_min, cfg.w_max, inplace=False)
+
+        # Concatenate old and new weights
+        expanded_weights = torch.cat([old_weights, new_weights], dim=0)
+        self.weights = nn.Parameter(expanded_weights, requires_grad=False)
+
+        # 2. Expand axonal delays [target, source] → [target+n_new, source]
+        new_delays = WeightInitializer.gaussian(
+            n_output=n_new,
+            n_input=cfg.n_input,
+            mean=cfg.axonal_delay_ms,
+            std=cfg.delay_variability * cfg.axonal_delay_ms,
+            device=device
+        ).clamp(min=0.1)
+        expanded_delays = torch.cat([self.axonal_delays, new_delays], dim=0)
+        self.register_buffer("axonal_delays", expanded_delays)
+
+        # 3. Expand connectivity mask if present
+        if self.connectivity_mask is not None:
+            new_mask = WeightInitializer.sparse_random(
+                n_output=n_new,
+                n_input=cfg.n_input,
+                sparsity=cfg.sparsity,
+                device=device
+            )
+            expanded_mask = torch.cat([self.connectivity_mask, new_mask], dim=0)
+            self.register_buffer("connectivity_mask", expanded_mask)
+
+        # 4. Expand neuron object (preserve old state)
+        old_neuron_state = self.neurons.get_state()
+
+        neuron_config = ConductanceLIFConfig(
+            tau_mem=cfg.tau_mem_ms,
+            v_rest=cfg.v_rest,
+            v_reset=cfg.v_reset,
+            v_threshold=cfg.v_thresh,
+            tau_ref=cfg.refractory_ms,
+            dt_ms=cfg.dt_ms,
+            device=device,
+        )
+        self.neurons = ConductanceLIF(n_neurons=new_target_size, config=neuron_config)
+
+        # Restore old state + initialize new neurons to rest
+        self.neurons.reset_state()  # Initialize all to rest
+        if old_neuron_state.get("membrane") is not None:
+            self.neurons.membrane[:old_target_size] = old_neuron_state["membrane"].to(device)
+        if old_neuron_state.get("refractory") is not None:
+            self.neurons.refractory[:old_target_size] = old_neuron_state["refractory"].to(device)
+        if old_neuron_state.get("g_E") is not None:
+            self.neurons.g_E[:old_target_size] = old_neuron_state["g_E"].to(device)
+        if old_neuron_state.get("g_I") is not None:
+            self.neurons.g_I[:old_target_size] = old_neuron_state["g_I"].to(device)
+        if old_neuron_state.get("g_adapt") is not None:
+            self.neurons.g_adapt[:old_target_size] = old_neuron_state["g_adapt"].to(device)
+
+        # Synaptic current
+        new_current = torch.zeros(n_new, device=device)
+        expanded_current = torch.cat([self.synaptic_current, new_current], dim=0)
+        self.register_buffer("synaptic_current", expanded_current)
+
+        # Grow trace manager to match new target size
+        # grow_dimension returns new manager, must reassign
+        # pre_trace and post_trace properties will automatically use new manager
+        self._trace_manager = self._trace_manager.grow_dimension(n_new)
+
+        # Update learning strategy's trace manager if using strategy-based learning
+        if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
+            if hasattr(self.learning_strategy, '_trace_manager'):
+                self.learning_strategy._trace_manager = self._trace_manager
+
+        # Firing rate estimate
+        new_firing_rate = torch.zeros(n_new, device=device) + cfg.activity_target
+        expanded_firing_rate = torch.cat([self.firing_rate_estimate, new_firing_rate], dim=0)
+        self.register_buffer("firing_rate_estimate", expanded_firing_rate)
+
+        # 5. Update STP if enabled
+        if self.stp is not None:
+            # STP tracks post-synaptic resources
+            self.stp = ShortTermPlasticity(
+                n_pre=cfg.n_input,
+                n_post=new_target_size,
+                config=self.stp.config,
+                per_synapse=True,
+            )
+            self.stp.to(device)
+
+        # 6. Update BCM if enabled
+        if self.bcm is not None:
+            # BCM tracks sliding threshold per target neuron
+            old_bcm_config = self.bcm.config
+            self.bcm = BCMRule(
+                n_post=new_target_size,
+                config=old_bcm_config,
+            )
+            self.bcm.to(device)
+
+        # 7. Update config
+        self.config.n_output = new_target_size
+        self.config.n_neurons = new_target_size  # Keep n_neurons in sync
 
     def get_state(self) -> Dict[str, Any]:
         """Get pathway state for checkpointing.

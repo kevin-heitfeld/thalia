@@ -69,7 +69,7 @@ save_checkpoint("checkpoint_1000.pt")  # Saves state with n_actions=5
 # Later: Resume training and add actions
 striatum = Striatum(StriatumConfig(n_actions=5))
 brain.load_checkpoint("checkpoint_1000.pt")  # OK: dimensions match
-brain.striatum.add_neurons(n_new=2)  # Now n_actions=7
+brain.striatum.grow_output(n_new=2)  # Now n_actions=7
 
 train(brain, episodes=500)
 save_checkpoint("checkpoint_1500.pt")  # Saves state with n_actions=7
@@ -244,7 +244,7 @@ config_pop = StriatumConfig(n_output=5, population_coding=True, neurons_per_acti
 
 ### How Growth Works
 
-From `Striatum.add_neurons()`:
+From `Striatum.grow_output()`:
 
 ```python
 def add_neurons(self, n_new: int, ...) -> None:
@@ -312,7 +312,7 @@ train(brain, episodes=1000)
 save_checkpoint("day1.pt")  # n_actions=5
 
 # Day 2: Add 2 actions, train more
-brain.striatum.add_neurons(n_new=2)  # n_actions=7
+brain.striatum.grow_output(n_new=2)  # n_actions=7
 train(brain, episodes=500)
 save_checkpoint("day2.pt")  # n_actions=7
 
@@ -331,7 +331,7 @@ curriculum.run_stage("stage1")  # Saves checkpoints with n_actions=5
 
 # Stage 2: Complex tasks → triggers growth
 curriculum.run_stage("stage2")
-brain.striatum.add_neurons(n_new=3)  # n_actions=8
+brain.striatum.grow_output(n_new=3)  # n_actions=8
 
 # Problem: Want to compare Stage 1 final vs Stage 2 initial
 load_checkpoint("stage1_final.pt")  # ❌ CRASH: incompatible dimensions
@@ -356,7 +356,7 @@ save_checkpoint("experimentB.pt")
 
 ```python
 # Train with growth
-brain.striatum.add_neurons(n_new=5)  # Grows to 10 actions
+brain.striatum.grow_output(n_new=5)  # Grows to 10 actions
 train(brain, episodes=2000)
 
 # Prune unused neurons
@@ -460,7 +460,7 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
         logger.info(f"Auto-growing brain by {n_growth} neurons to match checkpoint")
 
         # Grow current brain BEFORE loading checkpoint
-        self.striatum.add_neurons(n_new=n_growth, initialization='zeros')
+        self.striatum.grow_output(n_new=n_growth, initialization='zeros')
 
     elif checkpoint_n_output < current_n_output:
         # Checkpoint from smaller brain, current brain grown
@@ -508,7 +508,7 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 
     # 2. Replay growth history
     for growth_event in state["metadata"]["growth_history"]:
-        self.striatum.add_neurons(
+        self.striatum.grow_output(
             n_new=growth_event["n_added"],
             initialization=growth_event["init"],
         )
@@ -760,7 +760,7 @@ def load_checkpoint(brain, checkpoint):
 
     # 2. Apply growth events
     for event in checkpoint["growth_events"]:
-        brain.add_neurons(event["added_actions"], init=event["init"])
+        brain.grow_output(event["added_actions"], init=event["init"])
 
     # 3. Apply weight deltas
     for (i, j), delta in checkpoint["weight_deltas"].items():
@@ -801,7 +801,7 @@ checkpoint = {
 }
 
 # Growing uses reserved space (no reallocation)
-brain.add_neurons(n_new=2)  # Now using 7/8 slots
+brain.grow_output(n_new=2)  # Now using 7/8 slots
 
 # Checkpoint format unchanged
 checkpoint = {
@@ -1010,7 +1010,7 @@ def test_load_checkpoint_after_growth():
     brain = create_brain(n_actions=5)
     checkpoint = save_checkpoint(brain)
 
-    brain.striatum.add_neurons(n_new=2)  # Grow to 7 actions
+    brain.striatum.grow_output(n_new=2)  # Grow to 7 actions
 
     with pytest.raises(CheckpointDimensionMismatch):
         load_checkpoint(brain, checkpoint)
@@ -1023,7 +1023,7 @@ def test_load_checkpoint_then_grow():
     brain2 = create_brain(n_actions=5)  # Same initial size
     load_checkpoint(brain2, checkpoint)  # OK
 
-    brain2.striatum.add_neurons(n_new=2)  # Grow after load
+    brain2.striatum.grow_output(n_new=2)  # Grow after load
     # Should work fine
 
 def test_resize_brain_to_checkpoint():
@@ -1039,7 +1039,7 @@ def test_resize_brain_to_checkpoint():
 def test_growth_history_preserved():
     """Checkpoint metadata includes growth events"""
     brain = create_brain(n_actions=5)
-    brain.striatum.add_neurons(n_new=2, step=1000)
+    brain.striatum.grow_output(n_new=2, step=1000)
     checkpoint = save_checkpoint(brain)
 
     metadata = load_checkpoint_metadata(checkpoint)
@@ -1081,12 +1081,12 @@ If you need to resume from an old checkpoint after growth:
 # Option 1: Recreate original architecture, then re-grow
 brain = Brain(config_with_original_n_actions)
 brain.load_checkpoint("old.pt")
-brain.striatum.add_neurons(n_new=growth_amount)
+brain.striatum.grow_output(n_new=growth_amount)
 
 # Option 2: Use helper function (Phase 2)
 brain = reset_brain_to_checkpoint_dimensions(brain, "old.pt")
 brain.load_checkpoint("old.pt")
-brain.striatum.add_neurons(n_new=growth_amount)
+brain.striatum.grow_output(n_new=growth_amount)
 ```
 
 ### Best Practices

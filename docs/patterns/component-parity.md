@@ -1,7 +1,7 @@
 # Component Parity: Regions and Pathways are Equals
 
-**Date**: December 7, 2025  
-**Status**: Active Design Pattern  
+**Date**: December 7, 2025
+**Status**: Active Design Pattern
 **Related**: [State Management](./state-management.md), [Configuration](./configuration.md)
 
 ## Problem
@@ -50,7 +50,7 @@ All brain components MUST implement:
 ```python
 def forward(self, *args, **kwargs) -> Any:
     """Transform input to output with continuous learning.
-    
+
     Standard PyTorch method - enables callable syntax: component(input)
     All regions, pathways, and sensory encoders use this.
     """
@@ -64,8 +64,11 @@ def reset_state(self) -> None:
 
 #### 3. Growth (Curriculum Learning)
 ```python
-def add_neurons(self, n_new: int, initialization: str, sparsity: float) -> None:
-    """Expand capacity without disrupting existing circuits."""
+def grow_input(self, n_new: int, initialization: str, sparsity: float) -> None:
+    """Expand input dimension when upstream regions grow."""
+
+def grow_output(self, n_new: int, initialization: str, sparsity: float) -> None:
+    """Expand output dimension (neuron population) during curriculum."""
 
 def get_capacity_metrics(self) -> CapacityMetrics:
     """Report utilization to guide growth decisions."""
@@ -105,30 +108,39 @@ def load_full_state(self, state: Dict[str, Any]) -> None:
 4. Write tests for both regions AND pathways
 5. Type checker fails if either is missing
 
-### Example: Adding Growth Support (Phase 2)
+### Example: Unified Growth API
 
 ```python
-# Step 1: Add to protocol (already done)
+# Step 1: Protocol defines both methods (enforced)
 class BrainComponent(Protocol):
-    def add_neurons(self, n_new: int, ...) -> None: ...
+    def grow_input(self, n_new: int, ...) -> None: ...
+    def grow_output(self, n_new: int, ...) -> None: ...
     def get_capacity_metrics(self) -> CapacityMetrics: ...
 
-# Step 2: Implement for regions
+# Step 2: Regions implement both
 class BrainRegion(BrainComponent):
-    def add_neurons(self, n_new, initialization, sparsity):
-        # Expand weight matrices preserving existing weights
+    def grow_input(self, n_new, initialization, sparsity):
+        # Expand input weight columns when upstream grows
         ...
-    
+
+    def grow_output(self, n_new, initialization, sparsity):
+        # Expand neuron population (output dimension)
+        ...
+
     def get_capacity_metrics(self):
         from thalia.core.growth import GrowthManager
         return GrowthManager(self.name).get_capacity_metrics(self)
 
-# Step 3: Implement for pathways (REQUIRED by protocol)
+# Step 3: Pathways also implement both (REQUIRED by protocol)
 class BaseNeuralPathway(BrainComponent):
-    def add_neurons(self, n_new, initialization, sparsity):
-        # Expand pathway matrices when connected regions grow
+    def grow_input(self, n_new, initialization, sparsity):
+        # Expand input dimension (pre-synaptic side)
         ...
-    
+
+    def grow_output(self, n_new, initialization, sparsity):
+        # Expand output dimension (post-synaptic side)
+        ...
+
     def get_capacity_metrics(self):
         from thalia.core.growth import GrowthManager
         return GrowthManager(self.name).get_capacity_metrics(self)
@@ -139,8 +151,6 @@ def test_pathway_growth(cortex_to_hippo): ...
 ```
 
 ## Why Pathways Matter
-
-### Pathways are NOT just "glue"
 
 **Pathways are active learning components:**
 
@@ -161,32 +171,6 @@ def test_pathway_growth(cortex_to_hippo): ...
    - Have their own state and learning rules
    - Require diagnostics to debug
    - Must grow with system
-
-### What Breaks Without Pathway Parity
-
-**Example: Curriculum Learning**
-
-```python
-# System starts small for simple tasks
-brain = Brain(n_cortex_neurons=1000)
-
-# Learns task 1 successfully
-train(brain, easy_task)
-
-# Now try harder task - cortex needs more capacity
-brain.cortex.add_neurons(n_new=500)  # ✅ Cortex grows to 1500
-
-# BUT pathway still expects 1000 inputs! 💥
-brain.cortex_to_hippo.forward(cortex_spikes)  # Shape mismatch!
-# Expected: [batch, 1000]
-# Got: [batch, 1500]
-```
-
-**Fix**: Pathway must also grow:
-```python
-brain.cortex.add_neurons(n_new=500)
-brain.cortex_to_hippo.add_neurons(n_new=500)  # Pathway tracks region size
-```
 
 ## Code Review Checklist
 
@@ -240,7 +224,7 @@ class VisualPathway:
 class VisualPathway:
     def forward(self, image: torch.Tensor):  # Standard PyTorch convention
         """Output: [n_timesteps, output_size] - temporal spike train
-        
+
         Information encoded in WHEN neurons spike:
         - High activity → early spike (t=0)
         - Low activity → late spike (t=19)

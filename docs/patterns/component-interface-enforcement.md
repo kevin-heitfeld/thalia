@@ -38,7 +38,8 @@ BrainComponentMixin                # Default implementations
     ├── Provides: Default check_health() (returns healthy)
     │   Provides: Default get_capacity_metrics() (uses GrowthManager)
     │   Provides: Default set_oscillator_phases() (stores but doesn't use)
-    │   Provides: Default add_neurons() (raises helpful NotImplementedError)
+    │   Provides: Default grow_input() (raises helpful NotImplementedError)
+    │   Provides: Default grow_output() (raises helpful NotImplementedError)
     │
     └── Can be overridden: Subclasses customize as needed
 
@@ -102,7 +103,8 @@ All components MUST implement:
 - `set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes) -> None`
 
 ### Growth (Curriculum Learning)
-- `add_neurons(n_new, initialization, sparsity) -> None`
+- `grow_input(n_new, initialization, sparsity) -> None`
+- `grow_output(n_new, initialization, sparsity) -> None`
 - `get_capacity_metrics() -> CapacityMetrics`
 
 ### Diagnostics
@@ -167,8 +169,12 @@ class MyNewRegion(NeuralComponent):
         self.weights.data.copy_(state['weights'].to(self.device))
 
     # Optional: Override defaults from BrainComponentMixin
-    def add_neurons(self, n_new: int, initialization: str, sparsity: float):
-        # Custom growth implementation
+    def grow_input(self, n_new: int, initialization: str, sparsity: float):
+        # Custom input dimension growth
+        ...
+    
+    def grow_output(self, n_new: int, initialization: str, sparsity: float):
+        # Custom output dimension growth
         ...
 
     def check_health(self) -> HealthReport:
@@ -200,7 +206,8 @@ For each component:
 - [ ] Implements `load_full_state()` - restore from checkpoint
 - [ ] Has `device` property (automatic if inherits from `NeuralComponent`)
 - [ ] Has `dtype` property (automatic if inherits from `NeuralComponent`)
-- [ ] Optional: Override `add_neurons()` if growth supported
+- [ ] Optional: Override `grow_input()` for input dimension growth
+- [ ] Optional: Override `grow_output()` for output dimension growth
 - [ ] Optional: Override `check_health()` for custom health checks
 - [ ] Optional: Override `set_oscillator_phases()` if using oscillators
 
@@ -303,17 +310,24 @@ def set_oscillator_phases(self, phases, signals, theta_slot, coupled_amplitudes)
 
 **Override if**: You want to use oscillator phases in your forward pass
 
-### 4. `add_neurons()` - Raises helpful error
+### 4. `grow_input()` and `grow_output()` - Raise helpful errors
 ```python
-def add_neurons(self, n_new, initialization, sparsity):
+def grow_input(self, n_new, initialization, sparsity):
     raise NotImplementedError(
-        f"{self.__class__.__name__}.add_neurons() not yet implemented. "
+        f"{self.__class__.__name__}.grow_input() not yet implemented. "
+        f"This is required for handling upstream region growth. "
+        f"See src/thalia/mixins/growth_mixin.py for implementation guide."
+    )
+
+def grow_output(self, n_new, initialization, sparsity):
+    raise NotImplementedError(
+        f"{self.__class__.__name__}.grow_output() not yet implemented. "
         f"Growth is essential for curriculum learning. "
-        f"See src/thalia/core/growth.py for implementation guide."
+        f"See src/thalia/mixins/growth_mixin.py for implementation guide."
     )
 ```
 
-**Override if**: You implement growth (recommended for all components)
+**Override**: Implement both methods for all components that support growth
 
 ## Common Patterns
 
@@ -325,7 +339,8 @@ class MinimalRegion(NeuralComponent):
     def get_diagnostics(self): ...
     def get_full_state(self): ...
     def load_full_state(self, state): ...
-    # Uses default: check_health, get_capacity_metrics, set_oscillator_phases, add_neurons
+    # Uses default: check_health, get_capacity_metrics, set_oscillator_phases
+    # Must implement: grow_input, grow_output (or use defaults with NotImplementedError)
 ```
 
 ### Pattern 2: Full-Featured Region (Custom Implementations)
@@ -338,7 +353,8 @@ class FullRegion(NeuralComponent):
     def load_full_state(self, state): ...
     def check_health(self): ...          # Custom health checks
     def get_capacity_metrics(self): ...  # Custom capacity metrics
-    def add_neurons(self, n_new): ...    # Supports growth
+    def grow_input(self, n_new): ...     # Handles upstream growth
+    def grow_output(self, n_new): ...    # Supports curriculum growth
     def set_oscillator_phases(self, phases): ...  # Uses oscillators
 ```
 

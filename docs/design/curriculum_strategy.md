@@ -2306,7 +2306,7 @@ trainer.train_stage(substage_config)
 ```python
 # Manually grow struggling region
 problem_region = identify_bottleneck(brain)
-brain.regions[problem_region].add_neurons(
+brain.regions[problem_region].grow_output(
     n_new=5000,  # 10% capacity boost
     initialization='sparse_random'
 )
