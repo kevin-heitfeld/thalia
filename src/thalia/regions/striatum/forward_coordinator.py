@@ -165,11 +165,11 @@ class ForwardPassCoordinator:
         """
         self._tonic_dopamine = tonic_da
 
-    def compute_theta_modulation(self) -> tuple[float, float, float]:
+    def compute_theta_modulation(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute theta modulation factors.
 
         Returns:
-            (encoding_mod, retrieval_mod, theta_baseline_mod, theta_contrast_mod)
+            (theta_baseline_mod, theta_contrast_mod, baseline_exc) - all tensors on self.device
         """
         # Encoding peak at 0°, retrieval peak at 180°
         encoding_mod = (1 + torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
@@ -180,9 +180,9 @@ class ForwardPassCoordinator:
         theta_contrast_mod = THETA_CONTRAST_MIN + THETA_CONTRAST_RANGE * retrieval_mod
 
         return (
-            theta_baseline_mod.item(),
-            theta_contrast_mod.item(),
-            BASELINE_EXCITATION_SCALE * theta_baseline_mod.item()
+            theta_baseline_mod,
+            theta_contrast_mod,
+            BASELINE_EXCITATION_SCALE * theta_baseline_mod
         )
 
     def compute_gain_modulation(self) -> tuple[float, float]:

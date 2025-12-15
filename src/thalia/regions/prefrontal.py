@@ -1135,6 +1135,9 @@ class Prefrontal(NeuralComponent):
         if self.stp_recurrent is not None:
             state_dict["learning_state"]["stp_recurrent"] = self.stp_recurrent.get_state()
 
+        # Add format identifier for hybrid checkpoints
+        state_dict["format"] = "elastic_tensor"
+
         return state_dict
 
     def load_full_state(self, state: Dict[str, Any]) -> None:

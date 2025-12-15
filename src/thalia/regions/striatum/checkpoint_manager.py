@@ -47,6 +47,7 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, Any
+from pathlib import Path
 
 import torch
 
@@ -156,6 +157,7 @@ class CheckpointManager:
         }
 
         return {
+            "format": "elastic_tensor",  # Format identifier for hybrid checkpoints
             "format_version": "1.0.0",  # Checkpoint format version
             "neuron_state": neuron_state,
             "pathway_state": pathway_state,

@@ -374,6 +374,31 @@ class PredictiveCortex(NeuralComponent):
         self.state._oscillator_phases = phases
         self.state._oscillator_signals = signals
 
+    def grow_input(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow input dimension by delegating to base LayeredCortex.
+
+        When an upstream region grows its output, this method expands the
+        cortex's input dimension to accommodate the larger input size.
+
+        Args:
+            n_new: Number of input neurons to add
+            initialization: Weight initialization strategy
+            sparsity: Sparsity for new connections
+        """
+        # Delegate to base LayeredCortex
+        self.cortex.grow_input(n_new, initialization, sparsity)
+
+        # Update our config to match
+        self.config = replace(
+            self.config,
+            n_input=self.cortex.config.n_input
+        )
+
     def grow_output(
         self,
         n_new: int,
@@ -672,6 +697,9 @@ class PredictiveCortex(NeuralComponent):
 
         # Update config with PredictiveCortex-specific parameters
         state_dict["config"]["prediction_enabled"] = self.predictive_config.prediction_enabled
+
+        # Add format identifier for hybrid checkpoints
+        state_dict["format"] = "elastic_tensor"
 
         return state_dict
 

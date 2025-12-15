@@ -2176,6 +2176,7 @@ class TrisynapticHippocampus(NeuralComponent):
             episode_buffer_state.append(ep_state)
 
         return {
+            "format": "elastic_tensor",  # Format identifier for hybrid checkpoints
             "weights": weights,
             "region_state": region_state,
             "learning_state": learning_state,

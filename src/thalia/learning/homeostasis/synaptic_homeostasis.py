@@ -392,21 +392,24 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         self.target_rate = target_rate
         self.excitability_tau = excitability_tau
 
+        # Get device from config
+        device = (config or UnifiedHomeostasisConfig()).device
+
         # Per-action budgets (can vary if some actions should be favored)
         self.register_buffer(
             'action_budgets',
-            torch.ones(n_actions) * (config or UnifiedHomeostasisConfig()).weight_budget
+            torch.ones(n_actions, device=device) * (config or UnifiedHomeostasisConfig()).weight_budget
         )
 
         # Activity tracking for excitability modulation
         # Running average of firing rate per neuron (D1 and D2 separately)
-        self.register_buffer('d1_activity_avg', torch.zeros(self.n_neurons))
-        self.register_buffer('d2_activity_avg', torch.zeros(self.n_neurons))
+        self.register_buffer('d1_activity_avg', torch.zeros(self.n_neurons, device=device))
+        self.register_buffer('d2_activity_avg', torch.zeros(self.n_neurons, device=device))
 
         # Excitability modulation factors (multiply g_E by this)
         # > 1.0 means more excitable, < 1.0 means less excitable
-        self.register_buffer('d1_excitability', torch.ones(self.n_neurons))
-        self.register_buffer('d2_excitability', torch.ones(self.n_neurons))
+        self.register_buffer('d1_excitability', torch.ones(self.n_neurons, device=device))
+        self.register_buffer('d2_excitability', torch.ones(self.n_neurons, device=device))
 
     def update_activity(
         self,
