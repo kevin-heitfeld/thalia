@@ -2469,21 +2469,33 @@ class DynamicBrain(nn.Module):
             'ripple': self.oscillators.ripple.get_state(),
         }
 
-        # Get neuromodulator states (save only key attributes)
+        # Get neuromodulator states using proper get_state() methods
         if self.vta is not None:
-            state["neuromodulators"]["vta"] = {
-                "global_dopamine": self.vta._global_dopamine,
-                "tonic_dopamine": self.vta._tonic_dopamine,
-                "phasic_dopamine": self.vta._phasic_dopamine,
-            }
+            if hasattr(self.vta, 'get_state'):
+                state["neuromodulators"]["vta"] = self.vta.get_state()
+            else:
+                # Fallback for VTA without get_state()
+                state["neuromodulators"]["vta"] = {
+                    "global_dopamine": self.vta._global_dopamine,
+                    "tonic_dopamine": self.vta._tonic_dopamine,
+                    "phasic_dopamine": self.vta._phasic_dopamine,
+                }
         if self.locus_coeruleus is not None:
-            state["neuromodulators"]["locus_coeruleus"] = {
-                "norepinephrine": self.locus_coeruleus.get_norepinephrine(apply_homeostasis=False),
-            }
+            if hasattr(self.locus_coeruleus, 'get_state'):
+                state["neuromodulators"]["locus_coeruleus"] = self.locus_coeruleus.get_state()
+            else:
+                # Fallback for LC without get_state()
+                state["neuromodulators"]["locus_coeruleus"] = {
+                    "norepinephrine": self.locus_coeruleus.get_norepinephrine(apply_homeostasis=False),
+                }
         if self.nucleus_basalis is not None:
-            state["neuromodulators"]["nucleus_basalis"] = {
-                "acetylcholine": self.nucleus_basalis.get_acetylcholine(apply_homeostasis=False),
-            }
+            if hasattr(self.nucleus_basalis, 'get_state'):
+                state["neuromodulators"]["nucleus_basalis"] = self.nucleus_basalis.get_state()
+            else:
+                # Fallback for NB without get_state()
+                state["neuromodulators"]["nucleus_basalis"] = {
+                    "acetylcholine": self.nucleus_basalis.get_acetylcholine(apply_homeostasis=False),
+                }
 
         return state
 
@@ -2612,12 +2624,20 @@ class DynamicBrain(nn.Module):
         if "neuromodulators" in state:
             neuromod_state = state["neuromodulators"]
             if "vta" in neuromod_state and self.vta is not None:
-                vta_state = neuromod_state["vta"]
-                self.vta._tonic_dopamine = vta_state.get("tonic_dopamine", 0.0)
-                self.vta._phasic_dopamine = vta_state.get("phasic_dopamine", 0.0)
-                self.vta._global_dopamine = vta_state.get("global_dopamine", 0.0)
-            # Note: LC and NB currently don't have settable internal state
-            # Future: Add state restoration for LC and NB when needed
+                if hasattr(self.vta, 'set_state'):
+                    self.vta.set_state(neuromod_state["vta"])
+                else:
+                    # Fallback for VTA without set_state()
+                    vta_state = neuromod_state["vta"]
+                    self.vta._tonic_dopamine = vta_state.get("tonic_dopamine", 0.0)
+                    self.vta._phasic_dopamine = vta_state.get("phasic_dopamine", 0.0)
+                    self.vta._global_dopamine = vta_state.get("global_dopamine", 0.0)
+            if "locus_coeruleus" in neuromod_state and self.locus_coeruleus is not None:
+                if hasattr(self.locus_coeruleus, 'set_state'):
+                    self.locus_coeruleus.set_state(neuromod_state["locus_coeruleus"])
+            if "nucleus_basalis" in neuromod_state and self.nucleus_basalis is not None:
+                if hasattr(self.nucleus_basalis, 'set_state'):
+                    self.nucleus_basalis.set_state(neuromod_state["nucleus_basalis"])
 
         # Load growth history (if present)
         if "growth_history" in state:
