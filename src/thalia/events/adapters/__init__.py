@@ -20,7 +20,6 @@ Usage:
         EventDrivenStriatum,
         EventDrivenCerebellum,
         EventRegionConfig,
-        create_event_driven_brain,
     )
 
 Author: Thalia Project
@@ -31,18 +30,20 @@ from .base import (
     EventRegionConfig,
     EventDrivenRegionBase,
 )
+from .generic import GenericEventAdapter
 from .cortex import EventDrivenCortex
 from .hippocampus import EventDrivenHippocampus
 from .pfc import EventDrivenPFC
 from .striatum import EventDrivenStriatum
 from .cerebellum import EventDrivenCerebellum
 from .thalamus import EventDrivenThalamus
-from .factory import create_event_driven_brain
 
 __all__ = [
     # Base classes
     "EventRegionConfig",
     "EventDrivenRegionBase",
+    # Generic adapter
+    "GenericEventAdapter",
     # Region adapters
     "EventDrivenCortex",
     "EventDrivenHippocampus",
@@ -50,6 +51,6 @@ __all__ = [
     "EventDrivenStriatum",
     "EventDrivenThalamus",
     "EventDrivenCerebellum",
-    # Factory
-    "create_event_driven_brain",
+    # Generic adapter for user-defined components
+    "GenericEventAdapter",
 ]

@@ -100,6 +100,20 @@ class ComponentRegistry:
         "module": {},
     }
 
+    # Map component names to their config classes
+    _config_classes: Dict[str, Dict[str, Optional[Type]]] = {
+        "region": {},
+        "pathway": {},
+        "module": {},
+    }
+
+    # Map component names to their event adapters
+    _adapters: Dict[str, Dict[str, Optional[Type]]] = {
+        "region": {},
+        "pathway": {},
+        "module": {},
+    }
+
     @classmethod
     def register(
         cls,
@@ -110,6 +124,7 @@ class ComponentRegistry:
         description: str = "",
         version: str = "1.0",
         author: str = "",
+        config_class: Optional[Type] = None,
     ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
         """Decorator to register a brain component.
 
@@ -120,6 +135,7 @@ class ComponentRegistry:
             description: Human-readable description
             version: Component version string
             author: Component author/maintainer
+            config_class: Optional config class for this component
 
         Returns:
             Decorator function
@@ -128,12 +144,19 @@ class ComponentRegistry:
             ValueError: If component_type invalid or name already registered
 
         Example:
-            @ComponentRegistry.register("cortex", "region", aliases=["layered_cortex"])
+            @ComponentRegistry.register(
+                "cortex", "region",
+                aliases=["layered_cortex"],
+                config_class=LayeredCortexConfig
+            )
             class LayeredCortex(NeuralComponent):
                 '''Multi-layer cortical microcircuit.'''
                 ...
 
-            @ComponentRegistry.register("spiking_stdp", "pathway")
+            @ComponentRegistry.register(
+                "spiking_stdp", "pathway",
+                config_class=SpikingPathwayConfig
+            )
             class SpikingPathway(NeuralComponent):
                 '''STDP-learning spiking pathway.'''
                 ...
@@ -184,6 +207,9 @@ class ComponentRegistry:
                 "class": component_class.__name__,
                 "module": component_class.__module__,
             }
+
+            # Store config class if provided
+            cls._config_classes[component_type][name] = config_class
 
             return component_class
 
@@ -393,6 +419,129 @@ class ComponentRegistry:
         return cls._metadata[component_type].get(name)
 
     @classmethod
+    def get_config_class(
+        cls,
+        component_type: str,
+        name: str,
+    ) -> Optional[Type]:
+        """Get configuration class for a registered component.
+
+        Args:
+            component_type: Type of component ("region", "pathway", "module")
+            name: Component name or alias
+
+        Returns:
+            Config class if registered, None otherwise
+
+        Example:
+            config_class = ComponentRegistry.get_config_class("region", "cortex")
+            config = config_class(n_neurons=500)
+        """
+        # Resolve alias to canonical name
+        if component_type in cls._aliases:
+            alias_registry = cls._aliases[component_type]
+            if name in alias_registry:
+                name = alias_registry[name]
+
+        if component_type not in cls._config_classes:
+            return None
+
+        return cls._config_classes[component_type].get(name)
+
+    @classmethod
+    def register_adapter(
+        cls,
+        component_name: str,
+        component_type: str,
+        adapter_class: Type,
+    ) -> None:
+        """Register custom event adapter for a component.
+
+        Event adapters wrap components for event-driven execution with
+        the EventScheduler. Custom adapters enable:
+        - Specialized input routing (e.g., cortex layers)
+        - Layer-specific decay dynamics
+        - Multi-source input buffering
+        - Performance optimization
+
+        If no adapter is registered, GenericEventAdapter is used automatically.
+
+        Args:
+            component_name: Registry name of component
+            component_type: Type ('region', 'pathway', 'module')
+            adapter_class: EventDrivenRegionBase subclass
+
+        Raises:
+            ValueError: If component_type invalid
+
+        Example:
+            @register_region("my_region", config_class=MyConfig)
+            class MyRegion(NeuralComponent):
+                def forward(self, spikes):
+                    return self.process(spikes)
+
+            class MyRegionAdapter(EventDrivenRegionBase):
+                def _process_spikes(self, spikes, source):
+                    # Custom routing logic
+                    if source == "sensory":
+                        return self._region.layer1(spikes)
+                    elif source == "feedback":
+                        return self._region.layer2(spikes)
+                    return None
+
+            ComponentRegistry.register_adapter(
+                "my_region",
+                "region",
+                MyRegionAdapter
+            )
+        """
+        if component_type not in cls._adapters:
+            raise ValueError(
+                f"Invalid component_type '{component_type}'. "
+                f"Must be one of: {list(cls._adapters.keys())}"
+            )
+
+        cls._adapters[component_type][component_name] = adapter_class
+
+    @classmethod
+    def get_adapter(
+        cls,
+        component_type: str,
+        name: str,
+    ) -> Optional[Type]:
+        """Get custom event adapter for a component.
+
+        Returns the registered adapter class if one exists, otherwise None.
+        When None is returned, DynamicBrain will use GenericEventAdapter.
+
+        Args:
+            component_type: Type of component ("region", "pathway", "module")
+            name: Component name or alias
+
+        Returns:
+            Adapter class if registered, None otherwise
+
+        Example:
+            adapter_class = ComponentRegistry.get_adapter("region", "cortex")
+            if adapter_class:
+                # Custom adapter registered (e.g., EventDrivenCortex)
+                adapter = adapter_class(config, component)
+            else:
+                # Use GenericEventAdapter
+                adapter = GenericEventAdapter(config, component)
+        """
+        # Resolve alias to canonical name
+        if component_type in cls._aliases:
+            alias_registry = cls._aliases[component_type]
+            if name in alias_registry:
+                name = alias_registry[name]
+
+        if component_type not in cls._adapters:
+            return None
+
+        return cls._adapters[component_type].get(name)
+
+    @classmethod
     def validate_component(
         cls,
         component_type: str,
@@ -475,6 +624,7 @@ def register_region(
     description: str = "",
     version: str = "1.0",
     author: str = "",
+    config_class: Optional[Type] = None,
 ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
     """Shorthand for @ComponentRegistry.register(name, "region").
 
@@ -487,12 +637,13 @@ def register_region(
         description: Human-readable description
         version: Component version
         author: Component author
+        config_class: Optional config class for this region
 
     Returns:
         Decorator function
 
     Example:
-        @register_region("cortex", aliases=["layered_cortex"])
+        @register_region("cortex", aliases=["layered_cortex"], config_class=LayeredCortexConfig)
         class LayeredCortex(NeuralComponent):
             ...
     """
@@ -502,6 +653,7 @@ def register_region(
         description=description,
         version=version,
         author=author,
+        config_class=config_class,
     )
 
 
@@ -512,6 +664,7 @@ def register_pathway(
     description: str = "",
     version: str = "1.0",
     author: str = "",
+    config_class: Optional[Type] = None,
 ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
     """Shorthand for @ComponentRegistry.register(name, "pathway").
 
@@ -521,12 +674,13 @@ def register_pathway(
         description: Human-readable description
         version: Component version
         author: Component author
+        config_class: Optional config class for this pathway
 
     Returns:
         Decorator function
 
     Example:
-        @register_pathway("spiking_stdp", aliases=["stdp_pathway"])
+        @register_pathway("spiking_stdp", aliases=["stdp_pathway"], config_class=SpikingPathwayConfig)
         class SpikingPathway(NeuralComponent):
             ...
     """
@@ -536,6 +690,7 @@ def register_pathway(
         description=description,
         version=version,
         author=author,
+        config_class=config_class,
     )
 
 
@@ -546,6 +701,7 @@ def register_module(
     description: str = "",
     version: str = "1.0",
     author: str = "",
+    config_class: Optional[Type] = None,
 ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
     """Shorthand for @ComponentRegistry.register(name, "module").
 
@@ -555,12 +711,13 @@ def register_module(
         description: Human-readable description
         version: Component version
         author: Component author
+        config_class: Optional config class for this module
 
     Returns:
         Decorator function
 
     Example:
-        @register_module("theta_oscillator")
+        @register_module("theta_oscillator", config_class=OscillatorConfig)
         class ThetaOscillator(BrainComponent):
             ...
     """
@@ -570,4 +727,61 @@ def register_module(
         description=description,
         version=version,
         author=author,
+        config_class=config_class,
     )
+
+
+# =============================================================================
+# BUILT-IN EVENT ADAPTER REGISTRATION
+# =============================================================================
+
+def register_builtin_event_adapters() -> None:
+    """Register built-in event adapters for core brain regions.
+
+    This function registers EventDrivenRegionBase adapters for all built-in
+    regions. Custom adapters are preferred over GenericEventAdapter for
+    performance-critical regions.
+
+    Registered adapters:
+        - "cortex" / "layered_cortex" -> EventDrivenCortex
+        - "hippocampus" -> EventDrivenHippocampus
+        - "prefrontal_cortex" / "prefrontal" -> EventDrivenPFC
+        - "striatum" -> EventDrivenStriatum
+        - "cerebellum" -> EventDrivenCerebellum
+        - "thalamic_relay" / "thalamus" -> EventDrivenThalamus
+
+    Called automatically on first BrainBuilder use or can be called manually.
+    """
+    try:
+        from thalia.events.adapters import (
+            EventDrivenCortex,
+            EventDrivenHippocampus,
+            EventDrivenPFC,
+            EventDrivenStriatum,
+            EventDrivenCerebellum,
+            EventDrivenThalamus,
+        )
+    except ImportError:
+        # Event adapters not available (optional dependency)
+        return
+
+    # Register cortex adapter (component_name, component_type, adapter_class)
+    ComponentRegistry.register_adapter("cortex", "region", EventDrivenCortex)
+    ComponentRegistry.register_adapter("layered_cortex", "region", EventDrivenCortex)
+
+    # Register hippocampus adapter
+    ComponentRegistry.register_adapter("hippocampus", "region", EventDrivenHippocampus)
+
+    # Register prefrontal adapter
+    ComponentRegistry.register_adapter("prefrontal_cortex", "region", EventDrivenPFC)
+    ComponentRegistry.register_adapter("prefrontal", "region", EventDrivenPFC)
+
+    # Register striatum adapter
+    ComponentRegistry.register_adapter("striatum", "region", EventDrivenStriatum)
+
+    # Register cerebellum adapter
+    ComponentRegistry.register_adapter("cerebellum", "region", EventDrivenCerebellum)
+
+    # Register thalamus adapter
+    ComponentRegistry.register_adapter("thalamic_relay", "region", EventDrivenThalamus)
+    ComponentRegistry.register_adapter("thalamus", "region", EventDrivenThalamus)

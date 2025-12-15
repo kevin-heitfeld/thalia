@@ -43,7 +43,6 @@ Usage:
         EventDrivenCortex, EventDrivenHippocampus,
         EventDrivenPFC, EventDrivenStriatum,
         EventDrivenCerebellum, EventRegionConfig,
-        create_event_driven_brain,
     )
 
 Author: Thalia Project
@@ -81,8 +80,6 @@ from thalia.events.adapters import (
     EventDrivenPFC,
     EventDrivenStriatum,
     EventDrivenCerebellum,
-    # Factory
-    create_event_driven_brain,
 )
 
 __all__ = [
@@ -108,6 +105,4 @@ __all__ = [
     "EventDrivenPFC",
     "EventDrivenStriatum",
     "EventDrivenCerebellum",
-    # Factory
-    "create_event_driven_brain",
 ]

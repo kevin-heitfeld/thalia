@@ -205,7 +205,8 @@ class ThalamicRelayState(NeuralComponentState):
     aliases=["thalamic_relay"],
     description="Sensory relay and gating with burst/tonic modes and attentional modulation",
     version="1.0",
-    author="Thalia Project"
+    author="Thalia Project",
+    config_class=ThalamicRelayConfig,
 )
 class ThalamicRelay(NeuralComponent):
     """Thalamic relay nucleus with burst/tonic modes and attentional gating.

@@ -101,7 +101,8 @@ from .config import LayeredCortexConfig, LayeredCortexState
     aliases=["layered_cortex"],
     description="Multi-layer cortical microcircuit with L4/L2/3/L5 structure",
     version="2.0",
-    author="Thalia Project"
+    author="Thalia Project",
+    config_class=LayeredCortexConfig,
 )
 class LayeredCortex(NeuralComponent):
     """Multi-layer cortical microcircuit with proper layer separation and routing.

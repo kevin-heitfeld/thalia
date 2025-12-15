@@ -99,7 +99,8 @@ from .checkpoint_manager import HippocampusCheckpointManager
     aliases=["trisynaptic"],
     description="DG→CA3→CA1 trisynaptic circuit with theta-modulated encoding/retrieval and episodic memory",
     version="2.0",
-    author="Thalia Project"
+    author="Thalia Project",
+    config_class=HippocampusConfig,
 )
 class TrisynapticHippocampus(NeuralComponent):
     """
@@ -2057,9 +2058,6 @@ class TrisynapticHippocampus(NeuralComponent):
             "ffi": ffi_state,
             # Episode buffer
             "episode_buffer_size": len(self.episode_buffer),
-            # Manager diagnostics
-            "plasticity": self.plasticity_manager.get_diagnostics(),
-            "episode_manager": self.episode_manager.get_diagnostics(),
             # HER diagnostics
             "her": self.get_her_diagnostics(),
         }

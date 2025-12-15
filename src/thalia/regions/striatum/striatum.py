@@ -128,7 +128,8 @@ from .td_lambda import TDLambdaLearner, TDLambdaConfig
     "striatum",
     description="Reinforcement learning via dopamine-modulated three-factor rule with D1/D2 opponent pathways",
     version="2.0",
-    author="Thalia Project"
+    author="Thalia Project",
+    config_class=StriatumConfig,
 )
 class Striatum(NeuralComponent, ActionSelectionMixin):
     """Striatal region with three-factor reinforcement learning.
@@ -1569,13 +1570,15 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self._last_rpe = da_level
         self._last_expected = 0.0
 
-        # Adjust exploration based on performance
-        self.exploration_manager.adjust_tonic_dopamine(reward)
+        # Adjust exploration based on performance (new component API)
+        # reward > 0 counts as "correct" for exploration adjustment
+        correct = reward > 0
+        self.exploration_manager.update_performance(reward, correct)
 
-        # Delegate to learning manager
+        # Delegate to learning manager (new component API)
         goal_context = self._last_pfc_goal_context if hasattr(self, '_last_pfc_goal_context') else None
 
-        return self.learning_manager.apply_dopamine_learning(da_level, goal_context)
+        return self.learning_manager.apply_learning(da_level, goal_context)
 
 
     def deliver_counterfactual_reward(

@@ -1,0 +1,776 @@
+"""
+Brain Builder - Fluent API for Brain Construction
+
+This module provides a fluent, progressive API for building brain architectures
+using registered components.
+
+Instead of verbose dataclass configuration:
+    config = ThaliaConfig(
+        global_config=GlobalConfig(...),
+        brain=BrainConfig(
+            regions=RegionSizes(...),
+            ...
+        ),
+        ...
+    )
+    brain = EventDrivenBrain.from_thalia_config(config)
+
+Use fluent builder pattern:
+    brain = (
+        BrainBuilder(config)
+        .add_component("thalamus", "thalamic_relay", n_neurons=100)
+        .add_component("cortex", "layered_cortex", n_neurons=500)
+        .connect("thalamus", "cortex", "spiking")
+        .build()
+    )
+
+Or use preset architectures:
+    brain = BrainBuilder.preset("sensorimotor", config)
+
+Author: Thalia Project
+Date: December 15, 2025
+"""
+
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
+from pathlib import Path
+import json
+
+from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
+from thalia.managers.component_registry import ComponentRegistry
+from thalia.regions.base import NeuralComponent
+
+if TYPE_CHECKING:
+    from thalia.config import GlobalConfig
+
+
+class BrainBuilder:
+    """Fluent API for progressive brain construction.
+
+    Supports:
+        - Incremental component addition via method chaining
+        - Connection definition with automatic pathway creation
+        - Preset architectures for common use cases
+        - Validation before building
+        - Save/load component graphs to JSON
+
+    Example - Custom Brain:
+        builder = BrainBuilder(global_config)
+        builder.add_component("input", "thalamic_relay", n_neurons=128)
+        builder.add_component("process", "layered_cortex", n_neurons=512)
+        builder.add_component("memory", "hippocampus", n_neurons=256)
+        builder.connect("input", "process", "spiking")
+        builder.connect("process", "memory", "spiking")
+        brain = builder.build()
+
+    Example - Preset Brain:
+        brain = BrainBuilder.preset("sensorimotor", global_config)
+
+    Example - Chained Construction:
+        brain = (
+            BrainBuilder(global_config)
+            .add_component("thalamus", "thalamic_relay", n_neurons=100)
+            .add_component("cortex", "layered_cortex", n_neurons=500)
+            .connect("thalamus", "cortex", "spiking")
+            .build()
+        )
+    """
+
+    # Registry of preset architectures
+    _presets: Dict[str, "PresetArchitecture"] = {}
+
+    def __init__(
+        self,
+        global_config: "GlobalConfig",
+        use_parallel: bool = False,
+        n_workers: Optional[int] = None,
+    ):
+        """Initialize builder with global configuration.
+
+        Args:
+            global_config: Global configuration (device, dt_ms, etc.)
+            use_parallel: Enable parallel execution (default: False)
+            n_workers: Number of worker processes (default: auto)
+        """
+        self.global_config = global_config
+        self.use_parallel = use_parallel
+        self.n_workers = n_workers
+        self._components: Dict[str, ComponentSpec] = {}
+        self._connections: List[ConnectionSpec] = []
+        self._registry = ComponentRegistry()
+
+        # Register built-in event adapters (lazy registration)
+        self._ensure_adapters_registered()
+
+    @staticmethod
+    def _ensure_adapters_registered() -> None:
+        """Ensure built-in event adapters are registered (one-time).
+
+        This registers EventDrivenRegionBase adapters for all built-in regions.
+        Called once on first BrainBuilder instantiation.
+        """
+        # Check if already registered (avoid redundant registration)
+        if not hasattr(BrainBuilder, "_adapters_registered"):
+            from thalia.managers.component_registry import register_builtin_event_adapters
+            register_builtin_event_adapters()
+            BrainBuilder._adapters_registered = True
+
+    def add_component(
+        self,
+        name: str,
+        registry_name: str,
+        **config_params: Any,
+    ) -> "BrainBuilder":
+        """Add a component (region, pathway, module) to the brain.
+
+        Size Inference:
+            - Only `n_output` (neuron count) is required for most components
+            - `n_input` is automatically inferred from incoming connections
+            - Components without incoming connections (input interfaces) must specify `n_input`
+            - This prevents size mismatches between components and pathways
+
+        Args:
+            name: Instance name (e.g., "my_cortex", "visual_input")
+            registry_name: Component type in registry (e.g., "layered_cortex")
+            **config_params: Configuration parameters. Required:
+                - n_output: Number of output neurons (always required)
+                - n_input: Number of input neurons (only for input interfaces)
+
+        Returns:
+            Self for method chaining
+
+        Raises:
+            ValueError: If component name already exists
+            KeyError: If registry_name not found in ComponentRegistry
+
+        Example:
+            # Input interface (no incoming connections) - needs n_input
+            builder.add_component(
+                name="sensory_input",
+                registry_name="thalamic_relay",
+                n_input=128,
+                n_output=128,
+            )
+
+            # Processing component - n_input inferred from connection
+            builder.add_component(
+                name="cortex",
+                registry_name="layered_cortex",
+                n_output=512,  # Only n_output needed!
+            )
+
+            builder.connect("sensory_input", "cortex")
+        """
+        # Validate name uniqueness
+        if name in self._components:
+            raise ValueError(f"Component '{name}' already exists")
+
+        # Validate registry name exists
+        # ComponentRegistry uses (component_type, name) not just (name)
+        # We need to search all component types
+        found = False
+        component_type = None
+        for ctype in ["region", "pathway", "module"]:
+            if self._registry.is_registered(ctype, registry_name):
+                found = True
+                component_type = ctype
+                break
+
+        if not found:
+            available = self._registry.list_components()
+            raise KeyError(
+                f"Registry name '{registry_name}' not found. "
+                f"Available: {available}"
+            )
+
+        # Create component spec
+        spec = ComponentSpec(
+            name=name,
+            component_type=component_type,
+            registry_name=registry_name,
+            config_params=config_params,
+        )
+
+        self._components[name] = spec
+        return self
+
+    def connect(
+        self,
+        source: str,
+        target: str,
+        pathway_type: str = "spiking",
+        **config_params: Any,
+    ) -> "BrainBuilder":
+        """Connect two components with a pathway.
+
+        Args:
+            source: Source component name
+            target: Target component name
+            pathway_type: Pathway registry name (default: "spiking")
+            **config_params: Pathway configuration parameters
+
+        Returns:
+            Self for method chaining
+
+        Raises:
+            ValueError: If source or target component doesn't exist
+
+        Example:
+            builder.connect(
+                source="cortex",
+                target="hippocampus",
+                pathway_type="spiking",
+                learning_rate=0.001,
+            )
+        """
+        # Validate components exist
+        if source not in self._components:
+            raise ValueError(f"Source component '{source}' not found")
+        if target not in self._components:
+            raise ValueError(f"Target component '{target}' not found")
+
+        # Create connection spec
+        spec = ConnectionSpec(
+            source=source,
+            target=target,
+            pathway_type=pathway_type,
+            config_params=config_params,
+        )
+
+        self._connections.append(spec)
+        return self
+
+    def validate(self) -> List[str]:
+        """Validate component graph before building.
+
+        Checks:
+            - All connection endpoints exist
+            - No isolated components (warning)
+            - No cycles (if strict=True)
+
+        Returns:
+            List of warning/error messages (empty if valid)
+        """
+        issues = []
+
+        # Check for isolated components (no connections)
+        connected_components = set()
+        for conn in self._connections:
+            connected_components.add(conn.source)
+            connected_components.add(conn.target)
+
+        isolated = set(self._components.keys()) - connected_components
+        if isolated:
+            issues.append(
+                f"Warning: Isolated components (no connections): {isolated}"
+            )
+
+        # TODO: Add cycle detection (optional - some architectures may have cycles)
+
+        return issues
+
+    def _infer_component_sizes(self) -> None:
+        """Infer n_input for components based on incoming connections.
+
+        For components without n_input specified:
+        - If single incoming connection: n_input = source.n_output
+        - If multiple incoming connections: n_input = sum(source.n_output)
+        - If no incoming connections: Error (must specify n_input)
+        """
+        # Build incoming connection map
+        incoming: Dict[str, List[str]] = {name: [] for name in self._components}
+        for conn in self._connections:
+            incoming[conn.target].append(conn.source)
+
+        # Infer n_input for each component
+        for name, spec in self._components.items():
+            # Skip if n_input already specified
+            if "n_input" in spec.config_params:
+                continue
+
+            sources = incoming[name]
+
+            if not sources:
+                # No incoming connections - this is an input interface
+                raise ValueError(
+                    f"Component '{name}' has no incoming connections and no n_input specified. "
+                    f"Input interfaces must specify n_input explicitly."
+                )
+
+            # For now, require n_output to be specified in source components
+            # In a full implementation, we'd recursively infer sizes
+            source_outputs = []
+            for source_name in sources:
+                source_spec = self._components[source_name]
+                if "n_output" not in source_spec.config_params:
+                    raise ValueError(
+                        f"Component '{source_name}' must specify n_output before connecting to '{name}'"
+                    )
+                source_outputs.append(source_spec.config_params["n_output"])
+
+            # Infer n_input
+            if len(source_outputs) == 1:
+                inferred_n_input = source_outputs[0]
+            else:
+                # Multiple inputs - sum their outputs
+                inferred_n_input = sum(source_outputs)
+
+            # Store inferred size
+            spec.config_params["n_input"] = inferred_n_input
+
+    def build(self) -> DynamicBrain:
+        """Build DynamicBrain from specifications.
+
+        Steps:
+            1. Infer component input sizes from connections
+            2. Validate component graph
+            3. Instantiate all components from registry
+            4. Instantiate all pathways from registry
+            5. Create DynamicBrain with component graph
+
+        Returns:
+            Constructed DynamicBrain instance
+
+        Raises:
+            ValueError: If validation fails or size inference fails
+        """
+        # Infer n_input for components based on connections
+        self._infer_component_sizes()
+
+        # Validate before building
+        issues = self.validate()
+        errors = [msg for msg in issues if msg.startswith("Error:")]
+        if errors:
+            raise ValueError(f"Validation failed:\n" + "\n".join(errors))
+
+        # Instantiate components
+        components: Dict[str, NeuralComponent] = {}
+        for name, spec in self._components.items():
+            # Get config class from registry
+            config_class = self._registry.get_config_class(
+                spec.component_type, spec.registry_name
+            )
+
+            if config_class is None:
+                # Legacy component without config class metadata
+                # Try to instantiate directly (will fail if config required)
+                raise ValueError(
+                    f"Component '{spec.registry_name}' has no config_class "
+                    f"registered. Update registry with config_class metadata."
+                )
+
+            # Create config instance with device and dt_ms
+            config_params_with_globals = {
+                **spec.config_params,
+                "device": self.global_config.device,
+                "dt_ms": self.global_config.dt_ms,
+            }
+            config = config_class(**config_params_with_globals)
+
+            # Create component from registry
+            component = self._registry.create(
+                spec.component_type,
+                spec.registry_name,
+                config=config,
+            )
+
+            # Move component to correct device (config device string might not be applied)
+            if hasattr(component, 'to'):
+                component.to(self.global_config.device)
+
+            components[name] = component
+            spec.instance = component
+
+        # Instantiate pathways
+        connections: Dict[Tuple[str, str], NeuralComponent] = {}
+        for spec in self._connections:
+            # Get source and target components
+            source_comp = components[spec.source]
+            target_comp = components[spec.target]
+
+            # Determine pathway component type (should be "pathway")
+            pathway_component_type = None
+            for ctype in ["pathway", "module"]:
+                if self._registry.is_registered(ctype, spec.pathway_type):
+                    pathway_component_type = ctype
+                    break
+
+            if pathway_component_type is None:
+                raise ValueError(
+                    f"Pathway '{spec.pathway_type}' not found in registry"
+                )
+
+            # Get pathway config class
+            config_class = self._registry.get_config_class(
+                pathway_component_type, spec.pathway_type
+            )
+
+            if config_class is None:
+                raise ValueError(
+                    f"Pathway '{spec.pathway_type}' has no config_class "
+                    f"registered. Update registry with config_class metadata."
+                )
+
+            # Create pathway config with source/target sizes and global params
+            pathway_config_params = {
+                "n_input": source_comp.n_output,  # Source's output is pathway's input
+                "n_output": target_comp.n_input,  # Target's input is pathway's output
+                "device": self.global_config.device,
+                "dt_ms": self.global_config.dt_ms,
+                **spec.config_params,  # User-specified params override defaults
+            }
+            pathway_config = config_class(**pathway_config_params)
+
+            # Create pathway from registry
+            pathway = self._registry.create(
+                pathway_component_type,
+                spec.pathway_type,
+                config=pathway_config,
+            )
+
+            # Move pathway to correct device
+            if hasattr(pathway, 'to'):
+                pathway.to(self.global_config.device)
+
+            connections[(spec.source, spec.target)] = pathway
+            spec.instance = pathway
+
+        # Create DynamicBrain
+        brain = DynamicBrain(
+            components=components,
+            connections=connections,
+            global_config=self.global_config,
+            use_parallel=self.use_parallel,
+            n_workers=self.n_workers,
+        )
+
+        # Store component specs for event adapter lookup
+        brain._component_specs = {name: spec for name, spec in self._components.items()}
+
+        # Store registry reference for adapter lookup
+        brain._registry = self._registry
+
+        return brain
+
+    def save_spec(self, filepath: Path) -> None:
+        """Save component graph specification to JSON.
+
+        Allows sharing/versioning of brain architectures without code.
+
+        Args:
+            filepath: Path to JSON file
+
+        Example:
+            builder.save_spec(Path("architectures/my_brain.json"))
+        """
+        spec = {
+            "components": [
+                {
+                    "name": spec.name,
+                    "registry_name": spec.registry_name,
+                    "config_params": spec.config_params,
+                }
+                for spec in self._components.values()
+            ],
+            "connections": [
+                {
+                    "source": spec.source,
+                    "target": spec.target,
+                    "pathway_type": spec.pathway_type,
+                    "config_params": spec.config_params,
+                }
+                for spec in self._connections
+            ],
+        }
+
+        with open(filepath, "w") as f:
+            json.dump(spec, f, indent=2)
+
+    @classmethod
+    def load_spec(
+        cls,
+        filepath: Path,
+        global_config: "GlobalConfig",
+    ) -> "BrainBuilder":
+        """Load component graph specification from JSON.
+
+        Args:
+            filepath: Path to JSON file
+            global_config: Global configuration
+
+        Returns:
+            BrainBuilder populated with loaded specification
+
+        Example:
+            builder = BrainBuilder.load_spec(
+                Path("architectures/my_brain.json"),
+                global_config
+            )
+            brain = builder.build()
+        """
+        with open(filepath, "r") as f:
+            spec = json.load(f)
+
+        builder = cls(global_config)
+
+        # Add components
+        for comp in spec["components"]:
+            builder.add_component(
+                name=comp["name"],
+                registry_name=comp["registry_name"],
+                **comp["config_params"],
+            )
+
+        # Add connections
+        for conn in spec["connections"]:
+            builder.connect(
+                source=conn["source"],
+                target=conn["target"],
+                pathway_type=conn["pathway_type"],
+                **conn["config_params"],
+            )
+
+        return builder
+
+    @classmethod
+    def register_preset(
+        cls,
+        name: str,
+        description: str,
+        builder_fn: "PresetBuilderFn",
+    ) -> None:
+        """Register a preset architecture.
+
+        Args:
+            name: Preset name (e.g., "sensorimotor", "minimal")
+            description: Human-readable description
+            builder_fn: Function that configures a BrainBuilder
+
+        Example:
+            def build_minimal(builder: BrainBuilder):
+                builder.add_component("input", "thalamic_relay", n_neurons=64)
+                builder.add_component("output", "layered_cortex", n_neurons=128)
+                builder.connect("input", "output")
+
+            BrainBuilder.register_preset(
+                name="minimal",
+                description="Minimal 2-component brain for testing",
+                builder_fn=build_minimal,
+            )
+        """
+        cls._presets[name] = PresetArchitecture(
+            name=name,
+            description=description,
+            builder_fn=builder_fn,
+        )
+
+    @classmethod
+    def preset(
+        cls,
+        name: str,
+        global_config: "GlobalConfig",
+        use_parallel: bool = False,
+        n_workers: Optional[int] = None,
+        **overrides: Any,
+    ) -> DynamicBrain:
+        """Create brain from preset architecture.
+
+        Args:
+            name: Preset name (e.g., "sensorimotor")
+            global_config: Global configuration
+            use_parallel: Enable parallel execution (default: False)
+            n_workers: Number of worker processes (default: auto)
+            **overrides: Override default preset parameters
+
+        Returns:
+            Constructed DynamicBrain instance
+
+        Raises:
+            KeyError: If preset name not found
+
+        Example:
+            brain = BrainBuilder.preset("sensorimotor", global_config)
+
+            # With parallel execution
+            brain = BrainBuilder.preset(
+                "sensorimotor",
+                global_config,
+                use_parallel=True,
+                n_workers=4,
+            )
+
+            # With overrides
+            brain = BrainBuilder.preset(
+                "sensorimotor",
+                global_config,
+                cortex_neurons=1024,  # Override default
+            )
+        """
+        if name not in cls._presets:
+            available = list(cls._presets.keys())
+            raise KeyError(
+                f"Preset '{name}' not found. Available: {available}"
+            )
+
+        preset = cls._presets[name]
+        builder = cls(global_config, use_parallel=use_parallel, n_workers=n_workers)
+
+        # Apply preset builder function
+        preset.builder_fn(builder, **overrides)
+
+        return builder.build()
+
+    @classmethod
+    def list_presets(cls) -> List[Tuple[str, str]]:
+        """List available preset architectures.
+
+        Returns:
+            List of (name, description) tuples
+        """
+        return [
+            (name, preset.description)
+            for name, preset in cls._presets.items()
+        ]
+
+    @classmethod
+    def preset_builder(
+        cls,
+        name: str,
+        global_config: "GlobalConfig",
+        use_parallel: bool = False,
+        n_workers: Optional[int] = None,
+    ) -> "BrainBuilder":
+        """Create builder initialized with preset architecture.
+
+        Unlike preset(), this returns the builder so you can modify it
+        before calling build().
+
+        Args:
+            name: Preset name (e.g., "sensorimotor")
+            global_config: Global configuration
+            use_parallel: Enable parallel execution (default: False)
+            n_workers: Number of worker processes (default: auto)
+
+        Returns:
+            BrainBuilder instance with preset applied
+
+        Raises:
+            KeyError: If preset name not found
+
+        Example:
+            # Start with preset and add custom components
+            builder = BrainBuilder.preset_builder("minimal", global_config)
+            builder.add_component("pfc", "prefrontal", n_input=128, n_output=64)
+            builder.connect("cortex", "pfc", pathway_type="spiking")
+            brain = builder.build()
+        """
+        if name not in cls._presets:
+            available = list(cls._presets.keys())
+            raise KeyError(f"Preset '{name}' not found. Available: {available}")
+
+        preset = cls._presets[name]
+        builder = cls(global_config, use_parallel, n_workers)
+        preset.builder_fn(builder)
+        return builder
+
+
+# Type alias for preset builder functions
+from typing import Callable
+PresetBuilderFn = Callable[["BrainBuilder", Any], None]
+
+
+class PresetArchitecture:
+    """Container for preset architecture definition."""
+
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        builder_fn: PresetBuilderFn,
+    ):
+        self.name = name
+        self.description = description
+        self.builder_fn = builder_fn
+
+
+# ============================================================================
+# Built-in Preset Architectures
+# ============================================================================
+
+def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
+    """Minimal 3-component brain for testing.
+
+    Architecture:
+        input (64) → process (128) → output (64)
+    """
+    n_input = overrides.get("n_input", 64)
+    n_process = overrides.get("n_process", 128)
+    n_output = overrides.get("n_output", 64)
+
+    # Input interface - must specify both n_input and n_output
+    builder.add_component("input", "thalamic_relay", n_input=n_input, n_output=n_input)
+    # Processing components - only n_output needed, n_input inferred from connections
+    builder.add_component("process", "layered_cortex", n_output=n_process)
+    builder.add_component("output", "layered_cortex", n_output=n_output)
+
+    builder.connect("input", "process", "spiking")
+    builder.connect("process", "output", "spiking")
+
+
+def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
+    """Sensorimotor architecture (current EventDrivenBrain default).
+
+    Architecture:
+        Thalamus → Cortex ⇄ Hippocampus
+                     ↓
+                    PFC ⇄ Striatum
+                     ↓
+                Cerebellum
+
+    This preset replicates EventDrivenBrain's hardcoded 6-region architecture.
+    """
+    # Default sizes (can be overridden)
+    n_thalamus = overrides.get("n_thalamus", 128)  # Match test expectations
+    n_cortex = overrides.get("n_cortex", 500)
+    n_hippocampus = overrides.get("n_hippocampus", 200)
+    n_pfc = overrides.get("n_pfc", 300)
+    n_striatum = overrides.get("n_striatum", 150)
+    n_cerebellum = overrides.get("n_cerebellum", 100)
+
+    # Add regions (only thalamus needs n_input as it's the input interface)
+    builder.add_component("thalamus", "thalamus", n_input=n_thalamus, n_output=n_thalamus)
+    builder.add_component("cortex", "cortex", n_output=n_cortex)
+    builder.add_component("hippocampus", "hippocampus", n_output=n_hippocampus)
+    builder.add_component("pfc", "prefrontal", n_output=n_pfc)
+    builder.add_component("striatum", "striatum", n_output=n_striatum)
+    builder.add_component("cerebellum", "cerebellum", n_output=n_cerebellum)
+
+    # Add connections
+    builder.connect("thalamus", "cortex", "spiking")
+    builder.connect("cortex", "hippocampus", "spiking")
+    builder.connect("hippocampus", "cortex", "spiking")  # Bidirectional
+    builder.connect("cortex", "pfc", "spiking")
+    builder.connect("pfc", "striatum", "spiking")
+    builder.connect("striatum", "pfc", "spiking")  # Bidirectional
+    builder.connect("pfc", "cerebellum", "spiking")
+
+
+# Register built-in presets
+BrainBuilder.register_preset(
+    name="minimal",
+    description="Minimal 3-component brain for testing (input→process→output)",
+    builder_fn=_build_minimal,
+)
+
+BrainBuilder.register_preset(
+    name="sensorimotor",
+    description="6-region sensorimotor architecture (EventDrivenBrain default)",
+    builder_fn=_build_sensorimotor,
+)
+
+
+__all__ = [
+    "BrainBuilder",
+    "PresetArchitecture",
+]

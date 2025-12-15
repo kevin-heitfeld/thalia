@@ -1,7 +1,16 @@
 # TODO
 
-- Sparse computations throughout?
+---
+
+    # Note: LC and NB currently don't have settable internal state
+    # Future: Add state restoration for LC and NB when needed
+
+---
+
+- optional: add noise to the whole brain (processing (weights) + temporal (spikes))
+  - enable during curriculum training? (see curriculum strategy)
 - `docs\design\circuit_modeling_plan.md`
+- Sparse computations throughout?
 
 ---
 

@@ -270,7 +270,8 @@ class DopamineGatingSystem:
     aliases=["pfc"],
     description="Working memory and executive control with dopamine-gated updates and rule learning",
     version="2.0",
-    author="Thalia Project"
+    author="Thalia Project",
+    config_class=PrefrontalConfig,
 )
 class Prefrontal(NeuralComponent):
     """Prefrontal cortex with dopamine-gated working memory.
@@ -823,8 +824,6 @@ class Prefrontal(NeuralComponent):
             "dopamine_level": self.state.dopamine,
             "config_w_min": cfg.w_min,
             "config_w_max": cfg.w_max,
-            "config_rec_w_min": cfg.recurrent_w_min,
-            "config_rec_w_max": cfg.recurrent_w_max,
         }
 
         # Use collect_standard_diagnostics for weight and spike statistics

@@ -177,7 +177,8 @@ class ClimbingFiberSystem:
     "cerebellum",
     description="Supervised error-corrective learning via climbing fiber error signals",
     version="2.0",
-    author="Thalia Project"
+    author="Thalia Project",
+    config_class=CerebellumConfig,
 )
 class Cerebellum(NeuralComponent):
     """Cerebellar region with supervised error-corrective learning.

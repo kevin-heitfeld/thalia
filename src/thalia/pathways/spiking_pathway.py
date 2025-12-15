@@ -82,7 +82,8 @@ class SpikingLearningRule(Enum):
     "spiking",
     description="Fully spiking inter-region pathway with LIF neurons, STDP learning, and temporal coding",
     version="2.0",
-    author="Thalia Project"
+    author="Thalia Project",
+    config_class=PathwayConfig,
 )
 class SpikingPathway(NeuralComponent):
     """Fully spiking inter-region pathway with temporal dynamics and plasticity.
