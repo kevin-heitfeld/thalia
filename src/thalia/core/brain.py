@@ -2156,6 +2156,8 @@ class EventDrivenBrain(nn.Module):
                 "amplitudes": self.oscillators.get_effective_amplitudes(),
                 "signals": self.oscillators.get_signals(),
                 "couplings": self.oscillators.couplings,
+                # Region-specific phases for cross-region synchrony analysis
+                "region_phases": self._collect_region_oscillator_phases(),
             },
         }
 
@@ -2175,6 +2177,46 @@ class EventDrivenBrain(nn.Module):
         diag = self.criticality_monitor.get_diagnostics()
         diag["enabled"] = True
         return diag
+
+    def _collect_region_oscillator_phases(self) -> Dict[str, Dict[str, float]]:
+        """Collect oscillator phases from all regions for synchrony analysis.
+
+        Returns:
+            Dictionary mapping region_name → {oscillator: phase}
+            Example: {'hippocampus': {'theta': 1.2, 'gamma': 2.5},
+                     'cortex': {'theta': 1.2, 'gamma': 2.6}}
+
+        Used for:
+            - Cross-region phase synchrony analysis
+            - Validating working memory (hippocampus-PFC theta coherence)
+            - Validating cross-modal binding (visual-auditory gamma coherence)
+        """
+        region_phases = {}
+
+        # Collect from main regions
+        regions_to_check = [
+            ('cortex', self.cortex),
+            ('hippocampus', self.hippocampus),
+            ('striatum', self.striatum),
+            ('prefrontal', self.pfc),
+            ('cerebellum', self.cerebellum),
+        ]
+
+        for region_name, region_wrapper in regions_to_check:
+            try:
+                # Access the underlying implementation
+                region_impl = region_wrapper.impl if hasattr(region_wrapper, 'impl') else region_wrapper
+
+                # Check if region has stored oscillator phases
+                if hasattr(region_impl, 'state') and hasattr(region_impl.state, '_oscillator_phases'):
+                    phases = region_impl.state._oscillator_phases
+                    if phases:  # Only add if non-empty
+                        region_phases[region_name] = phases.copy()
+            except (AttributeError, TypeError):
+                # Gracefully skip regions that don't track phases
+                continue
+
+        return region_phases
 
     def get_structured_diagnostics(self) -> BrainSystemDiagnostics:
         """Get fully structured diagnostics as a dataclass.

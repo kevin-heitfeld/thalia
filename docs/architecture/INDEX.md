@@ -164,7 +164,7 @@ See ADRs (Architecture Decision Records) for formal design decisions:
 
 ## 🏛️ Archived Documentation
 
-**Location**: `../archive/architecture/`  
+**Location**: `../archive/architecture/`
 **Purpose**: Historical reference, preserved for context
 
 | Document | Content | Current Reference |
@@ -181,36 +181,36 @@ See ADRs (Architecture Decision Records) for formal design decisions:
 
 ### By Component Type
 
-**Brain Regions** → `ARCHITECTURE_OVERVIEW.md` § "Brain Regions"  
-**Pathways** → `ARCHITECTURE_OVERVIEW.md` § "Pathways"  
-**Neuromodulators** → `CENTRALIZED_SYSTEMS.md` § "Neuromodulator Systems"  
-**Oscillators** → `CENTRALIZED_SYSTEMS.md` § "Oscillator System"  
-**Goals** → `HIERARCHICAL_GOALS_COMPLETE.md`  
-**Consolidation** → `CENTRALIZED_SYSTEMS.md` § "Memory Consolidation System"  
-**Attention** → `ARCHITECTURE_OVERVIEW.md` § "Thalamus" + `src/thalia/pathways/attention/`  
-**Language** → `src/thalia/language/` + `../design/curriculum_strategy.md`  
-**Social Learning** → `src/thalia/learning/social_learning.py` + curriculum  
-**Metacognition** → `src/thalia/training/evaluation/metacognition.py`  
-**Managers** → `SUPPORTING_COMPONENTS.md` § "Managers System"  
-**Action Selection** → `SUPPORTING_COMPONENTS.md` § "Decision Making"  
-**Environments** → `SUPPORTING_COMPONENTS.md` § "Environments"  
+**Brain Regions** → `ARCHITECTURE_OVERVIEW.md` § "Brain Regions"
+**Pathways** → `ARCHITECTURE_OVERVIEW.md` § "Pathways"
+**Neuromodulators** → `CENTRALIZED_SYSTEMS.md` § "Neuromodulator Systems"
+**Oscillators** → `CENTRALIZED_SYSTEMS.md` § "Oscillator System"
+**Goals** → `HIERARCHICAL_GOALS_COMPLETE.md`
+**Consolidation** → `CENTRALIZED_SYSTEMS.md` § "Memory Consolidation System"
+**Attention** → `ARCHITECTURE_OVERVIEW.md` § "Thalamus" + `src/thalia/pathways/attention/`
+**Language** → `src/thalia/language/` + `../design/curriculum_strategy.md`
+**Social Learning** → `src/thalia/learning/social_learning.py` + curriculum
+**Metacognition** → `src/thalia/training/evaluation/metacognition.py`
+**Managers** → `SUPPORTING_COMPONENTS.md` § "Managers System"
+**Action Selection** → `SUPPORTING_COMPONENTS.md` § "Decision Making"
+**Environments** → `SUPPORTING_COMPONENTS.md` § "Environments"
 
 ### By Task
 
-**Understanding architecture** → Start with `ARCHITECTURE_OVERVIEW.md`  
-**Implementing new region** → `ARCHITECTURE_OVERVIEW.md` + `../patterns/component-parity.md`  
-**Adding neuromodulation** → `CENTRALIZED_SYSTEMS.md` § "Neuromodulator Systems"  
-**Implementing learning rule** → `ARCHITECTURE_OVERVIEW.md` § "Regional Specialization"  
-**Creating environments** → `SUPPORTING_COMPONENTS.md` § "Environments"  
-**Action selection** → `SUPPORTING_COMPONENTS.md` § "Decision Making"  
-**Goal decomposition** → `HIERARCHICAL_GOALS_COMPLETE.md`  
-**Debugging** → `SUPPORTING_COMPONENTS.md` § "Diagnostics"  
+**Understanding architecture** → Start with `ARCHITECTURE_OVERVIEW.md`
+**Implementing new region** → `ARCHITECTURE_OVERVIEW.md` + `../patterns/component-parity.md`
+**Adding neuromodulation** → `CENTRALIZED_SYSTEMS.md` § "Neuromodulator Systems"
+**Implementing learning rule** → `ARCHITECTURE_OVERVIEW.md` § "Regional Specialization"
+**Creating environments** → `SUPPORTING_COMPONENTS.md` § "Environments"
+**Action selection** → `SUPPORTING_COMPONENTS.md` § "Decision Making"
+**Goal decomposition** → `HIERARCHICAL_GOALS_COMPLETE.md`
+**Debugging** → `SUPPORTING_COMPONENTS.md` § "Diagnostics"
 
 ### By Role
 
-**New User** → `ARCHITECTURE_OVERVIEW.md`  
-**Developer** → `ARCHITECTURE_OVERVIEW.md` → topic-specific docs  
-**Researcher** → All active docs + `../design/` + `../decisions/`  
+**New User** → `ARCHITECTURE_OVERVIEW.md`
+**Developer** → `ARCHITECTURE_OVERVIEW.md` → topic-specific docs
+**Researcher** → All active docs + `../design/` + `../decisions/`
 **Maintainer** → This index + `../reviews/architecture-docs-update-2025-12-13.md`
 
 ---
@@ -246,9 +246,9 @@ See ADRs (Architecture Decision Records) for formal design decisions:
 
 ### When to Update Docs
 
-**Code changes** → Update relevant active doc  
-**New major system** → Create new doc + update this index  
-**Architectural decision** → Create ADR in `../decisions/`  
+**Code changes** → Update relevant active doc
+**New major system** → Create new doc + update this index
+**Architectural decision** → Create ADR in `../decisions/`
 
 ### Update Checklist
 
@@ -301,6 +301,6 @@ See ADRs (Architecture Decision Records) for formal design decisions:
 
 ---
 
-**Last Updated**: December 13, 2025  
-**Status**: Complete ✅  
+**Last Updated**: December 13, 2025
+**Status**: Complete ✅
 **Next Review**: March 2026

@@ -36,6 +36,12 @@ A dedicated monitor for oscillator health with the following capabilities:
   - Measures correlation between theta phase and gamma amplitude
   - Alerts on weak coupling (< 0.2)
 
+- **Cross-Region Phase Synchrony**: Validates curriculum-critical coherence patterns
+  - Computes phase coherence between oscillator pairs across brain regions
+  - Supports custom coherence expectations for different curriculum stages
+  - Working Memory (Stage 1+): Hippocampus-PFC theta coherence
+  - Cross-Modal Binding (Stage 2+): Visual-Auditory gamma coherence
+
 - **Dead Oscillator**: Detects oscillators with no signal variation
   - Tracks amplitude variance over time
 
@@ -77,11 +83,6 @@ A dedicated monitor for oscillator health with the following capabilities:
 - Comprehensive test suite (10 tests, all passing)
 - Tests for all detection features
 - Integration tests with HealthMonitor
-
-### 7. **Documentation & Examples**
-- Example script: `examples/oscillator_health_monitoring.py`
-- Demonstrates standalone and integrated usage
-- Shows all detection capabilities
 
 ## Usage
 
@@ -130,13 +131,36 @@ print(f"Theta amplitude: {stats['amplitude']['mean']:.3f}")
 monitor.reset_history()
 ```
 
+### Cross-Region Phase Synchrony:
+```python
+from thalia.diagnostics.oscillator_health import OscillatorHealthMonitor
+
+monitor = OscillatorHealthMonitor()
+
+# Define curriculum-critical synchrony expectations
+synchrony_expectations = [
+    ("hippocampus.theta", "prefrontal.theta", 0.7),  # Working memory
+    ("cortex.gamma", "cerebellum.gamma", 0.6),       # Cross-modal binding
+]
+
+# Check cross-region synchrony
+region_phases = brain.get_diagnostics()["region_oscillator_phases"]
+report = monitor.check_cross_region_synchrony(region_phases, synchrony_expectations)
+
+if not report.is_healthy:
+    for issue in report.issues:
+        print(f"{issue.description}")
+        print(f"  Expected: {issue.expected_coherence:.2f}, Actual: {issue.actual_coherence:.2f}")
+```
+
 ## Benefits
 
 1. **Early Detection**: Catches oscillator pathology before it causes mysterious failures
 2. **Actionable Feedback**: Provides specific recommendations for fixing issues
 3. **Biological Accuracy**: Monitors oscillations critical for temporal dynamics
-4. **Comprehensive**: Covers frequency, phase, amplitude, and coupling health
+4. **Comprehensive**: Covers frequency, phase, amplitude, coupling, and cross-region synchrony
 5. **Configurable**: All thresholds and parameters are adjustable
+6. **Curriculum Validation**: Supports validation of stage-critical synchrony patterns
 6. **Non-Intrusive**: Optional monitoring with graceful degradation
 
 ## Biological Motivation
@@ -149,27 +173,18 @@ Brain oscillations are fundamental to cognition, and their pathology indicates s
 
 This monitor provides automated detection of these pathological patterns in the Thalia architecture.
 
-## Related TODO Items
-
-- ✅ **Oscillatory pathology detection** - **COMPLETED**
-- 🔲 Cross-region phase synchrony metrics - **Future work**
-- 🔲 Adaptive coupling strength - **Future work**
-- 🔲 Region-specific coupling - **Future work**
-
 ## Files Changed/Created
 
 ### Created:
 1. `src/thalia/diagnostics/oscillator_health.py` (512 lines)
 2. `tests/unit/diagnostics/test_oscillator_health.py` (222 lines)
-3. `examples/oscillator_health_monitoring.py` (146 lines)
-4. `docs/oscillator_pathology_detection.md` (this file)
+3. `docs/oscillator_pathology_detection.md` (this file)
 
 ### Modified:
 1. `src/thalia/diagnostics/health_monitor.py` - Added oscillator monitoring integration
 2. `src/thalia/diagnostics/__init__.py` - Added exports
 3. `src/thalia/core/brain.py` - Added oscillator diagnostics
 4. `src/thalia/coordination/oscillator.py` - Added get_frequencies() method
-5. `TODO.md` - Marked item as completed
 
 ## Test Results
 

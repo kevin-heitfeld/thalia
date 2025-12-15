@@ -4,18 +4,7 @@ This guide helps you get started with Thalia's curriculum training system for de
 
 ## Quick Start
 
-### 1. Run the Example
-
-```bash
-cd examples
-python curriculum_training_example.py
-```
-
-This demonstrates training a brain through:
-- **Stage -0.5** (Sensorimotor): Motor control and reaching
-- **Stage 0** (Phonology): Visual and phonological foundations
-
-### 2. Basic Usage Pattern
+**Basic Usage Pattern**
 
 ```python
 from thalia.core import Brain  # EventDrivenBrain
@@ -392,8 +381,7 @@ brain.set_threshold_multiplier(0.8)
 
 1. **Read the full strategy**: [`curriculum_strategy.md`](design/curriculum_strategy.md)
 2. **Review implementation plan**: [`curriculum_implementation.md`](design/curriculum_implementation.md)
-3. **Check example code**: [`examples/curriculum_training_example.py`](../examples/curriculum_training_example.py)
-4. **Run tests**: `pytest tests/integration/test_curriculum*.py`
+3. **Run tests**: `pytest tests/integration/test_curriculum*.py`
 
 ## Getting Help
 
@@ -406,4 +394,3 @@ brain.set_threshold_multiplier(0.8)
 
 - Curriculum strategy: `docs/design/curriculum_strategy.md`
 - Checkpoint format: `docs/design/checkpoint_format.md`
-- Example code: `examples/curriculum_training_example.py`

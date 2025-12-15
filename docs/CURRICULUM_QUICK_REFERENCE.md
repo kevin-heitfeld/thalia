@@ -234,15 +234,11 @@ config = get_curriculum_growth_config(conservative=False)
 
 - Full strategy: `docs/design/curriculum_strategy.md`
 - Getting started: `docs/GETTING_STARTED_CURRICULUM.md`
-- Example: `examples/curriculum_training_example.py`
 - Checkpoints: `docs/design/checkpoint_format.md`
 
 ## Test Commands
 
 ```bash
-# Run example
-python examples/curriculum_training_example.py
-
 # Run tests (when implemented)
 pytest tests/integration/test_curriculum*.py
 

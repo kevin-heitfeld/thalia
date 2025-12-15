@@ -62,6 +62,7 @@ class OscillatorIssue(Enum):
     SYNCHRONY_LOSS = "synchrony_loss"
     PATHOLOGICAL_COUPLING = "pathological_coupling"
     OSCILLATOR_DEAD = "oscillator_dead"
+    CROSS_REGION_DESYNCHRONY = "cross_region_desynchrony"
 
 
 @dataclass
@@ -112,6 +113,10 @@ class OscillatorHealthConfig:
     # Coupling bounds
     coupling_strength_min: float = 0.1   # Below this = ineffective coupling
     coupling_strength_max: float = 1.0   # Above this = pathological coupling
+
+    # Cross-region synchrony thresholds
+    phase_coherence_min: float = 0.3     # Below this = poor synchrony
+    phase_coherence_window: int = 50     # Window for coherence computation
 
     # History and reporting
     history_length: int = 100
@@ -475,3 +480,173 @@ class OscillatorHealthMonitor:
         }
 
         return stats
+
+    def compute_phase_coherence(
+        self,
+        region1_phases: Dict[str, float],
+        region2_phases: Dict[str, float],
+        oscillator: str = 'gamma',
+    ) -> float:
+        """Compute phase coherence between two regions for a specific oscillator.
+
+        Phase coherence measures how synchronized two regions are at a given
+        frequency. High coherence indicates coordinated activity (e.g., for
+        cross-modal binding or working memory).
+
+        Biological Context:
+        ===================
+        - **Gamma coherence**: Cross-modal binding (visual + auditory)
+        - **Theta coherence**: Working memory (hippocampus-PFC)
+        - **Alpha coherence**: Attention coordination across regions
+        - **Beta coherence**: Motor-cognitive coordination
+
+        Args:
+            region1_phases: Phase dict for first region
+            region2_phases: Phase dict for second region
+            oscillator: Which oscillator to measure ('theta', 'gamma', etc.)
+
+        Returns:
+            Phase coherence [0, 1] where 1 = perfect synchrony
+
+        Reference:
+            Fries (2015): Rhythms for Cognition: Communication Through Coherence
+        """
+        if oscillator not in region1_phases or oscillator not in region2_phases:
+            return 0.0
+
+        phase1 = region1_phases[oscillator]
+        phase2 = region2_phases[oscillator]
+
+        # Compute phase difference
+        phase_diff = phase1 - phase2
+
+        # Normalize to [-π, π]
+        while phase_diff > math.pi:
+            phase_diff -= 2 * math.pi
+        while phase_diff < -math.pi:
+            phase_diff += 2 * math.pi
+
+        # Convert phase difference to coherence [0, 1]
+        # Perfect synchrony (phase_diff=0) → coherence=1
+        # Complete desynchrony (phase_diff=π) → coherence=0
+        coherence = (1.0 + math.cos(phase_diff)) / 2.0
+
+        return coherence
+
+    def compute_region_pair_coherence(
+        self,
+        region_phases: Dict[str, Dict[str, float]],
+        region_pairs: Optional[List[tuple]] = None,
+        oscillators: Optional[List[str]] = None,
+    ) -> Dict[str, Dict[str, float]]:
+        """Compute phase coherence for multiple region pairs and oscillators.
+
+        This is the primary method for validating curriculum mechanisms:
+        - Stage 1: Hippocampus-PFC theta coherence (working memory)
+        - Stage 2+: Visual-auditory gamma coherence (cross-modal binding)
+
+        Args:
+            region_phases: Dict mapping region_name → {oscillator: phase}
+                Example: {'hippocampus': {'theta': 1.2, 'gamma': 2.5},
+                         'prefrontal': {'theta': 1.3, 'gamma': 2.7}}
+            region_pairs: List of (region1, region2) tuples to measure
+                If None, measures all pairs
+            oscillators: List of oscillators to measure
+                If None, uses ['theta', 'gamma'] (most important for curriculum)
+
+        Returns:
+            Dictionary: {(region1, region2): {oscillator: coherence}}
+                Example: {('hippocampus', 'prefrontal'): {'theta': 0.85, 'gamma': 0.62}}
+        """
+        if oscillators is None:
+            oscillators = ['theta', 'gamma']  # Most important for curriculum
+
+        # Auto-generate all pairs if not specified
+        if region_pairs is None:
+            regions = list(region_phases.keys())
+            region_pairs = []
+            for i, r1 in enumerate(regions):
+                for r2 in regions[i+1:]:
+                    region_pairs.append((r1, r2))
+
+        coherence_map = {}
+
+        for region1, region2 in region_pairs:
+            if region1 not in region_phases or region2 not in region_phases:
+                continue
+
+            pair_key = f"{region1}-{region2}"
+            coherence_map[pair_key] = {}
+
+            for osc in oscillators:
+                coherence = self.compute_phase_coherence(
+                    region_phases[region1],
+                    region_phases[region2],
+                    oscillator=osc,
+                )
+                coherence_map[pair_key][osc] = coherence
+
+        return coherence_map
+
+    def check_cross_region_synchrony(
+        self,
+        region_phases: Dict[str, Dict[str, float]],
+        expected_synchrony: Optional[Dict[tuple, Dict[str, float]]] = None,
+    ) -> List[OscillatorIssueReport]:
+        """Check for expected cross-region synchrony and detect problems.
+
+        Validates curriculum mechanisms:
+        - Working memory tasks: Expect high hippocampus-PFC theta coherence
+        - Cross-modal binding: Expect high visual-auditory gamma coherence
+
+        Args:
+            region_phases: Dict mapping region_name → {oscillator: phase}
+            expected_synchrony: Dict of expected coherence thresholds
+                Example: {('hippocampus', 'prefrontal'): {'theta': 0.6}}
+                If None, uses default curriculum expectations
+
+        Returns:
+            List of issues if synchrony is below expected levels
+        """
+        issues = []
+
+        # Default expectations from curriculum
+        if expected_synchrony is None:
+            expected_synchrony = {
+                # Stage 1+: Working memory requires hippocampus-PFC theta coherence
+                ('hippocampus', 'prefrontal'): {'theta': 0.5},
+                # Stage 2+: Cross-modal binding requires visual-auditory gamma coherence
+                ('visual_cortex', 'auditory_cortex'): {'gamma': 0.4},
+                ('cortex', 'hippocampus'): {'gamma': 0.3},  # General binding
+            }
+
+        # Compute actual coherence
+        coherence_map = self.compute_region_pair_coherence(region_phases)
+
+        # Check each expected synchrony
+        for pair, osc_thresholds in expected_synchrony.items():
+            region1, region2 = pair
+            pair_key = f"{region1}-{region2}"
+            reverse_key = f"{region2}-{region1}"
+
+            # Check both orderings
+            actual_coherence = coherence_map.get(pair_key) or coherence_map.get(reverse_key)
+
+            if actual_coherence is None:
+                continue  # Regions not present
+
+            for osc, min_coherence in osc_thresholds.items():
+                coherence = actual_coherence.get(osc, 0.0)
+
+                if coherence < min_coherence:
+                    severity = 60.0 * (min_coherence - coherence) / min_coherence
+                    issues.append(OscillatorIssueReport(
+                        issue_type=OscillatorIssue.CROSS_REGION_DESYNCHRONY,
+                        oscillator_name=f"{pair_key}-{osc}",
+                        severity=min(100, severity),
+                        description=f"Low {osc} coherence between {region1} and {region2}: {coherence:.3f} < {min_coherence:.3f}",
+                        recommendation=f"Check {osc} oscillator synchronization or coupling strength between regions",
+                        metrics={"coherence": coherence, "expected": min_coherence, "oscillator": osc},
+                    ))
+
+        return issues

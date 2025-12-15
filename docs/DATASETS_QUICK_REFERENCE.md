@@ -1,6 +1,6 @@
 # Task-Specific Datasets Quick Reference
 
-**Created**: December 8, 2025  
+**Created**: December 8, 2025
 **Status**: All Stage 0-3 datasets complete ✅
 
 ---
@@ -347,20 +347,6 @@ for step in range(120000):
 
 ---
 
-## Running the Demo
-
-```bash
-python examples/task_specific_datasets_demo.py
-```
-
-**Output**:
-- Temporal sequences: Pattern generation and statistics
-- CIFAR-10: Encoding methods and sparsity analysis
-- Grammar: Rule testing and violation detection
-- Reading: All task types demonstrated
-
----
-
 ## Files Created
 
 ```
@@ -370,9 +356,6 @@ src/thalia/datasets/
 ├── grammar.py                # Stage 2 - 700+ lines
 ├── reading.py                # Stage 3 - 800+ lines
 └── __init__.py               # Updated exports
-
-examples/
-└── task_specific_datasets_demo.py  # Comprehensive demo
 ```
 
 ---
@@ -386,5 +369,5 @@ examples/
 
 ---
 
-**Last Updated**: December 8, 2025  
+**Last Updated**: December 8, 2025
 **Status**: All Stage 0-3 datasets complete and tested ✅

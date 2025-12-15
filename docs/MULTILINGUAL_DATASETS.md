@@ -1,7 +1,7 @@
 # Multilingual Dataset Support
 
-**Date**: December 8, 2025  
-**Languages**: English, German, Spanish  
+**Date**: December 8, 2025
+**Languages**: English, German, Spanish
 **Status**: Complete ✅
 
 ---
@@ -164,7 +164,7 @@ for step in range(120000):
         dataset = reading_de
     else:
         dataset = reading_es
-    
+
     task_data, label, task_type = dataset.generate_task()
     # ... train brain
 ```
@@ -214,28 +214,9 @@ for step in range(120000):
 ```
 src/thalia/datasets/
 ├── grammar.py              # Added Language enum, multilingual vocab
-├── reading.py              # Added Language enum, multilingual vocab  
+├── reading.py              # Added Language enum, multilingual vocab
 └── __init__.py             # Export GrammarLanguage, ReadingLanguage
-
-examples/
-└── multilingual_datasets_demo.py  # NEW - Comprehensive demo
 ```
-
----
-
-## Demo Script
-
-Run the multilingual demo:
-```bash
-python examples/multilingual_datasets_demo.py
-```
-
-**Output includes**:
-- Grammar examples in all 3 languages
-- Reading examples with IPA phonemes
-- Cross-linguistic comparison (same rule, different languages)
-- Phoneme inventory comparison
-- Curriculum training suggestions
 
 ---
 
@@ -300,7 +281,6 @@ Successfully extended Grammar and Reading datasets to support **English**, **Ger
 ---
 
 **Next Steps**:
-1. Run `python examples/multilingual_datasets_demo.py` to test
-2. Integrate with curriculum training pipeline
-3. Experiment with different language mixing ratios
-4. Evaluate cross-linguistic transfer learning
+1. Integrate with curriculum training pipeline
+2. Experiment with different language mixing ratios
+3. Evaluate cross-linguistic transfer learning

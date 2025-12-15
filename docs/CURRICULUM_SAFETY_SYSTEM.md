@@ -1,7 +1,7 @@
 # Curriculum Safety System
 
-**Status**: Implementation Complete  
-**Priority**: CRITICAL - Use before any Stage 1+ training  
+**Status**: Implementation Complete
+**Priority**: CRITICAL - Use before any Stage 1+ training
 **Consensus Design**: Expert Review + ChatGPT Engineering Analysis
 
 ## Overview
@@ -41,15 +41,15 @@ safety = CurriculumSafetySystem(
 for step in range(training_steps):
     # Normal training step
     result = train_step(brain, batch)
-    
+
     # Update safety monitoring
     intervention = safety.update(brain, step, result)
-    
+
     # Handle intervention if triggered
     if intervention:
         actions = safety.handle_intervention(intervention, brain)
         execute_actions(actions)
-    
+
     # Periodic status check
     if step % 5000 == 0:
         status = safety.get_status()
@@ -252,10 +252,10 @@ from thalia.training.curriculum import CurriculumTrainer, CurriculumSafetySystem
 
 class SafeCurriculumTrainer(CurriculumTrainer):
     """Curriculum trainer with integrated safety system."""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Initialize safety system
         self.safety = CurriculumSafetySystem(
             brain=self.brain,
@@ -263,43 +263,43 @@ class SafeCurriculumTrainer(CurriculumTrainer):
             enable_auto_intervention=True,
             checkpoint_callback=self.save_checkpoint
         )
-    
+
     def train_step(self, batch):
         """Single training step with safety monitoring."""
         # Normal training
         result = super().train_step(batch)
-        
+
         # Safety update
         intervention = self.safety.update(
             self.brain,
             self.global_step,
             result
         )
-        
+
         # Handle intervention
         if intervention:
             self._handle_intervention(intervention)
-        
+
         return result
-    
+
     def _handle_intervention(self, intervention):
         """Execute intervention response."""
         actions = self.safety.handle_intervention(intervention, self.brain)
-        
+
         if 'trigger_consolidation' in actions['actions']:
             self.consolidate(emergency=True)
-        
+
         if 'reduce_task_complexity' in actions['actions']:
             self.reduce_difficulty()
-        
+
         if 'rollback_to_checkpoint' in actions['actions']:
             self.load_last_checkpoint()
             raise TrainingInterrupted("Rollback triggered")
-    
+
     def can_advance_to_next_stage(self):
         """Check if ready for next stage."""
         can_advance, gate_result = self.safety.can_advance_stage()
-        
+
         if can_advance:
             return True
         else:
@@ -307,12 +307,12 @@ class SafeCurriculumTrainer(CurriculumTrainer):
                 f"Cannot advance: {gate_result.failures}"
             )
             return False
-    
+
     def advance_stage(self):
         """Advance to next stage (after passing gate)."""
         if not self.can_advance_to_next_stage():
             raise ValueError("Stage gate criteria not met")
-        
+
         self.safety.advance_to_next_stage()
         self.current_stage = self.safety.current_stage
         logger.info(f"Advanced to stage {self.current_stage}")
@@ -404,7 +404,7 @@ if intervention:
 # Check health every 5k steps
 if step % 5000 == 0:
     status = safety.get_status()
-    
+
     if status.health_score < 0.7:
         logger.warning(f"Health declining: {status.health_score:.2f}")
         # Consider consolidation or load reduction

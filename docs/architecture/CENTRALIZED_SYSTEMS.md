@@ -1,6 +1,6 @@
 # Centralized Systems Architecture
 
-**Status**: ✅ COMPLETE  
+**Status**: ✅ COMPLETE
 **Last Updated**: December 2025
 
 ## Overview
@@ -229,7 +229,6 @@ Potential additional centralized systems:
 Each system has comprehensive tests:
 - Unit tests: `tests/unit/neuromodulation/`, `tests/unit/coordination/`
 - Integration tests: `tests/integration/`
-- Example usage: `examples/test_brain_coordination.py`
 
 ---
 

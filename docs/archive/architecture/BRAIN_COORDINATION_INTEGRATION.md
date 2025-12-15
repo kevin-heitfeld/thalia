@@ -1,10 +1,10 @@
 # Brain Integration of Homeostatic Regulation & Coordination - COMPLETE
 
-> **⚠️ ARCHIVED DOCUMENTATION**: This document is preserved for historical reference but contains **outdated file paths**. 
+> **⚠️ ARCHIVED DOCUMENTATION**: This document is preserved for historical reference but contains **outdated file paths**.
 > For current information, see **[CENTRALIZED_SYSTEMS.md](CENTRALIZED_SYSTEMS.md)** and **[ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md)**.
 
-**Date**: December 10, 2025  
-**Status**: ✅ FULLY INTEGRATED (Implementation complete, paths updated)  
+**Date**: December 10, 2025
+**Status**: ✅ FULLY INTEGRATED (Implementation complete, paths updated)
 
 ---
 
@@ -13,8 +13,6 @@
 Successfully integrated **homeostatic regulation** and **neuromodulator coordination** into the `EventDrivenBrain` class. The Brain now automatically applies biological coordination when broadcasting neuromodulators to all regions.
 
 ## Changes Made
-
-### 1. Brain.py Modifications
 
 **File**: `src/thalia/core/brain.py`
 
@@ -60,31 +58,6 @@ self.cortex.impl.set_acetylcholine(acetylcholine)
 # ... (same for hippocampus, pfc, striatum, cerebellum)
 ```
 
-### 2. Integration Test
-
-**File**: `examples/test_brain_coordination.py` (~130 lines)
-
-**Tests**:
-- ✅ NeuromodulatorCoordination instance created
-- ✅ Coordination applied during timestep updates  
-- ✅ All regions receive coordinated signals
-- ✅ Signals consistent across regions
-- ✅ System functions normally over multiple samples
-
-**Run it**:
-```bash
-python examples/test_brain_coordination.py
-```
-
-**Example Output**:
-```
-Sample 4:
-  System levels -> DA: 0.0591, NE: 0.5635, ACh: 0.3330
-  Cortex receives -> DA: 0.0591, NE: 0.5635, ACh: 0.3224
-```
-
-Notice: ACh differs slightly (0.3330 → 0.3224) due to coordination effects!
-
 ---
 
 ## How It Works
@@ -94,7 +67,7 @@ Notice: ACh differs slightly (0.3330 → 0.3224) due to coordination effects!
 Every timestep in `_timestep_updates()`:
 
 1. **VTA updates** with intrinsic reward → produces DA
-2. **LC updates** with uncertainty → produces NE  
+2. **LC updates** with uncertainty → produces NE
 3. **NB updates** with prediction error → produces ACh
 
 4. **Coordination applied** (in order):
@@ -139,7 +112,7 @@ if prediction_error > 0.5 and norepinephrine > 0.5:
 - No biological interactions
 - Manual coordination required by users
 
-### After Integration  
+### After Integration
 - **Automatic coordination** on every timestep
 - **Biologically accurate** system interactions
 - **No user action required** - works out of the box
@@ -231,22 +204,6 @@ ach_modulated = coord.coordinate_da_ach(da, ach, strength=0.5)  # Custom strengt
 
 ---
 
-## Files Modified
-
-1. **`src/thalia/core/brain.py`**
-   - Added import of `NeuromodulatorCoordination`
-   - Added coordination instance to `__init__`
-   - Updated `_timestep_updates()` to apply coordination
-   - ~40 lines modified/added
-
-2. **`examples/test_brain_coordination.py`** (new)
-   - Integration test demonstrating coordination
-   - ~130 lines
-
-**Total**: ~170 lines across 2 files
-
----
-
 ## Performance Impact
 
 **Negligible** - coordination adds ~50 operations per timestep:
@@ -293,6 +250,6 @@ Key achievements:
 
 ---
 
-**Author**: Thalia Project  
-**Date**: December 10, 2025  
+**Author**: Thalia Project
+**Date**: December 10, 2025
 **Status**: ✅ PRODUCTION READY

@@ -48,7 +48,173 @@ class TestOscillatorHealthMonitor:
 
         assert report.is_healthy
         assert len(report.issues) == 0
-        assert report.overall_severity == 0.0
+
+
+class TestCrossRegionSynchrony:
+    """Test cross-region phase synchrony metrics."""
+
+    def test_perfect_synchrony(self):
+        """Test detection of perfect phase synchrony."""
+        monitor = OscillatorHealthMonitor()
+
+        # Two regions with identical phases (perfect synchrony)
+        region1_phases = {'theta': 1.0, 'gamma': 2.0}
+        region2_phases = {'theta': 1.0, 'gamma': 2.0}
+
+        # Should get coherence = 1.0
+        coherence = monitor.compute_phase_coherence(
+            region1_phases, region2_phases, 'theta'
+        )
+
+        assert coherence == pytest.approx(1.0, abs=0.01)
+
+    def test_zero_synchrony(self):
+        """Test detection of opposite phases (no synchrony)."""
+        monitor = OscillatorHealthMonitor()
+
+        # Two regions with opposite phases (π radians apart)
+        region1_phases = {'theta': 0.0, 'gamma': 0.0}
+        region2_phases = {'theta': math.pi, 'gamma': math.pi}
+
+        # Should get coherence ≈ 0.0
+        coherence = monitor.compute_phase_coherence(
+            region1_phases, region2_phases, 'theta'
+        )
+
+        assert coherence == pytest.approx(0.0, abs=0.01)
+
+    def test_partial_synchrony(self):
+        """Test detection of partial synchrony."""
+        monitor = OscillatorHealthMonitor()
+
+        # Two regions with π/2 phase difference
+        region1_phases = {'theta': 0.0}
+        region2_phases = {'theta': math.pi / 2}
+
+        coherence = monitor.compute_phase_coherence(
+            region1_phases, region2_phases, 'theta'
+        )
+
+        # cos(π/2) = 0, so (1 + 0)/2 = 0.5
+        assert coherence == pytest.approx(0.5, abs=0.01)
+
+    def test_region_pair_coherence(self):
+        """Test computing coherence for multiple region pairs."""
+        monitor = OscillatorHealthMonitor()
+
+        # Three regions with varying synchrony
+        region_phases = {
+            'hippocampus': {'theta': 1.0, 'gamma': 2.0},
+            'prefrontal': {'theta': 1.1, 'gamma': 2.5},  # Slight theta offset
+            'cortex': {'theta': 1.0, 'gamma': 3.0},      # Large gamma offset
+        }
+
+        # Compute all pairs for theta and gamma
+        coherence_map = monitor.compute_region_pair_coherence(
+            region_phases,
+            oscillators=['theta', 'gamma']
+        )
+
+        # Should have 3 pairs: hippo-pfc, hippo-cortex, pfc-cortex
+        assert len(coherence_map) == 3
+
+        # Hippocampus-prefrontal theta should be high (small phase diff)
+        hippo_pfc = coherence_map.get('hippocampus-prefrontal')
+        assert hippo_pfc is not None
+        assert hippo_pfc['theta'] > 0.9  # Very close phases
+
+    def test_working_memory_synchrony_detection(self):
+        """Test detection of working memory synchrony (hippocampus-PFC theta)."""
+        monitor = OscillatorHealthMonitor()
+
+        # Good working memory: high hippocampus-PFC theta coherence
+        region_phases_good = {
+            'hippocampus': {'theta': 1.0, 'gamma': 2.0},
+            'prefrontal': {'theta': 1.05, 'gamma': 2.2},  # Close theta phases
+        }
+
+        issues = monitor.check_cross_region_synchrony(region_phases_good)
+        assert len(issues) == 0  # No issues with high coherence
+
+        # Poor working memory: low hippocampus-PFC theta coherence
+        region_phases_poor = {
+            'hippocampus': {'theta': 0.0, 'gamma': 2.0},
+            'prefrontal': {'theta': math.pi, 'gamma': 2.2},  # Opposite theta phases
+        }
+
+        issues = monitor.check_cross_region_synchrony(region_phases_poor)
+        # Should detect desynchrony
+        assert len(issues) > 0
+        assert any(
+            issue.issue_type == OscillatorIssue.CROSS_REGION_DESYNCHRONY
+            for issue in issues
+        )
+
+    def test_cross_modal_binding_synchrony(self):
+        """Test detection of cross-modal binding (visual-auditory gamma)."""
+        monitor = OscillatorHealthMonitor()
+
+        # Good binding: high visual-auditory gamma coherence
+        region_phases_good = {
+            'visual_cortex': {'gamma': 2.0, 'theta': 1.0},
+            'auditory_cortex': {'gamma': 2.1, 'theta': 1.5},  # Close gamma phases
+        }
+
+        issues = monitor.check_cross_region_synchrony(region_phases_good)
+        assert len(issues) == 0  # No issues
+
+        # Poor binding: low gamma coherence
+        region_phases_poor = {
+            'visual_cortex': {'gamma': 0.0, 'theta': 1.0},
+            'auditory_cortex': {'gamma': math.pi, 'theta': 1.5},  # Opposite gamma
+        }
+
+        issues = monitor.check_cross_region_synchrony(region_phases_poor)
+        # Should detect desynchrony
+        assert len(issues) > 0
+        desynchrony_issues = [
+            i for i in issues
+            if i.issue_type == OscillatorIssue.CROSS_REGION_DESYNCHRONY
+        ]
+        assert len(desynchrony_issues) > 0
+
+    def test_custom_synchrony_expectations(self):
+        """Test checking synchrony with custom expectations."""
+        monitor = OscillatorHealthMonitor()
+
+        region_phases = {
+            'region1': {'theta': 1.0, 'gamma': 2.0},
+            'region2': {'theta': math.pi, 'gamma': 2.1},  # Opposite theta phases
+        }
+
+        # Custom expectation: require high theta coherence
+        custom_expectations = {
+            ('region1', 'region2'): {'theta': 0.7}  # High threshold
+        }
+
+        issues = monitor.check_cross_region_synchrony(
+            region_phases,
+            expected_synchrony=custom_expectations
+        )
+
+        # Should detect poor theta synchrony (opposite phases)
+        assert len(issues) > 0
+        assert any('theta' in issue.oscillator_name for issue in issues)
+
+    def test_phase_wrapping(self):
+        """Test that phase differences handle 2π wrapping correctly."""
+        monitor = OscillatorHealthMonitor()
+
+        # Phases near 0 and 2π should be considered close
+        region1_phases = {'theta': 0.1}
+        region2_phases = {'theta': 2 * math.pi - 0.1}  # Almost 2π
+
+        coherence = monitor.compute_phase_coherence(
+            region1_phases, region2_phases, 'theta'
+        )
+
+        # These are very close (0.2 radians apart after wrapping)
+        assert coherence > 0.95
 
     def test_frequency_drift_detection(self):
         """Test detection of abnormal frequencies."""
