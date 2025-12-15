@@ -116,8 +116,8 @@ class ConductanceLIFConfig(BaseNeuronConfig):
     adapt_increment: float = 0.0
     E_adapt: float = -0.5  # Adaptation reversal (hyperpolarizing, like slow K+)
 
-    # Noise
-    noise_std: float = 0.0
+    # Noise (enable by default for biological realism)
+    noise_std: float = 0.01  # NOISE_STD_LOW - enables exploration and prevents overfitting
 
     @property
     def tau_m(self) -> float:

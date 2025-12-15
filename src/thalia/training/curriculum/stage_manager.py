@@ -151,11 +151,15 @@ from thalia.config.curriculum_growth import (
     CurriculumStage,
     get_curriculum_growth_config,
 )
-from thalia.training.curriculum import (
+from thalia.training.curriculum.curriculum import (
     InterleavedCurriculumSampler,
     SpacedRepetitionScheduler,
     TestingPhaseProtocol,
     StageTransitionProtocol,
+)
+from thalia.training.curriculum.noise_scheduler import (
+    NoiseScheduler,
+    NoiseSchedulerConfig,
 )
 from thalia.memory.consolidation.consolidation import (
     MemoryPressureDetector,
@@ -677,6 +681,7 @@ class CurriculumTrainer:
         self.memory_pressure = MemoryPressureDetector()
         self.sleep_controller = SleepStageController()
         self.critical_period_gating = CriticalPeriodGating()  # NEW: Critical period windows
+        self.noise_scheduler = NoiseScheduler(NoiseSchedulerConfig(verbose=verbose))  # NEW: Noise scheduling
 
         # Safety system (NEW: Comprehensive safety monitoring)
         self.enable_safety_system = enable_safety_system
@@ -767,6 +772,13 @@ class CurriculumTrainer:
         self.current_stage = stage
         self.stage_start_step = self.global_step
         start_time = time.time()
+
+        # Update noise scheduler for new stage
+        self.noise_scheduler.set_stage(stage)
+        self._apply_noise_profile_to_brain()
+
+        if self.verbose:
+            print(f"🔊 Noise profile: {self.noise_scheduler.get_current_profile()}")
 
         # Update safety system for new stage
         if self.safety_system:
@@ -903,6 +915,15 @@ class CurriculumTrainer:
                 if step % 1000 == 0:
                     metrics = self._collect_metrics()
                     self._log_progress(stage, step, metrics)
+
+                    # Update noise scheduler with current performance and criticality
+                    avg_performance = sum(self.task_performance[t][-100:] if self.task_performance[t] else [0.0] for t in self.task_performance) / max(1, len(self.task_performance))
+                    criticality = metrics.get('criticality', 1.0) if metrics else 1.0
+                    self.noise_scheduler.update(stage, performance=avg_performance, criticality=criticality)
+
+                    # Apply updated noise profile
+                    if step % 5000 == 0:  # Re-apply every 5000 steps for adaptation
+                        self._apply_noise_profile_to_brain()
 
                 # Call callbacks every step for progress tracking
                 # Only collect metrics if not already done above
@@ -1684,6 +1705,55 @@ class CurriculumTrainer:
             milestone_metadata = {'milestones': self._last_milestone_results}
 
         return self.save_checkpoint(name=name, metadata=milestone_metadata)
+
+    def _apply_noise_profile_to_brain(self) -> None:
+        """Apply current noise profile to all brain regions and oscillators.
+
+        This updates membrane noise, weight noise settings, oscillator phase noise,
+        and other noise-related parameters across all neural components.
+        """
+        profile = self.noise_scheduler.get_current_profile()
+
+        # Apply membrane noise to all regions with neurons
+        region_mapping = {
+            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
+            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
+            'pfc': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
+            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
+            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
+            'thalamus': self.brain.thalamus.impl if hasattr(self.brain, 'thalamus') else None,
+        }
+
+        for region_name, region in region_mapping.items():
+            if region is None:
+                continue
+
+            # Get region-specific membrane noise
+            membrane_noise = self.noise_scheduler.get_membrane_noise_for_region(region_name)
+
+            # Apply to neurons if they exist
+            if hasattr(region, 'neurons') and region.neurons is not None:
+                if hasattr(region.neurons, 'config'):
+                    region.neurons.config.noise_std = membrane_noise
+
+            # Apply weight noise flag to region (for learning)
+            if hasattr(region, '_weight_noise_enabled'):
+                region._weight_noise_enabled = profile.enable_weight_noise
+            if hasattr(region, '_weight_noise_std'):
+                region._weight_noise_std = profile.weight_noise_std
+
+        # Apply working memory noise to PFC specifically
+        if hasattr(self.brain, 'pfc') and self.brain.pfc.impl is not None:
+            pfc = self.brain.pfc.impl
+            if hasattr(pfc, 'pfc_config'):
+                pfc.pfc_config.wm_noise_std = profile.wm_noise_std
+
+        # Apply oscillator phase noise to all oscillators
+        if hasattr(self.brain, 'oscillators'):
+            phase_noise_std = self.noise_scheduler.get_oscillator_phase_noise_std()
+            for _, oscillator in self.brain.oscillators.items():
+                if hasattr(oscillator, 'config'):
+                    oscillator.config.phase_noise_std = phase_noise_std
 
     def _apply_critical_period_modulation(
         self,

@@ -2,8 +2,6 @@
 
 ---
 
-- optional: add noise to the whole brain (processing (weights) + temporal (spikes))
-  - enable during curriculum training? (see curriculum strategy)
 - `docs\design\circuit_modeling_plan.md`
 - Sparse computations throughout?
 - Consciousness / Self-Awareness:

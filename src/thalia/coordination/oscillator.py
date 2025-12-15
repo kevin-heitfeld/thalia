@@ -60,6 +60,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 import math
+import random
 
 import torch.nn as nn
 
@@ -75,11 +76,15 @@ class OscillatorConfig:
         dt_ms: Default timestep in milliseconds
         initial_phase: Starting phase in radians [0, 2π)
         amplitude: Base amplitude (signal range multiplier)
+        phase_noise_std: Standard deviation of phase noise in radians (default: 0.0)
+            Biological oscillators have drift ~0.05 rad (~3 degrees)
+            This makes phase coding more robust and realistic
     """
     frequency_hz: float = 10.0
     dt_ms: float = 1.0
     initial_phase: float = 0.0
     amplitude: float = 1.0
+    phase_noise_std: float = 0.0  # Enable with 0.05 for biological realism
 
 
 class BrainOscillator(nn.Module, ABC):
@@ -139,6 +144,7 @@ class BrainOscillator(nn.Module, ABC):
         Advance the oscillator by one timestep.
 
         Updates phase based on current frequency and wraps to [0, 2π).
+        Optionally adds phase noise for biological realism.
 
         Args:
             dt_ms: Timestep in milliseconds (uses config default if None)
@@ -147,6 +153,11 @@ class BrainOscillator(nn.Module, ABC):
 
         # Advance phase
         self._phase += self._phase_per_ms * dt
+
+        # Add phase noise if configured (biological oscillator drift)
+        if self.config.phase_noise_std > 0:
+            noise = random.gauss(0, self.config.phase_noise_std)
+            self._phase += noise
 
         # Wrap to [0, 2π)
         self._phase = self._phase % (2.0 * math.pi)
@@ -277,12 +288,14 @@ class SinusoidalOscillator(BrainOscillator):
         dt_ms: float = 1.0,
         initial_phase: float = 0.0,
         amplitude: float = 1.0,
+        phase_noise_std: float = 0.0,
     ):
         config = OscillatorConfig(
             frequency_hz=frequency_hz,
             dt_ms=dt_ms,
             initial_phase=initial_phase,
             amplitude=amplitude,
+            phase_noise_std=phase_noise_std,
         )
         super().__init__(config)
 

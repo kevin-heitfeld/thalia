@@ -65,6 +65,12 @@ from thalia.training.curriculum.stage_monitoring import (
     InterventionType,
     MonitoringMetrics,
 )
+from thalia.training.curriculum.noise_scheduler import (
+    NoiseScheduler,
+    NoiseSchedulerConfig,
+    NoiseProfile,
+    NoiseType,
+)
 
 __all__ = [
     # Curriculum mechanics
@@ -89,6 +95,11 @@ __all__ = [
     "MechanismPriority",
     "ActiveMechanism",
     "CognitiveLoadMonitor",
+    # Noise scheduling (NEW)
+    "NoiseScheduler",
+    "NoiseSchedulerConfig",
+    "NoiseProfile",
+    "NoiseType",
     # Safety system (NEW)
     "CurriculumSafetySystem",
     "SafetyStatus",

@@ -43,6 +43,11 @@ from thalia.training.curriculum import (
     MechanismPriority,
     ActiveMechanism,
     CognitiveLoadMonitor,
+    # Noise scheduling
+    NoiseScheduler,
+    NoiseSchedulerConfig,
+    NoiseProfile,
+    NoiseType,
     # Stage evaluation
     evaluate_stage_sensorimotor,
     evaluate_stage_phonology,
@@ -109,6 +114,11 @@ __all__ = [
     "MechanismPriority",
     "ActiveMechanism",
     "CognitiveLoadMonitor",
+    # Noise scheduling
+    "NoiseScheduler",
+    "NoiseSchedulerConfig",
+    "NoiseProfile",
+    "NoiseType",
     # Stage evaluation
     "evaluate_stage_sensorimotor",
     "evaluate_stage_phonology",
