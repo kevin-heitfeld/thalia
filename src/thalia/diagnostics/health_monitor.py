@@ -56,6 +56,7 @@ class HealthIssue(Enum):
     CRITICALITY_DRIFT = "criticality_drift"
     DOPAMINE_SATURATION = "dopamine_saturation"
     LEARNING_STALL = "learning_stall"
+    OSCILLATOR_PATHOLOGY = "oscillator_pathology"
 
 
 class IssueSeverity(Enum):
@@ -155,23 +156,36 @@ class HealthMonitor:
     1. Detect common pathological states
     2. Provide severity scoring
     3. Suggest corrective actions
+    4. Monitor oscillator health (optional)
 
     It's designed to be called during training/testing to catch
     issues early before they cause mysterious failures.
     """
 
-    def __init__(self, config: Optional[HealthConfig] = None):
+    def __init__(self, config: Optional[HealthConfig] = None, enable_oscillator_monitoring: bool = True):
         """Initialize health monitor.
 
         Args:
             config: Health configuration (uses defaults if None)
+            enable_oscillator_monitoring: Enable oscillator health monitoring
         """
         self.config = config or HealthConfig()
+        self.enable_oscillator_monitoring = enable_oscillator_monitoring
 
         # History for tracking trends
         self._spike_rate_history: List[float] = []
         self._weight_mean_history: List[float] = []
         self._max_history_len = 100
+
+        # Oscillator health monitor (optional)
+        self.oscillator_monitor = None
+        if enable_oscillator_monitoring:
+            try:
+                from .oscillator_health import OscillatorHealthMonitor
+                self.oscillator_monitor = OscillatorHealthMonitor()
+            except ImportError:
+                # Graceful degradation if oscillator_health not available
+                self.enable_oscillator_monitoring = False
 
     def check_health(self, diagnostics: Dict[str, Any]) -> HealthReport:
         """Check network health from diagnostic data.
@@ -330,6 +344,35 @@ class HealthMonitor:
                 recommendation="Reduce reward scaling or enable reward normalization",
                 metrics={"dopamine": global_da, "threshold": cfg.dopamine_max},
             ))
+
+        # =====================================================================
+        # CHECK 6: Oscillator Health (if enabled)
+        # =====================================================================
+
+        if self.enable_oscillator_monitoring and self.oscillator_monitor:
+            oscillator_data = diagnostics.get("oscillators", {})
+            if oscillator_data:
+                try:
+                    osc_report = self.oscillator_monitor.check_health(
+                        phases=oscillator_data.get("phases", {}),
+                        frequencies=oscillator_data.get("frequencies", {}),
+                        amplitudes=oscillator_data.get("amplitudes", {}),
+                        signals=oscillator_data.get("signals"),
+                        couplings=oscillator_data.get("couplings"),
+                    )
+
+                    # Add oscillator issues to main report
+                    for osc_issue in osc_report.issues:
+                        issues.append(IssueReport(
+                            issue_type=HealthIssue.OSCILLATOR_PATHOLOGY,
+                            severity=osc_issue.severity,
+                            description=f"[{osc_issue.oscillator_name}] {osc_issue.description}",
+                            recommendation=osc_issue.recommendation,
+                            metrics=osc_issue.metrics,
+                        ))
+                except Exception:
+                    # Graceful degradation on oscillator check failure
+                    pass
 
         # =====================================================================
         # Filter by severity threshold

@@ -24,6 +24,13 @@ from .health_monitor import (
     IssueReport,
     HealthIssue,
 )
+from .oscillator_health import (
+    OscillatorHealthConfig,
+    OscillatorHealthMonitor,
+    OscillatorHealthReport,
+    OscillatorIssueReport,
+    OscillatorIssue,
+)
 from .performance_profiler import (
     PerformanceProfiler,
     PerformanceStats,
@@ -51,6 +58,12 @@ __all__ = [
     "HealthReport",
     "IssueReport",
     "HealthIssue",
+    # Oscillator health monitoring
+    "OscillatorHealthConfig",
+    "OscillatorHealthMonitor",
+    "OscillatorHealthReport",
+    "OscillatorIssueReport",
+    "OscillatorIssue",
     # Performance profiling
     "PerformanceProfiler",
     "PerformanceStats",

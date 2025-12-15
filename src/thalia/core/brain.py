@@ -2148,6 +2148,15 @@ class EventDrivenBrain(nn.Module):
 
             # Robustness/Criticality diagnostics
             "criticality": self._get_criticality_diagnostics(),
+
+            # Oscillator diagnostics (for oscillator health monitoring)
+            "oscillators": {
+                "phases": self.oscillators.get_phases(),
+                "frequencies": self.oscillators.get_frequencies(),
+                "amplitudes": self.oscillators.get_effective_amplitudes(),
+                "signals": self.oscillators.get_signals(),
+                "couplings": self.oscillators.couplings,
+            },
         }
 
         # Add pathway diagnostics for all 9 inter-region pathways (backward compatibility)

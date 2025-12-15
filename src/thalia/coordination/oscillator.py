@@ -644,6 +644,20 @@ class OscillatorManager:
             'gamma': self.gamma.phase,
         }
 
+    def get_frequencies(self) -> Dict[str, float]:
+        """Get current frequencies of all oscillators.
+
+        Returns:
+            Dictionary mapping oscillator name to frequency (Hz)
+        """
+        return {
+            'delta': self.delta.frequency_hz,
+            'theta': self.theta.frequency_hz,
+            'alpha': self.alpha.frequency_hz,
+            'beta': self.beta.frequency_hz,
+            'gamma': self.gamma.frequency_hz,
+        }
+
     def get_signals(self) -> Dict[str, float]:
         """Get current signal values of all oscillators with coupling applied.
 

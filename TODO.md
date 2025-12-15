@@ -19,5 +19,4 @@
 
 - [ ] Adaptive coupling strength (learn optimal coupling per task)
 - [ ] Region-specific coupling (different strengths per region)
-- [ ] Oscillatory pathology detection (detect abnormal patterns)
 - [ ] Cross-region phase synchrony metrics
