@@ -245,7 +245,10 @@ class HindsightRelabeler:
         target_goal: torch.Tensor
     ) -> bool:
         """Check if achieved goal matches target goal."""
-        distance = torch.norm(achieved_goal - target_goal)
+        # Convert to float for distance computation (handles bool/spike tensors)
+        achieved_float = achieved_goal.float() if achieved_goal.dtype == torch.bool else achieved_goal
+        target_float = target_goal.float() if target_goal.dtype == torch.bool else target_goal
+        distance = torch.norm(achieved_float - target_float)
         return distance < self.config.goal_tolerance
 
     def relabel_episode(

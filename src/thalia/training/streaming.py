@@ -39,11 +39,11 @@ Example Usage:
 ==============
 
     from thalia.training.streaming import StreamingTrainer, StreamConfig
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
     import torch
 
     # Create brain
-    brain = EventDrivenBrain(config)
+    brain = DynamicBrain.from_thalia_config(config)
 
     # Create data stream (infinite generator)
     def mnist_stream():
@@ -110,7 +110,16 @@ import time
 import torch
 import numpy as np
 
-from thalia.core.brain import EventDrivenBrain
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
+
+    Brain = EventDrivenBrain | DynamicBrain
+else:
+    Brain = object
+
 from thalia.diagnostics.health_monitor import HealthMonitor
 from thalia.diagnostics.performance_profiler import PerformanceProfiler
 from thalia.io.checkpoint import BrainCheckpoint
@@ -275,10 +284,10 @@ class StreamingTrainer:
 
     def __init__(
         self,
-        brain: EventDrivenBrain,
+        brain: "Brain",
         config: StreamConfig,
         checkpoint_dir: str | Path = "checkpoints/streaming",
-        evaluator: Optional[Callable[[EventDrivenBrain], Dict[str, float]]] = None,
+        evaluator: Optional[Callable[["Brain"], Dict[str, float]]] = None,
     ):
         """Initialize streaming trainer.
 

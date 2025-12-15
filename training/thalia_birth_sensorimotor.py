@@ -84,7 +84,7 @@ from datetime import datetime
 
 import torch
 
-from thalia.core.brain import EventDrivenBrain
+from thalia.core.dynamic_brain import DynamicBrain
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes, print_config
 from thalia.config.curriculum_growth import (
     CurriculumStage,
@@ -123,7 +123,7 @@ def print_birth_banner():
     print()
 
 
-def create_thalia_brain(device: str = "cpu") -> tuple[EventDrivenBrain, ThaliaConfig]:
+def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig]:
     """Create Thalia's initial brain configuration.
 
     This is the moment of creation. The neural substrate exists,
@@ -133,7 +133,7 @@ def create_thalia_brain(device: str = "cpu") -> tuple[EventDrivenBrain, ThaliaCo
         device: PyTorch device ('cpu' or 'cuda')
 
     Returns:
-        Tuple of (EventDrivenBrain, ThaliaConfig)
+        Tuple of (DynamicBrain, ThaliaConfig)
     """
     print("[1/4] Creating neural substrate...")
 
@@ -157,7 +157,7 @@ def create_thalia_brain(device: str = "cpu") -> tuple[EventDrivenBrain, ThaliaCo
         ),
     )
 
-    brain = EventDrivenBrain.from_thalia_config(config)
+    brain = DynamicBrain.from_thalia_config(config)
 
     # Move to GPU if available
     if device == "cuda":
@@ -217,7 +217,7 @@ def create_sensorimotor_environment(device: str = "cpu") -> SensorimotorTaskLoad
 
 
 def create_curriculum_trainer(
-    brain: EventDrivenBrain,
+    brain: DynamicBrain,
     checkpoint_dir: Path,
     log_file: Path,
     device: str,
@@ -280,7 +280,7 @@ def configure_stage_sensorimotor():
 
 
 def evaluate_stage_sensorimotor(
-    brain: EventDrivenBrain,
+    brain: DynamicBrain,
     task_loader: SensorimotorTaskLoader,
     n_trials: int = 100
 ) -> dict:

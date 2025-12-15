@@ -56,22 +56,22 @@ def lesion_region(
         >>> lesion_region(brain, "hippocampus")
         >>> # Brain now has no episodic memory formation
     """
-    # Get region adapter
-    region = _get_region(brain, region_name)
+    # Get region implementation
+    region_impl = _get_region(brain, region_name)
 
     # Save original state if requested
     if save_for_restore:
         _save_lesion_state(brain, region_name, "complete")
 
     # Disable plasticity
-    if hasattr(region.impl, "plasticity_enabled"):
-        region.impl.plasticity_enabled = False
+    if hasattr(region_impl, "plasticity_enabled"):
+        region_impl.plasticity_enabled = False
 
     # Zero all weights
-    _zero_region_weights(region.impl)
+    _zero_region_weights(region_impl)
 
     # Reset state to zero
-    region.impl.reset_state()
+    region_impl.reset_state()
 
     print(f"✂️  Lesioned region: {region_name}")
 
@@ -96,10 +96,10 @@ def partial_lesion(
         >>> partial_lesion(brain, "cortex", lesion_fraction=0.3)
         >>> # 30% of cortical neurons are silenced
     """
-    region = _get_region(brain, region_name)
+    region_impl = _get_region(brain, region_name)
 
     # Get region size
-    n_neurons = _get_region_size(region.impl)
+    n_neurons = _get_region_size(region_impl)
     n_lesioned = int(n_neurons * lesion_fraction)
 
     # Randomly select neurons to lesion
@@ -111,11 +111,11 @@ def partial_lesion(
         state.lesioned_indices = lesioned_indices
 
     # Disable plasticity
-    if hasattr(region.impl, "plasticity_enabled"):
-        region.impl.plasticity_enabled = False
+    if hasattr(region_impl, "plasticity_enabled"):
+        region_impl.plasticity_enabled = False
 
     # Zero weights for lesioned neurons
-    _zero_neurons_weights(region.impl, lesioned_indices)
+    _zero_neurons_weights(region_impl, lesioned_indices)
 
     print(f"✂️  Partially lesioned region: {region_name} ({lesion_fraction:.0%})")
 
@@ -171,14 +171,14 @@ def restore_region(
         )
 
     state = _lesion_cache[region_name]
-    region = _get_region(brain, region_name)
+    region_impl = _get_region(brain, region_name)
 
     # Restore weights
-    _restore_weights(region.impl, state.original_weights)
+    _restore_weights(region_impl, state.original_weights)
 
     # Restore plasticity
-    if hasattr(region.impl, "plasticity_enabled"):
-        region.impl.plasticity_enabled = state.original_plasticity
+    if hasattr(region_impl, "plasticity_enabled"):
+        region_impl.plasticity_enabled = state.original_plasticity
 
     # Remove from cache
     del _lesion_cache[region_name]
@@ -189,7 +189,12 @@ def restore_region(
 # Helper functions
 
 def _get_region(brain: "EventDrivenBrain", region_name: str):
-    """Get region adapter by name."""
+    """Get region implementation by name.
+
+    Returns the actual implementation, not the adapter wrapper.
+    For EventDrivenBrain: returns adapter.impl
+    For DynamicBrain: returns component directly
+    """
     name_map = {
         "cortex": "cortex",
         "hippocampus": "hippocampus",
@@ -207,7 +212,10 @@ def _get_region(brain: "EventDrivenBrain", region_name: str):
         )
 
     attr_name = name_map[region_name]
-    return getattr(brain, attr_name)
+    region = getattr(brain, attr_name)
+
+    # Return implementation: .impl for EventDrivenBrain, region directly for DynamicBrain
+    return region.impl if hasattr(region, 'impl') else region
 
 
 def _get_region_size(region_impl) -> int:
@@ -226,16 +234,16 @@ def _save_lesion_state(
     lesion_type: str,
 ) -> LesionState:
     """Save region state before lesion."""
-    region = _get_region(brain, region_name)
+    region_impl = _get_region(brain, region_name)
 
     # Save weights
     original_weights = {}
-    for name, param in region.impl.named_parameters():
+    for name, param in region_impl.named_parameters():
         if param.requires_grad:
             original_weights[name] = param.data.clone()
 
     # Save plasticity state
-    original_plasticity = getattr(region.impl, "plasticity_enabled", True)
+    original_plasticity = getattr(region_impl, "plasticity_enabled", True)
 
     # Create state object
     state = LesionState(

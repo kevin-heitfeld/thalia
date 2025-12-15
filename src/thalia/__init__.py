@@ -6,16 +6,16 @@ A framework for building genuinely thinking spiking neural networks.
 Quick Start (External Users):
 =============================
 
-    from thalia import ThaliaConfig, Brain
+    from thalia import ThaliaConfig, DynamicBrain
     from thalia import Striatum, Hippocampus, LayeredCortex
     from thalia import ConductanceLIF, WeightInitializer
 
     # Create regions directly
     striatum = Striatum(StriatumConfig(n_input=256, n_output=64))
 
-    # Or use full brain system
+    # Or use full brain system (DynamicBrain)
     config = ThaliaConfig(...)
-    brain = Brain.from_thalia_config(config)
+    brain = DynamicBrain.from_thalia_config(config)
 
 Internal Development:
 ====================
@@ -39,8 +39,18 @@ __version__ = "0.2.0"
 # Configuration
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
-# Brain System
-from thalia.core.brain import EventDrivenBrain as Brain
+# Brain System (DynamicBrain is now the primary API)
+from thalia.core.dynamic_brain import DynamicBrain
+
+# Deprecated: EventDrivenBrain will be removed in v0.3.0
+import warnings
+from thalia.core.brain import EventDrivenBrain
+warnings.warn(
+    "EventDrivenBrain is deprecated and will be removed in v0.3.0. "
+    "Use DynamicBrain instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from thalia.core.base.component_config import NeuralComponentConfig
 
@@ -130,7 +140,7 @@ __all__ = [
     "BrainConfig",
     "RegionSizes",
     # Brain System
-    "Brain",
+    "DynamicBrain",
     # Brain Regions
     "NeuralComponentConfig",
     "Striatum",

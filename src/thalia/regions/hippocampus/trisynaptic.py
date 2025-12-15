@@ -1686,8 +1686,8 @@ class TrisynapticHippocampus(NeuralComponent):
             achieved_goal: (HER) What was actually achieved (CA1 output)
             done: (HER) Whether episode terminated
         """
-        # Delegate to episode manager
-        self.episode_manager.store_episode(
+        # Delegate to memory component (note: method is store_memory, not store_episode)
+        self.memory.store_memory(
             state=state,
             action=action,
             reward=reward,

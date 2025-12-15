@@ -1,6 +1,28 @@
 """
 EventDrivenBrain: High-level brain system using event-driven architecture.
 
+⚠️  DEPRECATION WARNING ⚠️
+==========================
+EventDrivenBrain is deprecated and will be removed in v0.3.0.
+Please migrate to DynamicBrain which offers:
+- Flexible topology (not hardcoded to 6 regions)
+- Better port-based routing for layered cortex
+- Same API compatibility for drop-in replacement
+- All the same features (neuromodulation, consolidation, growth, etc.)
+
+Migration Guide:
+    # Old code:
+    from thalia.core.brain import EventDrivenBrain
+    brain = EventDrivenBrain.from_thalia_config(config)
+
+    # New code:
+    from thalia.core.dynamic_brain import DynamicBrain
+    brain = DynamicBrain.from_thalia_config(config)
+
+    # Or use the public API (recommended):
+    from thalia import DynamicBrain
+    brain = DynamicBrain.from_thalia_config(config)
+
 This module provides a brain system that uses the event-driven infrastructure
 for biologically realistic parallel computation.
 
@@ -220,24 +242,35 @@ class EventDrivenBrain(nn.Module):
     def __init__(self, config: "ThaliaConfig"):
         """Initialize EventDrivenBrain from ThaliaConfig.
 
+        ⚠️ DEPRECATION WARNING: EventDrivenBrain is deprecated. Use DynamicBrain instead.
+
         Args:
             config: ThaliaConfig with all settings
 
         Example:
-            from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig
-
-            config = ThaliaConfig(
-                global_=GlobalConfig(device="cuda"),
-                brain=BrainConfig(sizes=RegionSizes(cortex_size=256)),
-            )
+            # Deprecated:
+            from thalia.core.brain import EventDrivenBrain
             brain = EventDrivenBrain(config)
 
+            # Use instead:
+            from thalia.core.dynamic_brain import DynamicBrain
+            brain = DynamicBrain.from_thalia_config(config)
+
         Note:
-            Prefer using EventDrivenBrain.from_thalia_config(config) for clarity.
+            Prefer using DynamicBrain.from_thalia_config(config) for the new API.
 
         Raises:
             ConfigValidationError: If configuration is invalid
         """
+        # Issue deprecation warning
+        import warnings
+        warnings.warn(
+            "EventDrivenBrain is deprecated and will be removed in v0.3.0. "
+            "Use DynamicBrain instead for better flexibility and the same features.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         # Validate configuration before initialization
         validate_thalia_config(config)
 

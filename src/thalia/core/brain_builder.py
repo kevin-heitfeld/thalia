@@ -200,6 +200,8 @@ class BrainBuilder:
         source: str,
         target: str,
         pathway_type: str = "spiking",
+        source_port: Optional[str] = None,
+        target_port: Optional[str] = None,
         **config_params: Any,
     ) -> "BrainBuilder":
         """Connect two components with a pathway.
@@ -208,6 +210,8 @@ class BrainBuilder:
             source: Source component name
             target: Target component name
             pathway_type: Pathway registry name (default: "spiking")
+            source_port: Output port on source (e.g., 'l23', 'l5')
+            target_port: Input port on target (e.g., 'feedforward', 'top_down', 'ec_l3')
             **config_params: Pathway configuration parameters
 
         Returns:
@@ -217,12 +221,15 @@ class BrainBuilder:
             ValueError: If source or target component doesn't exist
 
         Example:
-            builder.connect(
-                source="cortex",
-                target="hippocampus",
-                pathway_type="spiking",
-                learning_rate=0.001,
-            )
+            # Simple connection (backward compatible)
+            builder.connect("thalamus", "cortex")
+
+            # Layer-specific routing
+            builder.connect("cortex", "hippocampus", source_port="l23")
+
+            # Multiple input types
+            builder.connect("thalamus", "cortex", target_port="feedforward")
+            builder.connect("pfc", "cortex", target_port="top_down")
         """
         # Validate components exist
         if source not in self._components:
@@ -230,11 +237,13 @@ class BrainBuilder:
         if target not in self._components:
             raise ValueError(f"Target component '{target}' not found")
 
-        # Create connection spec
+        # Create connection spec with ports
         spec = ConnectionSpec(
             source=source,
             target=target,
             pathway_type=pathway_type,
+            source_port=source_port,
+            target_port=target_port,
             config_params=config_params,
         )
 
@@ -266,61 +275,196 @@ class BrainBuilder:
                 f"Warning: Isolated components (no connections): {isolated}"
             )
 
-        # TODO: Add cycle detection (optional - some architectures may have cycles)
-
         return issues
 
     def _infer_component_sizes(self) -> None:
         """Infer n_input for components based on incoming connections.
 
+        Supports port-based routing:
+        - source_port: Routes specific layer outputs (e.g., 'l23', 'l5')
+        - target_port: Differentiates input types (e.g., 'feedforward', 'top_down')
+
         For components without n_input specified:
-        - If single incoming connection: n_input = source.n_output
-        - If multiple incoming connections: n_input = sum(source.n_output)
-        - If no incoming connections: Error (must specify n_input)
+        - Feedforward ports (None, 'feedforward', 'cortical', 'hippocampal'): Counted in n_input
+        - Top-down/modulation ports ('top_down', 'pfc_modulation'): Set as separate config params
+        - Sensory ports ('ec_l3'): Set as ec_l3_input_size
         """
-        # Build incoming connection map
-        incoming: Dict[str, List[str]] = {name: [] for name in self._components}
+        # Build incoming connection map with port information
+        incoming: Dict[str, List[Tuple[str, "ConnectionSpec"]]] = {name: [] for name in self._components}
         for conn in self._connections:
-            incoming[conn.target].append(conn.source)
+            incoming[conn.target].append((conn.source, conn))
 
-        # Infer n_input for each component
+        # Infer n_input and port-specific sizes for each component
         for name, spec in self._components.items():
-            # Skip if n_input already specified
-            if "n_input" in spec.config_params:
-                continue
-
             sources = incoming[name]
 
             if not sources:
                 # No incoming connections - this is an input interface
-                raise ValueError(
-                    f"Component '{name}' has no incoming connections and no n_input specified. "
-                    f"Input interfaces must specify n_input explicitly."
-                )
-
-            # For now, require n_output to be specified in source components
-            # In a full implementation, we'd recursively infer sizes
-            source_outputs = []
-            for source_name in sources:
-                source_spec = self._components[source_name]
-                if "n_output" not in source_spec.config_params:
+                if "n_input" not in spec.config_params:
                     raise ValueError(
-                        f"Component '{source_name}' must specify n_output before connecting to '{name}'"
+                        f"Component '{name}' has no incoming connections and no n_input specified. "
+                        f"Input interfaces must specify n_input explicitly."
                     )
-                source_outputs.append(source_spec.config_params["n_output"])
+                continue
 
-            # Infer n_input
-            if len(source_outputs) == 1:
-                inferred_n_input = source_outputs[0]
+            # Separate connections by target port
+            feedforward_sources = []
+            topdown_sources = []
+            sensory_sources = []
+            modulation_sources = []
+
+            for source_name, conn in sources:
+                target_port = conn.target_port
+
+                # Determine port category
+                if target_port in (None, "feedforward", "cortical", "hippocampal"):
+                    # Standard feedforward inputs - count in n_input
+                    feedforward_sources.append((source_name, conn))
+                elif target_port == "top_down":
+                    topdown_sources.append((source_name, conn))
+                elif target_port == "ec_l3":
+                    sensory_sources.append((source_name, conn))
+                elif target_port == "pfc_modulation":
+                    modulation_sources.append((source_name, conn))
+                else:
+                    # Unknown port - treat as feedforward with warning
+                    print(f"Warning: Unknown target_port '{target_port}' on connection to '{name}', treating as feedforward")
+                    feedforward_sources.append((source_name, conn))
+
+            # Infer n_input from feedforward connections
+            if "n_input" not in spec.config_params and feedforward_sources:
+                feedforward_sizes = []
+                for source_name, conn in feedforward_sources:
+                    output_size = self._get_source_output_size(source_name, conn.source_port)
+                    feedforward_sizes.append(output_size)
+
+                spec.config_params["n_input"] = sum(feedforward_sizes)
+
+            # Set port-specific sizes
+            if sensory_sources:
+                # ec_l3_input_size for hippocampus
+                ec_l3_size = sum(self._get_source_output_size(src, conn.source_port)
+                                for src, conn in sensory_sources)
+                spec.config_params["ec_l3_input_size"] = ec_l3_size
+
+            # Note: top_down and pfc_modulation are handled separately in forward pass
+            # They don't contribute to n_input but are stored for reference
+            if topdown_sources:
+                spec.config_params["_has_topdown"] = True
+            if modulation_sources:
+                spec.config_params["_has_modulation"] = True
+
+    def _get_source_output_size(self, source_name: str, source_port: Optional[str]) -> int:
+        """Get output size from source component, optionally from specific port.
+
+        Args:
+            source_name: Name of source component
+            source_port: Output port ('l23', 'l5', or None for full output)
+
+        Returns:
+            Output size (layer-specific if port specified)
+        """
+        source_spec = self._components[source_name]
+
+        if "n_output" not in source_spec.config_params:
+            raise ValueError(
+                f"Component '{source_name}' must specify n_output before connecting"
+            )
+
+        # If no port specified, use full output
+        if source_port is None:
+            return source_spec.config_params["n_output"]
+
+        # For layered cortex, compute layer sizes
+        if source_spec.registry_name in ("cortex", "layered_cortex"):
+            from thalia.regions.cortex import calculate_layer_sizes
+            from thalia.regions.cortex import LayeredCortexConfig
+
+            # Get layer configuration
+            config = source_spec.config_params
+            l4_ratio = config.get("l4_ratio", LayeredCortexConfig.l4_ratio)
+            l23_ratio = config.get("l23_ratio", LayeredCortexConfig.l23_ratio)
+            l5_ratio = config.get("l5_ratio", LayeredCortexConfig.l5_ratio)
+
+            n_output = config["n_output"]
+            l4_size, l23_size, l5_size = calculate_layer_sizes(n_output, l4_ratio, l23_ratio, l5_ratio)
+
+            # Return layer-specific size
+            if source_port == "l23":
+                return l23_size
+            elif source_port == "l5":
+                return l5_size
+            elif source_port == "l4":
+                return l4_size
             else:
-                # Multiple inputs - sum their outputs
-                inferred_n_input = sum(source_outputs)
+                raise ValueError(f"Unknown cortex port '{source_port}'")
 
-            # Store inferred size
-            spec.config_params["n_input"] = inferred_n_input
+        # For other components, ports not yet supported
+        if source_port is not None:
+            raise ValueError(
+                f"Component '{source_spec.registry_name}' does not support port '{source_port}'"
+            )
 
-    def build(self) -> DynamicBrain:
+        return source_spec.config_params["n_output"]
+
+    def _get_pathway_source_size(self, source_comp: NeuralComponent, source_port: Optional[str]) -> int:
+        """Get output size for pathway from source component and port.
+
+        Args:
+            source_comp: Source component instance
+            source_port: Output port specification
+
+        Returns:
+            Output size for pathway
+        """
+        if source_port is None:
+            # Use full output
+            return source_comp.n_output
+
+        # Check for layer-specific outputs (cortex)
+        if hasattr(source_comp, 'l23_size') and hasattr(source_comp, 'l5_size'):
+            if source_port == "l23":
+                return source_comp.l23_size
+            elif source_port == "l5":
+                return source_comp.l5_size
+            elif source_port == "l4" and hasattr(source_comp, 'l4_size'):
+                return source_comp.l4_size
+            else:
+                raise ValueError(f"Unknown cortex port '{source_port}'")
+
+        # For other components, ports not yet supported
+        raise ValueError(
+            f"Component {type(source_comp).__name__} does not support port '{source_port}'"
+        )
+
+    def _get_pathway_target_size(self, target_comp: NeuralComponent, target_port: Optional[str]) -> int:
+        """Get input size for pathway to target component and port.
+
+        Args:
+            target_comp: Target component instance
+            target_port: Input port specification
+
+        Returns:
+            Input size for pathway
+        """
+        if target_port in (None, "feedforward", "cortical", "hippocampal"):
+            # Use standard n_input
+            return target_comp.n_input
+
+        # For top_down and other ports, we still route through n_input
+        # (the component's forward() handles separation)
+        return target_comp.n_input
+
+    def build(
+        self,
+        use_parallel: Optional[bool] = None,
+        n_workers: Optional[int] = None,
+    ) -> DynamicBrain:
         """Build DynamicBrain from specifications.
+
+        Args:
+            use_parallel: Override instance use_parallel setting
+            n_workers: Override instance n_workers setting
 
         Steps:
             1. Infer component input sizes from connections
@@ -335,6 +479,10 @@ class BrainBuilder:
         Raises:
             ValueError: If validation fails or size inference fails
         """
+        # Use provided values or fall back to instance values
+        final_use_parallel = use_parallel if use_parallel is not None else self.use_parallel
+        final_n_workers = n_workers if n_workers is not None else self.n_workers
+        
         # Infer n_input for components based on connections
         self._infer_component_sizes()
 
@@ -361,11 +509,15 @@ class BrainBuilder:
                 )
 
             # Create config instance with device and dt_ms
+            # Filter out internal flags (starting with _)
             config_params_with_globals = {
-                **spec.config_params,
+                k: v for k, v in spec.config_params.items()
+                if not k.startswith("_")  # Remove internal flags like _has_topdown
+            }
+            config_params_with_globals.update({
                 "device": self.global_config.device,
                 "dt_ms": self.global_config.dt_ms,
-            }
+            })
             config = config_class(**config_params_with_globals)
 
             # Create component from registry
@@ -412,13 +564,23 @@ class BrainBuilder:
                     f"registered. Update registry with config_class metadata."
                 )
 
+            # Determine pathway sizes based on ports
+            source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
+            target_input_size = self._get_pathway_target_size(target_comp, spec.target_port)
+
             # Create pathway config with source/target sizes and global params
+            # Filter out port specifications (they're not pathway config params)
+            filtered_config_params = {
+                k: v for k, v in spec.config_params.items()
+                if not k.startswith("_")  # Remove internal flags
+            }
+
             pathway_config_params = {
-                "n_input": source_comp.n_output,  # Source's output is pathway's input
-                "n_output": target_comp.n_input,  # Target's input is pathway's output
+                "n_input": source_output_size,
+                "n_output": target_input_size,
                 "device": self.global_config.device,
                 "dt_ms": self.global_config.dt_ms,
-                **spec.config_params,  # User-specified params override defaults
+                **filtered_config_params,  # User-specified params override defaults
             }
             pathway_config = config_class(**pathway_config_params)
 
@@ -441,8 +603,9 @@ class BrainBuilder:
             components=components,
             connections=connections,
             global_config=self.global_config,
-            use_parallel=self.use_parallel,
-            n_workers=self.n_workers,
+            use_parallel=final_use_parallel,
+            n_workers=final_n_workers,
+            connection_specs={(spec.source, spec.target): spec for spec in self._connections},
         )
 
         # Store component specs for event adapter lookup
@@ -731,7 +894,7 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
     This preset replicates EventDrivenBrain's hardcoded 6-region architecture.
     """
     # Default sizes (can be overridden)
-    n_thalamus = overrides.get("n_thalamus", 128)  # Match test expectations
+    n_thalamus = overrides.get("n_thalamus", 128)
     n_cortex = overrides.get("n_cortex", 500)
     n_hippocampus = overrides.get("n_hippocampus", 200)
     n_pfc = overrides.get("n_pfc", 300)
@@ -751,6 +914,8 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
     builder.connect("cortex", "hippocampus", "spiking")
     builder.connect("hippocampus", "cortex", "spiking")  # Bidirectional
     builder.connect("cortex", "pfc", "spiking")
+    builder.connect("cortex", "striatum", "spiking")
+    builder.connect("hippocampus", "striatum", "spiking")
     builder.connect("pfc", "striatum", "spiking")
     builder.connect("striatum", "pfc", "spiking")  # Bidirectional
     builder.connect("pfc", "cerebellum", "spiking")

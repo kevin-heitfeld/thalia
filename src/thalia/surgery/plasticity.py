@@ -39,14 +39,14 @@ def freeze_region(
     """
     from .lesion import _get_region
 
-    region = _get_region(brain, region_name)
+    region_impl = _get_region(brain, region_name)
 
     # Disable plasticity
-    if hasattr(region.impl, "plasticity_enabled"):
-        region.impl.plasticity_enabled = False
+    if hasattr(region_impl, "plasticity_enabled"):
+        region_impl.plasticity_enabled = False
 
     # Freeze parameters
-    for param in region.impl.parameters():
+    for param in region_impl.parameters():
         param.requires_grad = False
 
     print(f"❄️  Frozen region: {region_name} (plasticity disabled)")
@@ -68,14 +68,14 @@ def unfreeze_region(
     """
     from .lesion import _get_region
 
-    region = _get_region(brain, region_name)
+    region_impl = _get_region(brain, region_name)
 
     # Enable plasticity
-    if hasattr(region.impl, "plasticity_enabled"):
-        region.impl.plasticity_enabled = True
+    if hasattr(region_impl, "plasticity_enabled"):
+        region_impl.plasticity_enabled = True
 
     # Unfreeze parameters
-    for param in region.impl.parameters():
+    for param in region_impl.parameters():
         param.requires_grad = True
 
     print(f"🔥 Unfrozen region: {region_name} (plasticity enabled)")

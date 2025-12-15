@@ -244,9 +244,20 @@ def export_topology_to_graphviz(
 
         f.write("\n")
 
-        # Write edges - use pathway_map which has (source, target) keys
+        # Write edges - handle both EventDrivenBrain and DynamicBrain pathway managers
         pathway_manager = brain.pathway_manager
-        for (source, target), pathway in pathway_manager._pathway_map.items():
+
+        # Get pathways dict - different APIs for different managers
+        if hasattr(pathway_manager, '_pathway_map'):
+            # EventDrivenBrain PathwayManager
+            pathway_dict = pathway_manager._pathway_map
+        elif hasattr(pathway_manager, 'connections'):
+            # DynamicBrain DynamicPathwayManager
+            pathway_dict = pathway_manager.connections
+        else:
+            raise AttributeError(f"PathwayManager type {type(pathway_manager).__name__} not supported")
+
+        for (source, target), pathway in pathway_dict.items():
             strength = _get_pathway_strength(pathway)
 
             if include_weights:

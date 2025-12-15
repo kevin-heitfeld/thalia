@@ -71,11 +71,11 @@ Usage:
         StageConfig,
         CurriculumStage,
     )
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
     from thalia.config.curriculum_growth import get_curriculum_growth_config
 
     # Initialize brain
-    brain = EventDrivenBrain(config)
+    brain = DynamicBrain.from_thalia_config(config)_config(config)
 
     # Initialize trainer
     trainer = CurriculumTrainer(
@@ -630,7 +630,7 @@ class CurriculumTrainer:
 
     def __init__(
         self,
-        brain: Any,  # EventDrivenBrain or similar
+        brain: Any,  # DynamicBrain or EventDrivenBrain (backward compatible)
         growth_config: Optional[CurriculumGrowthConfig] = None,
         checkpoint_dir: Optional[str] = None,
         device: str = 'cpu',
