@@ -20,6 +20,7 @@ from thalia.regions.hippocampus.config import HippocampusConfig
 from thalia.regions.striatum.config import StriatumConfig
 from thalia.regions.prefrontal import PrefrontalConfig
 from thalia.regions.cerebellum import CerebellumConfig
+from thalia.diagnostics.criticality import CriticalityConfig
 
 if TYPE_CHECKING:
     from thalia.coordination.oscillator import OscillatorCoupling
@@ -47,12 +48,12 @@ class CortexType(Enum):
 @dataclass
 class NeuromodulationConfig:
     """Configuration for neuromodulatory systems (VTA, LC, NB).
-    
+
     Neuromodulators gate learning and modulate neural processing:
     - Dopamine (VTA): Reward prediction error, gates striatal learning
     - Norepinephrine (LC): Arousal, attention, gain modulation
     - Acetylcholine (NB): Encoding vs retrieval mode in hippocampus
-    
+
     Example:
         config = NeuromodulationConfig(
             dopamine_baseline=0.1,
@@ -60,37 +61,37 @@ class NeuromodulationConfig:
             use_norepinephrine=True,
         )
     """
-    
+
     # Dopamine (VTA - ventral tegmental area)
     dopamine_baseline: float = 0.0
     """Baseline dopamine level (tonic). Range: -0.5 to 0.5."""
-    
+
     dopamine_learning_threshold: float = 0.01
     """Minimum |dopamine| to trigger learning. Filters noise."""
-    
+
     dopamine_decay_tau_ms: float = 100.0
     """Time constant for dopamine decay back to baseline (milliseconds)."""
-    
+
     # Norepinephrine (LC - locus coeruleus)
     use_norepinephrine: bool = False
     """Enable norepinephrine modulation (arousal, attention)."""
-    
+
     norepinephrine_baseline: float = 0.5
     """Baseline norepinephrine (arousal level). Range: 0.0 to 1.0."""
-    
+
     norepinephrine_gain_scale: float = 1.5
     """How much NE scales neural gain. 1.0 = no effect, >1.0 = amplification."""
-    
+
     # Acetylcholine (NB - nucleus basalis)
     use_acetylcholine: bool = True
     """Enable acetylcholine modulation (encoding/retrieval)."""
-    
+
     acetylcholine_encoding_level: float = 0.8
     """ACh level during encoding (high = strengthen new memories)."""
-    
+
     acetylcholine_retrieval_level: float = 0.2
     """ACh level during retrieval (low = strengthen recall pathways)."""
-    
+
     def summary(self) -> str:
         """Return formatted summary."""
         lines = [
@@ -342,6 +343,32 @@ class BrainConfig:
     Lower values = more frequent checks (more overhead)
     Higher values = less frequent checks (may delay growth)
     Default 1000 = check every 1000 timesteps (~1 second at 1ms timesteps)
+    """
+
+    # =========================================================================
+    # Brain-wide diagnostics
+    # =========================================================================
+    enable_criticality_monitor: bool = False
+    """Enable brain-wide criticality monitoring (branching ratio tracking).
+
+    When True:
+        - CriticalityMonitor tracks branching ratio across all regions
+        - Diagnostics include criticality metrics
+        - Useful for research and debugging network dynamics
+
+    When False (default):
+        - No criticality monitoring (saves computation)
+        - Standard for production training
+
+    Note: This is brain-wide, not region-specific. It monitors spikes
+    across all regions to estimate the network's criticality state.
+    """
+
+    criticality_config: CriticalityConfig = field(default_factory=CriticalityConfig)
+    """Configuration for brain-wide criticality monitoring.
+
+    Only used when enable_criticality_monitor=True.
+    Tracks branching ratio and can provide weight scaling corrections.
     """
 
     def summary(self) -> str:

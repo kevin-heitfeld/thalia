@@ -731,9 +731,9 @@ class EventDrivenBrain(nn.Module):
         # Create brain via __init__ (which also validates, but this provides early feedback)
         brain = cls(config)
 
-        # TODO: Initialize CriticalityMonitor when ThaliaConfig gets robustness field
-        # if hasattr(config, 'robustness') and config.robustness.enable_criticality:
-        #     brain.criticality_monitor = CriticalityMonitor(config.robustness.criticality)
+        # Initialize CriticalityMonitor if enabled in brain config
+        if config.brain.enable_criticality_monitor:
+            brain.criticality_monitor = CriticalityMonitor(config.brain.criticality_config)
 
         return brain
 

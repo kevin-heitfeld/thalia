@@ -1,7 +1,6 @@
 # TODO
 
 - Sparse computations throughout?
-- Re-enable CriticalityMonitor in brain
 - `docs\design\circuit_modeling_plan.md`
 
 ---
