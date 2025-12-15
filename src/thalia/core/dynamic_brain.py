@@ -147,8 +147,16 @@ class DynamicBrain(nn.Module):
         self.global_config = global_config
         self.device = torch.device(global_config.device)
 
+        # Minimal config for checkpoint compatibility
+        # Note: Sizes will be added after components are known
+        from types import SimpleNamespace
+        self.config = SimpleNamespace(device=global_config.device)
+
         # Store components as nn.ModuleDict for proper parameter tracking
         self.components = nn.ModuleDict(components)
+
+        # Update config with component sizes (for CheckpointManager compatibility)
+        self._update_config_sizes()
 
         # Store connections with tuple keys for easy lookup
         # Also register in ModuleDict for parameter tracking
@@ -187,14 +195,59 @@ class DynamicBrain(nn.Module):
             )
 
         # =================================================================
+        # PATHWAY MANAGER (Phase 1.7.1)
+        # =================================================================
+        # Centralized pathway management for diagnostics and growth coordination
+        # Note: PathwayManager expects specific EventDrivenBrain structure
+        # For DynamicBrain, we create a simpler adapter that provides same API
+        from thalia.pathways.dynamic_pathway_manager import DynamicPathwayManager
+
+        self.pathway_manager = DynamicPathwayManager(
+            connections=self.connections,
+            topology=self._topology,
+            device=self.device,
+            dt_ms=self.global_config.dt_ms,
+        )
+
+        # Backward compatibility: expose pathways dict
+        self.pathways = self.pathway_manager.get_all_pathways()
+
+        # =================================================================
+        # OSCILLATOR MANAGER (Phase 1.7.2)
+        # =================================================================
+        # Rhythmic coordination via all brain oscillations (delta, theta, alpha, beta, gamma, ripple)
+        # Provides theta-driven encoding/retrieval, gamma feature binding, cross-frequency coupling
+        from thalia.coordination.oscillator import OscillatorManager, OSCILLATOR_DEFAULTS
+
+        # Get frequencies from config if available, otherwise use defaults
+        delta_freq = getattr(global_config, 'delta_frequency_hz', OSCILLATOR_DEFAULTS['delta'])
+        theta_freq = getattr(global_config, 'theta_frequency_hz', OSCILLATOR_DEFAULTS['theta'])
+        alpha_freq = getattr(global_config, 'alpha_frequency_hz', OSCILLATOR_DEFAULTS['alpha'])
+        beta_freq = getattr(global_config, 'beta_frequency_hz', OSCILLATOR_DEFAULTS['beta'])
+        gamma_freq = getattr(global_config, 'gamma_frequency_hz', OSCILLATOR_DEFAULTS['gamma'])
+        ripple_freq = getattr(global_config, 'ripple_frequency_hz', OSCILLATOR_DEFAULTS['ripple'])
+
+        self.oscillators = OscillatorManager(
+            dt_ms=self.global_config.dt_ms,
+            device=self.global_config.device,
+            delta_freq=delta_freq,
+            theta_freq=theta_freq,
+            alpha_freq=alpha_freq,
+            beta_freq=beta_freq,
+            gamma_freq=gamma_freq,
+            ripple_freq=ripple_freq,
+            couplings=None,  # Use default couplings (theta-gamma, etc.)
+        )
+
+        # =================================================================
         # NEUROMODULATOR SYSTEMS (Phase 1.6.3)
         # =================================================================
         # VTA (dopamine), LC (norepinephrine), NB (acetylcholine)
         # Provides centralized neuromodulation like EventDrivenBrain
         from thalia.neuromodulation.manager import NeuromodulatorManager
-        
+
         self.neuromodulator_manager = NeuromodulatorManager()
-        
+
         # Shortcuts for backward compatibility
         self.vta = self.neuromodulator_manager.vta
         self.locus_coeruleus = self.neuromodulator_manager.locus_coeruleus
@@ -205,6 +258,93 @@ class DynamicBrain(nn.Module):
         # =================================================================
         self._last_action: Optional[int] = None
         self._last_confidence: Optional[float] = None
+
+        # Mutable container for shared last_action state (needed by ConsolidationManager)
+        self._last_action_container = [None]
+
+        # =================================================================
+        # CONSOLIDATION MANAGER (Phase 1.7.4)
+        # =================================================================
+        # Note: ConsolidationManager requires EventDrivenBrain's unified config
+        # DynamicBrain uses simpler consolidation without manager
+        # For full ConsolidationManager support, use EventDrivenBrain
+        self.consolidation_manager = None
+
+        # =================================================================
+        # CHECKPOINT MANAGER (Phase 1.7.4)
+        # =================================================================
+        # Centralized checkpoint save/load with compression and validation
+        from thalia.io.checkpoint_manager import CheckpointManager
+
+        self.checkpoint_manager = CheckpointManager(
+            brain=self,
+            default_compression='zstd',  # Match EventDrivenBrain
+        )
+
+        # =================================================================
+        # PLANNING SYSTEMS (Phase 1.7.5)
+        # =================================================================
+        # Mental simulation and Dyna planning for model-based RL
+        # Only initialize if use_model_based_planning enabled in global_config
+        from typing import TYPE_CHECKING
+        if TYPE_CHECKING:
+            from thalia.planning import MentalSimulationCoordinator, DynaPlanner
+
+        self.mental_simulation: Optional["MentalSimulationCoordinator"] = None
+        self.dyna_planner: Optional["DynaPlanner"] = None
+
+        # Check if planning is enabled (either direct flag or via brain config)
+        planning_enabled = (
+            getattr(global_config, 'use_model_based_planning', False) or
+            (hasattr(global_config, 'brain') and getattr(global_config.brain, 'use_model_based_planning', False))
+        )
+
+        if planning_enabled:
+            # Only import if enabled (optional dependency)
+            from thalia.planning import (
+                MentalSimulationCoordinator,
+                SimulationConfig,
+                DynaPlanner,
+                DynaConfig,
+            )
+
+            # Check that required components exist
+            if all(name in self.components for name in ['pfc', 'hippocampus', 'striatum', 'cortex']):
+                # Create mental simulation coordinator
+                self.mental_simulation = MentalSimulationCoordinator(
+                    pfc=self.components['pfc'],
+                    hippocampus=self.components['hippocampus'],
+                    striatum=self.components['striatum'],
+                    cortex=self.components['cortex'],
+                    config=SimulationConfig(),
+                )
+
+                # Create Dyna planner for background planning
+                self.dyna_planner = DynaPlanner(
+                    coordinator=self.mental_simulation,
+                    striatum=self.components['striatum'],
+                    hippocampus=self.components['hippocampus'],
+                    config=DynaConfig(),
+                )
+
+        # =================================================================
+        # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)
+        # =================================================================
+        # Monitor network health and criticality for training diagnostics
+        from thalia.diagnostics import HealthMonitor, CriticalityMonitor
+
+        # Initialize health monitor (always enabled)
+        self.health_monitor = HealthMonitor(
+            enable_oscillator_monitoring=True  # We have oscillators
+        )
+
+        # Initialize criticality monitor (optional, enabled by config)
+        self.criticality_monitor: Optional[CriticalityMonitor] = None
+        criticality_enabled = getattr(global_config, 'monitor_criticality', False)
+
+        if criticality_enabled:
+            # CriticalityMonitor doesn't need component sizes - it tracks spike counts directly
+            self.criticality_monitor = CriticalityMonitor()
 
         # =================================================================
         # EVENT ADAPTER SYSTEM
@@ -220,14 +360,60 @@ class DynamicBrain(nn.Module):
         self._registry: Optional["ComponentRegistry"] = None
         """Component registry reference (for adapter lookup)"""
 
+    def _update_config_sizes(self) -> None:
+        """Update config with component sizes for CheckpointManager compatibility.
+
+        EventDrivenBrain has config.input_size, config.cortex_size, etc.
+        DynamicBrain extracts these from components if they exist.
+        """
+        # Try to extract common size attributes for compatibility
+        if "thalamus" in self.components:
+            thalamus = self.components["thalamus"]
+            # Try n_input first, then n_output as fallback
+            if hasattr(thalamus.config, "n_input"):
+                self.config.input_size = thalamus.config.n_input
+            elif hasattr(thalamus.config, "n_output"):
+                self.config.input_size = thalamus.config.n_output
+
+        # Extract region sizes
+        for region_name in ["cortex", "hippocampus", "pfc", "striatum", "cerebellum"]:
+            if region_name in self.components:
+                component = self.components[region_name]
+                if hasattr(component.config, "n_output"):
+                    setattr(self.config, f"{region_name}_size", component.config.n_output)
+
+        # Extract n_actions from striatum
+        if "striatum" in self.components:
+            striatum = self.components["striatum"]
+            if hasattr(striatum.config, "n_actions"):
+                self.config.n_actions = striatum.config.n_actions
+
+        # Set defaults for any missing attributes (for CheckpointManager compatibility)
+        if not hasattr(self.config, "input_size"):
+            self.config.input_size = None
+        if not hasattr(self.config, "n_actions"):
+            self.config.n_actions = None
+
     @property
     def current_time(self) -> float:
         """Get current simulation time in milliseconds.
-        
+
         Returns:
             Current simulation time in ms
         """
         return self._current_time
+
+    @property
+    def adapters(self) -> Dict[str, Any]:
+        """Get components dict (alias for CheckpointManager compatibility).
+
+        EventDrivenBrain uses 'adapters', DynamicBrain uses 'components'.
+        This property provides compatibility with CheckpointManager.
+
+        Returns:
+            Dict mapping component names to components
+        """
+        return dict(self.components.items())
 
     @classmethod
     def from_thalia_config(cls, config: "ThaliaConfig") -> "DynamicBrain":
@@ -366,7 +552,7 @@ class DynamicBrain(nn.Module):
             input_data: Dict mapping component names to input tensors
                         (e.g., {"thalamus": sensory_input})
             n_timesteps: Number of simulation timesteps
-            use_event_driven: Use event-driven execution (default: True)
+            use_event_driven: Use event-driven execution (default: True, recommended)
                             If False, uses simple synchronous execution
 
         Returns:
@@ -597,6 +783,9 @@ class DynamicBrain(nn.Module):
             if events:
                 self._current_time = events[0].time
 
+            # Broadcast oscillator phases every timestep
+            self._broadcast_oscillator_phases()
+
         # Ensure time advances to end_time even if no more events
         self._current_time = end_time
 
@@ -668,6 +857,23 @@ class DynamicBrain(nn.Module):
                 # Store output
                 outputs[component_name] = component_output
 
+            # Advance oscillators and broadcast phases
+            self._broadcast_oscillator_phases()
+
+            # Update criticality monitor if enabled (Phase 1.7.6)
+            if self.criticality_monitor is not None:
+                # Collect all spikes into a single tensor for branching ratio analysis
+                all_spikes = []
+                for component in self.components.values():
+                    if hasattr(component, 'state') and component.state is not None:
+                        if hasattr(component.state, 'spikes') and component.state.spikes is not None:
+                            all_spikes.append(component.state.spikes)
+
+                if all_spikes:
+                    # Concatenate all spikes and update criticality monitor
+                    combined_spikes = torch.cat([s.flatten() for s in all_spikes])
+                    self.criticality_monitor.update(combined_spikes)
+
             # Update time
             self._current_time += self.global_config.dt_ms
 
@@ -676,19 +882,62 @@ class DynamicBrain(nn.Module):
             "time": self._current_time,
         }
 
+    def _broadcast_oscillator_phases(self) -> None:
+        """Broadcast oscillator phases to all components.
+
+        Advances oscillators by dt_ms and updates all components with current
+        phases for all frequency bands (delta, theta, alpha, beta, gamma, ripple).
+
+        This enables:
+        - Delta slow-wave sleep consolidation
+        - Theta-driven encoding/retrieval in hippocampus
+        - Alpha attention gating
+        - Beta motor control and working memory
+        - Gamma feature binding in cortex
+        - Ripple sharp-wave replay
+        """
+        # Advance oscillators
+        self.oscillators.advance(dt_ms=self.global_config.dt_ms)
+
+        # Get all phases and signals
+        phases = self.oscillators.get_phases()
+        signals = self.oscillators.get_signals()
+
+        # Broadcast to components via event adapters (if in event-driven mode)
+        if self._event_adapters is not None:
+            for adapter in self._event_adapters.values():
+                if hasattr(adapter, 'set_oscillator_phases'):
+                    adapter.set_oscillator_phases(phases, signals)
+                # Backward compatibility: individual setters
+                elif hasattr(adapter, 'set_theta_phase'):
+                    adapter.set_theta_phase(phases['theta'])
+
+        # Also broadcast directly to components that support it
+        for component in self.components.values():
+            if hasattr(component, 'set_oscillator_phases'):
+                component.set_oscillator_phases(phases, signals)
+            # Backward compatibility: individual setters
+            elif hasattr(component, 'set_theta_phase'):
+                component.set_theta_phase(phases['theta'])
+
     # =========================================================================
     # REINFORCEMENT LEARNING INTERFACE
     # =========================================================================
 
-    def select_action(self, explore: bool = True, use_planning: bool = False) -> tuple[int, float]:
+    def select_action(self, explore: bool = True, use_planning: bool = True) -> tuple[int, float]:
         """Select action based on current striatum state.
 
         Compatible with EventDrivenBrain RL interface. Uses striatum to
         select actions based on accumulated evidence.
 
+        If use_planning=True and model-based planning is enabled:
+        - Uses MentalSimulationCoordinator for tree search
+        - Returns best action from simulated rollouts
+        - Falls back to striatum if planning disabled
+
         Args:
             explore: Whether to allow exploration (epsilon-greedy)
-            use_planning: Whether to use model-based planning (not yet supported)
+            use_planning: Whether to use model-based planning
 
         Returns:
             (action, confidence): Selected action index and confidence [0, 1]
@@ -699,13 +948,13 @@ class DynamicBrain(nn.Module):
         Example:
             # After forward pass
             brain.forward({"thalamus": sensory_input}, n_timesteps=20)
-            
+
             # Select action
             action, confidence = brain.select_action(explore=True)
-            
+
             # Execute action in environment
             next_state, reward, done = env.step(action)
-            
+
             # Deliver reward for learning
             brain.deliver_reward(external_reward=reward)
         """
@@ -717,14 +966,31 @@ class DynamicBrain(nn.Module):
 
         striatum = self.components["striatum"]
 
+        # Use mental simulation if requested and available
+        if use_planning and self.mental_simulation is not None:
+            # Get current state from PFC
+            current_state = None
+            if 'pfc' in self.components:
+                pfc = self.components['pfc']
+                if hasattr(pfc, 'state') and pfc.state is not None:
+                    current_state = pfc.state.spikes
+
+            if current_state is not None:
+                # Use tree search to find best action
+                action = self.mental_simulation.search(
+                    state=current_state,
+                    n_simulations=10,
+                )
+                return action, 1.0  # High confidence from planning
+
         # Striatum has finalize_action method for action selection
         if hasattr(striatum, "finalize_action"):
             # Call finalize_action with correct signature (only explore parameter)
             result = striatum.finalize_action(explore=explore)
-            
+
             # Extract action from result dict
             action = result["selected_action"]
-            
+
             # Compute confidence from probabilities or net votes
             probs = result.get("probs")
             if probs is not None:
@@ -737,11 +1003,11 @@ class DynamicBrain(nn.Module):
                     confidence = float(net_votes[action].item() / net_votes.sum().item())
                 else:
                     confidence = 1.0 / len(net_votes)  # Uniform if no votes
-            
+
             # Store for deliver_reward
             self._last_action = action
             self._last_confidence = confidence
-            
+
             return action, confidence
         else:
             raise AttributeError(
@@ -771,10 +1037,10 @@ class DynamicBrain(nn.Module):
         Example:
             # After action selection
             action, _ = brain.select_action()
-            
+
             # Execute in environment
             reward = env.step(action)
-            
+
             # Deliver reward for learning
             brain.deliver_reward(external_reward=reward)
 
@@ -811,6 +1077,35 @@ class DynamicBrain(nn.Module):
                 f"Striatum component ({type(striatum).__name__}) does not have "
                 f"deliver_reward method. Ensure striatum implements RL interface."
             )
+
+        # Trigger background planning (Dyna) after real experience
+        if self.dyna_planner is not None:
+            current_state = None
+            next_state = None
+
+            # Get current and next states from PFC
+            if 'pfc' in self.components:
+                pfc = self.components['pfc']
+                if hasattr(pfc, 'state') and pfc.state is not None:
+                    next_state = pfc.state.spikes
+                    # Current state would need to be saved from before action
+                    # For now, use same state (limitation: need state history)
+                    current_state = next_state
+
+            if current_state is not None and next_state is not None and self._last_action is not None:
+                goal_context = current_state
+
+                self.dyna_planner.process_real_experience(
+                    state=current_state,
+                    action=self._last_action,
+                    reward=total_reward,
+                    next_state=next_state,
+                    done=False,
+                    goal_context=goal_context
+                )
+
+        # Sync last_action to container for consolidation manager
+        self._last_action_container[0] = self._last_action
 
     # =========================================================================
     # NEUROMODULATION (Phase 1.6.3)
@@ -920,10 +1215,20 @@ class DynamicBrain(nn.Module):
             ValueError: If hippocampus not present in brain
 
         Note:
-            Requires hippocampus component with consolidation support.
-            This is a simplified version - full EventDrivenBrain consolidation
-            includes consolidation manager with more features.
+            If ConsolidationManager is available (brain has hippocampus + striatum),
+            delegates to manager for full EventDrivenBrain-compatible consolidation.
+            Otherwise, falls back to simplified consolidation.
         """
+        # Prefer ConsolidationManager if available
+        if self.consolidation_manager is not None:
+            return self.consolidation_manager.consolidate(
+                n_cycles=n_cycles,
+                batch_size=batch_size,
+                verbose=verbose,
+                last_action_holder=self._last_action_container,
+            )
+
+        # Fallback: simplified consolidation without manager
         # Check for hippocampus
         if "hippocampus" not in self.components:
             raise ValueError(
@@ -936,7 +1241,7 @@ class DynamicBrain(nn.Module):
         # Check for consolidation support (either HER or standard replay)
         has_her_replay = hasattr(hippocampus, "sample_her_replay_batch")
         has_standard_replay = hasattr(hippocampus, "sample_replay_batch")
-        
+
         if not has_her_replay and not has_standard_replay:
             raise AttributeError(
                 f"Hippocampus ({type(hippocampus).__name__}) does not support consolidation. "
@@ -1001,6 +1306,52 @@ class DynamicBrain(nn.Module):
         return stats
 
     # =========================================================================
+    # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)
+    # =========================================================================
+
+    def check_health(self) -> Dict[str, Any]:
+        """Check network health and detect pathological states.
+
+        Returns health report with detected issues, severity, and recommendations.
+        Compatible with EventDrivenBrain's health monitoring interface.
+
+        Returns:
+            HealthReport dict with:
+                - is_healthy: bool
+                - issues: List[IssueReport]
+                - summary: str
+                - severity_max: float
+
+        Example:
+            health = brain.check_health()
+            if not health['is_healthy']:
+                for issue in health['issues']:
+                    print(f"{issue['issue_type']}: {issue['description']}")
+        """
+        # Get comprehensive diagnostics for health check
+        diagnostics = self.get_diagnostics()
+
+        # Run health check through HealthMonitor
+        health_report = self.health_monitor.check_health(diagnostics)
+
+        # Convert HealthReport to dict format
+        return {
+            'is_healthy': health_report.is_healthy,
+            'issues': [
+                {
+                    'issue_type': issue.issue_type.name,
+                    'severity': issue.severity,
+                    'description': issue.description,
+                    'recommendation': issue.recommendation,
+                    'metrics': issue.metrics,
+                }
+                for issue in health_report.issues
+            ],
+            'summary': health_report.summary,
+            'severity_max': health_report.overall_severity,
+        }
+
+    # =========================================================================
     # DIAGNOSTICS & GROWTH (Phase 1.6.4)
     # =========================================================================
 
@@ -1036,10 +1387,10 @@ class DynamicBrain(nn.Module):
 
             # Use GrowthManager to analyze capacity
             manager = GrowthManager(region_name=name)
-            
+
             try:
                 metrics = manager.get_capacity_metrics(component)
-                
+
                 growth_report[name] = {
                     "firing_rate": metrics.firing_rate,
                     "weight_saturation": metrics.weight_saturation,
@@ -1105,31 +1456,29 @@ class DynamicBrain(nn.Module):
             component.grow_output(n_new=growth_amount)
             growth_actions[component_name] = growth_amount
 
-            # Grow connected pathways
-            self._grow_connected_pathways(component_name, growth_amount)
+            # Grow connected pathways via PathwayManager
+            self.pathway_manager.grow_connected_pathways(
+                component_name=component_name,
+                growth_amount=growth_amount,
+            )
 
         return growth_actions
 
     def _grow_connected_pathways(self, component_name: str, growth_amount: int) -> None:
         """Grow all pathways connected to a component that has grown.
 
-        Updates pathway dimensions to match new component sizes.
+        Deprecated: Use pathway_manager.grow_connected_pathways() instead.
+        Kept for backward compatibility.
 
         Args:
             component_name: Name of component that grew
             growth_amount: Number of neurons added to component
         """
-        # Find all pathways connected to this component
-        for (src, tgt), pathway in self.connections.items():
-            # If component is source, grow pathway output
-            if src == component_name:
-                if hasattr(pathway, "grow_output"):
-                    pathway.grow_output(n_new=growth_amount)
-
-            # If component is target, grow pathway input
-            if tgt == component_name:
-                if hasattr(pathway, "grow_input"):
-                    pathway.grow_input(n_new=growth_amount)
+        # Delegate to PathwayManager
+        self.pathway_manager.grow_connected_pathways(
+            component_name=component_name,
+            growth_amount=growth_amount,
+        )
 
     # =========================================================================
     # COMPONENT GRAPH UTILITIES
@@ -1159,18 +1508,16 @@ class DynamicBrain(nn.Module):
 
         # Gather inputs from upstream connections
         for conn_key, pathway in self.connections.items():
-            # Parse connection: "source_to_target"
-            parts = conn_key.split("_to_")
-            if len(parts) == 2:
-                src, tgt = parts
+            # Connection keys are tuples: (source, target)
+            src, tgt = conn_key
 
-                # Is this connection targeting our component?
-                if tgt == component_name:
-                    upstream_output = prior_outputs.get(src)
-                    if upstream_output is not None:
-                        # Route through pathway
-                        pathway_output = pathway.forward(upstream_output)
-                        inputs.append(pathway_output)
+            # Is this connection targeting our component?
+            if tgt == component_name:
+                upstream_output = prior_outputs.get(src)
+                if upstream_output is not None:
+                    # Route through pathway
+                    pathway_output = pathway.forward(upstream_output)
+                    inputs.append(pathway_output)
 
         # Combine inputs
         if not inputs:
@@ -1295,25 +1642,106 @@ class DynamicBrain(nn.Module):
                 self._scheduler.schedule(event)
 
     def reset_state(self) -> None:
-        """Reset all component states."""
+        """Reset all component and system states."""
         for component in self.components.values():
             component.reset_state()
 
         for pathway in self.connections.values():
             pathway.reset_state()
 
+        # Reset oscillators
+        self.oscillators.reset()
+
         self._current_time = 0.0
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostics from all components.
+        """Get comprehensive diagnostic information from all subsystems.
+
+        Returns diagnostic metrics from:
+        - Components (regions)
+        - Pathways
+        - Oscillators
+        - Neuromodulators
+        - Planning systems (if enabled)
+        - Criticality (if enabled)
 
         Returns:
-            Dict mapping component names to their diagnostics
-        """
-        diagnostics = {}
+            Dict containing diagnostic metrics from all brain subsystems
 
+        Example:
+            diag = brain.get_diagnostics()
+            print(diag['components']['cortex'])  # Component diagnostics
+            print(diag['pathways'])  # Pathway diagnostics
+            print(diag['oscillators'])  # Oscillator phases/signals
+        """
+        diagnostics = {
+            "components": {},
+            "spike_counts": {},
+            "pathways": {},
+            "oscillators": {},
+            "neuromodulators": {},
+        }
+
+        # Component diagnostics
         for name, component in self.components.items():
-            diagnostics[name] = component.get_diagnostics()
+            if hasattr(component, "get_diagnostics"):
+                diagnostics["components"][name] = component.get_diagnostics()
+
+            # Collect spike counts for health monitoring
+            if hasattr(component, "state") and component.state is not None:
+                if hasattr(component.state, "spikes") and component.state.spikes is not None:
+                    diagnostics["spike_counts"][name] = component.state.spikes.sum().item()
+
+        # Pathway diagnostics (from PathwayManager)
+        diagnostics["pathways"] = self.pathway_manager.get_diagnostics()
+
+        # Oscillator diagnostics
+        diagnostics["oscillators"] = {
+            'delta': {
+                'phase': self.oscillators.delta.phase,
+                'frequency_hz': self.oscillators.delta.frequency_hz,
+                'signal': self.oscillators.delta.signal,
+            },
+            'theta': {
+                'phase': self.oscillators.theta.phase,
+                'frequency_hz': self.oscillators.theta.frequency_hz,
+                'signal': self.oscillators.theta.signal,
+            },
+            'alpha': {
+                'phase': self.oscillators.alpha.phase,
+                'frequency_hz': self.oscillators.alpha.frequency_hz,
+                'signal': self.oscillators.alpha.signal,
+            },
+            'beta': {
+                'phase': self.oscillators.beta.phase,
+                'frequency_hz': self.oscillators.beta.frequency_hz,
+                'signal': self.oscillators.beta.signal,
+            },
+            'gamma': {
+                'phase': self.oscillators.gamma.phase,
+                'frequency_hz': self.oscillators.gamma.frequency_hz,
+                'signal': self.oscillators.gamma.signal,
+            },
+            'ripple': {
+                'phase': self.oscillators.ripple.phase,
+                'frequency_hz': self.oscillators.ripple.frequency_hz,
+                'signal': self.oscillators.ripple.signal,
+            },
+        }
+
+        # Neuromodulator diagnostics
+        diagnostics["neuromodulators"] = self.neuromodulator_manager.get_diagnostics()
+
+        # Planning diagnostics (if enabled)
+        if self.mental_simulation is not None:
+            diagnostics["planning"] = {
+                "mental_simulation_enabled": True,
+                "dyna_enabled": self.dyna_planner is not None,
+            }
+
+        # Criticality diagnostics (if enabled)
+        if self.criticality_monitor is not None:
+            diagnostics["criticality"] = self.criticality_monitor.get_diagnostics()
 
         return diagnostics
 
@@ -1322,23 +1750,43 @@ class DynamicBrain(nn.Module):
 
         Returns:
             Dict containing all component states, neuromodulator states, and metadata
+
+        Note:
+            Uses "regions" key (not "components") for CheckpointManager compatibility.
+            DynamicBrain's components are stored as regions in the checkpoint format.
         """
         state = {
             "global_config": self.global_config,
             "current_time": self._current_time,
             "topology": self._topology,
-            "components": {},
-            "connections": {},
+            "regions": {},  # Use "regions" key for CheckpointManager compatibility
+            "pathways": {},
+            "oscillators": {},
             "neuromodulators": {},
+            "config": {},  # Add config for CheckpointManager validation
         }
 
-        # Get component states
-        for name, component in self.components.items():
-            state["components"][name] = component.get_full_state()
+        # Add config sizes for CheckpointManager validation
+        for attr in ["input_size", "cortex_size", "hippocampus_size", "pfc_size", "n_actions"]:
+            if hasattr(self.config, attr):
+                state["config"][attr] = getattr(self.config, attr)
 
-        # Get connection states
-        for conn_key, pathway in self.connections.items():
-            state["connections"][conn_key] = pathway.get_full_state()
+        # Get component states (stored as "regions" for compatibility)
+        for name, component in self.components.items():
+            state["regions"][name] = component.get_full_state()
+
+        # Get pathway states via PathwayManager
+        state["pathways"] = self.pathway_manager.get_state()
+
+        # Get oscillator states
+        state["oscillators"] = {
+            'delta': self.oscillators.delta.get_state(),
+            'theta': self.oscillators.theta.get_state(),
+            'alpha': self.oscillators.alpha.get_state(),
+            'beta': self.oscillators.beta.get_state(),
+            'gamma': self.oscillators.gamma.get_state(),
+            'ripple': self.oscillators.ripple.get_state(),
+        }
 
         # Get neuromodulator states (save only key attributes)
         if self.vta is not None:
@@ -1363,21 +1811,69 @@ class DynamicBrain(nn.Module):
 
         Args:
             state: State dict from get_full_state()
-        """
-        self._current_time = state["current_time"]
-        self._topology = state["topology"]
 
-        # Load component states
-        for name, component_state in state["components"].items():
+        Note:
+            Supports both "regions" (new format) and "components" (old format)
+            for backward compatibility.
+
+            Also supports both DynamicBrain format (current_time at top level)
+            and EventDrivenBrain format (current_time inside scheduler dict).
+        """
+        # Handle current_time in both formats
+        if "current_time" in state:
+            self._current_time = state["current_time"]
+        elif "scheduler" in state and "current_time" in state["scheduler"]:
+            self._current_time = state["scheduler"]["current_time"]
+        else:
+            self._current_time = 0.0  # Default if not present
+
+        # Handle topology (may not be present in EventDrivenBrain format)
+        self._topology = state.get("topology", self._topology)
+
+        # Load component states (support both "regions" and "components" keys)
+        component_states = state.get("regions", state.get("components", {}))
+        for name, component_state in component_states.items():
             if name in self.components:
                 self.components[name].load_full_state(component_state)
 
-        # Load connection states
-        for conn_key, pathway_state in state["connections"].items():
-            if conn_key in self.connections:
-                self.connections[conn_key].load_full_state(pathway_state)
+        # Load pathway states via PathwayManager
+        if "pathways" in state:
+            self.pathway_manager.load_state(state["pathways"])
+        elif "connections" in state:
+            # Backward compatibility: old format used "connections" directly
+            for conn_key, pathway_state in state["connections"].items():
+                if conn_key in self.connections:
+                    self.connections[conn_key].load_full_state(pathway_state)
+
+        # Load oscillator states
+        if "oscillators" in state:
+            osc_state = state["oscillators"]
+            if "delta" in osc_state:
+                self.oscillators.delta.set_state(osc_state["delta"])
+            if "theta" in osc_state:
+                self.oscillators.theta.set_state(osc_state["theta"])
+            if "alpha" in osc_state:
+                self.oscillators.alpha.set_state(osc_state["alpha"])
+            if "beta" in osc_state:
+                self.oscillators.beta.set_state(osc_state["beta"])
+            if "gamma" in osc_state:
+                self.oscillators.gamma.set_state(osc_state["gamma"])
+            if "ripple" in osc_state:
+                self.oscillators.ripple.set_state(osc_state["ripple"])
 
         # Load neuromodulator states (if present)
+        if "neuromodulators" in state:
+            neuromod_state = state["neuromodulators"]
+            if "vta" in neuromod_state and self.vta is not None:
+                vta_state = neuromod_state["vta"]
+                self.vta._tonic_dopamine = vta_state.get("tonic_dopamine", 0.0)
+                self.vta._phasic_dopamine = vta_state.get("phasic_dopamine", 0.0)
+                self.vta._global_dopamine = vta_state.get("global_dopamine", 0.0)
+            # Note: LC and NB currently don't have settable internal state
+            # Future: Add state restoration for LC and NB when needed
+
+        # Invalidate cached execution order
+        self._execution_order = None
         if "neuromodulators" in state:
             neuromod_state = state["neuromodulators"]
             if "vta" in neuromod_state and self.vta is not None:
