@@ -265,6 +265,7 @@ class BrainComponent(Protocol):
             NotImplementedError: If component doesn't support input growth yet
         """
 
+    # === GROWTH METHODS ===
     @abstractmethod
     def grow_output(
         self,
@@ -272,21 +273,24 @@ class BrainComponent(Protocol):
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,
     ) -> None:
-        """
-        Grow component's output dimension without disrupting existing circuits.
+        """Grow output dimension by adding neurons.
 
-        **CRITICAL for curriculum learning**: As the system learns harder tasks,
-        it needs more output capacity. Growing must preserve existing knowledge.
+        Called when this component needs to produce more outputs.
+        This adds neurons to the component's output population.
 
-        For regions:
-        - Expands neuron population [n_output] → [n_output + n_new]
-        - New neurons start with sparse random connections
-        - Existing neurons and weights unchanged
+        Args:
+            n_new: Number of output neurons/dimensions to add
+            initialization: Weight initialization strategy for new connections
+            sparsity: Connection sparsity for sparse random initialization
 
-        For pathways:
-        - Expands target dimension to match downstream region growth
-        - Maintains connectivity when target region grows
-        - Preserves existing connection strengths
+        Effects:
+            - Expands output-related weight matrices (adds rows)
+            - Adds new neurons to neuron population
+            - Expands output-side state tensors (membrane, traces, etc.)
+            - Updates config.n_output
+
+        **CRITICAL for curriculum learning**: Growing must preserve existing knowledge.
+        Existing neurons and weights remain unchanged
 
         Args:
             n_new: Number of output neurons/units to add

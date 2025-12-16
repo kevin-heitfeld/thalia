@@ -2,6 +2,25 @@
 
 This file provides context for AI assistants working with the Thalia codebase.
 
+## Navigation & Documentation
+
+**For detailed navigation guidance, search strategies, and common tasks, see:**
+- `docs/AI_ASSISTANT_GUIDE.md` - Comprehensive navigation guide with search patterns
+- `docs/COPILOT_AVAILABLE_TOOLS.md` - Complete list of available tools with descriptions
+- `docs/architecture/ARCHITECTURE_OVERVIEW.md` - System architecture overview (start here for architecture questions)
+
+## Python Environment Setup
+
+**Configure the Python environment before running any Python code, tests, or commands.**
+
+Use the `configure_python_environment` tool at the start of every session or before running:
+- Python scripts (training, examples, etc.)
+- Tests (`pytest`, `runTests`)
+- Python terminal commands
+- Package installations
+
+This ensures the correct environment is activated with all dependencies (pytest, torch, etc.) available. If you see import errors or missing packages that should be installed, you likely forgot this step.
+
 ## Project Overview
 
 **Thalia** is a biologically-accurate spiking neural network framework for building multi-modal, biologically-plausible ML models with LLM-level (or better) capabilities.
@@ -111,6 +130,24 @@ from thalia.diagnostics import HealthMonitor, CriticalityMonitor, MetacognitiveM
 from thalia.training.visualization import TrainingMonitor
 ```
 
+## Finding Code (PowerShell)
+
+```powershell
+# Find component registrations
+Select-String -Path src\* -Pattern "@register_region" -Recurse
+Select-String -Path src\* -Pattern "@register_pathway" -Recurse
+
+# Find growth implementations
+Select-String -Path src\* -Pattern "def grow_output" -Recurse
+Select-String -Path src\* -Pattern "def grow_input" -Recurse
+
+# Find learning strategies
+Select-String -Path src\* -Pattern "create_strategy" -Recurse
+
+# Find multi-source pathway logic
+Select-String -Path src\* -Pattern "MultiSourcePathway" -Recurse
+```
+
 ## Biological Accuracy Constraints
 
 ### DO:
@@ -149,6 +186,60 @@ from thalia.training.visualization import TrainingMonitor
 - **Parallel Execution**: Multi-core CPU support (`src/thalia/events/parallel.py`)
 - **Diagnostics**: Health monitor, training monitor, criticality monitor
 - **Datasets**: Temporal sequences, CIFAR-10, Grammar (3 languages), Reading (3 languages)
+
+## Type Alias Glossary
+
+```python
+# Component Organization
+ComponentGraph = Dict[str, NeuralComponent]           # name -> component instance
+ConnectionGraph = Dict[Tuple[str, str], NeuralComponent]  # (src, tgt) -> pathway
+TopologyGraph = Dict[str, List[str]]                  # src -> [tgt1, tgt2, ...]
+
+# Multi-Source Pathways
+SourceSpec = Tuple[str, Optional[str]]                # (region_name, port)
+SourceOutputs = Dict[str, torch.Tensor]               # {region_name: output_spikes}
+InputSizes = Dict[str, int]                           # {region_name: size}
+
+# Configuration
+ComponentSpec = dataclass                              # Pre-instantiation component definition
+ConnectionSpec = dataclass                             # Pre-instantiation connection definition
+
+# Port-Based Routing
+SourcePort = Optional[str]                            # 'l23', 'l5', 'l4', None
+TargetPort = Optional[str]                            # 'feedforward', 'top_down', None
+
+# Diagnostics
+DiagnosticsDict = Dict[str, Any]                      # Component health/performance metrics
+HealthReport = dataclass                               # Structured health check results
+
+# State Management
+StateDict = Dict[str, torch.Tensor]                   # Component state for checkpointing
+CheckpointMetadata = Dict[str, Any]                   # Training progress, stage info
+```
+
+## Standard Growth API
+
+All `NeuralComponent` subclasses implement these standardized signatures:
+
+```python
+def grow_output(self, n_new: int) -> None:
+    """Grow output dimension by adding neurons.
+
+    Effects: Expands weights (adds rows), adds neurons, updates config.n_output
+    """
+
+def grow_input(self, n_new: int) -> None:
+    """Grow input dimension to accept more inputs.
+
+    Effects: Expands weights (adds columns), NO new neurons, updates config.n_input
+    """
+
+def grow_source(self, source_name: str, new_size: int) -> None:
+    """Grow input for specific source (MultiSourcePathway only).
+
+    Effects: Updates input_sizes[source_name], resizes weights, preserves other sources
+    """
+```
 
 ## Key Documentation
 

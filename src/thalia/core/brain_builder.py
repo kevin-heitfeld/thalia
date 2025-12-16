@@ -534,6 +534,7 @@ class BrainBuilder:
             components[name] = component
             spec.instance = component
 
+        # === MULTI-SOURCE PATHWAY CONSTRUCTION ===
         # Instantiate pathways - GROUP BY TARGET for multi-source pathways
         connections: Dict[Tuple[str, str], NeuralComponent] = {}
 

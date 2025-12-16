@@ -205,6 +205,7 @@ class DynamicBrain(nn.Module):
         # Use EventScheduler for event-driven execution with delays
         self._scheduler = EventScheduler()
 
+        # === MULTI-SOURCE PATHWAY BUFFERING ===
         # Buffer for multi-source pathway inputs
         # Maps target_name -> {source_name -> latest_output}
         self._multi_source_buffers: Dict[str, Dict[str, torch.Tensor]] = {}

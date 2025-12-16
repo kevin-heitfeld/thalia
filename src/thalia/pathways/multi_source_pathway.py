@@ -219,14 +219,28 @@ class MultiSourcePathway(SpikingPathway):
             # Unknown port - return full output
             return output
 
+    # === GROWTH METHODS ===
     def grow_source(self, source_name: str, new_size: int) -> None:
-        """Grow input dimension for a specific source.
+        """Grow input dimension for a specific source (MultiSourcePathway only).
 
-        Called when a source region grows. Only this pathway needs to update.
+        Called when one source region in a multi-source connection grows.
+        Only that source's contribution to the total input expands.
 
         Args:
-            source_name: Name of the source that grew
-            new_size: New output size from that source
+            source_name: Name of the source region that grew
+            new_size: New total size for that source (not delta!)
+
+        Effects:
+            - Updates self.input_sizes[source_name]
+            - Resizes weight matrix to accommodate new total input size
+            - Preserves weights from other sources
+            - Updates config.n_input to sum of all source sizes
+
+        Example:
+            >>> pathway.input_sizes  # {'cortex': 100, 'hippocampus': 64}
+            >>> pathway.grow_source('cortex', 120)  # Cortex grew by 20
+            >>> pathway.input_sizes  # {'cortex': 120, 'hippocampus': 64}
+            >>> pathway.config.n_input  # 184 (was 164)
         """
         if source_name not in self.input_sizes:
             raise ValueError(
