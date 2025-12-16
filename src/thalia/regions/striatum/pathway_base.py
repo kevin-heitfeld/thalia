@@ -3,6 +3,16 @@ Base class for striatal pathways (D1/D2).
 
 Provides common interface for pathway-specific learning and dynamics.
 D1 and D2 pathways differ in dopamine polarity and functional role.
+
+**Architecture Note**:
+Internal pathways (D1/D2) are different from external pathways (SpikingPathway):
+- External pathways connect BETWEEN regions (managed by PathwayManager)
+- Internal pathways are MSN subpopulations WITHIN striatum
+- Different biological roles: external = long-range projections with delays,
+  internal = local cell type differentiation (D1 vs D2 receptors)
+
+This class uses mixins for shared utilities (weight init, growth) while
+remaining independent from the external pathway hierarchy.
 """
 
 from __future__ import annotations
@@ -25,6 +35,7 @@ from thalia.components.neurons.neuron_constants import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
+from thalia.mixins import GrowthMixin, ResettableMixin
 
 
 @dataclass
@@ -50,19 +61,23 @@ class StriatumPathwayConfig(PathwayConfig):
     e_inhibitory: float = E_INHIBITORY
 
 
-class StriatumPathway(nn.Module, ABC):
+class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
     """
     Base class for D1 and D2 striatal pathways.
 
     Each pathway is a separate population of Medium Spiny Neurons (MSNs)
     with its own weights, eligibility traces, and learning dynamics.
 
+    **Mixins Used**:
+    - GrowthMixin: Provides _expand_weights() helper for grow() and grow_input()
+    - ResettableMixin: Enforces reset_state() interface
+
     Key responsibilities:
     - Weight matrix management
     - Eligibility trace computation
     - Neuron population simulation
     - Dopamine-modulated learning
-    - Growth (adding new actions)
+    - Growth (adding neurons or inputs)
     - State management (checkpointing)
     """
 
@@ -87,13 +102,6 @@ class StriatumPathway(nn.Module, ABC):
 
         # Neuron population
         self.neurons = self._create_neurons()
-
-    def _initialize_weights(self) -> nn.Parameter:
-        """Initialize weight matrix with sparse random connectivity.
-
-        Returns:
-            Parameter [n_output, n_input] with sparse random weights
-        """
 
     # =========================================================================
     # PROPERTIES FOR DIAGNOSTICS
@@ -233,38 +241,31 @@ class StriatumPathway(nn.Module, ABC):
         """
         Add new neurons to pathway (for adding new actions).
 
+        Uses GrowthMixin._expand_weights() for standardized weight expansion.
+
         Expands:
-        - Weight matrix
+        - Weight matrix (rows)
         - Eligibility traces
-        - STDP traces
         - Neuron population
 
         Args:
             n_new_neurons: Number of neurons to add
             initialization: Weight initialization strategy
+
+        Example:
+            >>> # In Striatum.grow_output()
+            >>> self.d1_pathway.grow(n_new=10)
+            >>> self.d2_pathway.grow(n_new=10)
         """
         old_n_output = self.config.n_output
         new_n_output = old_n_output + n_new_neurons
 
-        # 1. Expand weights
-        if initialization == 'xavier':
-            new_weights = WeightInitializer.xavier(
-                n_output=n_new_neurons,
-                n_input=self.config.n_input,
-                gain=0.2,
-                device=self.device,
-            ) * self.config.w_max
-        else:  # uniform
-            new_weights = WeightInitializer.uniform(
-                n_output=n_new_neurons,
-                n_input=self.config.n_input,
-                low=0.0,
-                high=self.config.w_max * 0.2,
-                device=self.device,
-            )
-
-        self.weights = nn.Parameter(
-            torch.cat([self.weights.data, new_weights], dim=0)
+        # 1. Expand weights using GrowthMixin helper
+        self.weights = self._expand_weights(
+            current_weights=self.weights,
+            n_new=n_new_neurons,
+            initialization=initialization,
+            scale=self.config.w_max * 0.2,
         )
 
         # 2. Reset eligibility traces (strategy will reinitialize on next update)
@@ -292,6 +293,60 @@ class StriatumPathway(nn.Module, ABC):
             self.neurons.g_I[:old_n_output] = old_g_I
         if old_refractory is not None:
             self.neurons.refractory[:old_n_output] = old_refractory
+
+    def grow_input(self, n_new_inputs: int, initialization: str = 'xavier') -> None:
+        """
+        Expand input dimension when upstream regions grow.
+
+        Uses GrowthMixin._expand_weights() by transposing, expanding, and transposing back.
+
+        Args:
+            n_new_inputs: Number of input neurons to add
+            initialization: Weight initialization strategy
+
+        Example:
+            >>> # When cortex grows from 128→148 neurons:
+            >>> cortex.grow_output(20)  # cortex adds 20 neurons
+            >>> cortex_to_striatum.grow_source('cortex', 148)  # pathway resizes
+            >>> striatum.grow_input(20)  # THIS method: d1/d2 pathways resize
+        """
+        old_n_input = self.config.n_input
+        new_n_input = old_n_input + n_new_inputs
+
+        # Strategy: Create new columns by initializing new [n_output, n_new_inputs] block
+        if initialization == 'xavier':
+            new_cols = WeightInitializer.xavier(
+                n_output=self.config.n_output,
+                n_input=n_new_inputs,
+                gain=0.2,
+                device=self.device,
+            ) * self.config.w_max
+        elif initialization == 'sparse_random':
+            new_cols = WeightInitializer.sparse_random(
+                n_output=self.config.n_output,
+                n_input=n_new_inputs,
+                sparsity=0.1,
+                scale=self.config.w_max * 0.2,
+                device=self.device,
+            )
+        else:  # uniform
+            new_cols = WeightInitializer.uniform(
+                n_output=self.config.n_output,
+                n_input=n_new_inputs,
+                low=0.0,
+                high=self.config.w_max * 0.2,
+                device=self.device,
+            )
+
+        # Concatenate along input dimension (columns)
+        expanded = torch.cat([self.weights.data, new_cols], dim=1)
+        self.weights = nn.Parameter(expanded)
+
+        # Update config
+        self.config.n_input = new_n_input
+
+        # Reset eligibility traces (new dimensions)
+        self.learning_strategy.reset_state()
 
     def get_state(self) -> Dict[str, Any]:
         """Get pathway state for checkpointing.

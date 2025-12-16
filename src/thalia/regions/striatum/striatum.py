@@ -1035,7 +1035,8 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         """Grow striatum input dimension when upstream regions grow.
 
         When upstream regions (cortex, hippocampus, PFC) add neurons, this
-        method expands the striatum's D1 and D2 pathway weights.
+        method expands the striatum's D1 and D2 pathway weights by delegating
+        to the pathway objects' grow_input() method.
 
         Args:
             n_new: Number of input neurons to add
@@ -1044,36 +1045,18 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         Example:
             >>> cortex.grow_output(20)
-            >>> cortex_to_striatum.grow_output(20)
+            >>> cortex_to_striatum.grow_source('cortex', new_size)
             >>> striatum.grow_input(20)  # Expand D1/D2 input weights
         """
         old_n_input = self.config.n_input
         new_n_input = old_n_input + n_new
 
-        # Expand D1 pathway weights [n_output, input] → [n_output, input+n_new]
-        new_d1_cols = WeightInitializer.xavier(
-            n_output=self.config.n_output,
-            n_input=n_new,
-            gain=0.2,  # Small gain to avoid disrupting learned patterns
-            device=self.device
-        )
-        # Use .data assignment (can't re-register nn.Parameter)
-        self.d1_weights.data = torch.cat([self.d1_weights.data, new_d1_cols], dim=1)
+        # Delegate to internal pathway grow_input() methods
+        # (Pathways handle weight expansion, eligibility reset)
+        self.d1_pathway.grow_input(n_new_inputs=n_new, initialization=initialization)
+        self.d2_pathway.grow_input(n_new_inputs=n_new, initialization=initialization)
 
-        # Expand D2 pathway weights [n_output, input] → [n_output, input+n_new]
-        new_d2_cols = WeightInitializer.xavier(
-            n_output=self.config.n_output,
-            n_input=n_new,
-            gain=0.2,
-            device=self.device
-        )
-        # Use .data assignment (can't re-register nn.Parameter)
-        self.d2_weights.data = torch.cat([self.d2_weights.data, new_d2_cols], dim=1)
-
-        # Update generic weights reference (use d1_weights for compatibility)
-        self.weights = self.d1_weights
-
-        # Update config
+        # Update striatum config
         self.config = replace(self.config, n_input=new_n_input)
 
     def _initialize_pathway_weights(self) -> torch.Tensor:
