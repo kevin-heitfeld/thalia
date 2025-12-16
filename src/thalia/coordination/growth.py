@@ -330,8 +330,16 @@ class GrowthManager:
                 f"Component {self.region_name} does not implement grow_output()"
             )
 
+        # Striatum grows by actions, not individual neurons
+        # Convert neuron count to action count if needed
+        actual_n_new = n_new
+        if hasattr(component, 'neurons_per_action') and component.neurons_per_action > 1:
+            # Striatum: n_new should be number of actions, not neurons
+            # Round to nearest action population
+            actual_n_new = max(1, round(n_new / component.neurons_per_action))
+
         component.grow_output(
-            n_new=n_new,
+            n_new=actual_n_new,
             initialization=initialization,
             sparsity=sparsity,
         )

@@ -216,20 +216,107 @@ def create_sensorimotor_environment(device: str = "cpu") -> SensorimotorTaskLoad
 
 
 def progress_callback(step: int, metrics: Dict[str, Any]) -> None:
-    """Print progress updates every 500 steps.
+    """Print detailed progress updates with per-region diagnostics.
+
+    For Stage -0.5 (Sensorimotor), we're doing UNSUPERVISED learning:
+    - No external rewards during training (dopamine stays at 0)
+    - Learning via STDP, BCM, Hebbian mechanisms
+    - Performance is evaluated at milestones, not during training
+
+    What we DO monitor:
+    - Per-region activity (detect silencing/death)
+    - Weight changes (learning is happening)
+    - Network health (stability, no runaway)
 
     Args:
         step: Current training step (loop iteration number)
         metrics: Dictionary of current metrics
     """
-    if step > 0 and step % 500 == 0:  # Print every 500 steps
-        reward = metrics.get('reward', 0.0) if metrics else 0.0
-        loss = metrics.get('loss', 0.0) if metrics else 0.0
-        accuracy = metrics.get('accuracy', 0.0) if metrics else 0.0
-        firing_rate = metrics.get('avg_firing_rate', 0.0) if metrics else 0.0
+    if step > 0 and step % 100 == 0:  # Print every 100 steps for detailed monitoring
+        # Build progress line
+        progress_parts = [f"Step {step:5d}"]
 
-        print(f"\n  Progress: Step {step:5d} | Reward: {reward:6.3f} | Loss: {loss:6.3f} | "
-              f"Acc: {accuracy:5.1%} | FR: {firing_rate:5.3f}", flush=True)
+        # Per-region firing rates (critical for detecting death/silence)
+        if 'region_firing_rates' in metrics:
+            region_frs = metrics['region_firing_rates']
+            fr_parts = []
+            for region, fr in region_frs.items():
+                # Color code: 🟢 healthy (>0.05), 🟡 low (<0.05), 🔴 silent (0)
+                if fr == 0.0:
+                    status = "🔴"
+                elif fr < 0.05:
+                    status = "🟡"
+                else:
+                    status = "🟢"
+                fr_parts.append(f"{region}:{status}{fr:.3f}")
+            progress_parts.append(f"FR:[{' '.join(fr_parts)}]")
+
+        # Dopamine levels (tonic and phasic)
+        if 'neuromodulator/dopamine_tonic' in metrics:
+            tonic = metrics['neuromodulator/dopamine_tonic']
+            phasic = metrics['neuromodulator/dopamine_phasic']
+            progress_parts.append(f"DA:[tonic:{tonic:.3f} phasic:{phasic:.3f}]")
+        elif 'dopamine' in metrics:
+            da = metrics['dopamine']
+            progress_parts.append(f"DA:{da:.3f}")
+
+        # Overall health indicator
+        if 'health/is_healthy' in metrics:
+            health_ok = metrics['health/is_healthy'] > 0.5
+            health_icon = "✅" if health_ok else "⚠️"
+            progress_parts.append(f"Health:{health_icon}")
+
+        print(f"\n  Progress: {' | '.join(progress_parts)}", flush=True)
+
+        # Every 500 steps, add detailed analysis
+        if step % 500 == 0:
+            print(f"\n  📊 UNSUPERVISED LEARNING STATUS (Step {step}):")
+            print(f"      Stage -0.5 uses intrinsic learning (STDP/BCM/Hebbian)")
+            print(f"      No external rewards during training (evaluated at milestones)")
+            print()
+
+            # Check each critical region
+            if 'region_firing_rates' in metrics:
+                regions = metrics['region_firing_rates']
+
+                print("      Region Activity:")
+                for region_name, fr in regions.items():
+                    if fr == 0.0:
+                        status = "🔴 SILENT"
+                        alert = " ⚠️ PROBLEM: Region has died!"
+                    elif fr < 0.05:
+                        status = "🟡 LOW"
+                        alert = " - May need intervention"
+                    else:
+                        status = "🟢 ACTIVE"
+                        alert = ""
+                    print(f"        {region_name:15s}: {status:10s} (FR: {fr:.3f}){alert}")
+
+            # Weight statistics (learning indicator)
+            if any(k.startswith('weights/') for k in metrics):
+                print()
+                print("      Weight Statistics (Learning Indicator):")
+                for key in sorted(metrics.keys()):
+                    if key.startswith('weights/') and key.endswith('_mean'):
+                        pathway = key.replace('weights/', '').replace('_mean', '')
+                        mean_w = metrics.get(f'weights/{pathway}_mean', 0)
+                        std_w = metrics.get(f'weights/{pathway}_std', 0)
+                        print(f"        {pathway:20s}: μ={mean_w:.3f}, σ={std_w:.3f}")
+
+            # Dopamine breakdown (tonic vs phasic)
+            if 'neuromodulator/dopamine_tonic' in metrics:
+                print()
+                print("      Dopamine System (Tonic + Phasic):")
+                tonic = metrics['neuromodulator/dopamine_tonic']
+                phasic = metrics['neuromodulator/dopamine_phasic']
+                global_da = metrics.get('neuromodulator/dopamine_global', tonic + phasic)
+                print(f"        Tonic (baseline):  {tonic:+.3f}  (intrinsic motivation)")
+                print(f"        Phasic (bursts):   {phasic:+.3f}  (reward prediction error)")
+                print(f"        Global (combined): {global_da:+.3f}  (total modulation)")
+                if abs(tonic) < 0.001 and abs(phasic) < 0.001:
+                    print(f"        ⚠️ No dopamine modulation - expected for unsupervised learning")
+
+            print()
 
 
 def create_curriculum_trainer(
@@ -542,10 +629,13 @@ def main():
     print("   📊 Real-time Updates:")
     print("      - Diagnostics: Every 5000 steps (spike rasters, health, performance)")
     print("      - Visualization: Every 5000 steps (detailed plots saved to plots/)")
-    print("      - Progress callbacks: Every 10 steps (console summary)")
+    print("      - Progress callbacks: Every 100 steps (per-region firing rates)")
+    print("      - Detailed analysis: Every 500 steps (region health, task accuracy)")
     print()
     print("   📈 Progress Format:")
-    print("      Step XXXXX | Reward: X.XXX | Loss: X.XXX | Acc: XX.X% | FR: X.XXX")
+    print("      Step XXXXX | Acc: XX.X% | FR:[cortex:X.XXX striatum:X.XXX ...] | DA: X.XXX")
+    print()
+    print("   Region Status: 🟢 Active (>0.05) | 🟡 Low (<0.05) | 🔴 Silent (0)")
     print()
     print("   To disable: Pass enable_live_diagnostics=False to create_curriculum_trainer()")
     print()

@@ -1563,7 +1563,7 @@ class CurriculumTrainer:
             # Grow connected pathways (automatic via PathwayManager)
             if hasattr(self.brain, 'pathway_manager'):
                 self.brain.pathway_manager.grow_connected_pathways(
-                    region_name=region_name,
+                    component_name=region_name,
                     growth_amount=n_new_neurons,
                 )
                 if self.verbose:
@@ -1884,16 +1884,28 @@ class CurriculumTrainer:
 
             # 3.1 Firing rates per region
             spike_counts = brain_diag.get('spike_counts', {})
+
+            # Create structured region_firing_rates dict for progress callback
+            region_firing_rates = {}
             for region_name, spike_count in spike_counts.items():
                 # Normalize by rough neuron count estimate
                 # This is approximate; actual firing rate calculation would need neuron counts
-                metrics[f'firing_rate/{region_name}'] = spike_count / 100.0
+                fr_value = spike_count / 100.0
+                metrics[f'firing_rate/{region_name}'] = fr_value
+                region_firing_rates[region_name] = fr_value
+
+            # Add structured dict for easy access in callbacks
+            if region_firing_rates:
+                metrics['region_firing_rates'] = region_firing_rates
 
             # Overall average firing rate
             if spike_counts:
-                metrics['firing_rate/average'] = sum(spike_counts.values()) / (len(spike_counts) * 100.0)
+                avg_fr = sum(spike_counts.values()) / (len(spike_counts) * 100.0)
+                metrics['firing_rate/average'] = avg_fr
+                metrics['avg_firing_rate'] = avg_fr  # Alias for progress callback
             else:
                 metrics['firing_rate/average'] = 0.0
+                metrics['avg_firing_rate'] = 0.0
 
             # 3.2 Weight statistics per pathway
             pathway_diag = brain_diag.get('pathways', {})
@@ -1912,9 +1924,13 @@ class CurriculumTrainer:
             # 3.3 Neuromodulator levels
             dopamine = brain_diag.get('dopamine', {})
             if dopamine:
-                metrics['neuromodulator/dopamine_global'] = float(dopamine.get('global', 0.0))
+                da_global = float(dopamine.get('global', 0.0))
+                metrics['neuromodulator/dopamine_global'] = da_global
+                metrics['dopamine'] = da_global  # Alias for progress callback
                 metrics['neuromodulator/dopamine_tonic'] = float(dopamine.get('tonic', 0.0))
                 metrics['neuromodulator/dopamine_phasic'] = float(dopamine.get('phasic', 0.0))
+            else:
+                metrics['dopamine'] = 0.0
 
             lc_state = brain_diag.get('locus_coeruleus', {})
             if lc_state:
@@ -1980,12 +1996,23 @@ class CurriculumTrainer:
         # =====================================================================
         # 5. TASK-SPECIFIC PERFORMANCE
         # =====================================================================
+        # Create structured task_performance dict for progress callback
+        task_performance_dict = {}
         for task_name, perf_buffer in self.task_performance.items():
             if perf_buffer:
                 # Recent average (last 100 samples)
-                metrics[f'task/{task_name}_accuracy'] = float(np.mean(list(perf_buffer)[-100:]))
+                recent_avg = float(np.mean(list(perf_buffer)[-100:]))
+                metrics[f'task/{task_name}_accuracy'] = recent_avg
+                task_performance_dict[task_name] = recent_avg
                 # Overall average
                 metrics[f'task/{task_name}_accuracy_all'] = float(np.mean(perf_buffer))
+
+        # Add structured dict for easy access in callbacks
+        if task_performance_dict:
+            metrics['task_performance'] = task_performance_dict
+            # Set highest performing task as current accuracy
+            metrics['accuracy'] = max(task_performance_dict.values()) if task_performance_dict else 0.0
+            metrics['task_accuracy'] = metrics['accuracy']  # Alias
 
         # =====================================================================
         # 6. CRITICAL PERIOD STATUS

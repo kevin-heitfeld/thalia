@@ -375,8 +375,8 @@ class BrainBuilder:
         if source_port is None:
             return source_spec.config_params["n_output"]
 
-        # For layered cortex, compute layer sizes
-        if source_spec.registry_name in ("cortex", "layered_cortex"):
+        # For layered cortex (including predictive_cortex), compute layer sizes
+        if source_spec.registry_name in ("cortex", "layered_cortex", "predictive_cortex"):
             from thalia.regions.cortex import calculate_layer_sizes
             from thalia.regions.cortex import LayeredCortexConfig
 
@@ -482,7 +482,7 @@ class BrainBuilder:
         # Use provided values or fall back to instance values
         final_use_parallel = use_parallel if use_parallel is not None else self.use_parallel
         final_n_workers = n_workers if n_workers is not None else self.n_workers
-        
+
         # Infer n_input for components based on connections
         self._infer_component_sizes()
 
@@ -918,7 +918,10 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
     builder.connect("hippocampus", "striatum", "spiking")
     builder.connect("pfc", "striatum", "spiking")
     builder.connect("striatum", "pfc", "spiking")  # Bidirectional
-    builder.connect("pfc", "cerebellum", "spiking")
+    # Cerebellum: receives cortex (sensory) + PFC (goals), outputs predictions to cortex
+    builder.connect("cortex", "cerebellum", "spiking")  # Sensorimotor input
+    builder.connect("pfc", "cerebellum", "spiking")  # Goal/context input
+    builder.connect("cerebellum", "cortex", "spiking")  # Forward model predictions
 
 
 # Register built-in presets

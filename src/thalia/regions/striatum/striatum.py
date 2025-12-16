@@ -874,16 +874,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         new_d2_ids = self._generate_new_neuron_ids(n_new_d2, pathway_type="d2")
         self.neuron_ids.extend(new_d1_ids)
         self.neuron_ids.extend(new_d2_ids)
-        # =====================================================================
-        # Generate IDs for new neurons before creating them
-        # Half D1, half D2 to maintain balance
-        n_new_d1 = n_new_neurons // 2
-        n_new_d2 = n_new_neurons - n_new_d1
-
-        new_d1_ids = self._generate_new_neuron_ids(n_new_d1, pathway_type="d1")
-        new_d2_ids = self._generate_new_neuron_ids(n_new_d2, pathway_type="d2")
-        self.neuron_ids.extend(new_d1_ids)
-        self.neuron_ids.extend(new_d2_ids)
 
         # =====================================================================
         # 1. EXPAND D1 AND D2 WEIGHT MATRICES using base helper

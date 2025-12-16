@@ -481,6 +481,53 @@ class DynamicBrain(nn.Module):
         """
         return dict(self.components.items())
 
+    @property
+    def theta_oscillator(self):
+        """Get theta oscillator (compatibility property for monitoring).
+
+        Returns wrapper object with get_frequency() method.
+        """
+        class ThetaWrapper:
+            def __init__(self, theta_osc):
+                self._theta = theta_osc
+
+            def get_frequency(self):
+                return self._theta.frequency_hz
+
+        return ThetaWrapper(self.oscillators.theta)
+
+    def measure_phase_locking(self) -> float:
+        """Measure gamma-theta phase locking.
+
+        Computes the phase-amplitude coupling between gamma amplitude
+        and theta phase, a key metric of oscillator coordination.
+
+        Returns:
+            Phase locking value [0, 1], where higher is better coupling
+        """
+        # Get current phases
+        theta_phase = self.oscillators.theta.phase
+        gamma_phase = self.oscillators.gamma.phase
+
+        # Get coupling amplitude if available
+        coupled_amps = self.oscillators.get_coupled_amplitudes()
+        if 'gamma' in coupled_amps:
+            # Use coupling amplitude as proxy for phase locking
+            # (higher coupling = better phase locking)
+            return coupled_amps['gamma']
+
+        # Fallback: compute simple phase coherence
+        # Gamma should be at ~40 Hz, theta at ~8 Hz
+        # Ideal ratio is 5:1 (5 gamma cycles per theta cycle)
+        expected_ratio = 5.0
+        actual_ratio = self.oscillators.gamma.frequency_hz / self.oscillators.theta.frequency_hz
+
+        # Phase locking = how close to expected ratio
+        ratio_error = abs(actual_ratio - expected_ratio) / expected_ratio
+        phase_locking = max(0.0, 1.0 - ratio_error)
+
+        return phase_locking
+
     @classmethod
     def from_thalia_config(cls, config: "ThaliaConfig") -> "DynamicBrain":
         """Create DynamicBrain from ThaliaConfig (backward compatibility).
@@ -525,8 +572,10 @@ class DynamicBrain(nn.Module):
             n_output=sizes.thalamus_size
         )
 
-        # Other regions - n_input inferred from connections
-        builder.add_component("cortex", "cortex", n_output=sizes.cortex_size)
+        # Cortex - use cortex_type from config (PREDICTIVE or LAYERED)
+        # Both types expose l23_size/l5_size for port-based routing
+        cortex_registry_name = "predictive_cortex" if config.brain.cortex_type.value == "predictive" else "cortex"
+        builder.add_component("cortex", cortex_registry_name, n_output=sizes.cortex_size)
         builder.add_component("hippocampus", "hippocampus", n_output=sizes.hippocampus_size)
         builder.add_component("pfc", "prefrontal", n_output=sizes.pfc_size)
         builder.add_component("striatum", "striatum", n_output=sizes.n_actions)
@@ -1460,6 +1509,8 @@ class DynamicBrain(nn.Module):
         # Low prediction error = good model of the world = reward
         if 'cortex' in self.components:
             cortex = self.components['cortex']
+
+            # Try PredictiveCortex first (has explicit free_energy)
             if hasattr(cortex, 'state') and hasattr(cortex.state, 'free_energy'):
                 free_energy = cortex.state.free_energy
 
@@ -1475,6 +1526,16 @@ class DynamicBrain(nn.Module):
                 total_fe = cortex._total_free_energy
                 cortex_reward = 1.0 - 0.1 * min(total_fe, 20.0)
                 cortex_reward = max(-1.0, min(1.0, cortex_reward))
+                reward += cortex_reward
+                n_sources += 1
+
+            # LayeredCortex: Use L2/3 firing rate as proxy for processing quality
+            # High activity = engaged processing, low = unresponsive
+            elif hasattr(cortex, 'state') and hasattr(cortex.state, 'l23_spikes'):
+                from thalia.components.coding.spike_utils import compute_firing_rate
+                l23_activity = compute_firing_rate(cortex.state.l23_spikes)
+                # Map [0, 1] to [-0.5, 0.5] - less weight than free energy
+                cortex_reward = (l23_activity - 0.5)
                 reward += cortex_reward
                 n_sources += 1
 
