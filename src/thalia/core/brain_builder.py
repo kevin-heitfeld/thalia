@@ -641,6 +641,7 @@ class BrainBuilder:
                 for spec in target_specs:
                     source_comp = components[spec.source]
                     source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
+                    # Store port info for documentation (extraction happens in DynamicBrain before buffering)
                     sources.append((spec.source, spec.source_port))
                     total_input_size += source_output_size
 

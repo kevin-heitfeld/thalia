@@ -580,7 +580,17 @@ class DynamicBrain(nn.Module):
         # Cortex - use cortex_type from config (PREDICTIVE or LAYERED)
         # Both types expose l23_size/l5_size for port-based routing
         cortex_registry_name = "predictive_cortex" if config.brain.cortex_type.value == "predictive" else "cortex"
-        builder.add_component("cortex", cortex_registry_name, n_output=sizes.cortex_size)
+
+        # Pass explicit layer sizes if available (all-or-nothing per strict validation)
+        cortex_config = {"n_output": sizes.cortex_size}
+        if sizes._cortex_l4_size is not None and sizes._cortex_l23_size is not None and sizes._cortex_l5_size is not None:
+            cortex_config.update({
+                "l4_size": sizes.cortex_l4_size,
+                "l23_size": sizes.cortex_l23_size,
+                "l5_size": sizes.cortex_l5_size,
+            })
+
+        builder.add_component("cortex", cortex_registry_name, **cortex_config)
         builder.add_component("hippocampus", "hippocampus", n_output=sizes.hippocampus_size)
         builder.add_component("pfc", "prefrontal", n_output=sizes.pfc_size)
         builder.add_component("striatum", "striatum", n_output=sizes.n_actions)

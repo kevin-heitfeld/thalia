@@ -144,11 +144,15 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
         ),
         brain=BrainConfig(
             sizes=RegionSizes(
-                input_size=128,       # Sensory input (visual + proprioceptive)
-                cortex_size=128,      # Cortex output size
-                hippocampus_size=64,  # Episodic memory
-                pfc_size=32,          # Working memory
-                n_actions=7,          # Movement directions (L/R/U/D/F/B/STOP)
+                input_size=128,        # Sensory input (visual + proprioceptive)
+                thalamus_size=128,     # Match input for 1:1 relay
+                cortex_size=320,       # Cortex total output (L2/3 + L5 = 192 + 128)
+                _cortex_l4_size=128,   # L4 input layer
+                _cortex_l23_size=192,  # L2/3 processing layer (cortico-cortical)
+                _cortex_l5_size=128,   # L5 output layer (subcortical)
+                hippocampus_size=64,   # Episodic memory
+                pfc_size=32,           # Working memory
+                n_actions=7,           # Movement directions (L/R/U/D/F/B/STOP)
             ),
             encoding_timesteps=10,
             delay_timesteps=5,

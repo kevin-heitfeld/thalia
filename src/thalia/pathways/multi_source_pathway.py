@@ -154,7 +154,7 @@ class MultiSourcePathway(SpikingPathway):
 
         Returns:
             Output spikes [n_output]
-        
+
         Note:
             Missing sources are filled with zero tensors (biologically plausible -
             no spikes from that source yet). This prevents deadlocks in recurrent
@@ -162,7 +162,7 @@ class MultiSourcePathway(SpikingPathway):
         """
         # Extract and concatenate inputs in consistent order
         inputs = []
-        for source_name, port in self.sources:
+        for source_name, _port in self.sources:  # Port is for documentation only
             if source_name not in source_outputs:
                 # Use zero tensor for missing source (no spikes yet)
                 # This is biologically plausible and prevents deadlocks
@@ -173,9 +173,8 @@ class MultiSourcePathway(SpikingPathway):
 
             source_output = source_outputs[source_name]
 
-            # Extract port if specified
-            if port is not None:
-                source_output = self._extract_port(source_output, source_name, port)
+            # NOTE: Port extraction already happened in DynamicBrain._schedule_downstream_events
+            # before the output was buffered. The 'port' in sources tuple is for documentation only.
 
             # Validate size
             expected_size = self.input_sizes[source_name]
@@ -291,7 +290,7 @@ class MultiSourcePathway(SpikingPathway):
         # We need to copy source-by-source to maintain alignment
         old_offset = 0
         new_offset = 0
-        for source_name, port in self.sources:
+        for source_name, _ in self.sources:  # Port is for documentation only
             old_size = min(self.input_sizes[source_name], old_input_size - old_offset)
             new_size = self.input_sizes[source_name]
 
@@ -365,14 +364,19 @@ class MultiSourcePathway(SpikingPathway):
         new_delay_buffer[:, :copy_size] = self.delay_buffer[:, :copy_size]
         self.delay_buffer = new_delay_buffer
 
-        # Resize trace manager
-        if new_input_size > old_input_size:
-            growth_amount = new_input_size - old_input_size
-            self._trace_manager.grow_dimension(growth_amount, dimension='input')
-        elif new_input_size < old_input_size:
-            # Shrinking not supported, recreate trace manager
-            # This shouldn't happen in normal operation
-            pass
+        # Resize trace manager - recreate with correct size
+        # We can't use grow_dimension reliably because we don't know the current state
+        from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig
+
+        # Copy config from existing trace manager if possible
+        old_config = self._trace_manager.config if self._trace_manager else STDPConfig()
+
+        self._trace_manager = EligibilityTraceManager(
+            n_input=new_input_size,
+            n_output=n_output,
+            config=old_config,
+            device=self.config.device,
+        )
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get pathway diagnostics including per-source information.

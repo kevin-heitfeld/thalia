@@ -128,6 +128,10 @@ class RegionSizes:
 
     All sizes are in terms of number of neurons (or output size).
     Ratios and internal sizes are computed automatically.
+
+    For cortex, you can either:
+    1. Specify cortex_size only (uses default 1.0:1.5:1.0 ratios)
+    2. Specify cortex_size AND explicit layer sizes (cortex_l4_size, cortex_l23_size, cortex_l5_size)
     """
 
     input_size: int = 256
@@ -138,6 +142,16 @@ class RegionSizes:
 
     cortex_size: int = 128
     """Output size of cortex. L2/3 and L5 layers will be sized relative to this."""
+
+    # Explicit cortex layer sizes (optional, overrides ratio-based calculation)
+    _cortex_l4_size: Optional[int] = None
+    """Explicit L4 size (if None, computed from cortex_size * 1.0)."""
+
+    _cortex_l23_size: Optional[int] = None
+    """Explicit L2/3 size (if None, computed from cortex_size * 1.5)."""
+
+    _cortex_l5_size: Optional[int] = None
+    """Explicit L5 size (if None, computed from cortex_size * 1.0)."""
 
     hippocampus_size: int = 64
     """Output size of hippocampus (CA1 output)."""
@@ -154,18 +168,18 @@ class RegionSizes:
 
     @property
     def cortex_l4_size(self) -> int:
-        """L4 (input layer) size - same as cortex output."""
-        return self.cortex_size
+        """L4 (input layer) size - explicit or computed from cortex_size."""
+        return self._cortex_l4_size if self._cortex_l4_size is not None else self.cortex_size
 
     @property
     def cortex_l23_size(self) -> int:
-        """L2/3 (processing layer) size - 1.5x cortex for recurrence."""
-        return int(self.cortex_size * 1.5)
+        """L2/3 (processing layer) size - explicit or computed as 1.5x cortex."""
+        return self._cortex_l23_size if self._cortex_l23_size is not None else int(self.cortex_size * 1.5)
 
     @property
     def cortex_l5_size(self) -> int:
-        """L5 (output layer) size - same as cortex output."""
-        return self.cortex_size
+        """L5 (output layer) size - explicit or computed from cortex_size."""
+        return self._cortex_l5_size if self._cortex_l5_size is not None else self.cortex_size
 
     @property
     def hippocampus_dg_size(self) -> int:
