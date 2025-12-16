@@ -342,7 +342,7 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
 
         # Reset eligibility traces (new dimensions)
         self.learning_strategy.reset_state()
-        
+
         # NOTE: Config is NOT updated here - parent region (Striatum) manages config
 
     def get_state(self) -> Dict[str, Any]:

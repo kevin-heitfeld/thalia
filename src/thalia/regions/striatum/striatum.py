@@ -1056,6 +1056,12 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self.d1_pathway.grow_input(n_new_inputs=n_new, initialization=initialization)
         self.d2_pathway.grow_input(n_new_inputs=n_new, initialization=initialization)
 
+        # Grow TD(λ) traces for both D1 and D2
+        if self.td_lambda_d1 is not None:
+            self.td_lambda_d1.grow_input(n_new)
+        if self.td_lambda_d2 is not None:
+            self.td_lambda_d2.grow_input(n_new)
+
         # Update striatum config
         self.config = replace(self.config, n_input=new_n_input)
 

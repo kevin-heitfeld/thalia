@@ -183,6 +183,26 @@ class TDLambdaTraces:
         """Get current eligibility traces."""
         return self.traces
 
+    def grow_input(self, n_new: int) -> None:
+        """Grow input dimension by adding columns to traces.
+
+        Args:
+            n_new: Number of new input neurons to add
+        """
+        old_traces = self.traces
+        self.n_input = self.n_input + n_new
+
+        # Create new traces with expanded input dimension
+        self.traces = torch.zeros(
+            self.n_output, self.n_input,
+            device=self.device
+        )
+
+        # Copy old traces (preserve existing credit assignment)
+        self.traces[:, :old_traces.shape[1]] = old_traces
+
+        # New columns initialized to zero (no credit yet for new inputs)
+
     def reset_state(self) -> None:
         """Reset traces to zero (between episodes)."""
         self.traces.zero_()
@@ -246,6 +266,15 @@ class TDLambdaLearner:
         self._total_updates = 0
         self._cumulative_td_error = 0.0
         self._cumulative_trace_magnitude = 0.0
+
+    def grow_input(self, n_new: int) -> None:
+        """Grow input dimension.
+
+        Args:
+            n_new: Number of new input neurons to add
+        """
+        self.n_input = self.n_input + n_new
+        self.traces.grow_input(n_new)
 
     def update_eligibility(
         self,
