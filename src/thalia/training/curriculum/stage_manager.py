@@ -178,11 +178,9 @@ from thalia.diagnostics import (
 )
 from thalia.training.curriculum.safety_system import (
     CurriculumSafetySystem,
-    SafetyStatus,
 )
 from thalia.training.curriculum.stage_monitoring import (
     InterventionType,
-    MonitoringMetrics,
 )
 
 
@@ -634,19 +632,20 @@ class CurriculumTrainer:
 
     def __init__(
         self,
-        brain: Any,  # DynamicBrain or EventDrivenBrain (backward compatible)
+        brain: Any,  # DynamicBrain
         growth_config: Optional[CurriculumGrowthConfig] = None,
         checkpoint_dir: Optional[str] = None,
         device: str = 'cpu',
         verbose: bool = True,
         enable_live_diagnostics: bool = False,
         diagnostics_interval: int = 100,
-        enable_safety_system: bool = True,  # NEW: Enable safety monitoring
+        enable_safety_system: bool = True,
+        callbacks: Optional[List[Callable[[int, Dict[str, Any]], None]]] = None,
     ):
         """Initialize curriculum trainer.
 
         Args:
-            brain: Brain instance to train
+            brain: DynamicBrain instance to train
             growth_config: Growth configuration (uses default if None)
             checkpoint_dir: Directory for checkpoints (creates if needed)
             device: Device for training
@@ -654,10 +653,12 @@ class CurriculumTrainer:
             enable_live_diagnostics: Whether to enable real-time visualization
             diagnostics_interval: Steps between diagnostic updates (if enabled)
             enable_safety_system: Whether to enable safety monitoring and gates
+            callbacks: Optional list of callback functions called with (step, metrics)
         """
         self.brain = brain
         self.device = device
         self.verbose = verbose
+        self.callbacks = callbacks or []
 
         # Checkpoint manager (Tier 3.2 - unified checkpoint management)
         self.checkpoint_manager = CheckpointManager(
@@ -721,11 +722,26 @@ class CurriculumTrainer:
         self.training_history: List[TrainingResult] = []
         self.performance_history: Dict[str, List[float]] = {}
 
-        # Callbacks
-        self.callbacks: List[Callable[[int, Dict[str, float]], None]] = []
-
         # Goal hierarchy cache (for Stages 3+)
         self._goal_hierarchies: Dict[str, Goal] = {}
+
+    def _get_brain_regions(self) -> Dict[str, Any]:
+        """Get brain regions from DynamicBrain.
+
+        Returns:
+            Dictionary mapping region names to region objects
+        """
+        # DynamicBrain - regions in components ModuleDict
+        components = self.brain.components
+        return {
+            'cortex': components['cortex'] if 'cortex' in components else None,
+            'hippocampus': components['hippocampus'] if 'hippocampus' in components else None,
+            'pfc': components['pfc'] if 'pfc' in components else None,
+            'prefrontal': components['pfc'] if 'pfc' in components else None,  # Alias
+            'striatum': components['striatum'] if 'striatum' in components else None,
+            'cerebellum': components['cerebellum'] if 'cerebellum' in components else None,
+            'thalamus': components['thalamus'] if 'thalamus' in components else None,
+        }
 
     def _safety_checkpoint_callback(self, stage: int, reason: str):
         """Callback for safety system to trigger checkpoints.
@@ -917,7 +933,13 @@ class CurriculumTrainer:
                     self._log_progress(stage, step, metrics)
 
                     # Update noise scheduler with current performance and criticality
-                    avg_performance = sum(self.task_performance[t][-100:] if self.task_performance[t] else [0.0] for t in self.task_performance) / max(1, len(self.task_performance))
+                    # Calculate average performance across all tasks (using last 100 samples each)
+                    perf_values = []
+                    for task_name in self.task_performance:
+                        if self.task_performance[task_name]:
+                            recent_perf = list(self.task_performance[task_name])[-100:]
+                            perf_values.extend(recent_perf)
+                    avg_performance = sum(perf_values) / max(1, len(perf_values)) if perf_values else 0.0
                     criticality = metrics.get('criticality', 1.0) if metrics else 1.0
                     self.noise_scheduler.update(stage, performance=avg_performance, criticality=criticality)
 
@@ -925,22 +947,24 @@ class CurriculumTrainer:
                     if step % 5000 == 0:  # Re-apply every 5000 steps for adaptation
                         self._apply_noise_profile_to_brain()
 
-                # Call callbacks every step for progress tracking
-                # Only collect metrics if not already done above
+                # Call callbacks every step for progress tracking (BEFORE incrementing global_step)
+                # Pass the current loop step number, not global_step
                 if self.callbacks:
                     if metrics is None:
                         metrics = {}  # Empty dict for progress tracking
                     for callback in self.callbacks:
-                        callback(self.global_step, metrics)
+                        callback(step, metrics)
+
+                # Increment global step counter
+                self.global_step += 1
 
                 # 9. Live diagnostics (if enabled)
                 if self.enable_live_diagnostics and step % self.diagnostics_interval == 0:
                     metrics = self._collect_metrics()
                     self.live_diagnostics.update(step, self.brain, metrics)
-                    if step % (self.diagnostics_interval * 10) == 0:  # Show every 10 updates
-                        self.live_diagnostics.show()
-
-                self.global_step += 1
+                    # Save plot to file instead of displaying interactively
+                    plot_path = f"{self.checkpoint_dir}/../plots/diagnostics_step_{self.global_step:06d}.png"
+                    self.live_diagnostics.show(save_path=plot_path)
 
             # Post-training evaluation
             if self.verbose:
@@ -1450,14 +1474,8 @@ class CurriculumTrainer:
         # Get component-wise growth configs
         component_configs = self.growth_config.component_configs
 
-        # Map brain attributes to config names
-        region_mapping = {
-            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
-            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
-            'prefrontal': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
-            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
-            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
-        }
+        # Get brain regions in unified way
+        region_mapping = self._get_brain_regions()
 
         # Check each region for growth needs
         for region_name, region in region_mapping.items():
@@ -1694,15 +1712,31 @@ class CurriculumTrainer:
         stage: CurriculumStage,
         step: int,
         final: bool = False,
+        reason: Optional[str] = None,
     ) -> str:
-        """Save checkpoint internally during training."""
-        suffix = "final" if final else f"step_{step}"
+        """Save checkpoint internally during training.
+
+        Args:
+            stage: Current curriculum stage
+            step: Current step within the stage
+            final: Whether this is a final checkpoint
+            reason: Optional reason for checkpoint (e.g., 'emergency_stop')
+        """
+        if reason:
+            suffix = reason
+        elif final:
+            suffix = "final"
+        else:
+            suffix = f"step_{step}"
+
         name = f"stage_{stage.value}_{suffix}"
 
         # Include current milestone progress in metadata
         milestone_metadata = {}
         if hasattr(self, '_last_milestone_results'):
             milestone_metadata = {'milestones': self._last_milestone_results}
+        if reason:
+            milestone_metadata['checkpoint_reason'] = reason
 
         return self.save_checkpoint(name=name, metadata=milestone_metadata)
 
@@ -1714,15 +1748,8 @@ class CurriculumTrainer:
         """
         profile = self.noise_scheduler.get_current_profile()
 
-        # Apply membrane noise to all regions with neurons
-        region_mapping = {
-            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
-            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
-            'pfc': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
-            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
-            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
-            'thalamus': self.brain.thalamus.impl if hasattr(self.brain, 'thalamus') else None,
-        }
+        # Apply membrane noise to all regions with neurons (DynamicBrain)
+        region_mapping = self._get_brain_regions()
 
         for region_name, region in region_mapping.items():
             if region is None:
@@ -1743,15 +1770,17 @@ class CurriculumTrainer:
                 region._weight_noise_std = profile.weight_noise_std
 
         # Apply working memory noise to PFC specifically
-        if hasattr(self.brain, 'pfc') and self.brain.pfc.impl is not None:
-            pfc = self.brain.pfc.impl
-            if hasattr(pfc, 'pfc_config'):
-                pfc.pfc_config.wm_noise_std = profile.wm_noise_std
+        regions = self._get_brain_regions()
+        pfc = regions.get('pfc')
+        if pfc is not None and hasattr(pfc, 'pfc_config'):
+            pfc.pfc_config.wm_noise_std = profile.wm_noise_std
 
         # Apply oscillator phase noise to all oscillators
         if hasattr(self.brain, 'oscillators'):
             phase_noise_std = self.noise_scheduler.get_oscillator_phase_noise_std()
-            for _, oscillator in self.brain.oscillators.items():
+            # OscillatorManager stores oscillators in .oscillators dict
+            oscillators = self.brain.oscillators.oscillators if hasattr(self.brain.oscillators, 'oscillators') else {}
+            for _, oscillator in oscillators.items():
                 if hasattr(oscillator, 'config'):
                     oscillator.config.phase_noise_std = phase_noise_std
 

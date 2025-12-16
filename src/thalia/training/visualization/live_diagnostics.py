@@ -26,8 +26,12 @@ from typing import Dict, Any, Optional
 from collections import deque
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import torch
+
+# Use non-interactive backend to avoid blocking windows
+matplotlib.use('Agg')  # Non-interactive backend for saving plots
 
 from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.training.visualization.constants import (
@@ -139,12 +143,13 @@ class LiveDiagnostics:
         # Update health
         if hasattr(brain, 'check_health'):
             health = brain.check_health()
+            # Handle HealthReport object (DynamicBrain returns this now)
             self.health_history['is_healthy'].append(1.0 if health.is_healthy else 0.0)
             self.health_history['runaway_count'].append(
-                sum(1 for issue in health.issues if 'runaway' in issue.lower())
+                sum(1 for issue in health.issues if 'runaway' in issue.issue_type.name.lower())
             )
             self.health_history['silent_count'].append(
-                sum(1 for issue in health.issues if 'silent' in issue.lower())
+                sum(1 for issue in health.issues if 'silent' in issue.issue_type.name.lower())
             )
         else:
             self.health_history['is_healthy'].append(1.0)
@@ -234,8 +239,10 @@ class LiveDiagnostics:
         if save_path:
             plt.savefig(save_path, dpi=150, bbox_inches='tight')
             print(f"[OK] Diagnostics saved: {save_path}")
+            plt.close(fig)  # Close figure to free memory
         else:
-            plt.show()
+            # If no save path, just close without displaying
+            plt.close(fig)
 
     def _plot_spike_raster(self, ax) -> None:
         """Plot spike raster for latest timesteps."""

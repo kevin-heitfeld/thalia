@@ -1748,47 +1748,32 @@ class DynamicBrain(nn.Module):
     # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)
     # =========================================================================
 
-    def check_health(self) -> Dict[str, Any]:
+    def check_health(self) -> "HealthReport":
         """Check network health and detect pathological states.
 
         Returns health report with detected issues, severity, and recommendations.
         Compatible with EventDrivenBrain's health monitoring interface.
 
         Returns:
-            HealthReport dict with:
+            HealthReport object with:
                 - is_healthy: bool
                 - issues: List[IssueReport]
                 - summary: str
-                - severity_max: float
+                - overall_severity: float
 
         Example:
             health = brain.check_health()
-            if not health['is_healthy']:
-                for issue in health['issues']:
-                    print(f"{issue['issue_type']}: {issue['description']}")
+            if not health.is_healthy:
+                for issue in health.issues:
+                    print(f"{issue.issue_type}: {issue.description}")
         """
+        from thalia.diagnostics.health_monitor import HealthReport
+
         # Get comprehensive diagnostics for health check
         diagnostics = self.get_diagnostics()
 
-        # Run health check through HealthMonitor
-        health_report = self.health_monitor.check_health(diagnostics)
-
-        # Convert HealthReport to dict format
-        return {
-            'is_healthy': health_report.is_healthy,
-            'issues': [
-                {
-                    'issue_type': issue.issue_type.name,
-                    'severity': issue.severity,
-                    'description': issue.description,
-                    'recommendation': issue.recommendation,
-                    'metrics': issue.metrics,
-                }
-                for issue in health_report.issues
-            ],
-            'summary': health_report.summary,
-            'severity_max': health_report.overall_severity,
-        }
+        # Run health check through HealthMonitor and return HealthReport directly
+        return self.health_monitor.check_health(diagnostics)
 
     # =========================================================================
     # DIAGNOSTICS & GROWTH (Phase 1.6.4)

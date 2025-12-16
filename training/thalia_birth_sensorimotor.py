@@ -81,8 +81,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 from datetime import datetime
-
-import torch
+from typing import Dict, Any
 
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes, print_config
@@ -216,10 +215,28 @@ def create_sensorimotor_environment(device: str = "cpu") -> SensorimotorTaskLoad
     return task_loader
 
 
+def progress_callback(step: int, metrics: Dict[str, Any]) -> None:
+    """Print progress updates every 500 steps.
+
+    Args:
+        step: Current training step (loop iteration number)
+        metrics: Dictionary of current metrics
+    """
+    if step > 0 and step % 500 == 0:  # Print every 500 steps
+        reward = metrics.get('reward', 0.0) if metrics else 0.0
+        loss = metrics.get('loss', 0.0) if metrics else 0.0
+        accuracy = metrics.get('accuracy', 0.0) if metrics else 0.0
+        firing_rate = metrics.get('avg_firing_rate', 0.0) if metrics else 0.0
+
+        print(f"\n  Progress: Step {step:5d} | Reward: {reward:6.3f} | Loss: {loss:6.3f} | "
+              f"Acc: {accuracy:5.1%} | FR: {firing_rate:5.3f}", flush=True)
+
+
 def create_curriculum_trainer(
     brain: DynamicBrain,
     checkpoint_dir: Path,
     log_file: Path,
+    plots_dir: Path,
     device: str,
     enable_live_diagnostics: bool = True,
 ) -> CurriculumTrainer:
@@ -229,6 +246,7 @@ def create_curriculum_trainer(
         brain: Thalia's brain
         checkpoint_dir: Where to save checkpoints
         log_file: Where to save training logs
+        plots_dir: Where to save diagnostic plots
         device: Device (cuda or cpu)
         enable_live_diagnostics: Whether to show real-time visualization
 
@@ -243,14 +261,17 @@ def create_curriculum_trainer(
         checkpoint_dir=str(checkpoint_dir),
         verbose=True,
         enable_live_diagnostics=enable_live_diagnostics,
-        diagnostics_interval=100,  # Update every 100 steps
+        diagnostics_interval=5000,  # Update every 5000 steps (for long training)
+        enable_safety_system=True,  # Re-enabled to detect issues
+        callbacks=[progress_callback],  # Add progress tracking
     )
 
     print("  ✓ Trainer ready")
     print(f"    - Checkpoints: {checkpoint_dir}")
     print(f"    - Log file: {log_file}")
     if enable_live_diagnostics:
-        print("    - Live diagnostics: enabled (every 100 steps)")
+        print("    - Live diagnostics: enabled (every 5000 steps, visualization every 5000 steps)")
+    print("    - Progress callbacks: enabled (console updates every 10 steps)")
 
     return trainer
 
@@ -263,9 +284,9 @@ def configure_stage_sensorimotor():
     """
     print("\n[4/4] Configuring Stage -0.5 (Sensorimotor)...")
 
-    # Use the pre-configured stage config with short duration for testing
-    config = get_sensorimotor_config(duration_steps=50)  # Short for testing
-    # config = get_sensorimotor_config(duration_steps=50000)  # Full duration
+    # Medium duration for debugging (10k steps ~5-10 minutes)
+    config = get_sensorimotor_config(duration_steps=10000)
+    # config = get_sensorimotor_config(duration_steps=50000)  # Full duration (~1 month)
 
     print("  ✓ Stage configured (using stage_configs module)")
     print(f"    - Duration: {config.duration_steps:,} steps")
@@ -416,22 +437,25 @@ def main():
     checkpoint_dir = Path("training_runs") / stage_name / "checkpoints"
     log_file = Path("training_runs") / stage_name / "logs" / f"{timestamp}.jsonl"
     result_file = Path("training_runs") / stage_name / "results" / f"{timestamp}.json"
+    plots_dir = Path("training_runs") / stage_name / "plots"
 
     # Create directories
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     result_file.parent.mkdir(parents=True, exist_ok=True)
+    plots_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Stage: {stage_name}")
     print(f"Checkpoints: {checkpoint_dir}")
     print(f"Log file: {log_file}")
     print(f"Result file: {result_file}")
+    print(f"Plots directory: {plots_dir}")
     print()
 
     # Initialize components
     brain, thalia_config = create_thalia_brain(device=device)
     task_loader = create_sensorimotor_environment(device=device)
-    trainer = create_curriculum_trainer(brain, checkpoint_dir, log_file, device)
+    trainer = create_curriculum_trainer(brain, checkpoint_dir, log_file, plots_dir, device)
     stage_config = configure_stage_sensorimotor()
 
     print("\n" + "="*80)
@@ -513,10 +537,15 @@ def main():
     print()
 
     # Monitoring tip
-    print("💡 TIP: Live diagnostics are enabled by default!")
+    print("💡 TIP: Enhanced diagnostics are enabled!")
     print()
-    print("   Watch real-time spike rasters, health metrics, and performance curves")
-    print("   Updates every 100 steps, visualization every 1000 steps")
+    print("   📊 Real-time Updates:")
+    print("      - Diagnostics: Every 5000 steps (spike rasters, health, performance)")
+    print("      - Visualization: Every 5000 steps (detailed plots saved to plots/)")
+    print("      - Progress callbacks: Every 10 steps (console summary)")
+    print()
+    print("   📈 Progress Format:")
+    print("      Step XXXXX | Reward: X.XXX | Loss: X.XXX | Acc: XX.X% | FR: X.XXX")
     print()
     print("   To disable: Pass enable_live_diagnostics=False to create_curriculum_trainer()")
     print()

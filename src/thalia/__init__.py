@@ -43,14 +43,9 @@ from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 from thalia.core.dynamic_brain import DynamicBrain
 
 # Deprecated: EventDrivenBrain will be removed in v0.3.0
-import warnings
+# Note: Warning is shown only when EventDrivenBrain is actually instantiated
+# to avoid cluttering logs when users only import DynamicBrain
 from thalia.core.brain import EventDrivenBrain
-warnings.warn(
-    "EventDrivenBrain is deprecated and will be removed in v0.3.0. "
-    "Use DynamicBrain instead.",
-    DeprecationWarning,
-    stacklevel=2
-)
 
 from thalia.core.base.component_config import NeuralComponentConfig
 
