@@ -298,7 +298,8 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         """
         Expand input dimension when upstream regions grow.
 
-        Uses GrowthMixin._expand_weights() by transposing, expanding, and transposing back.
+        NOTE: Does NOT update self.config.n_input - that's handled by the parent
+        region (Striatum). Internal pathways just expand their weight matrices.
 
         Args:
             n_new_inputs: Number of input neurons to add
@@ -308,11 +309,8 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             >>> # When cortex grows from 128→148 neurons:
             >>> cortex.grow_output(20)  # cortex adds 20 neurons
             >>> cortex_to_striatum.grow_source('cortex', 148)  # pathway resizes
-            >>> striatum.grow_input(20)  # THIS method: d1/d2 pathways resize
+            >>> striatum.grow_input(20)  # Calls d1/d2.grow_input(20)
         """
-        old_n_input = self.config.n_input
-        new_n_input = old_n_input + n_new_inputs
-
         # Strategy: Create new columns by initializing new [n_output, n_new_inputs] block
         if initialization == 'xavier':
             new_cols = WeightInitializer.xavier(
@@ -342,11 +340,10 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         expanded = torch.cat([self.weights.data, new_cols], dim=1)
         self.weights = nn.Parameter(expanded)
 
-        # Update config
-        self.config.n_input = new_n_input
-
         # Reset eligibility traces (new dimensions)
         self.learning_strategy.reset_state()
+        
+        # NOTE: Config is NOT updated here - parent region (Striatum) manages config
 
     def get_state(self) -> Dict[str, Any]:
         """Get pathway state for checkpointing.
