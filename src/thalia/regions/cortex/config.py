@@ -57,17 +57,27 @@ class CorticalLayer(Enum):
 class LayeredCortexConfig(NeuralComponentConfig):
     """Configuration for layered cortical microcircuit.
 
-    Layer Sizes:
-        By default, layers are sized relative to the output size:
-        - L4: Same as output (input processing)
-        - L2/3: 1.5x output (processing, more neurons for recurrence)
-        - L5: Same as output (subcortical output)
+    Layer Sizes (EXPLICIT):
+        Specify explicit layer sizes for clarity and debuggability.
+        If not specified, computed from n_output using default ratios.
+
+        Important: n_output parameter now has TWO meanings:
+        - If layer sizes NOT specified: base size for ratio calculations
+        - If layer sizes specified: should equal l23_size + l5_size (validated)
+
+        Recommendation: Always specify l4_size, l23_size, l5_size explicitly!
     """
 
-    # Layer size ratios (relative to n_output)
-    l4_ratio: float = 1.0  # Input layer
-    l23_ratio: float = 1.5  # Processing layer (larger for recurrence)
-    l5_ratio: float = 1.0  # Output layer
+    # Explicit layer sizes (recommended - set these directly!)
+    l4_size: Optional[int] = None    # Input layer (typically same as base)
+    l23_size: Optional[int] = None   # Processing layer (typically 1.5x base)
+    l5_size: Optional[int] = None    # Output layer (typically same as base)
+
+    # Legacy: Layer size ratios (DEPRECATED - only used if explicit sizes not set)
+    # These are kept for backward compatibility but should not be used in new code
+    l4_ratio: float = 1.0  # Input layer (deprecated)
+    l23_ratio: float = 1.5  # Processing layer (deprecated)
+    l5_ratio: float = 1.0  # Output layer (deprecated)
 
     # Layer sparsity (fraction of neurons active)
     l4_sparsity: float = 0.15  # Moderate sparsity

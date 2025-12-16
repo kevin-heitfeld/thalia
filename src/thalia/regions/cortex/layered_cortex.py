@@ -180,10 +180,36 @@ class LayeredCortex(NeuralComponent):
         """Initialize layered cortex."""
         self.layer_config = config
 
-        # Compute layer sizes
-        self.l4_size, self.l23_size, self.l5_size = calculate_layer_sizes(
-            config.n_output, config.l4_ratio, config.l23_ratio, config.l5_ratio
-        )
+        # Get layer sizes - strict all-or-nothing for explicit sizes
+        explicit_count = sum([
+            config.l4_size is not None,
+            config.l23_size is not None,
+            config.l5_size is not None,
+        ])
+
+        if explicit_count > 0 and explicit_count < 3:
+            raise ValueError(
+                f"LayeredCortex: Explicit layer sizes must be all-or-nothing. "
+                f"Got {explicit_count}/3 sizes specified (l4_size, l23_size, l5_size). "
+                f"Either provide all three explicit sizes, or provide none to use ratio-based sizing."
+            )
+
+        if explicit_count == 3:
+            # Explicit sizes provided (recommended)
+            self.l4_size = config.l4_size
+            self.l23_size = config.l23_size
+            self.l5_size = config.l5_size
+
+            # Validate n_output matches total
+            expected_total = self.l23_size + self.l5_size
+            if config.n_output != expected_total:
+                print(f"Warning: LayeredCortex n_output={config.n_output} doesn't match "
+                      f"l23_size + l5_size = {expected_total}. Using explicit layer sizes.")
+        else:
+            # Legacy: Compute from ratios
+            self.l4_size, self.l23_size, self.l5_size = calculate_layer_sizes(
+                config.n_output, config.l4_ratio, config.l23_ratio, config.l5_ratio
+            )
 
         # Output is always both L2/3 and L5 (biological cortex has both pathways)
         actual_output = self.l23_size + self.l5_size

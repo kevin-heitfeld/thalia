@@ -154,15 +154,22 @@ class MultiSourcePathway(SpikingPathway):
 
         Returns:
             Output spikes [n_output]
+        
+        Note:
+            Missing sources are filled with zero tensors (biologically plausible -
+            no spikes from that source yet). This prevents deadlocks in recurrent
+            networks where multiple regions feed into each other.
         """
         # Extract and concatenate inputs in consistent order
         inputs = []
         for source_name, port in self.sources:
             if source_name not in source_outputs:
-                raise ValueError(
-                    f"Missing input from source '{source_name}'. "
-                    f"Provided: {list(source_outputs.keys())}"
-                )
+                # Use zero tensor for missing source (no spikes yet)
+                # This is biologically plausible and prevents deadlocks
+                expected_size = self.input_sizes[source_name]
+                zero_input = torch.zeros(expected_size, device=self.device)
+                inputs.append(zero_input)
+                continue
 
             source_output = source_outputs[source_name]
 

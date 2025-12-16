@@ -2135,8 +2135,9 @@ class DynamicBrain(nn.Module):
     ) -> None:
         """Schedule spike events to downstream components with axonal delays.
 
-        For multi-source pathways, this buffers outputs and only forwards when
-        all sources have produced output.
+        For multi-source pathways, forwards immediately when ANY source fires.
+        Missing sources will be filled with zeros by the pathway (biologically
+        plausible - no spikes from that source yet).
 
         Args:
             source: Source component name
@@ -2149,36 +2150,39 @@ class DynamicBrain(nn.Module):
         for (src, tgt), pathway in self.connections.items():
             if src == source:
                 if isinstance(pathway, MultiSourcePathway):
-                    # Multi-source pathway - buffer this source's output
+                    # Multi-source pathway - update this source's output in buffer
                     if tgt not in self._multi_source_buffers:
                         self._multi_source_buffers[tgt] = {}
 
-                    # Store this source's output (full output, pathway extracts port)
-                    self._multi_source_buffers[tgt][source] = output_spikes
+                    # Extract port-specific output if specified
+                    conn_spec = self._connection_specs.get((src, tgt))
+                    if conn_spec and hasattr(conn_spec, 'source_port') and conn_spec.source_port:
+                        # Get source component to extract port data
+                        source_comp = self.components[src]
+                        port_output = self._extract_port_output(source_comp, output_spikes, conn_spec.source_port)
+                    else:
+                        port_output = output_spikes
 
-                    # Check if we have all required sources
-                    required_sources = {src_name for src_name, _ in pathway.sources}
-                    available_sources = set(self._multi_source_buffers[tgt].keys())
+                    # Store this source's output (port-extracted)
+                    self._multi_source_buffers[tgt][source] = port_output
 
-                    if required_sources == available_sources:
-                        # All sources ready - forward through pathway
-                        delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
+                    # Forward immediately with ALL currently available sources
+                    # (pathway will use zeros for any missing sources)
+                    delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
 
-                        # Forward with dict of source outputs
-                        pathway_output = pathway.forward(self._multi_source_buffers[tgt])
+                    # Forward with dict of currently available source outputs
+                    pathway_output = pathway.forward(self._multi_source_buffers[tgt])
 
-                        # Clear buffer after use
-                        self._multi_source_buffers[tgt].clear()
-
-                        # Schedule event to target
-                        event = Event(
-                            time=current_time + delay_ms,
-                            event_type=EventType.SPIKE,
-                            source=f"multi:{','.join(required_sources)}",
-                            target=tgt,
-                            payload=SpikePayload(spikes=pathway_output),
-                        )
-                        self._scheduler.schedule(event)
+                    # Schedule event to target
+                    available_sources = list(self._multi_source_buffers[tgt].keys())
+                    event = Event(
+                        time=current_time + delay_ms,
+                        event_type=EventType.SPIKE,
+                        source=f"multi:{','.join(available_sources)}",
+                        target=tgt,
+                        payload=SpikePayload(spikes=pathway_output),
+                    )
+                    self._scheduler.schedule(event)
 
                 else:
                     # Single-source pathway - process immediately
