@@ -1562,6 +1562,7 @@ class CurriculumTrainer:
 
             # Grow connected pathways (automatic via PathwayManager)
             if hasattr(self.brain, 'pathway_manager'):
+                # Grow connected pathways (no longer needs adapters)
                 self.brain.pathway_manager.grow_connected_pathways(
                     component_name=region_name,
                     growth_amount=n_new_neurons,

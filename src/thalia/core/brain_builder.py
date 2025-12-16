@@ -534,69 +534,132 @@ class BrainBuilder:
             components[name] = component
             spec.instance = component
 
-        # Instantiate pathways
+        # Instantiate pathways - GROUP BY TARGET for multi-source pathways
         connections: Dict[Tuple[str, str], NeuralComponent] = {}
+
+        # Group connections by target to create multi-source pathways
+        connections_by_target: Dict[str, List[ConnectionSpec]] = {}
         for spec in self._connections:
-            # Get source and target components
-            source_comp = components[spec.source]
-            target_comp = components[spec.target]
+            if spec.target not in connections_by_target:
+                connections_by_target[spec.target] = []
+            connections_by_target[spec.target].append(spec)
 
-            # Determine pathway component type (should be "pathway")
-            pathway_component_type = None
-            for ctype in ["pathway", "module"]:
-                if self._registry.is_registered(ctype, spec.pathway_type):
-                    pathway_component_type = ctype
-                    break
+        # Create one pathway per target (multi-source if multiple inputs)
+        for target_name, target_specs in connections_by_target.items():
+            target_comp = components[target_name]
 
-            if pathway_component_type is None:
-                raise ValueError(
-                    f"Pathway '{spec.pathway_type}' not found in registry"
+            if len(target_specs) == 1:
+                # Single source - use standard pathway
+                spec = target_specs[0]
+                source_comp = components[spec.source]
+
+                # Determine pathway component type (should be "pathway")
+                pathway_component_type = None
+                for ctype in ["pathway", "module"]:
+                    if self._registry.is_registered(ctype, spec.pathway_type):
+                        pathway_component_type = ctype
+                        break
+
+                if pathway_component_type is None:
+                    raise ValueError(
+                        f"Pathway '{spec.pathway_type}' not found in registry"
+                    )
+
+                # Get pathway config class
+                config_class = self._registry.get_config_class(
+                    pathway_component_type, spec.pathway_type
                 )
 
-            # Get pathway config class
-            config_class = self._registry.get_config_class(
-                pathway_component_type, spec.pathway_type
-            )
+                if config_class is None:
+                    raise ValueError(
+                        f"Pathway '{spec.pathway_type}' has no config_class "
+                        f"registered. Update registry with config_class metadata."
+                    )
 
-            if config_class is None:
-                raise ValueError(
-                    f"Pathway '{spec.pathway_type}' has no config_class "
-                    f"registered. Update registry with config_class metadata."
+                # Determine pathway sizes based on ports
+                source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
+                target_input_size = self._get_pathway_target_size(target_comp, spec.target_port)
+
+                # Create pathway config with source/target sizes and global params
+                # Filter out port specifications (they're not pathway config params)
+                filtered_config_params = {
+                    k: v for k, v in spec.config_params.items()
+                    if not k.startswith("_")  # Remove internal flags
+                }
+
+                pathway_config_params = {
+                    "n_input": source_output_size,
+                    "n_output": target_input_size,
+                    "device": self.global_config.device,
+                    "dt_ms": self.global_config.dt_ms,
+                    **filtered_config_params,  # User-specified params override defaults
+                }
+                pathway_config = config_class(**pathway_config_params)
+
+                # Create pathway from registry
+                pathway = self._registry.create(
+                    pathway_component_type,
+                    spec.pathway_type,
+                    config=pathway_config,
                 )
 
-            # Determine pathway sizes based on ports
-            source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
-            target_input_size = self._get_pathway_target_size(target_comp, spec.target_port)
+                # Move pathway to correct device
+                if hasattr(pathway, 'to'):
+                    pathway.to(self.global_config.device)
 
-            # Create pathway config with source/target sizes and global params
-            # Filter out port specifications (they're not pathway config params)
-            filtered_config_params = {
-                k: v for k, v in spec.config_params.items()
-                if not k.startswith("_")  # Remove internal flags
-            }
+                connections[(spec.source, spec.target)] = pathway
+                spec.instance = pathway
 
-            pathway_config_params = {
-                "n_input": source_output_size,
-                "n_output": target_input_size,
-                "device": self.global_config.device,
-                "dt_ms": self.global_config.dt_ms,
-                **filtered_config_params,  # User-specified params override defaults
-            }
-            pathway_config = config_class(**pathway_config_params)
+            else:
+                # Multiple sources - create MultiSourcePathway
+                from thalia.pathways.multi_source_pathway import MultiSourcePathway
+                from thalia.core.base.component_config import PathwayConfig
 
-            # Create pathway from registry
-            pathway = self._registry.create(
-                pathway_component_type,
-                spec.pathway_type,
-                config=pathway_config,
-            )
+                # Collect source information
+                sources = []
+                total_input_size = 0
+                for spec in target_specs:
+                    source_comp = components[spec.source]
+                    source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
+                    sources.append((spec.source, spec.source_port))
+                    total_input_size += source_output_size
 
-            # Move pathway to correct device
-            if hasattr(pathway, 'to'):
+                # Use first spec's config params as base (they should be compatible)
+                base_spec = target_specs[0]
+                filtered_config_params = {
+                    k: v for k, v in base_spec.config_params.items()
+                    if not k.startswith("_")
+                }
+
+                # Create multi-source pathway config
+                pathway_config = PathwayConfig(
+                    n_input=total_input_size,  # Will be recalculated by MultiSourcePathway
+                    n_output=self._get_pathway_target_size(target_comp, base_spec.target_port),
+                    device=self.global_config.device,
+                    dt_ms=self.global_config.dt_ms,
+                    **filtered_config_params,
+                )
+
+                # Create multi-source pathway
+                pathway = MultiSourcePathway(
+                    sources=sources,
+                    target=target_name,
+                    config=pathway_config,
+                )
+
+                # Set correct sizes for each source
+                for spec in target_specs:
+                    source_comp = components[spec.source]
+                    source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
+                    pathway.set_source_size(spec.source, source_output_size)
+
+                # Move to correct device
                 pathway.to(self.global_config.device)
 
-            connections[(spec.source, spec.target)] = pathway
-            spec.instance = pathway
+                # Register pathway for all source->target pairs
+                for spec in target_specs:
+                    connections[(spec.source, spec.target)] = pathway
+                    spec.instance = pathway
 
         # Create DynamicBrain
         brain = DynamicBrain(

@@ -374,8 +374,8 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             "W_pred": self.W_pred.data if hasattr(self, 'W_pred') else None,
             "W_encode": self.W_encode.data if hasattr(self, 'W_encode') else None,
             "log_precision": self.log_precision.data if hasattr(self, 'log_precision') else None,
-            "prediction": self.state.prediction.clone() if hasattr(self.state, 'prediction') else None,
-            "error": self.state.error.clone() if hasattr(self.state, 'error') else None,
+            "prediction": self.state.prediction.clone() if (hasattr(self.state, 'prediction') and self.state.prediction is not None) else None,
+            "error": self.state.error.clone() if (hasattr(self.state, 'error') and self.state.error is not None) else None,
         }
         return state_dict
 

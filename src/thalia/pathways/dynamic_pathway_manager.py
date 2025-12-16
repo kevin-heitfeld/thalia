@@ -8,7 +8,7 @@ Author: Thalia Project
 Date: December 15, 2025
 """
 
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 import torch
 
@@ -124,6 +124,10 @@ class DynamicPathwayManager:
         When a component grows, its connected pathways must grow too
         to maintain dimensional compatibility.
 
+        With multi-source pathways, growing the source updates the pathway's
+        input size tracking for that specific source, automatically handling
+        dimension changes without adapter complexity.
+
         Args:
             component_name: Name of component that grew
             growth_amount: Number of neurons added
@@ -134,6 +138,8 @@ class DynamicPathwayManager:
             # Component 'cortex' added 32 neurons
             manager.grow_connected_pathways('cortex', 32)
         """
+        from thalia.pathways.multi_source_pathway import MultiSourcePathway
+
         if component_name not in self._component_pathways:
             return  # No connected pathways
 
@@ -144,7 +150,13 @@ class DynamicPathwayManager:
 
             # Grow pathway input dimension if this component is the source
             if grow_outputs and src == component_name:
-                if hasattr(pathway, 'grow_input'):
+                if isinstance(pathway, MultiSourcePathway):
+                    # Multi-source pathway - grow this specific source
+                    old_size = pathway.input_sizes.get(src, 0)
+                    new_size = old_size + growth_amount
+                    pathway.grow_source(src, new_size)
+                elif hasattr(pathway, 'grow_input'):
+                    # Single-source pathway - grow total input
                     try:
                         pathway.grow_input(growth_amount)
                     except Exception:

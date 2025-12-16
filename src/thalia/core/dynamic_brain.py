@@ -205,6 +205,10 @@ class DynamicBrain(nn.Module):
         # Use EventScheduler for event-driven execution with delays
         self._scheduler = EventScheduler()
 
+        # Buffer for multi-source pathway inputs
+        # Maps target_name -> {source_name -> latest_output}
+        self._multi_source_buffers: Dict[str, Dict[str, torch.Tensor]] = {}
+
         # =================================================================
         # PARALLEL EXECUTION (Optional)
         # =================================================================
@@ -2130,38 +2134,76 @@ class DynamicBrain(nn.Module):
     ) -> None:
         """Schedule spike events to downstream components with axonal delays.
 
+        For multi-source pathways, this buffers outputs and only forwards when
+        all sources have produced output.
+
         Args:
             source: Source component name
             output_spikes: Output spikes from source
             current_time: Current simulation time
         """
+        from thalia.pathways.multi_source_pathway import MultiSourcePathway
+
         # Find all connections from this source
         for (src, tgt), pathway in self.connections.items():
             if src == source:
-                # Get axonal delay from pathway config
-                delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
+                if isinstance(pathway, MultiSourcePathway):
+                    # Multi-source pathway - buffer this source's output
+                    if tgt not in self._multi_source_buffers:
+                        self._multi_source_buffers[tgt] = {}
 
-                # Extract port-specific output if specified
-                conn_spec = self._connection_specs.get((src, tgt))
-                if conn_spec and hasattr(conn_spec, 'source_port') and conn_spec.source_port:
-                    # Get source component to extract port data
-                    source_comp = self.components[src]
-                    port_output = self._extract_port_output(source_comp, output_spikes, conn_spec.source_port)
+                    # Store this source's output (full output, pathway extracts port)
+                    self._multi_source_buffers[tgt][source] = output_spikes
+
+                    # Check if we have all required sources
+                    required_sources = {src_name for src_name, _ in pathway.sources}
+                    available_sources = set(self._multi_source_buffers[tgt].keys())
+
+                    if required_sources == available_sources:
+                        # All sources ready - forward through pathway
+                        delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
+
+                        # Forward with dict of source outputs
+                        pathway_output = pathway.forward(self._multi_source_buffers[tgt])
+
+                        # Clear buffer after use
+                        self._multi_source_buffers[tgt].clear()
+
+                        # Schedule event to target
+                        event = Event(
+                            time=current_time + delay_ms,
+                            event_type=EventType.SPIKE,
+                            source=f"multi:{','.join(required_sources)}",
+                            target=tgt,
+                            payload=SpikePayload(spikes=pathway_output),
+                        )
+                        self._scheduler.schedule(event)
+
                 else:
-                    port_output = output_spikes
+                    # Single-source pathway - process immediately
+                    delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
 
-                # Route spikes through pathway
-                pathway_output = pathway.forward(port_output)
+                    # Extract port-specific output if specified
+                    conn_spec = self._connection_specs.get((src, tgt))
+                    if conn_spec and hasattr(conn_spec, 'source_port') and conn_spec.source_port:
+                        # Get source component to extract port data
+                        source_comp = self.components[src]
+                        port_output = self._extract_port_output(source_comp, output_spikes, conn_spec.source_port)
+                    else:
+                        port_output = output_spikes
 
-                # Schedule event to target with delay
-                event = Event(
-                    time=current_time + delay_ms,
-                    event_type=EventType.SPIKE,
-                    source=source,
-                    target=tgt,
-                    payload=SpikePayload(spikes=pathway_output),
-                )
-                self._scheduler.schedule(event)
+                    # Route spikes through pathway
+                    pathway_output = pathway.forward(port_output)
+
+                    # Schedule event to target with delay
+                    event = Event(
+                        time=current_time + delay_ms,
+                        event_type=EventType.SPIKE,
+                        source=source,
+                        target=tgt,
+                        payload=SpikePayload(spikes=pathway_output),
+                    )
+                    self._scheduler.schedule(event)
 
     def _extract_port_output(self, component: NeuralComponent, output: torch.Tensor, port: str) -> torch.Tensor:
         """Extract port-specific output from component output.
