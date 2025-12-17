@@ -8,7 +8,7 @@ Components:
 - SpikeEncoder: Token embeddings → Sparse spike patterns
 - SpikeDecoder: Spike patterns → Token probabilities
 - PositionEncoder: Sequence position via oscillatory phase
-- LanguageBrain: Language-enabled brain (integrates with EventDrivenBrain)
+- LanguageBrain: Language-enabled brain (integrates with DynamicBrain)
 """
 
 from thalia.language.encoder import (

@@ -53,9 +53,9 @@ class TestPathwayManagerIntegration:
         # Get diagnostics
         diag = simple_brain.get_diagnostics()
 
-        # Should include pathway_manager diagnostics
-        assert 'pathway_manager' in diag
-        pathway_diag = diag['pathway_manager']
+        # Should include pathways diagnostics (from PathwayManager)
+        assert 'pathways' in diag
+        pathway_diag = diag['pathways']
 
         # Should have pathway entries
         assert len(pathway_diag) > 0

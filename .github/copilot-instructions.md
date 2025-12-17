@@ -105,7 +105,7 @@ self.weights.data = new_weights
 
 ```python
 # Brain and configuration
-from thalia.core.brain import EventDrivenBrain
+from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
 # Learning strategies
@@ -127,7 +127,17 @@ from thalia.datasets import (
 
 # Diagnostics
 from thalia.diagnostics import HealthMonitor, CriticalityMonitor, MetacognitiveMonitor
+from thalia.diagnostics.health_monitor import HealthReport  # Dataclass, not dict
 from thalia.training.visualization import TrainingMonitor
+
+# Creating a brain
+brain = BrainBuilder.preset("sensorimotor", global_config)  # Use presets
+brain = DynamicBrain.from_thalia_config(thalia_config)      # From config
+
+# Accessing components
+region = brain.components["cortex"]                     # Get region by name
+pathway = brain.connections[("thalamus", "cortex")]    # Get pathway
+all_regions = brain.components                          # Dict of all components
 ```
 
 ## Finding Code (PowerShell)
@@ -163,6 +173,15 @@ Select-String -Path src\* -Pattern "MultiSourcePathway" -Recurse
 - Implement non-local learning rules
 - Use negative firing rates
 - Access future timesteps in current computation
+
+## Brain Architecture
+
+**DynamicBrain** is the sole brain implementation (as of December 2025):
+- Flexible architecture built with `BrainBuilder`
+- Component-based: regions and pathways are independent components
+- Access pattern: `brain.components["region_name"]` for all regions
+- No direct attributes: `brain.cortex` is NOT supported
+- EventDrivenBrain has been removed (legacy hardcoded 6-region architecture)
 
 ## Implemented Features (December 2025)
 

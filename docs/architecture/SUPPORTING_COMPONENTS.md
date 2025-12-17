@@ -43,7 +43,7 @@ class BaseManager(Generic[ConfigT], ABC):
     def __init__(self, config: ConfigT, context: ManagerContext):
         self.config = config
         self.context = context
-        
+
     @abstractmethod
     def reset_state(self) -> None:
         """Reset manager state at trial boundaries."""
@@ -79,7 +79,7 @@ Regions compose managers for specific responsibilities:
 class Hippocampus(BaseRegion):
     def __init__(self, config, context):
         super().__init__(config, context)
-        
+
         # Compose managers
         self.learning_manager = LearningManager(
             config.learning,
@@ -215,16 +215,16 @@ Enables **Stage -0.5 (Sensorimotor Grounding)** training:
 @dataclass
 class SensorimotorConfig:
     env_name: str = "Reacher-v4"
-    
+
     # Encoding
     n_proprioceptive_neurons: int = 64
     encoding_type: str = "rate"  # "rate" or "population"
     max_firing_rate: float = 100.0  # Hz
-    
+
     # Decoding
     motor_smoothing: float = 0.3
     action_bound_enforcement: bool = True
-    
+
     # Task
     task_type: str = "babbling"  # "babbling", "reaching"
     difficulty: float = 1.0
@@ -294,11 +294,12 @@ Real-time monitoring and debugging for the brain system.
 
 ```python
 from thalia.core.diagnostics import BrainSystemDiagnostics
+from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
 
 diagnostics = BrainSystemDiagnostics()
 
 # Attach to brain
-brain = EventDrivenBrain(config)
+brain = BrainBuilder.preset("sensorimotor", global_config)
 diagnostics.attach(brain)
 
 # Run diagnostics
@@ -448,10 +449,10 @@ class Striatum(BaseRegion):
     def __init__(self, config, context):
         # Use action selector
         self.action_selector = ActionSelector(config.action_selection)
-        
+
         # Use learning manager
         self.learning_manager = LearningManager(config.learning, context)
-        
+
         # Use diagnostics
         self.diagnostics = RegionDiagnostics()
 ```

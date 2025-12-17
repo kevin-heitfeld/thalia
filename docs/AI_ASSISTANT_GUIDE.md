@@ -4,7 +4,14 @@ This guide helps AI assistants (and developers) navigate the Thalia codebase eff
 
 ## Quick Reference Card
 
-**Finding Code (use built-in tools):**
+**v2.0 Architecture (Dec 2025):**
+- **LearnableComponent**: All regions + weighted pathways (includes 5 mixins)
+- **RoutingComponent**: AxonalProjection (spike routing, NO weights)
+- **NeuralComponent**: Alias for LearnableComponent (backward compatibility)
+- **Mixins**: Neuromodulator, LearningStrategy, Diagnostics, Growth, **Resettable**
+- **Helper Methods**: `_reset_subsystems()`, `_reset_scalars()` (from ResettableMixin)
+
+**Finding Code (use built-in tools):****
 - Regions: `grep_search(query="@register_region", isRegexp=false)`
 - Pathways: `grep_search(query="@register_pathway", isRegexp=false)`
 - Growth methods: `grep_search(query="def grow_output", isRegexp=false)`
@@ -19,10 +26,13 @@ This guide helps AI assistants (and developers) navigate the Thalia codebase eff
 
 **Key Files:**
 - `docs/architecture/ARCHITECTURE_OVERVIEW.md` - System overview (START HERE)
-- `src/thalia/core/protocols/component.py` - NeuralComponent protocol
+- `src/thalia/core/protocols/component.py` - **LearnableComponent & RoutingComponent** (v2.0 architecture)
+- `src/thalia/regions/base.py` - **NeuralComponent alias** (77 lines, backward compatibility)
 - `src/thalia/core/dynamic_brain.py` - Main brain implementation
 - `src/thalia/core/brain_builder.py` - Fluent construction API
 - `src/thalia/pathways/multi_source_pathway.py` - Multi-input pathway implementation
+- `src/thalia/pathways/axonal_projection.py` - Pure spike routing (NO weights)
+- `src/thalia/synapses/afferent.py` - Synaptic integration layer
 
 ## Quick Start
 
@@ -63,9 +73,11 @@ Select-String -Path src\thalia\* -Pattern "def grow_output" -Recurse
 Understanding these type patterns helps navigate the codebase:
 
 ```python
-# Component Organization
-ComponentGraph = Dict[str, NeuralComponent]           # name -> component instance
-ConnectionGraph = Dict[Tuple[str, str], NeuralComponent]  # (src, tgt) -> pathway
+# Component Organization (v2.0 Architecture)
+LearnableComponent = Base class for learnable components  # weights + neurons + learning
+RoutingComponent = Base class for routing components      # spike routing, NO learning
+ComponentGraph = Dict[str, BrainComponentBase]           # name -> component instance
+ConnectionGraph = Dict[Tuple[str, str], BrainComponentBase]  # (src, tgt) -> pathway
 TopologyGraph = Dict[str, List[str]]                  # src -> [tgt1, tgt2, ...]
 
 # Multi-Source Pathways
@@ -92,7 +104,9 @@ CheckpointMetadata = Dict[str, Any]                   # Training progress, stage
 
 ## Standard Growth API
 
-All `NeuralComponent` subclasses should implement these methods with standardized signatures:
+**All `LearnableComponent` subclasses** (regions and weighted pathways) implement these methods:
+
+**NOTE**: `NeuralComponent` is now an alias for `LearnableComponent` (backward compatibility).
 
 ### Growth Methods
 

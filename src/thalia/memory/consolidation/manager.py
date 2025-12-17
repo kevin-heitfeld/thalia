@@ -1,7 +1,7 @@
 """
-Consolidation coordinator for EventDrivenBrain.
+Consolidation coordinator for DynamicBrain.
 
-This module extracts memory consolidation and replay logic from EventDrivenBrain,
+This module manages memory consolidation and replay logic:
 following the existing manager pattern.
 
 Author: Thalia Project
@@ -86,21 +86,16 @@ class ConsolidationManager:
         # Infer correctness from reward
         correct = reward > 0.0
 
-        # Get actual region implementations (handle both EventDrivenBrain and DynamicBrain)
-        cortex_impl = self.cortex.impl if hasattr(self.cortex, 'impl') else self.cortex
-        hippocampus_impl = self.hippocampus.impl if hasattr(self.hippocampus, 'impl') else self.hippocampus
-        pfc_impl = self.pfc.impl if hasattr(self.pfc, 'impl') else self.pfc
-
         # Construct state from current brain activity
-        cortex_L5 = cortex_impl.state.l5_spikes if hasattr(cortex_impl, 'state') and cortex_impl.state else None
+        cortex_L5 = self.cortex.state.l5_spikes if hasattr(self.cortex, 'state') and self.cortex.state else None
         if cortex_L5 is None:
             cortex_L5 = torch.zeros(1, self._cortex_l5_size, device=self.config.device)
 
-        hippo_out = hippocampus_impl.state.ca1_spikes if hasattr(hippocampus_impl, 'state') and hippocampus_impl.state else None
+        hippo_out = self.hippocampus.state.ca1_spikes if hasattr(self.hippocampus, 'state') and self.hippocampus.state else None
         if hippo_out is None:
             hippo_out = torch.zeros(1, self._hippo_size, device=self.config.device)
 
-        pfc_out = pfc_impl.state.spikes if hasattr(pfc_impl, 'state') and pfc_impl.state else None
+        pfc_out = self.pfc.state.spikes if hasattr(self.pfc, 'state') and self.pfc.state else None
         if pfc_out is None:
             pfc_out = torch.zeros(1, self._pfc_size, device=self.config.device)
 
@@ -117,11 +112,11 @@ class ConsolidationManager:
 
         # Goal-conditioned storage for HER
         goal_for_her = None
-        if hippocampus_impl.her_integration is not None:
+        if self.hippocampus.her_integration is not None:
             goal_for_her = pfc_out.clone()
 
         # Store in hippocampus
-        hippocampus_impl.store_episode(
+        self.hippocampus.store_episode(
             state=combined_state,
             action=action,
             reward=reward,
@@ -165,26 +160,23 @@ class ConsolidationManager:
             'cycles_completed': 0,
             'total_replayed': 0,
             'experiences_learned': 0,
-            'her_enabled': self.hippocampus.impl.her_integration is not None if hasattr(self.hippocampus, 'impl') else (
+            'her_enabled': (
                 self.hippocampus.her_integration is not None if hasattr(self.hippocampus, 'her_integration') else False
             ),
         }
 
-        # Get actual hippocampus implementation (handle both EventDrivenBrain and DynamicBrain)
-        hippocampus_impl = self.hippocampus.impl if hasattr(self.hippocampus, 'impl') else self.hippocampus
-
         # Enter consolidation mode if HER enabled
-        if hasattr(hippocampus_impl, 'her_integration') and hippocampus_impl.her_integration is not None:
-            hippocampus_impl.enter_consolidation_mode()
+        if hasattr(self.hippocampus, 'her_integration') and self.hippocampus.her_integration is not None:
+            self.hippocampus.enter_consolidation_mode()
             if verbose:
-                her_diag = hippocampus_impl.get_her_diagnostics()
+                her_diag = self.hippocampus.get_her_diagnostics()
                 print(f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions")
 
         # Run replay cycles
         for cycle in range(n_cycles):
-            if hasattr(hippocampus_impl, 'her_integration') and hippocampus_impl.her_integration is not None:
+            if hasattr(self.hippocampus, 'her_integration') and self.hippocampus.her_integration is not None:
                 # Sample mix of real + hindsight experiences
-                batch = hippocampus_impl.sample_her_replay_batch(batch_size=batch_size)
+                batch = self.hippocampus.sample_her_replay_batch(batch_size=batch_size)
                 if batch:
                     stats['total_replayed'] += len(batch)
 
@@ -196,7 +188,7 @@ class ConsolidationManager:
                         print(f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(batch)} experiences, {stats['experiences_learned']} learned")
             else:
                 # Sample normal episodic replay
-                episodes = hippocampus_impl.sample_episodes_prioritized(n=batch_size)
+                episodes = self.hippocampus.sample_episodes_prioritized(n=batch_size)
                 if episodes:
                     stats['total_replayed'] += len(episodes)
 
@@ -210,8 +202,8 @@ class ConsolidationManager:
             stats['cycles_completed'] += 1
 
         # Exit consolidation mode
-        if hasattr(hippocampus_impl, 'her_integration') and hippocampus_impl.her_integration is not None:
-            hippocampus_impl.exit_consolidation_mode()
+        if hasattr(self.hippocampus, 'her_integration') and self.hippocampus.her_integration is not None:
+            self.hippocampus.exit_consolidation_mode()
 
         return stats
 
@@ -243,9 +235,6 @@ class ConsolidationManager:
         if action is None or state is None:
             return
 
-        # Get actual region implementations (handle both EventDrivenBrain and DynamicBrain)
-        striatum_impl = self.striatum.impl if hasattr(self.striatum, 'impl') else self.striatum
-
         # Reconstruct state components
         cortex_size = self._cortex_l5_size
         hippo_size = self._hippo_size
@@ -262,7 +251,7 @@ class ConsolidationManager:
             hippo_state,
             pfc_state,
         ], dim=-1)
-        _ = striatum_impl.forward(striatum_input)
+        _ = self.striatum.forward(striatum_input)
 
         # Set action and deliver reward (triggers learning!)
         last_action_holder[0] = action

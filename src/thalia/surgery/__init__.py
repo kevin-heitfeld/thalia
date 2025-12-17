@@ -39,7 +39,7 @@ Example Usage:
         lesion_region, ablate_pathway, add_region_to_trained_brain,
         temporary_lesion, freeze_region
     )
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
     from thalia.io.checkpoint import BrainCheckpoint
 
     # Load trained brain

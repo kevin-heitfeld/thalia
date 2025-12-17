@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import torch
 
 if TYPE_CHECKING:
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
 
 
 @dataclass
@@ -34,7 +34,7 @@ _lesion_cache: Dict[str, LesionState] = {}
 
 
 def lesion_region(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     region_name: str,
     save_for_restore: bool = True,
 ) -> None:
@@ -77,7 +77,7 @@ def lesion_region(
 
 
 def partial_lesion(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     region_name: str,
     lesion_fraction: float = 0.5,
     save_for_restore: bool = True,
@@ -122,7 +122,7 @@ def partial_lesion(
 
 @contextmanager
 def temporary_lesion(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     region_name: str,
     lesion_fraction: float = 1.0,
 ):
@@ -152,7 +152,7 @@ def temporary_lesion(
 
 
 def restore_region(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     region_name: str,
 ) -> None:
     """Restore a lesioned region to original state.
@@ -188,12 +188,15 @@ def restore_region(
 
 # Helper functions
 
-def _get_region(brain: "EventDrivenBrain", region_name: str):
-    """Get region implementation by name.
+def _get_region(brain: "DynamicBrain", region_name: str):
+    """Get region component by name.
 
-    Returns the actual implementation, not the adapter wrapper.
-    For EventDrivenBrain: returns adapter.impl
-    For DynamicBrain: returns component directly
+    Args:
+        brain: DynamicBrain instance
+        region_name: Region name (supports aliases)
+
+    Returns:
+        The region component
     """
     name_map = {
         "cortex": "cortex",
@@ -212,10 +215,12 @@ def _get_region(brain: "EventDrivenBrain", region_name: str):
         )
 
     attr_name = name_map[region_name]
-    region = getattr(brain, attr_name)
 
-    # Return implementation: .impl for EventDrivenBrain, region directly for DynamicBrain
-    return region.impl if hasattr(region, 'impl') else region
+    # Use brain.components for direct access
+    if attr_name not in brain.components:
+        raise ValueError(f"Region '{attr_name}' not found in brain")
+
+    return brain.components[attr_name]
 
 
 def _get_region_size(region_impl) -> int:
@@ -229,7 +234,7 @@ def _get_region_size(region_impl) -> int:
 
 
 def _save_lesion_state(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     region_name: str,
     lesion_type: str,
 ) -> LesionState:

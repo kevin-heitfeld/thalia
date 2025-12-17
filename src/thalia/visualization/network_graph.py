@@ -49,7 +49,7 @@ def visualize_brain_topology(
     """Create NetworkX graph visualization of brain topology.
 
     Args:
-        brain: EventDrivenBrain instance
+        brain: DynamicBrain instance
         layout: Layout algorithm ('hierarchical', 'spring', 'circular', 'shell')
         figsize: Figure size in inches
         node_size_scale: Scale factor for node sizes (proportional to neuron count)
@@ -93,10 +93,7 @@ def visualize_brain_topology(
         region_info[name] = {'neurons': n_neurons, 'type': region_type}
 
     # Add edges (pathways)
-    pathway_manager = brain.pathway_manager
-    for pathway_name, pathway in pathway_manager.pathways.items():
-        source = pathway.source_name
-        target = pathway.target_name
+    for (source, target), pathway in brain.connections.items():
 
         # Get connection strength (average weight)
         strength = _get_pathway_strength(pathway)
@@ -106,7 +103,7 @@ def visualize_brain_topology(
             target,
             weight=strength,
             label=f"{strength:.3f}" if show_weights else "",
-            pathway=pathway_name,
+            pathway=f"{source}->{target}",
         )
 
     # Create visualization
@@ -219,7 +216,7 @@ def export_topology_to_graphviz(
     Useful for rendering with external tools or documentation.
 
     Args:
-        brain: EventDrivenBrain instance
+        brain: DynamicBrain instance
         output_path: Path to save .dot file
         include_weights: Whether to include edge weights
 
@@ -244,20 +241,8 @@ def export_topology_to_graphviz(
 
         f.write("\n")
 
-        # Write edges - handle both EventDrivenBrain and DynamicBrain pathway managers
-        pathway_manager = brain.pathway_manager
-
-        # Get pathways dict - different APIs for different managers
-        if hasattr(pathway_manager, '_pathway_map'):
-            # EventDrivenBrain PathwayManager
-            pathway_dict = pathway_manager._pathway_map
-        elif hasattr(pathway_manager, 'connections'):
-            # DynamicBrain DynamicPathwayManager
-            pathway_dict = pathway_manager.connections
-        else:
-            raise AttributeError(f"PathwayManager type {type(pathway_manager).__name__} not supported")
-
-        for (source, target), pathway in pathway_dict.items():
+        # Write edges - use brain.connections directly
+        for (source, target), pathway in brain.connections.items():
             strength = _get_pathway_strength(pathway)
 
             if include_weights:
@@ -278,7 +263,7 @@ def plot_connectivity_matrix(
     Shows connection strengths between all region pairs.
 
     Args:
-        brain: EventDrivenBrain instance
+        brain: DynamicBrain instance
         figsize: Figure size in inches
         cmap: Matplotlib colormap name
     """
@@ -289,8 +274,7 @@ def plot_connectivity_matrix(
     # Build connectivity matrix
     matrix = np.zeros((n_regions, n_regions))
 
-    pathway_manager = brain.pathway_manager
-    for (source, target), pathway in pathway_manager._pathway_map.items():
+    for (source, target), pathway in brain.connections.items():
         try:
             source_idx = region_names.index(source)
             target_idx = region_names.index(target)
@@ -327,11 +311,7 @@ def plot_connectivity_matrix(
 # =============================================================================
 
 def _get_neuron_count(region: Any) -> int:
-    """Get neuron count from region (handles EventDrivenRegion adapters)."""
-    # If this is an EventDrivenRegion adapter, unwrap to get implementation
-    if hasattr(region, 'impl'):
-        region = region.impl
-
+    """Get neuron count from region."""
     # Try various attributes
     if hasattr(region, 'n_neurons'):
         return region.n_neurons

@@ -370,9 +370,9 @@ SHA-256 hash of all data from offset 0 to checksum_offset.
    - ✅ **SpikingAttentionPathway**: Extends base + input/attention/gain projections + beta phase
    - ✅ **SpikingReplayPathway**: Extends base + replay buffer + priority network + ripple generator
 
-4. **Brain-Level Orchestration** (`src/thalia/core/brain.py`):
-   - ✅ EventDrivenBrain.get_full_state(): Coordinates all 5 regions + pathways + theta + scheduler
-   - ✅ EventDrivenBrain.load_full_state(): Validates config, restores all components
+4. **Brain-Level Orchestration** (`src/thalia/core/dynamic_brain.py`):
+   - ✅ DynamicBrain.get_full_state(): Coordinates all regions + pathways + neuromodulators + scheduler
+   - ✅ DynamicBrain.load_full_state(): Validates config, restores all components
 
 5. **Comprehensive Testing** (`tests/unit/test_checkpoint_state.py`):
    - **18/18 tests passing** (100% success rate)

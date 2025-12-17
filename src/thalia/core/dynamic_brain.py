@@ -171,13 +171,6 @@ class DynamicBrain(nn.Module):
         # Store components as nn.ModuleDict for proper parameter tracking
         self.components = nn.ModuleDict(components)
 
-        # Add EventDrivenBrain-compatible attribute access
-        # Expose components as direct attributes for API compatibility
-        for comp_name, comp in components.items():
-            # Only set if not already an attribute (avoid overriding methods)
-            if not hasattr(self, comp_name):
-                setattr(self, comp_name, comp)
-
         # Update config with component sizes (for CheckpointManager compatibility)
         self._update_config_sizes()
 
@@ -205,6 +198,9 @@ class DynamicBrain(nn.Module):
         # Use EventScheduler for event-driven execution with delays
         self._scheduler = EventScheduler()
 
+        # Event adapters (lazy initialization - created when needed for event-driven execution)
+        self._event_adapters: Optional[Dict[str, "EventDrivenRegionBase"]] = None
+
         # === MULTI-SOURCE PATHWAY BUFFERING ===
         # Buffer for multi-source pathway inputs
         # Maps target_name -> {source_name -> latest_output}
@@ -227,8 +223,6 @@ class DynamicBrain(nn.Module):
         # PATHWAY MANAGER (Phase 1.7.1)
         # =================================================================
         # Centralized pathway management for diagnostics and growth coordination
-        # Note: PathwayManager expects specific EventDrivenBrain structure
-        # For DynamicBrain, we create a simpler adapter that provides same API
         from thalia.pathways.dynamic_pathway_manager import DynamicPathwayManager
 
         self.pathway_manager = DynamicPathwayManager(
@@ -272,15 +266,10 @@ class DynamicBrain(nn.Module):
         # NEUROMODULATOR SYSTEMS (Phase 1.6.3)
         # =================================================================
         # VTA (dopamine), LC (norepinephrine), NB (acetylcholine)
-        # Provides centralized neuromodulation like EventDrivenBrain
+        # Provides centralized neuromodulation
         from thalia.neuromodulation.manager import NeuromodulatorManager
 
         self.neuromodulator_manager = NeuromodulatorManager()
-
-        # Shortcuts for backward compatibility
-        self.vta = self.neuromodulator_manager.vta
-        self.locus_coeruleus = self.neuromodulator_manager.locus_coeruleus
-        self.nucleus_basalis = self.neuromodulator_manager.nucleus_basalis
 
         # =================================================================
         # REINFORCEMENT LEARNING STATE (Phase 1.6.2)
@@ -292,7 +281,7 @@ class DynamicBrain(nn.Module):
         self._last_action_container = [None]
 
         # =================================================================
-        # SPIKE COUNTING (EventDrivenBrain compatibility)
+        # SPIKE COUNTING
         # =================================================================
         # Track total spikes per component for diagnostics
         self._spike_counts: Dict[str, int] = {name: 0 for name in components.keys()}
@@ -336,7 +325,7 @@ class DynamicBrain(nn.Module):
 
         self.checkpoint_manager = CheckpointManager(
             brain=self,
-            default_compression='zstd',  # Match EventDrivenBrain
+            default_compression='zstd',  # Default compression format
         )
 
         # =================================================================
@@ -408,18 +397,13 @@ class DynamicBrain(nn.Module):
             self.criticality_monitor = CriticalityMonitor()
 
         # =================================================================
-        # EVENT ADAPTER SYSTEM
+        # COMPONENT METADATA
         # =================================================================
-        # For event-driven execution, we wrap components with EventDrivenRegionBase adapters
-        # These adapters translate events, apply membrane decay, and route outputs
         self._component_specs: Dict[str, ComponentSpec] = {}
         """Component specifications (set by BrainBuilder after build)"""
 
-        self._event_adapters: Optional[Dict[str, "EventDrivenRegionBase"]] = None
-        """Event adapters (lazy-initialized on first event-driven forward)"""
-
         self._registry: Optional["ComponentRegistry"] = None
-        """Component registry reference (for adapter lookup)"""
+        """Component registry reference (for component type lookup)"""
 
     def _update_config_sizes(self) -> None:
         """Update config with component sizes for CheckpointManager compatibility.
@@ -474,17 +458,7 @@ class DynamicBrain(nn.Module):
         """
         return self._current_time
 
-    @property
-    def adapters(self) -> Dict[str, Any]:
-        """Get components dict (alias for CheckpointManager compatibility).
 
-        EventDrivenBrain uses 'adapters', DynamicBrain uses 'components'.
-        This property provides compatibility with CheckpointManager.
-
-        Returns:
-            Dict mapping component names to components
-        """
-        return dict(self.components.items())
 
     @property
     def theta_oscillator(self):
@@ -594,11 +568,11 @@ class DynamicBrain(nn.Module):
         builder.add_component("hippocampus", "hippocampus", n_output=sizes.hippocampus_size)
         builder.add_component("pfc", "prefrontal", n_output=sizes.pfc_size)
         builder.add_component("striatum", "striatum", n_output=sizes.n_actions)
-        # Cerebellum outputs n_actions (motor commands) to match EventDrivenBrain
+        # Cerebellum outputs n_actions (motor commands)
         builder.add_component("cerebellum", "cerebellum", n_output=sizes.n_actions)
 
-        # Add connections (sensorimotor topology matching EventDrivenBrain)
-        # Note: This topology must match EventDrivenBrain exactly for equivalence
+        # Add connections (standard sensorimotor topology)
+        # Thalamus → Cortex → Hippocampus/PFC → Striatum → Cerebellum
         builder.connect("thalamus", "cortex", "spiking")
         builder.connect("cortex", "hippocampus", "spiking", source_port="l23")  # Cortico-cortical
         builder.connect("hippocampus", "cortex", "spiking")  # Bidirectional (replay pathway)
@@ -1463,9 +1437,9 @@ class DynamicBrain(nn.Module):
         cognitive_load = self._compute_cognitive_load()
 
         # Update neuromodulator systems
-        self.vta.update(dt_ms=self.global_config.dt_ms, intrinsic_reward=intrinsic_reward)
-        self.locus_coeruleus.update(dt_ms=self.global_config.dt_ms, uncertainty=uncertainty)
-        self.nucleus_basalis.update(dt_ms=self.global_config.dt_ms, prediction_error=prediction_error)
+        self.neuromodulator_manager.vta.update(dt_ms=self.global_config.dt_ms, intrinsic_reward=intrinsic_reward)
+        self.neuromodulator_manager.locus_coeruleus.update(dt_ms=self.global_config.dt_ms, uncertainty=uncertainty)
+        self.neuromodulator_manager.nucleus_basalis.update(dt_ms=self.global_config.dt_ms, prediction_error=prediction_error)
 
         # Update PFC cognitive load for temporal discounting (Phase 3)
         if 'pfc' in self.components:
@@ -1477,8 +1451,8 @@ class DynamicBrain(nn.Module):
                 pfc.update_cognitive_load(cognitive_load)
 
         # Get current neuromodulator levels
-        dopamine = self.vta.get_global_dopamine()
-        norepinephrine = self.locus_coeruleus.get_norepinephrine()
+        dopamine = self.neuromodulator_manager.vta.get_global_dopamine()
+        norepinephrine = self.neuromodulator_manager.locus_coeruleus.get_norepinephrine()
 
         # Apply DA-NE coordination
         dopamine, norepinephrine = self.neuromodulator_manager.coordination.coordinate_da_ne(
@@ -1546,7 +1520,9 @@ class DynamicBrain(nn.Module):
 
             # LayeredCortex: Use L2/3 firing rate as proxy for processing quality
             # High activity = engaged processing, low = unresponsive
-            elif hasattr(cortex, 'state') and hasattr(cortex.state, 'l23_spikes'):
+            elif (hasattr(cortex, 'state') and
+                  hasattr(cortex.state, 'l23_spikes') and
+                  cortex.state.l23_spikes is not None):
                 from thalia.components.coding.spike_utils import compute_firing_rate
                 l23_activity = compute_firing_rate(cortex.state.l23_spikes)
                 # Map [0, 1] to [-0.5, 0.5] - less weight than free energy
@@ -1609,7 +1585,9 @@ class DynamicBrain(nn.Module):
         # Cortex prediction error as uncertainty proxy
         if 'cortex' in self.components:
             cortex = self.components['cortex']
-            if hasattr(cortex, 'state') and hasattr(cortex.state, 'free_energy'):
+            if (hasattr(cortex, 'state') and
+                hasattr(cortex.state, 'free_energy') and
+                cortex.state.free_energy is not None):
                 free_energy = cortex.state.free_energy
                 # High FE → high uncertainty
                 cortex_uncertainty = min(1.0, free_energy / 10.0)
@@ -2573,31 +2551,31 @@ class DynamicBrain(nn.Module):
         }
 
         # Get neuromodulator states using proper get_state() methods
-        if self.vta is not None:
-            if hasattr(self.vta, 'get_state'):
-                state["neuromodulators"]["vta"] = self.vta.get_state()
+        if self.neuromodulator_manager.vta is not None:
+            if hasattr(self.neuromodulator_manager.vta, 'get_state'):
+                state["neuromodulators"]["vta"] = self.neuromodulator_manager.vta.get_state()
             else:
                 # Fallback for VTA without get_state()
                 state["neuromodulators"]["vta"] = {
-                    "global_dopamine": self.vta._global_dopamine,
-                    "tonic_dopamine": self.vta._tonic_dopamine,
-                    "phasic_dopamine": self.vta._phasic_dopamine,
+                    "global_dopamine": self.neuromodulator_manager.vta._global_dopamine,
+                    "tonic_dopamine": self.neuromodulator_manager.vta._tonic_dopamine,
+                    "phasic_dopamine": self.neuromodulator_manager.vta._phasic_dopamine,
                 }
-        if self.locus_coeruleus is not None:
-            if hasattr(self.locus_coeruleus, 'get_state'):
-                state["neuromodulators"]["locus_coeruleus"] = self.locus_coeruleus.get_state()
+        if self.neuromodulator_manager.locus_coeruleus is not None:
+            if hasattr(self.neuromodulator_manager.locus_coeruleus, 'get_state'):
+                state["neuromodulators"]["locus_coeruleus"] = self.neuromodulator_manager.locus_coeruleus.get_state()
             else:
                 # Fallback for LC without get_state()
                 state["neuromodulators"]["locus_coeruleus"] = {
-                    "norepinephrine": self.locus_coeruleus.get_norepinephrine(apply_homeostasis=False),
+                    "norepinephrine": self.neuromodulator_manager.locus_coeruleus.get_norepinephrine(apply_homeostasis=False),
                 }
-        if self.nucleus_basalis is not None:
-            if hasattr(self.nucleus_basalis, 'get_state'):
-                state["neuromodulators"]["nucleus_basalis"] = self.nucleus_basalis.get_state()
+        if self.neuromodulator_manager.nucleus_basalis is not None:
+            if hasattr(self.neuromodulator_manager.nucleus_basalis, 'get_state'):
+                state["neuromodulators"]["nucleus_basalis"] = self.neuromodulator_manager.nucleus_basalis.get_state()
             else:
                 # Fallback for NB without get_state()
                 state["neuromodulators"]["nucleus_basalis"] = {
-                    "acetylcholine": self.nucleus_basalis.get_acetylcholine(apply_homeostasis=False),
+                    "acetylcholine": self.neuromodulator_manager.nucleus_basalis.get_acetylcholine(apply_homeostasis=False),
                 }
 
         return state
@@ -2726,21 +2704,21 @@ class DynamicBrain(nn.Module):
         # Load neuromodulator states (if present)
         if "neuromodulators" in state:
             neuromod_state = state["neuromodulators"]
-            if "vta" in neuromod_state and self.vta is not None:
-                if hasattr(self.vta, 'set_state'):
-                    self.vta.set_state(neuromod_state["vta"])
+            if "vta" in neuromod_state and self.neuromodulator_manager.vta is not None:
+                if hasattr(self.neuromodulator_manager.vta, 'set_state'):
+                    self.neuromodulator_manager.vta.set_state(neuromod_state["vta"])
                 else:
                     # Fallback for VTA without set_state()
                     vta_state = neuromod_state["vta"]
-                    self.vta._tonic_dopamine = vta_state.get("tonic_dopamine", 0.0)
-                    self.vta._phasic_dopamine = vta_state.get("phasic_dopamine", 0.0)
-                    self.vta._global_dopamine = vta_state.get("global_dopamine", 0.0)
-            if "locus_coeruleus" in neuromod_state and self.locus_coeruleus is not None:
-                if hasattr(self.locus_coeruleus, 'set_state'):
-                    self.locus_coeruleus.set_state(neuromod_state["locus_coeruleus"])
-            if "nucleus_basalis" in neuromod_state and self.nucleus_basalis is not None:
-                if hasattr(self.nucleus_basalis, 'set_state'):
-                    self.nucleus_basalis.set_state(neuromod_state["nucleus_basalis"])
+                    self.neuromodulator_manager.vta._tonic_dopamine = vta_state.get("tonic_dopamine", 0.0)
+                    self.neuromodulator_manager.vta._phasic_dopamine = vta_state.get("phasic_dopamine", 0.0)
+                    self.neuromodulator_manager.vta._global_dopamine = vta_state.get("global_dopamine", 0.0)
+            if "locus_coeruleus" in neuromod_state and self.neuromodulator_manager.locus_coeruleus is not None:
+                if hasattr(self.neuromodulator_manager.locus_coeruleus, 'set_state'):
+                    self.neuromodulator_manager.locus_coeruleus.set_state(neuromod_state["locus_coeruleus"])
+            if "nucleus_basalis" in neuromod_state and self.neuromodulator_manager.nucleus_basalis is not None:
+                if hasattr(self.neuromodulator_manager.nucleus_basalis, 'set_state'):
+                    self.neuromodulator_manager.nucleus_basalis.set_state(neuromod_state["nucleus_basalis"])
 
         # Load growth history (if present)
         if "growth_history" in state:

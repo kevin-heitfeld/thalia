@@ -42,11 +42,6 @@ from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 # Brain System (DynamicBrain is now the primary API)
 from thalia.core.dynamic_brain import DynamicBrain
 
-# Deprecated: EventDrivenBrain will be removed in v0.3.0
-# Note: Warning is shown only when EventDrivenBrain is actually instantiated
-# to avoid cluttering logs when users only import DynamicBrain
-from thalia.core.brain import EventDrivenBrain
-
 from thalia.core.base.component_config import NeuralComponentConfig
 
 # Brain Regions (most commonly used)

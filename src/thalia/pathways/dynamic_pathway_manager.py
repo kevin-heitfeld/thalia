@@ -1,14 +1,19 @@
 """
 Dynamic Pathway Manager for DynamicBrain.
 
-Provides simplified pathway management API compatible with EventDrivenBrain's
-PathwayManager, but works with arbitrary component graphs.
+Provides pathway management API for DynamicBrain's flexible component graph:
+- Pathway diagnostics collection
+- Coordinated pathway growth
+- State save/load
+
+Works with arbitrary connection graphs, supporting both single-source
+and multi-source pathway architectures.
 
 Author: Thalia Project
 Date: December 15, 2025
 """
 
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any
 
 import torch
 
@@ -18,13 +23,12 @@ from thalia.regions.base import NeuralComponent
 class DynamicPathwayManager:
     """Manages pathways in DynamicBrain's flexible component graph.
 
-    Provides EventDrivenBrain-compatible API for:
+    Provides pathway management API for:
     - Pathway diagnostics collection
     - Coordinated pathway growth
     - State save/load
 
-    Unlike EventDrivenBrain's PathwayManager which has hardcoded pathways,
-    this works with arbitrary connection graphs.
+    Works with arbitrary connection graphs.
     """
 
     def __init__(
@@ -219,23 +223,9 @@ class DynamicPathwayManager:
                 if 'weights' in pathway_state and hasattr(pathway, 'weights'):
                     pathway.weights.data = pathway_state['weights'].to(self.device)
 
-    def process_event(self, event: Any) -> Any:
-        """Process event through pathways (for EventDrivenBrain compatibility).
-
-        In EventDrivenBrain, PathwayManager intercepts events for learning.
-        DynamicBrain handles this differently, so this is a no-op.
-
-        Args:
-            event: Event to process
-
-        Returns:
-            Unmodified event
-        """
-        return event
-
     @property
     def region_connections(self) -> Dict[str, List[str]]:
-        """Get region connectivity for backward compatibility.
+        """Get region connectivity graph.
 
         Returns:
             Adjacency list of region connections

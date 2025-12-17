@@ -7,6 +7,8 @@ from thalia.core.protocols.component import (
     BrainComponent,
     BrainComponentBase,
     BrainComponentMixin,
+    LearnableComponent,
+    RoutingComponent,
 )
 from thalia.core.protocols.neural import (
     Resettable,
@@ -23,6 +25,8 @@ __all__ = [
     "BrainComponent",
     "BrainComponentBase",
     "BrainComponentMixin",
+    "LearnableComponent",
+    "RoutingComponent",
     # Neural Protocols
     "Resettable",
     "Learnable",

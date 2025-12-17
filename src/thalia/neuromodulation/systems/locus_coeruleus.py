@@ -96,7 +96,7 @@ class LocusCoeruleusSystem:
 
     Usage:
     ======
-        # In EventDrivenBrain:
+        # In brain:
         self.locus_coeruleus = LocusCoeruleusSystem()
 
         # Each timestep:

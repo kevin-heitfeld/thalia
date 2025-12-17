@@ -53,7 +53,7 @@ pytest tests/
 ```
 src/thalia/
 ├── core/                   # Brain system orchestration
-│   ├── brain.py           # EventDrivenBrain (main system)
+│   ├── dynamic_brain.py   # DynamicBrain (component-based architecture)
 │   └── diagnostics_keys.py # Standard metric names
 ├── regions/               # Brain regions
 │   ├── cortex/           # Layered cortex (L4→L2/3→L5)

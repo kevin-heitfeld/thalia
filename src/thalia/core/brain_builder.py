@@ -13,7 +13,7 @@ Instead of verbose dataclass configuration:
         ),
         ...
     )
-    brain = EventDrivenBrain.from_thalia_config(config)
+    brain = DynamicBrain.from_thalia_config(config)
 
 Use fluent builder pattern:
     brain = (
@@ -26,6 +26,52 @@ Use fluent builder pattern:
 
 Or use preset architectures:
     brain = BrainBuilder.preset("sensorimotor", config)
+
+## Architecture v2.0: Axonal Projections vs Spiking Pathways
+
+**TWO architectural patterns are available:**
+
+### 1. AxonalProjection (Recommended for inter-region connections)
+- **Biologically accurate**: Represents axon bundles (no synapses)
+- **No weights**: Synapses belong to target region
+- **No learning**: Plasticity occurs at synapses, not axons
+- **Pure routing**: Concatenates sources, applies conduction delays
+- **Usage**: `builder.connect(src, tgt, pathway_type="axonal")`
+
+Example (cortex → striatum):
+```python
+# AxonalProjection: Just axons (2ms delay)
+builder.connect("cortex", "striatum", pathway_type="axonal")
+
+# Corticostriatal synapses are OWNED by striatum (at MSN dendrites)
+# No double-synapse problem, clear ownership
+```
+
+### 2. SpikingPathway (Use when pathway has neurons)
+- **For relay stations**: Thalamus, pathway interneurons
+- **Has neurons**: Real neural populations in pathway
+- **Has learning**: Pathway-specific plasticity
+- **Computation**: Filters, gates, or transforms information
+- **Usage**: `builder.connect(src, tgt, pathway_type="spiking")`
+
+Example (sensory input → thalamus):
+```python
+# Thalamus IS a neural population (relay neurons)
+builder.add_component("thalamus", "thalamus", n_input=784, n_output=256)
+
+# Thalamus → cortex: Now just axons
+builder.connect("thalamus", "cortex", pathway_type="axonal")
+```
+
+**Decision Rule:**
+- Does the connection have neurons? → Use SpikingPathway
+- Is it pure transmission? → Use AxonalProjection (recommended)
+
+**Benefits of AxonalProjection:**
+1. Matches biology (axons ≠ synapses)
+2. Clear synaptic ownership (target owns synapses)
+3. Simpler growth (no double-resize)
+4. Better checkpointing (weights in regions, not pathways)
 
 Author: Thalia Project
 Date: December 15, 2025
@@ -209,10 +255,14 @@ class BrainBuilder:
         Args:
             source: Source component name
             target: Target component name
-            pathway_type: Pathway registry name (default: "spiking")
+            pathway_type: Pathway registry name:
+                - "spiking": SpikingPathway (has neurons + weights + learning)
+                - "axonal": AxonalProjection (pure spike routing, NO weights)
+                - Other registered pathway types
             source_port: Output port on source (e.g., 'l23', 'l5')
             target_port: Input port on target (e.g., 'feedforward', 'top_down', 'ec_l3')
             **config_params: Pathway configuration parameters
+                For axonal pathways, can specify 'axonal_delay_ms' (default: 2.0)
 
         Returns:
             Self for method chaining
@@ -224,12 +274,20 @@ class BrainBuilder:
             # Simple connection (backward compatible)
             builder.connect("thalamus", "cortex")
 
+            # Axonal projection (v2.0 architecture - biologically accurate)
+            builder.connect("cortex", "striatum", pathway_type="axonal", source_port="l5")
+
             # Layer-specific routing
             builder.connect("cortex", "hippocampus", source_port="l23")
 
             # Multiple input types
             builder.connect("thalamus", "cortex", target_port="feedforward")
             builder.connect("pfc", "cortex", target_port="top_down")
+
+            # Axonal with custom delay
+            builder.connect("hippocampus", "pfc",
+                          pathway_type="axonal",
+                          axonal_delay_ms=3.0)
         """
         # Validate components exist
         if source not in self._components:
@@ -456,22 +514,82 @@ class BrainBuilder:
             f"Component {type(source_comp).__name__} does not support port '{source_port}'"
         )
 
+    def _create_axonal_projection(
+        self,
+        target_specs: List[ConnectionSpec],
+        components: Dict[str, NeuralComponent],
+        target_name: str,
+    ) -> "AxonalProjection":
+        """Create AxonalProjection from connection specs.
+
+        AxonalProjection has different initialization than standard pathways:
+        - Takes list of (region_name, port, size, delay_ms) tuples
+        - NO config class with n_input/n_output
+        - Handles multi-source concatenation internally
+
+        Args:
+            target_specs: List of ConnectionSpec for this target
+            components: Dict of instantiated components
+            target_name: Name of target component
+
+        Returns:
+            AxonalProjection instance
+        """
+        from thalia.pathways.axonal_projection import AxonalProjection
+
+        # Build sources list: [(region_name, port, size, delay_ms), ...]
+        sources = []
+        for spec in target_specs:
+            source_comp = components[spec.source]
+            source_size = self._get_pathway_source_size(source_comp, spec.source_port)
+
+            # Get axonal delay (default: 2.0ms)
+            delay_ms = spec.config_params.get("axonal_delay_ms", 2.0)
+
+            sources.append((
+                spec.source,      # region_name
+                spec.source_port, # port (can be None)
+                source_size,      # size
+                delay_ms,         # delay_ms
+            ))
+
+        # Create AxonalProjection
+        projection = AxonalProjection(
+            sources=sources,
+            device=self.global_config.device,
+            dt_ms=self.global_config.dt_ms,
+        )
+
+        return projection
+
     def _get_pathway_target_size(self, target_comp: NeuralComponent, target_port: Optional[str]) -> int:
-        """Get input size for pathway to target component and port.
+        """Get output size for pathway to target component.
+
+        External pathways (between regions) act as axonal projections that
+        concatenate/route spikes. The actual synaptic integration happens
+        at the TARGET region's dendrites via internal weights.
+
+        This is biologically accurate:
+        - Axons carry spikes between regions (external pathway)
+        - Synapses form ON target dendrites (internal region weights)
+        - Each target neuron has many synaptic inputs on its dendrites
+
+        For example (corticostriatal projection):
+        - Cortex L5 (128), Hippocampus (64), PFC (32) → Striatum
+        - External pathway: concatenates [128+64+32] → [224]
+        - Striatum receives [224] and internal D1/D2 weights [70, 224]
+          represent synapses ON MSN dendrites
+        - Each of 70 MSNs integrates 224 synaptic inputs
 
         Args:
             target_comp: Target component instance
             target_port: Input port specification
 
         Returns:
-            Input size for pathway
+            Output size for pathway (= concatenated input size)
         """
-        if target_port in (None, "feedforward", "cortical", "hippocampal"):
-            # Use standard n_input
-            return target_comp.n_input
-
-        # For top_down and other ports, we still route through n_input
-        # (the component's forward() handles separation)
+        # External pathway outputs concatenated inputs
+        # Target's internal weights handle synaptic integration
         return target_comp.n_input
 
     def build(
@@ -573,6 +691,15 @@ class BrainBuilder:
                 spec = target_specs[0]
                 source_comp = components[spec.source]
 
+                # Special handling for AxonalProjection (v2.0 architecture)
+                if spec.pathway_type in ("axonal", "axonal_projection"):
+                    pathway = self._create_axonal_projection(
+                        target_specs, components, target_name
+                    )
+                    connections[(spec.source, spec.target)] = pathway
+                    spec.instance = pathway
+                    continue
+
                 # Determine pathway component type (should be "pathway")
                 pathway_component_type = None
                 for ctype in ["pathway", "module"]:
@@ -631,6 +758,21 @@ class BrainBuilder:
                 spec.instance = pathway
 
             else:
+                # Multiple sources
+                # Check if all specs request axonal pathway
+                all_axonal = all(s.pathway_type in ("axonal", "axonal_projection")
+                                for s in target_specs)
+
+                if all_axonal:
+                    # Create multi-source AxonalProjection
+                    pathway = self._create_axonal_projection(
+                        target_specs, components, target_name
+                    )
+                    for spec in target_specs:
+                        connections[(spec.source, spec.target)] = pathway
+                        spec.instance = pathway
+                    continue
+
                 # Multiple sources - create MultiSourcePathway
                 from thalia.pathways.multi_source_pathway import MultiSourcePathway
                 from thalia.core.base.component_config import PathwayConfig
@@ -950,23 +1092,30 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
 
     Architecture:
         input (64) → process (128) → output (64)
+
+    **Pathway Types**:
+    - Input stage uses "thalamic_relay" region (has relay neurons)
+    - Connections use AXONAL projections (v2.0 architecture)
     """
     n_input = overrides.get("n_input", 64)
     n_process = overrides.get("n_process", 128)
     n_output = overrides.get("n_output", 64)
 
     # Input interface - must specify both n_input and n_output
+    # Uses thalamic relay (which has real neurons for sensory filtering)
     builder.add_component("input", "thalamic_relay", n_input=n_input, n_output=n_input)
+
     # Processing components - only n_output needed, n_input inferred from connections
     builder.add_component("process", "layered_cortex", n_output=n_process)
     builder.add_component("output", "layered_cortex", n_output=n_output)
 
-    builder.connect("input", "process", "spiking")
-    builder.connect("process", "output", "spiking")
+    # Connections use axonal projections (pure spike routing)
+    builder.connect("input", "process", pathway_type="axonal")
+    builder.connect("process", "output", pathway_type="axonal")
 
 
 def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
-    """Sensorimotor architecture (current EventDrivenBrain default).
+    """Sensorimotor architecture (6-region default).
 
     Architecture:
         Thalamus → Cortex ⇄ Hippocampus
@@ -975,7 +1124,12 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
                      ↓
                 Cerebellum
 
-    This preset replicates EventDrivenBrain's hardcoded 6-region architecture.
+    This preset provides the standard 6-region sensorimotor architecture.
+
+    **Pathway Types** (v2.0 Architecture):
+    - Thalamus is a REGION (has relay neurons), not a pathway
+    - All inter-region connections use AXONAL projections (pure spike routing)
+    - Synapses are owned by target regions (biologically accurate)
     """
     # Default sizes (can be overridden)
     n_thalamus = overrides.get("n_thalamus", 128)
@@ -993,19 +1147,34 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
     builder.add_component("striatum", "striatum", n_output=n_striatum)
     builder.add_component("cerebellum", "cerebellum", n_output=n_cerebellum)
 
-    # Add connections
-    builder.connect("thalamus", "cortex", "spiking")
-    builder.connect("cortex", "hippocampus", "spiking")
-    builder.connect("hippocampus", "cortex", "spiking")  # Bidirectional
-    builder.connect("cortex", "pfc", "spiking")
-    builder.connect("cortex", "striatum", "spiking")
-    builder.connect("hippocampus", "striatum", "spiking")
-    builder.connect("pfc", "striatum", "spiking")
-    builder.connect("striatum", "pfc", "spiking")  # Bidirectional
-    # Cerebellum: receives cortex (sensory) + PFC (goals), outputs predictions to cortex
-    builder.connect("cortex", "cerebellum", "spiking")  # Sensorimotor input
-    builder.connect("pfc", "cerebellum", "spiking")  # Goal/context input
-    builder.connect("cerebellum", "cortex", "spiking")  # Forward model predictions
+    # Add connections using AXONAL projections (v2.0 architecture)
+    # Why axonal? These are long-range projections with NO intermediate computation.
+    # Synapses are located at TARGET dendrites, not in the pathway.
+
+    # Thalamus → Cortex: Thalamocortical projection
+    builder.connect("thalamus", "cortex", pathway_type="axonal")
+
+    # Cortex ⇄ Hippocampus: Bidirectional memory integration
+    builder.connect("cortex", "hippocampus", pathway_type="axonal")
+    builder.connect("hippocampus", "cortex", pathway_type="axonal")
+
+    # Cortex → PFC: Executive control pathway
+    builder.connect("cortex", "pfc", pathway_type="axonal")
+
+    # Multi-source → Striatum: Corticostriatal + hippocampostriatal + PFC inputs
+    # These will be automatically combined into single multi-source AxonalProjection
+    builder.connect("cortex", "striatum", pathway_type="axonal")
+    builder.connect("hippocampus", "striatum", pathway_type="axonal")
+    builder.connect("pfc", "striatum", pathway_type="axonal")
+
+    # Striatum → PFC: Basal ganglia gating of working memory
+    builder.connect("striatum", "pfc", pathway_type="axonal")
+
+    # Cerebellum: Motor/cognitive forward models
+    # Receives multi-modal input (sensory + goals), outputs predictions
+    builder.connect("cortex", "cerebellum", pathway_type="axonal")  # Sensorimotor input
+    builder.connect("pfc", "cerebellum", pathway_type="axonal")     # Goal/context input
+    builder.connect("cerebellum", "cortex", pathway_type="axonal")  # Forward model predictions
 
 
 # Register built-in presets
@@ -1017,7 +1186,7 @@ BrainBuilder.register_preset(
 
 BrainBuilder.register_preset(
     name="sensorimotor",
-    description="6-region sensorimotor architecture (EventDrivenBrain default)",
+    description="6-region sensorimotor architecture (standard default)",
     builder_fn=_build_sensorimotor,
 )
 

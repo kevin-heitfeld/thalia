@@ -218,7 +218,7 @@ See ADRs (Architecture Decision Records) for formal design decisions:
 ## 📊 Documentation Coverage
 
 ### Fully Documented ✅
-- EventDrivenBrain core
+- DynamicBrain core (component-based architecture)
 - All brain regions (thalamus, cortex, hippocampus, PFC, striatum, cerebellum)
 - Neuromodulator systems (VTA, LC, NB)
 - Oscillator system

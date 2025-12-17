@@ -128,7 +128,7 @@ config = ThaliaConfig(
     ),
 )
 
-brain = EventDrivenBrain.from_thalia_config(config)
+brain = DynamicBrain.from_thalia_config(config)
 ```
 
 ## Consequences
@@ -254,7 +254,7 @@ brain = EventDrivenBrain.from_thalia_config(config)
 config = ThaliaConfig(
     brain=BrainConfig(parallel=False),  # or omit (default)
 )
-brain = EventDrivenBrain.from_thalia_config(config)
+brain = DynamicBrain.from_thalia_config(config)
 ```
 
 ### Enabling Parallel Mode
@@ -265,7 +265,7 @@ config = ThaliaConfig(
     global_=GlobalConfig(device="cpu"),  # Required
     brain=BrainConfig(parallel=True),    # Enable
 )
-brain = EventDrivenBrain.from_thalia_config(config)
+brain = DynamicBrain.from_thalia_config(config)
 
 # Training scripts need __main__ guard on Windows
 if __name__ == "__main__":

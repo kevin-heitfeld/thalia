@@ -106,8 +106,8 @@ class TestNetworkConnectivity:
         We infer connectivity from pathway names in get_all_pathways() dict.
         """
         # Build connectivity graph from pathway names
-        has_input = {name: False for name in test_brain.adapters}
-        has_output = {name: False for name in test_brain.adapters}
+        has_input = {name: False for name in test_brain.components}
+        has_output = {name: False for name in test_brain.components}
 
         pathway_manager = test_brain.pathway_manager
 
@@ -134,7 +134,7 @@ class TestNetworkConnectivity:
 
         # Check for disconnected regions
         disconnected = []
-        for region_name in test_brain.adapters:
+        for region_name in test_brain.components:
             # Allow explicit input/output regions to be one-way
             if region_name in ['input', 'output', 'sensory', 'motor']:
                 continue
@@ -161,7 +161,7 @@ class TestNetworkConnectivity:
         """
         pathway_manager = test_brain.pathway_manager
         n_pathways = len(pathway_manager.get_all_pathways())
-        n_regions = len(test_brain.adapters)
+        n_regions = len(test_brain.components)
 
         # Minimum: Each region should have at least one connection
         assert n_pathways >= n_regions - 1, \
@@ -343,7 +343,7 @@ class TestEdgeCases:
         # Store initial structure
         pathway_manager = test_brain.pathway_manager
         initial_pathway_count = len(pathway_manager.get_all_pathways())
-        initial_region_count = len(test_brain.adapters)
+        initial_region_count = len(test_brain.components)
         initial_pathway_names = set(pathway_manager.get_all_pathways().keys())
 
         # Reset brain
@@ -352,7 +352,7 @@ class TestEdgeCases:
         # Validate structure unchanged
         assert len(pathway_manager.get_all_pathways()) == initial_pathway_count, \
             "Pathway count changed after reset"
-        assert len(test_brain.adapters) == initial_region_count, \
+        assert len(test_brain.components) == initial_region_count, \
             "Region count changed after reset"
         assert set(pathway_manager.get_all_pathways().keys()) == initial_pathway_names, \
             "Pathway names changed after reset"

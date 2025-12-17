@@ -671,6 +671,78 @@ class SpikingPathway(NeuralComponent):
 
         return diagnostics
 
+    def check_health(self) -> Any:  # Returns HealthReport
+        """Check for pathological states in the pathway.
+
+        Detects:
+        - Silence: Firing rate too low
+        - Runaway activity: Firing rate too high
+        - Weight saturation
+        - NaN/Inf values
+
+        Returns:
+            HealthReport with is_healthy flag and list of issues
+        """
+        from thalia.diagnostics.health_monitor import HealthReport
+
+        issues = []
+
+        # Check for NaN/Inf in weights
+        if torch.isnan(self.weights).any() or torch.isinf(self.weights).any():
+            issues.append("NaN or Inf values in weights")
+
+        # Check firing rate if available
+        if self.firing_rate_estimate is not None:
+            mean_rate = self.firing_rate_estimate.mean().item()
+            if mean_rate < 0.01:  # Less than 1% firing
+                issues.append(f"Very low firing rate: {mean_rate:.4f}")
+            elif mean_rate > 0.9:  # More than 90% firing
+                issues.append(f"Runaway activity: {mean_rate:.4f}")
+
+        # Check weight saturation
+        if hasattr(self.config, 'weight_clipping') and self.config.weight_clipping is not None:
+            min_clip, max_clip = self.config.weight_clipping
+            saturated = (self.weights <= min_clip + 0.01).float().mean()
+            if saturated > 0.5:
+                issues.append(f"Weight saturation: {saturated:.1%} at minimum")
+
+        return HealthReport(
+            is_healthy=(len(issues) == 0),
+            issues=issues,
+            warnings=[],  # Could add warnings for borderline cases
+        )
+
+    def get_capacity_metrics(self) -> Dict[str, float]:
+        """Get capacity and resource utilization metrics.
+
+        Returns:
+            Dictionary with:
+            - n_neurons: Number of neurons in pathway
+            - n_connections: Total number of synaptic connections
+            - effective_connections: Non-zero connections (after sparsification)
+            - sparsity: Fraction of zero-weight connections
+            - utilization: Fraction of active neurons (recent firing)
+        """
+        n_neurons = self.config.n_output
+        n_connections = self.weights.numel()
+        
+        # Count effective (non-zero) connections
+        effective = (self.weights.abs() > 1e-6).sum().item()
+        sparsity = 1.0 - (effective / n_connections)
+
+        # Estimate utilization from firing rate
+        utilization = 0.0
+        if self.firing_rate_estimate is not None:
+            utilization = (self.firing_rate_estimate > 0.01).float().mean().item()
+
+        return {
+            "n_neurons": float(n_neurons),
+            "n_connections": float(n_connections),
+            "effective_connections": float(effective),
+            "sparsity": sparsity,
+            "utilization": utilization,
+        }
+
     # =========================================================================
     # UNIFIED GROWTH API
     # =========================================================================

@@ -99,23 +99,25 @@ def test_criticality_monitor_optional(health_brain, criticality_brain):
 
 def test_check_health_method_exists(health_brain):
     """Test that check_health() method exists and returns correct format."""
+    from thalia.diagnostics.health_monitor import HealthReport
+
     health_report = health_brain.check_health()
 
-    # Check report structure
-    assert isinstance(health_report, dict)
-    assert 'is_healthy' in health_report
-    assert 'issues' in health_report
-    assert 'summary' in health_report
-    assert 'severity_max' in health_report
+    # Check report structure (HealthReport dataclass)
+    assert isinstance(health_report, HealthReport)
+    assert hasattr(health_report, 'is_healthy')
+    assert hasattr(health_report, 'issues')
+    assert hasattr(health_report, 'summary')
+    assert hasattr(health_report, 'overall_severity')
 
     # Check types
-    assert isinstance(health_report['is_healthy'], bool)
-    assert isinstance(health_report['issues'], list)
-    assert isinstance(health_report['summary'], str)
-    assert isinstance(health_report['severity_max'], (int, float))
+    assert isinstance(health_report.is_healthy, bool)
+    assert isinstance(health_report.issues, list)
+    assert isinstance(health_report.summary, str)
+    assert isinstance(health_report.overall_severity, (int, float))
 
-    print(f"✓ check_health() returns: is_healthy={health_report['is_healthy']}, "
-          f"issues={len(health_report['issues'])}, severity={health_report['severity_max']:.2f}")
+    print(f"✓ check_health() returns: is_healthy={health_report.is_healthy}, "
+          f"issues={len(health_report.issues)}, severity={health_report.overall_severity:.2f}")
 
 
 def test_check_health_with_normal_activity(health_brain):
@@ -134,8 +136,8 @@ def test_check_health_with_normal_activity(health_brain):
 
     # With normal activity, should be healthy
     # (May have minor warnings but not critical issues)
-    print(f"✓ Normal activity health: {health_report['is_healthy']}, "
-          f"issues={len(health_report['issues'])}, summary='{health_report['summary']}'")
+    print(f"✓ Normal activity health: {health_report.is_healthy}, "
+          f"issues={len(health_report.issues)}, summary='{health_report.summary}'")
 
 
 def test_check_health_detects_silence(health_brain):
@@ -153,11 +155,11 @@ def test_check_health_detects_silence(health_brain):
     health_report = health_brain.check_health()
 
     # Should detect low activity (though may not flag as unhealthy immediately)
-    print(f"✓ Silence detection: is_healthy={health_report['is_healthy']}, "
-          f"issues={len(health_report['issues'])}, severity={health_report['severity_max']:.2f}")
+    print(f"✓ Silence detection: is_healthy={health_report.is_healthy}, "
+          f"issues={len(health_report.issues)}, severity={health_report.overall_severity:.2f}")
 
     # At minimum should report activity metrics
-    assert len(health_report['issues']) >= 0  # May or may not detect as issue
+    assert len(health_report.issues) >= 0  # May or may not detect as issue
 
 
 def test_enhanced_diagnostics(health_brain):
@@ -259,9 +261,11 @@ def test_health_check_uses_all_diagnostics(health_brain):
 
 def test_health_monitoring_backward_compatibility(health_brain):
     """Test that health monitoring is compatible with EventDrivenBrain interface."""
+    from thalia.diagnostics.health_monitor import HealthReport
+
     # EventDrivenBrain interface requirements:
     # 1. check_health() method exists
-    # 2. Returns dict with is_healthy, issues, summary, severity_max
+    # 2. Returns HealthReport with is_healthy, issues, summary, overall_severity
     # 3. get_diagnostics() includes all subsystem info
 
     # Check interface compatibility
@@ -273,10 +277,13 @@ def test_health_monitoring_backward_compatibility(health_brain):
     sig = inspect.signature(health_brain.check_health)
     assert len(sig.parameters) == 0  # No required parameters
 
-    # Check return format
+    # Check return format (HealthReport dataclass)
     health_report = health_brain.check_health()
-    required_keys = {'is_healthy', 'issues', 'summary', 'severity_max'}
-    assert required_keys.issubset(health_report.keys())
+    assert isinstance(health_report, HealthReport)
+    assert hasattr(health_report, 'is_healthy')
+    assert hasattr(health_report, 'issues')
+    assert hasattr(health_report, 'summary')
+    assert hasattr(health_report, 'overall_severity')
 
     print("✓ Health monitoring interface matches EventDrivenBrain")
 

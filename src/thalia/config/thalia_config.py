@@ -204,8 +204,8 @@ class ThaliaConfig:
         config.validate()
 
         # Create brain from config
-        from thalia.core import EventDrivenBrain
-        brain = EventDrivenBrain.from_thalia_config(config)
+        from thalia.core.dynamic_brain import DynamicBrain
+        brain = DynamicBrain.from_thalia_config(config)
     """
 
     # Global parameters (inherited by all modules)

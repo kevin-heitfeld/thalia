@@ -113,7 +113,7 @@ def test_coordinate_growth_with_real_brain():
     brain = DynamicBrain.from_thalia_config(config)
 
     # Get initial sizes
-    initial_cortex_size = brain.cortex.config.n_output
+    initial_cortex_size = brain.components['cortex'].config.n_output
 
     # Coordinate growth on cortex
     coordinator = GrowthCoordinator(brain)
@@ -129,7 +129,7 @@ def test_coordinate_growth_with_real_brain():
     assert events[0].n_neurons_added == 10, "Should add 10 neurons to cortex"
 
     # Contract: Region should have grown
-    new_cortex_size = brain.cortex.config.n_output
+    new_cortex_size = brain.components['cortex'].config.n_output
     # Cortex distributes n_new across layers (L4/L2/3/L5), so actual growth may differ
     # from requested n_new due to layer ratios. Just verify it grew.
     assert new_cortex_size > initial_cortex_size, \

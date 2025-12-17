@@ -35,20 +35,20 @@ Each brain region has its own learning rule:
 ### High-Level Structure
 
 ```
-EventDrivenBrain
+DynamicBrain (Component-Based Architecture)
 ├── Centralized Systems
 │   ├── NeuromodulatorManager (DA, NE, ACh)
 │   ├── OscillatorManager (5 rhythms + cross-frequency coupling)
 │   ├── GoalHierarchyManager (hierarchical planning)
 │   └── ConsolidationManager (memory replay & offline learning)
-├── Brain Regions
+├── Brain Regions (brain.components["name"])
 │   ├── Thalamus (sensory relay, attention gating)
 │   ├── Cortex (sensory processing)
 │   ├── Hippocampus (episodic memory)
 │   ├── Prefrontal Cortex (working memory, planning)
 │   ├── Striatum (action selection, RL)
 │   └── Cerebellum (motor learning)
-├── Pathways (inter-region connections)
+├── Pathways (brain.connections[(src, tgt)])
 │   ├── Excitatory projections
 │   ├── Inhibitory projections
 │   ├── Attention pathways (PFC → Cortex)
@@ -62,12 +62,14 @@ EventDrivenBrain
 
 ## Core Components
 
-### 1. EventDrivenBrain
+### 1. DynamicBrain
 
-**Location**: `src/thalia/core/brain.py`
+**Location**: `src/thalia/core/dynamic_brain.py`
 
 Central orchestrator that:
 - Manages all brain regions and their interconnections
+- Built using flexible `BrainBuilder` or from configuration
+- Component-based: access regions via `brain.components["name"]`
 - Coordinates centralized systems (neuromodulators, oscillators, goals)
 - Handles event-driven communication between regions
 - Provides high-level APIs for task execution
@@ -77,6 +79,11 @@ Central orchestrator that:
 - `select_action()` - Choose action via striatum
 - `deliver_reward()` - Deliver reward and trigger learning
 - `reset()` - Reset all regions and systems
+
+**Component Access**:
+- `brain.components["cortex"]` - Get region by name
+- `brain.connections[("thalamus", "cortex")]` - Get pathway
+- `brain.components` - Dict of all components
 
 ---
 

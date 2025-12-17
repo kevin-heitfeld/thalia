@@ -196,7 +196,7 @@ class MetacognitiveCalibrator:
     5. Periodically evaluate ECE on held-out set
 
     **Attributes**:
-        brain: Brain instance to calibrate (EventDrivenBrain)
+        brain: Brain instance to calibrate (DynamicBrain)
         confidence_region: Brain region producing confidence (typically PFC)
         n_bins: Number of bins for ECE computation
         device: Torch device for computation
@@ -205,7 +205,7 @@ class MetacognitiveCalibrator:
 
     def __init__(
         self,
-        brain: Any,  # EventDrivenBrain, but use Any to avoid import
+        brain: Any,  # DynamicBrain, but use Any to avoid import
         confidence_region: str = 'prefrontal',
         n_bins: int = 10,
         device: Optional[torch.device] = None,
@@ -213,7 +213,7 @@ class MetacognitiveCalibrator:
         """Initialize metacognitive calibrator.
 
         **Args**:
-            brain: Brain instance to calibrate (EventDrivenBrain)
+            brain: Brain instance to calibrate (DynamicBrain)
             confidence_region: Brain region for confidence estimates
             n_bins: Number of bins for ECE computation (default 10)
             device: Torch device for computation

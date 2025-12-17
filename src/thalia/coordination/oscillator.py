@@ -459,7 +459,7 @@ class OscillatorManager:
 
     Usage:
     ======
-        # In EventDrivenBrain:
+        # In the brain:
         self.oscillators = OscillatorManager(dt_ms=1.0, device="cuda")
 
         # Each timestep:
@@ -468,8 +468,8 @@ class OscillatorManager:
         signals = self.oscillators.get_signals()
 
         # Broadcast to regions:
-        self.cortex.impl.set_oscillator_phases(phases, signals)
-        self.hippocampus.impl.set_oscillator_phases(phases, signals)
+        self.cortex.set_oscillator_phases(phases, signals)
+        self.hippocampus.set_oscillator_phases(phases, signals)
 
     Benefits:
     =========

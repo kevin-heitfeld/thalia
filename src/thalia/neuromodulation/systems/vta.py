@@ -78,7 +78,7 @@ class VTADopamineSystem:
 
     Usage:
     ======
-        # In EventDrivenBrain:
+        # In brain:
         self.vta = VTADopamineSystem()
 
         # Each timestep:

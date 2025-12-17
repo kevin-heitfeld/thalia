@@ -280,7 +280,7 @@ def worker_process(
 class ParallelExecutor:
     """Event-driven simulation with parallel region execution.
 
-    Used by EventDrivenBrain when parallel=True to distribute event
+    Used by DynamicBrain when parallel=True to distribute event
     processing across multiple CPU cores.
 
     Distributes events to region processes running in parallel,

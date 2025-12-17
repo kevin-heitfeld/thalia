@@ -127,14 +127,6 @@ def test_get_neuron_count_various_attributes():
     assert _get_neuron_count(region3) == expected_membrane_neurons, \
         "Should extract neuron count from membrane.shape"
 
-    # EventDrivenRegion adapter with impl
-    region4 = Mock(spec=['impl'])
-    region4.impl = Mock(spec=['n_neurons'])
-    expected_impl_neurons = 120
-    region4.impl.n_neurons = expected_impl_neurons
-    assert _get_neuron_count(region4) == expected_impl_neurons, \
-        "Should unwrap EventDrivenRegion adapter and extract from impl.n_neurons"
-
     # Region with no attributes
     region5 = Mock(spec=[])
     assert _get_neuron_count(region5) == 0, \

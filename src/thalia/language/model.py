@@ -2,7 +2,7 @@
 Language Model Integration - Connecting language to the unified brain.
 
 This module provides utilities for integrating language processing
-with the EventDrivenBrain. Instead of a standalone language model,
+with DynamicBrain. Instead of a standalone language model,
 language is just another sensory modality feeding into the unified brain.
 
 Architecture:
@@ -19,7 +19,7 @@ Architecture:
             │
             ▼
     ┌──────────────────┐
-    │ EventDrivenBrain │  (our unified brain)
+    │ DynamicBrain     │  (our unified brain)
     │  Cortex → Hippo  │
     │  → PFC → Action  │
     └───────┬──────────┘
@@ -33,11 +33,11 @@ Architecture:
 Usage:
 ======
 
-    from thalia.core import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
     from thalia.language import LanguageBrainInterface
 
     # Create brain with language interface
-    brain = EventDrivenBrain(config)
+    brain = BrainBuilder.preset("sensorimotor", global_config)
     lang_interface = LanguageBrainInterface(brain)
 
     # Process text through the brain
@@ -77,7 +77,7 @@ from thalia.language.position import (
 
 # Type checking imports
 if TYPE_CHECKING:
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
     from thalia.config import ThaliaConfig
 
 
@@ -110,7 +110,7 @@ class LanguageInterfaceConfig:
 
 class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     """
-    Interface between language and the EventDrivenBrain.
+    Interface between language and DynamicBrain.
 
     This class handles:
     1. Encoding text tokens to spikes (via SpikeEncoder)
@@ -121,7 +121,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     once converted to spikes, the brain processes it like any other modality.
 
     Usage:
-        brain = EventDrivenBrain(config)
+        brain = DynamicBrain.from_thalia_config(config)
         lang_interface = LanguageBrainInterface(brain, LanguageInterfaceConfig())
 
         # Process text
@@ -138,7 +138,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     @classmethod
     def from_thalia_config(
         cls,
-        brain: "EventDrivenBrain",
+        brain: "DynamicBrain",
         config: "ThaliaConfig",
     ) -> "LanguageBrainInterface":
         """Create interface from ThaliaConfig.
@@ -147,7 +147,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
         as a required positional argument.
 
         Args:
-            brain: Instantiated EventDrivenBrain
+            brain: Instantiated DynamicBrain
             config: ThaliaConfig with all settings
 
         Returns:
@@ -167,7 +167,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
 
     def __init__(
         self,
-        brain: "EventDrivenBrain",
+        brain: "DynamicBrain",
         config: Optional[LanguageInterfaceConfig] = None,
     ):
         super().__init__()

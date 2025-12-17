@@ -31,11 +31,8 @@ Thalia implements several brain-wide systems as centralized managers that comput
 
 **Integration**:
 ```python
-# In EventDrivenBrain.__init__()
+# In DynamicBrain.__init__()
 self.neuromodulator_manager = NeuromodulatorManager()
-self.vta = self.neuromodulator_manager.vta
-self.locus_coeruleus = self.neuromodulator_manager.locus_coeruleus
-self.nucleus_basalis = self.neuromodulator_manager.nucleus_basalis
 
 # In timestep updates
 self.neuromodulator_manager.update(

@@ -27,9 +27,17 @@ Date: December 2025
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Protocol, runtime_checkable
+from typing import Any, Dict, Protocol, runtime_checkable, Optional
 
 import torch
+import torch.nn as nn
+
+# Import mixins for LearnableComponent
+from thalia.neuromodulation.mixin import NeuromodulatorMixin
+from thalia.learning.strategy_mixin import LearningStrategyMixin
+from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
+from thalia.mixins.growth_mixin import GrowthMixin
+from thalia.mixins.resettable_mixin import ResettableMixin
 
 
 @runtime_checkable
@@ -690,3 +698,447 @@ class BrainComponentMixin:
         self._oscillator_signals = signals or {}
         self._oscillator_theta_slot = theta_slot
         self._coupled_amplitudes = coupled_amplitudes or {}
+
+
+# =============================================================================
+# Component Type Hierarchy (v2.0 Architecture)
+# =============================================================================
+
+class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, LearningStrategyMixin, DiagnosticsMixin, GrowthMixin, ResettableMixin):
+    """
+    Complete base class for all learnable neural components (regions and weighted pathways).
+
+    LearnableComponent provides EVERYTHING needed for biologically-plausible learning:
+    - **Synaptic weights**: Learnable connection strengths
+    - **Neurons**: Spiking neuron models with membrane dynamics
+    - **Plasticity**: Local learning rules (STDP, BCM, three-factor, etc.)
+    - **Neuromodulation**: Dopamine, acetylcholine, norepinephrine modulation
+    - **State management**: Membrane potentials, spikes, eligibility traces
+    - **Growth**: Dynamic expansion during curriculum learning
+    - **Diagnostics**: Health monitoring and activity metrics
+
+    This is the ONLY base class needed for brain regions and weighted pathways.
+    No intermediate NeuralComponent layer needed.
+
+    Examples:
+    - Brain regions: `class Striatum(LearnableComponent)`
+    - Weighted pathways: `class SpikingPathway(LearnableComponent)`
+    - Laminar structures: `class LayeredCortex(LearnableComponent)`
+
+    Key Principle: If it has weights and learns, inherit from LearnableComponent.
+
+    Usage:
+        class MyRegion(LearnableComponent):
+            def __init__(self, config):
+                super().__init__(config)
+                # Weights and neurons already initialized via _initialize_weights/_create_neurons
+
+            def _initialize_weights(self) -> nn.Parameter:
+                return nn.Parameter(torch.randn(self.n_output, self.n_input))
+
+            def _create_neurons(self) -> Any:
+                from thalia.neurons import ConductanceLIF
+                return ConductanceLIF(self.n_output, ...)
+
+            def forward(self, input_spikes):
+                # Process + learn in one pass (continuous plasticity)
+                current = input_spikes @ self.weights.T
+                output_spikes = self.neurons(current)
+                if self.plasticity_enabled:
+                    self._apply_learning(input_spikes, output_spikes)
+                return output_spikes
+
+            def reset_state(self):
+                self.neurons.reset()
+                self.state = NeuralComponentState()
+    """
+
+    def __init__(self, config: Any):
+        """Initialize learnable neural component.
+
+        Args:
+            config: NeuralComponentConfig with device, dtype, learning_rate, etc.
+        """
+        # Initialize nn.Module first (MUST be before any attribute assignment)
+        nn.Module.__init__(self)
+
+        # Store configuration
+        self.config = config
+        self._device = torch.device(config.device)
+        self._dtype = config.get_torch_dtype()
+
+        # Initialize weights (subclasses implement _initialize_weights)
+        weights = self._initialize_weights()
+        if weights is not None:
+            self.weights = weights
+
+        # Initialize neurons (subclasses implement _create_neurons)
+        neurons = self._create_neurons()
+        if neurons is not None:
+            self.neurons = neurons
+
+        # =================================================================
+        # NEURAL COMPONENT STATE
+        # =================================================================
+        # Import here to avoid circular dependency
+        from thalia.regions.base import NeuralComponentState
+        self.state = NeuralComponentState()
+
+        # =================================================================
+        # AFFERENT SYNAPSES (v2.0 Architecture - Optional)
+        # =================================================================
+        # In v2.0 architecture, regions can own their afferent synapses
+        # (weights + learning) instead of having pathways with weights.
+        self.afferent_synapses: Optional[Any] = None
+        if getattr(config, 'use_afferent_synapses', False):
+            self._init_afferent_synapses()
+
+        # =================================================================
+        # CONTINUOUS PLASTICITY SETTINGS
+        # =================================================================
+        self.plasticity_enabled: bool = True       # Can be disabled for eval
+        self.base_learning_rate: float = config.learning_rate
+
+        # =================================================================
+        # AXONAL DELAY BUFFER (ALL neural components have conduction delays)
+        # =================================================================
+        # Delay buffer initialized on first forward() to avoid conflicts
+        # with subclasses that use register_buffer()
+        self.axonal_delay_ms = config.axonal_delay_ms
+        self.avg_delay_steps = int(self.axonal_delay_ms / config.dt_ms)
+        self.max_delay_steps = max(1, int(self.axonal_delay_ms * 2 / config.dt_ms) + 1)
+
+    @abstractmethod
+    def _initialize_weights(self) -> Optional[nn.Parameter]:
+        """Initialize synaptic weights.
+
+        Returns:
+            nn.Parameter with weights, or None if composition-based (weights set later)
+        """
+
+    @abstractmethod
+    def _create_neurons(self) -> Optional[Any]:
+        """Create neuron models.
+
+        Returns:
+            Neuron object (e.g., ConductanceLIF), or None if composition-based
+        """
+
+    def _init_afferent_synapses(self) -> None:
+        """Initialize afferent synapses layer (v2.0 architecture).
+
+        Subclasses can override to customize synaptic configuration.
+        """
+        from thalia.synapses import AfferentSynapses, AfferentSynapsesConfig
+
+        synapses_config = AfferentSynapsesConfig(
+            n_neurons=self.config.n_neurons,
+            n_inputs=self.config.n_input,
+            learning_rule=getattr(self.config, 'learning_rule', 'hebbian'),
+            learning_rate=self.config.learning_rate,
+            device=self.config.device,
+        )
+        self.afferent_synapses = AfferentSynapses(synapses_config)
+
+    @property
+    def device(self) -> torch.device:
+        """Device where tensors are stored."""
+        return self._device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Data type for floating point tensors."""
+        return self._dtype
+
+    @property
+    def n_input(self) -> int:
+        """Number of input connections (convenience accessor)."""
+        if hasattr(self.config, 'n_input'):
+            return self.config.n_input
+        else:
+            raise AttributeError(f"{self.__class__.__name__} config has no n_input attribute")
+
+    @property
+    def n_output(self) -> int:
+        """Number of output neurons (convenience accessor)."""
+        if hasattr(self.config, 'n_output'):
+            return self.config.n_output
+        elif hasattr(self.config, 'n_neurons'):
+            return self.config.n_neurons
+        else:
+            raise AttributeError(f"{self.__class__.__name__} config has no n_output or n_neurons attribute")
+
+    # =========================================================================
+    # CONCRETE IMPLEMENTATIONS (from old NeuralComponent)
+    # =========================================================================
+
+    def check_health(self) -> Any:  # Returns HealthReport
+        """Check for pathological states.
+
+        Detects:
+        - Silence: Firing rate too low (<1%)
+        - Runaway activity: Firing rate too high (>90%)
+        - Weight saturation: Too many weights at limits
+        - Dead neurons: No activity
+
+        Returns:
+            HealthReport with detected issues
+        """
+        from thalia.diagnostics.health_monitor import (
+            HealthReport, IssueReport, HealthIssue, IssueSeverity
+        )
+        from thalia.components.coding.spike_utils import compute_firing_rate
+
+        issues = []
+
+        # Check firing rate
+        if self.state.spikes is not None:
+            firing_rate = float(compute_firing_rate(self.state.spikes))
+
+            if firing_rate < 0.01:  # Less than 1%
+                issues.append(IssueReport(
+                    issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                    severity=IssueSeverity.HIGH.value,
+                    description=f'Firing rate too low: {firing_rate:.1%}',
+                    recommendation='Check input strength, reduce thresholds, or increase excitation'
+                ))
+            elif firing_rate > 0.90:  # More than 90%
+                issues.append(IssueReport(
+                    issue_type=HealthIssue.SEIZURE_RISK,
+                    severity=IssueSeverity.HIGH.value,
+                    description=f'Firing rate too high: {firing_rate:.1%}',
+                    recommendation='Increase inhibition, increase thresholds, or reduce input strength'
+                ))
+
+        # Check weight saturation
+        if hasattr(self, 'weights') and self.weights is not None:
+            w = self.weights.detach()
+            w_max = getattr(self.config, 'w_max', 1.0)
+            w_min = getattr(self.config, 'w_min', 0.0)
+            near_max = (w > w_max * 0.95).float().mean().item()
+            near_min = (w < w_min + 0.05).float().mean().item()
+
+            if near_max > 0.5:
+                issues.append(IssueReport(
+                    issue_type=HealthIssue.WEIGHT_EXPLOSION,
+                    severity=IssueSeverity.MEDIUM.value,
+                    description=f'Weight saturation at maximum: {near_max:.1%} near max',
+                    recommendation='Consider synaptic scaling or weight normalization'
+                ))
+            elif near_min > 0.5:
+                issues.append(IssueReport(
+                    issue_type=HealthIssue.WEIGHT_COLLAPSE,
+                    severity=IssueSeverity.MEDIUM.value,
+                    description=f'Weight saturation at minimum: {near_min:.1%} near min',
+                    recommendation='Consider increasing learning rate or input strength'
+                ))
+
+        # Create report
+        is_healthy = len(issues) == 0
+        overall_severity = max([issue.severity.value for issue in issues]) if issues else 0.0
+
+        if is_healthy:
+            summary = f"{self.__class__.__name__}: Healthy"
+        else:
+            summary = f"{self.__class__.__name__}: {len(issues)} issue(s) detected"
+
+        return HealthReport(
+            is_healthy=is_healthy,
+            overall_severity=overall_severity,
+            issues=issues,
+            summary=summary,
+            metrics=self.get_diagnostics()
+        )
+
+    def get_capacity_metrics(self) -> Any:  # Returns CapacityMetrics
+        """Get capacity utilization metrics for growth decisions.
+
+        Default implementation provides basic metrics. Regions can override
+        for more sophisticated analysis.
+
+        Returns:
+            CapacityMetrics with:
+            - firing_rate: Average firing rate (0-1)
+            - weight_saturation: Fraction of weights near max
+            - synapse_usage: Fraction of active synapses
+            - neuron_count: Total neurons
+            - synapse_count: Total synapses
+            - growth_recommended: Whether growth is advised
+        """
+        from thalia.coordination.growth import GrowthManager
+
+        # Use GrowthManager for standard metrics computation
+        manager = GrowthManager(region_name=self.__class__.__name__)
+        metrics = manager.get_capacity_metrics(self)
+        return metrics  # Return CapacityMetrics object, not dict
+
+    # =========================================================================
+    # AXONAL DELAY HELPERS (ADR-010)
+    # =========================================================================
+
+    def _initialize_delay_buffer(self, n_neurons: int) -> None:
+        """Initialize circular buffer for axonal delays.
+
+        Called lazily on first forward() to avoid conflicts with subclasses
+        that use register_buffer().
+
+        Args:
+            n_neurons: Number of neurons (output dimension)
+        """
+        self.delay_buffer = torch.zeros(
+            (self.max_delay_steps, n_neurons),
+            dtype=torch.bool,
+            device=self._device
+        )
+        self.delay_buffer_idx = 0
+
+    def _apply_axonal_delay(
+        self,
+        output_spikes: torch.Tensor,
+        dt: float,
+    ) -> torch.Tensor:
+        """Apply axonal delay to output spikes using circular buffer.
+
+        Args:
+            output_spikes: Binary spike tensor [n_neurons]
+            dt: Timestep in milliseconds
+
+        Returns:
+            Delayed spikes from avg_delay_steps ago
+        """
+        if not hasattr(self, 'delay_buffer') or self.delay_buffer is None:
+            self._initialize_delay_buffer(output_spikes.shape[0])
+
+        self.delay_buffer[self.delay_buffer_idx] = output_spikes
+        delayed_idx = (self.delay_buffer_idx - self.avg_delay_steps) % self.delay_buffer.shape[0]
+        delayed_spikes = self.delay_buffer[delayed_idx]
+        self.delay_buffer_idx = (self.delay_buffer_idx + 1) % self.delay_buffer.shape[0]
+        return delayed_spikes
+
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float] | None = None,
+        theta_slot: int = 0,
+        coupled_amplitudes: Dict[str, float] | None = None,
+    ) -> None:
+        """Set oscillator phases for neural oscillations (default: no-op).
+
+        Subclasses with oscillators should override to update phase state.
+
+        Args:
+            phases: Dictionary of oscillator phases (e.g., {'theta': 0.5, 'gamma': 0.25})
+            signals: Optional oscillator signals (amplitudes)
+            theta_slot: Current theta slot for sequence learning
+            coupled_amplitudes: Optional coupled oscillator amplitudes
+        """
+        pass  # Default: no oscillators, do nothing
+
+    # =========================================================================
+    # RESET HELPERS (for subclasses)
+    # =========================================================================
+
+    def _reset_subsystems(self, *subsystem_names: str) -> None:
+        """Reset multiple subsystems by calling their reset_state() methods.
+
+        Convenience helper to avoid repetitive code in reset_state() implementations.
+
+        Args:
+            *subsystem_names: Names of attributes to reset (must have reset_state())
+
+        Example:
+            >>> def reset_state(self):
+            >>>     super().reset_state()
+            >>>     self._reset_subsystems('neurons', 'stp', 'trace_manager')
+        """
+        for name in subsystem_names:
+            if hasattr(self, name):
+                subsystem = getattr(self, name)
+                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                    subsystem.reset_state()
+
+    def _reset_scalars(self, **scalar_values: Any) -> None:
+        """Reset scalar attributes to specified values.
+
+        Convenience helper for resetting counters, accumulators, etc.
+
+        Args:
+            **scalar_values: Attribute names and their reset values
+
+        Example:
+            >>> def reset_state(self):
+            >>>     super().reset_state()
+            >>>     self._reset_scalars(
+            >>>         _cumulative_spikes=0,
+            >>>         _timestep=0,
+            >>>         _episode_reward=0.0
+            >>>     )
+        """
+        for name, value in scalar_values.items():
+            setattr(self, name, value)
+
+
+class RoutingComponent(BrainComponentBase, nn.Module):
+    """
+    Abstract base for non-learnable routing components.
+
+    RoutingComponent extends BrainComponentBase WITHOUT learning:
+    - NO synaptic weights (pure spike routing)
+    - NO neurons (transmission only, no computation)
+    - NO plasticity (fixed connectivity)
+
+    What RoutingComponents DO have:
+    - Spike transmission with delays
+    - Multi-source concatenation
+    - Dynamic growth (routing table updates)
+
+    Examples:
+    - Axonal projections (v2.0 architecture)
+    - Sensory encoders (convert external input to spikes)
+    - Motor decoders (convert spikes to actions)
+
+    Key Principle: If it only routes/transforms without learning, it's a RoutingComponent.
+
+    Usage:
+        class AxonalProjection(RoutingComponent):
+            def __init__(self, sources, device, dt_ms):
+                config = SimpleNamespace(device=device)
+                super().__init__(config)
+                self.sources = sources
+                self._init_delay_buffers()
+
+            def forward(self, source_outputs):
+                # Route spikes with delays, NO learning
+                return self._apply_delays_and_concatenate(source_outputs)
+
+            def grow_input(self, n_new, **kwargs):
+                pass  # Routing components don't have input dimension
+
+            def grow_output(self, n_new, **kwargs):
+                raise NotImplementedError("Use grow_source() instead")
+    """
+
+    def __init__(self, config: Any):
+        """Initialize routing component.
+
+        Args:
+            config: Minimal config (at minimum: device)
+        """
+        # Initialize nn.Module first
+        nn.Module.__init__(self)
+
+        # Store configuration
+        self.config = config
+        self._device = torch.device(config.device)
+        # Routing components don't need dtype (no learnable parameters)
+        self._dtype = torch.float32
+
+    @property
+    def device(self) -> torch.device:
+        """Device where tensors are stored."""
+        return self._device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Data type (routing components use default float32)."""
+        return self._dtype

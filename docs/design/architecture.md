@@ -40,7 +40,7 @@ Level 2: STABILITY MECHANISMS
 Level 3: REGIONS (Isolated)
   ↓ (cortex, hippocampus, striatum, PFC, cerebellum)
 Level 4: INTEGRATION
-  ↓ (EventDrivenBrain, pathways, neuromodulators, oscillators)
+  ↓ (DynamicBrain, pathways, neuromodulators, oscillators)
 ```
 
 ### Level 0: Primitives
@@ -64,8 +64,8 @@ Level 4: INTEGRATION
 **Details**: See [Brain Regions](../architecture/ARCHITECTURE_OVERVIEW.md#brain-regions)
 
 ### Level 4: Integration
-**Components**: EventDrivenBrain, NeuromodulatorManager, OscillatorManager, PathwayManager
-**Location**: `src/thalia/core/brain.py`, `src/thalia/neuromodulation/`, `src/thalia/coordination/`
+**Components**: DynamicBrain, NeuromodulatorManager, OscillatorManager, PathwayManager
+**Location**: `src/thalia/core/dynamic_brain.py`, `src/thalia/neuromodulation/`, `src/thalia/coordination/`
 **Details**: See [Centralized Systems](../architecture/CENTRALIZED_SYSTEMS.md)
 - **Implements**: Sliding threshold, rate-based learning
 - **Parameters**: `learning_rate`, `tau_theta`, `p` (LTP/LTD power)

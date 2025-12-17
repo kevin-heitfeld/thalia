@@ -10,15 +10,14 @@ Tests end-to-end functionality:
 """
 
 import os
-import psutil
 import time
+import psutil
 
 import pytest
 import torch
 
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.core.brain_builder import BrainBuilder
-from thalia.core.brain import EventDrivenBrain
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
 
@@ -621,6 +620,10 @@ class TestNeuromodulationAndConsolidation:
         """Test neuromodulator update and broadcasting."""
         brain = BrainBuilder.preset("sensorimotor", global_config)
 
+        # Run a forward pass first to initialize state
+        input_data = {"thalamus": torch.randn(128, device=device)}
+        brain.forward(input_data, n_timesteps=1)
+
         # Update neuromodulators
         brain._update_neuromodulators()
 
@@ -632,6 +635,10 @@ class TestNeuromodulationAndConsolidation:
     def test_neuromodulator_broadcast_to_components(self, device, global_config):
         """Test that neuromodulators are broadcast to components."""
         brain = BrainBuilder.preset("sensorimotor", global_config)
+
+        # Run a forward pass first to initialize state
+        input_data = {"thalamus": torch.randn(128, device=device)}
+        brain.forward(input_data, n_timesteps=1)
 
         # Deliver reward to trigger dopamine release
         brain.vta.deliver_reward(external_reward=1.0, expected_value=0.0)

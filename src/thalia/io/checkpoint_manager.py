@@ -69,31 +69,31 @@ from thalia.io.checkpoint import BrainCheckpoint
 from thalia.io.precision import PrecisionPolicy
 
 if TYPE_CHECKING:
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
 
 
 class CheckpointManager:
-    """Unified checkpoint manager for EventDrivenBrain.
+    """Unified checkpoint manager for DynamicBrain.
 
     Provides centralized checkpoint save/load/validate operations
     ensuring complete state capture and restoration.
 
     Attributes:
-        brain: EventDrivenBrain instance to manage
+        brain: DynamicBrain instance to manage
         default_precision: Default precision policy for checkpoints
         default_compression: Default compression method
     """
 
     def __init__(
         self,
-        brain: EventDrivenBrain,
+        brain: DynamicBrain,
         default_precision: Union[str, PrecisionPolicy] = "fp32",
         default_compression: Optional[str] = None,
     ):
         """Initialize checkpoint manager.
 
         Args:
-            brain: EventDrivenBrain instance
+            brain: DynamicBrain instance
             default_precision: Default precision policy ('fp32', 'fp16', 'mixed')
             default_compression: Default compression ('zstd', 'lz4', None)
         """
@@ -306,11 +306,11 @@ class CheckpointManager:
             >>> print(f"Pathways: {len(components['pathways'])} pathways")
         """
         return {
-            "regions": list(self.brain.adapters.keys()),
-            "pathways": list(self.brain.pathway_manager.pathways.keys()),
+            "regions": list(self.brain.components.keys()),
+            "pathways": list(self.brain.connections.keys()),
             "neuromodulators": ["vta", "lc", "nb"],  # VTA, LC, NB
             "oscillators": ["delta", "theta", "alpha", "beta", "gamma"],
-            "managers": ["pathway_manager", "neuromodulator_manager", "oscillator_manager"],
+            "managers": ["neuromodulator_manager", "oscillator_manager"],
         }
 
     def _count_components(self) -> Dict[str, int]:
@@ -320,7 +320,7 @@ class CheckpointManager:
             Dict with component counts
         """
         return {
-            "regions": len(self.brain.adapters),
+            "regions": len(self.brain.components),
             "pathways": len(self.brain.pathways),  # Brain has .pathways dict
             "neuromodulators": 3,  # VTA, LC, NB
             "oscillators": 5,  # delta, theta, alpha, beta, gamma
@@ -374,14 +374,14 @@ class CheckpointManager:
 # =============================================================================
 
 def save_checkpoint(
-    brain: EventDrivenBrain,
+    brain: DynamicBrain,
     path: Union[str, Path],
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Convenience function to save a checkpoint.
 
     Args:
-        brain: EventDrivenBrain instance
+        brain: DynamicBrain instance
         path: Path to save checkpoint
         **kwargs: Additional arguments passed to CheckpointManager.save()
 
@@ -396,14 +396,14 @@ def save_checkpoint(
 
 
 def load_checkpoint(
-    brain: EventDrivenBrain,
+    brain: DynamicBrain,
     path: Union[str, Path],
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Convenience function to load a checkpoint.
 
     Args:
-        brain: EventDrivenBrain instance
+        brain: DynamicBrain instance
         path: Path to checkpoint file
         **kwargs: Additional arguments passed to CheckpointManager.load()
 

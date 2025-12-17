@@ -291,7 +291,7 @@ def test_visualize_real_brain(tmp_path):
             ),
         ),
     )
-    brain = EventDrivenBrain.from_config(config)
+    brain = DynamicBrain.from_thalia_config(config)
 
     # Test with REAL components
     output_file = tmp_path / "topology.dot"
@@ -632,7 +632,7 @@ def test_softmax_selection():
 ```python
 def test_something():
     config = ThaliaConfig(...)  # Repeated in every test
-    brain = EventDrivenBrain.from_config(config)
+    brain = DynamicBrain.from_thalia_config(config)
     # Test code
 ```
 
@@ -642,7 +642,7 @@ def test_something():
 def test_brain():
     """Create standard brain for tests."""
     config = ThaliaConfig(...)
-    return EventDrivenBrain.from_config(config)
+    return DynamicBrain.from_thalia_config(config)
 
 def test_something(test_brain):
     # Use fixture

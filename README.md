@@ -36,10 +36,14 @@ pip install -e ".[all]"
 
 ```python
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
-from thalia.core.brain import EventDrivenBrain
+from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
 import torch
 
-# Create configuration
+# Option 1: Use preset architectures
+global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+brain = BrainBuilder.preset("sensorimotor", global_config)
+
+# Option 2: Build from configuration
 config = ThaliaConfig(
     global_=GlobalConfig(device="cpu", dt_ms=1.0),
     brain=BrainConfig(
@@ -52,13 +56,15 @@ config = ThaliaConfig(
         ),
     ),
 )
-
-# Initialize brain
-brain = EventDrivenBrain.from_thalia_config(config)
+brain = DynamicBrain.from_thalia_config(config)
 
 # Process sensory input (encoding phase)
 visual_input = torch.rand(784, dtype=torch.float32)
 output = brain.forward(sensory_input=visual_input, n_timesteps=15)
+
+# Access regions by name
+cortex = brain.components["cortex"]
+hippocampus = brain.components["hippocampus"]
 
 # Select action (decision-making)
 action, confidence = brain.select_action(explore=True)
@@ -89,6 +95,7 @@ graph TD
 ```
 
 **Key Features:**
+- **Flexible Architecture**: Component-based brain built with `BrainBuilder` or from configuration
 - **Spiking Pathways**: ConductanceLIF neurons with realistic axonal delays (2-8ms)
 - **Learning Rules**: STDP, BCM, Hebbian, three-factor (dopamine-modulated)
 - **Neuromodulation**: Dopamine (reward), acetylcholine (encoding/retrieval), norepinephrine (arousal)
@@ -117,12 +124,12 @@ graph TD
 
 ## Project Status
 
-**Current Version**: 0.1.0 (Pre-Alpha)  
+**Current Version**: 0.1.0 (Pre-Alpha)
 **Status**: Active Development
 
 ### Implemented Features ✅
 - Core brain regions (Cortex, Hippocampus, Striatum, PFC, Cerebellum, Thalamus)
-- Event-driven simulation with axonal delays
+- Flexible component-based architecture (DynamicBrain with BrainBuilder)
 - Learning strategies (STDP, BCM, Hebbian, three-factor)
 - Neuromodulator systems (dopamine, acetylcholine, norepinephrine)
 - Planning systems (TD(λ), Dyna, hierarchical goals)

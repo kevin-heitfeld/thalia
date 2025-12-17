@@ -1233,12 +1233,14 @@ class CurriculumTrainer:
                     stability_metrics[f'{region_name}_weight_std'] = float(weights.std())
 
         # Weight statistics from pathways
-        if hasattr(self.brain, 'pathway_manager'):
-            pathway_diag = self.brain.pathway_manager.get_diagnostics()
-            for pathway_name, pathway_stats in pathway_diag.items():
-                if isinstance(pathway_stats, dict) and 'weight_mean' in pathway_stats:
-                    stability_metrics[f'{pathway_name}_weight_mean'] = pathway_stats['weight_mean']
-                    stability_metrics[f'{pathway_name}_weight_std'] = pathway_stats.get('weight_std', 0.0)
+        if hasattr(self.brain, 'connections'):
+            for pathway_key, pathway in self.brain.connections.items():
+                if hasattr(pathway, 'get_diagnostics'):
+                    pathway_stats = pathway.get_diagnostics()
+                    if isinstance(pathway_stats, dict) and 'weight_mean' in pathway_stats:
+                        pathway_name = f"{pathway_key[0]}_to_{pathway_key[1]}"
+                        stability_metrics[f'{pathway_name}_weight_mean'] = pathway_stats['weight_mean']
+                        stability_metrics[f'{pathway_name}_weight_std'] = pathway_stats.get('weight_std', 0.0)
 
         analysis['stability'] = stability_metrics
 
@@ -1560,7 +1562,7 @@ class CurriculumTrainer:
                 component_type='region',
             )
 
-            # Grow connected pathways (automatic via PathwayManager)
+            # Grow connected pathways (automatic via DynamicPathwayManager)
             if hasattr(self.brain, 'pathway_manager'):
                 # Grow connected pathways (no longer needs adapters)
                 self.brain.pathway_manager.grow_connected_pathways(
@@ -2289,11 +2291,11 @@ class CurriculumTrainer:
         firing_rates = {}
 
         region_mapping = {
-            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
-            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
-            'pfc': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
-            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
-            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
+            'cortex': self.brain.components.get('cortex'),
+            'hippocampus': self.brain.components.get('hippocampus'),
+            'pfc': self.brain.components.get('pfc'),
+            'striatum': self.brain.components.get('striatum'),
+            'cerebellum': self.brain.components.get('cerebellum'),
         }
 
         for region_name, region in region_mapping.items():
@@ -2320,11 +2322,11 @@ class CurriculumTrainer:
         # Check each region for weight saturation
 
         region_mapping = {
-            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
-            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
-            'pfc': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
-            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
-            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
+            'cortex': self.brain.components.get('cortex'),
+            'hippocampus': self.brain.components.get('hippocampus'),
+            'pfc': self.brain.components.get('pfc'),
+            'striatum': self.brain.components.get('striatum'),
+            'cerebellum': self.brain.components.get('cerebellum'),
         }
 
         for region_name, region in region_mapping.items():
@@ -2471,11 +2473,11 @@ class CurriculumTrainer:
         total_neurons = 0
 
         region_mapping = {
-            'cortex': self.brain.cortex.impl if hasattr(self.brain, 'cortex') else None,
-            'hippocampus': self.brain.hippocampus.impl if hasattr(self.brain, 'hippocampus') else None,
-            'pfc': self.brain.pfc.impl if hasattr(self.brain, 'pfc') else None,
-            'striatum': self.brain.striatum.impl if hasattr(self.brain, 'striatum') else None,
-            'cerebellum': self.brain.cerebellum.impl if hasattr(self.brain, 'cerebellum') else None,
+            'cortex': self.brain.components.get('cortex'),
+            'hippocampus': self.brain.components.get('hippocampus'),
+            'pfc': self.brain.components.get('pfc'),
+            'striatum': self.brain.components.get('striatum'),
+            'cerebellum': self.brain.components.get('cerebellum'),
         }
 
         for region in region_mapping.values():

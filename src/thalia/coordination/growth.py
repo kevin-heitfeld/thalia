@@ -445,7 +445,7 @@ class GrowthCoordinator:
         """Initialize growth coordinator.
 
         Args:
-            brain: EventDrivenBrain instance
+            brain: DynamicBrain instance
         """
         self.brain = brain
         self.pathway_manager = brain.pathway_manager

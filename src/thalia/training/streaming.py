@@ -113,10 +113,9 @@ import numpy as np
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from thalia.core.brain import EventDrivenBrain
     from thalia.core.dynamic_brain import DynamicBrain
 
-    Brain = EventDrivenBrain | DynamicBrain
+    Brain = DynamicBrain
 else:
     Brain = object
 

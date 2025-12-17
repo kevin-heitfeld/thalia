@@ -93,7 +93,7 @@ class BrainCheckpoint:
         """Save brain state to binary checkpoint file.
 
         Args:
-            brain: Brain instance (EventDrivenBrain)
+            brain: Brain instance (DynamicBrain)
             path: Path to save checkpoint
             metadata: Optional metadata dict
             compression: Compression type ('zstd', 'lz4', or None)

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import torch
 
 if TYPE_CHECKING:
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
 
 
 @dataclass
@@ -27,7 +27,7 @@ _ablation_cache: Dict[str, AblationState] = {}
 
 
 def ablate_pathway(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     pathway_name: str,
     save_for_restore: bool = True,
 ) -> None:
@@ -75,7 +75,7 @@ def ablate_pathway(
 
 
 def restore_pathway(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     pathway_name: str,
 ) -> None:
     """Restore an ablated pathway to original state.
@@ -113,7 +113,7 @@ def restore_pathway(
 
 # Helper functions
 
-def _get_pathway(brain: "EventDrivenBrain", pathway_name: str):
+def _get_pathway(brain: "DynamicBrain", pathway_name: str):
     """Get pathway by name."""
     # Access pathways dict directly (brain.pathways is already the dict)
     pathways = brain.pathways
@@ -158,7 +158,7 @@ def _get_pathway(brain: "EventDrivenBrain", pathway_name: str):
 
 
 def _save_ablation_state(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     pathway_name: str,
     pathway,
 ) -> AblationState:

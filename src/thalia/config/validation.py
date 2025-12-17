@@ -227,7 +227,7 @@ def validate_thalia_config(config: "ThaliaConfig") -> None:
         >>> from thalia.config import ThaliaConfig, validate_thalia_config
         >>> config = ThaliaConfig(...)
         >>> validate_thalia_config(config)  # Raises if invalid
-        >>> brain = EventDrivenBrain.from_thalia_config(config)  # Safe to create
+        >>> brain = DynamicBrain.from_thalia_config(config)  # Safe to create
     """
     errors: List[str] = []
 

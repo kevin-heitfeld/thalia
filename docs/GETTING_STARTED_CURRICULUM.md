@@ -7,12 +7,12 @@ This guide helps you get started with Thalia's curriculum training system for de
 **Basic Usage Pattern**
 
 ```python
-from thalia.core import Brain  # EventDrivenBrain
+from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 from thalia.config.curriculum_growth import CurriculumStage, get_curriculum_growth_config
 from thalia.training.curriculum.stage_manager import CurriculumTrainer, StageConfig
 
-# 1. Create brain with ThaliaConfig
+# 1. Create brain with ThaliaConfig or use preset
 config = ThaliaConfig(
     global_=GlobalConfig(device="cpu"),
     brain=BrainConfig(
@@ -25,7 +25,10 @@ config = ThaliaConfig(
         ),
     ),
 )
-brain = EventDrivenBrain.from_thalia_config(config)
+brain = DynamicBrain.from_thalia_config(config)
+
+# Alternative: Use preset architecture
+# brain = BrainBuilder.preset("sensorimotor", GlobalConfig(device="cpu"))
 
 # 2. Initialize trainer
 trainer = CurriculumTrainer(

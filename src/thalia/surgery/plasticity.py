@@ -12,11 +12,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
 
 
 def freeze_region(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     region_name: str,
 ) -> None:
     """Disable plasticity in a brain region.
@@ -53,7 +53,7 @@ def freeze_region(
 
 
 def unfreeze_region(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     region_name: str,
 ) -> None:
     """Re-enable plasticity in a frozen region.
@@ -82,7 +82,7 @@ def unfreeze_region(
 
 
 def freeze_pathway(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     pathway_name: str,
 ) -> None:
     """Disable plasticity in a pathway.
@@ -111,7 +111,7 @@ def freeze_pathway(
 
 
 def unfreeze_pathway(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     pathway_name: str,
 ) -> None:
     """Re-enable plasticity in a frozen pathway.

@@ -75,7 +75,7 @@ brain.regions = {'cortex': Mock()}
 
 # ✅ GOOD
 config = ThaliaConfig(...)
-brain = EventDrivenBrain.from_config(config)
+brain = DynamicBrain.from_thalia_config(config)
 ```
 
 ### Trivial Assertions

@@ -12,12 +12,12 @@ from thalia.core.base.component_config import PathwayConfig
 from thalia.pathways.spiking_pathway import SpikingPathway
 
 if TYPE_CHECKING:
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
     from thalia.core.base import NeuralComponent
 
 
 def add_region_to_trained_brain(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     region_name: str,
     region: "NeuralComponent",
     input_pathway_from: Optional[str] = None,
@@ -92,7 +92,7 @@ def add_region_to_trained_brain(
 
 
 def _create_input_pathway(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     source_region_name: str,
     target_region: "NeuralComponent",
     target_region_name: str,
@@ -102,7 +102,7 @@ def _create_input_pathway(
 
     # Get source region
     source_region = _get_region(brain, source_region_name)
-    source_size = source_region.impl.config.n_output
+    source_size = source_region.config.n_output
     target_size = target_region.config.n_input
 
     # Create pathway
@@ -126,7 +126,7 @@ def _create_input_pathway(
 
 
 def _create_output_pathway(
-    brain: "EventDrivenBrain",
+    brain: "DynamicBrain",
     source_region: "NeuralComponent",
     source_region_name: str,
     target_region_name: str,
@@ -137,7 +137,7 @@ def _create_output_pathway(
     # Get target region
     target_region = _get_region(brain, target_region_name)
     source_size = source_region.config.n_output
-    target_size = target_region.impl.config.n_input
+    target_size = target_region.config.n_input
 
     # Create pathway
     pathway_name = f"{source_region_name}_to_{target_region_name}"

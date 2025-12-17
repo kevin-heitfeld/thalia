@@ -22,7 +22,7 @@ Usage:
     config.summary()
 
     # Create brain with resolved config
-    brain = EventDrivenBrain.from_config(config)
+    brain = DynamicBrain.from_config(config)
 
 Author: Thalia Project
 Date: December 2025

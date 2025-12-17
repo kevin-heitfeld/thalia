@@ -38,9 +38,9 @@ Biological Inspiration:
 
 Example:
     ```python
-    from thalia.core.brain import EventDrivenBrain
+    from thalia.core.dynamic_brain import DynamicBrain
 
-    brain = EventDrivenBrain(config)
+    brain = DynamicBrain.from_thalia_config(config)
 
     # Mental simulation uses EXISTING regions (no separate world model!)
     # PFC holds simulated state, hippocampus predicts next, striatum evaluates

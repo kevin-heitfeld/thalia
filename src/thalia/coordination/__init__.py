@@ -10,7 +10,6 @@ from thalia.coordination.oscillator import (
     SinusoidalOscillator,
     OscillatorCoupling,
 )
-from thalia.coordination.trial_coordinator import TrialCoordinator
 from thalia.coordination.growth import (
     GrowthManager,
     GrowthEvent,
@@ -25,8 +24,6 @@ __all__ = [
     "OscillatorConfig",
     "SinusoidalOscillator",
     "OscillatorCoupling",
-    # Trial Coordinator
-    "TrialCoordinator",
     # Growth
     "GrowthManager",
     "GrowthEvent",

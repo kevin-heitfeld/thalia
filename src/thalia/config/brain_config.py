@@ -1,7 +1,7 @@
 """
 Brain Configuration - Settings for brain regions and architecture.
 
-This module defines configuration for the EventDrivenBrain and its
+This module defines configuration for DynamicBrain and its
 constituent regions, with clear inheritance from GlobalConfig.
 
 Author: Thalia Project
@@ -225,7 +225,7 @@ class RegionSizes:
 def _default_cortex_config() -> PredictiveCortexConfig:
     """Create default cortex config with placeholder sizes.
 
-    Note: n_input and n_output are set to 0 here because EventDrivenBrain
+    Note: n_input and n_output are set to 0 here because the brain
     will override them based on RegionSizes. The actual layer sizes are
     computed from RegionSizes.input_size and RegionSizes.cortex_size.
 

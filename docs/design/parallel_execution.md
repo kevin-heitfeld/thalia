@@ -1,6 +1,6 @@
 # Distributed Computation Support (Parallel Mode)
 
-**Status**: ✅ Implemented (December 2025)  
+**Status**: ✅ Implemented (December 2025)
 **Priority**: Tier 3 - Major Restructuring
 
 ## Overview
@@ -85,7 +85,7 @@ config = ThaliaConfig(
 )
 
 # Create brain (automatically initializes parallel executor)
-brain = EventDrivenBrain.from_thalia_config(config)
+brain = DynamicBrain.from_thalia_config(config)
 
 # Use normally - parallel execution is transparent
 input_pattern = torch.rand(784) > 0.5
@@ -114,7 +114,10 @@ config_seq = ThaliaConfig(
         parallel=False,
     ),
 )
-brain_seq = EventDrivenBrain.from_thalia_config(config_seq)
+)
+
+# Sequential execution (single process)
+brain_seq = DynamicBrain.from_thalia_config(config_seq)
 
 start = time.time()
 for _ in range(100):
@@ -129,7 +132,10 @@ config_par = ThaliaConfig(
         parallel=True,
     ),
 )
-brain_par = EventDrivenBrain.from_thalia_config(config_par)
+)
+
+# Parallel execution (multi-process)
+brain_par = DynamicBrain.from_thalia_config(config_par)
 
 start = time.time()
 for _ in range(100):
@@ -216,12 +222,12 @@ Windows uses `spawn` instead of `fork`, requiring:
 ```python
 # train.py
 from thalia.config import ThaliaConfig
-from thalia.core.brain import EventDrivenBrain
+from thalia.core.dynamic_brain import DynamicBrain
 
 def main():
     config = ThaliaConfig(...)
-    brain = EventDrivenBrain.from_thalia_config(config)
-    
+    brain = DynamicBrain.from_thalia_config(config)
+
     # Training loop
     for epoch in range(10):
         result = brain.forward(input_pattern, n_timesteps=15)
@@ -326,24 +332,24 @@ def create_cortex_region(config_dict: Dict, device: str) -> RegionInterface:
     """Create cortex region (module-level for pickling)."""
     from thalia.events.adapters import EventDrivenCortex, EventRegionConfig
     from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
-    
+
     # Build config from dict
     cortex_config = LayeredCortexConfig(
         n_layers=config_dict["n_layers"],
         layer_sizes=config_dict["layer_sizes"],
         ...
     )
-    
+
     # Create region
     cortex = LayeredCortex(cortex_config)
-    
+
     # Wrap in event-driven adapter
     event_config = EventRegionConfig(
         name=config_dict["name"],
         output_targets=config_dict["output_targets"],
         device=device,
     )
-    
+
     return EventDrivenCortex(config=event_config, cortex=cortex)
 
 # Create factory that can be pickled
@@ -358,15 +364,15 @@ Events within tolerance are batched for parallel execution:
 class ParallelExecutor:
     def __init__(self, ..., batch_tolerance_ms=0.1):
         self.batch_tolerance = batch_tolerance_ms  # 0.1ms default
-    
+
     def run_until(self, end_time):
         while True:
             # Get all events within 0.1ms
             batch = self.scheduler.pop_simultaneous(self.batch_tolerance)
-            
+
             # Process in parallel
             output_events = self._process_batch(batch)
-            
+
             # Schedule outputs
             for event in output_events:
                 self.scheduler.schedule(event)
@@ -401,7 +407,7 @@ import pstats
 pr = cProfile.Profile()
 pr.enable()
 
-brain = EventDrivenBrain.from_thalia_config(config)
+brain = DynamicBrain.from_thalia_config(config)
 for _ in range(100):
     brain.forward(input_pattern, n_timesteps=10)
 
@@ -511,7 +517,7 @@ def compare_results(result_seq, result_par, tolerance=0.5):
     for region in ["cortex", "hippocampus", "pfc"]:
         seq_count = result_seq["spike_counts"][region]
         par_count = result_par["spike_counts"][region]
-        
+
         if seq_count > 0:
             ratio = par_count / seq_count
             assert tolerance < ratio < (1/tolerance), f"{region} results too different"

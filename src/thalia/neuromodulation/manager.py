@@ -1,5 +1,5 @@
 """
-Neuromodulator Manager for EventDrivenBrain.
+Neuromodulator Manager for DynamicBrain.
 
 Centralizes management of VTA dopamine, LC norepinephrine, and NB acetylcholine systems.
 """

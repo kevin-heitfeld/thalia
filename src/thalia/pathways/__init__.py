@@ -4,15 +4,17 @@ All inter-region and sensory pathways for the Thalia brain architecture.
 
 Pathways ARE mini-regions with neurons, synapses, and learning rules.
 They actively transform information and learn continuously via STDP/BCM.
+
+v2.0 Architecture:
+- AxonalProjection: Pure spike routing, NO weights (new in v2.0)
+- SpikingPathway: Traditional pathway with weights (legacy, v1.x)
 """
 
 # Protocol
 from thalia.pathways.protocol import NeuralPathway
 
-# Manager
-from thalia.pathways.manager import PathwayManager
-
 # Core pathway types
+from thalia.pathways.axonal_projection import AxonalProjection  # v2.0
 from thalia.pathways.spiking_pathway import (
     SpikingPathway,
     SpikingLearningRule,
@@ -49,9 +51,8 @@ from thalia.pathways.attention.crossmodal_binding import (
 __all__ = [
     # Protocol
     "NeuralPathway",
-    # Manager
-    "PathwayManager",
     # Core pathways
+    "AxonalProjection",
     "SpikingPathway",
     "SpikingLearningRule",
     "TemporalCoding",
