@@ -1873,9 +1873,9 @@ class DynamicBrain(nn.Module):
 
                 growth_report[name] = {
                     "firing_rate": metrics.firing_rate,
-                    "weight_saturation": metrics.weight_saturation,
+                    "weight_saturation": metrics.saturation_fraction if metrics.saturation_fraction is not None else 0.0,
                     "synapse_usage": metrics.synapse_usage,
-                    "neuron_count": metrics.neuron_count,
+                    "neuron_count": metrics.total_neurons,
                     "growth_recommended": metrics.growth_recommended,
                     "growth_reason": metrics.growth_reason,
                 }

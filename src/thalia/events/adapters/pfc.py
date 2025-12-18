@@ -50,7 +50,6 @@ class EventDrivenPFC(EventDrivenRegionBase):
     ):
         super().__init__(config)
         self.impl_module = pfc  # Register as public attribute for nn.Module
-        self._pfc = pfc  # Keep reference for backwards compatibility
 
         # Configure input buffering using base class
         if cortex_input_size > 0 and hippocampus_input_size > 0:
@@ -65,7 +64,7 @@ class EventDrivenPFC(EventDrivenRegionBase):
     @property
     def impl(self) -> Any:
         """Return the underlying PFC implementation."""
-        return self._pfc
+        return self.impl_module
 
     @property
     def state(self) -> Any:

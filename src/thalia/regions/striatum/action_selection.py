@@ -200,13 +200,8 @@ class ActionSelectionMixin:
         Args:
             action: The action that was selected (0 to n_actions-1)
         """
-        # Delegate to exploration component if available, otherwise update local state
-        if hasattr(self, 'exploration'):
-            self.exploration.update_action_counts(action)
-        else:
-            # Fallback for backward compatibility (if exploration not yet initialized)
-            self._action_counts[action] += 1
-            self._total_trials += 1
+        # Delegate to exploration component (always initialized in __init__)
+        self.exploration.update_action_counts(action)
 
     def finalize_action(self, explore: bool = True) -> Dict[str, Any]:
         """Finalize action selection at the end of a trial.

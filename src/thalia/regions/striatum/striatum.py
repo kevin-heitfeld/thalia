@@ -1197,27 +1197,14 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         """
         return None
 
-    def _create_neurons(self) -> ConductanceLIF:
-        """Create MSN-like neurons (legacy - kept for parent class compatibility).
+    def _create_neurons(self) -> Optional[ConductanceLIF]:
+        """Striatum uses D1/D2 pathway neurons, not base class neurons.
 
-        NOTE: This is now only used for parent class compatibility.
-        The actual D1/D2 neurons are created by _create_d1_neurons() and
-        _create_d2_neurons() which are called in __init__.
+        Returns None because striatum manages neurons via d1_pathway.neurons and d2_pathway.neurons.
+        Each pathway has its own neuron population created separately in __init__.
+        The actual D1/D2 neurons are created by _create_d1_neurons() and _create_d2_neurons().
         """
-        neuron_config = ConductanceLIFConfig(
-            v_threshold=V_THRESHOLD_STANDARD,
-            v_reset=V_RESET_STANDARD,
-            E_L=E_LEAK,
-            E_E=E_EXCITATORY,
-            E_I=E_INHIBITORY,
-            tau_E=5.0,
-            tau_I=5.0,
-            dt_ms=1.0,
-            tau_ref=2.0,
-        )
-        neurons = ConductanceLIF(n_neurons=self.config.n_output, config=neuron_config)
-        neurons.to(self.device)
-        return neurons
+        return None
 
     def _create_d1_neurons(self) -> ConductanceLIF:
         """Create D1-MSN population (direct pathway / GO).

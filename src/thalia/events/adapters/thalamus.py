@@ -45,14 +45,13 @@ class EventDrivenThalamus(EventDrivenRegionBase):
     ):
         super().__init__(config)
         self.impl_module = thalamus  # Register as public attribute for nn.Module
-        self._thalamus = thalamus  # Keep reference for backwards compatibility
 
         # No accumulated input needed - thalamus has single input source (sensory)
 
     @property
     def impl(self) -> Any:
         """Return the underlying thalamus implementation."""
-        return self._thalamus
+        return self.impl_module
 
     @property
     def state(self) -> Any:

@@ -43,12 +43,11 @@ class EventDrivenCortex(EventDrivenRegionBase):
     ):
         super().__init__(config)
         self.impl_module = cortex  # Register as public attribute for nn.Module
-        self._cortex = cortex  # Keep reference for backwards compatibility
 
     @property
     def impl(self) -> Any:
         """Return the underlying cortex implementation."""
-        return self._cortex
+        return self.impl_module
 
     @property
     def state(self) -> Any:

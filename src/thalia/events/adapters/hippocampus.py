@@ -39,7 +39,6 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
     ):
         super().__init__(config)
         self.impl_module = hippocampus  # Register as public attribute for nn.Module
-        self._hippocampus = hippocampus  # Keep reference for backwards compatibility
 
         # Track EC direct input (from sensory, bypasses cortex)
         self._ec_direct_input: Optional[torch.Tensor] = None
@@ -47,7 +46,7 @@ class EventDrivenHippocampus(EventDrivenRegionBase):
     @property
     def impl(self) -> Any:
         """Return the underlying hippocampus implementation."""
-        return self._hippocampus
+        return self.impl_module
 
     @property
     def state(self) -> Any:

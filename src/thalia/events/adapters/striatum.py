@@ -50,7 +50,6 @@ class EventDrivenStriatum(EventDrivenRegionBase):
     ):
         super().__init__(config)
         self.impl_module = striatum  # Register as public attribute for nn.Module
-        self._striatum = striatum  # Keep reference for backwards compatibility
         self._pfc_input_size = pfc_input_size  # Store for extracting goal context from input
 
         # Configure input buffering using base class
@@ -160,7 +159,7 @@ class EventDrivenStriatum(EventDrivenRegionBase):
 
     def _forward_striatum(self, combined_input: torch.Tensor) -> torch.Tensor:
         """Forward combined input through striatum.
-        
+
         The combined_input contains: [cortex | hippocampus | pfc]
         The striatum will extract the PFC component automatically if needed.
         """

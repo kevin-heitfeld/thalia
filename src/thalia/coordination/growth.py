@@ -124,17 +124,6 @@ class CapacityMetrics:
     synapse_count: Optional[int] = None  # Total synapses
     growth_reason: str = ""  # Why growth is recommended
 
-    # Legacy aliases for backward compatibility
-    @property
-    def neuron_count(self) -> int:
-        """Alias for total_neurons (backward compatibility)."""
-        return self.total_neurons
-
-    @property
-    def weight_saturation(self) -> float:
-        """Alias for saturation_fraction (backward compatibility)."""
-        return self.saturation_fraction if self.saturation_fraction is not None else 0.0
-
     def to_dict(self) -> Dict[str, float]:
         """Convert to dict for logging."""
         result = {

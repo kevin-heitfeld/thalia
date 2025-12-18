@@ -41,7 +41,6 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
     ):
         super().__init__(config)
         self.impl_module = cerebellum  # Register as public attribute for nn.Module
-        self._cerebellum = cerebellum  # Keep reference for backwards compatibility
 
         # Track recent activity for learning
         self._recent_input: Optional[torch.Tensor] = None
@@ -51,7 +50,7 @@ class EventDrivenCerebellum(EventDrivenRegionBase):
     @property
     def impl(self) -> Any:
         """Return the underlying cerebellum implementation."""
-        return self._cerebellum
+        return self.impl_module
 
     @property
     def state(self) -> Any:
