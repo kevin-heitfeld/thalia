@@ -38,7 +38,12 @@ Architecture:
 The Key Innovation:
 ===================
 Traditional cortex: L4 → L2/3 → L5 (feedforward hierarchy)
-Predictive cortex: L5 → L4 (predictions) + L4 vs L5 → L2/3 (errors)
+Predictive cortex: L5+L6 → L4 (predictions) + L4 vs L5+L6 → L2/3 (errors)
+
+L5 and L6 are BOTH prediction neurons (deep pyramidal layers):
+- L5: Predicts cortical/subcortical activity
+- L6: Predicts thalamic input (via TRN modulation)
+- Together: Combined representation for predictive coding
 
 Learning Rule:
 - Error = Input - Prediction
@@ -112,10 +117,11 @@ class PredictiveCortexState(NeuralComponentState):
     Extends NeuralComponentState with cortex-specific fields for layer spikes,
     predictive coding, and attention.
     """
-    # Layer-specific spikes (cortex has L4→L2/3→L5 microcircuit)
+    # Layer-specific spikes (cortex has L4→L2/3→L5+L6 microcircuit)
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None
+    l6_spikes: Optional[torch.Tensor] = None  # L6 is part of prediction neurons
 
     # Store original input for learning
     input_spikes: Optional[torch.Tensor] = None
@@ -147,8 +153,8 @@ class PredictiveCortex(NeuralComponent):
     Layered cortex with integrated predictive coding.
 
     This combines:
-    1. LayeredCortex: Biologically realistic L4 → L2/3 → L5 microcircuit
-    2. PredictiveCoding: L5 generates predictions, L2/3 computes errors
+    1. LayeredCortex: Biologically realistic L4 → L2/3 → L5+L6 microcircuit
+    2. PredictiveCoding: L5+L6 generate predictions, L2/3 computes errors
     3. SpikingAttention: Precision weighting modulated by attention
 
     The result is a cortical module that:
@@ -159,10 +165,10 @@ class PredictiveCortex(NeuralComponent):
     Credit Assignment Solution:
     ===========================
     Instead of backprop, learning happens via:
-    1. L5 predicts expected L4 input
-    2. Error = L4_actual - L5_prediction
+    1. L5+L6 predict expected L4 input (deep layers are prediction neurons)
+    2. Error = L4_actual - L5+L6_prediction
     3. Error propagates to L2/3 (goes UP to next area)
-    4. L5 weights update based on local error
+    4. L5+L6 weights update based on local error
 
     All learning is LOCAL to each layer!
 
@@ -207,10 +213,12 @@ class PredictiveCortex(NeuralComponent):
         """Initialize predictive cortex."""
         self.predictive_config = config
 
-        # All layer sizes are now required (L6 not used in PredictiveCortex)
+        # All layer sizes are now required
+        # Note: L5+L6 together form the "prediction neurons" (deep pyramidal layers)
         l4_size = config.l4_size
         l23_size = config.l23_size
         l5_size = config.l5_size
+        l6_size = config.l6_size
 
         # Validate n_output matches total
         _output_size = l23_size + l5_size
@@ -245,20 +253,27 @@ class PredictiveCortex(NeuralComponent):
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
+        self.l6_size = self.cortex.l6_size  # Track L6 for prediction neurons
         self._output_size = _output_size  # Track output size for growth
         assert self.l4_size == l4_size, f"L4 size mismatch: {self.l4_size} != {l4_size}"
         assert self.l23_size == l23_size, f"L2/3 size mismatch: {self.l23_size} != {l23_size}"
         assert self.l5_size == l5_size, f"L5 size mismatch: {self.l5_size} != {l5_size}"
+        assert self.l6_size == l6_size, f"L6 size mismatch: {self.l6_size} != {l6_size}"
 
         # =====================================================================
         # PREDICTIVE CODING MODULE
         # =====================================================================
         if config.prediction_enabled:
-            # L5 → L4 prediction pathway
+            # L5+L6 → L4 prediction pathway
+            # Both deep layers (L5 and L6) are prediction neurons:
+            # - L5: Projects to subcortical targets and other cortex
+            # - L6: Projects to thalamus TRN (modulates sensory input)
+            # Together they form the "prediction representation"
+            prediction_repr_size = self.l5_size + self.l6_size
             self.prediction_layer = PredictiveCodingLayer(
                 PredictiveCodingConfig(
-                    n_input=self.l4_size,              # Predicts L4 input
-                    n_representation=self.l5_size,      # From L5 representation
+                    n_input=self.l4_size,                    # Predicts L4 input
+                    n_representation=prediction_repr_size,    # From L5+L6 combined
                     n_output=self.l4_size,
                     prediction_tau_ms=config.prediction_tau_ms,
                     error_tau_ms=config.error_tau_ms,
@@ -350,6 +365,7 @@ class PredictiveCortex(NeuralComponent):
         self._cumulative_l4_spikes = 0
         self._cumulative_l23_spikes = 0
         self._cumulative_l5_spikes = 0
+        self._cumulative_l6_spikes = 0
 
     def set_oscillator_phases(
         self,
@@ -414,8 +430,8 @@ class PredictiveCortex(NeuralComponent):
     ) -> None:
         """Grow output dimension by delegating to base LayeredCortex.
 
-        This expands all layers (L4, L2/3, L5) proportionally while also
-        updating the prediction layer and attention modules.
+        This expands all layers (L4, L2/3, L5, L6) proportionally while also
+        updating the prediction layer (which uses L5+L6 combined) and attention modules.
 
         Args:
             n_new: Number of neurons to add to total cortex size
@@ -434,6 +450,7 @@ class PredictiveCortex(NeuralComponent):
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
+        self.l6_size = self.cortex.l6_size
 
         # Update output size (note: _output_size initialized in __init__)
         self._output_size = self.l23_size + self.l5_size
@@ -448,10 +465,12 @@ class PredictiveCortex(NeuralComponent):
         # 3. RECREATE PREDICTION LAYER with new sizes
         # =====================================================================
         if self.predictive_config.prediction_enabled:
+            # Use L5+L6 combined as prediction representation (biologically accurate)
+            prediction_repr_size = self.l5_size + self.l6_size
             self.prediction_layer = PredictiveCodingLayer(
                 PredictiveCodingConfig(
                     n_input=self.l4_size,
-                    n_representation=self.l5_size,
+                    n_representation=prediction_repr_size,
                     n_output=self.l4_size,
                     prediction_tau_ms=self.predictive_config.prediction_tau_ms,
                     error_tau_ms=self.predictive_config.error_tau_ms,
@@ -521,6 +540,7 @@ class PredictiveCortex(NeuralComponent):
         l4_output = self.cortex.state.l4_spikes
         l23_output = self.cortex.state.l23_spikes
         l5_output = self.cortex.state.l5_spikes
+        l6_output = self.cortex.state.l6_spikes  # L6 is part of prediction neurons
 
         # Store in state (including original input for learning)
         self.state.input_spikes = input_spikes
@@ -535,19 +555,24 @@ class PredictiveCortex(NeuralComponent):
             self._cumulative_l23_spikes += int(l23_output.sum().item())
         if l5_output is not None:
             self._cumulative_l5_spikes += int(l5_output.sum().item())
+        if l6_output is not None:
+            self._cumulative_l6_spikes += int(l6_output.sum().item())
 
         # =====================================================================
-        # STEP 2: Predictive coding (L5 → L4 prediction, compute error)
+        # STEP 2: Predictive coding (L5+L6 → L4 prediction, compute error)
         # =====================================================================
-        if self.prediction_layer is not None and l5_output is not None:
-            # L5 generates prediction of what L4 should receive
+        if self.prediction_layer is not None and l5_output is not None and l6_output is not None:
+            # L5+L6 together generate prediction of what L4 should receive
+            # L5: Cortical predictions (to other areas, subcortical)
+            # L6: Thalamic predictions (via TRN, modulates sensory gating)
+            # Both deep layers participate in predictive coding
             # NOTE: top_down is for L2/3 modulation, NOT for L4 prediction
-            # The prediction_layer handles L5→L4 predictions internally
             # Convert bool spikes to float for prediction layer (ADR-004)
+            combined_representation = torch.cat([l5_output.float(), l6_output.float()], dim=-1)
             error, prediction, _ = self.prediction_layer(
                 actual_input=l4_output.float(),
-                representation=l5_output.float(),
-                top_down_prediction=None,  # L5→L4 prediction is generated internally
+                representation=combined_representation,
+                top_down_prediction=None,  # L5+L6→L4 prediction is generated internally
             )
 
             self.state.prediction = prediction
@@ -634,11 +659,13 @@ class PredictiveCortex(NeuralComponent):
             "l4_size": self.l4_size,
             "l23_size": self.l23_size,
             "l5_size": self.l5_size,
+            "l6_size": self.l6_size,
             "last_plasticity_delta": getattr(self, "_last_plasticity_delta", 0.0),
             # Cumulative spike counts (since last reset_state)
             "l4_cumulative_spikes": getattr(self, "_cumulative_l4_spikes", 0),
             "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
             "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
+            "l6_cumulative_spikes": getattr(self, "_cumulative_l6_spikes", 0),
         }
 
         # Spike diagnostics for each layer (same format as LayeredCortex)
@@ -735,6 +762,18 @@ class PredictiveCortex(NeuralComponent):
                 })
 
         # Note: Gamma attention state loaded by base LayeredCortex
+
+    def get_l6_spikes(self) -> Optional[torch.Tensor]:
+        """Get L6 corticothalamic feedback spikes.
+
+        L6 is part of the prediction neurons in PredictiveCortex,
+        but also serves the biological function of thalamic feedback
+        via TRN for attentional modulation.
+
+        Returns:
+            L6 spikes [l6_size] or None if not available
+        """
+        return self.cortex.get_l6_spikes()
 
     @property
     def output_size(self) -> int:
