@@ -32,7 +32,7 @@ def cortex_config_with_l6(device):
     """Cortex configuration with L6 layer enabled."""
     return LayeredCortexConfig(
         n_input=128,
-        n_output=256,
+        n_output=320,  # Must equal l23_size + l5_size = 192 + 128
         # Must specify ALL layer sizes (all-or-nothing requirement)
         l4_size=128,   # Input layer
         l23_size=192,  # Processing layer (1.5x)

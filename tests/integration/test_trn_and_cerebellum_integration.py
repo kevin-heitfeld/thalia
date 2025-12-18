@@ -29,7 +29,6 @@ def global_config(device):
     return GlobalConfig(
         device=str(device),
         dt_ms=1.0,
-        n_theta_slots=4,
     )
 
 
@@ -176,23 +175,13 @@ class TestEnhancedCerebellumIntegration:
         # Create custom brain config with enhanced cerebellum
         global_config = GlobalConfig(device=str(device), dt_ms=1.0)
 
-        # Build brain with custom cerebellum config
-        brain_config = BrainConfig(
-            sizes=RegionSizes(
-                thalamus=128,
-                cortex=256,
-                striatum=64,
-                hippocampus=128,
-                prefrontal=64,
-                cerebellum=64,
-            ),
-        )
+        # Build brain with custom config (using BrainBuilder directly)
 
-        builder = BrainBuilder(global_config, brain_config)
+        builder = BrainBuilder(global_config)
 
         # Add regions
-        builder.add_region("thalamus", "thalamus")
-        builder.add_region("cortex", "cortex")
+        builder.add_component("thalamus", "thalamus")
+        builder.add_component("cortex", "cortex")
 
         # Add cerebellum with enhanced microcircuit
         cerebellum_config = CerebellumConfig(
@@ -205,7 +194,7 @@ class TestEnhancedCerebellumIntegration:
             dt_ms=1.0,
             device=str(device),
         )
-        builder.add_region("cerebellum", "cerebellum", config=cerebellum_config)
+        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
 
         # Connect
         builder.connect("thalamus", "cortex", pathway_type="axonal")
@@ -223,17 +212,11 @@ class TestEnhancedCerebellumIntegration:
         global_config = GlobalConfig(device=str(device), dt_ms=1.0)
 
         # Simple brain: input → cerebellum → output
-        brain_config = BrainConfig(
-            sizes=RegionSizes(
-                thalamus=128,
-                cortex=256,
-                cerebellum=64,
-            ),
-        )
+        # Custom brain (no BrainConfig needed, using BrainBuilder)
 
-        builder = BrainBuilder(global_config, brain_config)
-        builder.add_region("thalamus", "thalamus")
-        builder.add_region("cortex", "cortex")
+        builder = BrainBuilder(global_config)
+        builder.add_component("thalamus", "thalamus")
+        builder.add_component("cortex", "cortex")
 
         # Enhanced cerebellum
         cerebellum_config = CerebellumConfig(
@@ -243,7 +226,7 @@ class TestEnhancedCerebellumIntegration:
             dt_ms=1.0,
             device=str(device),
         )
-        builder.add_region("cerebellum", "cerebellum", config=cerebellum_config)
+        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
 
         builder.connect("thalamus", "cortex", pathway_type="axonal")
         builder.connect("cortex", "cerebellum", pathway_type="axonal")
@@ -287,8 +270,8 @@ class TestEnhancedCerebellumIntegration:
         )
 
         builder = BrainBuilder(global_config)
-        builder.add_region("thalamus", "thalamus", n_output=128)
-        builder.add_region("cerebellum", "cerebellum", config=cerebellum_config)
+        builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
+        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
         builder.connect("thalamus", "cerebellum", pathway_type="axonal")
 
         brain = builder.build()
@@ -369,15 +352,9 @@ class TestMultiRegionCoordination:
         global_config = GlobalConfig(device=str(device), dt_ms=1.0)
 
         # Build brain with custom components
-        brain_config = BrainConfig(
-            sizes=RegionSizes(
-                thalamus=128,
-                cortex=256,
-                cerebellum=64,
-            ),
-        )
+        # Custom brain (no BrainConfig needed, using BrainBuilder)
 
-        builder = BrainBuilder(global_config, brain_config)
+        builder = BrainBuilder(global_config)
 
         # Cortex with L6
         cortex_config = LayeredCortexConfig(
@@ -390,8 +367,8 @@ class TestMultiRegionCoordination:
             dt_ms=1.0,
             device=str(device),
         )
-        builder.add_region("thalamus", "thalamus")
-        builder.add_region("cortex", "cortex", config=cortex_config)
+        builder.add_component("thalamus", "thalamus")
+        builder.add_component("cortex", "cortex", config=cortex_config)
 
         # Enhanced cerebellum
         cerebellum_config = CerebellumConfig(
@@ -401,7 +378,7 @@ class TestMultiRegionCoordination:
             dt_ms=1.0,
             device=str(device),
         )
-        builder.add_region("cerebellum", "cerebellum", config=cerebellum_config)
+        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
 
         # Connections
         builder.connect("thalamus", "cortex", pathway_type="axonal")
@@ -454,16 +431,10 @@ class TestSystemRobustness:
         global_config = GlobalConfig(device=str(device), dt_ms=1.0)
 
         # Build brain with enhanced features
-        brain_config = BrainConfig(
-            sizes=RegionSizes(
-                thalamus=128,
-                cortex=256,
-                cerebellum=64,
-            ),
-        )
+        # Custom brain (no BrainConfig needed, using BrainBuilder)
 
-        builder = BrainBuilder(global_config, brain_config)
-        builder.add_region("thalamus", "thalamus")
+        builder = BrainBuilder(global_config)
+        builder.add_component("thalamus", "thalamus")
 
         cortex_config = LayeredCortexConfig(
             n_input=128,
@@ -472,7 +443,7 @@ class TestSystemRobustness:
             dt_ms=1.0,
             device=str(device),
         )
-        builder.add_region("cortex", "cortex", config=cortex_config)
+        builder.add_component("cortex", "cortex", config=cortex_config)
 
         cerebellum_config = CerebellumConfig(
             n_input=256,
@@ -481,7 +452,7 @@ class TestSystemRobustness:
             dt_ms=1.0,
             device=str(device),
         )
-        builder.add_region("cerebellum", "cerebellum", config=cerebellum_config)
+        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
 
         builder.connect("thalamus", "cortex", pathway_type="axonal")
         builder.connect("cortex", "cerebellum", pathway_type="axonal")

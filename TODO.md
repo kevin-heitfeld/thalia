@@ -7,6 +7,7 @@
 
 ---
 
+- Explicit oscillators necessary or should oscillation emerge? How to validate?
 - `docs\design\circuit_modeling_plan.md`
 - Sparse computations throughout?
 - Consciousness / Self-Awareness:

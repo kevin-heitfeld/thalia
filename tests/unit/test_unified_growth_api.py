@@ -28,8 +28,8 @@ from thalia.core.base.component_config import PathwayConfig
 def cortex():
     """Create cortex for testing."""
     config = LayeredCortexConfig(
-        n_input=784,
-        n_output=128,
+        n_input=64,
+        n_output=160,  # Must equal l23_size + l5_size = 96 + 64
         l4_size=64,
         l23_size=96,
         l5_size=64,
@@ -233,20 +233,21 @@ class TestUnifiedGrowthAPI:
     def test_cortex_grow_output_expands_neuron_population(self, cortex):
         """Test that cortex.grow_output() expands output dimension.
 
-        Note: Cortex adds neurons proportionally across layers based on ratios.
-        With default ratios (L4:1.0, L2/3:1.5, L5:1.0), adding n_new=30 results in:
-        - L4 += 30
-        - L2/3 += 45
-        - L5 += 30
-        - Total output (L2/3 + L5) += 75
+        Note: Cortex adds neurons proportionally across layers based on current sizes.
+        With l4=64, l23=96, l5=64, l6=32 (total=256), adding n_new=30 results in:
+        - L4 += 7 (30 * 64/256)
+        - L2/3 += 11 (30 * 96/256)
+        - L5 += 7 (30 * 64/256)
+        - L6 += 3 (30 * 32/256)
+        - Total output (L2/3 + L5) += 18
         """
         initial_output = cortex.config.n_output
 
-        # Grow output by 30 (actual output growth will be 75)
+        # Grow output by 30 (actual output growth will be 18: L2/3:11 + L5:7)
         cortex.grow_output(n_new=30)
 
-        # Verify output dimension expanded by 75 (L2/3:45 + L5:30)
-        assert cortex.config.n_output == initial_output + 75
+        # Verify output dimension expanded by 18 (L2/3:11 + L5:7)
+        assert cortex.config.n_output == initial_output + 18
 
     def test_hippocampus_grow_input_expands_ec_weights(self, hippocampus):
         """Test that hippocampus.grow_input() expands EC input weights."""
@@ -324,10 +325,10 @@ class TestUnifiedGrowthAPI:
 
         # Grow input then output
         cortex.grow_input(20)
-        cortex.grow_output(30)  # Actually adds 75 due to layer ratios
+        cortex.grow_output(30)  # Actually adds 18 due to proportional growth
 
         assert cortex.config.n_input == initial_input + 20
-        assert cortex.config.n_output == initial_output + 75  # 75, not 30
+        assert cortex.config.n_output == initial_output + 18  # 18, not 30
 
     def test_forward_pass_after_unified_growth(self, cortex):
         """Test that forward pass works after using unified growth API."""
