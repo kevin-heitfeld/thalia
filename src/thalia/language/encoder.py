@@ -82,11 +82,6 @@ class SpikeEncoderConfig(SpikeCodingConfig):
     pretrained_embedding: Optional[torch.Tensor] = None
 
     @property
-    def encoding_type(self) -> CodingStrategy:
-        """Alias for coding_strategy (backward compatibility)."""
-        return self.coding_strategy
-
-    @property
     def theta_period_ms(self) -> float:
         """Period of theta oscillation in ms (compatibility)."""
         return self.oscillation_period_ms
@@ -249,7 +244,7 @@ class SpikeEncoder(BaseSpikeEncoder):
 
         # SDR generator (token-specific)
         self.sdr = SparseDistributedRepresentation(config)
-        
+
         # Phase tracking for temporal coding (theta oscillation)
         self.register_buffer('theta_phase', torch.tensor(0.0))
         # Phase increment per timestep (radians)

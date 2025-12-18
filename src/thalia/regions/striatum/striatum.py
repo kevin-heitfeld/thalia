@@ -1712,20 +1712,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             Dictionary with complete region state
         """
         # Delegate to checkpoint manager
-        checkpoint_state = self.checkpoint_manager.get_full_state()
-
-        # Add additional metadata for backward compatibility
-        checkpoint_state.update({
-            "config": self.striatum_config,
-            "n_actions": self.n_actions,
-            "neuromodulator_state": self.get_neuromodulator_state(),
-            "oscillator_state": {},  # Empty for striatum
-        })
-
-        # Add tonic dopamine to neuromodulator state
-        checkpoint_state["neuromodulator_state"]["tonic_dopamine"] = self.tonic_dopamine
-
-        return checkpoint_state
+        return self.checkpoint_manager.get_full_state()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Restore complete state from checkpoint.

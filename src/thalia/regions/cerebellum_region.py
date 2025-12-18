@@ -957,14 +957,7 @@ class Cerebellum(NeuralComponent):
 
         # Restore trace manager state (both pathways)
         region_state = state["region_state"]
-        if "trace_manager" in region_state:
-            self._trace_manager.load_state(region_state["trace_manager"])
-        else:
-            # Backward compatibility: old checkpoints had separate traces
-            if "input_trace" in region_state:
-                self._trace_manager.input_trace.copy_(region_state["input_trace"].to(self.device))
-            if "output_trace" in region_state:
-                self._trace_manager.output_trace.copy_(region_state["output_trace"].to(self.device))
+        self._trace_manager.load_state(region_state["trace_manager"])
 
         # Restore learning state (both pathways)
         learning_state = state["learning_state"]

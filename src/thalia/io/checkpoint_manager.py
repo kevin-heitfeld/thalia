@@ -321,7 +321,7 @@ class CheckpointManager:
         """
         return {
             "regions": len(self.brain.components),
-            "pathways": len(self.brain.pathways),  # Brain has .pathways dict
+            "pathways": len(self.brain.connections),
             "neuromodulators": 3,  # VTA, LC, NB
             "oscillators": 5,  # delta, theta, alpha, beta, gamma
         }

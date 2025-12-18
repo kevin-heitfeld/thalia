@@ -1689,9 +1689,6 @@ class TrisynapticHippocampus(NeuralComponent):
             sequence=sequence,
         )
 
-        # Keep episode_buffer in sync for backward compatibility
-        self.episode_buffer = self.memory.episode_buffer
-
         # =====================================================================
         # AUTOMATIC HER INTEGRATION
         # =====================================================================

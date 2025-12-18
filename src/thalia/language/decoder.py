@@ -84,16 +84,6 @@ class SpikeDecoderConfig(SpikeCodingConfig):
     weight_decay: float = 1e-5
 
     @property
-    def decoding_type(self) -> CodingStrategy:
-        """Alias for coding_strategy (backward compatibility)."""
-        return self.coding_strategy
-
-    @property
-    def integration_tau_ms(self) -> float:
-        """Time constant for spike integration (compatibility)."""
-        return self.tau_ms
-
-    @property
     def decay_factor(self) -> float:
         """Exponential decay factor for leaky integration."""
         return 1.0 - self.dt_ms / self.tau_ms
