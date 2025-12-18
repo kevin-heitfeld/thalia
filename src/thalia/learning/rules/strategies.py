@@ -687,10 +687,10 @@ class BCMStrategy(BaseStrategy):
         self.theta = self.theta.clamp(cfg.theta_min, cfg.theta_max)
 
     def update_threshold(self, post: torch.Tensor) -> None:
-        """Update sliding threshold (public API for backward compatibility).
+        """Update sliding threshold (public API).
 
-        This is an alias for _update_theta() to maintain compatibility with
-        code that used the legacy BCMRule.
+        This is the standard public interface for updating BCM thresholds,
+        matching the API in BCMRule for consistency.
 
         Args:
             post: Postsynaptic activity [n_post] (1D)
