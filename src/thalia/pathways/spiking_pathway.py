@@ -212,11 +212,6 @@ class SpikingPathway(NeuralComponent):
         )
 
         # =====================================================================
-        # BACKWARD COMPATIBILITY PROPERTIES
-        # =====================================================================
-        # Provide access to traces for external code
-
-        # =====================================================================
         # DELAY BUFFER for axonal delays
         # =====================================================================
         max_delay_steps = int(config.axonal_delay_ms * 2 / 1.0) + 1  # Assume dt=1ms
@@ -311,16 +306,6 @@ class SpikingPathway(NeuralComponent):
             device=config.device,
         )
         self.homeostasis = UnifiedHomeostasis(homeostasis_config)
-
-    @property
-    def pre_trace(self) -> torch.Tensor:
-        """Pre-synaptic trace (backward compatibility)."""
-        return self._trace_manager.input_trace
-
-    @property
-    def post_trace(self) -> torch.Tensor:
-        """Post-synaptic trace (backward compatibility)."""
-        return self._trace_manager.output_trace
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create neuron model for pathway.
@@ -657,8 +642,8 @@ class SpikingPathway(NeuralComponent):
             diagnostics["firing_rate_mean"] = 0.0
 
         # Eligibility traces using mixin helper
-        diagnostics.update(self.trace_diagnostics(self.pre_trace, prefix="pre"))
-        diagnostics.update(self.trace_diagnostics(self.post_trace, prefix="post"))
+        diagnostics.update(self.trace_diagnostics(self._trace_manager.input_trace, prefix="pre"))
+        diagnostics.update(self.trace_diagnostics(self._trace_manager.output_trace, prefix="post"))
 
         # Oscillation and neuromodulation state
         diagnostics["oscillation_phase"] = self.oscillation_phase
@@ -725,7 +710,7 @@ class SpikingPathway(NeuralComponent):
         """
         n_neurons = self.config.n_output
         n_connections = self.weights.numel()
-        
+
         # Count effective (non-zero) connections
         effective = (self.weights.abs() > 1e-6).sum().item()
         sparsity = 1.0 - (effective / n_connections)
@@ -1079,8 +1064,8 @@ class SpikingPathway(NeuralComponent):
                 "synaptic_current": self.synaptic_current.clone(),
             },
             "stdp_traces": {
-                "pre_trace": self.pre_trace.clone(),
-                "post_trace": self.post_trace.clone(),
+                "pre_trace": self._trace_manager.input_trace.clone(),
+                "post_trace": self._trace_manager.output_trace.clone(),
             },
             "delays": {
                 "buffer": self.delay_buffer.clone(),
@@ -1132,8 +1117,8 @@ class SpikingPathway(NeuralComponent):
 
         # Restore STDP traces
         stdp_traces = state["stdp_traces"]
-        self.pre_trace.copy_(stdp_traces["pre_trace"].to(device))
-        self.post_trace.copy_(stdp_traces["post_trace"].to(device))
+        self._trace_manager.input_trace.copy_(stdp_traces["pre_trace"].to(device))
+        self._trace_manager.output_trace.copy_(stdp_traces["post_trace"].to(device))
 
         # Restore delay buffer
         delays = state["delays"]

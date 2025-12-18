@@ -372,7 +372,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             # Compute budget from initialized weights (per-action sum of D1+D2)
             # This ensures the budget matches the actual weight scale
             with torch.no_grad():
-                d1_d2_sum = self.d1_weights.sum() + self.d2_weights.sum()
+                d1_d2_sum = self.d1_pathway.weights.sum() + self.d2_pathway.weights.sum()
                 dynamic_budget = (d1_d2_sum / self.n_actions).item()
 
             homeostasis_config = HomeostasisManagerConfig(
@@ -585,38 +585,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     # =========================================================================
     # PATHWAY DELEGATION PROPERTIES
     # =========================================================================
-    # These properties delegate to D1/D2 pathway objects for backward compatibility.
-    # Old code accesses self.d1_weights, self.d2_weights, etc.
-
-    @property
-    def d1_weights(self) -> nn.Parameter:
-        """D1 pathway weights (delegates to d1_pathway)."""
-        return self.d1_pathway.weights
-
-    @property
-    def d2_weights(self) -> nn.Parameter:
-        """D2 pathway weights (delegates to d2_pathway)."""
-        return self.d2_pathway.weights
-
-    @property
-    def d1_eligibility(self) -> torch.Tensor:
-        """D1 eligibility traces (delegates to d1_pathway)."""
-        return self.d1_pathway.eligibility
-
-    @d1_eligibility.setter
-    def d1_eligibility(self, value: torch.Tensor) -> None:
-        """Set D1 eligibility traces."""
-        self.d1_pathway.eligibility = value
-
-    @property
-    def d2_eligibility(self) -> torch.Tensor:
-        """D2 eligibility traces (delegates to d2_pathway)."""
-        return self.d2_pathway.eligibility
-
-    @d2_eligibility.setter
-    def d2_eligibility(self, value: torch.Tensor) -> None:
-        """Set D2 eligibility traces."""
-        self.d2_pathway.eligibility = value
+    # Kept properties for neurons which are accessed frequently
 
     @property
     def d1_neurons(self) -> ConductanceLIF:
@@ -878,9 +847,6 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             scale=self.config.w_max * 0.2,
         )
 
-        # Update generic weights reference (use d1_weights for compatibility)
-        self.weights = self.d1_weights
-
         # =====================================================================
         # 2. UPDATE CONFIG (DO THIS BEFORE CREATING NEURONS!)
         # =====================================================================
@@ -907,8 +873,8 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # =====================================================================
         # Build state dict for all 2D tensors [n_neurons, dim]
         state_2d = {
-            'd1_eligibility': self.d1_eligibility,
-            'd2_eligibility': self.d2_eligibility,
+            'd1_eligibility': self.d1_pathway.eligibility,
+            'd2_eligibility': self.d2_pathway.eligibility,
         }
 
         # Add TD-lambda traces if present
@@ -919,8 +885,8 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         # Expand all 2D state tensors at once
         expanded_2d = self._expand_state_tensors(state_2d, n_new_neurons)
-        self.d1_eligibility = expanded_2d['d1_eligibility']
-        self.d2_eligibility = expanded_2d['d2_eligibility']
+        self.d1_pathway.eligibility = expanded_2d['d1_eligibility']
+        self.d2_pathway.eligibility = expanded_2d['d2_eligibility']
         if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
             self.td_lambda_d1.traces.traces = expanded_2d['td_lambda_d1_traces']
             self.td_lambda_d1.traces.n_output = new_n_output
@@ -1223,16 +1189,13 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self.forward_coordinator.set_neuromodulators(norepinephrine=self.state.norepinephrine)
         self.forward_coordinator.set_tonic_dopamine(self.tonic_dopamine)
 
-    def _initialize_weights(self) -> torch.Tensor:
-        """Initialize with small positive weights."""
-        weights = WeightInitializer.uniform(
-            n_output=self.config.n_output,
-            n_input=self.config.n_input,
-            low=0.0,
-            high=self.config.w_max * 0.2,
-            device=self.device
-        )
-        return clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
+    def _initialize_weights(self) -> Optional[nn.Parameter]:
+        """Striatum uses D1/D2 pathway weights, not base class weights.
+
+        Returns None because striatum manages weights via d1_pathway and d2_pathway.
+        Each pathway has its own weight matrix initialized via _initialize_pathway_weights().
+        """
+        return None
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create MSN-like neurons (legacy - kept for parent class compatibility).
@@ -1644,8 +1607,8 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
         for action in range(self.n_actions):
             pop_slice = self._get_action_population_indices(action)
-            d1_mean = self.d1_weights[pop_slice, :].mean().item()
-            d2_mean = self.d2_weights[pop_slice, :].mean().item()
+            d1_mean = self.d1_pathway.weights[pop_slice, :].mean().item()
+            d2_mean = self.d2_pathway.weights[pop_slice, :].mean().item()
             d1_per_action.append(d1_mean)
             d2_per_action.append(d2_mean)
             net_per_action.append(d1_mean - d2_mean)
@@ -1659,11 +1622,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         net_votes_list = net_votes.tolist()
 
         # Use mixin helpers for weight statistics
-        d1_weight_stats = self.weight_diagnostics(self.d1_weights, "d1")
-        d2_weight_stats = self.weight_diagnostics(self.d2_weights, "d2")
+        d1_weight_stats = self.weight_diagnostics(self.d1_pathway.weights, "d1")
+        d2_weight_stats = self.weight_diagnostics(self.d2_pathway.weights, "d2")
 
         # Additional NET statistics
-        net_weights = self.d1_weights - self.d2_weights
+        net_weights = self.d1_pathway.weights - self.d2_pathway.weights
         net_stats = {
             "net_weight_mean": net_weights.mean().item(),
             "net_weight_std": net_weights.std().item(),
@@ -1740,8 +1703,8 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         return self.collect_standard_diagnostics(
             region_name="striatum",
             trace_tensors={
-                "d1_elig": self.d1_eligibility,
-                "d2_elig": self.d2_eligibility,
+                "d1_elig": self.d1_pathway.eligibility,
+                "d2_elig": self.d2_pathway.eligibility,
             },
             custom_metrics=custom,
         )

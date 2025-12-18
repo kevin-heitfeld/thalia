@@ -108,17 +108,17 @@ def test_bidirectional_growth_sequence(simple_pathway):
 def test_grow_output_preserves_traces(simple_pathway):
     """Test that grow_output() expands post-synaptic traces."""
     initial_output_size = simple_pathway.config.n_output
-    initial_post_trace = simple_pathway.post_trace.clone()
+    initial_post_trace = simple_pathway._trace_manager.output_trace.clone()
 
     simple_pathway.grow_output(n_new=10)
 
     # Verify post_trace expanded
-    assert simple_pathway.post_trace.shape[0] == initial_output_size + 10, \
+    assert simple_pathway._trace_manager.output_trace.shape[0] == initial_output_size + 10, \
         "Post-synaptic trace should expand with target"
 
     # Old traces should be preserved
     assert torch.allclose(
-        simple_pathway.post_trace[:initial_output_size],
+        simple_pathway._trace_manager.output_trace[:initial_output_size],
         initial_post_trace,
         atol=1e-6
     ), "Old post-synaptic traces should be preserved"
@@ -127,17 +127,17 @@ def test_grow_output_preserves_traces(simple_pathway):
 def test_grow_input_preserves_traces(simple_pathway):
     """Test that grow_input() expands pre-synaptic traces."""
     initial_input_size = simple_pathway.config.n_input
-    initial_pre_trace = simple_pathway.pre_trace.clone()
+    initial_pre_trace = simple_pathway._trace_manager.input_trace.clone()
 
     simple_pathway.grow_input(n_new=15)
 
     # Verify pre_trace expanded
-    assert simple_pathway.pre_trace.shape[0] == initial_input_size + 15, \
+    assert simple_pathway._trace_manager.input_trace.shape[0] == initial_input_size + 15, \
         "Pre-synaptic trace should expand with source"
 
     # Old traces should be preserved
     assert torch.allclose(
-        simple_pathway.pre_trace[:initial_input_size],
+        simple_pathway._trace_manager.input_trace[:initial_input_size],
         initial_pre_trace,
         atol=1e-6
     ), "Old pre-synaptic traces should be preserved"

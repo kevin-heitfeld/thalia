@@ -2272,13 +2272,13 @@ class DynamicBrain(nn.Module):
             end = start + neurons_per
 
             # Safe access to weights (might be None)
-            if hasattr(striatum, 'd1_weights') and striatum.d1_weights is not None:
-                d1_mean = striatum.d1_weights[start:end].mean().item()
+            if hasattr(striatum, 'd1_pathway') and hasattr(striatum.d1_pathway, 'weights') and striatum.d1_pathway.weights is not None:
+                d1_mean = striatum.d1_pathway.weights[start:end].mean().item()
             else:
                 d1_mean = 0.0
 
-            if hasattr(striatum, 'd2_weights') and striatum.d2_weights is not None:
-                d2_mean = striatum.d2_weights[start:end].mean().item()
+            if hasattr(striatum, 'd2_pathway') and hasattr(striatum.d2_pathway, 'weights') and striatum.d2_pathway.weights is not None:
+                d2_mean = striatum.d2_pathway.weights[start:end].mean().item()
             else:
                 d2_mean = 0.0
 
@@ -2293,12 +2293,12 @@ class DynamicBrain(nn.Module):
             start = a * neurons_per
             end = start + neurons_per
             # Safe access to eligibility traces (might be None)
-            if hasattr(striatum, 'd1_eligibility') and striatum.d1_eligibility is not None:
-                d1_elig_per_action.append(striatum.d1_eligibility[start:end].abs().mean().item())
+            if hasattr(striatum, 'd1_pathway') and hasattr(striatum.d1_pathway, 'eligibility') and striatum.d1_pathway.eligibility is not None:
+                d1_elig_per_action.append(striatum.d1_pathway.eligibility[start:end].abs().mean().item())
             else:
                 d1_elig_per_action.append(0.0)
-            if hasattr(striatum, 'd2_eligibility') and striatum.d2_eligibility is not None:
-                d2_elig_per_action.append(striatum.d2_eligibility[start:end].abs().mean().item())
+            if hasattr(striatum, 'd2_pathway') and hasattr(striatum.d2_pathway, 'eligibility') and striatum.d2_pathway.eligibility is not None:
+                d2_elig_per_action.append(striatum.d2_pathway.eligibility[start:end].abs().mean().item())
             else:
                 d2_elig_per_action.append(0.0)
 

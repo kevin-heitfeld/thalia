@@ -158,8 +158,8 @@ class ActionSelectionMixin:
             start = action * self.neurons_per_action
             end = start + self.neurons_per_action
 
-            d1_mean = self.d1_weights[start:end].mean().item()
-            d2_mean = self.d2_weights[start:end].mean().item()
+            d1_mean = self.d1_pathway.weights[start:end].mean().item()
+            d2_mean = self.d2_pathway.weights[start:end].mean().item()
             nets.append(d1_mean - d2_mean)
 
         return nets

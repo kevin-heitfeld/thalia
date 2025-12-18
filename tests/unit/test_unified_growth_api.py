@@ -276,8 +276,8 @@ class TestUnifiedGrowthAPI:
         """Test that striatum.grow_input() expands D1/D2 pathway weights."""
         initial_input = striatum.config.n_input
         initial_output = striatum.config.n_output
-        initial_d1 = striatum.d1_weights.data.clone()
-        initial_d2 = striatum.d2_weights.data.clone()
+        initial_d1 = striatum.d1_pathway.weights.data.clone()
+        initial_d2 = striatum.d2_pathway.weights.data.clone()
 
         # Grow input by 30
         striatum.grow_input(n_new=30)
@@ -286,21 +286,21 @@ class TestUnifiedGrowthAPI:
         assert striatum.config.n_input == initial_input + 30
 
         # Verify D1 weights expanded
-        assert striatum.d1_weights.shape[0] == initial_output
-        assert striatum.d1_weights.shape[1] == initial_input + 30
+        assert striatum.d1_pathway.weights.shape[0] == initial_output
+        assert striatum.d1_pathway.weights.shape[1] == initial_input + 30
 
         # Verify D2 weights expanded
-        assert striatum.d2_weights.shape[0] == initial_output
-        assert striatum.d2_weights.shape[1] == initial_input + 30
+        assert striatum.d2_pathway.weights.shape[0] == initial_output
+        assert striatum.d2_pathway.weights.shape[1] == initial_input + 30
 
         # Verify old weights preserved
         assert torch.allclose(
-            striatum.d1_weights.data[:, :initial_input],
+            striatum.d1_pathway.weights.data[:, :initial_input],
             initial_d1,
             atol=1e-6
         )
         assert torch.allclose(
-            striatum.d2_weights.data[:, :initial_input],
+            striatum.d2_pathway.weights.data[:, :initial_input],
             initial_d2,
             atol=1e-6
         )
