@@ -10,10 +10,6 @@ Components:
 - EpisodicStore: Long-term episodic memory storage
 - Consolidation: Memory pressure detection and sleep-based replay
 - Advanced Consolidation: Schema extraction, semantic reorganization, interference resolution
-
-Configuration:
-- Use ``thalia.config.SequenceMemoryConfig`` for new code
-- Legacy ``SequenceMemoryConfig`` here is deprecated
 """
 
 from thalia.memory.sequence import (
@@ -46,12 +42,8 @@ from thalia.memory.consolidation.advanced_consolidation import (
     run_advanced_consolidation,
 )
 
-# Re-export from canonical location for backwards compatibility
-from thalia.config import SequenceMemoryConfig
-
 __all__ = [
     "SequenceMemory",
-    "SequenceMemoryConfig",
     "SequenceContext",
     "ContextBuffer",
     "ContextBufferConfig",
