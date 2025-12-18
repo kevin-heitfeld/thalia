@@ -444,27 +444,32 @@ class BrainBuilder:
             has_l4 = "l4_size" in config and config["l4_size"] is not None
             has_l23 = "l23_size" in config and config["l23_size"] is not None
             has_l5 = "l5_size" in config and config["l5_size"] is not None
-            explicit_count = sum([has_l4, has_l23, has_l5])
+            has_l6 = "l6_size" in config and config["l6_size"] is not None
+            explicit_count = sum([has_l4, has_l23, has_l5, has_l6])
 
-            if explicit_count > 0 and explicit_count < 3:
+            if explicit_count > 0 and explicit_count < 4:
                 raise ValueError(
                     f"BrainBuilder: Cortex '{source_name}' has partial explicit layer sizes. "
-                    f"Got {explicit_count}/3 sizes specified (l4_size, l23_size, l5_size). "
-                    f"Either provide all three explicit sizes, or provide none to use ratio-based sizing."
+                    f"Got {explicit_count}/4 sizes specified (l4_size, l23_size, l5_size, l6_size). "
+                    f"Either provide all four explicit sizes, or provide none to use ratio-based sizing."
                 )
 
-            if explicit_count == 3:
+            if explicit_count == 4:
                 # Explicit layer sizes provided
                 l4_size = config["l4_size"]
                 l23_size = config["l23_size"]
                 l5_size = config["l5_size"]
+                l6_size = config["l6_size"]
             else:
                 # Legacy: Calculate from ratios
                 l4_ratio = config.get("l4_ratio", LayeredCortexConfig.l4_ratio)
                 l23_ratio = config.get("l23_ratio", LayeredCortexConfig.l23_ratio)
                 l5_ratio = config.get("l5_ratio", LayeredCortexConfig.l5_ratio)
+                l6_ratio = config.get("l6_ratio", LayeredCortexConfig.l6_ratio)
                 n_output = config["n_output"]
-                l4_size, l23_size, l5_size = calculate_layer_sizes(n_output, l4_ratio, l23_ratio, l5_ratio)
+                l4_size, l23_size, l5_size, l6_size = calculate_layer_sizes(
+                    n_output, l4_ratio, l23_ratio, l5_ratio, l6_ratio
+                )
 
             # Return layer-specific size
             if source_port == "l23":
@@ -473,6 +478,8 @@ class BrainBuilder:
                 return l5_size
             elif source_port == "l4":
                 return l4_size
+            elif source_port == "l6":
+                return l6_size
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -506,6 +513,8 @@ class BrainBuilder:
                 return source_comp.l5_size
             elif source_port == "l4" and hasattr(source_comp, 'l4_size'):
                 return source_comp.l4_size
+            elif source_port == "l6" and hasattr(source_comp, 'l6_size'):
+                return source_comp.l6_size
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -1153,6 +1162,10 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
 
     # Thalamus → Cortex: Thalamocortical projection
     builder.connect("thalamus", "cortex", pathway_type="axonal")
+
+    # Cortex L6 → Thalamus: Corticothalamic feedback for attentional modulation
+    # L6 projects to TRN to implement selective attention (feedback loop)
+    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6")
 
     # Cortex ⇄ Hippocampus: Bidirectional memory integration
     builder.connect("cortex", "hippocampus", pathway_type="axonal")

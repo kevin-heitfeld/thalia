@@ -23,7 +23,13 @@ from thalia.components.neurons.neuron_constants import ADAPT_INCREMENT_CORTEX_L2
 from .robustness_config import RobustnessConfig
 
 
-def calculate_layer_sizes(n_output: int, l4_ratio: float, l23_ratio: float, l5_ratio: float) -> tuple[int, int, int]:
+def calculate_layer_sizes(
+    n_output: int,
+    l4_ratio: float,
+    l23_ratio: float,
+    l5_ratio: float,
+    l6_ratio: float = 0.5
+) -> tuple[int, int, int, int]:
     """Calculate layer sizes from output size and ratios.
 
     Args:
@@ -31,9 +37,10 @@ def calculate_layer_sizes(n_output: int, l4_ratio: float, l23_ratio: float, l5_r
         l4_ratio: L4 size as ratio of n_output (typically 1.0)
         l23_ratio: L2/3 size as ratio of n_output (typically 1.5)
         l5_ratio: L5 size as ratio of n_output (typically 1.0)
+        l6_ratio: L6 size as ratio of n_output (typically 0.5)
 
     Returns:
-        Tuple of (l4_size, l23_size, l5_size)
+        Tuple of (l4_size, l23_size, l5_size, l6_size)
 
     Note:
         This is the canonical calculation used throughout the codebase.
@@ -42,7 +49,8 @@ def calculate_layer_sizes(n_output: int, l4_ratio: float, l23_ratio: float, l5_r
     l4_size = int(n_output * l4_ratio)
     l23_size = int(n_output * l23_ratio)
     l5_size = int(n_output * l5_ratio)
-    return l4_size, l23_size, l5_size
+    l6_size = int(n_output * l6_ratio)
+    return l4_size, l23_size, l5_size, l6_size
 
 
 class CorticalLayer(Enum):
@@ -72,17 +80,20 @@ class LayeredCortexConfig(NeuralComponentConfig):
     l4_size: Optional[int] = None    # Input layer (typically same as base)
     l23_size: Optional[int] = None   # Processing layer (typically 1.5x base)
     l5_size: Optional[int] = None    # Output layer (typically same as base)
+    l6_size: Optional[int] = None    # Corticothalamic feedback layer (typically 0.5x base)
 
     # Legacy: Layer size ratios (DEPRECATED - only used if explicit sizes not set)
     # These are kept for backward compatibility but should not be used in new code
     l4_ratio: float = 1.0  # Input layer (deprecated)
     l23_ratio: float = 1.5  # Processing layer (deprecated)
     l5_ratio: float = 1.0  # Output layer (deprecated)
+    l6_ratio: float = 0.5  # Feedback layer (deprecated)
 
     # Layer sparsity (fraction of neurons active)
     l4_sparsity: float = 0.15  # Moderate sparsity
     l23_sparsity: float = 0.10  # Sparser (more selective)
     l5_sparsity: float = 0.20  # Less sparse (motor commands)
+    l6_sparsity: float = 0.12  # Slightly more sparse than L2/3
 
     # Recurrence in L2/3
     l23_recurrent_strength: float = 0.3  # Lateral connection strength
@@ -97,9 +108,21 @@ class LayeredCortexConfig(NeuralComponentConfig):
     input_to_l4_strength: float = 2.0  # External input → L4 (was 1.0, too weak for sparse input)
     l4_to_l23_strength: float = 1.5    # L4 → L2/3 (was 0.4, too weak)
     l23_to_l5_strength: float = 1.5    # L2/3 → L5 (was 0.4, too weak)
+    l23_to_l6_strength: float = 1.2    # L2/3 → L6 (corticothalamic feedback)
 
     # Top-down modulation (for attention pathway)
     l23_top_down_strength: float = 0.2  # Feedback to L2/3
+
+    # L6 corticothalamic feedback strength
+    l6_to_trn_strength: float = 0.8  # L6 → TRN feedback (moderate, modulates thalamus)
+
+    # Spillover transmission (volume transmission)
+    # Enable in cortex L2/3 and L5 where experimentally documented
+    # (Agnati et al. 2010, Fuxe & Agnati 1991, Zoli et al. 1999)
+    # Cortical spillover contributes to lateral excitation and feature binding
+    enable_spillover: bool = True  # Override base config (disabled by default)
+    spillover_mode: str = "connectivity"  # Use shared inputs for neighborhood
+    spillover_strength: float = 0.15  # 15% of direct synaptic strength (biological range)
 
     # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
     # are inherited from NeuralComponentConfig
@@ -146,12 +169,16 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # Biological signal propagation times within cortical laminae:
     # - L4→L2/3: ~2ms (short vertical projection)
     # - L2/3→L5: ~2ms (longer vertical projection)
+    # - L2/3→L6: ~2ms (within column, short projection)
+    # - L6→TRN: ~10ms (corticothalamic feedback, long-range)
     # Total laminar processing: ~4ms (much faster than processing timescales)
     #
     # Set to 0.0 for instant processing (current behavior, backward compatible)
     # Set to biological values for realistic temporal dynamics and STDP timing
     l4_to_l23_delay_ms: float = 0.0  # L4→L2/3 axonal delay (0=instant)
     l23_to_l5_delay_ms: float = 0.0  # L2/3→L5 axonal delay (0=instant)
+    l23_to_l6_delay_ms: float = 0.0  # L2/3→L6 axonal delay (0=instant)
+    l6_to_trn_delay_ms: float = 0.0  # L6→TRN feedback delay (0=instant, ~10ms biological)
 
     # Gamma-based attention (spike-native phase gating for L2/3)
     # Always enabled for spike-native attention
@@ -197,6 +224,7 @@ class LayeredCortexState(NeuralComponentState):
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None
+    l6_spikes: Optional[torch.Tensor] = None  # Corticothalamic feedback spikes
 
     # L2/3 recurrent activity (accumulated over time)
     l23_recurrent_activity: Optional[torch.Tensor] = None
@@ -205,6 +233,7 @@ class LayeredCortexState(NeuralComponentState):
     l4_trace: Optional[torch.Tensor] = None
     l23_trace: Optional[torch.Tensor] = None
     l5_trace: Optional[torch.Tensor] = None
+    l6_trace: Optional[torch.Tensor] = None  # L6 trace for feedback plasticity
 
     # Top-down modulation state
     top_down_modulation: Optional[torch.Tensor] = None

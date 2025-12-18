@@ -74,7 +74,7 @@ from thalia.regions.base import NeuralComponent, LearningRule, NeuralComponentSt
 from thalia.regions.factory import RegionFactory, RegionRegistry, register_region
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig  # Now from cerebellum/__init__.py
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 from thalia.regions.hippocampus import (

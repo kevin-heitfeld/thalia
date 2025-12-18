@@ -68,6 +68,14 @@ class HippocampusConfig(NeuralComponentConfig):
 
     # Coincidence detection for comparison
     coincidence_window: float = 5.0  # ms window for spike coincidence
+
+    # Spillover transmission (volume transmission)
+    # Enable in hippocampus CA1 and CA3 where experimentally documented
+    # (Vizi et al. 1999, Agnati et al. 2010, Sykova 2004)
+    # Hippocampal spillover supports pattern completion and memory integration
+    enable_spillover: bool = True  # Override base config (disabled by default)
+    spillover_mode: str = "connectivity"  # Use shared inputs for neighborhood
+    spillover_strength: float = 0.18  # 18% for CA regions (slightly higher than cortex)
     match_threshold: float = 0.3     # Fraction of coincident spikes for match
 
     # NMDA receptor parameters for CA1 coincidence detection

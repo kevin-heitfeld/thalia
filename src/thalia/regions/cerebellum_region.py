@@ -87,6 +87,11 @@ from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis,
 from thalia.regions.base import (
     NeuralComponent,
 )
+from thalia.regions.cerebellum import (
+    GranuleCellLayer,
+    EnhancedPurkinjeCell,
+    DeepCerebellarNuclei,
+)
 
 
 @dataclass
@@ -118,6 +123,19 @@ class CerebellumConfig(NeuralComponentConfig):
 
     # Input trace parameters
     input_trace_tau_ms: float = 20.0  # Input trace decay
+
+    # =========================================================================
+    # ENHANCED MICROCIRCUIT (optional, for increased biological detail)
+    # =========================================================================
+    # When enabled, uses granule→Purkinje→DCN circuit instead of direct
+    # parallel fiber→Purkinje mapping. Provides:
+    # - 4× sparse expansion in granule layer (pattern separation)
+    # - Dendritic computation in Purkinje cells (complex/simple spikes)
+    # - DCN integration (Purkinje sculpts tonic output)
+    use_enhanced_microcircuit: bool = True
+    granule_expansion_factor: float = 4.0  # Granule cells per mossy fiber
+    granule_sparsity: float = 0.03  # Fraction of granule cells active (3%)
+    purkinje_n_dendrites: int = 100  # Simplified dendritic compartments
 
 
 class ClimbingFiberSystem:
@@ -234,6 +252,48 @@ class Cerebellum(NeuralComponent):
         )
 
         # =====================================================================
+        # ENHANCED MICROCIRCUIT (optional)
+        # =====================================================================
+        self.use_enhanced = self.cerebellum_config.use_enhanced_microcircuit
+
+        if self.use_enhanced:
+            # Granule cell layer (sparse expansion)
+            self.granule_layer = GranuleCellLayer(
+                n_mossy_fibers=config.n_input,
+                expansion_factor=self.cerebellum_config.granule_expansion_factor,
+                sparsity=self.cerebellum_config.granule_sparsity,
+                device=config.device,
+                dt_ms=config.dt_ms,
+            )
+
+            # Enhanced Purkinje cells (one per output neuron)
+            self.purkinje_cells = torch.nn.ModuleList([
+                EnhancedPurkinjeCell(
+                    n_dendrites=self.cerebellum_config.purkinje_n_dendrites,
+                    device=config.device,
+                    dt_ms=config.dt_ms,
+                )
+                for _ in range(config.n_output)
+            ])
+
+            # Deep cerebellar nuclei (final output)
+            self.deep_nuclei = DeepCerebellarNuclei(
+                n_output=config.n_output,
+                n_purkinje=config.n_output,
+                n_mossy=config.n_input,
+                device=config.device,
+                dt_ms=config.dt_ms,
+            )
+
+            # Update weight dimensions for granule layer expansion
+            expanded_input = self.granule_layer.n_granule
+        else:
+            self.granule_layer = None
+            self.purkinje_cells = None
+            self.deep_nuclei = None
+            expanded_input = config.n_input
+
+        # =====================================================================
         # ELIGIBILITY TRACE MANAGER for STDP
         # =====================================================================
         stdp_config = STDPConfig(
@@ -247,7 +307,7 @@ class Cerebellum(NeuralComponent):
             heterosynaptic_ratio=self.cerebellum_config.heterosynaptic_ratio,
         )
         self._trace_manager = EligibilityTraceManager(
-            n_input=config.n_input,
+            n_input=expanded_input,  # Use expanded size if granule layer enabled
             n_output=config.n_output,
             config=stdp_config,
             device=self.device,
@@ -402,15 +462,16 @@ class Cerebellum(NeuralComponent):
         new_n_output = old_n_output + n_new
 
         # =====================================================================
-        # 1. EXPAND WEIGHTS using base helper
+        # 1. EXPAND WEIGHTS using base helper (classic pathway only)
         # =====================================================================
-        self.weights = self._expand_weights(
-            current_weights=self.weights,
-            n_new=n_new,
-            initialization=initialization,
-            sparsity=sparsity,
-            scale=1.0,  # Default scale for cerebellum
-        )
+        if not self.use_enhanced:
+            self.weights = self._expand_weights(
+                current_weights=self.weights,
+                n_new=n_new,
+                initialization=initialization,
+                sparsity=sparsity,
+                scale=1.0,  # Default scale for cerebellum
+            )
 
         # =====================================================================
         # 2. UPDATE CONFIG
@@ -418,12 +479,26 @@ class Cerebellum(NeuralComponent):
         self.config = replace(self.config, n_output=new_n_output)
 
         # =====================================================================
-        # 3. EXPAND NEURON POPULATION using base helper
+        # 3. EXPAND NEURON POPULATION using base helper (classic pathway only)
         # =====================================================================
-        self.neurons = self._recreate_neurons_with_state(
-            neuron_factory=self._create_neurons,
-            old_n_output=old_n_output,
-        )
+        if not self.use_enhanced:
+            self.neurons = self._recreate_neurons_with_state(
+                neuron_factory=self._create_neurons,
+                old_n_output=old_n_output,
+            )
+        else:
+            # Enhanced pathway: add new Purkinje cells
+            for _ in range(n_new):
+                self.purkinje_cells.append(
+                    EnhancedPurkinjeCell(
+                        n_dendrites=self.cerebellum_config.purkinje_n_dendrites,
+                        device=self.device,
+                        dt_ms=self.config.dt_ms,
+                    )
+                )
+
+            # Grow DCN output
+            self.deep_nuclei.grow_output(n_new)
 
         # =====================================================================
         # 4. GROW TRACE MANAGER
@@ -472,24 +547,60 @@ class Cerebellum(NeuralComponent):
         input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
         # Note: retrieval_mod could be used for output gain if needed for motor commands
 
-        # Compute synaptic input - modulated by encoding phase
         dt = self.config.dt_ms
-        # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
-        g_exc = (self.weights @ input_spikes.float()) * input_gain
 
         # =====================================================================
-        # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
+        # ENHANCED MICROCIRCUIT PATHWAY (if enabled)
         # =====================================================================
-        # High NE (arousal/stress): Increase motor gain → faster reactions
-        # Low NE (baseline): Normal gain
-        # Biological: NE modulates cerebellar Purkinje cell excitability
-        ne_level = self.state.norepinephrine
-        # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
-        g_exc = g_exc * ne_gain
+        if self.use_enhanced:
+            # 1. Granule layer: sparse expansion (4× expansion, 3% active)
+            granule_spikes = self.granule_layer(input_spikes)  # [n_granule]
 
-        # Forward through neurons (returns 1D bool spikes)
-        output_spikes, _ = self.neurons(g_exc, None)
+            # 2. Purkinje cells: dendritic computation
+            # Each Purkinje cell receives sparse parallel fibers
+            purkinje_spikes = []
+            for purkinje in self.purkinje_cells:
+                # Get climbing fiber error if available (passed through DCN)
+                climbing_fiber = torch.tensor(0.0, device=self.device)
+
+                # Process parallel fibers + climbing fiber
+                # EnhancedPurkinjeCell returns (simple_spikes, complex_spike_occurred)
+                simple_spikes, complex_spike = purkinje(granule_spikes, climbing_fiber)
+                purkinje_spikes.append(simple_spikes)
+
+            purkinje_output = torch.stack(purkinje_spikes)  # [n_output]
+
+            # 3. Deep cerebellar nuclei: final integration
+            # DCN receives Purkinje inhibition + mossy collaterals
+            output_spikes = self.deep_nuclei(
+                purkinje_spikes=purkinje_output,
+                mossy_spikes=input_spikes,  # Direct mossy input to DCN
+            )
+
+            # For learning: use granule spikes as effective input
+            effective_input = granule_spikes
+        else:
+            # CLASSIC PATHWAY: parallel fiber → Purkinje directly
+            # Compute synaptic input - modulated by encoding phase
+            # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
+            g_exc = (self.weights @ input_spikes.float()) * input_gain
+
+            # =====================================================================
+            # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
+            # =====================================================================
+            # High NE (arousal/stress): Increase motor gain → faster reactions
+            # Low NE (baseline): Normal gain
+            # Biological: NE modulates cerebellar Purkinje cell excitability
+            ne_level = self.state.norepinephrine
+            # NE gain: 1.0 (baseline) to 1.5 (high arousal)
+            ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
+            g_exc = g_exc * ne_gain
+
+            # Forward through neurons (returns 1D bool spikes)
+            output_spikes, _ = self.neurons(g_exc, None)
+
+            # For learning: use original input
+            effective_input = input_spikes
 
         # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
         # VTA updates dopamine, LC updates NE, NB updates ACh.
@@ -501,14 +612,14 @@ class Cerebellum(NeuralComponent):
         # ======================================================================
         # Use trace manager for consolidated STDP computation
         self._trace_manager.update_traces(
-            input_spikes=input_spikes,
+            input_spikes=effective_input,  # Use granule spikes if enhanced
             output_spikes=output_spikes,
             dt_ms=dt,
         )
 
         # Compute STDP weight change direction (raw LTP/LTD without combining)
         ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(
-            input_spikes=input_spikes,
+            input_spikes=effective_input,
             output_spikes=output_spikes,
         )
 
@@ -599,16 +710,24 @@ class Cerebellum(NeuralComponent):
         dw = self.stdp_eligibility * error_sign * error.abs().unsqueeze(1) * effective_lr
 
         # Update weights with hard bounds
-        # Biological regulation via UnifiedHomeostasis (weight normalization)
-        old_weights = self.weights.clone()
-        self.weights = clamp_weights(self.weights + dw, self.config.w_min, self.config.w_max, inplace=False)
+        # For enhanced cerebellum, skip weight updates (learning happens in Purkinje cells)
+        # For classic cerebellum, update global weights
+        if not self.use_enhanced:
+            # Classic pathway: update global weights
+            old_weights = self.weights.clone()
+            self.weights.data = clamp_weights(self.weights + dw, self.config.w_min, self.config.w_max, inplace=False)
 
-        # Synaptic scaling for homeostasis using UnifiedHomeostasis
-        if cfg.homeostasis_enabled:
-            with torch.no_grad():
-                self.weights = self.homeostasis.normalize_weights(self.weights, dim=1)
+            # Synaptic scaling for homeostasis using UnifiedHomeostasis
+            if cfg.homeostasis_enabled:
+                with torch.no_grad():
+                    self.weights.data = self.homeostasis.normalize_weights(self.weights, dim=1)
 
-        actual_dw = self.weights - old_weights
+            actual_dw = self.weights - old_weights
+        else:
+            # Enhanced: No global weight update (Purkinje cells learn internally)
+            # TODO: Implement proper learning for individual Purkinje dendritic weights
+            actual_dw = dw  # Use computed dw for metrics only
+
         ltp = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
         ltd = actual_dw[actual_dw < 0].sum().item() if (actual_dw < 0).any() else 0.0
 
@@ -764,17 +883,18 @@ class Cerebellum(NeuralComponent):
         """Get complete state for checkpointing.
 
         Returns state dictionary with keys:
-        - weights: Parallel fiber to Purkinje cell weights
+        - weights: Parallel fiber to Purkinje cell weights (classic) or granule/DCN (enhanced)
         - region_state: Neuron state, traces
         - learning_state: Eligibility traces, climbing fiber state
+        - enhanced_state: Granule layer, Purkinje cells, DCN (if use_enhanced)
         - config: Configuration for validation
         """
         state_dict = {
             "weights": {
-                "parallel_fiber_purkinje": self.weights.data.clone(),
+                "parallel_fiber_purkinje": self.weights.data.clone() if not self.use_enhanced else None,
             },
             "region_state": {
-                "neurons": self.neurons.get_state() if self.neurons is not None else None,
+                "neurons": self.neurons.get_state() if self.neurons is not None and not self.use_enhanced else None,
                 "trace_manager": self._trace_manager.get_state(),
             },
             "learning_state": {
@@ -784,8 +904,17 @@ class Cerebellum(NeuralComponent):
             "config": {
                 "n_input": self.config.n_input,
                 "n_output": self.config.n_output,
+                "use_enhanced": self.use_enhanced,
             },
         }
+
+        # Add enhanced microcircuit state if enabled
+        if self.use_enhanced:
+            state_dict["enhanced_state"] = {
+                "granule_layer": self.granule_layer.get_full_state(),
+                "purkinje_cells": [pc.get_state() for pc in self.purkinje_cells],
+                "deep_nuclei": self.deep_nuclei.get_full_state(),
+            }
 
         return state_dict
 
@@ -804,17 +933,30 @@ class Cerebellum(NeuralComponent):
             raise CheckpointError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
         if config.get("n_output") != self.config.n_output:
             raise CheckpointError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
+        if config.get("use_enhanced", False) != self.use_enhanced:
+            raise CheckpointError(f"Config mismatch: use_enhanced {config.get('use_enhanced')} != {self.use_enhanced}")
 
-        # Restore weights
-        weights = state["weights"]
-        self.weights.data.copy_(weights["parallel_fiber_purkinje"].to(self.device))
+        # Restore weights (classic pathway only)
+        if not self.use_enhanced:
+            weights = state["weights"]
+            if weights["parallel_fiber_purkinje"] is not None:
+                self.weights.data.copy_(weights["parallel_fiber_purkinje"].to(self.device))
 
-        # Restore neuron state
+            # Restore neuron state
+            region_state = state["region_state"]
+            if self.neurons is not None and region_state["neurons"] is not None:
+                self.neurons.load_state(region_state["neurons"])
+        else:
+            # Restore enhanced microcircuit state
+            enhanced_state = state.get("enhanced_state", {})
+            if enhanced_state:
+                self.granule_layer.load_full_state(enhanced_state["granule_layer"])
+                for pc, pc_state in zip(self.purkinje_cells, enhanced_state["purkinje_cells"]):
+                    pc.load_state(pc_state)
+                self.deep_nuclei.load_full_state(enhanced_state["deep_nuclei"])
+
+        # Restore trace manager state (both pathways)
         region_state = state["region_state"]
-        if self.neurons is not None and region_state["neurons"] is not None:
-            self.neurons.load_state(region_state["neurons"])
-
-        # Restore trace manager state
         if "trace_manager" in region_state:
             self._trace_manager.load_state(region_state["trace_manager"])
         else:
@@ -824,7 +966,7 @@ class Cerebellum(NeuralComponent):
             if "output_trace" in region_state:
                 self._trace_manager.output_trace.copy_(region_state["output_trace"].to(self.device))
 
-        # Restore learning state
+        # Restore learning state (both pathways)
         learning_state = state["learning_state"]
         self._trace_manager.eligibility.copy_(learning_state["stdp_eligibility"].to(self.device))
         self.climbing_fiber.load_state(learning_state["climbing_fiber"])

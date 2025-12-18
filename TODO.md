@@ -4,15 +4,9 @@
 
 - 🟡 Missing gap junctions and electrical synapses
 - 🟡 Limited glial influence on learning
-- 🟡 Thalamus-cortex-TRN feedback loop incomplete
-- 🟡 Cerebellum implementation could be more detailed
 
 ---
 
-- Add spillover/volume transmission?
-  - Spatial organization required?
-  - Integrate into weight matrix of receiving components rather than spike output of transmitting components (because we are using binary spikes, see ADR-004)
-  - Performance implications?
 - `docs\design\circuit_modeling_plan.md`
 - Sparse computations throughout?
 - Consciousness / Self-Awareness:

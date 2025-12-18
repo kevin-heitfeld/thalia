@@ -463,16 +463,24 @@ class ThalamicRelay(NeuralComponent):
     def forward(
         self,
         input_spikes: torch.Tensor,
+        cortical_l6_feedback: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process sensory input through thalamic relay.
 
         Args:
             input_spikes: Sensory input spikes [n_input] (1D, ADR-005)
-            **kwargs: Additional arguments (ignored)
+            cortical_l6_feedback: Optional L6 corticothalamic feedback [n_l6] (1D)
+                                  Provided by cortex_l6_to_thalamus pathway if wired
+            **kwargs: Additional arguments (unused)
 
         Returns:
             Relay output spikes [n_relay] (bool, ADR-004/005)
+
+        Note:
+            L6 feedback is provided via a dedicated pathway (cortex_l6_to_thalamus)
+            that routes L6 output from cortex to this component's forward().
+            The pathway system handles this routing automatically.
         """
         # ADR-005: Expect 1D input
         assert input_spikes.dim() == 1, (
@@ -484,7 +492,7 @@ class ThalamicRelay(NeuralComponent):
 
         # =====================================================================
         # 1. APPLY CENTER-SURROUND SPATIAL FILTER
-        # =====================================================================
+        # ====================================================================="
         # Filter input spikes spatially before relay (ADR-005: 1D)
         # Convert bool to float for matmul (ADR-004)
         input_float = input_spikes.float()
@@ -549,17 +557,45 @@ class ThalamicRelay(NeuralComponent):
         relay_output = burst_amplified > THALAMUS_MODE_THRESHOLD  # [n_relay], bool
 
         # =====================================================================
-        # 5. TRN NEURONS: Input collaterals + Relay collaterals
+        # 5. TRN NEURONS: Input collaterals + Relay collaterals + L6 Feedback
         # =====================================================================
         # TRN receives:
         # - Input collaterals (sensory copy)
         # - Relay collaterals (relay activity)
+        # - L6 corticothalamic feedback (attentional modulation)
         # - Recurrent inhibition (TRN-TRN)
 
         # Convert bool to float for matmul (ADR-004)
         trn_excitation_input = torch.mv(self.input_to_trn, input_float)  # [n_trn]
         trn_excitation_relay = torch.mv(self.relay_to_trn, relay_output.float())  # [n_trn]
-        trn_excitation = trn_excitation_input + trn_excitation_relay  # [n_trn]
+
+        # L6 corticothalamic feedback: Cortex modulates TRN to control attention
+        # This implements the feedback loop: Sensory → Thalamus → Cortex → L6 → TRN → Thalamus
+        # Biological function: Cortex can amplify or suppress specific sensory channels
+        trn_excitation_l6 = torch.zeros(self.n_trn, device=self.device)
+        if cortical_l6_feedback is not None:
+            # Scale L6 feedback appropriately (moderate strength)
+            l6_strength = 0.8  # Configurable, but reasonable default
+            trn_excitation_l6 = cortical_l6_feedback.float() * l6_strength
+            # If L6 and TRN sizes don't match, broadcast or pool
+            if trn_excitation_l6.shape[0] != self.n_trn:
+                # Simple average pooling if sizes mismatch
+                if trn_excitation_l6.shape[0] > self.n_trn:
+                    # Downsample L6 to TRN size
+                    pool_size = trn_excitation_l6.shape[0] // self.n_trn
+                    remainder = trn_excitation_l6.shape[0] % self.n_trn
+                    if remainder != 0:
+                        # Pad to make evenly divisible
+                        pad_size = self.n_trn - remainder
+                        trn_excitation_l6 = torch.cat([trn_excitation_l6, torch.zeros(pad_size, device=self.device)])
+                        pool_size = trn_excitation_l6.shape[0] // self.n_trn
+                    trn_excitation_l6 = trn_excitation_l6.view(self.n_trn, pool_size).mean(dim=1)
+                else:
+                    # Upsample L6 to TRN size (repeat)
+                    repeat_factor = self.n_trn // trn_excitation_l6.shape[0]
+                    trn_excitation_l6 = trn_excitation_l6.repeat_interleave(repeat_factor)[:self.n_trn]
+
+        trn_excitation = trn_excitation_input + trn_excitation_relay + trn_excitation_l6  # [n_trn]
 
         # TRN recurrent inhibition
         if self.state.trn_spikes is not None:

@@ -837,10 +837,11 @@ class DynamicBrain(nn.Module):
                     adapter._last_update_time = event.time
 
                     # Get output spikes (use impl for regions, forward for pathways)
+                    # Pass brain reference for L6 feedback access
                     if hasattr(adapter, 'impl'):
-                        output_spikes = adapter.impl.forward(event.payload.spikes)
+                        output_spikes = adapter.impl.forward(event.payload.spikes, brain=self)
                     else:
-                        output_spikes = adapter.forward(event.payload.spikes)
+                        output_spikes = adapter.forward(event.payload.spikes, brain=self)
 
                     outputs[event.target] = output_spikes
 

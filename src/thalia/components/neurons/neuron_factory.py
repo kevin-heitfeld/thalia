@@ -244,9 +244,16 @@ def create_cortical_layer_neurons(
             **base_config,
             "v_threshold": 0.9,
         }
+    elif layer == "L6":
+        # L6: Corticothalamic feedback layer, moderate threshold
+        layer_config = {
+            **base_config,
+            "v_threshold": 1.0,
+            "tau_mem": 15.0,  # Slightly slower dynamics for feedback control
+        }
     else:
         raise ValueError(
-            f"Unknown cortical layer '{layer}'. Must be one of: 'L4', 'L2/3', 'L5'"
+            f"Unknown cortical layer '{layer}'. Must be one of: 'L4', 'L2/3', 'L5', 'L6'"
         )
 
     # Apply overrides

@@ -317,6 +317,46 @@ class NeuralComponentConfig(BaseConfig):
     competition_strength: float = 0.1
     """Strength of competitive suppression between neurons."""
 
+    # =========================================================================
+    # SPILLOVER TRANSMISSION (Volume Transmission)
+    # =========================================================================
+    # Spillover/volume transmission: neurotransmitter diffusion affects nearby synapses
+    # Implemented as augmentation of weight matrix (W_effective = W_direct + W_spillover)
+    # Zero computational cost during forward pass (spillover computed once at init)
+    #
+    # Biological basis:
+    # - Neurotransmitter released at one synapse diffuses through extracellular space
+    # - Activates receptors at nearby synapses on functionally proximal neurons
+    # - ~10-20% strength of direct synaptic transmission
+    # - Well-documented in cortex, hippocampus, striatum, cerebellum
+    #
+    # References:
+    # - Agnati et al. (2010): Volume transmission and wiring transmission
+    # - Vizi & Lendvai (1999): Nonsynaptic chemical transmission
+
+    enable_spillover: bool = False
+    """Enable spillover (volume) transmission."""
+
+    spillover_strength: float = 0.15
+    """Spillover weight strength relative to direct synapses (0.1-0.2 biological)."""
+
+    spillover_mode: str = "connectivity"
+    """Spillover neighborhood definition method.
+
+    Options:
+    - 'connectivity': Shared presynaptic inputs define functional neighbors
+    - 'similarity': Weight pattern similarity defines neighbors
+    - 'lateral': Simple index-based banded spillover (assumes spatial ordering)
+    """
+
+    spillover_lateral_radius: int = 3
+    """Neighborhood radius for lateral spillover mode."""
+
+    spillover_similarity_threshold: float = 0.5
+    """Minimum similarity for spillover in similarity mode."""
+
+    spillover_normalize: bool = True
+    """Normalize spillover weights to prevent runaway excitation."""
 
 @dataclass
 class LearningComponentConfig(BaseConfig):

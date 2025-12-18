@@ -772,6 +772,35 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
         if weights is not None:
             self.weights = weights
 
+            # =============================================================
+            # SPILLOVER TRANSMISSION (optional weight augmentation)
+            # =============================================================
+            # Apply spillover if enabled - augments weights with volume transmission
+            # W_effective = W_direct + W_spillover
+            # Computed once at init, zero cost during forward pass
+            if getattr(config, 'enable_spillover', False):
+                from thalia.synapses.spillover import SpilloverTransmission, SpilloverConfig
+
+                spillover_config = SpilloverConfig(
+                    enabled=True,
+                    strength=getattr(config, 'spillover_strength', 0.15),
+                    mode=getattr(config, 'spillover_mode', 'connectivity'),
+                    lateral_radius=getattr(config, 'spillover_lateral_radius', 3),
+                    similarity_threshold=getattr(config, 'spillover_similarity_threshold', 0.5),
+                    normalize=getattr(config, 'spillover_normalize', True),
+                )
+
+                self.spillover = SpilloverTransmission(
+                    self.weights.data,
+                    spillover_config,
+                    device=self._device,
+                )
+
+                # Replace direct weights with effective weights (direct + spillover)
+                self.weights.data = self.spillover.get_effective_weights()
+            else:
+                self.spillover = None
+
         # Initialize neurons (subclasses implement _create_neurons)
         neurons = self._create_neurons()
         if neurons is not None:
