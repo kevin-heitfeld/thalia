@@ -173,6 +173,10 @@ class DeepCerebellarNuclei(nn.Module):
         """Get full DCN state (alias for get_state)."""
         return self.get_state()
 
+    def load_full_state(self, state: dict) -> None:
+        """Load DCN state from checkpoint (alias for load_state)."""
+        self.load_state(state)
+
     def grow_output(self, n_new: int) -> None:
         """Grow DCN output neurons (alias for grow).
 

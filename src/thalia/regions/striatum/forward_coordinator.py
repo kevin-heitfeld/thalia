@@ -149,8 +149,27 @@ class ForwardPassCoordinator:
         self._beta_phase = beta_phase
         self._beta_amplitude = beta_amplitude
 
+    def set_neuromodulators(
+        self,
+        dopamine: Optional[float] = None,
+        norepinephrine: Optional[float] = None,
+        acetylcholine: Optional[float] = None,
+    ) -> None:
+        """Set neuromodulator levels (unified API).
+
+        Args:
+            dopamine: Dopamine level [0, 1] (tonic DA)
+            norepinephrine: Norepinephrine level [0, 1]
+            acetylcholine: Acetylcholine level [0, 1] (not used by striatum)
+        """
+        if dopamine is not None:
+            self._tonic_dopamine = dopamine
+        if norepinephrine is not None:
+            self._ne_level = norepinephrine
+        # acetylcholine not used by striatum
+
     def set_norepinephrine(self, ne_level: float) -> None:
-        """Set norepinephrine level.
+        """Set norepinephrine level (backward compatibility).
 
         Args:
             ne_level: NE level [0, 1]
@@ -158,7 +177,7 @@ class ForwardPassCoordinator:
         self._ne_level = ne_level
 
     def set_tonic_dopamine(self, tonic_da: float) -> None:
-        """Set tonic dopamine level.
+        """Set tonic dopamine level (backward compatibility).
 
         Args:
             tonic_da: Tonic dopamine level [0, 1]

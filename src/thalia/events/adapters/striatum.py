@@ -69,7 +69,7 @@ class EventDrivenStriatum(EventDrivenRegionBase):
     @property
     def impl(self) -> Any:
         """Return the underlying striatum implementation."""
-        return self._striatum
+        return self.impl_module
 
     @property
     def state(self) -> Any:

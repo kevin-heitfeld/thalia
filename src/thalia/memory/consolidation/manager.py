@@ -59,13 +59,13 @@ class ConsolidationManager:
         self._deliver_reward = deliver_reward_fn
 
         # Cache sizes for state reconstruction
-        self._cortex_l5_size = None
+        self._cortex_output_size = None  # Full cortex output (L23+L5)
         self._hippo_size = config.hippocampus_size
         self._pfc_size = config.pfc_size
 
-    def set_cortex_l5_size(self, size: int) -> None:
-        """Set cortex L5 size (needed for state reconstruction)."""
-        self._cortex_l5_size = size
+    def set_cortex_output_size(self, size: int) -> None:
+        """Set cortex output size (L23+L5 combined, needed for state reconstruction)."""
+        self._cortex_output_size = size
 
     def store_experience(
         self,
@@ -87,9 +87,15 @@ class ConsolidationManager:
         correct = reward > 0.0
 
         # Construct state from current brain activity
-        cortex_L5 = self.cortex.state.l5_spikes if hasattr(self.cortex, 'state') and self.cortex.state else None
-        if cortex_L5 is None:
-            cortex_L5 = torch.zeros(1, self._cortex_l5_size, device=self.config.device)
+        # Cortex outputs through both L23 and L5 (full output)
+        cortex_out = None
+        if hasattr(self.cortex, 'state') and self.cortex.state:
+            l23 = self.cortex.state.l23_spikes
+            l5 = self.cortex.state.l5_spikes
+            if l23 is not None and l5 is not None:
+                cortex_out = torch.cat([l23, l5], dim=-1)  # Concatenate L23+L5
+        if cortex_out is None:
+            cortex_out = torch.zeros(1, self._cortex_output_size, device=self.config.device)
 
         hippo_out = self.hippocampus.state.ca1_spikes if hasattr(self.hippocampus, 'state') and self.hippocampus.state else None
         if hippo_out is None:
@@ -100,7 +106,7 @@ class ConsolidationManager:
             pfc_out = torch.zeros(1, self._pfc_size, device=self.config.device)
 
         combined_state = torch.cat([
-            cortex_L5.view(-1),
+            cortex_out.view(-1),
             hippo_out.view(-1),
             pfc_out.view(-1),
         ])
@@ -236,7 +242,7 @@ class ConsolidationManager:
             return
 
         # Reconstruct state components
-        cortex_size = self._cortex_l5_size
+        cortex_size = self._cortex_output_size  # Full cortex output (L23+L5)
         hippo_size = self._hippo_size
         pfc_size = self._pfc_size
 

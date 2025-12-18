@@ -19,6 +19,7 @@ import torch
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.core.brain_builder import BrainBuilder
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from thalia.regions.cortex import calculate_layer_sizes
 
 
 @pytest.fixture
@@ -49,7 +50,7 @@ class TestDynamicBrainIntegration:
         brain = (
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", n_input=64, n_output=64)
-            .add_component("cortex", "layered_cortex", n_output=32)  # n_input inferred!
+            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))  # n_input inferred!
             .connect("input", "cortex", pathway_type="spiking", axonal_delay_ms=5.0)
             .build()
         )
@@ -72,8 +73,8 @@ class TestDynamicBrainIntegration:
         brain = (
             BrainBuilder(global_config)
             .add_component("region_a", "thalamic_relay", n_input=32, n_output=32)
-            .add_component("region_b", "layered_cortex", n_output=64)  # n_input inferred from region_a
-            .add_component("region_c", "layered_cortex", n_output=16)  # n_input inferred from region_b
+            .add_component("region_b", "layered_cortex", **calculate_layer_sizes(64))  # n_input inferred from region_a
+            .add_component("region_c", "layered_cortex", **calculate_layer_sizes(16))  # n_input inferred from region_b
             .connect("region_a", "region_b", pathway_type="spiking", axonal_delay_ms=3.0)
             .connect("region_b", "region_c", pathway_type="spiking", axonal_delay_ms=3.0)
             .build()
@@ -95,9 +96,9 @@ class TestDynamicBrainIntegration:
         brain = (
             BrainBuilder(global_config)
             .add_component("source", "thalamic_relay", n_input=32, n_output=32)
-            .add_component("branch1", "layered_cortex", n_output=16)  # n_input=32 inferred
-            .add_component("branch2", "layered_cortex", n_output=16)  # n_input=32 inferred
-            .add_component("sink", "layered_cortex", n_output=8)      # n_input=32 inferred (16+16)
+            .add_component("branch1", "layered_cortex", **calculate_layer_sizes(16))  # n_input=32 inferred
+            .add_component("branch2", "layered_cortex", **calculate_layer_sizes(16))  # n_input=32 inferred
+            .add_component("sink", "layered_cortex", **calculate_layer_sizes(8))      # n_input=32 inferred (16+16)
             .connect("source", "branch1", pathway_type="spiking", axonal_delay_ms=3.0)
             .connect("source", "branch2", pathway_type="spiking", axonal_delay_ms=3.0)
             .connect("branch1", "sink", pathway_type="spiking", axonal_delay_ms=3.0)
@@ -131,7 +132,7 @@ class TestDynamicBrainIntegration:
 
         cortex_config = LayeredCortexConfig(
             n_input=16,  # Match pathway output
-            n_output=8,
+            n_output=10,  # Must equal l23_size + l5_size
             l4_size=4,
             l23_size=6,
             l5_size=4,
@@ -158,8 +159,8 @@ class TestDynamicBrainIntegration:
         result = brain.forward(input_data, n_timesteps=10)
 
         assert "cortex" in result["outputs"]
-        # LayeredCortex: n_output=8 → L2/3=12 + L5=8 = 20 total
-        assert result["outputs"]["cortex"].shape == (20,)
+        # LayeredCortex: n_output=10 → L2/3=6 + L5=4 = 10 total
+        assert result["outputs"]["cortex"].shape == (10,)
 
 
 class TestPresetArchitectures:
@@ -395,7 +396,7 @@ class TestSaveAndLoad:
         original_builder = (
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", n_input=32, n_output=32)
-            .add_component("cortex", "layered_cortex", n_output=16)  # n_input inferred
+            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(16))  # n_input inferred
             .connect("input", "cortex", pathway_type="spiking", axonal_delay_ms=5.0)
         )
 
@@ -610,15 +611,15 @@ class TestNeuromodulationAndConsolidation:
         assert hasattr(brain, "neuromodulator_manager")
         assert brain.neuromodulator_manager is not None
 
-        # Check system shortcuts
-        assert hasattr(brain, "vta")
-        assert hasattr(brain, "locus_coeruleus")
-        assert hasattr(brain, "nucleus_basalis")
+        # Check neuromodulator systems exist in manager
+        assert hasattr(brain.neuromodulator_manager, "vta")
+        assert hasattr(brain.neuromodulator_manager, "locus_coeruleus")
+        assert hasattr(brain.neuromodulator_manager, "nucleus_basalis")
 
-        # Verify they are the same objects as in manager
-        assert brain.vta is brain.neuromodulator_manager.vta
-        assert brain.locus_coeruleus is brain.neuromodulator_manager.locus_coeruleus
-        assert brain.nucleus_basalis is brain.neuromodulator_manager.nucleus_basalis
+        # Verify they are properly initialized
+        assert brain.neuromodulator_manager.vta is not None
+        assert brain.neuromodulator_manager.locus_coeruleus is not None
+        assert brain.neuromodulator_manager.nucleus_basalis is not None
 
     def test_update_neuromodulators(self, device, global_config):
         """Test neuromodulator update and broadcasting."""
@@ -632,7 +633,7 @@ class TestNeuromodulationAndConsolidation:
         brain._update_neuromodulators()
 
         # Dopamine should be accessible
-        current_da = brain.vta.get_global_dopamine()
+        current_da = brain.neuromodulator_manager.vta.get_global_dopamine()
         assert isinstance(current_da, float)
         assert -10.0 <= current_da <= 10.0  # Reasonable range
 
@@ -645,7 +646,7 @@ class TestNeuromodulationAndConsolidation:
         brain.forward(input_data, n_timesteps=1)
 
         # Deliver reward to trigger dopamine release
-        brain.vta.deliver_reward(external_reward=1.0, expected_value=0.0)
+        brain.neuromodulator_manager.vta.deliver_reward(external_reward=1.0, expected_value=0.0)
 
         # Update and broadcast
         brain._update_neuromodulators()
@@ -797,7 +798,7 @@ class TestStateManagement:
         return (
             BrainBuilder(global_config)
             .add_component("thalamus", "thalamic_relay", n_input=10, n_output=10)
-            .add_component("cortex", "layered_cortex", n_output=20)
+            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
             .add_component("hippocampus", "hippocampus", n_output=15)
             .add_component("pfc", "prefrontal", n_output=12)
             .add_component("striatum", "striatum", n_output=5)
@@ -944,7 +945,7 @@ class TestStateManagement:
         brain1 = (
             BrainBuilder(global_config)
             .add_component("thalamus", "thalamic_relay", n_input=10, n_output=10)
-            .add_component("cortex", "layered_cortex", n_output=20)
+            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
             .connect("thalamus", "cortex", pathway_type="spiking", axonal_delay_ms=3.0)
             .build()
         )
@@ -961,7 +962,7 @@ class TestStateManagement:
         brain2 = (
             BrainBuilder(global_config)
             .add_component("thalamus", "thalamic_relay", n_input=10, n_output=10)
-            .add_component("cortex", "layered_cortex", n_output=20)
+            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
             .connect("thalamus", "cortex", pathway_type="spiking", axonal_delay_ms=3.0)
             .build()
         )

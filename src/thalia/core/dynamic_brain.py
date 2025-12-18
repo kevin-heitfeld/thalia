@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 
 from thalia.regions.base import NeuralComponent
+from thalia.regions.cortex import calculate_layer_sizes
 from thalia.events.system import EventScheduler, Event, EventType, SpikePayload
 from thalia.events.adapters.base import EventRegionConfig
 from thalia.core.diagnostics import (
@@ -311,11 +312,15 @@ class DynamicBrain(nn.Module):
                 deliver_reward_fn=self.deliver_reward,
             )
 
-            # Set cortex L5 size if LayeredCortex
-            if hasattr(self.components['cortex'], 'l5_size'):
-                self.consolidation_manager.set_cortex_l5_size(self.components['cortex'].l5_size)
-            elif hasattr(self.components['cortex'], 'config') and hasattr(self.components['cortex'].config, 'l5_size'):
-                self.consolidation_manager.set_cortex_l5_size(self.components['cortex'].config.l5_size)
+            # Set cortex output size (L23+L5) for state reconstruction
+            if hasattr(self.components['cortex'], 'config'):
+                config = self.components['cortex'].config
+                if hasattr(config, 'l23_size') and hasattr(config, 'l5_size'):
+                    output_size = config.l23_size + config.l5_size
+                    self.consolidation_manager.set_cortex_output_size(output_size)
+            elif hasattr(self.components['cortex'], 'l23_size') and hasattr(self.components['cortex'], 'l5_size'):
+                output_size = self.components['cortex'].l23_size + self.components['cortex'].l5_size
+                self.consolidation_manager.set_cortex_output_size(output_size)
 
         # =================================================================
         # CHECKPOINT MANAGER (Phase 1.7.4)
@@ -555,14 +560,17 @@ class DynamicBrain(nn.Module):
         # Both types expose l23_size/l5_size for port-based routing
         cortex_registry_name = "predictive_cortex" if config.brain.cortex_type.value == "predictive" else "cortex"
 
-        # Pass explicit layer sizes if available (all-or-nothing per strict validation)
-        cortex_config = {"n_output": sizes.cortex_size}
+        # Use explicit layer sizes if available, otherwise calculate from n_output
         if sizes._cortex_l4_size is not None and sizes._cortex_l23_size is not None and sizes._cortex_l5_size is not None:
-            cortex_config.update({
+            cortex_config = {
+                "n_output": sizes.cortex_size,
                 "l4_size": sizes.cortex_l4_size,
                 "l23_size": sizes.cortex_l23_size,
                 "l5_size": sizes.cortex_l5_size,
-            })
+            }
+        else:
+            # Calculate layer sizes using standard ratios
+            cortex_config = calculate_layer_sizes(sizes.cortex_size)
 
         builder.add_component("cortex", cortex_registry_name, **cortex_config)
         builder.add_component("hippocampus", "hippocampus", n_output=sizes.hippocampus_size)

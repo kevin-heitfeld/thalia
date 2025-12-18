@@ -86,6 +86,7 @@ import json
 from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
 from thalia.managers.component_registry import ComponentRegistry
 from thalia.regions.base import NeuralComponent
+from thalia.regions.cortex import calculate_layer_sizes
 
 if TYPE_CHECKING:
     from thalia.config import GlobalConfig
@@ -1093,8 +1094,8 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     builder.add_component("input", "thalamic_relay", n_input=n_input, n_output=n_input)
 
     # Processing components - only n_output needed, n_input inferred from connections
-    builder.add_component("process", "layered_cortex", n_output=n_process)
-    builder.add_component("output", "layered_cortex", n_output=n_output)
+    builder.add_component("process", "layered_cortex", **calculate_layer_sizes(n_process))
+    builder.add_component("output", "layered_cortex", **calculate_layer_sizes(n_output))
 
     # Connections use axonal projections (pure spike routing)
     builder.connect("input", "process", pathway_type="axonal")
@@ -1128,7 +1129,7 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
 
     # Add regions (only thalamus needs n_input as it's the input interface)
     builder.add_component("thalamus", "thalamus", n_input=n_thalamus, n_output=n_thalamus)
-    builder.add_component("cortex", "cortex", n_output=n_cortex)
+    builder.add_component("cortex", "cortex", **calculate_layer_sizes(n_cortex))
     builder.add_component("hippocampus", "hippocampus", n_output=n_hippocampus)
     builder.add_component("pfc", "prefrontal", n_output=n_pfc)
     builder.add_component("striatum", "striatum", n_output=n_striatum)

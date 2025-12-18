@@ -17,6 +17,7 @@ import math
 
 from thalia.config import GlobalConfig
 from thalia.core.brain_builder import BrainBuilder
+from thalia.regions.cortex import calculate_layer_sizes
 
 
 class TestOscillatorManagerIntegration:
@@ -33,7 +34,7 @@ class TestOscillatorManagerIntegration:
         brain = (
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", n_input=64, n_output=64)
-            .add_component("cortex", "layered_cortex", n_output=32)
+            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))
             .connect("input", "cortex", pathway_type="spiking")
             .build()
         )

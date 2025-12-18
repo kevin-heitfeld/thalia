@@ -209,3 +209,49 @@ class LayeredCortexState(NeuralComponentState):
 
     # Last plasticity delta (for monitoring continuous learning)
     last_plasticity_delta: float = 0.0
+
+
+def calculate_layer_sizes(
+    n_output: int,
+    l4_ratio: float = 1.0,
+    l23_ratio: float = 1.5,
+    l5_ratio: float = 1.0,
+    l6_ratio: float = 0.5,
+) -> dict[str, int]:
+    """Calculate layer sizes from n_output using standard ratios.
+
+    This utility provides convenient layer size calculation for tests and examples.
+    The returned sizes should be passed explicitly to LayeredCortexConfig.
+
+    Args:
+        n_output: Desired output size (used as base for calculations)
+        l4_ratio: L4 size as multiple of n_output (default: 1.0)
+        l23_ratio: L2/3 size as multiple of n_output (default: 1.5)
+        l5_ratio: L5 size as multiple of n_output (default: 1.0)
+        l6_ratio: L6 size as multiple of n_output (default: 0.5)
+
+    Returns:
+        Dictionary with keys: l4_size, l23_size, l5_size, l6_size, n_output
+        Note: Returned n_output will equal l23_size + l5_size (cortex output convention)
+
+    Example:
+        >>> sizes = calculate_layer_sizes(n_output=32)
+        >>> brain = BrainBuilder(config).add_component(
+        ...     "cortex", "layered_cortex", **sizes
+        ... ).build()
+    """
+    l4_size = int(n_output * l4_ratio)
+    l23_size = int(n_output * l23_ratio)
+    l5_size = int(n_output * l5_ratio)
+    l6_size = int(n_output * l6_ratio)
+
+    # Cortex output is L2/3 + L5 (cortico-cortical + subcortical)
+    actual_output = l23_size + l5_size
+
+    return {
+        "l4_size": l4_size,
+        "l23_size": l23_size,
+        "l5_size": l5_size,
+        "l6_size": l6_size,
+        "n_output": actual_output,
+    }

@@ -148,6 +148,10 @@ class GranuleCellLayer(nn.Module):
         """Get full granule layer state (alias for get_state)."""
         return self.get_state()
 
+    def load_full_state(self, state: dict) -> None:
+        """Load granule layer state from checkpoint (alias for load_state)."""
+        self.load_state(state)
+
     def grow(self, n_new: int) -> None:
         """Grow granule cell population.
 
