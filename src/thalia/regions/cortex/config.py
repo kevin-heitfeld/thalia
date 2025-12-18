@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
-from enum import Enum
 
 import torch
 
@@ -21,14 +20,6 @@ from thalia.learning.rules.bcm import BCMConfig
 from thalia.regulation.learning_constants import STDP_A_PLUS_CORTEX, STDP_A_MINUS_CORTEX
 from thalia.components.neurons.neuron_constants import ADAPT_INCREMENT_CORTEX_L23
 from .robustness_config import RobustnessConfig
-
-
-class CorticalLayer(Enum):
-    """Cortical layer identifiers."""
-
-    L4 = "L4"  # Input layer
-    L23 = "L2/3"  # Processing/cortico-cortical output
-    L5 = "L5"  # Subcortical output
 
 
 @dataclass
