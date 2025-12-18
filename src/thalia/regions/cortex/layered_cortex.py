@@ -87,7 +87,6 @@ from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
 from thalia.components.synapses.traces import update_trace
 from thalia.regions.base import NeuralComponent
-from thalia.regions.cortex.config import calculate_layer_sizes
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
@@ -153,7 +152,10 @@ class LayeredCortex(NeuralComponent):
         config = LayeredCortexConfig(
             n_input=256,
             n_output=128,  # Total output size (L2/3 + L5)
-            layer_ratio=(0.4, 0.4, 0.2),  # L4:L2/3:L5 proportions
+            l4_size=64,    # Input layer
+            l23_size=96,   # Processing/cortico-cortical output (1.5x)
+            l5_size=64,    # Subcortical output
+            l6_size=32,    # Corticothalamic feedback (0.5x)
         )
         cortex = LayeredCortex(config)
 
@@ -189,41 +191,19 @@ class LayeredCortex(NeuralComponent):
         """Initialize layered cortex."""
         self.layer_config = config
 
-        # Get layer sizes - strict all-or-nothing for explicit sizes
-        explicit_count = sum([
-            config.l4_size is not None,
-            config.l23_size is not None,
-            config.l5_size is not None,
-            config.l6_size is not None,
-        ])
+        # All layer sizes are now required
+        self.l4_size = config.l4_size
+        self.l23_size = config.l23_size
+        self.l5_size = config.l5_size
+        self.l6_size = config.l6_size
 
-        if explicit_count > 0 and explicit_count < 4:
-            raise ValueError(
-                f"LayeredCortex: Explicit layer sizes must be all-or-nothing. "
-                f"Got {explicit_count}/4 sizes specified (l4_size, l23_size, l5_size, l6_size). "
-                f"Either provide all four explicit sizes, or provide none to use ratio-based sizing."
-            )
-
-        if explicit_count == 4:
-            # Explicit sizes provided (recommended)
-            self.l4_size = config.l4_size
-            self.l23_size = config.l23_size
-            self.l5_size = config.l5_size
-            self.l6_size = config.l6_size
-
-            # Validate n_output matches total
-            expected_total = self.l23_size + self.l5_size
-            if config.n_output != expected_total:
-                print(f"Warning: LayeredCortex n_output={config.n_output} doesn't match "
-                      f"l23_size + l5_size = {expected_total}. Using explicit layer sizes.")
-        else:
-            # Legacy: Compute from ratios
-            self.l4_size, self.l23_size, self.l5_size, self.l6_size = calculate_layer_sizes(
-                config.n_output, config.l4_ratio, config.l23_ratio, config.l5_ratio, config.l6_ratio
-            )
-
-        # Output is always both L2/3 and L5 (biological cortex has both pathways)
+        # Validate n_output matches total (output is both L2/3 and L5)
         actual_output = self.l23_size + self.l5_size
+        if config.n_output != actual_output:
+            raise ValueError(
+                f"LayeredCortex: n_output ({config.n_output}) must equal "
+                f"l23_size + l5_size ({self.l23_size} + {self.l5_size} = {actual_output})"
+            )
 
         # Create modified config for parent
         parent_config = NeuralComponentConfig(
@@ -666,10 +646,8 @@ class LayeredCortex(NeuralComponent):
     ) -> None:
         """Grow output dimension by expanding all layers proportionally.
 
-        This expands L4, L2/3, and L5 while maintaining layer ratios:
-        - L4 expands by (l4_ratio * n_new)
-        - L2/3 expands by (l23_ratio * n_new)
-        - L5 expands by (l5_ratio * n_new)
+        This expands L4, L2/3, L5, and L6 proportionally to maintain current architecture.
+        Growth is distributed according to current layer size ratios.
 
         All inter-layer weights are expanded to accommodate new neurons.
 
@@ -678,10 +656,13 @@ class LayeredCortex(NeuralComponent):
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        # Calculate proportional growth for all layers
-        l4_growth, l23_growth, l5_growth, l6_growth = calculate_layer_sizes(
-            n_new, self.layer_config.l4_ratio, self.layer_config.l23_ratio, self.layer_config.l5_ratio, self.layer_config.l6_ratio
-        )
+        # Calculate proportional growth based on current layer sizes
+        # Maintain current ratios between layers
+        total_current = self.l4_size + self.l23_size + self.l5_size + self.l6_size
+        l4_growth = int(n_new * self.l4_size / total_current)
+        l23_growth = int(n_new * self.l23_size / total_current)
+        l5_growth = int(n_new * self.l5_size / total_current)
+        l6_growth = int(n_new * self.l6_size / total_current)
 
         old_l4_size = self.l4_size
         old_l23_size = self.l23_size

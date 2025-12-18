@@ -383,7 +383,10 @@ class TestMultiRegionCoordination:
         cortex_config = LayeredCortexConfig(
             n_input=128,
             n_output=256,
-            l6_size=128,
+            l4_size=160,
+            l23_size=160,
+            l5_size=96,
+            l6_size=80,
             dt_ms=1.0,
             device=str(device),
         )

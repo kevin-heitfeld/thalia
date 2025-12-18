@@ -50,9 +50,15 @@ Usage:
     from thalia.config.region_sizes import (
         DG_TO_EC_EXPANSION, DEFAULT_CORTEX_SIZE
     )
-    
+
     dg_size = int(ec_size * DG_TO_EC_EXPANSION)
-    cortex_config = LayeredCortexConfig(n_output=DEFAULT_CORTEX_SIZE)
+    cortex_config = LayeredCortexConfig(
+        n_output=DEFAULT_CORTEX_SIZE,
+        l4_size=int(DEFAULT_CORTEX_SIZE * 0.4),
+        l23_size=int(DEFAULT_CORTEX_SIZE * 0.6),
+        l5_size=int(DEFAULT_CORTEX_SIZE * 0.4),
+        l6_size=int(DEFAULT_CORTEX_SIZE * 0.2),
+    )
 
 Author: Thalia Project
 Date: December 11, 2025
@@ -228,17 +234,17 @@ For modeling, we use modest size focused on error correction.
 
 def compute_hippocampus_sizes(ec_input_size: int) -> dict:
     """Compute hippocampus layer sizes from EC input size.
-    
+
     Args:
         ec_input_size: Size of entorhinal cortex input
-        
+
     Returns:
         Dict with dg_size, ca3_size, ca1_size
     """
     dg_size = int(ec_input_size * DG_TO_EC_EXPANSION)
     ca3_size = int(dg_size * CA3_TO_DG_RATIO)
     ca1_size = int(ca3_size * CA1_TO_CA3_RATIO)
-    
+
     return {
         "dg_size": dg_size,
         "ca3_size": ca3_size,
@@ -248,17 +254,17 @@ def compute_hippocampus_sizes(ec_input_size: int) -> dict:
 
 def compute_cortex_layer_sizes(input_size: int) -> dict:
     """Compute cortex layer sizes from input size.
-    
+
     Args:
         input_size: Size of thalamic/sensory input
-        
+
     Returns:
         Dict with l4_size, l23_size, l5_size
     """
     l4_size = int(input_size * L4_TO_INPUT_RATIO)
     l23_size = int(l4_size * L23_TO_L4_RATIO)
     l5_size = int(l23_size * L5_TO_L23_RATIO)
-    
+
     return {
         "l4_size": l4_size,
         "l23_size": l23_size,
@@ -274,13 +280,13 @@ def compute_striatum_size(
     neurons_per_action: int = NEURONS_PER_ACTION_DEFAULT,
 ) -> int:
     """Compute striatum size based on cortex input and actions.
-    
+
     Args:
         cortex_size: Size of cortical input
         n_actions: Number of discrete actions
         population_coding: Whether to use population coding
         neurons_per_action: Neurons per action (if population coding)
-        
+
     Returns:
         Total striatum size (MSN count)
     """

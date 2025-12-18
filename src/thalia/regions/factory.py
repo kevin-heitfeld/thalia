@@ -26,7 +26,10 @@ Usage Example:
         ...
 
     # Create region by name
-    config = LayeredCortexConfig(n_input=256, n_output=128)
+    config = LayeredCortexConfig(
+        n_input=256, n_output=128,
+        l4_size=64, l23_size=96, l5_size=64, l6_size=32
+    )
     cortex = RegionFactory.create("cortex", config)
 
     # Dynamic brain construction

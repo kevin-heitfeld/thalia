@@ -51,6 +51,10 @@ def planning_brain():
             device="cpu",
             n_input=input_size,
             n_output=cortex_size,
+            l4_size=80,
+            l23_size=80,
+            l5_size=48,
+            l6_size=40,
         )),
         "hippocampus": Hippocampus(HippocampusConfig(
             dt_ms=1.0,

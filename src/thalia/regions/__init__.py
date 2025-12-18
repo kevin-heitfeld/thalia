@@ -49,7 +49,10 @@ Example Usage:
 from thalia.regions import LayeredCortex, LayeredCortexConfig, Cerebellum, Striatum
 
 # Unsupervised feature learning (layered cortex with L4→L2/3→L5)
-config = LayeredCortexConfig(n_input=20, n_output=10)
+config = LayeredCortexConfig(
+    n_input=20, n_output=10,
+    l4_size=10, l23_size=15, l5_size=10, l6_size=5
+)
 cortex = LayeredCortex(config)
 
 # Supervised sequence learning

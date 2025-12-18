@@ -132,6 +132,10 @@ class TestDynamicBrainIntegration:
         cortex_config = LayeredCortexConfig(
             n_input=16,  # Match pathway output
             n_output=8,
+            l4_size=4,
+            l23_size=6,
+            l5_size=4,
+            l6_size=2,
             device=device,
             dt_ms=1.0,
         )

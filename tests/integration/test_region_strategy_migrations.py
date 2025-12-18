@@ -23,6 +23,10 @@ class TestLayeredCortexStrategyMigration:
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
+            l4_size=8,
+            l23_size=10,
+            l5_size=6,
+            l6_size=4,
             bcm_enabled=True,
         )
         cortex = LayeredCortex(config)
@@ -51,6 +55,10 @@ class TestLayeredCortexStrategyMigration:
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
+            l4_size=8,
+            l23_size=10,
+            l5_size=6,
+            l6_size=4,
             bcm_enabled=False,
         )
         cortex = LayeredCortex(config)
@@ -72,6 +80,10 @@ class TestLayeredCortexStrategyMigration:
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
+            l4_size=8,
+            l23_size=10,
+            l5_size=6,
+            l6_size=4,
             bcm_enabled=True,
         )
         cortex = LayeredCortex(config)
@@ -91,6 +103,10 @@ class TestLayeredCortexStrategyMigration:
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
+            l4_size=8,
+            l23_size=10,
+            l5_size=6,
+            l6_size=4,
             bcm_enabled=True,
         )
         cortex = LayeredCortex(config)
@@ -115,6 +131,10 @@ class TestLayeredCortexStrategyMigration:
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
+            l4_size=8,
+            l23_size=10,
+            l5_size=6,
+            l6_size=4,
             bcm_enabled=True,
         )
         cortex = LayeredCortex(config)
@@ -134,6 +154,10 @@ class TestLayeredCortexStrategyMigration:
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
+            l4_size=8,
+            l23_size=10,
+            l5_size=6,
+            l6_size=4,
             bcm_enabled=True,
         )
         cortex = LayeredCortex(config)
@@ -171,6 +195,10 @@ class TestStrategyStateManagement:
         config = LayeredCortexConfig(
             n_input=32,
             n_output=16,
+            l4_size=8,
+            l23_size=10,
+            l5_size=6,
+            l6_size=4,
             bcm_enabled=True,
         )
         cortex = LayeredCortex(config)

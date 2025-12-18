@@ -272,7 +272,7 @@ class ComponentRegistry:
         Example:
             cortex = ComponentRegistry.create(
                 "region", "cortex",
-                LayeredCortexConfig(n_input=256, n_output=128)
+                LayeredCortexConfig(n_input=256, n_output=128, l4_size=128, l23_size=192, l5_size=128, l6_size=64)
             )
 
             pathway = ComponentRegistry.create(

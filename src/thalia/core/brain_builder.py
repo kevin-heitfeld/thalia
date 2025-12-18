@@ -435,41 +435,19 @@ class BrainBuilder:
 
         # For layered cortex (including predictive_cortex), get layer sizes
         if source_spec.registry_name in ("cortex", "layered_cortex", "predictive_cortex"):
-            from thalia.regions.cortex import calculate_layer_sizes
-            from thalia.regions.cortex import LayeredCortexConfig
-
             config = source_spec.config_params
 
-            # Strict validation: all-or-nothing for explicit layer sizes
-            has_l4 = "l4_size" in config and config["l4_size"] is not None
-            has_l23 = "l23_size" in config and config["l23_size"] is not None
-            has_l5 = "l5_size" in config and config["l5_size"] is not None
-            has_l6 = "l6_size" in config and config["l6_size"] is not None
-            explicit_count = sum([has_l4, has_l23, has_l5, has_l6])
-
-            if explicit_count > 0 and explicit_count < 4:
+            # All layer sizes are now required
+            if not all(k in config for k in ["l4_size", "l23_size", "l5_size", "l6_size"]):
                 raise ValueError(
-                    f"BrainBuilder: Cortex '{source_name}' has partial explicit layer sizes. "
-                    f"Got {explicit_count}/4 sizes specified (l4_size, l23_size, l5_size, l6_size). "
-                    f"Either provide all four explicit sizes, or provide none to use ratio-based sizing."
+                    f"BrainBuilder: Cortex '{source_name}' must specify all layer sizes "
+                    f"(l4_size, l23_size, l5_size, l6_size)"
                 )
 
-            if explicit_count == 4:
-                # Explicit layer sizes provided
-                l4_size = config["l4_size"]
-                l23_size = config["l23_size"]
-                l5_size = config["l5_size"]
-                l6_size = config["l6_size"]
-            else:
-                # Legacy: Calculate from ratios
-                l4_ratio = config.get("l4_ratio", LayeredCortexConfig.l4_ratio)
-                l23_ratio = config.get("l23_ratio", LayeredCortexConfig.l23_ratio)
-                l5_ratio = config.get("l5_ratio", LayeredCortexConfig.l5_ratio)
-                l6_ratio = config.get("l6_ratio", LayeredCortexConfig.l6_ratio)
-                n_output = config["n_output"]
-                l4_size, l23_size, l5_size, l6_size = calculate_layer_sizes(
-                    n_output, l4_ratio, l23_ratio, l5_ratio, l6_ratio
-                )
+            l4_size = config["l4_size"]
+            l23_size = config["l23_size"]
+            l5_size = config["l5_size"]
+            l6_size = config["l6_size"]
 
             # Return layer-specific size
             if source_port == "l23":

@@ -89,22 +89,6 @@ class TestL6Initialization:
         assert cortex_with_l6.l23_to_l6.shape == (64, cortex_with_l6.l23_size), \
             "L2/3→L6 weights should connect L2/3 to L6"
 
-    def test_l6_size_calculation(self, device):
-        """Test L6 size calculation from ratio."""
-        config = LayeredCortexConfig(
-            n_input=128,
-            n_output=256,
-            l6_ratio=0.5,  # 50% of base
-            dt_ms=1.0,
-            device=str(device),
-        )
-        cortex = LayeredCortex(config)
-
-        # L6 size should be 50% of n_output
-        expected_l6_size = int(256 * 0.5)
-        assert cortex.l6_size == expected_l6_size, \
-            f"L6 size should be {expected_l6_size} (50% of 256)"
-
     def test_l6_sparsity(self, cortex_with_l6):
         """Test L2/3→L6 connectivity sparsity."""
         weights = cortex_with_l6.l23_to_l6.data
@@ -418,15 +402,18 @@ class TestL6Growth:
     def test_l6_grows_with_cortex(self, cortex_with_l6):
         """Test that L6 expands when cortex output grows."""
         initial_l6_size = cortex_with_l6.l6_size
-        l6_ratio = cortex_with_l6.config.l6_ratio
+        initial_total = (
+            cortex_with_l6.l4_size + cortex_with_l6.l23_size +
+            cortex_with_l6.l5_size + cortex_with_l6.l6_size
+        )
 
         # Grow cortex output
         n_new = 64
         cortex_with_l6.grow_output(n_new=n_new)
 
-        # Contract: L6 should grow proportionally with the growth amount
+        # Contract: L6 should grow proportionally based on current layer sizes
         new_l6_size = cortex_with_l6.l6_size
-        expected_growth = int(n_new * l6_ratio)
+        expected_growth = int(n_new * initial_l6_size / initial_total)
         expected_new_l6 = initial_l6_size + expected_growth
 
         assert new_l6_size > initial_l6_size, "L6 should grow with cortex"

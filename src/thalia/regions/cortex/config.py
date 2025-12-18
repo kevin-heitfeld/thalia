@@ -23,36 +23,6 @@ from thalia.components.neurons.neuron_constants import ADAPT_INCREMENT_CORTEX_L2
 from .robustness_config import RobustnessConfig
 
 
-def calculate_layer_sizes(
-    n_output: int,
-    l4_ratio: float,
-    l23_ratio: float,
-    l5_ratio: float,
-    l6_ratio: float = 0.5
-) -> tuple[int, int, int, int]:
-    """Calculate layer sizes from output size and ratios.
-
-    Args:
-        n_output: Desired output size (typically n_output from config)
-        l4_ratio: L4 size as ratio of n_output (typically 1.0)
-        l23_ratio: L2/3 size as ratio of n_output (typically 1.5)
-        l5_ratio: L5 size as ratio of n_output (typically 1.0)
-        l6_ratio: L6 size as ratio of n_output (typically 0.5)
-
-    Returns:
-        Tuple of (l4_size, l23_size, l5_size, l6_size)
-
-    Note:
-        This is the canonical calculation used throughout the codebase.
-        All layer size computations should use this function to ensure consistency.
-    """
-    l4_size = int(n_output * l4_ratio)
-    l23_size = int(n_output * l23_ratio)
-    l5_size = int(n_output * l5_ratio)
-    l6_size = int(n_output * l6_ratio)
-    return l4_size, l23_size, l5_size, l6_size
-
-
 class CorticalLayer(Enum):
     """Cortical layer identifiers."""
 
@@ -65,29 +35,26 @@ class CorticalLayer(Enum):
 class LayeredCortexConfig(NeuralComponentConfig):
     """Configuration for layered cortical microcircuit.
 
-    Layer Sizes (EXPLICIT):
-        Specify explicit layer sizes for clarity and debuggability.
-        If not specified, computed from n_output using default ratios.
+    Layer Sizes (REQUIRED):
+        All layer sizes must be explicitly specified. This ensures clarity,
+        debuggability, and eliminates ambiguity in cortical architecture.
 
-        Important: n_output parameter now has TWO meanings:
-        - If layer sizes NOT specified: base size for ratio calculations
-        - If layer sizes specified: should equal l23_size + l5_size (validated)
+        The n_output parameter is validated to equal l23_size + l5_size,
+        as cortex outputs through both cortico-cortical (L2/3) and
+        subcortical (L5) pathways.
 
-        Recommendation: Always specify l4_size, l23_size, l5_size explicitly!
+        Typical ratios (for reference, not enforced):
+        - l4_size: Same as base (1.0x)
+        - l23_size: 1.5x base (processing/association)
+        - l5_size: Same as base (1.0x)
+        - l6_size: 0.5x base (feedback)
     """
 
-    # Explicit layer sizes (recommended - set these directly!)
-    l4_size: Optional[int] = None    # Input layer (typically same as base)
-    l23_size: Optional[int] = None   # Processing layer (typically 1.5x base)
-    l5_size: Optional[int] = None    # Output layer (typically same as base)
-    l6_size: Optional[int] = None    # Corticothalamic feedback layer (typically 0.5x base)
-
-    # Legacy: Layer size ratios (DEPRECATED - only used if explicit sizes not set)
-    # These are kept for backward compatibility but should not be used in new code
-    l4_ratio: float = 1.0  # Input layer (deprecated)
-    l23_ratio: float = 1.5  # Processing layer (deprecated)
-    l5_ratio: float = 1.0  # Output layer (deprecated)
-    l6_ratio: float = 0.5  # Feedback layer (deprecated)
+    # Explicit layer sizes (REQUIRED - must specify all four)
+    l4_size: int                     # Input layer
+    l23_size: int                    # Processing layer (cortico-cortical output)
+    l5_size: int                     # Subcortical output layer
+    l6_size: int                     # Corticothalamic feedback layer
 
     # Layer sparsity (fraction of neurons active)
     l4_sparsity: float = 0.15  # Moderate sparsity

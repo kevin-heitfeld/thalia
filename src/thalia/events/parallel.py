@@ -563,9 +563,21 @@ def create_cortex_region(
     from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 
     # Build cortex config (LayeredCortexConfig uses n_input/n_output)
+    n_output = config_dict.get("n_output", 256)
+    # Calculate layer sizes to satisfy n_output = l23_size + l5_size
+    # Use 1.67:1 ratio (l23:l5) for clean split
+    l5_size = int(n_output * 0.375)  # 37.5% → 96 for n_output=256
+    l23_size = n_output - l5_size     # Remaining → 160 for n_output=256
+    l4_size = l23_size                # Same as l23
+    l6_size = int(n_output * 0.3125)  # 31.25% → 80 for n_output=256
+
     cortex_config = LayeredCortexConfig(
         n_input=config_dict.get("n_input", 784),
-        n_output=config_dict.get("n_output", 256),
+        n_output=n_output,
+        l4_size=l4_size,
+        l23_size=l23_size,
+        l5_size=l5_size,
+        l6_size=l6_size,
         device=device,
         dt_ms=1.0,
     )    # Create cortex

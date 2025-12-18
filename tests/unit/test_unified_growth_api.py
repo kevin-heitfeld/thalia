@@ -31,6 +31,10 @@ def cortex():
     config = LayeredCortexConfig(
         n_input=784,
         n_output=128,
+        l4_size=64,
+        l23_size=96,
+        l5_size=64,
+        l6_size=32,
         device='cpu'
     )
     return LayeredCortex(config)
