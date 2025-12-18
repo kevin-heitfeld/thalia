@@ -36,13 +36,13 @@ class HippocampusMemoryComponent(MemoryComponent):
     =============
     - **Priority-Based Storage**: High-priority episodes (surprising, rewarding)
       are less likely to be overwritten
-    
+
     - **Similarity-Based Retrieval**: Pattern completion via cosine similarity
       between query and stored patterns (CA3 autoassociation model)
-    
+
     - **Sequence Support**: Store temporal sequences, not just single states
       (models sequential replay during sharp-wave ripples)
-    
+
     - **Metadata Tracking**: Store task context, timestamps, confidence
 
     Biological Motivation:
@@ -58,7 +58,7 @@ class HippocampusMemoryComponent(MemoryComponent):
     Usage:
     ======
         memory = HippocampusMemoryComponent(config, context)
-        
+
         # Store episode after trial
         memory.store_memory(
             state=ca3_pattern,
@@ -67,13 +67,13 @@ class HippocampusMemoryComponent(MemoryComponent):
             correct=was_correct,
             priority_boost=surprise_value,
         )
-        
+
         # Retrieve similar episodes (pattern completion)
         similar_episodes = memory.retrieve_similar(
             query_pattern=partial_cue,
             k=5,  # Top 5 matches
         )
-        
+
         # Sample for replay
         replay_batch = memory.sample_batch(batch_size=32, prioritized=True)
 
@@ -231,7 +231,3 @@ class HippocampusMemoryComponent(MemoryComponent):
             "total_priority": sum(ep.priority for ep in self.episode_buffer),
         })
         return diag
-
-
-# Backwards compatibility alias
-EpisodeManager = HippocampusMemoryComponent

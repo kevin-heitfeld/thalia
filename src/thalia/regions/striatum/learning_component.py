@@ -246,7 +246,3 @@ class StriatumLearningComponent(LearningComponent):
             "goal_conditioning_enabled": self.config.use_goal_conditioning,
         })
         return diag
-
-
-# Backwards compatibility alias
-LearningManager = StriatumLearningComponent

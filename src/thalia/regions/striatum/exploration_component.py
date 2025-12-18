@@ -252,7 +252,3 @@ class StriatumExplorationComponent(ExplorationComponent):
             "adaptive_enabled": self.config.adaptive_exploration,
         })
         return diag
-
-
-# Backwards compatibility alias
-ExplorationManager = StriatumExplorationComponent

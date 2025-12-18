@@ -278,17 +278,6 @@ class CheckpointManager:
         # Load exploration manager state if present (new format)
         if "manager_state" in exploration_state:
             s.exploration.load_state(exploration_state["manager_state"])
-        else:
-            # Backward compatibility: load old format directly
-            # Old format had action_counts, recent_rewards, etc. at top level
-            old_state = {
-                "action_counts": exploration_state.get("action_counts", torch.zeros(s.n_actions, device=s.device)),
-                "total_trials": exploration_state.get("total_trials", 0),
-                "recent_rewards": exploration_state.get("recent_rewards", []),
-                "recent_accuracy": exploration_state.get("recent_accuracy", []),
-                "tonic_dopamine": exploration_state.get("tonic_dopamine", 0.3),
-            }
-            s.exploration.load_state(old_state)
 
         # 6. RESTORE RPE STATE (if present)
         if "rpe_state" in state and state["rpe_state"]:

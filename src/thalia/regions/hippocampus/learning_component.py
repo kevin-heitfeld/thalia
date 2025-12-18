@@ -150,7 +150,3 @@ class HippocampusLearningComponent(LearningComponent):
             "intrinsic_plasticity_enabled": self.config.intrinsic_plasticity_enabled,
         })
         return diag
-
-
-# Backwards compatibility alias
-PlasticityManager = HippocampusLearningComponent
