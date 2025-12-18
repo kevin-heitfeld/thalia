@@ -87,7 +87,7 @@ class VTADopamineSystem:
 
         # Broadcast to regions:
         for region in self.regions:
-            region.set_dopamine(dopamine)
+            region.set_neuromodulators(dopamine=dopamine)
 
         # When external reward arrives:
         self.vta.deliver_reward(external_reward=1.0, expected_value=0.5)

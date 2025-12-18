@@ -50,7 +50,7 @@ Each region has its own learning rule:
 - **Dopamine**: Gates learning in striatum and prefrontal
 - **Acetylcholine**: Modulates encoding/retrieval in hippocampus
 - **Norepinephrine**: Arousal and gain modulation
-- Set via `region.set_dopamine(level)`, not passed every forward()
+- Set via `region.set_neuromodulators(dopamine=level)`, not passed every forward()
 
 ## Code Patterns
 

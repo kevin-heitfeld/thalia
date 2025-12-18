@@ -84,11 +84,11 @@ class EventDrivenThalamus(EventDrivenRegionBase):
         source: str,
     ) -> Optional[torch.Tensor]:
         """Process input through thalamus relay.
-        
+
         Args:
             input_spikes: Sensory input spikes [n_neurons] (1D, ADR-005)
             source: Input source name (typically "sensory_input")
-        
+
         Returns:
             Relay output spikes [n_relay] (bool, ADR-004/005)
         """
@@ -175,7 +175,7 @@ class EventDrivenThalamus(EventDrivenRegionBase):
 
                 # Set norepinephrine (arousal/gain modulation)
                 if "norepinephrine" in levels:
-                    self.impl.set_norepinephrine(levels["norepinephrine"])
+                    self.impl.set_neuromodulators(norepinephrine=levels["norepinephrine"])
 
         return []
 

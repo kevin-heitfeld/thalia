@@ -162,12 +162,12 @@ def test_thalamus_norepinephrine_modulation(thalamus):
     input_spikes = torch.rand(100) > 0.7  # [100], bool (ADR-004/005)
 
     # Low arousal (low NE)
-    thalamus.set_norepinephrine(0.0)
+    thalamus.set_neuromodulators(norepinephrine=0.0)
     output_low = thalamus(input_spikes)
 
     # High arousal (high NE)
     thalamus.reset_state()
-    thalamus.set_norepinephrine(1.0)
+    thalamus.set_neuromodulators(norepinephrine=1.0)
     output_high = thalamus(input_spikes)
 
     # High NE should increase gain (ADR-004: convert bool for mean)

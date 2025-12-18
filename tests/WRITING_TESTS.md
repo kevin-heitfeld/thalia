@@ -672,7 +672,7 @@ def test_region_everything():
     assert region.weights.mean() > 0.5
 
     # Test 4: Neuromodulation
-    region.set_dopamine(0.8)
+    region.set_neuromodulators(dopamine=0.8)
     # ... more tests
 ```
 

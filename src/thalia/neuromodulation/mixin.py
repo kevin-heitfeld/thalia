@@ -144,56 +144,13 @@ class NeuromodulatorMixin:
     DEFAULT_ACETYLCHOLINE_TAU_MS: float = 50.0
     DEFAULT_NOREPINEPHRINE_TAU_MS: float = 100.0
 
-    def set_dopamine(self, level: float) -> None:
-        """Set dopamine level (modulates plasticity rate).
-
-        .. deprecated::
-            Use :meth:`set_neuromodulators` instead for atomic updates.
-            Individual setters are kept for backward compatibility only.
-
-        Args:
-            level: Dopamine level, typically in [-1, 1].
-                   Positive = reward, consolidate current patterns
-                   Negative = punishment, reduce current patterns
-                   Zero = baseline learning rate
-        """
-        self.state.dopamine = level
-
-    def set_acetylcholine(self, level: float) -> None:
-        """Set acetylcholine level (modulates attention/encoding).
-
-        .. deprecated::
-            Use :meth:`set_neuromodulators` instead for atomic updates.
-            Individual setters are kept for backward compatibility only.
-
-        Args:
-            level: ACh level, typically in [0, 1].
-                   High = encoding mode, enhance sensory processing
-                   Low = retrieval mode, suppress interference
-        """
-        self.state.acetylcholine = level
-
-    def set_norepinephrine(self, level: float) -> None:
-        """Set norepinephrine level (modulates arousal/gain).
-
-        .. deprecated::
-            Use :meth:`set_neuromodulators` instead for atomic updates.
-            Individual setters are kept for backward compatibility only.
-
-        Args:
-            level: NE level, typically in [0, 1].
-                   High = arousal, increase neural gain
-                   Low = baseline gain
-        """
-        self.state.norepinephrine = level
-
     def set_neuromodulators(
         self,
-        dopamine: float,
-        norepinephrine: float,
-        acetylcholine: float
+        dopamine: Optional[float] = None,
+        norepinephrine: Optional[float] = None,
+        acetylcholine: Optional[float] = None
     ) -> None:
-        """Set all neuromodulator levels atomically (efficient broadcast).
+        """Set neuromodulator levels atomically (efficient broadcast).
 
         This consolidated method is more efficient than calling individual setters
         when updating multiple neuromodulators simultaneously (3x reduction in
@@ -215,10 +172,14 @@ class NeuromodulatorMixin:
             For biological plausibility, all three neuromodulator systems
             should be updated together to maintain consistent brain state.
             This method ensures atomic updates without partial state.
+            Any neuromodulator not specified will remain at its current value.
         """
-        self.state.dopamine = dopamine
-        self.state.norepinephrine = norepinephrine
-        self.state.acetylcholine = acetylcholine
+        if dopamine is not None:
+            self.state.dopamine = dopamine
+        if norepinephrine is not None:
+            self.state.norepinephrine = norepinephrine
+        if acetylcholine is not None:
+            self.state.acetylcholine = acetylcholine
 
     def set_neuromodulator(self, name: str, level: float) -> None:
         """Generic setter for any neuromodulator.

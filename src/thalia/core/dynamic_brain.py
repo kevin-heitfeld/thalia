@@ -1466,10 +1466,11 @@ class DynamicBrain(nn.Module):
 
         # Broadcast to pathways
         for pathway in self.connections.values():
-            if hasattr(pathway, "set_dopamine"):
-                pathway.set_dopamine(dopamine)
-            if hasattr(pathway, "set_norepinephrine"):
-                pathway.set_norepinephrine(norepinephrine)
+            if hasattr(pathway, "set_neuromodulators"):
+                pathway.set_neuromodulators(
+                    dopamine=dopamine,
+                    norepinephrine=norepinephrine,
+                )
 
     def _compute_intrinsic_reward(self) -> float:
         """Compute intrinsic reward from the brain's internal objectives.
@@ -1966,22 +1967,6 @@ class DynamicBrain(nn.Module):
             self._growth_history.append(event)
 
         return growth_actions
-
-    def _grow_connected_pathways(self, component_name: str, growth_amount: int) -> None:
-        """Grow all pathways connected to a component that has grown.
-
-        Deprecated: Use pathway_manager.grow_connected_pathways() instead.
-        Kept for backward compatibility.
-
-        Args:
-            component_name: Name of component that grew
-            growth_amount: Number of neurons added to component
-        """
-        # Delegate to PathwayManager
-        self.pathway_manager.grow_connected_pathways(
-            component_name=component_name,
-            growth_amount=growth_amount,
-        )
 
     # =========================================================================
     # COMPONENT GRAPH UTILITIES

@@ -1,10 +1,10 @@
 # Thalia Curriculum Training Strategy
 
-**Version**: 0.6.0  
-**Status**: Design Phase (Expert-Reviewed + Enhanced + Implementation-Ready)  
-**Last Updated**: December 8, 2025  
-**Expert Review**: December 8, 2025 (SNN + Cognitive Development Psychology)  
-**Enhancement**: December 8, 2025 (Critical periods, EF, attention, sleep architecture)  
+**Version**: 0.6.0
+**Status**: Design Phase (Expert-Reviewed + Enhanced + Implementation-Ready)
+**Last Updated**: December 8, 2025
+**Expert Review**: December 8, 2025 (SNN + Cognitive Development Psychology)
+**Enhancement**: December 8, 2025 (Critical periods, EF, attention, sleep architecture)
 **Implementation Review**: December 8, 2025 (Refinements for biological realism)
 
 **Recent Improvements** (v0.6.0 - Implementation Refinements):
@@ -100,29 +100,29 @@ Progressive training strategy to grow a biologically-plausible brain from basic 
 # Run these quick checks before starting curriculum:
 def pre_training_validation(brain):
     """Quick sanity checks before curriculum training."""
-    
+
     # 1. Random input produces spikes
     random_input = torch.randn(1, brain.input_size) * 0.5
     output = brain.forward(random_input)
     assert output['spikes'].sum() > 0, "No spikes from random input"
-    
+
     # 2. Constant input stabilizes firing rates
     for _ in range(100):
         brain.forward(torch.ones(1, brain.input_size) * 0.3)
     firing_rate = brain.get_firing_rate()
     assert 0.01 < firing_rate < 0.5, f"Unstable firing: {firing_rate}"
-    
+
     # 3. Learning rules modify weights
     initial_weights = brain.get_weights().clone()
     for _ in range(50):
         brain.forward(random_input)
         brain.learn(reward=1.0)
     assert not torch.allclose(brain.get_weights(), initial_weights), "No learning"
-    
+
     # 4. Oscillators run at correct frequencies
     if hasattr(brain, 'theta'):
         assert 7.5 < brain.theta.frequency_hz < 8.5, "Theta frequency off"
-    
+
     print("✅ All sanity checks passed")
 ```
 
@@ -141,7 +141,7 @@ def pre_training_validation(brain):
 - Cerebellum: 7,000 (forward models)
 - Cortex L4: 5,000 (visual input)
 
-**Rationale**: 
+**Rationale**:
 - Human infants spend 0-6 months learning basic motor control before object recognition
 - Active exploration (not passive viewing) drives early learning
 - Sensorimotor coordination is foundation for all later cognition
@@ -229,14 +229,14 @@ def pre_training_validation(brain):
      * Consolidate visual + temporal
      * Master phoneme boundaries (categorical perception)
      * Vowel categories (/a/ vs /i/ vs /u/)
-   
+
    **Success Criteria**:
    - Visual: >95% accuracy on MNIST
    - Temporal: >90% next-item prediction
    - **Phonological: >90% phoneme discrimination** (NEW)
    - **Categorical perception curves match human infants** (NEW)
-   
-   **Rationale**: 
+
+   **Rationale**:
    - Phoneme discrimination emerges 6-8 months in humans (Stage 0 timing!)
    - Earlier phonological foundation → better literacy (Stage 3)
    - Matches critical period for phonetic tuning
@@ -248,7 +248,7 @@ def pre_training_validation(brain):
    - **Attention weighting**: Attended regions get learning boost
    - **Simple joint attention**: Look at what's being pointed at
    - Success: >80% gaze following accuracy
-   
+
    **Implementation**:
    ```python
    def social_attention_boost(visual_input, gaze_direction):
@@ -288,7 +288,7 @@ Better to spend extra time here than debug cascading failures in Stage 3.
 class CriticalPeriodGating:
     """
     Model critical period plasticity for language.
-    
+
     Biology: GABAergic inhibition maturation closes plasticity windows.
     Hensch & Bavelier (2009) - molecular brakes on plasticity.
     """
@@ -299,11 +299,11 @@ class CriticalPeriodGating:
             'grammar': (25000, 150000),   # Moderately open (Stage 1-2)
             'semantic': (0, float('inf')), # Never closes
         }
-    
+
     def gate_learning(self, learning_rate, domain, age):
         """Modulate learning based on critical period."""
         window = self.plasticity_window[domain]
-        
+
         if age < window[0]:
             return learning_rate * 0.5  # Too early
         elif age > window[1]:
@@ -315,8 +315,8 @@ class CriticalPeriodGating:
 
 # Apply to phonological learning in Stage 0
 phonology_lr = critical_period.gate_learning(
-    base_lr, 
-    domain='phonology', 
+    base_lr,
+    domain='phonology',
     age=current_step
 )
 ```
@@ -338,7 +338,7 @@ phonology_lr = critical_period.gate_learning(
 def should_grow_region(region, observation_window=5000):
     """
     Decide if region needs more capacity.
-    
+
     Returns True only if ALL conditions met:
     - High sustained activity (not just momentary spike)
     - Weights saturated (learning constrained)
@@ -380,31 +380,31 @@ def should_grow_region(region, observation_window=5000):
    - Hold information for 100-500ms across theta cycles
    - **Productive failure**: Try 2-back before explicit teaching of strategies
    - Success: >80% on 2-back task
-   
+
    **Implementation**:
    ```python
    def theta_gamma_n_back(stimulus_sequence, n=2):
        """
        Use theta phase to maintain temporal context.
        Each item encoded at different theta phase within gamma cycle.
-       
+
        Biology: Hippocampal-PFC theta synchrony during WM tasks.
        """
        for t, stimulus in enumerate(stimulus_sequence):
            theta_phase = (t % 8) / 8.0  # 8 items per theta cycle (125ms)
            gamma_phase = 0.5  # Peak excitability
-           
+
            # Encode with phase information
            prefrontal.maintain(
-               stimulus, 
+               stimulus,
                theta_phase=theta_phase,
                gamma_phase=gamma_phase
            )
-           
+
            # Retrieve item from n cycles ago
            target_phase = ((t - n) % 8) / 8.0
            retrieved = prefrontal.retrieve(theta_phase=target_phase)
-           
+
            # Compare current to n-back
            is_match = (stimulus == retrieved)
    ```
@@ -415,12 +415,12 @@ def should_grow_region(region, observation_window=5000):
    - **Pedagogy detection**: Recognize teaching vs incidental observation
    - **Social referencing**: Use others' reactions to ambiguous stimuli
    - Success: >85% imitation accuracy, >80% joint attention
-   
+
    **Implementation**:
    ```python
    class SocialLearningModule:
        """Explicit social learning mechanisms for curriculum."""
-       
+
        def imitation_learning(self, observed_action, observed_outcome):
            """
            Learn from demonstration (not trial-and-error).
@@ -428,17 +428,17 @@ def should_grow_region(region, observation_window=5000):
            """
            # Mirror neuron activation: Simulate action
            predicted_outcome = self.cerebellum.forward_model(observed_action)
-           
+
            # Compare prediction to observation
            imitation_error = observed_outcome - predicted_outcome
-           
+
            # Update motor policy (supervised, not RL!)
            self.cerebellum.learn(
                action=observed_action,
                error=imitation_error,
                learning_rate=self.learning_rate * 2.0  # Fast imitation!
            )
-       
+
        def pedagogy_boost(self, input_data, is_teaching_signal):
            """
            Detect intentional teaching and boost learning.
@@ -450,7 +450,7 @@ def should_grow_region(region, observation_window=5000):
            else:
                learning_rate_multiplier = 1.0
                confidence_boost = 1.0
-           
+
            return learning_rate_multiplier, confidence_boost
    ```
 
@@ -465,12 +465,12 @@ def should_grow_region(region, observation_window=5000):
    - **Syllable segmentation** (chunking phonemes → syllables)
    - **Generation over recognition**: Produce words, not just parse
    - Success: Execute 85% of commands in both languages, >80% phonological mapping
-   
+
    **Why Phonology Already Established (Stage 0)?**
    - Stage 0: Phoneme categorical perception (sounds)
    - Stage 1: Map phonological representations → word meanings
    - Natural progression: sounds → words → grammar (next stage)
-   
+
    **Why Start with Two Languages?**
    - Mirrors bilingual children (manageable cognitive load)
    - Working memory developing in Stage 1 (can handle two)
@@ -483,7 +483,7 @@ def should_grow_region(region, observation_window=5000):
    - Binary uncertainty only (no continuous confidence yet)
    - Provides signal for consolidation prioritization
    - Success: >70% correct abstention (abstain when wrong, respond when right)
-   
+
    **Rationale**: Human children begin metacognitive awareness at 18-24 months.
    Starting here (not Stage 4) enables:
    - Earlier abstention (reduce "hallucinations")
@@ -495,16 +495,16 @@ def should_grow_region(region, observation_window=5000):
    - **Simple delayed gratification**: Wait for larger reward
    - **Impulse control**: Suppress prepotent responses
    - Success: >75% correct inhibition
-   
+
    **Implementation**:
    ```python
    class ExecutiveFunctionStage1:
        """
        Basic inhibitory control (12-24 months equivalent).
-       
+
        Psychology: Diamond (2013) - inhibition is first EF to emerge.
        """
-       
+
        def go_nogo_task(self, stimulus):
            """Suppress prepotent response (don't always act!)"""
            if stimulus.is_go_signal:
@@ -512,7 +512,7 @@ def should_grow_region(region, observation_window=5000):
            else:
                # Inhibit! (Hard for toddlers and early networks)
                return self.suppress_action()
-       
+
        def delayed_gratification(self, immediate_reward, delayed_reward):
            """Wait for better reward (marshmallow test basics)."""
            if delayed_reward > immediate_reward * 1.5:
@@ -520,7 +520,7 @@ def should_grow_region(region, observation_window=5000):
            else:
                return self.take_immediate()
    ```
-   
+
    **Why Critical**: Foundation for all later executive function and self-control
 
 7. **Attention Mechanisms** (Week 11-13) - NEW
@@ -528,7 +528,7 @@ def should_grow_region(region, observation_window=5000):
    - **Top-down task modulation**: Goal-directed attention (find red objects)
    - **Attentional control**: Resist distraction
    - Success: >70% target detection with distractors
-   
+
    **Implementation**:
    ```python
    class AttentionMechanisms:
@@ -536,7 +536,7 @@ def should_grow_region(region, observation_window=5000):
        Two-pathway attention (Corbetta & Shulman, 2002).
        Emerges in Stage 1, refines through later stages.
        """
-       
+
        def bottom_up_salience(self, visual_input):
            """Stimulus-driven attention (bright, moving, novel)."""
            salience_map = compute_salience(
@@ -545,7 +545,7 @@ def should_grow_region(region, observation_window=5000):
                novelty=self.novelty_detector(visual_input)
            )
            return salience_map
-       
+
        def top_down_task_modulation(self, visual_input, goal):
            """Goal-directed attention (look for red objects)."""
            relevance_map = compute_relevance(
@@ -553,19 +553,19 @@ def should_grow_region(region, observation_window=5000):
                goal_template=goal.target_features
            )
            return relevance_map
-       
+
        def combined_attention(self, visual_input, goal):
            """Integrate bottom-up and top-down."""
            salience = self.bottom_up_salience(visual_input)
            relevance = self.top_down_task_modulation(visual_input, goal)
-           
+
            # Weighted combination (task-dependent)
            # Stage 1: More bottom-up (70/30)
            # Stage 3+: More top-down (30/70)
            attention = 0.7 * salience + 0.3 * relevance
            return softmax(attention)
    ```
-   
+
    **Developmental Progression**:
    - Stage 1: Bottom-up dominant (70%), goal modulation weak (30%)
    - Stage 2: Balanced (50/50)
@@ -695,7 +695,7 @@ def should_grow_region(region, observation_window=5000):
    - **Productive failure**: Attempt Spanish grammar before explicit teaching
    - **Social learning**: Learn grammar from demonstrated examples (not just rules)
    - Success: >80% grammatical generation (not just recognition) in each language
-   
+
    **Desirable Difficulties**:
    - Week 13-14 Challenge: 90% difficulty, interleaved syntax (English SVO + German V2)
    - Temporal spacing: Review Stage 0-1 tasks with 2-3 day gaps
@@ -712,28 +712,28 @@ def should_grow_region(region, observation_window=5000):
    - **Generation task**: Create novel concept descriptions in each language
    - **Cross-modal binding with gamma synchrony**: Visual object + auditory label
    - Success: Answer 75% of reasoning questions, generate 70% correct descriptions
-   
+
    **Implementation**:
    ```python
    def cross_modal_gamma_binding(visual_object, auditory_label):
        """
        Use gamma synchrony to bind visual and auditory features.
-       
+
        Biology: Gamma synchronization is THE mechanism for feature binding.
        """
        gamma_phase = 0.5  # Peak excitability
-       
+
        # Force both pathways to same gamma phase
        visual_spikes = visual_cortex(
            visual_object,
            gamma_phase=gamma_phase
        )
-       
+
        auditory_spikes = auditory_cortex(
            auditory_label,
            gamma_phase=gamma_phase  # Synchronized!
        )
-       
+
        # Bound representation emerges from synchronous activation
        bound = hippocampus.bind(
            visual_spikes,
@@ -762,16 +762,16 @@ def should_grow_region(region, observation_window=5000):
    - **Task switching**: Alternate between two rule sets
    - **Cognitive flexibility**: Inhibit old rule, activate new rule
    - Success: >70% on switch trials (vs >90% on repeat trials)
-   
+
    **Implementation**:
    ```python
    class ExecutiveFunctionStage2:
        """
        Set shifting / cognitive flexibility (2-5 years equivalent).
-       
+
        Psychology: Zelazo (2006) - DCCS is classic measure.
        """
-       
+
        def dimensional_change_card_sort(self, card, current_rule):
            """Switch rules: sort by color, then by shape."""
            if current_rule == 'color':
@@ -779,7 +779,7 @@ def should_grow_region(region, observation_window=5000):
            elif current_rule == 'shape':
                # Requires inhibiting color dimension
                return self.sort_by_shape(card)
-       
+
        def task_switching(self, stimulus, task_cue):
            """Alternate between two tasks based on cue."""
            # Switch cost: Slower/less accurate on switch trials
@@ -787,10 +787,10 @@ def should_grow_region(region, observation_window=5000):
                # Reconfigure task set (prefrontal)
                self.inhibit_previous_task()
                self.activate_new_task(task_cue)
-           
+
            return self.execute_task(stimulus, task_cue)
    ```
-   
+
    **Why Critical**: Enables language switching, multi-task learning, flexible behavior
 
 **Training Details**:
@@ -868,30 +868,30 @@ def should_grow_region(region, observation_window=5000):
 class ConfidenceCalibrationTraining:
     """
     Explicit training to calibrate confidence estimates.
-    
+
     Psychology: Metacognitive monitoring improves with feedback
     (Schraw & Dennison, 1994).
     """
-    
+
     def calibration_feedback_loop(self, brain, test_set, training_fraction=0.20):
         """
         Train brain to match confidence to accuracy.
-        
+
         Args:
             training_fraction: 20% of Stage 3 training time on calibration
         """
-        
+
         for batch in test_set:
             # Get prediction + confidence
             output = brain.forward(batch['input'])
             confidence = brain.estimate_confidence(output)
-            
+
             # Reveal ground truth
             actual_correct = (output.prediction == batch['label'])
-            
+
             # Compute calibration error
             calibration_error = abs(confidence - float(actual_correct))
-            
+
             # Feedback signal (dopamine modulated)
             if calibration_error < 0.10:
                 dopamine = 1.0  # Well-calibrated!
@@ -899,13 +899,13 @@ class ConfidenceCalibrationTraining:
                 dopamine = 0.3  # Poorly calibrated
             else:
                 dopamine = 0.7  # Moderate
-            
+
             # Update confidence estimation network
             brain.metacognitive_module.learn(
                 error=calibration_error,
                 dopamine=dopamine
             )
-            
+
             # Log for analysis
             log_calibration_metrics(confidence, actual_correct, calibration_error)
 ```
@@ -920,39 +920,39 @@ class ConfidenceCalibrationTraining:
    - **Maze solving**: Plan path before execution
    - **Goal decomposition**: Break complex goal into subgoals
    - Success: >60% on 3-step planning tasks
-   
+
    **Implementation**:
    ```python
    class ExecutiveFunctionStage3:
        """
        Planning and goal management (6-10 years equivalent).
-       
+
        Psychology: Luciana & Nelson (1998) - prefrontal planning.
        """
-       
+
        def tower_of_hanoi(self, initial_state, goal_state):
            """Multi-step planning with subgoals."""
            # Decompose into subgoals
            subgoals = self.decompose_goal(initial_state, goal_state)
-           
+
            # Plan action sequence (prefrontal working memory)
            plan = []
            for subgoal in subgoals:
                actions = self.plan_to_subgoal(current_state, subgoal)
                plan.extend(actions)
-           
+
            return plan
-       
+
        def prospective_memory(self, intention, trigger_condition):
            """Remember to perform action when condition met (future planning)."""
            # Maintain intention in working memory
            self.prefrontal.store_intention(intention, trigger_condition)
-           
+
            # Monitor for trigger
            if self.detect_trigger(trigger_condition):
                return self.execute_intention(intention)
    ```
-   
+
    **Why Critical**: Foundation for complex reasoning, problem-solving, goal-directed behavior
 
 6. **Scaffolding and Fading** (Week 30-46) - NEW
@@ -960,7 +960,7 @@ class ConfidenceCalibrationTraining:
    - **Medium scaffolding** (Week 38-42): Partial hints only
    - **Low scaffolding** (Week 42-46): Minimal support
    - **Adaptive fading**: Based on performance
-   
+
    **Implementation**:
    ```python
    class ScaffoldingSchedule:
@@ -968,24 +968,24 @@ class ConfidenceCalibrationTraining:
        Gradual withdrawal of support (Wood, Bruner, Ross, 1976).
        Applies to reading comprehension and text generation.
        """
-       
+
        def __init__(self):
            self.support_level = 1.0  # Full support initially
-       
+
        def apply_scaffolding(self, task, support_level):
            """Provide decreasing support over time."""
            if support_level > 0.7:
                # High scaffolding: Show examples, highlight key features
                return task.with_examples(n=3).with_hints()
-           
+
            elif support_level > 0.4:
                # Medium: Partial hints only
                return task.with_hints(partial=True)
-           
+
            else:
                # Low: Minimal or no support
                return task
-       
+
        def fade_scaffolding(self, performance, threshold=0.80):
            """Reduce support when performance is good."""
            if performance > threshold:
@@ -993,7 +993,7 @@ class ConfidenceCalibrationTraining:
            elif performance < 0.60:
                self.support_level = min(1.0, self.support_level * 1.1)  # Restore
    ```
-   
+
    **Why Critical**: Matches Zone of Proximal Development, optimal challenge level
 
 **Training Details**:
@@ -1085,7 +1085,7 @@ class ConfidenceCalibrationTraining:
      * Active learning: Study what you don't know
      * Self-directed difficulty adjustment
    - Success: Calibration error <0.15, appropriate abstention rate, >70% self-selection accuracy
-   
+
    **Developmental Progression**:
    - Stage 1: Binary uncertainty ("know" vs "don't know")
    - Stage 2: Coarse confidence (high/medium/low)
@@ -1097,7 +1097,7 @@ class ConfidenceCalibrationTraining:
    - Multi-step logical inference without backprop
    - "If A and B, then C" reasoning locally
    - Success: >65% on multi-premise reasoning tasks
-   
+
    **Implementation**:
    ```python
    class LogicNeuron(DendriticNeuron):
@@ -1109,10 +1109,10 @@ class ConfidenceCalibrationTraining:
            # Each premise projects to separate dendritic branch
            branch_1 = self.dendrites[0].forward(premise_a)
            branch_2 = self.dendrites[1].forward(premise_b)
-           
+
            # Dendritic spikes occur only if BOTH branches active (AND gate)
            dendritic_spike = self.compute_dendritic_spike(branch_1, branch_2)
-           
+
            # Soma integrates dendritic spikes → conclusion
            conclusion = self.soma.forward(dendritic_spike)
            return conclusion
@@ -1123,45 +1123,45 @@ class ConfidenceCalibrationTraining:
    - **Analogical reasoning**: Structure mapping across domains
    - **Hypothesis testing**: Generate and evaluate hypotheses
    - Success: >65% on matrix reasoning tasks
-   
+
    **Implementation**:
    ```python
    class ExecutiveFunctionStage4:
        """
        Fluid reasoning and abstract thought (12-18 years equivalent).
-       
+
        Psychology: Cattell-Horn-Carroll theory - peak fluid intelligence.
        """
-       
+
        def ravens_matrices(self, pattern_matrix):
            """Abstract rule induction from visual patterns."""
            # Extract relations between elements
            relations = self.extract_relations(pattern_matrix)
-           
+
            # Induce abstract rule
            rule = self.induce_rule(relations)
-           
+
            # Apply rule to generate missing element
            prediction = self.apply_rule(rule, pattern_matrix)
            return prediction
-       
+
        def hypothesis_testing(self, observations, hypotheses):
            """Generate, test, and revise hypotheses."""
            # Prefrontal maintains multiple hypotheses
            for hypothesis in hypotheses:
                likelihood = self.evaluate_hypothesis(hypothesis, observations)
-               
+
            # Select best hypothesis (Bayesian updating)
            best_hypothesis = max(hypotheses, key=lambda h: h.likelihood)
            return best_hypothesis
    ```
-   
+
    **Developmental Summary (EF)**:
    - Stage 1 (12-24 mo): Inhibitory control (go/no-go)
    - Stage 2 (2-5 yr): Set shifting (DCCS, task switching)
    - Stage 3 (6-10 yr): Planning (Tower of Hanoi, subgoaling)
    - Stage 4 (12-18 yr): Fluid reasoning (Raven's, analogies)
-   
+
    **Why This Sequence**: Matches prefrontal cortex maturation trajectory
 
 **Training Details**:
@@ -1175,17 +1175,17 @@ class ConfidenceCalibrationTraining:
       """
       Brain selects next task based on uncertainty.
       Active learning: Study what you don't know!
-      
+
       Psychology: Kornell & Bjork - learner-selected difficulties optimal.
       """
       uncertainties = {}
-      
+
       for task in available_tasks:
           # Probe confidence on sample
           sample = task.sample(n=10)
           confidence = brain.estimate_confidence(sample)
           uncertainties[task] = 1.0 - confidence  # High = uncertain
-      
+
       # Sample proportional to uncertainty
       weights = softmax(uncertainties, temperature=0.5)
       return sample_task(weights)
@@ -1324,7 +1324,7 @@ class ConfidenceCalibrationTraining:
 
 **Conservative Pruning Summary Across Stages**:
 - Stage 2: 1% (gentle introduction)
-- Stage 3: 1% (early pruning phase) 
+- Stage 3: 1% (early pruning phase)
 - Stage 4: 2% (peak adolescent pruning)
 - Stage 5: 2% (continued refinement)
 - Stage 6: 1% (minimal maintenance)
@@ -1352,7 +1352,7 @@ class ConfidenceCalibrationTraining:
 class InterleavedCurriculumSampler:
     """
     Sample tasks from multinomial distribution each step.
-    
+
     Forces brain to 'reload' context → better discrimination & retention.
     Psychology: Rohrer & Taylor (2007) - interleaved beats blocked practice.
     """
@@ -1360,7 +1360,7 @@ class InterleavedCurriculumSampler:
         """Sample from distribution each step (not in blocks)."""
         # Example: [0.05 Stage0, 0.10 Stage1, 0.15 Stage2, 0.70 Stage4]
         return np.random.choice(stages, p=stage_weights)
-    
+
     # NOT blocked (bad):
     # - 70 steps Stage 4, then 30 steps review
     # YES interleaved (good):
@@ -1372,17 +1372,17 @@ class InterleavedCurriculumSampler:
 def calculate_review_schedule(stage_history, current_step, stage_performance):
     """
     Leitner-style expanding intervals for stage review.
-    
+
     Psychology: Ebbinghaus, Cepeda et al. - expanding intervals optimize retention.
     Focus on 'just-before-forgetting' sweet spot.
     """
     review_intervals = {}
-    
+
     for stage, last_review_step in stage_history.items():
         steps_since_review = current_step - last_review_step
         performance = stage_performance[stage]
         review_count = stage_review_counts[stage]
-        
+
         # Expand interval for well-retained knowledge
         if performance > 0.92:
             optimal_interval = 50000 * (1.5 ** review_count)  # Exponential spacing
@@ -1390,11 +1390,11 @@ def calculate_review_schedule(stage_history, current_step, stage_performance):
             optimal_interval = 10000  # Reset for forgotten material
         else:
             optimal_interval = 25000  # Moderate spacing
-        
+
         # Due for review?
         if steps_since_review >= optimal_interval:
             review_intervals[stage] = 1.0 / optimal_interval
-    
+
     return normalize(review_intervals)
 ```
 
@@ -1403,26 +1403,26 @@ def calculate_review_schedule(stage_history, current_step, stage_performance):
 def adaptive_mixing_weights(stage_performances, target_performance=0.90):
     """
     Weight review tasks by how much they've degraded.
-    
+
     If Stage 1 is at 0.85 (target 0.90) → more replay
     If Stage 2 is at 0.92 (above target) → less replay
     """
     weights = {}
     total_deficit = 0
-    
+
     for stage, perf in stage_performances.items():
         deficit = max(0, target_performance - perf)
         weights[stage] = deficit
         total_deficit += deficit
-    
+
     # Normalize to sum to review_budget (e.g., 30%)
     if total_deficit > 0:
         weights = {s: w/total_deficit for s, w in weights.items()}
     else:
         # All stages healthy → uniform review
-        weights = {s: 1/len(stage_performances) 
+        weights = {s: 1/len(stage_performances)
                    for s in stage_performances}
-    
+
     return weights
 ```
 
@@ -1441,17 +1441,17 @@ def adaptive_mixing_weights(stage_performances, target_performance=0.90):
 class CurriculumDifficultyCalibrator:
     """
     Adjust task difficulty to maintain 'zone of proximal development'.
-    
+
     Goal: ~75% success rate (optimal learning)
     Too easy (>90%): Bored, no learning
     Too hard (<60%): Frustrated, no progress
-    
+
     Exception: Productive failure phases intentionally aim for ~20% (see below)
     """
     def __init__(self, target_success_rate=0.75, adjustment_rate=0.05):
         self.target = target_success_rate
         self.adjust_rate = adjustment_rate
-        
+
     def calibrate(self, current_success_rate, current_difficulty):
         if current_success_rate > 0.90:
             # Too easy → increase difficulty
@@ -1462,7 +1462,7 @@ class CurriculumDifficultyCalibrator:
         else:
             # Just right → maintain
             new_difficulty = current_difficulty
-            
+
         return new_difficulty
 ```
 
@@ -1481,17 +1481,17 @@ class CurriculumDifficultyCalibrator:
 class CognitiveLoadMonitor:
     """
     Monitor total cognitive demand to prevent overload.
-    
+
     Psychology: Cognitive Load Theory (Sweller, 1988)
     Working memory has limited capacity (~4 chunks).
     """
-    
+
     def estimate_cognitive_load(self, brain, task):
         """
         Estimate total cognitive demand.
-        
+
         Load = WM_demand + EF_demand + novelty + switching_cost + attention
-        
+
         If load > capacity → performance degrades
         """
         load_components = {
@@ -1501,34 +1501,34 @@ class CognitiveLoadMonitor:
             'language_switching': task.n_language_switches * 0.15,  # Code-switching cost
             'attention_control': task.n_distractors * 0.1,  # Selective attention
         }
-        
+
         total_load = sum(load_components.values())
         capacity = brain.working_memory_capacity  # Grows with stage
-        
+
         load_ratio = total_load / capacity
-        
+
         if load_ratio > 1.2:
             return 'OVERLOAD'  # Risk of failure, reduce demands
         elif load_ratio > 0.9:
             return 'HIGH_LOAD'  # Near capacity (optimal challenge!)
         else:
             return 'MANAGEABLE'  # Under capacity
-    
+
     def prevent_mechanism_overload(self, current_week, proposed_tasks):
         """
         Prevent introducing too many demanding mechanisms simultaneously.
-        
+
         Example: Don't add Spanish + DCCS + 3-back in same week.
         """
         high_load_mechanisms = []
-        
+
         for task in proposed_tasks:
             if task.is_new_mechanism:
                 high_load_mechanisms.append(task.mechanism_name)
-        
+
         if len(high_load_mechanisms) > 2:
             return f"OVERLOAD WARNING: {len(high_load_mechanisms)} new mechanisms in week {current_week}"
-        
+
         return "OK"
 ```
 
@@ -1580,19 +1580,19 @@ result = load.estimate_cognitive_load(brain, task)
 def testing_phase(brain, test_set, test_frequency=0.15):
     """
     Frequent low-stakes testing WITHOUT feedback.
-    
+
     Forces retrieval effort, strengthens memory traces.
-    
+
     Args:
         test_frequency: % of steps that are tests (default 15%)
     """
     for sample in test_set:
         # NO feedback! No learning signal!
         output = brain.forward(sample, learning_enabled=False)
-        
+
         # Record accuracy for later analysis
         log_prediction(output, sample.label)
-    
+
     # Feedback given AFTER full test (delayed)
     # This spacing enhances retention
 ```
@@ -1621,7 +1621,7 @@ def testing_phase(brain, test_set, test_frequency=0.15):
 def productive_failure_phase(brain, new_task, failure_steps=100):
     """
     Let brain attempt new task without preparation.
-    
+
     Expect ~20% success (vs 75% normal target).
     Activates prior knowledge, highlights gaps, increases encoding effort.
     """
@@ -1629,12 +1629,12 @@ def productive_failure_phase(brain, new_task, failure_steps=100):
     for _ in range(failure_steps):
         result = brain.attempt(new_task)
         # NO learning signal! Just experience the task.
-    
+
     # Phase 2: Instruction (NOW teach properly)
     for _ in range(500):
         result = brain.attempt(new_task)
         brain.learn(result)  # With feedback
-    
+
     # Failure → instruction beats instruction-only
 ```
 
@@ -1689,7 +1689,7 @@ def productive_failure_phase(brain, new_task, failure_steps=100):
 - Stage 5-6: Conservative augmentation (20% max, preserve semantic fidelity)
 
 **Rationale**: Biological learning benefits from clean, consistent patterns.
-Over-augmentation can interfere with precise semantic learning and 
+Over-augmentation can interfere with precise semantic learning and
 biological plausibility. Keep augmentation conservative.
 
 ### Offline "Sleep" Consolidation Protocol
@@ -1704,20 +1704,20 @@ biological plausibility. Keep augmentation conservative.
 def calculate_memory_pressure(brain, window=5000):
     """
     Track synaptic weight accumulation as proxy for sleep pressure.
-    
+
     Biology: Synaptic homeostasis hypothesis (Tononi & Cirelli)
     High LTP without consolidation → adenosine buildup → need sleep.
     """
     recent_weight_changes = []
-    
+
     for region in brain.regions.values():
         if hasattr(region, 'weight_change_history'):
             recent_changes = region.weight_change_history[-window:]
             recent_weight_changes.append(torch.stack(recent_changes).abs().mean())
-    
+
     # High mean weight change = high memory pressure
     pressure = torch.stack(recent_weight_changes).mean()
-    
+
     return pressure
 
 # In training loop:
@@ -1731,7 +1731,7 @@ if memory_pressure > threshold:
 def consolidation_schedule(stage, last_consol_steps, performance_delta, memory_pressure):
     """
     Adaptive consolidation based on learning curve + memory pressure.
-    
+
     Principles:
     1. More frequent early in stage (steepest learning)
     2. Less frequent as performance plateaus
@@ -1745,11 +1745,11 @@ def consolidation_schedule(stage, last_consol_steps, performance_delta, memory_p
         2: 40000,  # Stage 2: Balanced
         3: 60000,  # Stage 3+: Conservative
     }.get(stage, 80000)
-    
+
     # 🔥 NEW: Memory pressure override
     if memory_pressure > 0.8:  # High synaptic pressure
         return 3000  # Urgent consolidation
-    
+
     # Adjust based on learning dynamics
     if performance_delta < -0.05:  # Forgetting detected
         return 5000  # Emergency consolidation
@@ -1787,23 +1787,23 @@ consolidates during active learning not plateau, prevents overconsolidation.
 def stage_transition_protocol(brain, old_stage, new_stage):
     """
     Smooth transition between curriculum stages.
-    
+
     Psychology: Gradual difficulty ramps prevent learned helplessness.
     Zone of Proximal Development requires appropriate scaffolding.
     """
-    
+
     # 1. Final consolidation of old stage (extended)
     print(f"Stage {old_stage} → {new_stage} transition beginning...")
     extended_consolidation(brain, n_cycles=10)  # Double normal consolidation
-    
+
     # 2. Evaluate readiness
     readiness = evaluate_stage_criteria(brain, old_stage)
     if not readiness['passed']:
         print(f"⚠️  Not ready for Stage {new_stage}. Extending Stage {old_stage} by 2 weeks.")
         return extend_current_stage(weeks=2)
-    
+
     print(f"✅ Stage {old_stage} milestones achieved. Proceeding to Stage {new_stage}.")
-    
+
     # 3. Gradual difficulty ramp for new stage (4-week intro)
     difficulty_schedule = [
         ('week_1', 0.3),  # Very easy introduction
@@ -1811,14 +1811,14 @@ def stage_transition_protocol(brain, old_stage, new_stage):
         ('week_3', 0.7),  # Moderate
         ('week_4+', 1.0), # Full difficulty
     ]
-    
+
     # 4. Maintain high old-stage review initially (gradual fade)
     mixing_schedule = [
         ('week_1', 0.70),  # 70% old stage (high review)
         ('week_2', 0.50),  # 50% old stage
         ('week_3+', 0.30), # 30% old stage (normal mixing)
     ]
-    
+
     # 5. Monitor cognitive load during transition
     for week in range(4):
         load = estimate_cognitive_load(brain, new_stage_tasks[week])
@@ -1826,13 +1826,13 @@ def stage_transition_protocol(brain, old_stage, new_stage):
             print(f"⚠️  Cognitive overload detected in transition week {week+1}")
             print(f"   Reducing difficulty and extending transition period.")
             difficulty_schedule = extend_transition(difficulty_schedule)
-    
+
     return TransitionPlan(difficulty_schedule, mixing_schedule)
 
 def evaluate_stage_criteria(brain, stage):
     """
     Check all milestone checklists for stage completion.
-    
+
     Returns:
         {
             'passed': bool,
@@ -1842,7 +1842,7 @@ def evaluate_stage_criteria(brain, stage):
     """
     milestones = STAGE_MILESTONES[stage]
     results = {}
-    
+
     for criterion, threshold in milestones.items():
         actual = brain.evaluate_criterion(criterion)
         results[criterion] = {
@@ -1850,9 +1850,9 @@ def evaluate_stage_criteria(brain, stage):
             'actual': actual,
             'passed': actual >= threshold
         }
-    
+
     failed = [k for k, v in results.items() if not v['passed']]
-    
+
     return {
         'passed': len(failed) == 0,
         'failed_criteria': failed,
@@ -1891,7 +1891,7 @@ Week 31:
 Week 32:
   - Difficulty: 0.7 (moderate)
   - Mixing: 30% Stage 2, 70% Stage 3
-  
+
 Week 33+:
   - Difficulty: 1.0 (full)
   - Mixing: 30% Stage 2, 70% Stage 3 (maintained)
@@ -1912,7 +1912,7 @@ Week 33+:
 def ultradian_consolidation_cycle(brain, replay_buffer, n_cycles=5):
     """
     Mimic natural sleep architecture with SWS→REM alternation.
-    
+
     Biology: 90-min cycles, SWS decreases and REM increases across night.
     Stickgold & Walker (2013) - staged consolidation serves different functions.
     """
@@ -1920,15 +1920,15 @@ def ultradian_consolidation_cycle(brain, replay_buffer, n_cycles=5):
         # SWS duration decreases across night (early consolidation)
         sws_proportion = 0.8 - 0.1 * cycle  # 80% → 30%
         rem_proportion = 1.0 - sws_proportion  # 20% → 70%
-        
+
         # SWS: Literal replay for stabilization
         sws_steps = int(10000 * sws_proportion / n_cycles)
         offline_consolidation(
-            brain, replay_buffer, 
-            n_steps=sws_steps, 
+            brain, replay_buffer,
+            n_steps=sws_steps,
             sleep_stage='sws'
         )
-        
+
         # REM: Schema extraction and creativity
         rem_steps = int(10000 * rem_proportion / n_cycles)
         offline_consolidation(
@@ -1936,7 +1936,7 @@ def ultradian_consolidation_cycle(brain, replay_buffer, n_cycles=5):
             n_steps=rem_steps,
             sleep_stage='rem'
         )
-    
+
     # Early night: More SWS (stabilization)
     # Late night: More REM (integration, generalization)
 ```
@@ -1975,21 +1975,21 @@ N_CYCLES_PER_CONSOLIDATION = 5
        prediction_error = abs(
            episode.reward + gamma * episode.next_value - episode.value
        )
-       
+
        priority = prediction_error
-       
+
        # Boost novel states (low familiarity)
        if episode.novelty_score > 0.7:
            priority *= 1.5
-       
+
        # Boost boundary events (state transitions)
        if episode.is_transition:
            priority *= 1.3
-       
+
        # Also keep successful experiences (don't forget what works)
        if episode.reward > 0.8:
            priority *= 1.2
-       
+
        return priority
    ```
 
@@ -2010,19 +2010,23 @@ N_CYCLES_PER_CONSOLIDATION = 5
 def offline_consolidation(brain, replay_buffer, n_steps=10000, stage=0, sleep_stage='sws'):
     """
     Sleep-like consolidation phase with optional pruning and REM generalization.
-    
+
     Can be called directly (for single-mode) or via ultradian_consolidation_cycle
     (for realistic SWS→REM alternation).
     """
-    
+
     # Reduce learning rates (gentler updates)
     original_lr = brain.get_learning_rates()
     brain.set_learning_rates(original_lr * 0.1)
-    
+
     # Modulate neuromodulators (mimic sleep state)
-    brain.set_global_dopamine(0.3)  # Lower dopamine
-    brain.set_acetylcholine(0.5)    # Moderate ACh
-    
+    # Use set_neuromodulators for atomic updates
+    for region in brain.components.values():
+        region.set_neuromodulators(
+            dopamine=0.3,        # Lower dopamine
+            acetylcholine=0.5,   # Moderate ACh
+        )
+
     # 🔥 REM vs SWS consolidation
     if sleep_stage == 'sws':
         # SWS: Literal replay for stabilization
@@ -2032,35 +2036,35 @@ def offline_consolidation(brain, replay_buffer, n_steps=10000, stage=0, sleep_st
             brain.forward(batch['input'])
             brain.learn(batch['target'], reward=batch['reward'])
             brain.consolidate_synapses(threshold=0.1)
-    
+
     elif sleep_stage == 'rem':
         # 🔥 REM generalization - extract schemas
         n_rem_steps = n_steps  # Full duration for REM
-        
+
         for step in range(n_rem_steps // 2):
             # Find similar episodes (cluster-based)
             cluster = replay_buffer.sample_cluster(k=5, similarity_threshold=0.7)
-            
+
             # Create prototypical 'average' episode (gist extraction)
             prototypical_input = torch.stack([ep['input'] for ep in cluster]).mean(dim=0)
-            
+
             # Replay with HIGH noise (creates variations)
             noisy_input = prototypical_input + torch.randn_like(prototypical_input) * 0.3
-            
+
             # Learn abstract structure (not specific instance)
             brain.forward(noisy_input)
             brain.learn(target=None, reward=0.3)  # Gentle, schema-level learning
-        
+
         # REM also does random replay (creativity, novel combinations)
         for step in range(n_rem_steps // 2):
             random_batch = replay_buffer.sample_random(batch_size=1)
             brain.forward(random_batch['input'])
-    
+
     # Adaptive pruning (Stage 3+)
     if stage >= 3:
         prune_fraction = 0.05 if stage == 3 else 0.10  # Conservative → moderate
         prune_synapses(brain, fraction=prune_fraction, observation_window=50000)
-    
+
     # Restore learning rates
     brain.set_learning_rates(original_lr)
     brain.reset_neuromodulators()
@@ -2074,18 +2078,18 @@ ultradian_consolidation_cycle(brain, replay_buffer, n_cycles=5)
 def prune_synapses(brain, stage=3, observation_window=50000):
     """
     Remove inefficient synapses while preserving learned knowledge.
-    
+
     Args:
         stage: Current curriculum stage (determines pruning rate)
         observation_window: Steps to track synapse activity
-    
+
     Pruning rates (conservative, biologically-inspired):
         Stage 2: 1% (gentle introduction)
         Stage 3: 1% (early pruning)
         Stage 4: 2% (peak adolescent pruning)
         Stage 5: 2% (continued refinement)
         Stage 6: 1% (minimal maintenance)
-    
+
     Biology: Humans prune ~2-3% annually during adolescence
     Our rates match this conservative approach.
     """
@@ -2097,32 +2101,32 @@ def prune_synapses(brain, stage=3, observation_window=50000):
         5: 0.02,  # 2% - continued
         6: 0.01,  # 1% - maintenance
     }
-    
+
     fraction = pruning_rates.get(stage, 0.01)  # Default 1%
-    
+
     for region_name, region in brain.regions.items():
         # Track synapse usage over window
         usage = region.get_synapse_activity(window=observation_window)
-        
+
         # Identify candidates (low activity + low importance)
         importance = region.estimate_synapse_importance()
         candidates = (usage < 0.05) & (importance < 0.1)
-        
+
         # Conservative pruning
         n_prune = min(int(fraction * len(usage)), candidates.sum())
-        
+
         # Keep critical pathways
         keep_mask = importance > 0.3
         final_prune_mask = candidates & ~keep_mask
-        
+
         # Select top N lowest-importance candidates
         prune_indices = torch.topk(
             torch.where(final_prune_mask, -importance, float('inf')),
             k=n_prune, largest=False
         ).indices
-        
+
         region.remove_synapses(prune_indices)
-        
+
         # Log pruning for analysis
         print(f"  {region_name}: Pruned {n_prune} synapses ({fraction*100:.1f}% rate)")
 ```
@@ -2148,7 +2152,7 @@ def prune_synapses(brain, stage=3, observation_window=50000):
 
 **Stage-Specific Benchmarks**:
 
-**Stage 0**: 
+**Stage 0**:
 - MNIST test set (10k images)
 - Custom sequence prediction (1k sequences)
 - TIMIT phoneme recognition (500 samples)
@@ -2200,18 +2204,18 @@ def prune_synapses(brain, stage=3, observation_window=50000):
 def adaptive_forgetting_threshold(stage, n_neurons):
     """
     Stricter thresholds as brain grows.
-    
+
     Rationale: 10% of 1M neurons >> 10% of 50k neurons
     Larger brains have more to lose, need tighter monitoring.
     """
     base_threshold = 0.10  # 10% baseline
-    
+
     # Scale inversely with size (larger = stricter)
     size_penalty = 1.0 - 0.3 * np.log10(n_neurons / 50000)
-    
+
     # Scale with stage (more to lose in later stages)
     stage_penalty = 1.0 - 0.05 * stage
-    
+
     threshold = base_threshold * size_penalty * stage_penalty
     return max(0.05, threshold)  # Floor at 5%
 ```
@@ -2412,11 +2416,11 @@ Failure detected?
 **1. Runaway Excitation** (Most common in Stage 0-1)
 - **Symptom**: Firing rates >0.8, all neurons active
 - **Cause**: Insufficient inhibition, positive feedback loops
-- **Prevention**: 
+- **Prevention**:
   * Criticality monitor with auto-adjustment
   * E/I balance regulator
   * Divisive normalization in cortex
-- **Recovery**: 
+- **Recovery**:
   * Reduce learning rates by 50%
   * Boost inhibitory weights by 20%
   * Add lateral inhibition if missing
@@ -2425,11 +2429,11 @@ Failure detected?
 **2. Silent Networks** (Can occur any stage)
 - **Symptom**: Firing rates <0.01, no spikes
 - **Cause**: Too-strong inhibition, input too weak, thresholds too high
-- **Prevention**: 
+- **Prevention**:
   * Input normalization to [0, 1] range
   * Intrinsic plasticity adapts thresholds
   * Minimum firing rate monitoring
-- **Recovery**: 
+- **Recovery**:
   * Boost input strength by 2x
   * Lower neuron thresholds by 10-20%
   * Check for dead neurons (membrane stuck at rest)
@@ -2438,11 +2442,11 @@ Failure detected?
 **3. Catastrophic Forgetting** (Stage 2+)
 - **Symptom**: >15% performance drop on previous stage tasks
 - **Cause**: New learning overwrites old representations
-- **Prevention**: 
+- **Prevention**:
   * Curriculum mixing (review old tasks regularly)
   * Long consolidation windows (50k+ steps)
   * Conservative synaptic scaling (gentle weakening)
-- **Recovery**: 
+- **Recovery**:
   * Increase review proportion for forgotten stage
   * Extended replay of affected tasks (20k extra steps)
   * Reduce learning rate for affected regions
@@ -2451,11 +2455,11 @@ Failure detected?
 **4. Capacity Saturation** (Stage 3+)
 - **Symptom**: >90% weight saturation, performance plateau, high utilization
 - **Cause**: Not enough neurons for task complexity
-- **Prevention**: 
+- **Prevention**:
   * Auto-growth at 80% utilization threshold
   * Monitor weight saturation per region
   * Track capacity metrics every 1000 steps
-- **Recovery**: 
+- **Recovery**:
   * Add 10-20% neurons to saturated region
   * Sparse initialization for new neurons
   * Continue training (should resume learning)
@@ -2464,11 +2468,11 @@ Failure detected?
 **5. Oscillator Desynchronization** (Stage 2+ with hippocampus)
 - **Symptom**: Irregular sequences, poor temporal binding
 - **Cause**: Theta/gamma frequencies drift, phase coupling lost
-- **Prevention**: 
+- **Prevention**:
   * Oscillator frequency monitoring
   * Automatic frequency correction
   * Phase coherence metrics
-- **Recovery**: 
+- **Recovery**:
   * Reset oscillator phases
   * Re-sync to target frequencies
   * May indicate region too active/silent (check firing rates)
@@ -2476,11 +2480,11 @@ Failure detected?
 **6. Striatum D1/D2 Imbalance** (Any stage with RL)
 - **Symptom**: All-Go or All-NoGo behavior, poor action selection
 - **Cause**: D1 or D2 pathways dominate, opponent balance lost
-- **Prevention**: 
+- **Prevention**:
   * Homeostatic D1/D2 balancing
   * Monitor weight ratio (should be ~1:1)
   * Dopamine modulation working correctly
-- **Recovery**: 
+- **Recovery**:
   * Rebalance D1/D2 weights manually
   * Check dopamine signal delivery
   * May need to adjust reward scale
@@ -2514,7 +2518,7 @@ When training stalls or fails:
 class MetacognitiveMonitor:
     """
     Estimates brain's confidence in predictions.
-    
+
     Biological: Anterior Cingulate Cortex + prefrontal
     Mechanism: Population variance → confidence signal
     """
@@ -2524,7 +2528,7 @@ class MetacognitiveMonitor:
         variance = torch.var(region_output['spikes'], dim=0)
         confidence = 1.0 / (1.0 + variance.mean())
         return confidence
-    
+
     def should_abstain(self, confidence, threshold=0.6):
         """
         Allow brain to say "I don't know"
@@ -2595,10 +2599,10 @@ class MetacognitiveMonitor:
 - HumanEval (Code generation)
 - MT-Bench (Instruction following)
 
-**Realistic Expectations**: 
+**Realistic Expectations**:
 - **NOT** trying to match GPT-3.5 parameter-for-parameter (175B vs ~500M synapses)
 - **Goal**: Explore how far biologically-plausible learning can scale
-- **Focus metrics**: 
+- **Focus metrics**:
   * Sample efficiency (learn from fewer examples than transformers)
   * Continual learning (no catastrophic forgetting)
   * Few-shot adaptation (rapid learning from 1-5 examples)
@@ -2617,8 +2621,8 @@ class MetacognitiveMonitor:
 - ✅ More interpretable (discrete spikes, local rules)
 - ✅ Biologically grounded (can inform neuroscience)
 
-**Timeline Caveat**: 36-48 months (REVISED from 18-24 months). Local learning rules 
-require 10-100x more samples than backprop. Focus is on scientific exploration, 
+**Timeline Caveat**: 36-48 months (REVISED from 18-24 months). Local learning rules
+require 10-100x more samples than backprop. Focus is on scientific exploration,
 not racing to deployment. This realistic timeline accounts for biological constraints.
 
 ---
@@ -3022,24 +3026,24 @@ def theta_gamma_n_back(stimulus_sequence, n=2):
     """
     Use theta phase to maintain temporal context.
     Each item encoded at different theta phase within gamma cycle.
-    
+
     Biology: Hippocampal-PFC theta synchrony during WM tasks.
     """
     for t, stimulus in enumerate(stimulus_sequence):
         theta_phase = (t % 8) / 8.0  # 8 items per theta cycle (125ms)
         gamma_phase = 0.5  # Peak excitability
-        
+
         # Encode with phase information
         prefrontal.maintain(
-            stimulus, 
+            stimulus,
             theta_phase=theta_phase,
             gamma_phase=gamma_phase
         )
-        
+
         # Retrieve item from n cycles ago
         target_phase = ((t - n) % 8) / 8.0
         retrieved = prefrontal.retrieve(theta_phase=target_phase)
-        
+
         # Compare current to n-back
         is_match = (stimulus == retrieved)
 ```
@@ -3050,22 +3054,22 @@ def cross_modal_gamma_binding(visual_object, auditory_label):
     """
     Synchronize gamma oscillations across modalities.
     Object: Visual shape + auditory label → bound by shared gamma phase
-    
+
     Biological: Gamma synchrony is THE mechanism for feature binding
     """
     gamma_phase = 0.5  # Peak excitability
-    
+
     # Force both pathways to same gamma phase
     visual_spikes = visual_cortex(
         visual_object,
         gamma_phase=gamma_phase
     )
-    
+
     auditory_spikes = auditory_cortex(
         auditory_label,
         gamma_phase=gamma_phase  # Synchronized!
     )
-    
+
     # Bound representation emerges from synchronous activation
     bound = hippocampus.bind(
         visual_spikes,
@@ -3100,20 +3104,20 @@ def cross_modal_gamma_binding(visual_object, auditory_label):
 class LogicNeuron(DendriticNeuron):
     """
     Use dendritic nonlinearities for compositional reasoning.
-    
+
     Enables: "If A and B, then C" reasoning without backprop!
     """
     def forward(self, premise_a, premise_b):
         # Each premise projects to separate dendritic branch
         branch_1_input = self.dendrites[0].forward(premise_a)
         branch_2_input = self.dendrites[1].forward(premise_b)
-        
+
         # Dendritic spikes occur only if BOTH branches active (AND gate)
         # or if EITHER branch active (OR gate, lower threshold)
         dendritic_spike = self.compute_dendritic_spike(
             branch_1_input, branch_2_input
         )
-        
+
         # Soma integrates dendritic spikes → conclusion
         conclusion = self.soma.forward(dendritic_spike)
         return conclusion
@@ -3318,8 +3322,8 @@ But maintains biological learning principles:
 - Publication preparation
 - **Declining pruning** (2% → 1% per cycle) (NEW v0.6.0)
 
-**Status**: Ready to begin implementation (v0.6.0 refinements integrated)  
-**First Experiment**: Stage -0.5 sensorimotor grounding (1 month, stringent criteria)  
+**Status**: Ready to begin implementation (v0.6.0 refinements integrated)
+**First Experiment**: Stage -0.5 sensorimotor grounding (1 month, stringent criteria)
 **Target Date**: Start January 2026
 
 ---

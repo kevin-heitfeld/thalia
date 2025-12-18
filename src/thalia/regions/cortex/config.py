@@ -41,11 +41,12 @@ class LayeredCortexConfig(NeuralComponentConfig):
         - l6_size: 0.5x base (feedback)
     """
 
-    # Explicit layer sizes (REQUIRED - must specify all four)
-    l4_size: int                     # Input layer
-    l23_size: int                    # Processing layer (cortico-cortical output)
-    l5_size: int                     # Subcortical output layer
-    l6_size: int                     # Corticothalamic feedback layer
+    # Explicit layer sizes (REQUIRED in practice - defaults provided for dataclass)
+    # Note: field() with no default_factory means these MUST be specified at creation
+    l4_size: int = field(default=0)          # Input layer
+    l23_size: int = field(default=0)         # Processing layer (cortico-cortical output)
+    l5_size: int = field(default=0)          # Subcortical output layer
+    l6_size: int = field(default=0)          # Corticothalamic feedback layer
 
     # Layer sparsity (fraction of neurons active)
     l4_sparsity: float = 0.15  # Moderate sparsity

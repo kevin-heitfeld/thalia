@@ -485,7 +485,7 @@ def test_striatum_extreme_dopamine():
     input_spikes = torch.rand(50) > 0.5
 
     # Set extreme dopamine
-    striatum.set_dopamine(10.0)
+    striatum.set_neuromodulators(dopamine=10.0)
 
     # Run forward pass
     output = striatum(input_spikes)

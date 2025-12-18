@@ -105,7 +105,7 @@ class LocusCoeruleusSystem:
 
         # Broadcast to regions:
         for region in self.regions:
-            region.set_norepinephrine(norepinephrine)
+            region.set_neuromodulators(norepinephrine=norepinephrine)
 
         # For unexpected events (novelty):
         self.locus_coeruleus.trigger_phasic_burst(magnitude=0.5)
