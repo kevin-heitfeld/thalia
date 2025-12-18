@@ -120,7 +120,7 @@ def _create_input_pathway(
     pathway.to(brain.device)
 
     # Register pathway
-    brain.pathways.register_pathway(pathway_name, pathway)
+    brain.pathway_manager.register_pathway(pathway_name, pathway)
 
     print(f"  ➕ Created input pathway: {pathway_name}")
 
@@ -154,6 +154,6 @@ def _create_output_pathway(
     pathway.to(brain.device)
 
     # Register pathway
-    brain.pathways.register_pathway(pathway_name, pathway)
+    brain.pathway_manager.register_pathway(pathway_name, pathway)
 
     print(f"  ➕ Created output pathway: {pathway_name}")

@@ -136,7 +136,7 @@ def test_restore_without_lesion_raises(test_brain):
 def test_ablate_pathway(test_brain):
     """Test pathway ablation."""
     # Get pathway (DynamicBrain uses full names)
-    pathway = test_brain.pathways["cortex_to_hippocampus"]
+    pathway = test_brain.connections[("cortex", "hippocampus")]
 
     # Ablate
     ablate_pathway(test_brain, "cortex_to_hippocampus")
@@ -153,7 +153,7 @@ def test_ablate_pathway(test_brain):
 def test_restore_pathway(test_brain):
     """Test pathway restoration."""
     pathway_name = "cortex_to_pfc"
-    pathway = test_brain.pathways[pathway_name]
+    pathway = test_brain.connections[("cortex", "pfc")]
 
     # Save initial weights
     initial_weights = {
@@ -203,7 +203,7 @@ def test_unfreeze_region(test_brain):
 def test_freeze_pathway(test_brain):
     """Test freezing pathway plasticity."""
     pathway_name = "cortex_to_striatum"
-    pathway = test_brain.pathways[pathway_name]
+    pathway = test_brain.connections[("cortex", "striatum")]
 
     freeze_pathway(test_brain, pathway_name)
 
@@ -218,7 +218,7 @@ def test_freeze_pathway(test_brain):
 def test_unfreeze_pathway(test_brain):
     """Test unfreezing pathway plasticity."""
     pathway_name = "pfc_to_striatum"
-    pathway = test_brain.pathways[pathway_name]
+    pathway = test_brain.connections[("pfc", "striatum")]
 
     freeze_pathway(test_brain, pathway_name)
     unfreeze_pathway(test_brain, pathway_name)

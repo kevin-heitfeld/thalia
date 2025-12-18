@@ -114,43 +114,49 @@ def restore_pathway(
 # Helper functions
 
 def _get_pathway(brain: "DynamicBrain", pathway_name: str):
-    """Get pathway by name."""
-    # Access pathways dict directly (brain.pathways is already the dict)
-    pathways = brain.pathways
+    """Get pathway by name.
 
-    # Try to get pathway
-    if pathway_name in pathways:
-        return pathways[pathway_name]
+    Converts string pathway names like 'cortex_to_hippocampus' to tuple keys like ('cortex', 'hippocampus').
+    """
+    # Access connections dict directly
+    connections = brain.connections
+
+    # Convert string name to tuple if needed
+    if "_to_" in pathway_name:
+        src, tgt = pathway_name.split("_to_")
+        pathway_key = (src, tgt)
+        if pathway_key in connections:
+            return connections[pathway_key]
 
     # Try alternative names
     pathway_map = {
-        "thalamus_to_cortex": "thalamus_to_cortex",
-        "cortex_to_hippocampus": "cortex_to_hippo",
-        "cortex_to_hippo": "cortex_to_hippo",
-        "cortex_to_pfc": "cortex_to_pfc",
-        "cortex_to_prefrontal": "cortex_to_pfc",
-        "cortex_to_striatum": "cortex_to_striatum",
-        "hippocampus_to_pfc": "hippo_to_pfc",
-        "hippo_to_pfc": "hippo_to_pfc",
-        "pfc_to_hippocampus": "pfc_to_hippo",
-        "pfc_to_hippo": "pfc_to_hippo",
-        "hippocampus_to_striatum": "hippo_to_striatum",
-        "hippo_to_striatum": "hippo_to_striatum",
-        "pfc_to_striatum": "pfc_to_striatum",
-        "prefrontal_to_striatum": "pfc_to_striatum",
-        "striatum_to_cerebellum": "striatum_to_cerebellum",
-        "pfc_to_cortex": "attention",  # Top-down attention
-        "hippocampus_to_cortex": "replay",  # Replay
-        "hippo_to_cortex": "replay",
+        "thalamus_to_cortex": ("thalamus", "cortex"),
+        "cortex_to_hippocampus": ("cortex", "hippocampus"),
+        "cortex_to_hippo": ("cortex", "hippocampus"),
+        "cortex_to_pfc": ("cortex", "pfc"),
+        "cortex_to_prefrontal": ("cortex", "pfc"),
+        "cortex_to_striatum": ("cortex", "striatum"),
+        "hippocampus_to_pfc": ("hippocampus", "pfc"),
+        "hippo_to_pfc": ("hippocampus", "pfc"),
+        "pfc_to_hippocampus": ("pfc", "hippocampus"),
+        "pfc_to_hippo": ("pfc", "hippocampus"),
+        "hippocampus_to_striatum": ("hippocampus", "striatum"),
+        "hippo_to_striatum": ("hippocampus", "striatum"),
+        "pfc_to_striatum": ("pfc", "striatum"),
+        "prefrontal_to_striatum": ("pfc", "striatum"),
+        "striatum_to_cerebellum": ("striatum", "cerebellum"),
+        "pfc_to_cortex": ("pfc", "cortex"),  # Top-down attention
+        "hippocampus_to_cortex": ("hippocampus", "cortex"),  # Replay
+        "hippo_to_cortex": ("hippocampus", "cortex"),
     }
 
     if pathway_name in pathway_map:
-        canonical_name = pathway_map[pathway_name]
-        if canonical_name in pathways:
-            return pathways[canonical_name]
+        canonical_key = pathway_map[pathway_name]
+        if canonical_key in connections:
+            return connections[canonical_key]
 
     # Pathway not found
-    available = list(pathways.keys())
+    available = list(connections.keys())
     raise ValueError(
         f"Unknown pathway: {pathway_name}. "
         f"Available pathways: {available}"

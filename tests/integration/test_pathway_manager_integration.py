@@ -43,12 +43,6 @@ class TestPathwayManagerIntegration:
         assert hasattr(simple_brain, 'pathway_manager')
         assert simple_brain.pathway_manager is not None
 
-    def test_pathways_dict_backward_compatibility(self, simple_brain):
-        """Test backward compatible pathways dict."""
-        assert hasattr(simple_brain, 'pathways')
-        assert isinstance(simple_brain.pathways, dict)
-        assert len(simple_brain.pathways) > 0
-
     def test_pathway_diagnostics(self, simple_brain):
         """Test pathway diagnostics collection."""
         # Get diagnostics

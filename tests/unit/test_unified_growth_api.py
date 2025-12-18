@@ -4,7 +4,6 @@ This test suite verifies that:
 1. All regions support grow_input() and grow_output()
 2. All pathways support grow_input() and grow_output()
 3. GrowthCoordinator properly propagates input growth to target regions
-4. The unified API maintains backward compatibility
 """
 
 import pytest

@@ -1186,8 +1186,10 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         )
 
         # Update forward coordinator with neuromodulator state
-        self.forward_coordinator.set_neuromodulators(norepinephrine=self.state.norepinephrine)
-        self.forward_coordinator.set_tonic_dopamine(self.tonic_dopamine)
+        self.forward_coordinator.set_neuromodulators(
+            dopamine=self.tonic_dopamine,
+            norepinephrine=self.state.norepinephrine,
+        )
 
     def _initialize_weights(self) -> Optional[nn.Parameter]:
         """Striatum uses D1/D2 pathway weights, not base class weights.

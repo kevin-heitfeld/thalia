@@ -43,8 +43,7 @@ forward pass coordination into a focused, maintainable module.
 **Key Methods:**
 - `forward()`: Main forward pass orchestration
 - `set_oscillator_phases()`: Update theta/beta phase from brain clock
-- `set_norepinephrine()`: Update NE level from neuromodulator system
-- `set_tonic_dopamine()`: Update baseline DA level
+- `set_neuromodulators()`: Update neuromodulator levels (unified API)
 
 Author: Thalia Project
 Date: December 9, 2025 (extracted during striatum refactoring)
@@ -126,10 +125,8 @@ class ForwardPassCoordinator:
         self._beta_phase: float = 0.0
         self._beta_amplitude: float = 1.0
 
-        # Norepinephrine level (set by set_norepinephrine)
+        # Neuromodulator levels (set by set_neuromodulators)
         self._ne_level: float = 0.0
-
-        # Tonic dopamine level (set externally)
         self._tonic_dopamine: float = 0.3
 
     def set_oscillator_phases(
@@ -167,22 +164,6 @@ class ForwardPassCoordinator:
         if norepinephrine is not None:
             self._ne_level = norepinephrine
         # acetylcholine not used by striatum
-
-    def set_norepinephrine(self, ne_level: float) -> None:
-        """Set norepinephrine level (backward compatibility).
-
-        Args:
-            ne_level: NE level [0, 1]
-        """
-        self._ne_level = ne_level
-
-    def set_tonic_dopamine(self, tonic_da: float) -> None:
-        """Set tonic dopamine level (backward compatibility).
-
-        Args:
-            tonic_da: Tonic dopamine level [0, 1]
-        """
-        self._tonic_dopamine = tonic_da
 
     def compute_theta_modulation(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute theta modulation factors.

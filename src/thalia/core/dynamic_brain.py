@@ -233,9 +233,6 @@ class DynamicBrain(nn.Module):
             dt_ms=self.global_config.dt_ms,
         )
 
-        # Backward compatibility: expose pathways dict
-        self.pathways = self.pathway_manager.get_all_pathways()
-
         # =================================================================
         # OSCILLATOR MANAGER (Phase 1.7.2)
         # =================================================================
@@ -637,7 +634,7 @@ class DynamicBrain(nn.Module):
             sensory_input = torch.randn(128, device=device)
             result = brain.forward(sensory_input, n_timesteps=10)
 
-            # Alternative: Dict-based input (legacy)
+            # Alternative: Dict-based input
             result = brain.forward({"thalamus": sensory_input}, n_timesteps=10)
         """
         # Handle default n_timesteps
@@ -647,7 +644,7 @@ class DynamicBrain(nn.Module):
         # Convert sensory_input to input_data dict format
         if sensory_input is not None:
             if isinstance(sensory_input, dict):
-                # Already in dict format (legacy)
+                # Already in dict format
                 input_data = sensory_input
             else:
                 # Convert tensor to dict with thalamus as input
@@ -1125,17 +1122,11 @@ class DynamicBrain(nn.Module):
             for adapter in self._event_adapters.values():
                 if hasattr(adapter, 'set_oscillator_phases'):
                     adapter.set_oscillator_phases(phases, signals)
-                # Backward compatibility: individual setters
-                elif hasattr(adapter, 'set_theta_phase'):
-                    adapter.set_theta_phase(phases['theta'])
 
         # Also broadcast directly to components that support it
         for component in self.components.values():
             if hasattr(component, 'set_oscillator_phases'):
                 component.set_oscillator_phases(phases, signals)
-            # Backward compatibility: individual setters
-            elif hasattr(component, 'set_theta_phase'):
-                component.set_theta_phase(phases['theta'])
 
     # =========================================================================
     # REINFORCEMENT LEARNING INTERFACE
@@ -2645,27 +2636,15 @@ class DynamicBrain(nn.Module):
 
         Args:
             state: State dict from get_full_state()
-
-        Note:
-            Supports both "regions" (new format) and "components" (old format)
-            for backward compatibility.
-
-            Also supports both DynamicBrain format (current_time at top level)
-            and EventDrivenBrain format (current_time inside scheduler dict).
         """
-        # Handle current_time in both formats
-        if "current_time" in state:
-            self._current_time = state["current_time"]
-        elif "scheduler" in state and "current_time" in state["scheduler"]:
-            self._current_time = state["scheduler"]["current_time"]
-        else:
-            self._current_time = 0.0  # Default if not present
+        # Load time
+        self._current_time = state.get("current_time", 0.0)
 
-        # Handle topology (may not be present in EventDrivenBrain format)
+        # Load topology
         self._topology = state.get("topology", self._topology)
 
-        # Load component states (support both "regions" and "components" keys)
-        component_states = state.get("regions", state.get("components", {}))
+        # Load component states
+        component_states = state.get("regions", {})
         for name, component_state in component_states.items():
             if name in self.components:
                 self.components[name].load_full_state(component_state)
@@ -2673,11 +2652,6 @@ class DynamicBrain(nn.Module):
         # Load pathway states via PathwayManager
         if "pathways" in state:
             self.pathway_manager.load_state(state["pathways"])
-        elif "connections" in state:
-            # Backward compatibility: old format used "connections" directly
-            for conn_key, pathway_state in state["connections"].items():
-                if conn_key in self.connections:
-                    self.connections[conn_key].load_full_state(pathway_state)
 
         # Load oscillator states
         if "oscillators" in state:
