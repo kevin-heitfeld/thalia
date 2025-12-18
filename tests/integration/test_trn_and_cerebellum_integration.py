@@ -12,9 +12,7 @@ import pytest
 import torch
 
 from thalia.core.brain_builder import BrainBuilder
-from thalia.config import GlobalConfig, BrainConfig, RegionSizes
-from thalia.regions.cortex.config import LayeredCortexConfig
-from thalia.regions.cerebellum import CerebellumConfig
+from thalia.config import GlobalConfig
 
 
 @pytest.fixture
@@ -30,6 +28,29 @@ def global_config(device):
         device=str(device),
         dt_ms=1.0,
     )
+
+
+@pytest.fixture
+def enhanced_cerebellum_brain(global_config, device):
+    """Brain with enhanced cerebellum for testing."""
+    builder = BrainBuilder(global_config)
+
+    # Add components with proper sizes
+    builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
+    builder.add_component("cortex", "cortex", n_output=256,
+                         l4_size=64, l23_size=128, l5_size=128, l6_size=0)
+    builder.add_component("cerebellum", "cerebellum",
+                         n_input=256, n_output=64,
+                         use_enhanced_microcircuit=True,
+                         granule_expansion_factor=4.0,
+                         granule_sparsity=0.03,
+                         purkinje_n_dendrites=100)
+
+    # Connect
+    builder.connect("thalamus", "cortex", pathway_type="axonal")
+    builder.connect("cortex", "cerebellum", pathway_type="axonal")
+
+    return builder.build()
 
 
 class TestL6TRNFeedbackIntegration:
@@ -170,70 +191,27 @@ class TestL6TRNFeedbackIntegration:
 class TestEnhancedCerebellumIntegration:
     """Integration tests for enhanced cerebellum in brain context."""
 
-    def test_brain_with_enhanced_cerebellum(self, device):
+    def test_brain_with_enhanced_cerebellum(self, enhanced_cerebellum_brain):
         """Test brain with enhanced cerebellar microcircuit."""
-        # Create custom brain config with enhanced cerebellum
-        global_config = GlobalConfig(device=str(device), dt_ms=1.0)
-
-        # Build brain with custom config (using BrainBuilder directly)
-
-        builder = BrainBuilder(global_config)
-
-        # Add regions
-        builder.add_component("thalamus", "thalamus")
-        builder.add_component("cortex", "cortex")
-
-        # Add cerebellum with enhanced microcircuit
-        cerebellum_config = CerebellumConfig(
-            n_input=256,  # From cortex
-            n_output=64,
-            use_enhanced_microcircuit=True,
-            granule_expansion_factor=4.0,
-            granule_sparsity=0.03,
-            purkinje_n_dendrites=100,
-            dt_ms=1.0,
-            device=str(device),
-        )
-        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
-
-        # Connect
-        builder.connect("thalamus", "cortex", pathway_type="axonal")
-        builder.connect("cortex", "cerebellum", pathway_type="axonal")
-
-        brain = builder.build()
+        brain = enhanced_cerebellum_brain
 
         # Contract: cerebellum should be enhanced
         cerebellum = brain.components["cerebellum"]
         assert cerebellum.use_enhanced, "Cerebellum should use enhanced microcircuit"
         assert cerebellum.granule_layer is not None, "Should have granule layer"
 
-    def test_enhanced_cerebellum_motor_learning(self, device):
+        # Test forward pass - need to actually drive activity
+        sensory_input = torch.ones(128, dtype=torch.bool, device=brain.device)  # Strong input
+
+        for _ in range(10):
+            brain(sensory_input, n_timesteps=1)
+
+        # Contract: components should be active
+        assert "cerebellum" in brain.components, "Brain should have cerebellum"
+
+    def test_enhanced_cerebellum_motor_learning(self, enhanced_cerebellum_brain, device):
         """Test enhanced cerebellum learns motor mappings."""
-        global_config = GlobalConfig(device=str(device), dt_ms=1.0)
-
-        # Simple brain: input → cerebellum → output
-        # Custom brain (no BrainConfig needed, using BrainBuilder)
-
-        builder = BrainBuilder(global_config)
-        builder.add_component("thalamus", "thalamus")
-        builder.add_component("cortex", "cortex")
-
-        # Enhanced cerebellum
-        cerebellum_config = CerebellumConfig(
-            n_input=256,
-            n_output=64,
-            use_enhanced_microcircuit=True,
-            dt_ms=1.0,
-            device=str(device),
-        )
-        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
-
-        builder.connect("thalamus", "cortex", pathway_type="axonal")
-        builder.connect("cortex", "cerebellum", pathway_type="axonal")
-
-        brain = builder.build()
-
-        # Training: present input and error signal
+        brain = enhanced_cerebellum_brain
         cerebellum = brain.components["cerebellum"]
 
         for epoch in range(5):
@@ -255,23 +233,15 @@ class TestEnhancedCerebellumIntegration:
         assert cerebellum.granule_layer.neurons.membrane is not None, \
             "Granule layer should be active after processing"
 
-    def test_granule_layer_in_brain_context(self, device):
+    def test_granule_layer_in_brain_context(self, global_config, device):
         """Test granule layer expansion works in full brain."""
-        global_config = GlobalConfig(device=str(device), dt_ms=1.0)
-
-        cerebellum_config = CerebellumConfig(
-            n_input=128,
-            n_output=64,
-            use_enhanced_microcircuit=True,
-            granule_expansion_factor=4.0,
-            granule_sparsity=0.03,
-            dt_ms=1.0,
-            device=str(device),
-        )
-
         builder = BrainBuilder(global_config)
         builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
-        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
+        builder.add_component("cerebellum", "cerebellum",
+                             n_input=128, n_output=64,
+                             use_enhanced_microcircuit=True,
+                             granule_expansion_factor=4.0,
+                             granule_sparsity=0.03)
         builder.connect("thalamus", "cerebellum", pathway_type="axonal")
 
         brain = builder.build()
@@ -347,38 +317,18 @@ class TestMultiRegionCoordination:
         # Contract: system should complete without errors
         assert True, "Oscillator coordination with L6 should work"
 
-    def test_learning_with_feedback_and_cerebellum(self, device):
+    def test_learning_with_feedback_and_cerebellum(self, global_config, device):
         """Test learning in system with both L6 feedback and enhanced cerebellum."""
-        global_config = GlobalConfig(device=str(device), dt_ms=1.0)
-
-        # Build brain with custom components
-        # Custom brain (no BrainConfig needed, using BrainBuilder)
-
         builder = BrainBuilder(global_config)
 
-        # Cortex with L6
-        cortex_config = LayeredCortexConfig(
-            n_input=128,
-            n_output=256,
-            l4_size=160,
-            l23_size=160,
-            l5_size=96,
-            l6_size=80,
-            dt_ms=1.0,
-            device=str(device),
-        )
-        builder.add_component("thalamus", "thalamus")
-        builder.add_component("cortex", "cortex", config=cortex_config)
-
-        # Enhanced cerebellum
-        cerebellum_config = CerebellumConfig(
-            n_input=256,
-            n_output=64,
-            use_enhanced_microcircuit=True,
-            dt_ms=1.0,
-            device=str(device),
-        )
-        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
+        # Add components with proper sizes (pass parameters directly)
+        builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
+        builder.add_component("cortex", "cortex",
+                             n_input=128, n_output=256,
+                             l4_size=64, l23_size=160, l5_size=96, l6_size=80)
+        builder.add_component("cerebellum", "cerebellum",
+                             n_input=256, n_output=64,
+                             use_enhanced_microcircuit=True)
 
         # Connections
         builder.connect("thalamus", "cortex", pathway_type="axonal")
@@ -426,33 +376,18 @@ class TestSystemRobustness:
                 assert (cortex.l6_neurons.membrane == cortex.l6_neurons.config.v_reset).all(), \
                     "L6 neurons should be reset"
 
-    def test_checkpoint_with_enhanced_features(self, device):
+    def test_checkpoint_with_enhanced_features(self, global_config, device):
         """Test checkpointing works with L6 and enhanced cerebellum."""
-        global_config = GlobalConfig(device=str(device), dt_ms=1.0)
-
-        # Build brain with enhanced features
-        # Custom brain (no BrainConfig needed, using BrainBuilder)
-
         builder = BrainBuilder(global_config)
-        builder.add_component("thalamus", "thalamus")
 
-        cortex_config = LayeredCortexConfig(
-            n_input=128,
-            n_output=256,
-            l6_size=128,
-            dt_ms=1.0,
-            device=str(device),
-        )
-        builder.add_component("cortex", "cortex", config=cortex_config)
-
-        cerebellum_config = CerebellumConfig(
-            n_input=256,
-            n_output=64,
-            use_enhanced_microcircuit=True,
-            dt_ms=1.0,
-            device=str(device),
-        )
-        builder.add_component("cerebellum", "cerebellum", config=cerebellum_config)
+        # Add components with proper sizes (pass parameters directly)
+        builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
+        builder.add_component("cortex", "cortex",
+                             n_input=128, n_output=256,
+                             l4_size=64, l23_size=128, l5_size=128, l6_size=128)
+        builder.add_component("cerebellum", "cerebellum",
+                             n_input=256, n_output=64,
+                             use_enhanced_microcircuit=True)
 
         builder.connect("thalamus", "cortex", pathway_type="axonal")
         builder.connect("cortex", "cerebellum", pathway_type="axonal")
