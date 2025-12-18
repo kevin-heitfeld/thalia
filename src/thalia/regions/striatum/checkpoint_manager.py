@@ -113,7 +113,7 @@ class CheckpointManager:
             "homeostatic_scaling_applied": s._homeostatic_scaling_applied,
 
             # Homeostasis manager state (if enabled)
-            "homeostasis_manager_state": s.homeostasis_manager.unified_homeostasis.get_state() if (s.homeostasis_manager is not None and s.homeostasis_manager.unified_homeostasis is not None) else None,
+            "homeostasis_manager_state": s.homeostasis.unified_homeostasis.get_state() if (s.homeostasis is not None and s.homeostasis.unified_homeostasis is not None) else None,
         }
 
         # 4. EXPLORATION STATE (delegate to ExplorationManager)
@@ -122,7 +122,7 @@ class CheckpointManager:
             "last_uncertainty": s.state_tracker._last_uncertainty,
             "last_exploration_prob": s.state_tracker._last_exploration_prob,
             # Get exploration manager state (includes action_counts, recent_rewards, etc.)
-            "manager_state": s.exploration_manager.get_state(),
+            "manager_state": s.exploration.get_state(),
         }
 
         # 5. VALUE ESTIMATION STATE (if RPE enabled)
@@ -264,10 +264,10 @@ class CheckpointManager:
         s._homeostatic_scaling_applied = learning_state["homeostatic_scaling_applied"]
 
         # Homeostasis manager (with backward compatibility)
-        if s.homeostasis_manager is not None:
+        if s.homeostasis is not None:
             # Try new format first, fall back to old format
             if "homeostasis_manager_state" in learning_state and learning_state["homeostasis_manager_state"] is not None:
-                s.homeostasis_manager.unified_homeostasis.load_state(learning_state["homeostasis_manager_state"])
+                s.homeostasis.unified_homeostasis.load_state(learning_state["homeostasis_manager_state"])
 
         # 4. RESTORE EXPLORATION STATE (delegate to ExplorationManager)
         exploration_state = state["exploration_state"]
@@ -277,7 +277,7 @@ class CheckpointManager:
 
         # Load exploration manager state if present (new format)
         if "manager_state" in exploration_state:
-            s.exploration_manager.load_state(exploration_state["manager_state"])
+            s.exploration.load_state(exploration_state["manager_state"])
         else:
             # Backward compatibility: load old format directly
             # Old format had action_counts, recent_rewards, etc. at top level
@@ -288,7 +288,7 @@ class CheckpointManager:
                 "recent_accuracy": exploration_state.get("recent_accuracy", []),
                 "tonic_dopamine": exploration_state.get("tonic_dopamine", 0.3),
             }
-            s.exploration_manager.load_state(old_state)
+            s.exploration.load_state(old_state)
 
         # 6. RESTORE RPE STATE (if present)
         if "rpe_state" in state and state["rpe_state"]:
@@ -438,7 +438,7 @@ class CheckpointManager:
             "neurons": neurons,
             # Also store global state (exploration, action selection, etc.)
             "exploration_state": {
-                "manager_state": s.exploration_manager.get_state(),
+                "manager_state": s.exploration.get_state(),
             },
             "action_state": {
                 "last_action": s.state_tracker.last_action,
@@ -520,7 +520,7 @@ class CheckpointManager:
 
         # Restore global state
         if "exploration_state" in state and "manager_state" in state["exploration_state"]:
-            s.exploration_manager.load_state(state["exploration_state"]["manager_state"])
+            s.exploration.load_state(state["exploration_state"]["manager_state"])
 
         if "action_state" in state:
             s.state_tracker.last_action = state["action_state"]["last_action"]

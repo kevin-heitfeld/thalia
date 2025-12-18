@@ -773,15 +773,6 @@ class TrisynapticHippocampus(NeuralComponent):
 
     # region Forward Pass (DG→CA3→CA1)
 
-    # =========================================================================
-    # BACKWARDS COMPATIBILITY PROPERTIES
-    # =========================================================================
-
-    @property
-    def episode_manager(self):
-        """Backwards compatibility alias for memory component."""
-        return self.memory
-
     def forward(
         self,
         input_spikes: torch.Tensor,
@@ -1734,7 +1725,7 @@ class TrisynapticHippocampus(NeuralComponent):
 
     def sample_episodes_prioritized(self, n: int) -> List[Episode]:
         """Sample episodes with probability proportional to priority."""
-        return self.episode_manager.sample_episodes_prioritized(n)
+        return self.memory.sample_episodes_prioritized(n)
 
     def retrieve_similar(
         self,
@@ -1773,7 +1764,7 @@ class TrisynapticHippocampus(NeuralComponent):
             Uses cosine similarity in state space. For more sophisticated
             retrieval, could use CA3 recurrent dynamics or DG-CA3-CA1 circuit.
         """
-        return self.episode_manager.retrieve_similar(
+        return self.memory.retrieve_similar(
             query_state=query_state,
             query_action=query_action,
             k=k,

@@ -510,7 +510,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
             d2_pathway=self.d2_pathway,
             d1_neurons=self.d1_neurons,
             d2_neurons=self.d2_neurons,
-            homeostasis_manager=self.homeostasis_manager,
+            homeostasis_manager=self.homeostasis,
             pfc_modulation_d1=self.pfc_modulation_d1,
             pfc_modulation_d2=self.pfc_modulation_d2,
             device=self.device,
@@ -548,25 +548,9 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self._d2_delay_ptr: int = 0
 
     # =========================================================================
-    # EXPLORATION STATE PROPERTIES (Backward Compatibility)
+    # EXPLORATION STATE PROPERTIES
     # =========================================================================
-    # These properties delegate to ExplorationManager for backward compatibility.
-    # External code may access _action_counts, tonic_dopamine, etc. directly.
-
-    @property
-    def exploration_manager(self):
-        """Backwards compatibility alias for exploration component."""
-        return self.exploration
-
-    @property
-    def learning_manager(self):
-        """Backwards compatibility alias for learning component."""
-        return self.learning
-
-    @property
-    def homeostasis_manager(self):
-        """Backwards compatibility alias for homeostasis component."""
-        return self.homeostasis
+    # These properties delegate to exploration component for convenience.
 
     @property
     def _action_counts(self) -> torch.Tensor:
@@ -984,11 +968,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         ], dim=0)
 
         # Expand exploration manager (handles action_counts and other exploration state)
-        self.exploration_manager.grow(self.n_actions)
+        self.exploration.grow(self.n_actions)
 
         # Expand homeostasis manager if it exists
-        if self.homeostasis_manager is not None:
-            self.homeostasis_manager.grow(n_new_neurons)
+        if self.homeostasis is not None:
+            self.homeostasis.grow(n_new_neurons)
 
         # Value estimates for new actions (start at 0)
         if hasattr(self, 'value_estimates'):
@@ -1518,7 +1502,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         self.state_tracker.update_trial_activity(d1_spikes, d2_spikes)
 
         # Store D1 and D2 spikes for learning manager
-        self.learning_manager.store_spikes(d1_spikes, d2_spikes)
+        self.learning.store_spikes(d1_spikes, d2_spikes)
 
         self.state.spikes = output_spikes
         self.state.t += 1
@@ -1552,12 +1536,12 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # Adjust exploration based on performance (new component API)
         # reward > 0 counts as "correct" for exploration adjustment
         correct = reward > 0
-        self.exploration_manager.update_performance(reward, correct)
+        self.exploration.update_performance(reward, correct)
 
         # Delegate to learning manager (new component API)
         goal_context = self._last_pfc_goal_context if hasattr(self, '_last_pfc_goal_context') else None
 
-        return self.learning_manager.apply_learning(da_level, goal_context)
+        return self.learning.apply_learning(da_level, goal_context)
 
 
     def deliver_counterfactual_reward(
@@ -1591,7 +1575,7 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         # This allows the learning manager to boost eligibility for the alternate action
         # if it would have led to better outcomes
         chosen = self.last_action if self.last_action is not None else 0
-        return self.learning_manager.apply_counterfactual_learning(
+        return self.learning.apply_counterfactual_learning(
             chosen_action=chosen,
             alternate_actions=[action],
             dopamine=reward,
@@ -1600,12 +1584,12 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
     def reset_eligibility(self, action_only: bool = True) -> None:
         """Reset eligibility traces after learning is complete.
 
-        Delegates to LearningManager for eligibility trace management.
+        Delegates to StriatumLearningComponent for eligibility trace management.
 
         Args:
             action_only: If True, only reset chosen action. If False, reset all.
         """
-        self.learning_manager.reset_eligibility(self.last_action, action_only)
+        self.learning.reset_eligibility(self.last_action, action_only)
 
     def reset_state(self) -> None:
         super().reset_state()

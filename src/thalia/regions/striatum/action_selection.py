@@ -200,11 +200,11 @@ class ActionSelectionMixin:
         Args:
             action: The action that was selected (0 to n_actions-1)
         """
-        # Delegate to exploration_manager if available, otherwise update local state
-        if hasattr(self, 'exploration_manager'):
-            self.exploration_manager.update_action_counts(action)
+        # Delegate to exploration component if available, otherwise update local state
+        if hasattr(self, 'exploration'):
+            self.exploration.update_action_counts(action)
         else:
-            # Fallback for backward compatibility (if exploration_manager not yet initialized)
+            # Fallback for backward compatibility (if exploration not yet initialized)
             self._action_counts[action] += 1
             self._total_trials += 1
 
@@ -224,12 +224,12 @@ class ActionSelectionMixin:
         """
         net_votes = self.get_accumulated_net_votes()
 
-        # UCB bonus - delegate to exploration_manager if available
+        # UCB bonus - delegate to exploration component if available
         ucb_bonus = torch.zeros_like(net_votes)
-        if hasattr(self, 'exploration_manager'):
-            ucb_bonus = self.exploration_manager.compute_ucb_bonus()
+        if hasattr(self, 'exploration'):
+            ucb_bonus = self.exploration.compute_ucb_bonus()
         elif self.striatum_config.ucb_exploration and self._total_trials > 0:
-            # Fallback: compute UCB locally if exploration_manager not available
+            # Fallback: compute UCB locally if exploration not available
             c = self.striatum_config.ucb_coefficient
             log_t = math.log(self._total_trials + 1)
             for a in range(self.n_actions):
