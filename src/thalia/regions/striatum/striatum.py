@@ -108,6 +108,7 @@ from thalia.utils.core_utils import clamp_weights
 from thalia.regions.base import (
     NeuralComponent,
 )
+from thalia.core.neural_region import NeuralRegion
 from thalia.regions.striatum.exploration import ExplorationConfig
 
 from .config import StriatumConfig
@@ -127,17 +128,21 @@ from .td_lambda import TDLambdaLearner, TDLambdaConfig
 @register_region(
     "striatum",
     description="Reinforcement learning via dopamine-modulated three-factor rule with D1/D2 opponent pathways",
-    version="2.0",
+    version="2.1",  # Updated for NeuralRegion migration
     author="Thalia Project",
     config_class=StriatumConfig,
 )
-class Striatum(NeuralComponent, ActionSelectionMixin):
+class Striatum(NeuralRegion, ActionSelectionMixin):
     """Striatal region with three-factor reinforcement learning.
+
+    **Phase 2 Migration**: Now inherits from NeuralRegion with biologically-accurate
+    synaptic weight placement at target dendrites (not in axonal pathways).
 
     Implements dopamine-modulated learning:
     - Eligibility traces tag recently active synapses
     - Dopamine signal converts eligibility to plasticity
     - No learning without dopamine (unlike Hebbian)
+    - Synaptic weights stored per-source in synaptic_weights dict
 
     Population Coding (optional):
     - Instead of 1 neuron per action, use N neurons per action
@@ -146,31 +151,28 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
     Mixins Provide:
     ---------------
-    From DiagnosticsMixin:
-        - check_health() → HealthMetrics
-        - get_firing_rate(spikes) → float
-        - check_weight_health(weights, name) → WeightHealth
-        - detect_runaway_excitation(spikes) → bool
-        - detect_silence(spikes) → bool
-
     From ActionSelectionMixin:
         - select_action_softmax(q_values, temperature) → int
         - select_action_greedy(q_values, epsilon) → int
         - compute_policy(q_values, temperature) → Tensor
         - add_exploration_noise(q_values, noise_std) → Tensor
 
-    From NeuralComponent (abstract base):
-        - forward(input, **kwargs) → Tensor [must implement]
-        - reset_state() → None
-        - get_diagnostics() → Dict
-        - set_dopamine(level) → None
+    From NeuralRegion (base class):
+        - synaptic_weights: ParameterDict (per-source weights)
+        - add_input_source(source, n_input, learning_rule) → None
+        - _apply_synapses(source, input_spikes) → Tensor
+        - forward(inputs: Dict) → Tensor [must implement]
 
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
+        docs/architecture/PHASE2_MIGRATION_GUIDE.md for migration details
     """
 
     def __init__(self, config: NeuralComponentConfig):
         """Initialize Striatum with D1/D2 opponent pathways.
+
+        **Phase 2 Changes**: Now initializes NeuralRegion base with synaptic weights
+        stored per-source instead of in D1/D2 pathways.
 
         Args:
             config: Neural component configuration. Will be converted to
@@ -179,10 +181,11 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         Initialization Steps:
             1. Convert config to StriatumConfig if needed
             2. Setup population coding (n_actions → n_neurons)
-            3. Initialize D1/D2 pathways (opponent processing)
-            4. Create state tracker for votes/actions/trials
-            5. Setup exploration, learning, homeostasis components
-            6. Initialize neuromodulator state (dopamine)
+            3. Initialize NeuralRegion with total neurons (D1 + D2)
+            4. Create D1/D2 pathways (neurons only, NO weights)
+            5. Create state tracker for votes/actions/trials
+            6. Setup exploration, learning, homeostasis components
+            7. Initialize neuromodulator state (dopamine)
 
         Population Coding:
             When enabled, each action is represented by multiple neurons:
@@ -226,7 +229,22 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         else:
             self.neurons_per_action = 1
 
-        super().__init__(config)
+        # =====================================================================
+        # INITIALIZE NEURAL REGION (Phase 2)
+        # =====================================================================
+        # NeuralRegion handles synaptic weights per-source in synaptic_weights dict
+        # D1/D2 pathways will be neuron populations only (no weights)
+        NeuralRegion.__init__(
+            self,
+            n_neurons=config.n_output,
+            default_learning_rule="three_factor",  # Dopamine-modulated
+            device=config.device,
+            dt_ms=config.dt_ms,
+        )
+
+        # Also initialize NeuralComponent for backward compatibility
+        # (mixins and diagnostics expect NeuralComponent interface)
+        NeuralComponent.__init__(self, config)
 
         # =====================================================================
         # ELASTIC TENSOR CAPACITY TRACKING (Phase 1 - Growth Support)
@@ -1276,30 +1294,59 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
 
     # region Forward Pass (D1/D2 Integration and Action Selection)
 
+    def _consolidate_inputs(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Convert Dict inputs to concatenated tensor for internal processing.
+
+        **Phase 2 Method**: Applies synaptic weights per-source and concatenates.
+        This preserves the internal logic which expects concatenated inputs.
+
+        Args:
+            inputs: Dict mapping source names to spike tensors
+                   e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo], "pfc": [n_pfc]}
+
+        Returns:
+            Concatenated current tensor ready for D1/D2 pathway processing
+            Format: [cortex_current | hippocampus_current | pfc_current]
+        """
+        # Infer device from parameters
+        device = next(self.parameters()).device if len(list(self.parameters())) > 0 else torch.device(self.device)
+
+        # Apply synaptic weights and accumulate currents
+        # Note: We accumulate rather than concatenate because both D1 and D2
+        # receive the same inputs (biologically accurate)
+        total_current = torch.zeros(self.n_neurons, device=device)
+
+        for source_name, input_spikes in inputs.items():
+            if source_name in self.synaptic_weights:
+                # Apply synaptic weights at target dendrites
+                current = self._apply_synapses(source_name, input_spikes)
+                total_current += current
+
+        return total_current
+
     def forward(
         self,
-        input_spikes: torch.Tensor,
+        inputs: Dict[str, torch.Tensor],
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input and select action using SEPARATE D1/D2 populations.
 
+        **Phase 2 Changes**: Now accepts Dict[str, Tensor] instead of concatenated tensor.
+        Synaptic weights are applied per-source at target dendrites (biologically accurate).
+
         BIOLOGICAL ARCHITECTURE:
-        - D1-MSNs: SEPARATE neuron population, receives d1_weights excitation
-        - D2-MSNs: SEPARATE neuron population, receives d2_weights excitation
+        - D1-MSNs: SEPARATE neuron population, receives synaptic currents
+        - D2-MSNs: SEPARATE neuron population, receives same synaptic currents
+        - Both populations have unique synaptic weights for same input sources
         - Action selection: argmax(D1_activity - D2_activity) per action
 
-        This is fundamentally different from the previous (broken) design where
-        D1/D2 weights fed the SAME neurons with different conductance types.
-
         Args:
-            input_spikes: Input spike tensor [n_input] (1D)
-                         Format: [cortex_l5 | hippocampus | pfc] (concatenated)
-                         PFC component is extracted automatically for goal modulation.
+            inputs: Dict mapping source names to spike tensors
+                   e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo], "pfc": [n_pfc]}
+                   PFC component (if present) is used for goal modulation.
 
         NOTE: Exploration is handled by finalize_action() at trial end, not per-timestep.
         NOTE: Theta modulation computed internally from self._theta_phase (set by Brain)
-        NOTE: In event-driven mode, pfc_goal_context is extracted from the input_spikes
-              (the PFC component of the concatenated pathway input)
 
         With population coding:
         - Each action has N neurons per pathway (neurons_per_action)
@@ -1308,7 +1355,18 @@ class Striatum(NeuralComponent, ActionSelectionMixin):
         - NET = D1_votes - D2_votes
         - Selected action = argmax(NET)
         """
-        # Ensure 1D input (ADR-005)
+        # =====================================================================
+        # PHASE 2: CONVERT DICT INPUTS TO CURRENTS
+        # =====================================================================
+        # Apply synaptic weights per-source and get total current
+        total_current = self._consolidate_inputs(inputs)
+
+        # For backward compatibility with internal logic that expects concatenated format:
+        # Convert currents back to "spike-like" representation for D1/D2 pathways
+        # TODO: Future optimization - D1/D2 pathways should accept currents directly
+        input_spikes = (total_current > 0).float()  # Binary spikes from current
+
+        # Ensure 1D (ADR-005)
         if input_spikes.dim() != 1:
             input_spikes = input_spikes.squeeze()
 

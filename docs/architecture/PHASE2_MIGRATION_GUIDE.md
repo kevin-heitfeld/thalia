@@ -1,8 +1,8 @@
 # Phase 2 Migration Guide: Region → NeuralRegion
 
-**Status**: Planning Phase  
-**Target**: Migrate all brain regions to NeuralRegion base class  
-**Estimated Time**: 2-3 weeks  
+**Status**: Planning Phase
+**Target**: Migrate all brain regions to NeuralRegion base class
+**Estimated Time**: 2-3 weeks
 **Prerequisites**: Phase 1 complete ✅
 
 ---
@@ -43,32 +43,32 @@ class RegionName(NeuralRegion):
             device=config.device,
             dt_ms=config.dt_ms,
         )
-        
+
         # 2. Store config
         self.region_config = config
-        
+
         # 3. Create internal neurons (sub-populations)
         self.population_a = ConductanceLIF(size_a, ...)
         self.population_b = ConductanceLIF(size_b, ...)
-        
+
         # 4. Internal weights (KEEP THESE)
         self.w_internal = nn.Parameter(...)  # Between internal populations
-        
+
         # 5. External weights (DELETE THESE - moved to synaptic_weights)
         # OLD: self.w_external = nn.Parameter(...)  # ❌ Remove!
         # NEW: Registered via add_input_source() in build()
-        
+
         # 6. Other components (buffers, learning rules, etc.)
         self.replay_buffer = ...
         self.td_lambda = ...
-    
+
     def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Process multi-source inputs.
-        
+
         Args:
             inputs: Dict mapping source names to spike tensors
                    e.g., {"cortex": [n_cortex], "hippocampus": [n_hipp]}
-        
+
         Returns:
             Output spikes [n_neurons]
         """
@@ -78,15 +78,15 @@ class RegionName(NeuralRegion):
             if source_name in self.synaptic_weights:
                 current = self._apply_synapses(source_name, input_spikes)
                 currents.append(current)
-        
+
         total_current = torch.sum(torch.stack(currents), dim=0) if currents else torch.zeros(self.n_neurons, device=self.device)
-        
+
         # 2. Internal processing (unchanged)
         # ... region-specific computation ...
-        
+
         # 3. Generate output spikes
         output_spikes = self.neurons(total_current)
-        
+
         # 4. Update learning (if enabled)
         for source_name in self.plasticity_rules:
             if source_name in inputs:
@@ -96,7 +96,7 @@ class RegionName(NeuralRegion):
                     post=output_spikes,
                 )
                 self.synaptic_weights[source_name].data = new_weights
-        
+
         return output_spikes
 ```
 
@@ -119,8 +119,8 @@ class RegionName(NeuralRegion):
 
 ### 🎯 **1. Striatum** (Start Here - Clearest Example)
 
-**File**: `src/thalia/regions/striatum/striatum_region.py`  
-**Lines**: ~850  
+**File**: `src/thalia/regions/striatum/striatum_region.py`
+**Lines**: ~850
 **Complexity**: Medium (already designed for multi-source)
 
 #### Current Architecture
@@ -130,10 +130,10 @@ class Striatum(NeuralComponent):
         # D1 and D2 MSN populations
         self.d1_neurons = ConductanceLIF(d1_size, ...)
         self.d2_neurons = ConductanceLIF(d2_size, ...)
-        
+
         # External weights (FROM PATHWAYS - WRONG!)
         # These are created in pathways, not here
-        
+
         # Internal weights (CORRECT - stay here)
         self.d1_d2_inhibition = nn.Parameter(...)
         self.d2_d1_inhibition = nn.Parameter(...)
@@ -148,46 +148,46 @@ class Striatum(NeuralRegion):
             default_learning_rule="three_factor",  # Dopamine-gated
             device=config.device,
         )
-        
+
         self.n_d1 = config.n_d1
         self.n_d2 = config.n_d2
-        
+
         # Internal populations (unchanged)
         self.d1_neurons = ConductanceLIF(self.n_d1, ...)
         self.d2_neurons = ConductanceLIF(self.n_d2, ...)
-        
+
         # Internal weights (unchanged)
         self.d1_d2_inhibition = nn.Parameter(...)
         self.d2_d1_inhibition = nn.Parameter(...)
-        
+
         # External weights registered dynamically:
         # - add_input_source("cortex", n_input=128, learning_rule="three_factor")
         # - add_input_source("hippocampus", n_input=64, learning_rule="three_factor")
         # - add_input_source("pfc", n_input=32, learning_rule=None)  # No learning
-    
+
     def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         # Apply synaptic weights
         cortical_current = self._apply_synapses("cortex", inputs["cortex"])
         hippo_current = self._apply_synapses("hippocampus", inputs["hippocampus"])
         pfc_current = self._apply_synapses("pfc", inputs["pfc"])
-        
+
         # Split into D1/D2 pathways (internal routing)
         total_current = cortical_current + hippo_current + pfc_current
         d1_current = total_current[:self.n_d1]
         d2_current = total_current[self.n_d1:]
-        
+
         # D1/D2 processing (unchanged)
         d1_spikes = self.d1_neurons(d1_current)
         d2_spikes = self.d2_neurons(d2_current)
-        
+
         # Apply cross-inhibition (unchanged)
         d1_inhibition = torch.matmul(self.d1_d2_inhibition, d2_spikes)
         d2_inhibition = torch.matmul(self.d2_d1_inhibition, d1_spikes)
-        
+
         # Re-fire with inhibition (simplified)
         d1_final = (d1_spikes * (1 - d1_inhibition)) > 0.5
         d2_final = (d2_spikes * (1 - d2_inhibition)) > 0.5
-        
+
         return torch.cat([d1_final, d2_final])
 ```
 
@@ -205,8 +205,8 @@ class Striatum(NeuralRegion):
 
 ### 🎯 **2. PFC** (Working Memory - Clear Single Purpose)
 
-**File**: `src/thalia/regions/prefrontal.py`  
-**Lines**: ~650  
+**File**: `src/thalia/regions/prefrontal.py`
+**Lines**: ~650
 **Complexity**: Medium (gating + maintenance)
 
 #### Current Architecture
@@ -215,7 +215,7 @@ class PrefrontalCortex(NeuralComponent):
     def __init__(self, config):
         # WM neurons with gating
         self.wm_neurons = GatedWMNeurons(...)
-        
+
         # Gating control
         self.gate_neurons = ConductanceLIF(...)
 ```
@@ -229,27 +229,27 @@ class PrefrontalCortex(NeuralRegion):
             default_learning_rule="gated_hebbian",
             device=config.device,
         )
-        
+
         # Internal populations (unchanged)
         self.wm_neurons = GatedWMNeurons(...)
         self.gate_neurons = ConductanceLIF(...)
-        
+
         # External weights via add_input_source():
         # - "cortex" (sensory/contextual info)
         # - "hippocampus" (episodic retrieval)
         # - "striatum" (action outcomes)
-    
+
     def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         # Apply synaptic weights
         cortex_input = self._apply_synapses("cortex", inputs.get("cortex", None))
         hippo_input = self._apply_synapses("hippocampus", inputs.get("hippocampus", None))
-        
+
         # Gating logic (unchanged)
         gate_signal = self.gate_neurons(cortex_input)
-        
+
         # WM maintenance (unchanged)
         wm_output = self.wm_neurons(hippo_input, gate=gate_signal)
-        
+
         return torch.cat([wm_output, gate_signal])
 ```
 
@@ -259,8 +259,8 @@ class PrefrontalCortex(NeuralRegion):
 
 ### 🎯 **3. Hippocampus** (Episodic Memory - Chain Architecture)
 
-**File**: `src/thalia/regions/hippocampus/hippocampus_region.py`  
-**Lines**: ~900  
+**File**: `src/thalia/regions/hippocampus/hippocampus_region.py`
+**Lines**: ~900
 **Complexity**: High (DG→CA3→CA1 chain, replay, consolidation)
 
 #### Current Architecture
@@ -271,12 +271,12 @@ class Hippocampus(NeuralComponent):
         self.dg_neurons = ConductanceLIF(dg_size, ...)
         self.ca3_neurons = ConductanceLIF(ca3_size, ...)
         self.ca1_neurons = ConductanceLIF(ca1_size, ...)
-        
+
         # Internal weights (KEEP)
         self.dg_ca3 = nn.Parameter(...)
         self.ca3_ca3_recurrent = nn.Parameter(...)  # Pattern completion
         self.ca3_ca1 = nn.Parameter(...)
-        
+
         # Replay system
         self.replay_buffer = EpisodicReplayBuffer(...)
 ```
@@ -290,49 +290,49 @@ class Hippocampus(NeuralRegion):
             default_learning_rule="hebbian",  # One-shot learning
             device=config.device,
         )
-        
+
         # Sizes
         self.n_dg = config.n_dg
         self.n_ca3 = config.n_ca3
         self.n_ca1 = config.n_ca1
-        
+
         # Internal populations (unchanged)
         self.dg_neurons = ConductanceLIF(self.n_dg, ...)
         self.ca3_neurons = ConductanceLIF(self.n_ca3, ...)
         self.ca1_neurons = ConductanceLIF(self.n_ca1, ...)
-        
+
         # Internal weights (unchanged)
         self.dg_ca3 = nn.Parameter(...)
         self.ca3_ca3_recurrent = nn.Parameter(...)
         self.ca3_ca1 = nn.Parameter(...)
-        
+
         # Entorhinal input via synaptic_weights:
         # - add_input_source("ec_l3", n_input=..., learning_rule="hebbian")
         # - add_input_source("cortex_l23", n_input=..., learning_rule="hebbian")
-        
+
         # Replay system (unchanged)
         self.replay_buffer = EpisodicReplayBuffer(...)
-    
+
     def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         # Entorhinal input to DG
         ec_input = self._apply_synapses("ec_l3", inputs["ec_l3"])
         cortex_input = self._apply_synapses("cortex_l23", inputs.get("cortex_l23", None))
-        
+
         # DG: Pattern separation
         dg_spikes = self.dg_neurons(ec_input + cortex_input)
-        
+
         # CA3: Pattern completion (recurrent)
         ca3_input = torch.matmul(self.dg_ca3, dg_spikes)
         ca3_recurrent = torch.matmul(self.ca3_ca3_recurrent, self.ca3_prev_spikes)
         ca3_spikes = self.ca3_neurons(ca3_input + ca3_recurrent)
-        
+
         # CA1: Output to cortex
         ca1_input = torch.matmul(self.ca3_ca1, ca3_spikes)
         ca1_spikes = self.ca1_neurons(ca1_input)
-        
+
         # Store for next step
         self.ca3_prev_spikes = ca3_spikes
-        
+
         return ca1_spikes  # Output from CA1
 ```
 
@@ -342,8 +342,8 @@ class Hippocampus(NeuralRegion):
 
 ### 🎯 **4. LayeredCortex** (Most Complex - Multiple Ports)
 
-**File**: `src/thalia/regions/cortex/layered_cortex.py`  
-**Lines**: ~1200  
+**File**: `src/thalia/regions/cortex/layered_cortex.py`
+**Lines**: ~1200
 **Complexity**: High (L4→L2/3→L5→L6, multiple input/output ports)
 
 #### Current Architecture
@@ -355,7 +355,7 @@ class LayeredCortex(NeuralComponent):
         self.l23_neurons = ConductanceLIF(l23_size, ...)
         self.l5_neurons = ConductanceLIF(l5_size, ...)
         self.l6_neurons = ConductanceLIF(l6_size, ...)
-        
+
         # Internal weights (KEEP)
         self.w_l4_l23 = nn.Parameter(...)
         self.w_l23_l5 = nn.Parameter(...)
@@ -373,26 +373,26 @@ class LayeredCortex(NeuralRegion):
             default_learning_rule="stdp",
             device=config.device,
         )
-        
+
         # Sizes
         self.n_l4 = config.n_l4
         self.n_l23 = config.n_l23
         self.n_l5 = config.n_l5
         self.n_l6 = config.n_l6
-        
+
         # Internal populations (unchanged)
         self.l4_neurons = ConductanceLIF(self.n_l4, ...)
         self.l23_neurons = ConductanceLIF(self.n_l23, ...)
         self.l5_neurons = ConductanceLIF(self.n_l5, ...)
         self.l6_neurons = ConductanceLIF(self.n_l6, ...)
-        
+
         # Internal weights (unchanged)
         self.w_l4_l23 = nn.Parameter(...)
         self.w_l23_l5 = nn.Parameter(...)
         self.w_l23_l6 = nn.Parameter(...)
         self.w_l5_l23 = nn.Parameter(...)
         self.w_l6_l4 = nn.Parameter(...)
-        
+
         # External weights via synaptic_weights:
         # Feedforward:
         # - add_input_source("thalamus", n_input=..., target_layer="l4")
@@ -400,31 +400,31 @@ class LayeredCortex(NeuralRegion):
         # - add_input_source("pfc", n_input=..., target_layer="l23")
         # Lateral:
         # - add_input_source("cortex_other", n_input=..., target_layer="l23")
-    
+
     def forward(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """Multi-port output: different layers project to different targets.
-        
+
         Returns:
             Dict with keys: "l23" (to hippocampus), "l5" (to striatum), "l6" (to thalamus)
         """
         # L4: Thalamic input
         thalamic_input = self._apply_synapses("thalamus", inputs["thalamus"])
         l4_spikes = self.l4_neurons(thalamic_input)
-        
+
         # L2/3: Cortical integration
         l23_input = torch.matmul(self.w_l4_l23, l4_spikes)
         if "pfc" in inputs:
             l23_input += self._apply_synapses("pfc", inputs["pfc"])
         l23_spikes = self.l23_neurons(l23_input)
-        
+
         # L5: Motor output
         l5_input = torch.matmul(self.w_l23_l5, l23_spikes)
         l5_spikes = self.l5_neurons(l5_input)
-        
+
         # L6: Feedback to thalamus
         l6_input = torch.matmul(self.w_l23_l6, l23_spikes)
         l6_spikes = self.l6_neurons(l6_input)
-        
+
         return {
             "l23": l23_spikes,   # To hippocampus
             "l5": l5_spikes,     # To striatum
@@ -432,16 +432,16 @@ class LayeredCortex(NeuralRegion):
         }
 ```
 
-**Challenge**: Multi-port output requires Dict return type  
-**Solution**: Update event system to handle Dict outputs  
+**Challenge**: Multi-port output requires Dict return type
+**Solution**: Update event system to handle Dict outputs
 **Expected Changes**: ~100 lines modified, ~60 lines removed
 
 ---
 
 ### 🎯 **5. Thalamus** (Complex - TRN + Mode Switching)
 
-**File**: `src/thalia/regions/thalamus.py`  
-**Lines**: ~885  
+**File**: `src/thalia/regions/thalamus.py`
+**Lines**: ~885
 **Complexity**: High (relay/TRN, burst/tonic modes, spatial filtering)
 
 #### Migration Notes
@@ -456,8 +456,8 @@ class LayeredCortex(NeuralRegion):
 
 ### 🎯 **6. Cerebellum** (Complex - Granule Layer + Purkinje)
 
-**File**: `src/thalia/regions/cerebellum/cerebellum_region.py`  
-**Lines**: ~1100  
+**File**: `src/thalia/regions/cerebellum/cerebellum_region.py`
+**Lines**: ~1100
 **Complexity**: High (granule expansion, Purkinje cells, DCN, error correction)
 
 #### Migration Notes
@@ -478,10 +478,10 @@ def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
     # Get the single input
     source_name = list(inputs.keys())[0]
     input_spikes = inputs[source_name]
-    
+
     # Apply synapses
     current = self._apply_synapses(source_name, input_spikes)
-    
+
     # Process
     output = self.neurons(current)
     return output
@@ -492,12 +492,12 @@ def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
 def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
     # Accumulate currents from all sources
     total_current = torch.zeros(self.n_neurons, device=self.device)
-    
+
     for source_name, input_spikes in inputs.items():
         if source_name in self.synaptic_weights:
             current = self._apply_synapses(source_name, input_spikes)
             total_current += current
-    
+
     # Process
     output = self.neurons(total_current)
     return output
@@ -509,15 +509,15 @@ def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
     # Route inputs to specific layers
     l4_current = torch.zeros(self.n_l4, device=self.device)
     l23_current = torch.zeros(self.n_l23, device=self.device)
-    
+
     if "thalamus" in inputs:
         # Thalamus → L4
         l4_current += self._apply_synapses("thalamus", inputs["thalamus"])
-    
+
     if "pfc" in inputs:
         # PFC → L2/3 (top-down)
         l23_current += self._apply_synapses("pfc", inputs["pfc"])
-    
+
     # Internal processing...
 ```
 
@@ -525,7 +525,7 @@ def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
 ```python
 def forward(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
     # ... processing ...
-    
+
     return {
         "l23": l23_spikes,
         "l5": l5_spikes,
@@ -559,12 +559,12 @@ def test_multi_source():
     region = Region(config)
     region.add_input_source("cortex", n_input=128)
     region.add_input_source("hippocampus", n_input=64)
-    
+
     output = region.forward({
         "cortex": cortex_spikes,
         "hippocampus": hippo_spikes,
     })
-    
+
     assert output.shape == (region.n_neurons,)
 ```
 
@@ -573,14 +573,14 @@ def test_multi_source():
 def test_learning():
     region = Region(config)
     region.add_input_source("input", n_input=100, learning_rule="stdp")
-    
+
     # Initial weights
     w_before = region.synaptic_weights["input"].clone()
-    
+
     # Run forward with correlated activity
     for _ in range(10):
         output = region.forward({"input": strong_input})
-    
+
     # Weights should change
     w_after = region.synaptic_weights["input"]
     assert not torch.allclose(w_before, w_after)
@@ -681,6 +681,6 @@ cortex_input = inputs.get("cortex", torch.zeros(n_input, device=self.device))
 
 ---
 
-**Document Status**: Living document - update as migrations proceed  
-**Last Updated**: 2025-12-19  
+**Document Status**: Living document - update as migrations proceed
+**Last Updated**: 2025-12-19
 **Next Review**: After first region migration (Striatum)
