@@ -386,9 +386,21 @@ class Brain(nn.Module):
 
 ### Phase 2: Migrate Core Regions
 
+**Status**: In Progress (Striatum ✅, 5 regions remaining)
 **Goal**: Convert thalamus, cortex, hippocampus to new architecture.
 
-**Steps**:
+**Completed**:
+1. ✅ **Striatum** (2025-12-19):
+   - Changed inheritance from BrainComponentBase to NeuralRegion
+   - Moved D1/D2 weights to parent's `synaptic_weights` dict
+   - Implemented property-based weight access (@property/@setter)
+   - D1 and D2 are separate full populations (both [n_output, n_input])
+   - All 13 tests passing (delays, checkpoints, learning)
+   - Commits: 8cb285c, 0aa9e30, 0fb9494, 0ce412d, 9bd1135
+   - Files: `striatum.py`, `pathway_base.py`
+   - Key insight: Opponent pathways need separate full-size matrices for opposite learning rules
+
+**Next Steps**:
 1. Convert `Thalamus`:
    - Remove internal weights (it's mostly routing)
    - Make it a simple relay with spike timing
@@ -429,9 +441,13 @@ class Brain(nn.Module):
            return torch.cat([l23_spikes, l5_spikes])
    ```
 
-3. Convert `Striatum`:
-   - Already designed for multi-source! Just move weights from pathways to region
-   - `synaptic_weights["cortex"]`, `synaptic_weights["hippocampus"]`, etc.
+3. ✅ Convert `Striatum` (COMPLETE):
+   - Successfully moved weights from D1/D2 pathway objects to parent's synaptic_weights
+   - Used `synaptic_weights["default_d1"]` and `synaptic_weights["default_d2"]`
+   - Each pathway: full [n_output, n_input] matrix (separate populations, not split)
+   - Property-based access: @property weights returns parent's tensor
+   - All operations (matmul, learning, checkpoints) work transparently
+   - Biological accuracy maintained: D1 (DA+→LTP) and D2 (DA+→LTD) need separate matrices
 
 4. Update tests to use new architecture
 
@@ -561,12 +577,17 @@ def _process_region_event(self, region_name, events):
 
 ## Part 5: Timeline
 
-**Total**: ~4 weeks for complete migration
+**Total**: ~4-5 weeks for complete migration (revised)
 
-- **Week 1**: Phase 1 + Phase 2 start (parallel implementation + begin region conversion)
-- **Week 2**: Phase 2 complete (all regions migrated)
-- **Week 3**: Phase 3 (event system update)
-- **Week 4**: Phase 4 + Phase 5 (cleanup + optimization)
+- **Week 1**: Phase 1 ✅ + Phase 2 start ✅ (Striatum complete in 1 day)
+- **Week 2-3**: Phase 2 continue (PFC, Hippocampus, Cortex)
+- **Week 4**: Phase 2 final (Thalamus, Cerebellum)
+- **Week 5**: Phase 3 (event system update)
+- **Week 6**: Phase 4 + Phase 5 (cleanup + optimization)
+
+**Progress**: 1/6 regions migrated (16.7%)
+**Elapsed**: 1 day
+**Last Updated**: 2025-12-19
 
 **Can parallelize**:
 - Region conversions (multiple people)

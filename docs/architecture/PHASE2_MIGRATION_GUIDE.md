@@ -1,9 +1,10 @@
 # Phase 2 Migration Guide: Region → NeuralRegion
 
-**Status**: Planning Phase
+**Status**: In Progress (Striatum Complete ✅)
 **Target**: Migrate all brain regions to NeuralRegion base class
 **Estimated Time**: 2-3 weeks
 **Prerequisites**: Phase 1 complete ✅
+**Last Updated**: 2025-12-19
 
 ---
 
@@ -15,18 +16,78 @@ Phase 2 migrates existing region implementations to use the biologically-accurat
 
 ---
 
+## Key Insights from Striatum Migration
+
+The completed Striatum migration revealed critical architectural patterns that apply to all regions:
+
+### 1. **Property-Based Weight Access Pattern**
+```python
+# In pathway (e.g., D1Pathway, D2Pathway):
+@property
+def weights(self) -> torch.Tensor:
+    return self._parent_striatum.synaptic_weights[self._weight_source]
+
+@weights.setter
+def weights(self, value: torch.Tensor) -> None:
+    self._parent_striatum.synaptic_weights[self._weight_source].data = value
+```
+**Why this works**: All operations (torch.matmul, weights.data =, learning updates) transparently access parent's storage. No code changes needed in pathways or learning components.
+
+### 2. **Opponent Pathways Need Separate Matrices**
+- D1 and D2 are **separate full populations**, not split populations
+- Each has shape `[n_output, n_input]` (both full size)
+- **Why**: D1 (DA+ → LTP) and D2 (DA+ → LTD) have opposite learning rules
+- **Biological accuracy**: Different synaptic weights for same input based on receptor type
+
+### 3. **Forward Flow Critical Pattern**
+```python
+# WRONG: Pre-processing currents
+currents = self._consolidate_inputs(inputs)  # Returns [n_output]
+output = self.forward_coordinator(currents)  # Expects [n_input]!
+
+# RIGHT: Pass raw spikes
+raw_spikes = torch.cat([inputs[k] for k in inputs])  # [n_input]
+output = self.forward_coordinator({"default": raw_spikes})  # Applies weights internally
+```
+**Lesson**: Let internal coordinators handle weight application. Parent only concatenates/routes inputs.
+
+### 4. **State Management Differs by Base Class**
+- **BrainComponentBase**: Uses `self.state.spikes`, `self.state.t`
+- **NeuralRegion**: Uses `self.output_spikes`, no timestep tracking
+- **Migration**: Change all `self.state.spikes` → `self.output_spikes`
+
+### 5. **Checkpoint Loading with Properties**
+```python
+# WRONG: Tries to create nn.Parameter
+self.weights = nn.Parameter(state['weights'])  # Fails on property
+
+# RIGHT: Use property setter
+self.weights = state['weights']  # Calls @weights.setter
+```
+
+### 6. **Backward Compatibility During Migration**
+```python
+def forward(self, inputs: Union[Dict[str, Tensor], Tensor]) -> Tensor:
+    if isinstance(inputs, torch.Tensor):
+        inputs = {"default": inputs}  # Auto-wrap for old tests
+    # ... proceed with Dict processing
+```
+**Benefit**: Tests can be updated incrementally, not all at once.
+
+---
+
 ## Migration Strategy
 
 ### 1. **Priority Order** (Simplest → Most Complex)
 
-| Order | Region | Complexity | Est. Time | Reason |
-|-------|--------|------------|-----------|--------|
-| 1 | **Striatum** | Medium | 2-3 days | Already multi-source, clear separation |
-| 2 | **PFC** | Medium | 2-3 days | Working memory, simpler than cortex |
-| 3 | **Hippocampus** | High | 3-4 days | DG→CA3→CA1 chain, replay system |
-| 4 | **LayeredCortex** | High | 4-5 days | Complex laminar structure, multiple ports |
-| 5 | **Thalamus** | High | 3-4 days | TRN, mode switching, spatial filtering |
-| 6 | **Cerebellum** | High | 3-4 days | Granule layer, Purkinje cells, DCN |
+| Order | Region | Status | Est. Time | Actual Time | Reason |
+|-------|--------|--------|-----------|-------------|--------|
+| 1 | **Striatum** | ✅ COMPLETE | 2-3 days | 1 day | Already multi-source, clear separation |
+| 2 | **PFC** | 🔄 Next | 2-3 days | - | Working memory, simpler than cortex |
+| 3 | **Hippocampus** | ⏳ Planned | 3-4 days | - | DG→CA3→CA1 chain, replay system |
+| 4 | **LayeredCortex** | ⏳ Planned | 4-5 days | - | Complex laminar structure, multiple ports |
+| 5 | **Thalamus** | ⏳ Planned | 3-4 days | - | TRN, mode switching, spatial filtering |
+| 6 | **Cerebellum** | ⏳ Planned | 3-4 days | - | Granule layer, Purkinje cells, DCN |
 
 ### 2. **Migration Pattern**
 
@@ -200,6 +261,47 @@ class Striatum(NeuralRegion):
 6. Run tests: `pytest tests/unit/regions/striatum/ -v`
 
 **Expected Changes**: ~50 lines modified, ~30 lines removed
+
+#### ✅ **MIGRATION COMPLETE** (2025-12-19)
+
+**Commits**:
+1. `8cb285c` - Part 1: Changed inheritance to NeuralRegion
+2. `0aa9e30` - Part 2: Moved D1/D2 weights to parent's synaptic_weights dict
+3. `0fb9494` - Fixed initialization order and Protocol issues
+4. `0ce412d` - Added backward compatibility and helper methods
+5. `9bd1135` - Fixed weight size bug and forward flow
+
+**Architecture Implemented**:
+- D1 weights: `synaptic_weights["default_d1"]` shape `[n_output, n_input]`
+- D2 weights: `synaptic_weights["default_d2"]` shape `[n_output, n_input]`
+- Property-based access: `@property weights` returns parent's tensor
+- Biological accuracy: D1 and D2 are separate full populations, not split
+- Each pathway has full weight matrix for opposite learning rules
+
+**Key Fixes**:
+1. **Weight Size**: Changed from `n_d1 = n_total // 2` to `n_d1 = n_total` (separate populations)
+2. **Forward Flow**: Removed `_consolidate_inputs()`, pass raw inputs to forward_coordinator
+3. **State Management**: Use `self.output_spikes` (NeuralRegion pattern) not `self.state.spikes`
+4. **Checkpoint**: Use property setter `self.weights = state['weights']` not `nn.Parameter()`
+
+**Test Results**:
+- ✅ All 13 striatum D1/D2 delay tests passing
+- ✅ Checkpoint save/restore working
+- ✅ Property-based weight access validated
+- ✅ Backward compatibility maintained
+
+**Lessons Learned**:
+1. **D1/D2 are opponent pathways**: Need separate full-size weight matrices for opposite learning rules (DA+ → LTP vs DA+ → LTD)
+2. **Property pattern works perfectly**: torch.matmul(), weights.data =, and learning updates all transparent
+3. **Forward flow critical**: Must pass raw [n_input] spikes, not pre-processed [n_output] currents
+4. **State management matters**: NeuralRegion uses self.output_spikes not self.state
+5. **Checkpoint loading**: Properties need setter, not nn.Parameter() assignment
+
+**Files Modified**:
+- `src/thalia/regions/striatum/striatum.py` (lines 799-835, 1477-1528, 1760-1787)
+- `src/thalia/regions/striatum/pathway_base.py` (lines 87-163, 395)
+
+**Total Changes**: ~70 lines modified, ~40 lines removed
 
 ---
 
@@ -617,35 +719,53 @@ Each region migration is independent. If a migration causes issues:
 
 Phase 2 complete when:
 
-- ✅ All 6 regions inherit from NeuralRegion
-- ✅ All tests pass (>95% pass rate)
-- ✅ No external weights in regions (all in `synaptic_weights`)
-- ✅ All regions use `forward(inputs: Dict)` signature
-- ✅ Learning works for all regions
-- ✅ Checkpoints load/save correctly
-- ✅ Documentation updated
+- ✅ All 6 regions inherit from NeuralRegion (1/6 complete)
+- ⏳ All tests pass (>95% pass rate) (Currently: 78.5% overall, 100% striatum)
+- ⏳ No external weights in regions (all in `synaptic_weights`) (1/6 complete)
+- ⏳ All regions use `forward(inputs: Dict)` signature (1/6 complete)
+- ⏳ Learning works for all regions (1/6 validated)
+- ⏳ Checkpoints load/save correctly (1/6 validated)
+- ⏳ Documentation updated (In progress)
+
+**Current Progress**: 16.7% complete (1/6 regions)
+
+### Per-Region Metrics
+
+| Region | Inherit NeuralRegion | Tests Pass | Weights Moved | Learning Works | Checkpoints Work |
+|--------|---------------------|------------|---------------|----------------|------------------|
+| **Striatum** | ✅ | ✅ (13/13) | ✅ | ✅ | ✅ |
+| **PFC** | ❌ | - | ❌ | - | - |
+| **Hippocampus** | ❌ | - | ❌ | - | - |
+| **LayeredCortex** | ❌ | - | ❌ | - | - |
+| **Thalamus** | ❌ | - | ❌ | - | - |
+| **Cerebellum** | ❌ | - | ❌ | - | - |
 
 ---
 
 ## Timeline Estimate
 
-| Week | Focus | Regions | Deliverable |
-|------|-------|---------|-------------|
-| 1 | Foundation | Striatum, PFC | 2 regions migrated, pattern validated |
-| 2 | Complex | Hippocampus, Cortex | 4 regions migrated, multi-port working |
-| 3 | Final | Thalamus, Cerebellum | All 6 regions migrated |
-| 4 | Polish | Testing, docs | Phase 2 complete, ready for Phase 3 |
+| Week | Focus | Regions | Status | Deliverable |
+|------|-------|---------|--------|-------------|
+| 1 | Foundation | Striatum, PFC | ✅ Striatum done | 1 region migrated, pattern validated |
+| 2 | Continue | PFC, Hippocampus | 🔄 In progress | 3 regions migrated |
+| 3 | Complex | Cortex, Thalamus | ⏳ Planned | 5 regions migrated |
+| 4 | Final | Cerebellum | ⏳ Planned | All 6 regions migrated |
+| 5 | Polish | Testing, docs | ⏳ Planned | Phase 2 complete, ready for Phase 3 |
 
-**Total**: 3-4 weeks for complete migration
+**Total**: 4-5 weeks for complete migration (revised based on Striatum experience)
+**Elapsed**: 1 day (Striatum)
 
 ---
 
 ## Next Steps
 
-1. **Start with Striatum** (clearest example, already multi-source)
-2. **Validate pattern** (ensure approach works)
-3. **Document learnings** (update this guide based on experience)
-4. **Continue systematically** (follow priority order)
+1. ✅ **Striatum Complete** - Pattern validated, all tests passing
+2. 🔄 **Begin PFC Migration** - Apply learned patterns from Striatum
+3. ⏳ **Document Striatum learnings** - Update architecture docs (this file)
+4. ⏳ **Address remaining test failures** - Fix RecursionError in brain building (60+ tests)
+5. ⏳ **Continue systematically** - Follow priority order for remaining regions
+
+**Immediate Priority**: Start PFC migration using validated property-based pattern from Striatum
 
 ---
 
@@ -669,6 +789,29 @@ cortex_input = inputs.get("cortex", torch.zeros(n_input, device=self.device))
 
 ### Q: What about backward compatibility?
 **A**: Keep `use_legacy_pathways=True` until Phase 4. Old and new can coexist.
+
+### Q: How to handle opponent pathways (like D1/D2)?
+**A**: Create separate weight entries in synaptic_weights dict:
+```python
+# In region __init__:
+self.synaptic_weights["source_d1"] = torch.randn(n_neurons, n_input)
+self.synaptic_weights["source_d2"] = torch.randn(n_neurons, n_input)
+
+# In pathway (property-based access):
+@property
+def weights(self):
+    return self._parent.synaptic_weights[self._weight_source]
+```
+Each pathway gets full-size weight matrix for independent learning rules.
+
+### Q: What if forward() needs to support both Dict and Tensor during migration?
+**A**: Use Union type and auto-wrap:
+```python
+def forward(self, inputs: Union[Dict[str, torch.Tensor], torch.Tensor]) -> torch.Tensor:
+    if isinstance(inputs, torch.Tensor):
+        inputs = {"default": inputs}  # Backward compat
+    # ... process dict normally
+```
 
 ---
 
