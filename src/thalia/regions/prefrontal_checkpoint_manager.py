@@ -187,7 +187,7 @@ class PrefrontalCheckpointManager:
                 "working_memory": wm[i].item(),
                 "update_gate": update_gate[i].item(),
                 "incoming_synapses": self._extract_synapses_for_neuron(
-                    i, pfc.weights, pfc.rec_weights, pfc.inhib_weights
+                    i, pfc.synaptic_weights["default"], pfc.rec_weights, pfc.inhib_weights
                 ),
             }
             neurons.append(neuron_data)
@@ -255,7 +255,7 @@ class PrefrontalCheckpointManager:
         n_neurons = pfc.config.n_output
 
         # Restore weights
-        ff_weights_restored = torch.zeros_like(pfc.weights)
+        ff_weights_restored = torch.zeros_like(pfc.synaptic_weights["default"])
         rec_weights_restored = torch.zeros_like(pfc.rec_weights)
         inhib_weights_restored = torch.zeros_like(pfc.inhib_weights)
 
@@ -303,7 +303,7 @@ class PrefrontalCheckpointManager:
                                 inhib_weights_restored[i, source_idx] = weight
 
         # Apply restored weights
-        pfc.weights.data = ff_weights_restored
+        pfc.synaptic_weights["default"].data = ff_weights_restored
         pfc.rec_weights.data = rec_weights_restored
         pfc.inhib_weights.data = inhib_weights_restored
 

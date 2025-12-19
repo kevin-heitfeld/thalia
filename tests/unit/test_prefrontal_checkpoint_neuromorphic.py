@@ -120,7 +120,7 @@ class TestPrefrontalNeuromorphic:
     def test_save_load_preserves_state(self, small_prefrontal, tmp_path):
         """Save and load should preserve neuromorphic state."""
         # Set distinctive state
-        small_prefrontal.weights.data.fill_(0.5)
+        small_prefrontal.synaptic_weights["default"].data.fill_(0.5)
         small_prefrontal.state.working_memory = torch.arange(50, dtype=torch.float32) * 0.1
 
         manager = PrefrontalCheckpointManager(small_prefrontal)
@@ -130,14 +130,17 @@ class TestPrefrontalNeuromorphic:
         manager.save(str(checkpoint_path))
 
         # Modify state
-        small_prefrontal.weights.data.fill_(0.9)
+        small_prefrontal.synaptic_weights["default"].data.fill_(0.9)
         small_prefrontal.state.working_memory.fill_(999.0)
 
         # Load
         manager.load(str(checkpoint_path))
 
         # Verify restoration
-        assert torch.allclose(small_prefrontal.weights.data, torch.full_like(small_prefrontal.weights.data, 0.5))
+        assert torch.allclose(
+            small_prefrontal.synaptic_weights["default"].data,
+            torch.full_like(small_prefrontal.synaptic_weights["default"].data, 0.5)
+        )
         expected_wm = torch.arange(50, dtype=torch.float32) * 0.1
         assert torch.allclose(small_prefrontal.state.working_memory, expected_wm, atol=1e-5)
 
@@ -207,7 +210,7 @@ class TestPrefrontalHybrid:
 
         # Save checkpoint without metadata
         invalid_checkpoint = {
-            "weights": small_prefrontal.weights.data,
+            "weights": small_prefrontal.synaptic_weights["default"].data,
             "state": {"working_memory": small_prefrontal.state.working_memory},
         }
         torch.save(invalid_checkpoint, checkpoint_path)

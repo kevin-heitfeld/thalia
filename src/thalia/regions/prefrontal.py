@@ -63,7 +63,7 @@ When to Use:
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 
 import torch
 import torch.nn as nn
@@ -81,10 +81,8 @@ from thalia.regulation.learning_constants import LEARNING_RATE_STDP
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
 
-from thalia.regions.base import (
-    NeuralComponent,
-    NeuralComponentState,
-)
+from thalia.core.neural_region import NeuralRegion
+from thalia.regions.base import NeuralComponentState
 from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
 from thalia.regions.prefrontal_hierarchy import (
     Goal,
@@ -273,7 +271,7 @@ class DopamineGatingSystem:
     author="Thalia Project",
     config_class=PrefrontalConfig,
 )
-class Prefrontal(NeuralComponent):
+class Prefrontal(NeuralRegion):
     """Prefrontal cortex with dopamine-gated working memory.
 
     Implements:
@@ -308,9 +306,38 @@ class Prefrontal(NeuralComponent):
         Args:
             config: PFC configuration
         """
-        # Store config before calling super().__init__ which calls abstract methods
+        # Store config
         self.pfc_config = config
-        super().__init__(config)
+        self.config = config  # For backward compatibility
+        self.device = torch.device(config.device)
+
+        # Initialize NeuralRegion with total neurons
+        super().__init__(
+            n_neurons=config.n_output,
+            neuron_config=ConductanceLIFConfig(
+                g_L=0.02,  # Slower leak (τ_m ≈ 50ms)
+                tau_E=10.0,  # Slower excitatory (for integration)
+                tau_I=15.0,  # Slower inhibitory
+                adapt_increment=config.adapt_increment,
+                tau_adapt=config.adapt_tau,
+            ),
+            default_learning_rule="stdp",
+            device=config.device,
+            dt_ms=config.dt_ms,
+        )
+
+        # Override neurons to add STP (NeuralRegion creates basic neurons)
+        self.neurons = self._create_neurons()
+
+        # Register feedforward input source and initialize weights
+        self.add_input_source("default", n_input=config.n_input)
+        # Initialize with Xavier (better than NeuralRegion's default)
+        self.synaptic_weights["default"].data = WeightInitializer.xavier(
+            n_output=config.n_output,
+            n_input=config.n_input,
+            gain=1.0,
+            device=self.device
+        )
 
         # Recurrent weights for WM maintenance
         self.rec_weights = nn.Parameter(
@@ -401,16 +428,8 @@ class Prefrontal(NeuralComponent):
                 hd_config = config.hyperbolic_config or HyperbolicDiscountingConfig()
                 self.discounter = HyperbolicDiscounter(hd_config)
 
-    def _initialize_weights(self) -> torch.Tensor:
-        """Initialize feedforward weights."""
-        return nn.Parameter(
-            WeightInitializer.xavier(
-                n_output=self.pfc_config.n_output,
-                n_input=self.pfc_config.n_input,
-                gain=1.0,
-                device=torch.device(self.pfc_config.device)
-            )
-        )
+        # Enable plasticity by default
+        self.plasticity_enabled = True
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create conductance-based LIF neurons with slow dynamics and SFA."""
@@ -444,6 +463,34 @@ class Prefrontal(NeuralComponent):
 
         return neurons
 
+    def _reset_subsystems(self, *names: str) -> None:
+        """Reset state of named subsystems that have reset_state() method.
+
+        Helper from BrainComponentBase for backward compatibility.
+        """
+        for name in names:
+            if hasattr(self, name):
+                subsystem = getattr(self, name)
+                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                    subsystem.reset_state()
+
+    def set_neuromodulators(
+        self,
+        dopamine: Optional[float] = None,
+        acetylcholine: Optional[float] = None,
+        norepinephrine: Optional[float] = None,
+    ) -> None:
+        """Set neuromodulator levels (Brain → Region API).
+
+        Helper from BrainComponentBase for backward compatibility.
+        """
+        if dopamine is not None:
+            self.state.dopamine = dopamine
+        if acetylcholine is not None:
+            self.state.acetylcholine = acetylcholine
+        if norepinephrine is not None:
+            self.state.norepinephrine = norepinephrine
+
     def reset_state(self) -> None:
         """Reset state for new episode."""
         # Don't call super().reset_state() because it creates NeuralComponentState
@@ -472,8 +519,9 @@ class Prefrontal(NeuralComponent):
 
         PFC has a single weight matrix for input→neurons connections.
         """
-        self.weights = self._expand_weights(
-            current_weights=self.weights,
+        # Update synaptic weights in dict (not self.weights)
+        self.synaptic_weights["default"] = self._expand_weights(
+            current_weights=self.synaptic_weights["default"],
             n_new=n_new,
             initialization=initialization,
             sparsity=sparsity,
@@ -507,7 +555,7 @@ class Prefrontal(NeuralComponent):
 
     def forward(
         self,
-        input_spikes: torch.Tensor,
+        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
         dopamine_signal: float = 0.0,
         **kwargs: Any,
     ) -> torch.Tensor:
@@ -515,7 +563,8 @@ class Prefrontal(NeuralComponent):
         Process input through prefrontal cortex.
 
         Args:
-            input_spikes: Input spike pattern [n_input] (1D bool tensor, ADR-005)
+            inputs: Input spikes - Dict mapping source names to spike tensors,
+                   or single Tensor for backward compatibility [n_input]
             dopamine_signal: External DA signal for gating (-1 to 1)
             **kwargs: Additional inputs
 
@@ -525,6 +574,13 @@ class Prefrontal(NeuralComponent):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
+        # Backward compatibility: convert Tensor to Dict
+        if isinstance(inputs, torch.Tensor):
+            inputs = {"default": inputs}
+
+        # Get the input spikes (PFC typically has single input source)
+        input_spikes = inputs.get("default", torch.zeros(self.pfc_config.n_input, device=self.device))
+
         # Get timestep from config for temporal dynamics
         dt = self.config.dt_ms
 
@@ -567,8 +623,8 @@ class Prefrontal(NeuralComponent):
         rec_gain = 0.5 + 0.5 * retrieval_mod  # 0.5-1.0: boost recurrence during retrieval
 
         # Feedforward input - modulated by encoding phase
-        # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
-        ff_input = (self.weights @ input_spikes.float()) * ff_gain
+        # Apply synaptic weights: weights[n_output, n_input] @ input[n_input] → [n_output]
+        ff_input = (self.synaptic_weights["default"] @ input_spikes.float()) * ff_gain
 
         # =====================================================================
         # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -655,10 +711,10 @@ class Prefrontal(NeuralComponent):
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity(input_spikes, output_spikes)
 
-        # Apply axonal delay (biological reality: ALL neural connections have delays)
-        delayed_spikes = self._apply_axonal_delay(output_spikes, dt)
+        # Store output (NeuralRegion pattern)
+        self.output_spikes = output_spikes
 
-        return delayed_spikes
+        return output_spikes
 
     def _apply_plasticity(
         self,
@@ -681,13 +737,15 @@ class Prefrontal(NeuralComponent):
         metrics = self.apply_strategy_learning(
             pre_activity=input_spikes,
             post_activity=output_spikes,
-            weights=self.weights,
+            weights=self.synaptic_weights["default"],
         )
 
         # Optional: Apply synaptic scaling for homeostasis
         if cfg.homeostasis_enabled and metrics:
             with torch.no_grad():
-                self.weights.data = self.homeostasis.normalize_weights(self.weights.data, dim=1)
+                self.synaptic_weights["default"].data = self.homeostasis.normalize_weights(
+                    self.synaptic_weights["default"].data, dim=1
+                )
 
         # ======================================================================
         # Update recurrent weights to strengthen WM patterns
@@ -732,9 +790,11 @@ class Prefrontal(NeuralComponent):
             else:
                 return WeightInitializer.uniform(n_out, n_in, device=self.device)
 
-        # Expand self.weights [n_output, input] → [n_output, input+n_new]
+        # Expand synaptic_weights["default"] [n_output, input] → [n_output, input+n_new]
         new_input_cols = new_weights_for(self.config.n_output, n_new)
-        self.weights.data = torch.cat([self.weights.data, new_input_cols], dim=1)
+        self.synaptic_weights["default"].data = torch.cat(
+            [self.synaptic_weights["default"].data, new_input_cols], dim=1
+        )
 
         # Update config
         self.config = replace(self.config, n_input=new_n_input)
@@ -767,9 +827,11 @@ class Prefrontal(NeuralComponent):
             else:
                 return WeightInitializer.uniform(n_out, n_in, device=self.device)
 
-        # 1. Expand self.weights [n_output, input] → [n_output+n_new, input]
+        # 1. Expand synaptic_weights["default"] [n_output, input] → [n_output+n_new, input]
         new_output_rows = new_weights_for(n_new, self.config.n_input)
-        self.weights.data = torch.cat([self.weights.data, new_output_rows], dim=0)
+        self.synaptic_weights["default"].data = torch.cat(
+            [self.synaptic_weights["default"].data, new_output_rows], dim=0
+        )
 
         # 2. Expand rec_weights [n_output, n_output] → [n_output+n_new, n_output+n_new]
         new_rec_rows = new_weights_for(n_new, old_n_output)
