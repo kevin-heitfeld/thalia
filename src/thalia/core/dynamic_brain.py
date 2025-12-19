@@ -2108,80 +2108,65 @@ class DynamicBrain(nn.Module):
     ) -> None:
         """Schedule spike events to downstream components with axonal delays.
 
-        For multi-source pathways, forwards immediately when ANY source fires.
-        Missing sources will be filled with zeros by the pathway (biologically
-        plausible - no spikes from that source yet).
+        For multi-source pathways, buffers source outputs and forwards when ALL sources
+        have fired at least once. Missing sources are filled with zeros by AxonalProjection.
 
         Args:
             source: Source component name
             output_spikes: Output spikes from source
             current_time: Current simulation time
         """
-        from thalia.pathways.multi_source_pathway import MultiSourcePathway
-
         # Find all connections from this source
         for (src, tgt), pathway in self.connections.items():
             if src == source:
-                if isinstance(pathway, MultiSourcePathway):
-                    # Multi-source pathway - update this source's output in buffer
+                # Extract port-specific output if specified
+                conn_spec = self._connection_specs.get((src, tgt))
+                if conn_spec and hasattr(conn_spec, 'source_port') and conn_spec.source_port:
+                    # Get source component to extract port data
+                    source_comp = self.components[src]
+                    port_output = self._extract_port_output(source_comp, output_spikes, conn_spec.source_port)
+                else:
+                    port_output = output_spikes
+
+                # Check if this is a multi-source target
+                # (multiple pathways going to same target)
+                target_sources = [s for (s, t) in self.connections.keys() if t == tgt]
+                
+                if len(target_sources) > 1:
+                    # Multi-source target - buffer this source's output
                     if tgt not in self._multi_source_buffers:
                         self._multi_source_buffers[tgt] = {}
-
-                    # Extract port-specific output if specified
-                    conn_spec = self._connection_specs.get((src, tgt))
-                    if conn_spec and hasattr(conn_spec, 'source_port') and conn_spec.source_port:
-                        # Get source component to extract port data
-                        source_comp = self.components[src]
-                        port_output = self._extract_port_output(source_comp, output_spikes, conn_spec.source_port)
-                    else:
-                        port_output = output_spikes
-
-                    # Store this source's output (port-extracted)
+                    
                     self._multi_source_buffers[tgt][source] = port_output
-
-                    # Forward immediately with ALL currently available sources
-                    # (pathway will use zeros for any missing sources)
-                    delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
-
-                    # Forward with dict of currently available source outputs
-                    pathway_output = pathway.forward(self._multi_source_buffers[tgt])
-
-                    # Schedule event to target
-                    available_sources = list(self._multi_source_buffers[tgt].keys())
-                    event = Event(
-                        time=current_time + delay_ms,
-                        event_type=EventType.SPIKE,
-                        source=f"multi:{','.join(available_sources)}",
-                        target=tgt,
-                        payload=SpikePayload(spikes=pathway_output),
-                    )
-                    self._scheduler.schedule(event)
-
+                    
+                    # Forward with dict of currently available sources
+                    # AxonalProjection will fill missing sources with zeros
+                    source_dict = self._multi_source_buffers[tgt]
                 else:
-                    # Single-source pathway - process immediately
-                    delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
+                    # Single-source target - create dict with single entry
+                    source_dict = {source: port_output}
 
-                    # Extract port-specific output if specified
-                    conn_spec = self._connection_specs.get((src, tgt))
-                    if conn_spec and hasattr(conn_spec, 'source_port') and conn_spec.source_port:
-                        # Get source component to extract port data
-                        source_comp = self.components[src]
-                        port_output = self._extract_port_output(source_comp, output_spikes, conn_spec.source_port)
-                    else:
-                        port_output = output_spikes
+                # Get delay from pathway config
+                delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
 
-                    # Route spikes through pathway
-                    pathway_output = pathway.forward(port_output)
+                # Route spikes through pathway (AxonalProjection expects Dict)
+                pathway_output = pathway.forward(source_dict)
 
-                    # Schedule event to target with delay
-                    event = Event(
-                        time=current_time + delay_ms,
-                        event_type=EventType.SPIKE,
-                        source=source,
-                        target=tgt,
-                        payload=SpikePayload(spikes=pathway_output),
-                    )
-                    self._scheduler.schedule(event)
+                # Schedule event to target with delay
+                if len(target_sources) > 1:
+                    available_sources = list(source_dict.keys())
+                    source_label = f"multi:{','.join(available_sources)}"
+                else:
+                    source_label = source
+                    
+                event = Event(
+                    time=current_time + delay_ms,
+                    event_type=EventType.SPIKE,
+                    source=source_label,
+                    target=tgt,
+                    payload=SpikePayload(spikes=pathway_output),
+                )
+                self._scheduler.schedule(event)
 
     def _extract_port_output(self, component: NeuralComponent, output: torch.Tensor, port: str) -> torch.Tensor:
         """Extract port-specific output from component output.

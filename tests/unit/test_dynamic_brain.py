@@ -20,8 +20,7 @@ from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpe
 from thalia.core.brain_builder import BrainBuilder
 from thalia.config import GlobalConfig
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
-from thalia.pathways.spiking_pathway import SpikingPathway
-from thalia.core.base.component_config import PathwayConfig
+from thalia.pathways.axonal_projection import AxonalProjection
 
 
 # ============================================================================
@@ -38,7 +37,10 @@ def test_dynamic_brain_creation():
     }
 
     connections = {
-        ("region1", "region2"): SpikingPathway(PathwayConfig(n_input=64, n_output=128)),
+        ("region1", "region2"): AxonalProjection(
+            sources=[("region1", None, 64, 1.0)],
+            device="cpu"
+        ),
     }
 
     brain = DynamicBrain(components, connections, global_config)
@@ -60,8 +62,14 @@ def test_dynamic_brain_topology_graph():
     }
 
     connections = {
-        ("a", "b"): SpikingPathway(PathwayConfig(n_input=64, n_output=64)),
-        ("b", "c"): SpikingPathway(PathwayConfig(n_input=64, n_output=64)),
+        ("a", "b"): AxonalProjection(
+            sources=[("a", None, 64, 1.0)],
+            device="cpu"
+        ),
+        ("b", "c"): AxonalProjection(
+            sources=[("b", None, 64, 1.0)],
+            device="cpu"
+        ),
     }
 
     brain = DynamicBrain(components, connections, global_config)
@@ -82,7 +90,10 @@ def test_dynamic_brain_forward():
     }
 
     connections = {
-        ("input", "output"): SpikingPathway(PathwayConfig(n_input=64, n_output=64)),
+        ("input", "output"): AxonalProjection(
+            sources=[("input", None, 64, 1.0)],
+            device="cpu"
+        ),
     }
 
     brain = DynamicBrain(components, connections, global_config)
@@ -148,7 +159,10 @@ def test_dynamic_brain_add_connection():
     brain = DynamicBrain(components, {}, global_config)
 
     # Add connection
-    pathway = SpikingPathway(PathwayConfig(n_input=64, n_output=64))
+    pathway = AxonalProjection(
+        sources=[("a", None, 64, 1.0)],
+        device="cpu"
+    )
     brain.add_connection("a", "b", pathway)
 
     # connections dict uses tuple keys, not string keys
