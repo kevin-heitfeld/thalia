@@ -71,22 +71,22 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
+from thalia.core.neural_region import NeuralRegion
 from thalia.core.errors import CheckpointError
+from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
 from thalia.components.neurons import create_cortical_layer_neurons
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses.traces import update_trace
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
-from thalia.components.synapses.traces import update_trace
-from thalia.regions.base import NeuralComponent
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
@@ -103,7 +103,7 @@ from .config import LayeredCortexConfig, LayeredCortexState
     author="Thalia Project",
     config_class=LayeredCortexConfig,
 )
-class LayeredCortex(NeuralComponent):
+class LayeredCortex(NeuralRegion):
     """Multi-layer cortical microcircuit with proper layer separation and routing.
 
     Implements a canonical cortical column with distinct computational layers:
@@ -205,20 +205,22 @@ class LayeredCortex(NeuralComponent):
                 f"l23_size + l5_size ({self.l23_size} + {self.l5_size} = {actual_output})"
             )
 
-        # Create modified config for parent
-        parent_config = NeuralComponentConfig(
+        # Initialize NeuralRegion with total output neurons (L2/3 + L5)
+        super().__init__(
+            n_neurons=actual_output,
+            device=config.device,
+            dt_ms=config.dt_ms,
+        )
+
+        # Store config and device for compatibility
+        self.config = parent_config = NeuralComponentConfig(
             n_input=config.n_input,
             n_output=actual_output,
             dt_ms=config.dt_ms,
-            axonal_delay_ms=config.axonal_delay_ms,  # Preserve axonal delay
+            axonal_delay_ms=config.axonal_delay_ms,
             device=config.device,
         )
-
-        # Store output size before parent init
-        self._actual_output = actual_output
-
-        # Call parent init
-        super().__init__(parent_config)
+        self.device = config.device
 
         # Initialize layers
         self._init_layers()
@@ -437,19 +439,20 @@ class LayeredCortex(NeuralComponent):
         # target = threshold / (n_active * strength) ≈ 1.0 / (n_active * strength)
         # We initialize to mean ≈ target, with some variance for diversity
 
-        # Input → L4: positive excitatory weights
+        # Input → L4: positive excitatory weights (EXTERNAL - moved to synaptic_weights)
         w_scale_input = 1.0 / max(1, int(cfg.n_input * 0.15))  # Assume 15% input sparsity
-        self.w_input_l4 = nn.Parameter(
-            torch.abs(
-                WeightInitializer.gaussian(
-                    n_output=self.l4_size,
-                    n_input=cfg.n_input,
-                    mean=0.0,
-                    std=w_scale_input,
-                    device=device
-                )
+        input_weights = torch.abs(
+            WeightInitializer.gaussian(
+                n_output=self.l4_size,
+                n_input=cfg.n_input,
+                mean=0.0,
+                std=w_scale_input,
+                device=device
             )
         )
+        # Register external input source (NeuralRegion pattern)
+        self.add_input_source("input", n_input=cfg.n_input, learning_rule=None)
+        self.synaptic_weights["input"] = nn.Parameter(input_weights)
 
         # L4 → L2/3: positive excitatory weights
         w_scale_l4_l23 = 1.0 / expected_active_l4
@@ -527,10 +530,74 @@ class LayeredCortex(NeuralComponent):
         # because TRN is part of thalamic circuitry.
         # The brain's connection system will wire L6 spikes to thalamus input.
 
-        self.weights = self.w_input_l4
+        # Main weights reference (for compatibility with base class)
+        self.weights = self.synaptic_weights["input"]
 
         # Note: Learning strategies (STDP+BCM) are created in __init__ as
         # self.bcm_l4, self.bcm_l23, self.bcm_l5 composite strategies
+
+    def _reset_subsystems(self, *names: str) -> None:
+        """Reset state of named subsystems that have reset_state() method.
+
+        Helper for backward compatibility with NeuralComponent pattern.
+        """
+        for name in names:
+            if hasattr(self, name):
+                subsystem = getattr(self, name)
+                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                    subsystem.reset_state()
+
+    def _reset_scalars(self, **scalar_values: Any) -> None:
+        """Reset scalar attributes to specified values.
+
+        Helper for backward compatibility with NeuralComponent pattern.
+        """
+        for name, value in scalar_values.items():
+            setattr(self, name, value)
+
+    def get_effective_learning_rate(
+        self,
+        base_lr: Optional[float] = None,
+        dopamine_sensitivity: float = 1.0,
+    ) -> float:
+        """Compute learning rate modulated by dopamine.
+
+        Helper for backward compatibility with NeuromodulatorMixin pattern.
+
+        Args:
+            base_lr: Base learning rate (uses 0.01 if None)
+            dopamine_sensitivity: How much dopamine affects learning (0-1)
+
+        Returns:
+            Modulated learning rate
+        """
+        if base_lr is None:
+            base_lr = 0.01
+
+        modulation = 1.0 + dopamine_sensitivity * self.state.dopamine
+        modulation = max(0.0, modulation)  # Non-negative
+
+        return base_lr * modulation
+
+    def _apply_axonal_delay(
+        self,
+        output_spikes: torch.Tensor,
+        dt: float,
+    ) -> torch.Tensor:
+        """Apply axonal delay to output spikes.
+
+        Note: LayeredCortex already implements detailed inter-layer delays
+        (L4→L2/3, L2/3→L5, L2/3→L6) internally. This method is a pass-through
+        for backward compatibility with base class expectations.
+
+        Args:
+            output_spikes: Binary spike tensor [n_neurons]
+            dt: Timestep in milliseconds
+
+        Returns:
+            Spikes (no additional delay - internal delays already applied)
+        """
+        return output_spikes
 
     def reset_state(self) -> None:
         """Reset all layer states.
@@ -686,8 +753,8 @@ class LayeredCortex(NeuralComponent):
         # 1. Expand input→L4 weights [l4, input]
         # Add rows for new L4 neurons
         new_input_l4 = new_weights_for(l4_growth, self.layer_config.n_input)
-        self.w_input_l4 = nn.Parameter(
-            torch.cat([self.w_input_l4.data, new_input_l4], dim=0)
+        self.synaptic_weights["input"] = nn.Parameter(
+            torch.cat([self.synaptic_weights["input"].data, new_input_l4], dim=0)
         )
 
         # 2. Expand L4→L2/3 weights [l23, l4]
@@ -823,8 +890,8 @@ class LayeredCortex(NeuralComponent):
         # Expand input→L4 weights [l4, input] → [l4, input+n_new]
         # Add COLUMNS for new input neurons
         new_input_cols = new_weights_for(self.l4_size, n_new)
-        self.w_input_l4 = nn.Parameter(
-            torch.cat([self.w_input_l4.data, new_input_cols], dim=1)  # Add columns
+        self.synaptic_weights["input"] = nn.Parameter(
+            torch.cat([self.synaptic_weights["input"].data, new_input_cols], dim=1)  # Add columns
         )
 
         # Update config
@@ -837,7 +904,7 @@ class LayeredCortex(NeuralComponent):
 
     def forward(
         self,
-        input_spikes: torch.Tensor,
+        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
         top_down: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
@@ -849,7 +916,7 @@ class LayeredCortex(NeuralComponent):
         not a separate training phase.
 
         Args:
-            input_spikes: Input spike tensor [n_input] (1D per ADR-005)
+            inputs: Input spikes - dict {"input": tensor} or tensor [n_input] (1D per ADR-005)
             top_down: Optional top-down modulation [l23_size] (1D)
 
         Returns:
@@ -858,6 +925,14 @@ class LayeredCortex(NeuralComponent):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
+        # Backward compatibility: accept tensor directly
+        if isinstance(inputs, torch.Tensor):
+            input_spikes = inputs
+        else:
+            input_spikes = inputs.get("input")
+            if input_spikes is None:
+                raise ValueError("LayeredCortex.forward: 'input' key not found in inputs dict")
+
         # Get timestep from config for temporal dynamics
         dt = self.config.dt_ms
 
@@ -926,9 +1001,9 @@ class LayeredCortex(NeuralComponent):
         gated_input_spikes = input_spikes * alpha_suppression
 
         # L4: Input processing with conductance-based neurons
-        # Compute excitatory conductance from input
+        # Compute excitatory conductance from input (using synaptic_weights)
         l4_g_exc = (
-            torch.matmul(self.w_input_l4, gated_input_spikes.float())
+            torch.matmul(self.synaptic_weights["input"], gated_input_spikes.float())
             * cfg.input_to_l4_strength
         )
         l4_g_exc = l4_g_exc * (0.5 + 0.5 * encoding_mod)
@@ -1355,18 +1430,18 @@ class LayeredCortex(NeuralComponent):
         total_change = 0.0
 
         # Use STDP+BCM composite strategies for proper spike-timing-dependent learning
-        # Input → L4
+        # Input → L4 (using synaptic_weights)
         if self.bcm_l4 is not None:
             updated_weights, _ = self.bcm_l4.compute_update(
-                weights=self.w_input_l4.data,
+                weights=self.synaptic_weights["input"].data,
                 pre=input_spikes,
                 post=l4_spikes,
                 learning_rate=effective_lr,
             )
-            dw = updated_weights - self.w_input_l4.data
+            dw = updated_weights - self.synaptic_weights["input"].data
             with torch.no_grad():
-                self.w_input_l4.data.copy_(updated_weights)
-                clamp_weights(self.w_input_l4.data, cfg.w_min, cfg.w_max)
+                self.synaptic_weights["input"].data.copy_(updated_weights)
+                clamp_weights(self.synaptic_weights["input"].data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
         # L4 → L2/3
@@ -1542,7 +1617,7 @@ class LayeredCortex(NeuralComponent):
         return self.collect_standard_diagnostics(
             region_name="cortex",
             weight_matrices={
-                "input_l4": self.w_input_l4.data,
+                "input_l4": self.synaptic_weights["input"].data,
                 "l4_l23": self.w_l4_l23.data,
                 "l23_rec": self.w_l23_recurrent.data,
                 "l23_l5": self.w_l23_l5.data,
@@ -1569,7 +1644,7 @@ class LayeredCortex(NeuralComponent):
         """
         state_dict = {
             "weights": {
-                "w_input_l4": self.w_input_l4.data.clone(),
+                "w_input_l4": self.synaptic_weights["input"].data.clone(),
                 "w_l4_l23": self.w_l4_l23.data.clone(),
                 "w_l23_recurrent": self.w_l23_recurrent.data.clone(),
                 "w_l23_l5": self.w_l23_l5.data.clone(),
@@ -1653,7 +1728,7 @@ class LayeredCortex(NeuralComponent):
 
         # Restore weights
         weights = state["weights"]
-        self.w_input_l4.data.copy_(weights["w_input_l4"].to(self.device))
+        self.synaptic_weights["input"].data.copy_(weights["w_input_l4"].to(self.device))
         self.w_l4_l23.data.copy_(weights["w_l4_l23"].to(self.device))
         self.w_l23_recurrent.data.copy_(weights["w_l23_recurrent"].to(self.device))
         self.w_l23_l5.data.copy_(weights["w_l23_l5"].to(self.device))
