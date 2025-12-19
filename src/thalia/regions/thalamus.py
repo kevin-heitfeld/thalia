@@ -95,7 +95,8 @@ import math
 import torch
 import torch.nn as nn
 
-from thalia.regions.base import NeuralComponentConfig, NeuralComponentState
+from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.regions.base import NeuralComponentState
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
 from thalia.components.neurons.neuron_factory import create_relay_neurons, create_trn_neurons

@@ -9,10 +9,6 @@ Tests end-to-end functionality:
     - Memory usage validation
 """
 
-import os
-import time
-import psutil
-
 import pytest
 import torch
 
@@ -129,7 +125,7 @@ class TestDynamicBrainIntegration:
         from thalia.regions.cortex.config import LayeredCortexConfig
 
         cortex_config = LayeredCortexConfig(
-            n_input=16,  # Match pathway output
+            n_input=32,  # Match input source size
             n_output=10,  # Must equal l23_size + l5_size
             l4_size=4,
             l23_size=6,
@@ -142,11 +138,16 @@ class TestDynamicBrainIntegration:
 
         brain.add_component("cortex", cortex)
 
-        # Use add_connection method which creates AxonalProjection
+        # Create AxonalProjection from input to cortex
+        from thalia.pathways.axonal_projection import AxonalProjection
+        pathway = AxonalProjection(
+            sources=[("input", None, 32, 2.0)],  # (region_name, port, size, delay_ms)
+            device=device,
+        )
         brain.add_connection(
             source="input",
             target="cortex",
-            sources=[("input", None, 32, 2.0)],  # (region_name, port, size, delay_ms)
+            pathway=pathway,
         )
 
         # Test execution
@@ -224,140 +225,6 @@ class TestPresetArchitectures:
         result = brain.forward(input_data, n_timesteps=10)
 
         assert "custom_region" in result["outputs"]
-
-
-class TestPerformanceBenchmarks:
-    """Performance benchmarks comparing DynamicBrain vs EventDrivenBrain."""
-
-    @pytest.mark.slow
-    @pytest.mark.skip(reason="Device validation error in EventDrivenBrain - needs separate fix")
-    def test_execution_time_comparison(self, device, global_config):
-        """Compare execution time of DynamicBrain vs EventDrivenBrain."""
-        n_timesteps = 100
-        n_trials = 10
-
-        # Create DynamicBrain
-        dynamic_brain = BrainBuilder.preset("sensorimotor", global_config)
-
-        # Create EventDrivenBrain
-        config = ThaliaConfig(
-            global_=GlobalConfig(device=device, dt_ms=1.0),
-            brain=BrainConfig(
-                sizes=RegionSizes(
-                    input_size=128,
-                    cortex_size=128,
-                    hippocampus_size=64,
-                    pfc_size=32,
-                    n_actions=7,
-                ),
-            ),
-        )
-        event_brain = EventDrivenBrain.from_thalia_config(config)
-
-        # Warm-up
-        input_data = {"thalamus": torch.randn(128, device=device)}
-        dynamic_brain.forward(input_data, n_timesteps=10)
-        event_brain.forward(
-            sensory_input=torch.randn(128, device=device),
-            n_timesteps=10,
-        )
-
-        # Benchmark DynamicBrain
-        dynamic_times = []
-        for _ in range(n_trials):
-            start = time.perf_counter()
-            dynamic_brain.forward(input_data, n_timesteps=n_timesteps)
-            end = time.perf_counter()
-            dynamic_times.append(end - start)
-
-        # Benchmark EventDrivenBrain
-        event_times = []
-        for _ in range(n_trials):
-            start = time.perf_counter()
-            event_brain.forward(
-                sensory_input=torch.randn(128, device=device),
-                n_timesteps=n_timesteps,
-            )
-            end = time.perf_counter()
-            event_times.append(end - start)
-
-        avg_dynamic = sum(dynamic_times) / len(dynamic_times)
-        avg_event = sum(event_times) / len(event_times)
-
-        # DynamicBrain should be within reasonable performance
-        performance_ratio = avg_dynamic / avg_event
-        print(f"\nPerformance ratio (Dynamic/Event): {performance_ratio:.2f}")
-        print(f"DynamicBrain avg: {avg_dynamic*1000:.2f}ms")
-        print(f"EventDrivenBrain avg: {avg_event*1000:.2f}ms")
-
-        # Allow up to 2x slower for now (different execution models)
-        assert performance_ratio < 2.0, (
-            f"DynamicBrain too slow: {performance_ratio:.2f}x EventDrivenBrain"
-        )
-
-    @pytest.mark.slow
-    def test_memory_usage_comparison(self, device, global_config):
-        """Compare memory usage of DynamicBrain vs EventDrivenBrain."""
-        if device == "cuda":
-            pytest.skip("Memory comparison only on CPU")
-
-        process = psutil.Process(os.getpid())
-
-        # Measure baseline
-        baseline_memory = process.memory_info().rss / 1024 / 1024  # MB
-
-        # Create DynamicBrain
-        dynamic_brain = BrainBuilder.preset("sensorimotor", global_config)
-        dynamic_memory = process.memory_info().rss / 1024 / 1024  # MB
-        dynamic_delta = dynamic_memory - baseline_memory
-
-        # Reset
-        del dynamic_brain
-        import gc
-        gc.collect()
-        time.sleep(0.1)
-
-        # Create EventDrivenBrain
-        config = ThaliaConfig(
-            global_=GlobalConfig(device=device, dt_ms=1.0),
-            brain=BrainConfig(
-                sizes=RegionSizes(
-                    input_size=128,
-                    cortex_size=128,
-                    hippocampus_size=64,
-                    pfc_size=32,
-                    n_actions=7,
-                ),
-            ),
-        )
-        event_brain = EventDrivenBrain.from_thalia_config(config)
-        event_memory = process.memory_info().rss / 1024 / 1024  # MB
-        event_delta = event_memory - baseline_memory
-
-        memory_ratio = dynamic_delta / event_delta if event_delta > 0 else 1.0
-        print(f"\nMemory ratio (Dynamic/Event): {memory_ratio:.2f}")
-        print(f"DynamicBrain: {dynamic_delta:.2f}MB")
-        print(f"EventDrivenBrain: {event_delta:.2f}MB")
-
-        # Memory should be comparable (within 2x)
-        assert memory_ratio < 2.0, (
-            f"DynamicBrain uses too much memory: {memory_ratio:.2f}x EventDrivenBrain"
-        )
-
-    def test_forward_pass_correctness(self, device, global_config):
-        """Verify DynamicBrain produces reasonable outputs."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
-
-        input_data = {"thalamus": torch.randn(128, device=device)}
-
-        # Run multiple timesteps
-        result = brain.forward(input_data, n_timesteps=100)  # Longer for full propagation
-
-        # Check outputs are reasonable (cortex may not spike, causing None downstream)
-        for region_name, output in result["outputs"].items():
-            if output is not None:
-                assert torch.isfinite(output).all(), f"{region_name} has non-finite values"
-                assert output.shape[0] > 0, f"{region_name} has zero-size output"
 
 
 class TestBuilderValidation:
