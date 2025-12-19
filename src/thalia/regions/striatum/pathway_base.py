@@ -88,7 +88,9 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
 
         # Parent reference (set by Striatum after construction)
         # Pathways access weights via parent's synaptic_weights dict
-        self._parent_striatum: Optional[Any] = None  # Type: Striatum
+        # Use weakref to avoid circular reference during .to(device)
+        import weakref
+        self._parent_striatum_ref: Optional[weakref.ref] = None  # WeakRef to Striatum
         self._weight_source: Optional[str] = None  # e.g., "default_d1" or "default_d2"
 
         # Three-factor learning strategy (eligibility × dopamine)
@@ -119,12 +121,15 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         Returns:
             Weight matrix [n_output, n_input]
         """
-        if self._parent_striatum is None or self._weight_source is None:
+        if self._parent_striatum_ref is None or self._weight_source is None:
             raise RuntimeError(
                 f"{self.__class__.__name__} not linked to parent. "
                 "Call striatum._link_pathway_weights_to_parent() after construction."
             )
-        return self._parent_striatum.synaptic_weights[self._weight_source]
+        parent = self._parent_striatum_ref()
+        if parent is None:
+            raise RuntimeError(f"{self.__class__.__name__}: Parent striatum has been garbage collected")
+        return parent.synaptic_weights[self._weight_source]
 
     @weights.setter
     def weights(self, value: torch.Tensor) -> None:
@@ -133,16 +138,19 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         Args:
             value: New weight matrix [n_output, n_input] (Tensor or nn.Parameter)
         """
-        if self._parent_striatum is None or self._weight_source is None:
+        if self._parent_striatum_ref is None or self._weight_source is None:
             raise RuntimeError(
                 f"{self.__class__.__name__} not linked to parent. "
                 "Call striatum._link_pathway_weights_to_parent() after construction."
             )
+        parent = self._parent_striatum_ref()
+        if parent is None:
+            raise RuntimeError(f"{self.__class__.__name__}: Parent striatum has been garbage collected")
         # Extract tensor data from nn.Parameter if needed
         if isinstance(value, nn.Parameter):
-            self._parent_striatum.synaptic_weights[self._weight_source].data = value.data
+            parent.synaptic_weights[self._weight_source].data = value.data
         else:
-            self._parent_striatum.synaptic_weights[self._weight_source].data = value
+            parent.synaptic_weights[self._weight_source].data = value
 
     # =========================================================================
     # PROPERTIES FOR DIAGNOSTICS

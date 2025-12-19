@@ -61,7 +61,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 
 import torch
 
@@ -86,7 +86,9 @@ from thalia.regulation.learning_constants import (
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.regions.base import (
     NeuralComponent,
+    NeuralComponentState,
 )
+from thalia.core.neural_region import NeuralRegion
 from thalia.regions.cerebellum import (
     GranuleCellLayer,
     EnhancedPurkinjeCell,
@@ -198,7 +200,7 @@ class ClimbingFiberSystem:
     author="Thalia Project",
     config_class=CerebellumConfig,
 )
-class Cerebellum(NeuralComponent):
+class Cerebellum(NeuralRegion):
     """Cerebellar region with supervised error-corrective learning.
 
     Implements the cerebellar learning rule:
@@ -244,7 +246,16 @@ class Cerebellum(NeuralComponent):
             )
 
         self.cerebellum_config: CerebellumConfig = config  # type: ignore
-        super().__init__(config)
+
+        # Initialize NeuralRegion (Phase 2 pattern)
+        super().__init__(
+            n_neurons=config.n_output,
+            device=config.device,
+            dt_ms=config.dt_ms,
+        )
+
+        # Store full config for cerebellum-specific settings
+        self.config = config
 
         self.climbing_fiber = ClimbingFiberSystem(
             n_output=config.n_output,
@@ -332,6 +343,39 @@ class Cerebellum(NeuralComponent):
         self._gamma_amplitude: float = 1.0
         self._coupled_amplitudes: Dict[str, float] = {}
 
+        # =====================================================================
+        # INITIALIZE SYNAPTIC WEIGHTS (Phase 2 pattern)
+        # =====================================================================
+        # Parallel fiber (mossy fiber→Purkinje) weights stored in synaptic_weights
+        # Use expanded_input if granule layer enabled, otherwise n_input
+        self.synaptic_weights["default"] = self._initialize_weights_tensor(
+            n_output=config.n_output,
+            n_input=expanded_input,
+        )
+
+    def _initialize_weights_tensor(self, n_output: int, n_input: int) -> torch.nn.Parameter:
+        """Initialize weights tensor (no longer part of NeuralComponent pattern)."""
+        weights = WeightInitializer.gaussian(
+            n_output=n_output,
+            n_input=n_input,
+            mean=self.config.w_max * 0.1,
+            std=0.02,
+            device=self.device
+        )
+        return torch.nn.Parameter(
+            clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
+        )
+
+    @property
+    def weights(self) -> torch.Tensor:
+        """Backward compatibility: access synaptic_weights["default"]."""
+        return self.synaptic_weights["default"]
+
+    @weights.setter
+    def weights(self, value: torch.Tensor) -> None:
+        """Backward compatibility: set synaptic_weights["default"]."""
+        self.synaptic_weights["default"].data = value
+
     @property
     def input_trace(self) -> torch.Tensor:
         """Input trace (delegated to trace manager)."""
@@ -346,18 +390,6 @@ class Cerebellum(NeuralComponent):
     def stdp_eligibility(self) -> torch.Tensor:
         """STDP eligibility (delegated to trace manager)."""
         return self._trace_manager.eligibility
-
-    def _initialize_weights(self) -> torch.Tensor:
-        """Initialize weights with small uniform values plus noise."""
-        # Small initial weights (10% of max) with slight variation
-        weights = WeightInitializer.gaussian(
-            n_output=self.config.n_output,
-            n_input=self.config.n_input,
-            mean=self.config.w_max * 0.1,
-            std=0.02,
-            device=self.device
-        )
-        return clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
 
     def set_oscillator_phases(
         self,
@@ -507,13 +539,17 @@ class Cerebellum(NeuralComponent):
 
     def forward(
         self,
-        input_spikes: torch.Tensor,
+        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input through cerebellar circuit.
 
         Args:
-            input_spikes: Input spike pattern [n_input] (1D bool tensor, ADR-005)
+            inputs: Either:
+                   - Dict mapping source names to spike tensors (Phase 2)
+                     e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo]}
+                   - Tensor of spikes (legacy, backward compat) [n_input]
+            **kwargs: Additional arguments (unused)
 
         Returns:
             Output spikes [n_output] (1D bool tensor, ADR-004/005)
@@ -521,6 +557,15 @@ class Cerebellum(NeuralComponent):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
+        # =====================================================================
+        # BACKWARD COMPATIBILITY: Convert Tensor to Dict
+        # =====================================================================
+        if isinstance(inputs, torch.Tensor):
+            input_spikes = inputs
+        else:
+            # Phase 2: concatenate all source inputs
+            input_spikes = torch.cat(list(inputs.values()), dim=0)
+
         # Assert 1D input
         assert input_spikes.dim() == 1, (
             f"Cerebellum.forward: input_spikes must be 1D [n_input], "
@@ -630,8 +675,8 @@ class Cerebellum(NeuralComponent):
         if isinstance(stdp_dw, torch.Tensor):
             self._trace_manager.accumulate_eligibility(stdp_dw, dt_ms=dt)
 
-        self.state.spikes = output_spikes
-        self.state.t += 1
+        # Store output (NeuralRegion pattern - no state.t tracking)
+        self.output_spikes = output_spikes
 
         # Apply axonal delay (biological reality: ALL neural connections have delays)
         delayed_spikes = self._apply_axonal_delay(output_spikes, dt)
@@ -774,7 +819,7 @@ class Cerebellum(NeuralComponent):
             target[0, target_neuron] = 1.0
 
         if output_spikes is None:
-            output_spikes = self.state.spikes
+            output_spikes = self.output_spikes
 
         if output_spikes is None:
             return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
@@ -869,7 +914,7 @@ class Cerebellum(NeuralComponent):
                 "parallel_fiber": self.weights.data,
             },
             spike_tensors={
-                "output": self.state.spikes,
+                "output": self.output_spikes,
             },
             trace_tensors={
                 "input": self.input_trace,

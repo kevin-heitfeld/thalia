@@ -292,5 +292,24 @@ class NeuralRegion(nn.Module):
             if hasattr(strategy, 'reset_state'):
                 strategy.reset_state()
 
+    def _reset_subsystems(self, *subsystem_names: str) -> None:
+        """Reset multiple subsystems by calling their reset_state() methods.
+
+        Convenience helper to avoid repetitive code in reset_state() implementations.
+
+        Args:
+            *subsystem_names: Names of attributes to reset (must have reset_state())
+
+        Example:
+            >>> def reset_state(self):
+            >>>     super().reset_state()
+            >>>     self._reset_subsystems('_trace_manager', 'climbing_fiber')
+        """
+        for name in subsystem_names:
+            if hasattr(self, name):
+                subsystem = getattr(self, name)
+                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                    subsystem.reset_state()
+
 
 __all__ = ["NeuralRegion"]

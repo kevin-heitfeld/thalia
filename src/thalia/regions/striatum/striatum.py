@@ -88,6 +88,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from typing import Optional, Dict, Any, List, Union
+import weakref
 
 import torch
 import torch.nn as nn
@@ -841,11 +842,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - parent reference (for weight access)
         - source name ("default_d1" or "default_d2")
         """
-        # Pass parent reference to pathways
-        self.d1_pathway._parent_striatum = self
+        # Pass parent reference to pathways (using weakref to avoid circular module references)
+        self.d1_pathway._parent_striatum_ref = weakref.ref(self)
         self.d1_pathway._weight_source = "default_d1"
 
-        self.d2_pathway._parent_striatum = self
+        self.d2_pathway._parent_striatum_ref = weakref.ref(self)
         self.d2_pathway._weight_source = "default_d2"
 
     def _sync_pathway_weights_to_parent(self) -> None:
