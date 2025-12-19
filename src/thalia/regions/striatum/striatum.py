@@ -105,9 +105,6 @@ from thalia.components.neurons.neuron_constants import (
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import clamp_weights
-from thalia.regions.base import (
-    NeuralComponent,
-)
 from thalia.core.neural_region import NeuralRegion
 from thalia.regions.striatum.exploration import ExplorationConfig
 
@@ -242,9 +239,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             dt_ms=config.dt_ms,
         )
 
-        # Also initialize NeuralComponent for backward compatibility
-        # (mixins and diagnostics expect NeuralComponent interface)
-        NeuralComponent.__init__(self, config)
+        # Store config for backward compatibility with code that expects self.config
+        self.config = config
 
         # =====================================================================
         # ELASTIC TENSOR CAPACITY TRACKING (Phase 1 - Growth Support)
@@ -380,7 +376,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             context=learning_context,
             d1_pathway=self.d1_pathway,
             d2_pathway=self.d2_pathway,
-            parent_striatum=self,  # Pass parent for weight access
         )
 
         # =====================================================================
@@ -822,9 +817,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             device=self.device,
         ) * self.config.w_max
 
-        # Register as separate sources for backward compatibility
-        self.add_input_source("default_d1", n_input, initial_weights=d1_weights)
-        self.add_input_source("default_d2", n_input, initial_weights=d2_weights)
+        # Register as separate sources (will initialize with sparse_random, we'll override)
+        self.add_input_source("default_d1", n_input, sparsity=0.0, weight_scale=1.0)
+        self.add_input_source("default_d2", n_input, sparsity=0.0, weight_scale=1.0)
+
+        # Override with our Xavier-initialized weights
+        self.synaptic_weights["default_d1"].data = d1_weights
+        self.synaptic_weights["default_d2"].data = d2_weights
 
         # Store sizes for easy access
         self.n_d1 = n_d1
