@@ -97,7 +97,8 @@ from typing import Optional, Dict, Any
 import torch
 
 from thalia.components.neurons.neuron_factory import create_pyramidal_neurons
-from thalia.regions.base import NeuralComponent, NeuralComponentConfig
+from thalia.core.neural_region import NeuralRegion
+from thalia.regions.base import NeuralComponentConfig
 from thalia.managers.component_registry import register_region
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.rules.strategies import HebbianStrategy, HebbianConfig
@@ -145,7 +146,7 @@ class MultimodalIntegrationConfig(NeuralComponentConfig):
 
 
 @register_region("multimodal_integration")
-class MultimodalIntegration(NeuralComponent):
+class MultimodalIntegration(NeuralRegion):
     """Multimodal integration region for cross-modal fusion.
 
     Combines visual, auditory, and language/semantic inputs into
@@ -159,7 +160,14 @@ class MultimodalIntegration(NeuralComponent):
         Args:
             config: Configuration for region
         """
-        super().__init__(config)
+        # Call NeuralRegion init
+        super().__init__(
+            n_neurons=config.n_output,
+            neuron_config=None,  # Created manually below
+            default_learning_rule="hebbian",
+            device=config.device,
+            dt_ms=config.dt_ms,
+        )
         self.config = config
         self.multisensory_config = config  # Store for growth methods
 
@@ -473,14 +481,6 @@ class MultimodalIntegration(NeuralComponent):
                 )
 
         return output_spikes
-
-    def _initialize_weights(self) -> Optional[torch.Tensor]:
-        """Initialize weights (handled in __init__)."""
-        return None  # Weights created explicitly in __init__
-
-    def _create_neurons(self) -> Optional[Any]:
-        """Create neurons (handled in __init__)."""
-        return None  # Neurons created explicitly in __init__
 
     def reset_state(self) -> None:
         """Reset component state."""
