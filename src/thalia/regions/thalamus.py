@@ -89,15 +89,16 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 import math
 
 import torch
 import torch.nn as nn
 
-from thalia.components.neurons.neuron_factory import create_relay_neurons, create_trn_neurons
-from thalia.regions.base import NeuralComponent, NeuralComponentConfig, NeuralComponentState
+from thalia.regions.base import NeuralComponentConfig, NeuralComponentState
+from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
+from thalia.components.neurons.neuron_factory import create_relay_neurons, create_trn_neurons
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.regulation.region_constants import (
     THALAMUS_BURST_THRESHOLD,
@@ -208,7 +209,7 @@ class ThalamicRelayState(NeuralComponentState):
     author="Thalia Project",
     config_class=ThalamicRelayConfig,
 )
-class ThalamicRelay(NeuralComponent):
+class ThalamicRelay(NeuralRegion):
     """Thalamic relay nucleus with burst/tonic modes and attentional gating.
 
     Provides:
@@ -240,11 +241,21 @@ class ThalamicRelay(NeuralComponent):
             config: Thalamic relay configuration
         """
         self.thalamus_config = config
-        super().__init__(config)
 
         # Compute layer sizes
         self.n_relay = config.n_output  # Relay neurons = output size
         self.n_trn = int(config.n_output * config.trn_ratio)
+
+        # Initialize NeuralRegion with relay neurons as the primary population
+        super().__init__(
+            n_neurons=self.n_relay,
+            device=config.device,
+            dt_ms=config.dt_ms,
+        )
+
+        # Store config for backward compatibility
+        self.config = config
+        self.device = config.device
 
         # =====================================================================
         # RELAY NEURONS (Excitatory, glutamatergic)
@@ -332,6 +343,79 @@ class ThalamicRelay(NeuralComponent):
     def _create_neurons(self) -> Optional[Any]:
         """Neurons created in __init__, return None."""
         return None
+
+    def set_neuromodulators(
+        self,
+        dopamine: Optional[float] = None,
+        acetylcholine: Optional[float] = None,
+        norepinephrine: Optional[float] = None,
+    ) -> None:
+        """Set neuromodulator levels (Brain → Region API).
+
+        Helper for backward compatibility with NeuralComponent pattern.
+        """
+        if dopamine is not None:
+            self.state.dopamine = dopamine
+        if acetylcholine is not None:
+            self.state.acetylcholine = acetylcholine
+        if norepinephrine is not None:
+            self.state.norepinephrine = norepinephrine
+
+    def spike_diagnostics(self, spikes: torch.Tensor, prefix: str = "") -> Dict[str, Any]:
+        """Compute spike statistics for diagnostics.
+
+        Helper for backward compatibility with DiagnosticsMixin pattern.
+        """
+        if prefix:
+            prefix = f"{prefix}_"
+        
+        # Convert spike rate to Hz using dt_ms
+        spike_rate = spikes.float().mean().item()
+        firing_rate_hz = spike_rate * (1000.0 / self.dt_ms)  # Convert to Hz
+        
+        return {
+            f"{prefix}spike_count": spikes.sum().item(),
+            f"{prefix}firing_rate_hz": firing_rate_hz,
+        }
+
+    def membrane_diagnostics(
+        self,
+        membrane: torch.Tensor,
+        threshold: float,
+        prefix: str = "",
+    ) -> Dict[str, Any]:
+        """Compute membrane potential statistics for diagnostics.
+
+        Helper for backward compatibility with DiagnosticsMixin pattern.
+        """
+        if prefix:
+            prefix = f"{prefix}_"
+        
+        return {
+            f"{prefix}membrane_mean": membrane.mean().item(),
+            f"{prefix}membrane_std": membrane.std().item(),
+            f"{prefix}near_threshold_fraction": (membrane > threshold * 0.9).float().mean().item(),
+        }
+
+    def collect_standard_diagnostics(
+        self,
+        region_name: str,
+        weight_matrices: Dict[str, torch.Tensor],
+        custom_metrics: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Collect standard diagnostics for a region.
+
+        Helper for backward compatibility with DiagnosticsMixin pattern.
+        """
+        diagnostics = custom_metrics.copy() if custom_metrics else {}
+        
+        # Add weight statistics
+        for name, weights in weight_matrices.items():
+            diagnostics[f"{name}_mean"] = weights.mean().item()
+            diagnostics[f"{name}_std"] = weights.std().item()
+            diagnostics[f"{name}_shape"] = list(weights.shape)
+        
+        return diagnostics
 
     def _build_center_surround_filter(self) -> None:
         """Build center-surround spatial filter for receptive fields.
@@ -462,14 +546,14 @@ class ThalamicRelay(NeuralComponent):
 
     def forward(
         self,
-        input_spikes: torch.Tensor,
+        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
         cortical_l6_feedback: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process sensory input through thalamic relay.
 
         Args:
-            input_spikes: Sensory input spikes [n_input] (1D, ADR-005)
+            inputs: Sensory input - dict {"input": tensor} or tensor [n_input] (1D, ADR-005)
             cortical_l6_feedback: Optional L6 corticothalamic feedback [n_l6] (1D)
                                   Provided by cortex_l6_to_thalamus pathway if wired
             **kwargs: Additional arguments (unused)
@@ -482,6 +566,13 @@ class ThalamicRelay(NeuralComponent):
             that routes L6 output from cortex to this component's forward().
             The pathway system handles this routing automatically.
         """
+        # Backward compatibility: accept tensor directly
+        if isinstance(inputs, torch.Tensor):
+            input_spikes = inputs
+        else:
+            input_spikes = inputs.get("input", inputs.get("default"))
+            if input_spikes is None:
+                raise ValueError("ThalamicRelay.forward: 'input' or 'default' key not found in inputs dict")
         # ADR-005: Expect 1D input
         assert input_spikes.dim() == 1, (
             f"Thalamus.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"

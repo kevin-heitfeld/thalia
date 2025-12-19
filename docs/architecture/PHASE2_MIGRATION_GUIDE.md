@@ -1,6 +1,6 @@
 # Phase 2 Migration Guide: Region → NeuralRegion
 
-**Status**: In Progress (4/6 Complete: Striatum ✅, PFC ✅, Hippocampus ✅, LayeredCortex ✅)
+**Status**: In Progress (5/6 Complete: Striatum ✅, PFC ✅, Hippocampus ✅, LayeredCortex ✅, Thalamus ✅)
 **Target**: Migrate all brain regions to NeuralRegion base class
 **Estimated Time**: 2-3 weeks
 **Prerequisites**: Phase 1 complete ✅
@@ -86,8 +86,8 @@ def forward(self, inputs: Union[Dict[str, Tensor], Tensor]) -> Tensor:
 | 2 | **PFC** | ✅ COMPLETE | 2-3 days | 1 day | Working memory, simpler than cortex |
 | 3 | **Hippocampus** | ✅ COMPLETE | 3-4 days | 1 day | DG→CA3→CA1 chain, 4 EC pathways |
 | 4 | **LayeredCortex** | ✅ COMPLETE | 4-5 days | 1 day | Complex laminar structure, internal cascade |
-| 5 | **Thalamus** | 🔄 Next | 3-4 days | - | TRN, mode switching, spatial filtering |
-| 6 | **Cerebellum** | ⏳ Planned | 3-4 days | - | Granule layer, Purkinje cells, DCN |
+| 5 | **Thalamus** | ✅ COMPLETE | 3-4 days | 1 day | Unique: NO external weights (sensory relay) |
+| 6 | **Cerebellum** | 🔄 Next | 3-4 days | - | Granule layer, Purkinje cells, DCN |
 
 ### 2. **Migration Pattern**
 
@@ -582,19 +582,55 @@ class LayeredCortex(NeuralRegion):
 
 ---
 
-### 🎯 **5. Thalamus** (Complex - TRN + Mode Switching)
+### ✅ **5. Thalamus** (Complete - Unique Architecture)
 
 **File**: `src/thalia/regions/thalamus.py`
-**Lines**: ~885
-**Complexity**: High (relay/TRN, burst/tonic modes, spatial filtering)
+**Lines**: ~976 (post-migration)
+**Complexity**: Low architectural, high biological (relay/TRN, burst/tonic modes, spatial filtering)
+**Tests**: 12/12 passing (100%)
+**Commit**: [commit hash]
 
-#### Migration Notes
-- Keep TRN as internal component
-- Center-surround filtering stays internal
-- Mode switching logic unchanged
-- External inputs: sensory pathways (visual, auditory, somatosensory)
+#### Migration Results
+**Unique Discovery**: Thalamus has **NO external weight matrices**!
 
-**Expected Changes**: ~80 lines modified, ~50 lines removed
+**Why Thalamus is Different**:
+- **Function**: Sensory relay, not multi-source integrator
+- **Input**: Raw sensory spikes directly from sensory organs (retina, cochlea, skin)
+- **Architecture**: First processing stage - receives input, doesn't integrate other brain regions
+- **Weights**: All internal (input_to_trn, relay_to_trn, trn_to_relay, trn_recurrent, relay_gain, center_surround_filter)
+- **Biology**: Real thalamus has 1:1 relay connections, not learned synaptic weights
+
+**Migration Pattern**:
+```python
+class ThalamicRelay(NeuralRegion):
+    def __init__(self, config):
+        # Call NeuralRegion with relay neuron count
+        super().__init__(n_neurons=config.n_relay, device=config.device, dt_ms=config.dt_ms)
+        
+        # NO synaptic_weights initialization!
+        # All weights are internal thalamic circuitry
+        
+    def forward(self, inputs: Union[Dict, Tensor]) -> Tensor:
+        # Receives raw sensory spikes directly
+        if isinstance(inputs, torch.Tensor):
+            input_spikes = inputs
+        else:
+            input_spikes = inputs["input"]
+        
+        # Apply spatial filtering (internal circuit)
+        filtered = torch.mv(self.center_surround_filter, input_spikes.float())
+        # ... rest of relay logic ...
+```
+
+**Backward Compatibility Helpers Added**:
+1. `set_neuromodulators()` - Lost mixin access
+2. `spike_diagnostics()` - Compute firing rates in Hz
+3. `membrane_diagnostics()` - Voltage statistics
+4. `collect_standard_diagnostics()` - Weight and metric aggregation
+
+**Key Insight**: NeuralRegion pattern is flexible enough to support regions that don't use synaptic_weights at all. Validates architecture scales from zero-external-source (Thalamus) to quad-source (Hippocampus).
+
+**Actual Changes**: ~90 lines added (helpers), 0 lines removed (no external weights to delete)
 
 ---
 
