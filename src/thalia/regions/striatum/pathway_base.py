@@ -392,7 +392,8 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         Args:
             state: State dict from get_state()
         """
-        self.weights = nn.Parameter(state['weights'])
+        # Use property setter to update parent's synaptic_weights dict
+        self.weights = state['weights']
         if state.get('eligibility') is not None:
             self.learning_strategy.eligibility = state['eligibility']
 

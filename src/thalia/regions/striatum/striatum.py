@@ -796,9 +796,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         Args:
             n_input: Input dimension size
         """
-        n_total = self.config.n_output  # Total neurons (D1 + D2)
-        n_d1 = n_total // 2
-        n_d2 = n_total - n_d1
+        n_total = self.config.n_output  # Neurons per pathway
+        # D1 and D2 are SEPARATE full-size populations, not split
+        # Both pathways have n_output neurons (opponent/parallel processing)
+        n_d1 = n_total
+        n_d2 = n_total
 
         # Initialize D1 weights using Xavier initialization
         from thalia.components.synapses.weight_init import WeightInitializer
@@ -1513,20 +1515,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # BACKWARD COMPATIBILITY: Convert Tensor to Dict
         # =====================================================================
         if isinstance(inputs, torch.Tensor):
-            # Legacy format: concatenated tensor
-            # Wrap as default source for compatibility
-            inputs = {"default": inputs}
-        
-        # =====================================================================
-        # PHASE 2: CONVERT DICT INPUTS TO CURRENTS
-        # =====================================================================
-        # Apply synaptic weights per-source and get total current
-        total_current = self._consolidate_inputs(inputs)
-
-        # For backward compatibility with internal logic that expects concatenated format:
-        # Convert currents back to "spike-like" representation for D1/D2 pathways
-        # TODO: Future optimization - D1/D2 pathways should accept currents directly
-        input_spikes = (total_current > 0).float()  # Binary spikes from current
+            # Legacy format: concatenated tensor - pass through directly
+            input_spikes = inputs
+        else:
+            # =====================================================================
+            # PHASE 2: CONCATENATE DICT INPUTS (NO WEIGHT APPLICATION YET)
+            # =====================================================================
+            # D1/D2 pathways will apply their own weights via property access
+            # Just concatenate the raw inputs here
+            input_spikes = torch.cat(list(inputs.values()), dim=0)
 
         # Ensure 1D (ADR-005)
         if input_spikes.dim() != 1:
@@ -1639,9 +1636,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # UPDATE ELIGIBILITY TRACES (for all active neurons)
         # =====================================================================
-        # Get timestep from config for temporal dynamics
-        dt = self.config.dt_ms
-
         # Update D1/D2 STDP-style eligibility (always enabled)
         # Eligibility accumulates for ALL neurons that fire during the trial.
         # When reward arrives, deliver_reward() uses last_action (set by finalize_action)
@@ -1676,16 +1670,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Store D1 and D2 spikes for learning manager
         self.learning.store_spikes(d1_spikes, d2_spikes)
 
-        self.state.spikes = output_spikes
-        self.state.t += 1
+        # Store output spikes (NeuralRegion pattern, not self.state.spikes)
+        self.output_spikes = output_spikes
 
         # Increment step counter for neuromorphic checkpoint creation timestamps
         self._current_step += 1
 
-        # Apply axonal delay (biological reality: ALL neural connections have delays)
-        delayed_spikes = self._apply_axonal_delay(output_spikes, dt)
-
-        return delayed_spikes
+        # Return output spikes (D1/D2 delays already handled by forward_coordinator)
+        return output_spikes
 
     def deliver_reward(self, reward: float) -> Dict[str, Any]:
         """Deliver reward signal and trigger D1/D2 learning.
