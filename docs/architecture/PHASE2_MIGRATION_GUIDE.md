@@ -1,6 +1,6 @@
 # Phase 2 Migration Guide: Region → NeuralRegion
 
-**Status**: In Progress (Striatum Complete ✅)
+**Status**: In Progress (3/6 Complete: Striatum ✅, PFC ✅, Hippocampus ✅)
 **Target**: Migrate all brain regions to NeuralRegion base class
 **Estimated Time**: 2-3 weeks
 **Prerequisites**: Phase 1 complete ✅
@@ -84,8 +84,8 @@ def forward(self, inputs: Union[Dict[str, Tensor], Tensor]) -> Tensor:
 |-------|--------|--------|-----------|-------------|--------|
 | 1 | **Striatum** | ✅ COMPLETE | 2-3 days | 1 day | Already multi-source, clear separation |
 | 2 | **PFC** | ✅ COMPLETE | 2-3 days | 1 day | Working memory, simpler than cortex |
-| 3 | **Hippocampus** | 🔄 Next | 3-4 days | - | DG→CA3→CA1 chain, replay system |
-| 4 | **LayeredCortex** | ⏳ Planned | 4-5 days | - | Complex laminar structure, multiple ports |
+| 3 | **Hippocampus** | ✅ COMPLETE | 3-4 days | 1 day | DG→CA3→CA1 chain, 4 EC pathways |
+| 4 | **LayeredCortex** | 🔄 Next | 4-5 days | - | Complex laminar structure, multiple ports |
 | 5 | **Thalamus** | ⏳ Planned | 3-4 days | - | TRN, mode switching, spatial filtering |
 | 6 | **Cerebellum** | ⏳ Planned | 3-4 days | - | Granule layer, Purkinje cells, DCN |
 
@@ -803,11 +803,11 @@ Phase 2 complete when:
 
 1. ✅ **Striatum Complete** - Pattern validated, all tests passing
 2. ✅ **PFC Complete** - Single-source pattern validated, checkpoints working
-3. 🔄 **Begin Hippocampus Migration** - Most complex: DG→CA3→CA1 chain, replay system
-4. ⏳ **Address remaining test failures** - Fix RecursionError in brain building (60+ tests)
-5. ⏳ **Continue systematically** - Follow priority order for remaining regions
+3. ✅ **Hippocampus Complete** - Complex multi-source (4 EC pathways), trisynaptic circuit preserved
+4. 🔄 **Begin LayeredCortex Migration** - Complex laminar structure with port-based routing
+5. ⏳ **Continue systematically** - Follow priority order for remaining 3 regions
 
-**Immediate Priority**: Start PFC migration using validated property-based pattern from Striatum
+**Immediate Priority**: Start LayeredCortex migration - most complex region, multiple input/output ports
 
 ---
 
