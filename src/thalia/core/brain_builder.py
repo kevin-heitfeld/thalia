@@ -246,7 +246,7 @@ class BrainBuilder:
         self,
         source: str,
         target: str,
-        pathway_type: str = "spiking",
+        pathway_type: str = "axonal_projection",
         source_port: Optional[str] = None,
         target_port: Optional[str] = None,
         **config_params: Any,
@@ -257,8 +257,7 @@ class BrainBuilder:
             source: Source component name
             target: Target component name
             pathway_type: Pathway registry name:
-                - "spiking": SpikingPathway (has neurons + weights + learning)
-                - "axonal": AxonalProjection (pure spike routing, NO weights)
+                - "axonal_projection": AxonalProjection (pure spike routing, NO weights)
                 - Other registered pathway types
             source_port: Output port on source (e.g., 'l23', 'l5')
             target_port: Input port on target (e.g., 'feedforward', 'top_down', 'ec_l3')
@@ -272,11 +271,11 @@ class BrainBuilder:
             ValueError: If source or target component doesn't exist
 
         Example:
-            # Simple connection (backward compatible)
+            # Simple connection (default is axonal_projection)
             builder.connect("thalamus", "cortex")
 
-            # Axonal projection (v2.0 architecture - biologically accurate)
-            builder.connect("cortex", "striatum", pathway_type="axonal", source_port="l5")
+            # Axonal projection with custom delay
+            builder.connect("cortex", "striatum", pathway_type="axonal_projection", source_port="l5")
 
             # Layer-specific routing
             builder.connect("cortex", "hippocampus", source_port="l23")

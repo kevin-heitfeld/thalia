@@ -37,21 +37,21 @@ class TestConnectionSpecPorts:
             target="hippocampus",
             source_port="l23",
             target_port="feedforward",
-            pathway_type="spiking",
+            pathway_type="axonal_projection",
         )
 
         assert spec.source == "cortex"
         assert spec.target == "hippocampus"
         assert spec.source_port == "l23"
         assert spec.target_port == "feedforward"
-        assert spec.pathway_type == "spiking"
+        assert spec.pathway_type == "axonal_projection"
 
     def test_connection_spec_without_ports_defaults_to_none(self):
         """Test that ports default to None for backward compatibility."""
         spec = ConnectionSpec(
             source="thalamus",
             target="cortex",
-            pathway_type="spiking",
+            pathway_type="axonal_projection",
         )
 
         assert spec.source_port is None
@@ -63,7 +63,7 @@ class TestConnectionSpecPorts:
             source="cortex",
             target="striatum",
             source_port="l5",
-            pathway_type="spiking",
+            pathway_type="axonal_projection",
         )
 
         assert spec.source_port == "l5"
@@ -75,7 +75,7 @@ class TestConnectionSpecPorts:
             source="pfc",
             target="cortex",
             target_port="top_down",
-            pathway_type="spiking",
+            pathway_type="axonal_projection",
         )
 
         assert spec.source_port is None
@@ -97,7 +97,7 @@ class TestBrainBuilderPortBasedConnections:
         builder.connect(
             "cortex", "hippocampus",
             source_port="l23",
-            pathway_type="spiking"
+            pathway_type="axonal_projection"
         )
 
         # Verify connection was recorded with port
@@ -118,7 +118,7 @@ class TestBrainBuilderPortBasedConnections:
         builder.connect(
             "pfc", "cortex",
             target_port="top_down",
-            pathway_type="spiking"
+            pathway_type="axonal_projection"
         )
 
         conn = builder._connections[0]
@@ -135,7 +135,7 @@ class TestBrainBuilderPortBasedConnections:
             "cortex", "striatum",
             source_port="l5",
             target_port="cortical_input",
-            pathway_type="spiking"
+            pathway_type="axonal_projection"
         )
 
         conn = builder._connections[0]
@@ -154,14 +154,14 @@ class TestBrainBuilderPortBasedConnections:
         builder.connect(
             "thalamus", "cortex",
             target_port="feedforward",
-            pathway_type="spiking"
+            pathway_type="axonal_projection"
         )
 
         # Top-down path
         builder.connect(
             "pfc", "cortex",
             target_port="top_down",
-            pathway_type="spiking"
+            pathway_type="axonal_projection"
         )
 
         assert len(builder._connections) == 2
@@ -180,8 +180,8 @@ class TestLayerSpecificCorticalRouting:
         builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
         builder.add_component("hippocampus", "hippocampus", n_output=64)
 
-        builder.connect("thalamus", "cortex", pathway_type="spiking")
-        builder.connect("cortex", "hippocampus", source_port="l23", pathway_type="spiking")
+        builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
+        builder.connect("cortex", "hippocampus", source_port="l23", pathway_type="axonal_projection")
 
         brain = builder.build()
 
@@ -203,8 +203,8 @@ class TestLayerSpecificCorticalRouting:
         builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
         builder.add_component("striatum", "striatum", n_output=4)
 
-        builder.connect("thalamus", "cortex", pathway_type="spiking")
-        builder.connect("cortex", "striatum", source_port="l5", pathway_type="spiking")
+        builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
+        builder.connect("cortex", "striatum", source_port="l5", pathway_type="axonal_projection")
 
         brain = builder.build()
 
@@ -398,7 +398,7 @@ class TestBackwardCompatibility:
         builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
 
         # Old-style connection without ports
-        builder.connect("thalamus", "cortex", pathway_type="spiking")
+        builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
 
         brain = builder.build()
 

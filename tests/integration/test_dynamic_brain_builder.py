@@ -51,7 +51,7 @@ class TestDynamicBrainIntegration:
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", n_input=64, n_output=64)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))  # n_input inferred!
-            .connect("input", "cortex", pathway_type="spiking", axonal_delay_ms=5.0)
+            .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
             .build()
         )
 
@@ -75,8 +75,8 @@ class TestDynamicBrainIntegration:
             .add_component("region_a", "thalamic_relay", n_input=32, n_output=32)
             .add_component("region_b", "layered_cortex", **calculate_layer_sizes(64))  # n_input inferred from region_a
             .add_component("region_c", "layered_cortex", **calculate_layer_sizes(16))  # n_input inferred from region_b
-            .connect("region_a", "region_b", pathway_type="spiking", axonal_delay_ms=3.0)
-            .connect("region_b", "region_c", pathway_type="spiking", axonal_delay_ms=3.0)
+            .connect("region_a", "region_b", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("region_b", "region_c", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
 
@@ -99,10 +99,10 @@ class TestDynamicBrainIntegration:
             .add_component("branch1", "layered_cortex", **calculate_layer_sizes(16))  # n_input=32 inferred
             .add_component("branch2", "layered_cortex", **calculate_layer_sizes(16))  # n_input=32 inferred
             .add_component("sink", "layered_cortex", **calculate_layer_sizes(8))      # n_input=32 inferred (16+16)
-            .connect("source", "branch1", pathway_type="spiking", axonal_delay_ms=3.0)
-            .connect("source", "branch2", pathway_type="spiking", axonal_delay_ms=3.0)
-            .connect("branch1", "sink", pathway_type="spiking", axonal_delay_ms=3.0)
-            .connect("branch2", "sink", pathway_type="spiking", axonal_delay_ms=3.0)
+            .connect("source", "branch1", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("source", "branch2", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("branch1", "sink", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("branch2", "sink", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
 
@@ -141,7 +141,7 @@ class TestDynamicBrainIntegration:
         cortex = LayeredCortex(cortex_config).to(device)
 
         brain.add_component("cortex", cortex)
-        
+
         # Use add_connection method which creates AxonalProjection
         brain.add_connection(
             source="input",
@@ -211,7 +211,7 @@ class TestPresetArchitectures:
         """Test building from preset with custom modifications."""
         builder = BrainBuilder.preset_builder("sensorimotor", global_config)
         builder.add_component("custom_region", "prefrontal", n_output=64)  # n_input inferred from cortex
-        builder.connect("cortex", "custom_region", pathway_type="spiking", axonal_delay_ms=5.0)
+        builder.connect("cortex", "custom_region", pathway_type="axonal_projection", axonal_delay_ms=5.0)
         brain = builder.build()
 
         # Should have original + new component
@@ -392,7 +392,7 @@ class TestSaveAndLoad:
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", n_input=32, n_output=32)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(16))  # n_input inferred
-            .connect("input", "cortex", pathway_type="spiking", axonal_delay_ms=5.0)
+            .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
         )
 
         # Save spec
@@ -798,11 +798,11 @@ class TestStateManagement:
             .add_component("pfc", "prefrontal", n_output=12)
             .add_component("striatum", "striatum", n_output=5)
             .add_component("cerebellum", "cerebellum", n_output=10)
-            .connect("thalamus", "cortex", pathway_type="spiking", axonal_delay_ms=3.0)
-            .connect("cortex", "hippocampus", pathway_type="spiking", axonal_delay_ms=5.0)
-            .connect("cortex", "pfc", pathway_type="spiking", axonal_delay_ms=4.0)
-            .connect("pfc", "striatum", pathway_type="spiking", axonal_delay_ms=3.0)
-            .connect("cortex", "cerebellum", pathway_type="spiking", axonal_delay_ms=4.0)
+            .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("cortex", "hippocampus", pathway_type="axonal_projection", axonal_delay_ms=5.0)
+            .connect("cortex", "pfc", pathway_type="axonal_projection", axonal_delay_ms=4.0)
+            .connect("pfc", "striatum", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("cortex", "cerebellum", pathway_type="axonal_projection", axonal_delay_ms=4.0)
             .build()
         )
 
@@ -941,7 +941,7 @@ class TestStateManagement:
             BrainBuilder(global_config)
             .add_component("thalamus", "thalamic_relay", n_input=10, n_output=10)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
-            .connect("thalamus", "cortex", pathway_type="spiking", axonal_delay_ms=3.0)
+            .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
 
@@ -958,7 +958,7 @@ class TestStateManagement:
             BrainBuilder(global_config)
             .add_component("thalamus", "thalamic_relay", n_input=10, n_output=10)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
-            .connect("thalamus", "cortex", pathway_type="spiking", axonal_delay_ms=3.0)
+            .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
         brain2.load_full_state(state)

@@ -1357,7 +1357,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Update forward coordinator with neuromodulator state
         self.forward_coordinator.set_neuromodulators(
             dopamine=self.tonic_dopamine,
-            norepinephrine=self.state.norepinephrine,
+            norepinephrine=self.forward_coordinator._ne_level,
         )
 
     def _initialize_weights(self) -> Optional[nn.Parameter]:

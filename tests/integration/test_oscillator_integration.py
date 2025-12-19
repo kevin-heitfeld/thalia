@@ -35,7 +35,7 @@ class TestOscillatorManagerIntegration:
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", n_input=64, n_output=64)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))
-            .connect("input", "cortex", pathway_type="spiking")
+            .connect("input", "cortex", pathway_type="axonal_projection")
             .build()
         )
         return brain
