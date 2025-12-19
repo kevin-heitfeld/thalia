@@ -87,7 +87,7 @@ See: docs/decisions/adr-011-large-file-justification.md
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 
 import torch
 import torch.nn as nn
@@ -1474,13 +1474,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     def forward(
         self,
-        inputs: Dict[str, torch.Tensor],
+        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input and select action using SEPARATE D1/D2 populations.
 
         **Phase 2 Changes**: Now accepts Dict[str, Tensor] instead of concatenated tensor.
         Synaptic weights are applied per-source at target dendrites (biologically accurate).
+
+        **Backward Compatibility**: Still accepts Tensor input for legacy code, automatically
+        converts to {"default": tensor} format.
 
         BIOLOGICAL ARCHITECTURE:
         - D1-MSNs: SEPARATE neuron population, receives synaptic currents
@@ -1489,8 +1492,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - Action selection: argmax(D1_activity - D2_activity) per action
 
         Args:
-            inputs: Dict mapping source names to spike tensors
-                   e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo], "pfc": [n_pfc]}
+            inputs: Either:
+                   - Dict mapping source names to spike tensors (Phase 2)
+                     e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo]}
+                   - Tensor of concatenated spikes (legacy, backward compat)
+                     [n_input] - will be wrapped as {"default": tensor}
                    PFC component (if present) is used for goal modulation.
 
         NOTE: Exploration is handled by finalize_action() at trial end, not per-timestep.
@@ -1503,6 +1509,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - NET = D1_votes - D2_votes
         - Selected action = argmax(NET)
         """
+        # =====================================================================
+        # BACKWARD COMPATIBILITY: Convert Tensor to Dict
+        # =====================================================================
+        if isinstance(inputs, torch.Tensor):
+            # Legacy format: concatenated tensor
+            # Wrap as default source for compatibility
+            inputs = {"default": inputs}
+        
         # =====================================================================
         # PHASE 2: CONVERT DICT INPUTS TO CURRENTS
         # =====================================================================
@@ -1749,9 +1763,40 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         """
         self.learning.reset_eligibility(self.last_action, action_only)
 
-    def reset_state(self) -> None:
-        super().reset_state()
+    def _reset_subsystems(self, *subsystem_names: str) -> None:
+        """Reset multiple subsystems by calling their reset_state() methods.
 
+        Convenience helper to avoid repetitive code in reset_state() implementations.
+
+        Args:
+            *subsystem_names: Names of attributes to reset (must have reset_state())
+        """
+        for name in subsystem_names:
+            if hasattr(self, name):
+                subsystem = getattr(self, name)
+                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                    subsystem.reset_state()
+
+    def _reset_scalars(self, **scalar_values: Any) -> None:
+        """Reset scalar attributes to specified values.
+
+        Convenience helper for resetting counters, accumulators, etc.
+
+        Args:
+            **scalar_values: Attribute names and their reset values
+        """
+        for name, value in scalar_values.items():
+            setattr(self, name, value)
+
+    def reset_state(self) -> None:
+        """Reset striatum state for new sequence/episode.
+
+        Resets:
+        - State tracker (votes, spikes, trials)
+        - D1/D2 pathway eligibility and neurons
+        - TD(λ) traces (if enabled)
+        - Delay buffers (if enabled)
+        """
         # Reset state tracker (votes, recent spikes, trial stats, last action)
         self.state_tracker.reset_state()
 
@@ -1772,6 +1817,28 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self._d1_delay_buffer.zero_()
         if self._d2_delay_buffer is not None:
             self._d2_delay_buffer.zero_()
+
+    def set_neuromodulators(
+        self,
+        dopamine: Optional[float] = None,
+        norepinephrine: Optional[float] = None,
+        acetylcholine: Optional[float] = None,
+    ) -> None:
+        """Set neuromodulator levels for striatum.
+
+        Delegates to forward_coordinator which manages neuromodulator state.
+
+        Args:
+            dopamine: Dopamine level (affects D1/D2 gain, learning)
+            norepinephrine: Norepinephrine level (affects arousal/gain)
+            acetylcholine: Acetylcholine level (not used in striatum)
+        """
+        if hasattr(self, 'forward_coordinator'):
+            self.forward_coordinator.set_neuromodulators(
+                dopamine=dopamine,
+                norepinephrine=norepinephrine,
+                acetylcholine=acetylcholine,
+            )
 
     # endregion
 
