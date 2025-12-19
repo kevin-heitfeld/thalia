@@ -578,17 +578,17 @@ class DynamicBrain(nn.Module):
 
         # Add connections (standard sensorimotor topology)
         # Thalamus → Cortex → Hippocampus/PFC → Striatum → Cerebellum
-        builder.connect("thalamus", "cortex", "spiking")
-        builder.connect("cortex", "hippocampus", "spiking", source_port="l23")  # Cortico-cortical
-        builder.connect("hippocampus", "cortex", "spiking")  # Bidirectional (replay pathway)
-        builder.connect("cortex", "pfc", "spiking", source_port="l23")  # Cortico-cortical
-        builder.connect("hippocampus", "pfc", "spiking")
+        builder.connect("thalamus", "cortex", "axonal_projection")
+        builder.connect("cortex", "hippocampus", "axonal_projection", source_port="l23")  # Cortico-cortical
+        builder.connect("hippocampus", "cortex", "axonal_projection")  # Bidirectional (replay pathway)
+        builder.connect("cortex", "pfc", "axonal_projection", source_port="l23")  # Cortico-cortical
+        builder.connect("hippocampus", "pfc", "axonal_projection")
         # Striatum receives from 3 sources: cortex L5, hippocampus, pfc
-        builder.connect("cortex", "striatum", "spiking", source_port="l5")  # Subcortical
-        builder.connect("hippocampus", "striatum", "spiking")
-        builder.connect("pfc", "striatum", "spiking")
-        builder.connect("striatum", "pfc", "spiking")  # Bidirectional
-        builder.connect("pfc", "cerebellum", "spiking")  # PFC→cerebellum (motor refinement)
+        builder.connect("cortex", "striatum", "axonal_projection", source_port="l5")  # Subcortical
+        builder.connect("hippocampus", "striatum", "axonal_projection")
+        builder.connect("pfc", "striatum", "axonal_projection")
+        builder.connect("striatum", "pfc", "axonal_projection")  # Bidirectional
+        builder.connect("pfc", "cerebellum", "axonal_projection")  # PFC→cerebellum (motor refinement)
 
         return builder.build(use_parallel=use_parallel, n_workers=n_workers)
 
@@ -2131,14 +2131,14 @@ class DynamicBrain(nn.Module):
                 # Check if this is a multi-source target
                 # (multiple pathways going to same target)
                 target_sources = [s for (s, t) in self.connections.keys() if t == tgt]
-                
+
                 if len(target_sources) > 1:
                     # Multi-source target - buffer this source's output
                     if tgt not in self._multi_source_buffers:
                         self._multi_source_buffers[tgt] = {}
-                    
+
                     self._multi_source_buffers[tgt][source] = port_output
-                    
+
                     # Forward with dict of currently available sources
                     # AxonalProjection will fill missing sources with zeros
                     source_dict = self._multi_source_buffers[tgt]
@@ -2158,7 +2158,7 @@ class DynamicBrain(nn.Module):
                     source_label = f"multi:{','.join(available_sources)}"
                 else:
                     source_label = source
-                    
+
                 event = Event(
                     time=current_time + delay_ms,
                     event_type=EventType.SPIKE,

@@ -127,8 +127,6 @@ class TestDynamicBrainIntegration:
         # Add component dynamically
         from thalia.regions.cortex import LayeredCortex
         from thalia.regions.cortex.config import LayeredCortexConfig
-        from thalia.pathways.spiking_pathway import SpikingPathway
-        from thalia.core.base.component_config import PathwayConfig
 
         cortex_config = LayeredCortexConfig(
             n_input=16,  # Match pathway output
@@ -142,17 +140,14 @@ class TestDynamicBrainIntegration:
         )
         cortex = LayeredCortex(cortex_config).to(device)
 
-        pathway_config = PathwayConfig(
-            n_output=16,
-            n_input=32,
-            device=device,
-            dt_ms=1.0,
-            axonal_delay_ms=2.0,
-        )
-        pathway = SpikingPathway(pathway_config).to(device)
-
         brain.add_component("cortex", cortex)
-        brain.add_connection("input", "cortex", pathway)
+        
+        # Use add_connection method which creates AxonalProjection
+        brain.add_connection(
+            source="input",
+            target="cortex",
+            sources=[("input", None, 32, 2.0)],  # (region_name, port, size, delay_ms)
+        )
 
         # Test execution
         input_data = {"input": torch.randn(32, device=device)}

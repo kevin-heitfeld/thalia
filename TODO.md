@@ -7,6 +7,14 @@
 
 ---
 
+- Delay precision: Are delays accurate to 0.1ms? Axons show sub-millisecond variability
+- Synapse morphology: Are different synapse types (mossy, climbing, etc.) modeled?
+- Dendritic computation: Are dendritic NMDA spikes and plateau potentials included?
+- Axonal branching: Do axons branch and target multiple regions with different delays?
+- Myelination dynamics: Do delays change with activity (myelin plasticity)?
+
+---
+
 - **Oscillation Emergence Analysis** (see below for details):
   - ✅ **Beta/Delta**: Keep explicit (systems-level coordination)
   - ⚠️ **Gamma (40Hz)**: SHOULD emerge from L6→TRN→Thalamus loop (~25ms latency)

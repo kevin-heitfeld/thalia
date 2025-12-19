@@ -62,9 +62,8 @@ class TestPathwayDimensionIntegrity:
 
         This is a CRITICAL test - dimension mismatches cause runtime errors.
 
-        NOTE: SpikingPathway objects don't store source/target names as attributes.
-        The PathwayManager knows the mapping via get_all_pathways() dict keys.
-        This test verifies weight matrix dimensions are internally consistent.
+        NOTE: AxonalProjection objects route spikes, weights are stored in target regions.
+        This test verifies pathway routing dimensions are consistent with regions.
         """
         errors = []
 
@@ -102,7 +101,7 @@ class TestNetworkConnectivity:
 
         Disconnected regions indicate configuration errors.
 
-        NOTE: SpikingPathway doesn't have source_name/target_name attributes.
+        NOTE: AxonalProjection doesn't have source_name/target_name attributes.
         We infer connectivity from pathway names in get_all_pathways() dict.
         """
         # Build connectivity graph from pathway names
@@ -358,7 +357,7 @@ class TestEdgeCases:
             "Pathway names changed after reset"
 
         # Validate dimensions still match
-        # NOTE: SpikingPathway doesn't have source_name/target_name
+        # NOTE: AxonalProjection doesn't have source_name/target_name
         # We check internal consistency instead
         for pathway_name, pathway in pathway_manager.get_all_pathways().items():
             # Verify weight matrices still have correct shape

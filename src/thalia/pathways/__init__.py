@@ -5,25 +5,16 @@ All inter-region and sensory pathways for the Thalia brain architecture.
 Pathways ARE mini-regions with neurons, synapses, and learning rules.
 They actively transform information and learn continuously via STDP/BCM.
 
-v2.0 Architecture:
-- AxonalProjection: Pure spike routing, NO weights (new in v2.0)
-- SpikingPathway: Traditional pathway with weights (legacy, v1.x)
+v3.0 Architecture:
+- AxonalProjection: Pure spike routing, NO weights
+- All learning happens at dendrites (NeuralRegion pattern)
 """
 
 # Protocol
 from thalia.pathways.protocol import NeuralPathway
 
 # Core pathway types
-from thalia.pathways.axonal_projection import AxonalProjection  # v2.0
-from thalia.pathways.spiking_pathway import (
-    SpikingPathway,
-    SpikingLearningRule,
-    TemporalCoding,
-)
-from thalia.pathways.spiking_replay import (
-    SpikingReplayPathway,
-    SpikingReplayPathwayConfig,
-)
+from thalia.pathways.axonal_projection import AxonalProjection
 
 # Sensory pathways
 from thalia.pathways.sensory_pathways import (
@@ -39,10 +30,6 @@ from thalia.pathways.attention.attention import (
     AttentionMechanismsConfig,
     AttentionStage,
 )
-from thalia.pathways.attention.spiking_attention import (
-    SpikingAttentionPathway,
-    SpikingAttentionPathwayConfig,
-)
 from thalia.pathways.attention.crossmodal_binding import (
     CrossModalGammaBinding,
     CrossModalBindingConfig,
@@ -53,11 +40,6 @@ __all__ = [
     "NeuralPathway",
     # Core pathways
     "AxonalProjection",
-    "SpikingPathway",
-    "SpikingLearningRule",
-    "TemporalCoding",
-    "SpikingReplayPathway",
-    "SpikingReplayPathwayConfig",
     # Sensory pathways
     "SensoryPathway",
     "VisualPathway",
@@ -67,8 +49,6 @@ __all__ = [
     "AttentionMechanisms",
     "AttentionMechanismsConfig",
     "AttentionStage",
-    "SpikingAttentionPathway",
-    "SpikingAttentionPathwayConfig",
     "CrossModalGammaBinding",
     "CrossModalBindingConfig",
 ]

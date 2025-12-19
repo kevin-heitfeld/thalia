@@ -37,7 +37,7 @@ class AttentionMechanismsConfig:
     motion_weight: float = 0.4
     novelty_weight: float = 0.2
     
-    # Top-down parameters (requires existing SpikingAttentionPathway)
+    # Top-down parameters (for custom attention pathways)
     use_top_down: bool = True
     top_down_pathway: Optional[nn.Module] = None
     
@@ -262,7 +262,7 @@ class AttentionMechanisms:
         """
         Goal-directed attention (via PFC).
         
-        Uses existing SpikingAttentionPathway if available.
+        Uses existing attention pathway if available.
         
         Args:
             visual_input: Visual input [input_size]
@@ -287,7 +287,7 @@ class AttentionMechanisms:
         visual_input = visual_input.to(self.device)
         goal = goal.to(self.device)
         
-        # Use existing pathway (SpikingAttentionPathway)
+        # Use existing pathway (attention mechanism)
         # pathway.modulate(input_signal, pfc_activity, dt) → modulated signal
         attention = self.config.top_down_pathway.modulate(
             visual_input,

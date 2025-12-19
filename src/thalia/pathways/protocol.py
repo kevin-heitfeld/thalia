@@ -40,16 +40,16 @@ Types of Pathways
    - Method: forward(raw_input) → (spikes, metadata)
    - Standard PyTorch convention (ADR-007)
 
-2. **Inter-Region Pathways** (SpikingPathway):
-   - Transform spikes between brain regions
+2. **Inter-Region Pathways** (AxonalProjection):
+   - Route spikes between brain regions (pure axonal transmission)
    - Examples: Cortex→Hippocampus, Hippocampus→Cortex, Cortex→Striatum
-   - Method: forward(spikes) → spikes
-   - Learning: Automatic STDP during every forward pass
+   - Method: forward(source_dict) → spikes
+   - Learning: Happens at target region dendrites (NeuralRegion pattern)
 
 3. **Specialized Pathways**:
-   - SpikingAttentionPathway: PFC→Cortex attention modulation
-   - SpikingReplayPathway: Hippocampus→Cortex memory consolidation
-   - Inherit from SpikingPathway with specialized forward() behavior
+   - Sensory pathways transform raw input → spikes
+   - Custom routing logic for complex architectures
+   - Inherit from NeuralComponent with specialized forward() behavior
 
 Protocol Design:
 ================

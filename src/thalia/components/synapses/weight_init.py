@@ -39,11 +39,11 @@ Common Patterns in Thalia:
    - Good for: Biological realism, pattern separation
 
 6. **Topographic** - Gaussian connectivity based on spatial distance
-   - Used by: SpikingPathway with topographic=True
+   - Used by: Custom pathways with topographic=True
    - Good for: Spatial maps (visual, auditory)
 
 7. **Orthogonal** - nn.init.orthogonal_()
-   - Used by: SpikingAttentionPathway
+   - Used by: Attention mechanisms
    - Good for: Preserving norms, avoiding correlations
 
 Usage Example:
