@@ -338,9 +338,33 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             device=self.device,
         )
 
-        # Create D1 and D2 pathways
+        # Create D1 and D2 pathways (neurons only, weights stored in parent)
         self.d1_pathway = D1Pathway(pathway_config)
         self.d2_pathway = D2Pathway(pathway_config)
+
+        # =====================================================================
+        # INITIALIZE SYNAPTIC WEIGHTS (Phase 2 - Option B)
+        # =====================================================================
+        # Weights are stored in parent's synaptic_weights dict, NOT in pathways.
+        # Structure: synaptic_weights["source"] = [n_d1 + n_d2, n_source]
+        # First n_d1 rows = D1 MSNs, next n_d2 rows = D2 MSNs
+        # Each MSN has unique weights (biologically accurate).
+        #
+        # MIGRATION STRATEGY (Part 2):
+        # For backward compatibility during migration, we maintain BOTH:
+        # 1. Legacy: D1/D2 pathway weights (self.d1_pathway.weights, self.d2_pathway.weights)
+        # 2. New: Combined matrix in synaptic_weights["default"]
+        #
+        # The combined matrix is the SOURCE OF TRUTH - D1/D2 pathway weights are
+        # VIEWS into it. When pathways update their weights, they update the parent's
+        # combined matrix. This allows incremental migration of all references.
+        #
+        # Part 3 will update all code to use accessor methods (get_d1_weights, etc.)
+        # Part 4 will remove D1/D2 pathway weights entirely.
+        self._initialize_default_synaptic_weights(config.n_input)
+
+        # Link D1/D2 pathway weights to parent's combined matrix (temporary bridge)
+        self._link_pathway_weights_to_parent()
 
         # Create manager context for learning
         learning_context = ManagerContext(
@@ -350,12 +374,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             dt_ms=config.dt_ms,
         )
 
-        # Create learning manager
+        # Create learning manager (will access weights via parent methods)
         self.learning = StriatumLearningComponent(
             config=self.striatum_config,
             context=learning_context,
             d1_pathway=self.d1_pathway,
             d2_pathway=self.d2_pathway,
+            parent_striatum=self,  # Pass parent for weight access
         )
 
         # =====================================================================
@@ -390,8 +415,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # Compute budget from initialized weights (per-action sum of D1+D2)
             # This ensures the budget matches the actual weight scale
             with torch.no_grad():
-                d1_d2_sum = self.d1_pathway.weights.sum() + self.d2_pathway.weights.sum()
-                dynamic_budget = (d1_d2_sum / self.n_actions).item()
+                # Access D1 and D2 weights separately (Phase 2)
+                if "default_d1" in self.synaptic_weights and "default_d2" in self.synaptic_weights:
+                    d1_sum = self.synaptic_weights["default_d1"].sum()
+                    d2_sum = self.synaptic_weights["default_d2"].sum()
+                    dynamic_budget = ((d1_sum + d2_sum) / self.n_actions).item()
+                else:
+                    # Fallback to default budget if no weights initialized yet
+                    dynamic_budget = 0.5  # Conservative default
 
             homeostasis_config = HomeostasisManagerConfig(
                 weight_budget=dynamic_budget,
@@ -749,6 +780,124 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Return max value (best action from this state)
         return action_values.max().item()
+
+    # =========================================================================
+    # SYNAPTIC WEIGHT INITIALIZATION (Phase 2 - Option B)
+    # =========================================================================
+
+    def _initialize_default_synaptic_weights(self, n_input: int) -> None:
+        """Initialize default synaptic weights for D1 and D2 pathways.
+
+        Option B Architecture: D1 and D2 MSNs have SEPARATE weights because they
+        learn differently (opposite dopamine responses). Both receive the same inputs.
+
+        Structure:
+        - synaptic_weights["default_d1"] = [n_d1, n_input]  # D1 MSN weights
+        - synaptic_weights["default_d2"] = [n_d2, n_input]  # D2 MSN weights
+
+        This is biologically accurate: each MSN has unique synaptic weights,
+        and D1/D2 differ in their dopamine receptors (and thus learning rules).
+
+        Args:
+            n_input: Input dimension size
+        """
+        n_total = self.config.n_output  # Total neurons (D1 + D2)
+        n_d1 = n_total // 2
+        n_d2 = n_total - n_d1
+
+        # Initialize D1 weights using Xavier initialization
+        from thalia.components.synapses.weight_init import WeightInitializer
+        d1_weights = WeightInitializer.xavier(
+            n_output=n_d1,
+            n_input=n_input,
+            gain=0.2,  # Conservative initialization
+            device=self.device,
+        ) * self.config.w_max
+
+        # Initialize D2 weights (separate matrix, same initialization)
+        d2_weights = WeightInitializer.xavier(
+            n_output=n_d2,
+            n_input=n_input,
+            gain=0.2,
+            device=self.device,
+        ) * self.config.w_max
+
+        # Register as separate sources for backward compatibility
+        self.add_input_source("default_d1", n_input, initial_weights=d1_weights)
+        self.add_input_source("default_d2", n_input, initial_weights=d2_weights)
+
+        # Store sizes for easy access
+        self.n_d1 = n_d1
+        self.n_d2 = n_d2
+
+    def _link_pathway_weights_to_parent(self) -> None:
+        """Pass parent reference to D1/D2 pathways for weight access.
+
+        D1/D2 pathways no longer own weights - they access parent's synaptic_weights
+        dict via a reference. This implements Option B (biologically accurate).
+
+        Each pathway gets:
+        - parent reference (for weight access)
+        - source name ("default_d1" or "default_d2")
+        """
+        # Pass parent reference to pathways
+        self.d1_pathway._parent_striatum = self
+        self.d1_pathway._weight_source = "default_d1"
+
+        self.d2_pathway._parent_striatum = self
+        self.d2_pathway._weight_source = "default_d2"
+
+    def _sync_pathway_weights_to_parent(self) -> None:
+        """No-op: Pathways access parent weights directly, no sync needed."""
+        pass
+
+    def get_d1_weights(self, source: str = "default_d1") -> torch.Tensor:
+        """Get D1 MSN weights for a given source.
+
+        Args:
+            source: Input source name (default: "default_d1")
+
+        Returns:
+            D1 weights [n_d1, n_input]
+        """
+        if source not in self.synaptic_weights:
+            raise KeyError(f"Source '{source}' not found in synaptic_weights")
+        return self.synaptic_weights[source]
+
+    def get_d2_weights(self, source: str = "default_d2") -> torch.Tensor:
+        """Get D2 MSN weights for a given source.
+
+        Args:
+            source: Input source name (default: "default_d2")
+
+        Returns:
+            D2 weights [n_d2, n_input]
+        """
+        if source not in self.synaptic_weights:
+            raise KeyError(f"Source '{source}' not found in synaptic_weights")
+        return self.synaptic_weights[source]
+
+    def set_d1_weights(self, weights: torch.Tensor, source: str = "default_d1") -> None:
+        """Update D1 MSN weights for a given source.
+
+        Args:
+            weights: New D1 weights [n_d1, n_input]
+            source: Input source name (default: "default_d1")
+        """
+        if source not in self.synaptic_weights:
+            raise KeyError(f"Source '{source}' not found in synaptic_weights")
+        self.synaptic_weights[source].data = weights
+
+    def set_d2_weights(self, weights: torch.Tensor, source: str = "default_d2") -> None:
+        """Update D2 MSN weights for a given source.
+
+        Args:
+            weights: New D2 weights [n_d2, n_input]
+            source: Input source name (default: "default_d2")
+        """
+        if source not in self.synaptic_weights:
+            raise KeyError(f"Source '{source}' not found in synaptic_weights")
+        self.synaptic_weights[source].data = weights
 
     # =========================================================================
     # NEUROMORPHIC ID MANAGEMENT (Phase 2)

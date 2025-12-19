@@ -86,8 +86,10 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         self.config = config
         self.device = config.device
 
-        # Initialize weights [n_output, n_input]
-        self.weights = self._initialize_weights()
+        # Parent reference (set by Striatum after construction)
+        # Pathways access weights via parent's synaptic_weights dict
+        self._parent_striatum: Optional[Any] = None  # Type: Striatum
+        self._weight_source: Optional[str] = None  # e.g., "default_d1" or "default_d2"
 
         # Three-factor learning strategy (eligibility × dopamine)
         three_factor_config = ThreeFactorConfig(
@@ -104,6 +106,45 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         self.neurons = self._create_neurons()
 
     # =========================================================================
+    # WEIGHT ACCESS (Phase 2 - Option B)
+    # =========================================================================
+
+    @property
+    def weights(self) -> torch.Tensor:
+        """Access pathway weights from parent's synaptic_weights dict.
+
+        Pathways no longer own weights - they're stored in parent's synaptic_weights
+        dict. This implements Option B (biologically accurate architecture).
+
+        Returns:
+            Weight matrix [n_output, n_input]
+        """
+        if self._parent_striatum is None or self._weight_source is None:
+            raise RuntimeError(
+                f"{self.__class__.__name__} not linked to parent. "
+                "Call striatum._link_pathway_weights_to_parent() after construction."
+            )
+        return self._parent_striatum.synaptic_weights[self._weight_source]
+
+    @weights.setter
+    def weights(self, value: torch.Tensor) -> None:
+        """Update pathway weights in parent's synaptic_weights dict.
+
+        Args:
+            value: New weight matrix [n_output, n_input] (Tensor or nn.Parameter)
+        """
+        if self._parent_striatum is None or self._weight_source is None:
+            raise RuntimeError(
+                f"{self.__class__.__name__} not linked to parent. "
+                "Call striatum._link_pathway_weights_to_parent() after construction."
+            )
+        # Extract tensor data from nn.Parameter if needed
+        if isinstance(value, nn.Parameter):
+            self._parent_striatum.synaptic_weights[self._weight_source].data = value.data
+        else:
+            self._parent_striatum.synaptic_weights[self._weight_source].data = value
+
+    # =========================================================================
     # PROPERTIES FOR DIAGNOSTICS
     # =========================================================================
 
@@ -116,21 +157,6 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
     def eligibility(self, value: torch.Tensor) -> None:
         """Set eligibility traces (for checkpoint loading)."""
         self.learning_strategy.eligibility = value
-
-    def _initialize_weights(self) -> nn.Parameter:
-        """Initialize pathway weights using Xavier initialization.
-
-        Returns:
-            Weight matrix [n_output, n_input] as nn.Parameter
-        """
-        weights = WeightInitializer.xavier(
-            n_output=self.config.n_output,
-            n_input=self.config.n_input,
-            gain=0.2,  # Conservative initialization
-            device=self.device,
-        ) * self.config.w_max
-
-        return nn.Parameter(weights)
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create neuron population for this pathway.
