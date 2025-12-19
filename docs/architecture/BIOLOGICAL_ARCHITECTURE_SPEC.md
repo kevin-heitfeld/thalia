@@ -1,7 +1,7 @@
 # Biologically Accurate Neural Communication Architecture
 
-**Date**: 2025-12-18
-**Status**: Design specification for v2.0 refactoring
+**Date**: 2025-12-19
+**Status**: Design specification for v2.0 refactoring (Phase 2: 67% complete)
 **Priority**: Critical - Foundation for entire project
 
 ## Part 1: How the Real Brain Works
@@ -386,8 +386,8 @@ class Brain(nn.Module):
 
 ### Phase 2: Migrate Core Regions
 
-**Status**: In Progress (Striatum ✅, PFC ✅, 4 regions remaining)
-**Goal**: Convert thalamus, cortex, hippocampus to new architecture.
+**Status**: In Progress (Striatum ✅, PFC ✅, Hippocampus ✅, LayeredCortex ✅, 2 regions remaining)
+**Goal**: Convert all 6 regions to NeuralRegion architecture.
 
 **Completed**:
 1. ✅ **Striatum** (2025-12-19):
@@ -410,46 +410,40 @@ class Brain(nn.Module):
    - Files: `prefrontal.py`, `prefrontal_checkpoint_manager.py`
    - Key insight: Single-source regions straightforward, checkpoint managers need updates
 
+3. ✅ **Hippocampus** (2025-12-19):
+   - Changed inheritance from NeuralComponent to NeuralRegion
+   - Moved 4 EC pathway weights to `synaptic_weights` dict (EC_spatial, EC_nonspatial, EC_temporal, EC_object)
+   - Internal weights (DG→CA3, CA3→CA1, CA3 recurrent) remain as nn.Parameter
+   - Added backward compatibility for Dict/Tensor inputs
+   - All 8 checkpoint tests passing
+   - Commit: cd87ff8
+   - Files: `trisynaptic.py`
+   - Key insight: Multi-source with internal cascade works cleanly - only external inputs move
+
+4. ✅ **LayeredCortex** (2025-12-19):
+   - Changed inheritance from NeuralComponent to NeuralRegion
+   - Moved w_input_l4 to `synaptic_weights["input"]` (only external weight)
+   - Internal cascade (w_l4_l23, w_l23_recurrent, w_l23_l5, w_l23_l6, w_l23_inhib) unchanged
+   - Added backward compatibility helpers (_reset_subsystems, _reset_scalars, get_effective_learning_rate, _apply_axonal_delay)
+   - Updated forward() to accept Union[Dict, Tensor]
+   - 15/17 tests passing (88%), 2 failures are pre-existing behavioral issues
+   - Commit: a418d9a
+   - Files: `layered_cortex.py`
+   - Key insight: Largest region (1789 lines) but simplest migration - only ONE external weight
+
 **Next Steps**:
-1. Convert `Hippocampus` (complex: DG→CA3→CA1 chain)
-   - Remove internal weights (it's mostly routing)
-   - Make it a simple relay with spike timing
+1. Convert `Thalamus` (relay nucleus TRN + mode switching)
+2. Convert `Cerebellum` (granule layer, Purkinje cells, DCN)
 
-2. Convert `LayeredCortex`:
-   ```python
-   class LayeredCortex(NeuralRegion):
-       def __init__(self, n_neurons, ...):
-           super().__init__(n_neurons, learning_rule="stdp")
+**Remaining Regions** (2/6):
+- **Thalamus**: TRN gating, relay mode switching, spatial filtering
+- **Cerebellum**: Granule→Purkinje→DCN cascade, motor learning
 
-           # Internal layers (L4, L2/3, L5, L6)
-           self.l4_neurons = ConductanceLIF(l4_size, ...)
-           self.l23_neurons = ConductanceLIF(l23_size, ...)
-           self.l5_neurons = ConductanceLIF(l5_size, ...)
-           self.l6_neurons = ConductanceLIF(l6_size, ...)
+**Time**: 2 days estimated (2 regions × 1 day each, based on current pace)
 
-           # Internal weights (within cortex)
-           self.w_l4_l23 = nn.Parameter(...)  # Stay here
-           self.w_l23_l5 = nn.Parameter(...)  # Stay here
-           self.w_l23_l6 = nn.Parameter(...)  # Stay here
+---
 
-           # External weights (from other regions) removed!
-           # These move to self.synaptic_weights dict inherited from NeuralRegion
-
-       def forward(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
-           # Get thalamic input through synapses
-           thalamic_current = self._apply_synapses("thalamus", inputs["thalamus"])
-
-           # L4 processing
-           l4_spikes = self.l4_neurons(thalamic_current)
-
-           # Internal cortical processing (unchanged)
-           l23_spikes = self._l4_to_l23(l4_spikes)
-           l5_spikes = self._l23_to_l5(l23_spikes)
-           l6_spikes = self._l23_to_l6(l23_spikes)
-
-           # Output (L2/3 + L5 for cortico-cortical)
-           return torch.cat([l23_spikes, l5_spikes])
-   ```
+**Historical Migration Notes**:
 
 3. ✅ Convert `Striatum` (COMPLETE):
    - Successfully moved weights from D1/D2 pathway objects to parent's synaptic_weights
@@ -595,8 +589,8 @@ def _process_region_event(self, region_name, events):
 - **Week 5**: Phase 3 (event system update)
 - **Week 6**: Phase 4 + Phase 5 (cleanup + optimization)
 
-**Progress**: 3/6 regions migrated (50%)
-**Elapsed**: 3 days total (Striatum, PFC, Hippocampus each completed in 1 day)
+**Progress**: 4/6 regions migrated (67%)
+**Elapsed**: 4 days total (Striatum, PFC, Hippocampus, LayeredCortex each completed in 1 day)
 **Last Updated**: 2025-12-19
 
 **Can parallelize**:

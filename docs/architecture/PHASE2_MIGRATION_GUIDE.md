@@ -1,6 +1,6 @@
 # Phase 2 Migration Guide: Region → NeuralRegion
 
-**Status**: In Progress (3/6 Complete: Striatum ✅, PFC ✅, Hippocampus ✅)
+**Status**: In Progress (4/6 Complete: Striatum ✅, PFC ✅, Hippocampus ✅, LayeredCortex ✅)
 **Target**: Migrate all brain regions to NeuralRegion base class
 **Estimated Time**: 2-3 weeks
 **Prerequisites**: Phase 1 complete ✅
@@ -85,8 +85,8 @@ def forward(self, inputs: Union[Dict[str, Tensor], Tensor]) -> Tensor:
 | 1 | **Striatum** | ✅ COMPLETE | 2-3 days | 1 day | Already multi-source, clear separation |
 | 2 | **PFC** | ✅ COMPLETE | 2-3 days | 1 day | Working memory, simpler than cortex |
 | 3 | **Hippocampus** | ✅ COMPLETE | 3-4 days | 1 day | DG→CA3→CA1 chain, 4 EC pathways |
-| 4 | **LayeredCortex** | 🔄 Next | 4-5 days | - | Complex laminar structure, multiple ports |
-| 5 | **Thalamus** | ⏳ Planned | 3-4 days | - | TRN, mode switching, spatial filtering |
+| 4 | **LayeredCortex** | ✅ COMPLETE | 4-5 days | 1 day | Complex laminar structure, internal cascade |
+| 5 | **Thalamus** | 🔄 Next | 3-4 days | - | TRN, mode switching, spatial filtering |
 | 6 | **Cerebellum** | ⏳ Planned | 3-4 days | - | Granule layer, Purkinje cells, DCN |
 
 ### 2. **Migration Pattern**
