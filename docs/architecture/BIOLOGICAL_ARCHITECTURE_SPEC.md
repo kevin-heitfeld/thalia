@@ -386,7 +386,7 @@ class Brain(nn.Module):
 
 ### Phase 2: Migrate Core Regions
 
-**Status**: In Progress (Striatum ✅, 5 regions remaining)
+**Status**: In Progress (Striatum ✅, PFC ✅, 4 regions remaining)
 **Goal**: Convert thalamus, cortex, hippocampus to new architecture.
 
 **Completed**:
@@ -400,8 +400,18 @@ class Brain(nn.Module):
    - Files: `striatum.py`, `pathway_base.py`
    - Key insight: Opponent pathways need separate full-size matrices for opposite learning rules
 
+2. ✅ **Prefrontal (PFC)** (2025-12-19):
+   - Changed inheritance from NeuralComponent to NeuralRegion
+   - Moved feedforward weights to `synaptic_weights["default"]`
+   - Single input source (simpler than multi-source Striatum)
+   - Internal weights (recurrent, inhibitory) remain as nn.Parameter
+   - All 9 checkpoint tests passing
+   - Commit: 6bbe11f
+   - Files: `prefrontal.py`, `prefrontal_checkpoint_manager.py`
+   - Key insight: Single-source regions straightforward, checkpoint managers need updates
+
 **Next Steps**:
-1. Convert `Thalamus`:
+1. Convert `Hippocampus` (complex: DG→CA3→CA1 chain)
    - Remove internal weights (it's mostly routing)
    - Make it a simple relay with spike timing
 
@@ -585,8 +595,8 @@ def _process_region_event(self, region_name, events):
 - **Week 5**: Phase 3 (event system update)
 - **Week 6**: Phase 4 + Phase 5 (cleanup + optimization)
 
-**Progress**: 1/6 regions migrated (16.7%)
-**Elapsed**: 1 day
+**Progress**: 2/6 regions migrated (33.3%)
+**Elapsed**: 1 day (both Striatum and PFC complete)
 **Last Updated**: 2025-12-19
 
 **Can parallelize**:

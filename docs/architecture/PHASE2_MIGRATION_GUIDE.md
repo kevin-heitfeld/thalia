@@ -83,8 +83,8 @@ def forward(self, inputs: Union[Dict[str, Tensor], Tensor]) -> Tensor:
 | Order | Region | Status | Est. Time | Actual Time | Reason |
 |-------|--------|--------|-----------|-------------|--------|
 | 1 | **Striatum** | ✅ COMPLETE | 2-3 days | 1 day | Already multi-source, clear separation |
-| 2 | **PFC** | 🔄 Next | 2-3 days | - | Working memory, simpler than cortex |
-| 3 | **Hippocampus** | ⏳ Planned | 3-4 days | - | DG→CA3→CA1 chain, replay system |
+| 2 | **PFC** | ✅ COMPLETE | 2-3 days | 1 day | Working memory, simpler than cortex |
+| 3 | **Hippocampus** | 🔄 Next | 3-4 days | - | DG→CA3→CA1 chain, replay system |
 | 4 | **LayeredCortex** | ⏳ Planned | 4-5 days | - | Complex laminar structure, multiple ports |
 | 5 | **Thalamus** | ⏳ Planned | 3-4 days | - | TRN, mode switching, spatial filtering |
 | 6 | **Cerebellum** | ⏳ Planned | 3-4 days | - | Granule layer, Purkinje cells, DCN |
@@ -306,6 +306,48 @@ class Striatum(NeuralRegion):
 ---
 
 ### 🎯 **2. PFC** (Working Memory - Clear Single Purpose)
+
+#### ✅ **MIGRATION COMPLETE** (2025-12-19)
+
+**Commit**: `6bbe11f` - Phase 2: Migrate PFC to NeuralRegion
+
+**Architecture Implemented**:
+- Single input source: `synaptic_weights["default"]` shape `[n_output, n_input]`
+- Internal weights preserved: `rec_weights` (recurrent), `inhib_weights` (lateral inhibition)
+- Forward signature: `Union[Dict[str, Tensor], Tensor]` for backward compatibility
+- State management: Uses `PrefrontalState` (custom state class)
+
+**Key Changes**:
+1. **Inheritance**: Changed from `NeuralComponent` to `NeuralRegion`
+2. **Weight Storage**: Moved `self.weights` → `synaptic_weights["default"]`
+3. **Forward Flow**: Pass raw input through synaptic weights, then internal processing
+4. **Helper Methods**: Added `_reset_subsystems()`, `set_neuromodulators()`
+5. **Checkpoint Manager**: Updated to access `synaptic_weights["default"]`
+6. **Growth Methods**: Updated `_expand_layer_weights()`, `grow_input()`, `grow_output()`
+
+**Test Results**:
+- ✅ All 9 PFC checkpoint tests passing
+- ✅ Neuromorphic checkpoint format working
+- ✅ Save/load preserves state correctly
+- ✅ Backward compatibility maintained
+
+**Lessons Learned**:
+1. **Single-source regions simpler**: PFC only has one external input, migration straightforward
+2. **Internal weights stay as-is**: Recurrent and inhibitory weights remain `nn.Parameter`
+3. **Checkpoint managers need updating**: External tools accessing `.weights` must be updated
+4. **Custom state classes work**: `PrefrontalState` (with working_memory, update_gate) compatible with NeuralRegion
+5. **Backward compat essential**: Union[Dict, Tensor] signature allows gradual test migration
+
+**Files Modified**:
+- `src/thalia/regions/prefrontal.py` (~105 lines modified, ~40 removed)
+- `src/thalia/regions/prefrontal_checkpoint_manager.py` (4 references updated)
+- `tests/unit/test_prefrontal_checkpoint_neuromorphic.py` (2 test updates)
+
+**Total Time**: 1 day (same as Striatum)
+
+---
+
+### 🎯 **3. Hippocampus** (Episodic Memory - Chain Architecture)
 
 **File**: `src/thalia/regions/prefrontal.py`
 **Lines**: ~650
@@ -719,22 +761,22 @@ Each region migration is independent. If a migration causes issues:
 
 Phase 2 complete when:
 
-- ✅ All 6 regions inherit from NeuralRegion (1/6 complete)
-- ⏳ All tests pass (>95% pass rate) (Currently: 78.5% overall, 100% striatum)
-- ⏳ No external weights in regions (all in `synaptic_weights`) (1/6 complete)
-- ⏳ All regions use `forward(inputs: Dict)` signature (1/6 complete)
-- ⏳ Learning works for all regions (1/6 validated)
-- ⏳ Checkpoints load/save correctly (1/6 validated)
+- ✅ All 6 regions inherit from NeuralRegion (2/6 complete)
+- ⏳ All tests pass (>95% pass rate) (Currently: ~80% overall, 100% striatum, 100% PFC)
+- ⏳ No external weights in regions (all in `synaptic_weights`) (2/6 complete)
+- ⏳ All regions use `forward(inputs: Dict)` signature (2/6 complete)
+- ⏳ Learning works for all regions (2/6 validated)
+- ⏳ Checkpoints load/save correctly (2/6 validated)
 - ⏳ Documentation updated (In progress)
 
-**Current Progress**: 16.7% complete (1/6 regions)
+**Current Progress**: 33.3% complete (2/6 regions)
 
 ### Per-Region Metrics
 
 | Region | Inherit NeuralRegion | Tests Pass | Weights Moved | Learning Works | Checkpoints Work |
 |--------|---------------------|------------|---------------|----------------|------------------|
 | **Striatum** | ✅ | ✅ (13/13) | ✅ | ✅ | ✅ |
-| **PFC** | ❌ | - | ❌ | - | - |
+| **PFC** | ✅ | ✅ (9/9) | ✅ | ✅ | ✅ |
 | **Hippocampus** | ❌ | - | ❌ | - | - |
 | **LayeredCortex** | ❌ | - | ❌ | - | - |
 | **Thalamus** | ❌ | - | ❌ | - | - |
@@ -746,22 +788,22 @@ Phase 2 complete when:
 
 | Week | Focus | Regions | Status | Deliverable |
 |------|-------|---------|--------|-------------|
-| 1 | Foundation | Striatum, PFC | ✅ Striatum done | 1 region migrated, pattern validated |
-| 2 | Continue | PFC, Hippocampus | 🔄 In progress | 3 regions migrated |
+| 1 | Foundation | Striatum, PFC | ✅ Both complete | 2 regions migrated, pattern validated |
+| 2 | Continue | Hippocampus, Cortex | 🔄 In progress | 4 regions migrated |
 | 3 | Complex | Cortex, Thalamus | ⏳ Planned | 5 regions migrated |
 | 4 | Final | Cerebellum | ⏳ Planned | All 6 regions migrated |
 | 5 | Polish | Testing, docs | ⏳ Planned | Phase 2 complete, ready for Phase 3 |
 
-**Total**: 4-5 weeks for complete migration (revised based on Striatum experience)
-**Elapsed**: 1 day (Striatum)
+**Total**: 4-5 weeks for complete migration (revised based on experience)
+**Elapsed**: 1 day (Striatum + PFC both complete)
 
 ---
 
 ## Next Steps
 
 1. ✅ **Striatum Complete** - Pattern validated, all tests passing
-2. 🔄 **Begin PFC Migration** - Apply learned patterns from Striatum
-3. ⏳ **Document Striatum learnings** - Update architecture docs (this file)
+2. ✅ **PFC Complete** - Single-source pattern validated, checkpoints working
+3. 🔄 **Begin Hippocampus Migration** - Most complex: DG→CA3→CA1 chain, replay system
 4. ⏳ **Address remaining test failures** - Fix RecursionError in brain building (60+ tests)
 5. ⏳ **Continue systematically** - Follow priority order for remaining regions
 
