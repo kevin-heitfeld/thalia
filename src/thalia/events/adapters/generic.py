@@ -49,10 +49,12 @@ class GenericEventAdapter(EventDrivenRegionBase):
     - Region requires multi-source input buffering (e.g., striatum D1/D2)
 
     Example - Auto-wrapping User Region:
+        from thalia.core.neural_region import NeuralRegion
+
         @register_region("my_region", config_class=MyConfig)
-        class MyRegion(NeuralComponent):
-            def forward(self, spikes):
-                return self.process(spikes)
+        class MyRegion(NeuralRegion):
+            def forward(self, inputs: Dict[str, Tensor]):
+                return self.process(inputs)
 
         # GenericEventAdapter automatically wraps it
         brain = (

@@ -14,8 +14,8 @@ Unlike EventDrivenBrain (hardcoded 6 regions), DynamicBrain supports:
 - Optional parallel execution across multiple CPU cores
 
 Architecture:
-    DynamicBrain = Graph of NeuralComponents
-    - nodes: regions, pathways, modules (all inherit from NeuralComponent)
+    DynamicBrain = Graph of Components
+    - nodes: regions (NeuralRegion), pathways (AxonalProjection), custom modules
     - edges: data flow between components
     - execution: event-driven via EventScheduler OR parallel via ParallelExecutor
 

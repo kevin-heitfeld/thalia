@@ -3,15 +3,16 @@
 This module defines the NeuralPathway protocol that standardizes the interface
 across sensory pathways, inter-region pathways, and specialized pathways.
 
-IMPORTANT: All pathways implement the BrainComponent protocol!
-===============================================================
-As of ADR-008 (Neural Component Consolidation), both brain regions and pathways
-inherit from NeuralComponent base class and implement the BrainComponent protocol
-(defined in component_protocol.py).
+IMPORTANT: Architecture Evolution (v3.0)
+=========================================
+- Brain regions now inherit from NeuralRegion (synaptic weights at dendrites)
+- Pathways can use NeuralComponent/LearnableComponent for custom implementations
+- AxonalProjection is the standard inter-region pathway (pure routing, no weights)
 
 This unified architecture ensures component parity:
 - Both regions and pathways process information via forward()
-- Both learn continuously during forward passes (no separate learn())
+- Regions learn at dendrites (synaptic_weights dict)
+- Pathways route spikes (AxonalProjection) or provide custom logic
 - Both maintain temporal state and support growth
 - Both provide diagnostics and health monitoring
 
@@ -49,29 +50,29 @@ Types of Pathways
 3. **Specialized Pathways**:
    - Sensory pathways transform raw input → spikes
    - Custom routing logic for complex architectures
-   - Inherit from NeuralComponent with specialized forward() behavior
+   - Can inherit from NeuralComponent for custom implementations
 
 Protocol Design:
 ================
 
 The protocol allows for flexibility while ensuring consistency:
 - All pathways must implement forward() (standard PyTorch convention, ADR-007)
-- Learning is automatic during forward passes
+- Regions learn at dendrites (NeuralRegion pattern)
 - State management and diagnostics are required
 - Type hints enable static checking
 
 Usage Example
 ==============
-All pathways (regions too) inherit from NeuralComponent:
+Custom pathways can inherit from NeuralComponent:
 
 .. code-block:: python
 
     from thalia.regions.base import NeuralComponent
 
-    # Define an inter-region pathway
+    # Define a custom pathway (NeuralComponent for custom implementations)
     class MyPathway(NeuralComponent):
         def forward(self, spikes):
-            # Transform spikes AND apply STDP (automatically)
+            # Transform spikes with custom logic
             return self.transform(spikes)
 
         def reset_state(self) -> None:
@@ -84,10 +85,11 @@ All pathways (regions too) inherit from NeuralComponent:
                 "weight_mean": self.weights.mean().item(),
             }
 
-    # Define a region (same interface!)
-    class MyCortex(NeuralComponent):
-        def forward(self, input_spikes):
-            return self.process_layers(input_spikes)
+    # Define a region (use NeuralRegion for brain regions)
+    from thalia.core.neural_region import NeuralRegion
+    class MyCortex(NeuralRegion):
+        def forward(self, inputs: Dict[str, Tensor]):
+            return self.process_layers(inputs)
 
 Author: Thalia Project
 Date: December 2025

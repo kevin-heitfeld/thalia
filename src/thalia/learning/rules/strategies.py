@@ -58,15 +58,17 @@ Components apply strategies during forward passes:
 
 .. code-block:: python
 
-    class MyRegion(NeuralComponent):
+    from thalia.core.neural_region import NeuralRegion
+
+    class MyRegion(NeuralRegion):
         def __init__(self, config):
             super().__init__(config)
             self.learning_strategy = STDPStrategy(
                 STDPConfig(a_plus=0.01, a_minus=0.012)
             )
 
-        def forward(self, input_spikes):
-            output = self._compute_output(input_spikes)
+        def forward(self, inputs: Dict[str, Tensor]):
+            output = self._compute_output(inputs)
 
             # Apply learning automatically during forward
             if self.plasticity_enabled:

@@ -73,7 +73,7 @@ class RegionRegistry:
 
         Args:
             name: Primary name for the region
-            region_class: Region class to register (NeuralComponent subclass)
+            region_class: Region class to register (NeuralRegion or NeuralComponent subclass)
             aliases: Optional list of alternative names
 
         Raises:
@@ -87,7 +87,7 @@ class RegionRegistry:
                 )
             return  # Same class, already registered
 
-        # Validate region_class is a NeuralComponent subclass
+        # Validate region_class is a proper region class (duck typing check)
         if not inspect.isclass(region_class):
             raise ConfigurationError(
                 f"Region class must be a class, got {region_class}"
@@ -95,7 +95,7 @@ class RegionRegistry:
 
         if not issubclass(region_class, NeuralComponent):
             raise ConfigurationError(
-                f"Region class must be a NeuralComponent subclass, got {region_class}"
+                f"Region class must be a NeuralRegion or NeuralComponent subclass, got {region_class}"
             )
 
         # Register primary name

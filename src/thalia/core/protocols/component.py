@@ -717,18 +717,18 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
     - **Growth**: Dynamic expansion during curriculum learning
     - **Diagnostics**: Health monitoring and activity metrics
 
-    This is the ONLY base class needed for brain regions and weighted pathways.
-    No intermediate NeuralComponent layer needed.
+    This is the base class for weighted pathways and legacy components.
+    Brain regions now use NeuralRegion (v3.0 architecture).
 
     Examples:
-    - Brain regions: `class Striatum(LearnableComponent)`
-    - Weighted pathways: `class SpikingPathway(LearnableComponent)`
-    - Laminar structures: `class LayeredCortex(LearnableComponent)`
+    - Brain regions (v3.0): `class Striatum(NeuralRegion)`  [PREFERRED]
+    - Weighted pathways: `class SpikingPathway(LearnableComponent)` [DEPRECATED]
+    - Custom pathways: `class MyPathway(LearnableComponent)`
 
-    Key Principle: If it has weights and learns, inherit from LearnableComponent.
+    Key Principle: Regions use NeuralRegion, pathways can use LearnableComponent.
 
-    Usage:
-        class MyRegion(LearnableComponent):
+    Usage (for custom pathways only):
+        class MyPathway(LearnableComponent):
             def __init__(self, config):
                 super().__init__(config)
                 # Weights and neurons already initialized via _initialize_weights/_create_neurons
