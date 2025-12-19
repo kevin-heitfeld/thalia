@@ -79,9 +79,9 @@ from typing import Optional, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 
-from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
-from thalia.regions.base import NeuralComponent, NeuralComponentState
+from thalia.regions.base import NeuralComponentState
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_coding import (
     PredictiveCodingLayer,
@@ -148,7 +148,7 @@ class PredictiveCortexState(NeuralComponentState):
     author="Thalia Project",
     config_class=PredictiveCortexConfig,
 )
-class PredictiveCortex(NeuralComponent):
+class PredictiveCortex(NeuralRegion):
     """
     Layered cortex with integrated predictive coding.
 
@@ -174,14 +174,14 @@ class PredictiveCortex(NeuralComponent):
 
     Mixins Provide:
     ---------------
-    From DiagnosticsMixin:
+    From DiagnosticsMixin (via NeuralRegion):
         - check_health() → HealthMetrics
         - get_firing_rate(spikes) → float
         - check_weight_health(weights, name) → WeightHealth
         - detect_runaway_excitation(spikes) → bool
 
-    From NeuralComponent (abstract base):
-        - forward(input, **kwargs) → Tensor [delegates to cortex]
+    From NeuralRegion:
+        - forward(inputs: Dict[str, Tensor], **kwargs) → Tensor [delegates to cortex]
         - reset_state() → None [delegates to cortex]
         - get_diagnostics() → Dict
 
@@ -228,16 +228,15 @@ class PredictiveCortex(NeuralComponent):
                 f"l23_size + l5_size ({l23_size} + {l5_size} = {_output_size})"
             )
 
-        # Create parent config for NeuralComponent
-        parent_config = NeuralComponentConfig(
-            n_input=config.n_input,
-            n_output=_output_size,
-            dt_ms=config.dt_ms,
+        # Call NeuralRegion init (v3.0 architecture)
+        # PredictiveCortex uses composition - actual neurons managed by inner LayeredCortex
+        super().__init__(
+            n_neurons=_output_size,
+            neuron_config=None,  # Managed by inner cortex
+            default_learning_rule=None,  # Managed by inner cortex
             device=config.device,
+            dt_ms=config.dt_ms,
         )
-
-        # Call parent init (our _initialize_weights returns None for lazy init)
-        super().__init__(parent_config)
 
         # =====================================================================
         # BASE LAYERED CORTEX (creates the L4→L2/3→L5 microcircuit)
@@ -320,26 +319,6 @@ class PredictiveCortex(NeuralComponent):
         self._cumulative_l4_spikes = 0
         self._cumulative_l23_spikes = 0
         self._cumulative_l5_spikes = 0
-
-    # =========================================================================
-    # ABSTRACT METHOD IMPLEMENTATIONS (from NeuralComponent)
-    # =========================================================================
-
-    def _initialize_weights(self) -> Optional[torch.Tensor]:
-        """Weights are managed by internal LayeredCortex (initialized after super().__init__).
-
-        Returns None to signal lazy initialization - actual weights are set
-        in __init__ after creating self.cortex.
-        """
-        return None
-
-    def _create_neurons(self) -> Optional[Any]:
-        """Neurons are managed by internal LayeredCortex (initialized after super().__init__).
-
-        Returns None to signal lazy initialization - actual neurons are set
-        in __init__ after creating self.cortex.
-        """
-        return None
 
     def reset_state(self) -> None:
         """Reset all states for new sequence."""
