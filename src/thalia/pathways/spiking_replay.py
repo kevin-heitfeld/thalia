@@ -1,6 +1,10 @@
 """
 Spiking Replay Pathway - Fully spiking Hippocampus → Cortex consolidation.
 
+⚠️ DEPRECATION WARNING: This module inherits from SpikingPathway, which is deprecated.
+In v3.0, replay should be implemented at the region level (e.g., in Hippocampus)
+rather than as a specialized pathway type.
+
 This pathway implements memory replay using spiking neurons with
 temporal coding. Sharp-wave ripples (SWRs) trigger compressed replay
 of hippocampal patterns to cortex.
@@ -11,6 +15,14 @@ Key features:
 3. Time-compressed replay (accelerated sequences)
 4. Phase precession for sequence encoding
 """
+
+import warnings
+warnings.warn(
+    "SpikingReplay inherits from deprecated SpikingPathway. "
+    "Consider implementing replay at the hippocampus region level.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any

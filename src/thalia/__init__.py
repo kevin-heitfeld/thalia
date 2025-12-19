@@ -105,8 +105,18 @@ from thalia.learning import (
     UnifiedHomeostasis,
 )
 
-# Pathways
+# Pathways (SpikingPathway deprecated - use AxonalProjection)
+import warnings
 from thalia.pathways.spiking_pathway import SpikingPathway
+
+# Warn users on first import
+warnings.warn(
+    "SpikingPathway is deprecated and will be removed in v3.0. "
+    "All regions now use NeuralRegion base class with synaptic_weights at dendrites. "
+    "Use AxonalProjection for connections between regions.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 # Visualization (optional - requires manim)
 # try:

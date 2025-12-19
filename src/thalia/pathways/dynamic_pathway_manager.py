@@ -142,8 +142,6 @@ class DynamicPathwayManager:
             # Component 'cortex' added 32 neurons
             manager.grow_connected_pathways('cortex', 32)
         """
-        from thalia.pathways.multi_source_pathway import MultiSourcePathway
-
         if component_name not in self._component_pathways:
             return  # No connected pathways
 
@@ -154,13 +152,17 @@ class DynamicPathwayManager:
 
             # Grow pathway input dimension if this component is the source
             if grow_outputs and src == component_name:
-                if isinstance(pathway, MultiSourcePathway):
-                    # Multi-source pathway - grow this specific source
-                    old_size = pathway.input_sizes.get(src, 0)
-                    new_size = old_size + growth_amount
-                    pathway.grow_source(src, new_size)
+                # Try to grow source (works for both AxonalProjection and legacy pathways)
+                if hasattr(pathway, 'grow_source'):
+                    try:
+                        # For multi-source pathways, specify which source is growing
+                        old_size = getattr(pathway, 'input_sizes', {}).get(src, pathway.config.n_input)
+                        new_size = old_size + growth_amount
+                        pathway.grow_source(src, new_size)
+                    except Exception:
+                        pass  # Pathway may not support growth
                 elif hasattr(pathway, 'grow_input'):
-                    # Single-source pathway - grow total input
+                    # Fallback for single-source pathways without grow_source
                     try:
                         pathway.grow_input(growth_amount)
                     except Exception:

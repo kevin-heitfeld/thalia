@@ -746,68 +746,11 @@ class BrainBuilder:
                 spec.instance = pathway
 
             else:
-                # Multiple sources
-                # Check if all specs request axonal pathway
-                all_axonal = all(s.pathway_type in ("axonal", "axonal_projection")
-                                for s in target_specs)
-
-                if all_axonal:
-                    # Create multi-source AxonalProjection
-                    pathway = self._create_axonal_projection(
-                        target_specs, components, target_name
-                    )
-                    for spec in target_specs:
-                        connections[(spec.source, spec.target)] = pathway
-                        spec.instance = pathway
-                    continue
-
-                # Multiple sources - create MultiSourcePathway
-                from thalia.pathways.multi_source_pathway import MultiSourcePathway
-                from thalia.core.base.component_config import PathwayConfig
-
-                # Collect source information
-                sources = []
-                total_input_size = 0
-                for spec in target_specs:
-                    source_comp = components[spec.source]
-                    source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
-                    # Store port info for documentation (extraction happens in DynamicBrain before buffering)
-                    sources.append((spec.source, spec.source_port))
-                    total_input_size += source_output_size
-
-                # Use first spec's config params as base (they should be compatible)
-                base_spec = target_specs[0]
-                filtered_config_params = {
-                    k: v for k, v in base_spec.config_params.items()
-                    if not k.startswith("_")
-                }
-
-                # Create multi-source pathway config
-                pathway_config = PathwayConfig(
-                    n_input=total_input_size,  # Will be recalculated by MultiSourcePathway
-                    n_output=self._get_pathway_target_size(target_comp, base_spec.target_port),
-                    device=self.global_config.device,
-                    dt_ms=self.global_config.dt_ms,
-                    **filtered_config_params,
+                # Multiple sources - must use AxonalProjection
+                # Legacy SpikingPathway/MultiSourcePathway no longer supported
+                pathway = self._create_axonal_projection(
+                    target_specs, components, target_name
                 )
-
-                # Create multi-source pathway
-                pathway = MultiSourcePathway(
-                    sources=sources,
-                    target=target_name,
-                    config=pathway_config,
-                )
-
-                # Set correct sizes for each source
-                for spec in target_specs:
-                    source_comp = components[spec.source]
-                    source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
-                    pathway.set_source_size(spec.source, source_output_size)
-
-                # Move to correct device
-                pathway.to(self.global_config.device)
-
-                # Register pathway for all source->target pairs
                 for spec in target_specs:
                     connections[(spec.source, spec.target)] = pathway
                     spec.instance = pathway

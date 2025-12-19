@@ -1,6 +1,10 @@
 """
 Spiking Attention Pathway - Fully spiking PFC → Cortex attention modulation.
 
+⚠️ DEPRECATION WARNING: This module inherits from SpikingPathway, which is deprecated.
+In v3.0, attention should be implemented at the region level (e.g., in PFC or Cortex)
+rather than as a specialized pathway type.
+
 This pathway implements top-down attention using spiking neurons with
 temporal coding. The PFC attention signal modulates cortical processing
 through precise spike timing.
@@ -11,6 +15,14 @@ Key features:
 3. Phase coupling to theta oscillations
 4. Spike-timing-dependent gain modulation
 """
+
+import warnings
+warnings.warn(
+    "SpikingAttention inherits from deprecated SpikingPathway. "
+    "Consider implementing attention at the region level (PFC/Cortex).",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
