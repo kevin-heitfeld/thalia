@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
-from thalia.core.base.component_config import PathwayConfig
-from thalia.pathways.spiking_pathway import SpikingPathway
+from thalia.pathways.axonal_projection import AxonalProjection, SourceSpec
 
 if TYPE_CHECKING:
     from thalia.core.dynamic_brain import DynamicBrain
@@ -103,26 +102,22 @@ def _create_input_pathway(
     # Get source region
     source_region = _get_region(brain, source_region_name)
     source_size = source_region.config.n_output
-    target_size = target_region.config.n_input
 
-    # Create pathway
-    pathway_name = f"{source_region_name}_to_{target_region_name}"
-    pathway_config = PathwayConfig(
-        n_input=source_size,
-        n_output=target_size,
+    # Create AxonalProjection (pure routing, no weights)
+    # Weights will be in target region's synaptic_weights dict
+    sources = [SourceSpec(region_name=source_region_name, port=None, size=source_size)]
+
+    pathway = AxonalProjection(
+        sources=sources,
+        axonal_delay_ms=3.0,  # Default 3ms delay
         device=brain.device,
-        dt_ms=brain.config.dt_ms,
-        delay_timesteps=3,  # Default 3ms delay
-        stdp_enabled=True,
     )
-
-    pathway = SpikingPathway(pathway_config)
     pathway.to(brain.device)
 
-    # Register pathway
-    brain.pathway_manager.register_pathway(pathway_name, pathway)
+    # Add connection to brain
+    brain.add_connection(source_region_name, target_region_name, pathway)
 
-    print(f"  ➕ Created input pathway: {pathway_name}")
+    print(f"  ➕ Created input pathway: {source_region_name} → {target_region_name}")
 
 
 def _create_output_pathway(
@@ -134,26 +129,21 @@ def _create_output_pathway(
     """Create pathway from new region to existing region."""
     from .lesion import _get_region
 
-    # Get target region
-    target_region = _get_region(brain, target_region_name)
+    # Get source region size
     source_size = source_region.config.n_output
-    target_size = target_region.config.n_input
 
-    # Create pathway
-    pathway_name = f"{source_region_name}_to_{target_region_name}"
-    pathway_config = PathwayConfig(
-        n_input=source_size,
-        n_output=target_size,
+    # Create AxonalProjection (pure routing, no weights)
+    # Weights will be in target region's synaptic_weights dict
+    sources = [SourceSpec(region_name=source_region_name, port=None, size=source_size)]
+
+    pathway = AxonalProjection(
+        sources=sources,
+        axonal_delay_ms=3.0,  # Default 3ms delay
         device=brain.device,
-        dt_ms=brain.config.dt_ms,
-        delay_timesteps=3,  # Default 3ms delay
-        stdp_enabled=True,
     )
-
-    pathway = SpikingPathway(pathway_config)
     pathway.to(brain.device)
 
-    # Register pathway
-    brain.pathway_manager.register_pathway(pathway_name, pathway)
+    # Add connection to brain
+    brain.add_connection(source_region_name, target_region_name, pathway)
 
-    print(f"  ➕ Created output pathway: {pathway_name}")
+    print(f"  ➕ Created output pathway: {source_region_name} → {target_region_name}")
