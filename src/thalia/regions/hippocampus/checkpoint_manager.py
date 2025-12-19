@@ -155,7 +155,7 @@ class HippocampusCheckpointManager:
                 "created_step": 0,
                 "membrane": dg_membrane[i].item(),
                 "incoming_synapses": self._extract_synapses_for_neuron(
-                    i, h.w_ec_dg, "ec_neuron"
+                    i, h.synaptic_weights["ec_dg"], "ec_neuron"
                 ),
             }
             neurons.append(neuron_data)
@@ -190,13 +190,14 @@ class HippocampusCheckpointManager:
 
             # CA1 has three sets of incoming synapses: from CA3, from EC L3, and from EC direct
             ca3_synapses = self._extract_synapses_for_neuron(i, h.w_ca3_ca1, "hippo_ca3_neuron")
-            ec_synapses = self._extract_synapses_for_neuron(i, h.w_ec_ca1, "ec_neuron")
+            ec_synapses = self._extract_synapses_for_neuron(i, h.synaptic_weights["ec_ca1"], "ec_neuron")
 
             all_synapses = ca3_synapses + ec_synapses
 
             # Add EC L3 synapses if present
-            if h.w_ec_l3_ca1 is not None:
-                ec_l3_synapses = self._extract_synapses_for_neuron(i, h.w_ec_l3_ca1, "ec_l3_neuron")
+            w_ec_l3_ca1 = h.synaptic_weights.get("ec_l3_ca1", None)
+            if w_ec_l3_ca1 is not None:
+                ec_l3_synapses = self._extract_synapses_for_neuron(i, w_ec_l3_ca1, "ec_l3_neuron")
                 all_synapses.extend(ec_l3_synapses)
 
             neuron_data = {
@@ -311,7 +312,7 @@ class HippocampusCheckpointManager:
 
         # Restore DG neurons
         n_dg = h.dg_size
-        dg_weights_restored = torch.zeros_like(h.w_ec_dg)
+        dg_weights_restored = torch.zeros_like(h.synaptic_weights["ec_dg"])
 
         for i in range(n_dg):
             neuron_id = f"hippo_dg_neuron_{i}_step0"
@@ -329,10 +330,10 @@ class HippocampusCheckpointManager:
                     source_id = synapse["from"]
                     if source_id.startswith("ec_neuron_"):
                         source_idx = int(source_id.split("_")[-1])
-                        if source_idx < h.w_ec_dg.shape[1]:
+                        if source_idx < h.synaptic_weights["ec_dg"].shape[1]:
                             dg_weights_restored[i, source_idx] = synapse["weight"]
 
-        h.w_ec_dg.data = dg_weights_restored
+        h.synaptic_weights["ec_dg"].data = dg_weights_restored
 
         # Restore CA3 neurons
         n_ca3 = h.ca3_size
@@ -369,8 +370,9 @@ class HippocampusCheckpointManager:
         # Restore CA1 neurons
         n_ca1 = h.ca1_size
         ca1_ca3_weights_restored = torch.zeros_like(h.w_ca3_ca1)
-        ca1_ec_weights_restored = torch.zeros_like(h.w_ec_ca1)
-        ca1_ec_l3_weights_restored = torch.zeros_like(h.w_ec_l3_ca1) if h.w_ec_l3_ca1 is not None else None
+        ca1_ec_weights_restored = torch.zeros_like(h.synaptic_weights["ec_ca1"])
+        w_ec_l3_ca1 = h.synaptic_weights.get("ec_l3_ca1", None)
+        ca1_ec_l3_weights_restored = torch.zeros_like(w_ec_l3_ca1) if w_ec_l3_ca1 is not None else None
 
         for i in range(n_ca1):
             neuron_id = f"hippo_ca1_neuron_{i}_step0"
@@ -393,18 +395,18 @@ class HippocampusCheckpointManager:
 
                     elif source_id.startswith("ec_neuron_"):
                         source_idx = int(source_id.split("_")[-1])
-                        if source_idx < h.w_ec_ca1.shape[1]:
+                        if source_idx < h.synaptic_weights["ec_ca1"].shape[1]:
                             ca1_ec_weights_restored[i, source_idx] = synapse["weight"]
 
                     elif source_id.startswith("ec_l3_neuron_") and ca1_ec_l3_weights_restored is not None:
                         source_idx = int(source_id.split("_")[-1])
-                        if source_idx < h.w_ec_l3_ca1.shape[1]:
+                        if w_ec_l3_ca1 is not None and source_idx < w_ec_l3_ca1.shape[1]:
                             ca1_ec_l3_weights_restored[i, source_idx] = synapse["weight"]
 
         h.w_ca3_ca1.data = ca1_ca3_weights_restored
-        h.w_ec_ca1.data = ca1_ec_weights_restored
-        if h.w_ec_l3_ca1 is not None and ca1_ec_l3_weights_restored is not None:
-            h.w_ec_l3_ca1.data = ca1_ec_l3_weights_restored
+        h.synaptic_weights["ec_ca1"].data = ca1_ec_weights_restored
+        if w_ec_l3_ca1 is not None and ca1_ec_l3_weights_restored is not None:
+            h.synaptic_weights["ec_l3_ca1"].data = ca1_ec_l3_weights_restored
 
         # Update weight reference
         h.weights = h.w_ca3_ca1

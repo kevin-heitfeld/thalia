@@ -67,7 +67,7 @@ References:
 
 import math
 from dataclasses import replace
-from typing import Optional, Dict, Any, List, cast
+from typing import Optional, Dict, Any, List, Union, cast
 
 import torch
 import torch.nn as nn
@@ -86,6 +86,7 @@ from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
 from thalia.components.synapses.traces import update_trace
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.core.neural_region import NeuralRegion
 from thalia.regions.base import NeuralComponent
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
@@ -102,7 +103,7 @@ from .checkpoint_manager import HippocampusCheckpointManager
     author="Thalia Project",
     config_class=HippocampusConfig,
 )
-class TrisynapticHippocampus(NeuralComponent):
+class TrisynapticHippocampus(NeuralRegion):
     """
     Biologically-accurate hippocampus with DG→CA3→CA1 trisynaptic circuit.
 
@@ -160,7 +161,10 @@ class TrisynapticHippocampus(NeuralComponent):
 
     def __init__(self, config: HippocampusConfig):
         """Initialize trisynaptic hippocampus."""
+        # Store config
         self.tri_config = config
+        self.config = config  # For backward compatibility
+        self.device = torch.device(config.device)
 
         # Debug flag for learning investigation (set externally)
         self._debug_hippo = False
@@ -170,8 +174,14 @@ class TrisynapticHippocampus(NeuralComponent):
         self.ca3_size = int(self.dg_size * config.ca3_size_ratio)
         self.ca1_size = config.n_output  # CA1 matches output
 
-        # Call parent init
-        super().__init__(config)
+        # Initialize NeuralRegion with total neurons across all layers
+        super().__init__(
+            n_neurons=self.dg_size + self.ca3_size + self.ca1_size,
+            neuron_config=None,  # We create custom neurons for each layer
+            default_learning_rule="hebbian",  # Hippocampus uses Hebbian learning
+            device=config.device,
+            dt_ms=config.dt_ms,
+        )
 
         # Initialize oscillator-related state
         self._gamma_amplitude_effective: float = 1.0
@@ -398,10 +408,14 @@ class TrisynapticHippocampus(NeuralComponent):
         """Initialize all circuit weights."""
         device = torch.device(self.tri_config.device)
 
-        # EC → DG: Random sparse projections (each DG cell sees random subset)
-        # This creates orthogonal codes for pattern separation
-        # Uses row normalization for reliable activity propagation
-        self.w_ec_dg = nn.Parameter(
+        # =====================================================================
+        # EXTERNAL WEIGHTS: Move to synaptic_weights dict (NeuralRegion pattern)
+        # =====================================================================
+        # Register external input source and create synaptic weights
+        self.add_input_source("ec", n_input=self.tri_config.n_input)
+
+        # EC → DG: Random sparse projections (pattern separation)
+        self.synaptic_weights["ec_dg"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.dg_size,
                 n_input=self.tri_config.n_input,
@@ -411,6 +425,52 @@ class TrisynapticHippocampus(NeuralComponent):
                 device=device
             )
         )
+
+        # EC → CA3: Direct perforant path (layer II) - for retrieval cues
+        self.synaptic_weights["ec_ca3"] = nn.Parameter(
+            WeightInitializer.sparse_random(
+                n_output=self.ca3_size,
+                n_input=self.tri_config.n_input,
+                sparsity=0.4,  # Less sparse than DG path
+                weight_scale=0.3,  # Weaker than DG→CA3
+                normalize_rows=True,
+                device=device
+            )
+        )
+
+        # EC → CA1: Direct pathway - SPARSE and PLASTIC!
+        self.synaptic_weights["ec_ca1"] = nn.Parameter(
+            WeightInitializer.sparse_random(
+                n_output=self.ca1_size,
+                n_input=self.tri_config.n_input,
+                sparsity=0.20,  # Each CA1 sees only 20% of EC
+                weight_scale=0.3,  # Strong individual weights
+                normalize_rows=False,  # NO normalization - pattern-specific!
+                device=device
+            )
+        )
+
+        # EC Layer III → CA1: Separate pathway for raw sensory input (optional)
+        self._ec_l3_input_size = self.tri_config.ec_l3_input_size
+        if self._ec_l3_input_size > 0:
+            self.add_input_source("ec_l3", n_input=self._ec_l3_input_size)
+            self.synaptic_weights["ec_l3_ca1"] = nn.Parameter(
+                WeightInitializer.sparse_random(
+                    n_output=self.ca1_size,
+                    n_input=self._ec_l3_input_size,
+                    sparsity=0.20,
+                    weight_scale=0.3,
+                    device=device,
+                )
+            )
+
+        # =====================================================================
+        # INTERNAL WEIGHTS: Keep as nn.Parameter (within-hippocampus connections)
+        # =====================================================================
+
+        # =====================================================================
+        # INTERNAL WEIGHTS: Keep as nn.Parameter (within-hippocampus connections)
+        # =====================================================================
 
         # DG → CA3: Random but less sparse (mossy fibers)
         # Uses row normalization for reliable activity propagation
@@ -425,28 +485,8 @@ class TrisynapticHippocampus(NeuralComponent):
             )
         )
 
-        # EC → CA3: Direct perforant path (layer II)
-        # Less sparse than DG→CA3, preserves input similarity for retrieval cues
-        # This is CRITICAL for cue-based retrieval: partial cues seed the CA3 attractor
-        # Biological: ~40% connectivity, weaker than DG→CA3 but more direct
-        self.w_ec_ca3 = nn.Parameter(
-            WeightInitializer.sparse_random(
-                n_output=self.ca3_size,
-                n_input=self.tri_config.n_input,
-                sparsity=0.4,  # Less sparse than DG path
-                weight_scale=0.3,  # Weaker than DG→CA3
-                normalize_rows=True,
-                device=device
-            )
-        )
-
         # CA3 → CA3: Recurrent connections (autoassociative memory)
         # Initialize with small random values - these will be LEARNED via Hebbian
-        # For an attractor network, we need weights strong enough that when ~10% of
-        # neurons fire (N=32), the recurrent input exceeds threshold:
-        #   N * avg_weight * recurrent_strength > threshold
-        #   32 * 0.15 * 0.4 = 1.92 > 1.0 ✓
-        # We use slightly larger initial weights to bootstrap the network
         self.w_ca3_ca3 = nn.Parameter(
             WeightInitializer.gaussian(
                 n_output=self.ca3_size,
@@ -463,17 +503,6 @@ class TrisynapticHippocampus(NeuralComponent):
             self.w_ca3_ca3.data.clamp_(min=0.0)
 
         # CA3 → CA1: Feedforward (retrieved memory) - SPARSE!
-        # CRITICAL: This MUST be sparse so that different CA3 patterns activate
-        # different CA1 subpopulations. Otherwise, ALL CA1 neurons get high input
-        # from ANY CA3 pattern, and the mg_block is always 1.0.
-        #
-        # With dense connectivity:
-        #   Every CA1 gets ~24 CA3 spikes × 0.15 weight = 3.6 input → mg_block = 1.0
-        #
-        # With sparse connectivity (15%):
-        #   Each CA1 gets ~24 × 0.15 × 0.15 = 0.54 input on average
-        #   Only CA1 neurons connected to the active CA3 subset get high input
-        #   This creates PATTERN-SPECIFIC CA1 activation → NMDA gating works!
         self.w_ca3_ca1 = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca1_size,
@@ -485,53 +514,6 @@ class TrisynapticHippocampus(NeuralComponent):
             )
         )
 
-        # EC → CA1: Direct pathway - SPARSE and PLASTIC!
-        # CRITICAL INSIGHT: This pathway must LEARN to align with the indirect
-        # EC→DG→CA3→CA1 pathway during memory encoding.
-        #
-        # We use SPARSE initial connectivity so that:
-        # 1. Different EC patterns naturally activate different CA1 subsets
-        # 2. Hebbian learning strengthens the connections that are used
-        # 3. For a mismatched pattern, EC activates DIFFERENT CA1 neurons
-        #    than CA3, so there's no coincidence
-        #
-        # During SAMPLE phase:
-        #   - CA3 drives CA1 (retrieved/encoded pattern)
-        #   - CA1 fires for certain neurons
-        #   - EC→CA1 weights strengthen for active EC inputs → active CA1 neurons
-        #
-        # During TEST phase:
-        #   - MATCH: Same EC input → same EC→CA1 activation → coincidence with CA3
-        #   - MISMATCH: Different EC input → different EC→CA1 activation → no coincidence
-        self.w_ec_ca1 = nn.Parameter(
-            WeightInitializer.sparse_random(
-                n_output=self.ca1_size,
-                n_input=self.tri_config.n_input,
-                sparsity=0.20,  # Each CA1 sees only 20% of EC
-                weight_scale=0.3,  # Strong individual weights
-                normalize_rows=False,  # NO normalization - pattern-specific!
-                device=device
-            )
-        )
-
-        # EC Layer III → CA1: Separate pathway for raw sensory input
-        # In biology, EC layer III pyramidal cells project directly to CA1
-        # (temporoammonic path), carrying raw sensory information that is
-        # compared against the retrieved memory from CA3.
-        self._ec_l3_input_size = self.tri_config.ec_l3_input_size
-        if self._ec_l3_input_size > 0:
-            self.w_ec_l3_ca1 = nn.Parameter(
-                WeightInitializer.sparse_random(
-                    n_output=self.ca1_size,
-                    n_input=self._ec_l3_input_size,
-                    sparsity=0.20,
-                    weight_scale=0.3,
-                    device=device,
-                )
-            )
-        else:
-            self.w_ec_l3_ca1 = None  # Fall back to w_ec_ca1
-
         # CA1 lateral inhibition for competition
         self.w_ca1_inhib = nn.Parameter(
             torch.ones(self.ca1_size, self.ca1_size, device=device) * 0.5
@@ -539,8 +521,38 @@ class TrisynapticHippocampus(NeuralComponent):
         with torch.no_grad():
             self.w_ca1_inhib.data.fill_diagonal_(0.0)
 
-        # Store main weights reference for compatibility
-        self.weights = self.w_ca3_ca1
+        # Store main weights reference for compatibility (points to default external input)
+        self.weights = self.synaptic_weights["ec"]
+
+    def _reset_subsystems(self, *names: str) -> None:
+        """Reset state of named subsystems that have reset_state() method."""
+        for name in names:
+            if hasattr(self, name):
+                subsystem = getattr(self, name)
+                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                    subsystem.reset_state()
+
+    def get_neuromodulator_state(self) -> Dict[str, float]:
+        """Return current neuromodulator levels as a dict."""
+        return {
+            "dopamine": self.state.dopamine,
+            "acetylcholine": self.state.acetylcholine,
+            "norepinephrine": self.state.norepinephrine,
+        }
+
+    def set_neuromodulators(
+        self,
+        dopamine: Optional[float] = None,
+        acetylcholine: Optional[float] = None,
+        norepinephrine: Optional[float] = None,
+    ) -> None:
+        """Set neuromodulator levels (Brain → Region API)."""
+        if dopamine is not None:
+            self.state.dopamine = dopamine
+        if acetylcholine is not None:
+            self.state.acetylcholine = acetylcholine
+        if norepinephrine is not None:
+            self.state.norepinephrine = norepinephrine
 
     def reset_state(self) -> None:
         """Reset state for new episode.
@@ -660,8 +672,8 @@ class TrisynapticHippocampus(NeuralComponent):
         # 1. Expand input→DG weights [dg, input]
         # Add rows for new DG neurons
         new_input_dg = new_weights_for(dg_growth, self.tri_config.n_input)
-        self.w_ec_dg = nn.Parameter(
-            torch.cat([self.w_ec_dg.data, new_input_dg], dim=0)
+        self.synaptic_weights["ec_dg"] = nn.Parameter(
+            torch.cat([self.synaptic_weights["ec_dg"].data, new_input_dg], dim=0)
         )
 
         # 2. Expand DG→CA3 weights [ca3, dg]
@@ -678,8 +690,8 @@ class TrisynapticHippocampus(NeuralComponent):
         # 3. Expand EC→CA3 direct perforant path [ca3, n_input]
         # Only expand rows (CA3), input size is fixed
         new_ec_ca3_rows = new_weights_for(ca3_growth, self.tri_config.n_input)
-        self.w_ec_ca3 = nn.Parameter(
-            torch.cat([self.w_ec_ca3.data, new_ec_ca3_rows], dim=0)
+        self.synaptic_weights["ec_ca3"] = nn.Parameter(
+            torch.cat([self.synaptic_weights["ec_ca3"].data, new_ec_ca3_rows], dim=0)
         )
 
         # 4. Expand CA3→CA3 recurrent weights [ca3, ca3]
@@ -756,14 +768,14 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # Expand EC→DG weights [dg, input] → [dg, input+n_new]
         new_input_cols = new_weights_for(self.dg_size, n_new)
-        self.w_ec_dg = nn.Parameter(
-            torch.cat([self.w_ec_dg.data, new_input_cols], dim=1)
+        self.synaptic_weights["ec_dg"] = nn.Parameter(
+            torch.cat([self.synaptic_weights["ec_dg"].data, new_input_cols], dim=1)
         )
 
         # Expand EC→CA3 direct perforant path [ca3, input] → [ca3, input+n_new]
         new_perforant_cols = new_weights_for(self.ca3_size, n_new)
-        self.w_ec_ca3 = nn.Parameter(
-            torch.cat([self.w_ec_ca3.data, new_perforant_cols], dim=1)
+        self.synaptic_weights["ec_ca3"] = nn.Parameter(
+            torch.cat([self.synaptic_weights["ec_ca3"].data, new_perforant_cols], dim=1)
         )
 
         # Update config
@@ -775,7 +787,7 @@ class TrisynapticHippocampus(NeuralComponent):
 
     def forward(
         self,
-        input_spikes: torch.Tensor,
+        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
         ec_direct_input: Optional[torch.Tensor] = None,
         **kwargs
     ) -> torch.Tensor:
@@ -783,7 +795,8 @@ class TrisynapticHippocampus(NeuralComponent):
         Process input spikes through DG→CA3→CA1 circuit.
 
         Args:
-            input_spikes: Input spike pattern [n_input] (1D, no batch)
+            inputs: Input spikes - Dict mapping source names to spike tensors,
+                   or single Tensor for backward compatibility [n_input]
             ec_direct_input: Optional separate input for EC→CA1 direct pathway [n_input] (1D)
                             If None, uses input_spikes (original behavior).
                             When provided, this models EC layer III input which
@@ -802,6 +815,13 @@ class TrisynapticHippocampus(NeuralComponent):
             - EC layer III: Optional separate input for direct EC→CA1 (biologically
               accurate - EC L3 carries raw sensory info, EC L2 goes through DG)
         """
+        # Backward compatibility: convert Tensor to Dict
+        if isinstance(inputs, torch.Tensor):
+            inputs = {"ec": inputs}
+
+        # Get the input spikes (hippocampus typically receives from EC)
+        input_spikes = inputs.get("ec", torch.zeros(self.tri_config.n_input, device=self.device))
+
         # Ensure 1D input (single sample, no batch)
         input_spikes = input_spikes.squeeze()
         assert input_spikes.dim() == 1, (
@@ -881,7 +901,7 @@ class TrisynapticHippocampus(NeuralComponent):
         # 1. DENTATE GYRUS: Pattern Separation
         # =====================================================================
         # Random projections create orthogonal sparse codes
-        dg_code = torch.matmul(self.w_ec_dg, input_spikes_float)  # [dg_size]
+        dg_code = torch.matmul(self.synaptic_weights["ec_dg"], input_spikes_float)  # [dg_size]
 
         # Apply FFI: reduce DG drive when input changes significantly
         # ffi_strength is now normalized to [0, 1]
@@ -987,7 +1007,7 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # Direct perforant path from EC (provides retrieval cues)
         # Strong during retrieval to seed the CA3 attractor from partial cues
-        ca3_from_ec = torch.matmul(self.w_ec_ca3, input_spikes.float()) * ec_ca3_gate  # [ca3_size]
+        ca3_from_ec = torch.matmul(self.synaptic_weights["ec_ca3"], input_spikes.float()) * ec_ca3_gate  # [ca3_size]
 
         # Total feedforward input to CA3
         ca3_ff = ca3_from_dg + ca3_from_ec
@@ -1338,30 +1358,33 @@ class TrisynapticHippocampus(NeuralComponent):
         # Otherwise, we use the same weights as EC L2
         #
         # EC→CA1 also has STP (depressing) - first presentation is strongest
-        if ec_direct_input is not None and self.w_ec_l3_ca1 is not None:
+        w_ec_l3_ca1 = self.synaptic_weights.get("ec_l3_ca1", None)
+        w_ec_ca1 = self.synaptic_weights["ec_ca1"]
+
+        if ec_direct_input is not None and w_ec_l3_ca1 is not None:
             # Use separate EC L3 weights for raw sensory input
             if self.stp_ec_ca1 is not None:
                 stp_efficacy = self.stp_ec_ca1(ec_direct_input.float())
                 # Note: EC L3 may have different size, need to handle
-                effective_w = self.w_ec_l3_ca1 * stp_efficacy.T
+                effective_w = w_ec_l3_ca1 * stp_efficacy.T
                 ca1_from_ec = torch.matmul(effective_w, ec_direct_input.float())  # [ca1_size]
             else:
-                ca1_from_ec = torch.matmul(self.w_ec_l3_ca1, ec_direct_input.float())  # [ca1_size]
+                ca1_from_ec = torch.matmul(w_ec_l3_ca1, ec_direct_input.float())  # [ca1_size]
             ec_input_for_ca1 = ec_direct_input
         elif ec_direct_input is not None:
             # ec_direct_input provided but same size as EC L2
             if self.stp_ec_ca1 is not None:
                 stp_efficacy = self.stp_ec_ca1(ec_direct_input.float())
-                effective_w = self.w_ec_ca1 * stp_efficacy.T
+                effective_w = w_ec_ca1 * stp_efficacy.T
                 ca1_from_ec = torch.matmul(effective_w, ec_direct_input.float())  # [ca1_size]
             else:
-                ca1_from_ec = torch.matmul(self.w_ec_ca1, ec_direct_input.float())  # [ca1_size]
+                ca1_from_ec = torch.matmul(w_ec_ca1, ec_direct_input.float())  # [ca1_size]
             ec_input_for_ca1 = ec_direct_input
         else:
             # Fall back to input_spikes (original behavior)
             # Note: STP for EC→CA1 is sized for ec_l3_input_size, not n_input,
             # so we don't apply STP when falling back to input_spikes
-            ca1_from_ec = torch.matmul(self.w_ec_ca1, input_spikes.float())  # [ca1_size]
+            ca1_from_ec = torch.matmul(w_ec_ca1, input_spikes.float())  # [ca1_size]
             ec_input_for_ca1 = input_spikes
 
         # Apply feedforward inhibition: strong input change reduces CA1 drive
@@ -1448,12 +1471,12 @@ class TrisynapticHippocampus(NeuralComponent):
             dW = effective_lr * torch.outer(ca1_activity, ec_activity)
             with torch.no_grad():
                 # Update the appropriate weight matrix
-                if ec_direct_input is not None and self.w_ec_l3_ca1 is not None:
-                    self.w_ec_l3_ca1.data += dW
-                    clamp_weights(self.w_ec_l3_ca1.data, cfg.w_min, cfg.w_max)
+                if ec_direct_input is not None and w_ec_l3_ca1 is not None:
+                    self.synaptic_weights["ec_l3_ca1"].data += dW
+                    clamp_weights(self.synaptic_weights["ec_l3_ca1"].data, cfg.w_min, cfg.w_max)
                 else:
-                    self.w_ec_ca1.data += dW
-                    clamp_weights(self.w_ec_ca1.data, cfg.w_min, cfg.w_max)
+                    self.synaptic_weights["ec_ca1"].data += dW
+                    clamp_weights(self.synaptic_weights["ec_ca1"].data, cfg.w_min, cfg.w_max)
 
         self.state.ca1_spikes = ca1_spikes
 
@@ -2054,11 +2077,11 @@ class TrisynapticHippocampus(NeuralComponent):
         return self.collect_standard_diagnostics(
             region_name="hippocampus",
             weight_matrices={
-                "ec_dg": self.w_ec_dg.data,
+                "ec_dg": self.synaptic_weights["ec_dg"].data,
                 "dg_ca3": self.w_dg_ca3.data,
                 "ca3_ca3": self.w_ca3_ca3.data,
                 "ca3_ca1": self.w_ca3_ca1.data,
-                "ec_ca1": self.w_ec_ca1.data,
+                "ec_ca1": self.synaptic_weights["ec_ca1"].data,
             },
             custom_metrics=custom,
         )
@@ -2076,13 +2099,14 @@ class TrisynapticHippocampus(NeuralComponent):
             Dictionary with complete region state
         """
         # 1. LEARNABLE PARAMETERS (weights for all pathways)
+        w_ec_l3_ca1 = self.synaptic_weights.get("ec_l3_ca1", None)
         weights = {
-            "w_ec_dg": self.w_ec_dg.detach().clone(),
+            "w_ec_dg": self.synaptic_weights["ec_dg"].detach().clone(),
             "w_dg_ca3": self.w_dg_ca3.detach().clone(),
             "w_ca3_ca1": self.w_ca3_ca1.detach().clone(),
             "w_ca3_ca3": self.w_ca3_ca3.detach().clone(),
-            "w_ec_ca1": self.w_ec_ca1.detach().clone(),
-            "w_ec_l3_ca1": self.w_ec_l3_ca1.detach().clone() if self.w_ec_l3_ca1 is not None else None,
+            "w_ec_ca1": self.synaptic_weights["ec_ca1"].detach().clone(),
+            "w_ec_l3_ca1": w_ec_l3_ca1.detach().clone() if w_ec_l3_ca1 is not None else None,
             "w_ca1_inhib": self.w_ca1_inhib.detach().clone(),
         }
 
@@ -2196,13 +2220,13 @@ class TrisynapticHippocampus(NeuralComponent):
 
         # 1. RESTORE WEIGHTS
         weights = state["weights"]
-        self.w_ec_dg.data = weights["w_ec_dg"].to(self.device)
+        self.synaptic_weights["ec_dg"].data = weights["w_ec_dg"].to(self.device)
         self.w_dg_ca3.data = weights["w_dg_ca3"].to(self.device)
         self.w_ca3_ca1.data = weights["w_ca3_ca1"].to(self.device)
         self.w_ca3_ca3.data = weights["w_ca3_ca3"].to(self.device)
-        self.w_ec_ca1.data = weights["w_ec_ca1"].to(self.device)
-        if weights["w_ec_l3_ca1"] is not None and self.w_ec_l3_ca1 is not None:
-            self.w_ec_l3_ca1.data = weights["w_ec_l3_ca1"].to(self.device)
+        self.synaptic_weights["ec_ca1"].data = weights["w_ec_ca1"].to(self.device)
+        if weights["w_ec_l3_ca1"] is not None and "ec_l3_ca1" in self.synaptic_weights:
+            self.synaptic_weights["ec_l3_ca1"].data = weights["w_ec_l3_ca1"].to(self.device)
         self.w_ca1_inhib.data = weights["w_ca1_inhib"].to(self.device)
         self.weights = self.w_ca3_ca1  # Update reference
 
