@@ -212,6 +212,7 @@ class PredictiveCortex(NeuralRegion):
     def __init__(self, config: PredictiveCortexConfig):
         """Initialize predictive cortex."""
         self.predictive_config = config
+        self.config = config  # Alias for compatibility
 
         # All layer sizes are now required
         # Note: L5+L6 together form the "prediction neurons" (deep pyramidal layers)

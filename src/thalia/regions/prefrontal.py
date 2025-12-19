@@ -892,7 +892,7 @@ class Prefrontal(NeuralRegion):
         return self.collect_standard_diagnostics(
             region_name="prefrontal",
             weight_matrices={
-                "feedforward": self.weights.data,
+                "feedforward": self.synaptic_weights["default"].data,
                 "recurrent": self.rec_weights.data,
                 "inhibition": self.inhib_weights.data,
             },
@@ -1164,7 +1164,7 @@ class Prefrontal(NeuralRegion):
         """
         state_dict = {
             "weights": {
-                "feedforward": self.weights.data.clone(),
+                "feedforward": self.synaptic_weights["default"].data.clone(),
                 "recurrent": self.rec_weights.data.clone(),
                 "inhibition": self.inhib_weights.data.clone(),
             },
@@ -1219,7 +1219,7 @@ class Prefrontal(NeuralRegion):
 
         # Restore weights
         weights = state["weights"]
-        self.weights.data.copy_(weights["feedforward"].to(self.device))
+        self.synaptic_weights["default"].data.copy_(weights["feedforward"].to(self.device))
         self.rec_weights.data.copy_(weights["recurrent"].to(self.device))
         self.inhib_weights.data.copy_(weights["inhibition"].to(self.device))
 

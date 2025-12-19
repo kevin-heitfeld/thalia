@@ -2133,15 +2133,9 @@ class DynamicBrain(nn.Module):
                 target_sources = [s for (s, t) in self.connections.keys() if t == tgt]
 
                 if len(target_sources) > 1:
-                    # Multi-source target - buffer this source's output
-                    if tgt not in self._multi_source_buffers:
-                        self._multi_source_buffers[tgt] = {}
-
-                    self._multi_source_buffers[tgt][source] = port_output
-
-                    # Forward with dict of currently available sources
+                    # Multi-source target - create dict with only this source
                     # AxonalProjection will fill missing sources with zeros
-                    source_dict = self._multi_source_buffers[tgt]
+                    source_dict = {source: port_output}
                 else:
                     # Single-source target - create dict with single entry
                     source_dict = {source: port_output}

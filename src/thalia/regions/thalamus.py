@@ -258,6 +258,9 @@ class ThalamicRelay(NeuralRegion):
         self.config = config
         self.device = config.device
 
+        # Set n_input for compatibility (NeuralRegion doesn't track this by default)
+        self.n_input = config.n_input
+
         # =====================================================================
         # RELAY NEURONS (Excitatory, glutamatergic)
         # =====================================================================
@@ -369,11 +372,11 @@ class ThalamicRelay(NeuralRegion):
         """
         if prefix:
             prefix = f"{prefix}_"
-        
+
         # Convert spike rate to Hz using dt_ms
         spike_rate = spikes.float().mean().item()
         firing_rate_hz = spike_rate * (1000.0 / self.dt_ms)  # Convert to Hz
-        
+
         return {
             f"{prefix}spike_count": spikes.sum().item(),
             f"{prefix}firing_rate_hz": firing_rate_hz,
@@ -391,7 +394,7 @@ class ThalamicRelay(NeuralRegion):
         """
         if prefix:
             prefix = f"{prefix}_"
-        
+
         return {
             f"{prefix}membrane_mean": membrane.mean().item(),
             f"{prefix}membrane_std": membrane.std().item(),
@@ -409,13 +412,13 @@ class ThalamicRelay(NeuralRegion):
         Helper for backward compatibility with DiagnosticsMixin pattern.
         """
         diagnostics = custom_metrics.copy() if custom_metrics else {}
-        
+
         # Add weight statistics
         for name, weights in weight_matrices.items():
             diagnostics[f"{name}_mean"] = weights.mean().item()
             diagnostics[f"{name}_std"] = weights.std().item()
             diagnostics[f"{name}_shape"] = list(weights.shape)
-        
+
         return diagnostics
 
     def _build_center_surround_filter(self) -> None:

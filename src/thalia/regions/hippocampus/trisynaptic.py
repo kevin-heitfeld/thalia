@@ -183,6 +183,9 @@ class TrisynapticHippocampus(NeuralRegion):
             dt_ms=config.dt_ms,
         )
 
+        # Override n_output: Only CA1 neurons output (not DG/CA3)
+        self.n_output = self.ca1_size
+
         # Initialize oscillator-related state
         self._gamma_amplitude_effective: float = 1.0
 
