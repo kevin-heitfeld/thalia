@@ -340,18 +340,24 @@ class TestDeepCerebellarNuclei:
 
         # No Purkinje inhibition (baseline DCN activity)
         purkinje_silent = torch.zeros(64, dtype=torch.bool, device=device)
-        mossy_spikes = torch.rand(128, device=device) > 0.8
 
         baseline_outputs = []
         for _ in range(10):
+            # Generate fresh random input each timestep
+            mossy_spikes = torch.rand(128, device=device) > 0.8
             out = dcn(purkinje_silent, mossy_spikes)
             baseline_outputs.append(out.sum().item())
+
+        # Reset state before testing inhibition condition
+        dcn.reset_state()
 
         # Strong Purkinje inhibition
         purkinje_active = torch.ones(64, dtype=torch.bool, device=device)
 
         inhibited_outputs = []
         for _ in range(10):
+            # Generate fresh random input each timestep (independent from baseline)
+            mossy_spikes = torch.rand(128, device=device) > 0.8
             out = dcn(purkinje_active, mossy_spikes)
             inhibited_outputs.append(out.sum().item())
 

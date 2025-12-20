@@ -242,33 +242,36 @@ class TestFeedbackLoopTiming:
 
     def test_l23_to_l6_delay(self, cortex_with_l6, device):
         """Test L2/3→L6 delay matches configuration (2ms)."""
-        # Strong input to activate L2/3
+        # Run a few timesteps with NO input to let initial transients settle
+        zero_input = torch.zeros(128, dtype=torch.bool, device=device)
+        for _ in range(5):
+            cortex_with_l6(zero_input)
+
+        # Now pulse input briefly to create a clear L2/3 response
         input_spikes = torch.ones(128, dtype=torch.bool, device=device)
+        cortex_with_l6(input_spikes)  # t=5: input ON
+        l23_spike_time = 5
 
-        # Record L2/3 and L6 spike times
-        l23_first_spike_time = None
-        l6_first_spike_time = None
+        # Turn off input and watch for delayed L6 response
+        l6_response_time = None
+        for t in range(6, 15):  # t=6 to t=14
+            cortex_with_l6(zero_input)
 
-        for t in range(10):
-            cortex_with_l6(input_spikes)
+            l6_spikes = cortex_with_l6.state.l6_spikes
+            if l6_response_time is None and l6_spikes is not None and l6_spikes.sum() > 5:
+                # L6 shows strong response (>5 spikes) indicating L2/3 input arrived
+                l6_response_time = t
+                break
 
-            if l23_first_spike_time is None:
-                l23_spikes = cortex_with_l6.state.l23_spikes
-                if l23_spikes is not None and l23_spikes.sum() > 0:
-                    l23_first_spike_time = t
+        # Contract: L6 should respond after expected delay
+        expected_delay = cortex_with_l6.config.l23_to_l6_delay_ms / cortex_with_l6.config.dt_ms
 
-            if l6_first_spike_time is None:
-                l6_spikes = cortex_with_l6.state.l6_spikes
-                if l6_spikes is not None and l6_spikes.sum() > 0:
-                    l6_first_spike_time = t
+        assert l6_response_time is not None, \
+            "L6 should show response to L2/3 input within test window"
 
-        # Contract: L6 should spike after L2/3 (with ~2ms delay)
-        if l23_first_spike_time is not None and l6_first_spike_time is not None:
-            delay_timesteps = l6_first_spike_time - l23_first_spike_time
-            expected_delay = cortex_with_l6.config.l23_to_l6_delay_ms / cortex_with_l6.config.dt_ms
-
-            assert delay_timesteps >= expected_delay - 1, \
-                f"L6 should spike ~{expected_delay} steps after L2/3, got {delay_timesteps}"
+        actual_delay = l6_response_time - l23_spike_time
+        assert abs(actual_delay - expected_delay) <= 1, \
+            f"L6 delay should be ~{expected_delay} steps, got {actual_delay}"
 
     def test_feedback_loop_completes_in_gamma_cycle(self, device):
         """Test that full feedback loop (thalamus→cortex→L6→TRN→thalamus) fits in gamma cycle."""

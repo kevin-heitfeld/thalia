@@ -95,13 +95,19 @@ class DeepCerebellarNuclei(nn.Module):
 
         # DCN neurons (tonic firing, modulated by inhibition)
         # DCN neurons are spontaneously active (tonic firing)
+        # Key: Use biologically realistic reversal potentials to prevent pathological oscillations
         dcn_config = ConductanceLIFConfig(
-            v_threshold=-50.0,  # mV, relatively low threshold
-            v_reset=-60.0,      # mV
-            tau_mem=10.0,       # ms, moderate integration
-            tau_E=2.0,          # ms, excitatory conductance decay
-            tau_I=5.0,          # ms, inhibitory conductance decay (slower)
+            v_threshold=-50.0,  # mV, relatively low threshold for spontaneous activity
+            v_reset=-60.0,      # mV, moderate hyperpolarization (not too deep)
+            E_L=-60.0,          # mV, leak/resting potential (match reset for stability)
+            E_E=-45.0,          # mV, excitatory reversal (just above threshold, not 0!)
+            E_I=-80.0,          # mV, inhibitory reversal (hyperpolarizing)
+            g_L=0.05,           # Leak conductance (moderate)
+            tau_mem=20.0,       # ms, longer integration for irregular firing
+            tau_E=3.0,          # ms, excitatory conductance decay
+            tau_I=8.0,          # ms, inhibitory conductance decay (slower for sustained effect)
             dt_ms=dt_ms,        # Timestep in milliseconds
+            noise_std=0.5,      # mV, membrane noise to break synchrony
         )
         self.dcn_neurons = ConductanceLIF(
             n_neurons=n_output,
@@ -109,9 +115,27 @@ class DeepCerebellarNuclei(nn.Module):
         )
         self.dcn_neurons.to(device)
 
-        # Tonic excitation (DCN neurons have intrinsic activity)
-        # Reduced to allow inhibition to have visible effect
-        self.tonic_excitation = 0.2  # Baseline drive (lower for sensitivity to inhibition)
+        # HETEROGENEOUS tonic excitation to break pathological synchrony
+        # Real DCN neurons have different baseline excitabilities
+        # Use Gaussian distribution with moderate drive
+        self.tonic_excitation = torch.normal(
+            mean=0.08,  # Reduced from 0.12 for more stable dynamics
+            std=0.02,   # Reduced from 0.03 for tighter distribution
+            size=(n_output,),
+            device=device,
+        ).clamp(min=0.03, max=0.15)  # Narrower biological range
+
+        # Initialize neurons with heterogeneous membrane potentials
+        # Prevents synchronized oscillations from identical initial conditions
+        v_init = torch.normal(
+            mean=-60.0,  # Around reset potential
+            std=5.0,     # Moderate spread
+            size=(n_output,),
+            device=device,
+        ).clamp(min=-70.0, max=-50.0)  # Keep subthreshold
+
+        # Set initial membrane potentials (will be set after first reset_state)
+        self._initial_v = v_init
 
     def forward(
         self,
@@ -139,27 +163,39 @@ class DeepCerebellarNuclei(nn.Module):
             mossy_spikes.float()
         )
 
-        # Add tonic excitation (DCN neurons are intrinsically active)
+        # Add heterogeneous tonic excitation (DCN neurons are intrinsically active)
+        # Note: ConductanceLIF now has built-in noise_std, so no manual noise needed
         total_exc = mossy_exc + self.tonic_excitation
 
         # DCN spiking (excitation vs inhibition)
         # Note: g_inh_input uses conductance-based shunting inhibition
+        # With E_I = -80 mV and proper reversal potentials, inhibition now has clear effect
         dcn_spikes, _ = self.dcn_neurons(
             g_exc_input=total_exc,
-            g_inh_input=purkinje_inh * 2.0,  # Scale up inhibition for visible effect
+            g_inh_input=purkinje_inh * 2.0,  # Moderate scaling for biological effect
         )
 
         return dcn_spikes
 
     def reset_state(self) -> None:
-        """Reset DCN state."""
+        """Reset DCN state with heterogeneous initialization."""
         self.dcn_neurons.reset_state()
+
+        # Re-initialize with heterogeneous membrane potentials to break synchrony
+        v_init = torch.normal(
+            mean=-60.0,  # Around reset potential
+            std=5.0,     # Moderate spread
+            size=(self.n_output,),
+            device=self.device,
+        ).clamp(min=-70.0, max=-50.0)  # Keep subthreshold
+        self.dcn_neurons.membrane.data = v_init
 
     def get_state(self) -> dict:
         """Get DCN state for checkpointing."""
         return {
             "purkinje_to_dcn": self.purkinje_to_dcn.data.clone(),
             "mossy_to_dcn": self.mossy_to_dcn.data.clone(),
+            "tonic_excitation": self.tonic_excitation.clone(),
             "dcn_neurons": self.dcn_neurons.get_state(),
         }
 
@@ -167,6 +203,8 @@ class DeepCerebellarNuclei(nn.Module):
         """Load DCN state from checkpoint."""
         self.purkinje_to_dcn.data.copy_(state["purkinje_to_dcn"])
         self.mossy_to_dcn.data.copy_(state["mossy_to_dcn"])
+        if "tonic_excitation" in state:
+            self.tonic_excitation.copy_(state["tonic_excitation"])
         self.dcn_neurons.load_state(state["dcn_neurons"])
 
     def get_full_state(self) -> dict:
@@ -217,6 +255,15 @@ class DeepCerebellarNuclei(nn.Module):
         self.mossy_to_dcn = nn.Parameter(
             torch.cat([self.mossy_to_dcn.data, new_mossy_weights], dim=0)
         )
+
+        # Expand tonic excitation (heterogeneous for new neurons)
+        new_tonic = torch.normal(
+            mean=0.12,
+            std=0.03,
+            size=(n_new,),
+            device=self.device,
+        ).clamp(min=0.05, max=0.25)
+        self.tonic_excitation = torch.cat([self.tonic_excitation, new_tonic], dim=0)
 
         # Expand DCN neurons by recreating with new size
         # ConductanceLIF doesn't have grow() - recreate with expanded size
