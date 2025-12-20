@@ -83,19 +83,24 @@ class RegionRegistry:
             existing = cls._registry[name]
             if existing != region_class:
                 raise ConfigurationError(
-                    f"Region name '{name}' already registered to {existing.__name__}"
+                    f"Region name '{name}' already registered to {existing.__name__}. "
+                    f"Use a different name or unregister the existing region first with "
+                    f"RegionRegistry._registry.pop('{name}')."
                 )
             return  # Same class, already registered
 
         # Validate region_class is a proper region class (duck typing check)
         if not inspect.isclass(region_class):
             raise ConfigurationError(
-                f"Region class must be a class, got {region_class}"
+                f"Region class must be a class, got {type(region_class).__name__}. "
+                f"Did you pass an instance instead of a class?"
             )
 
         if not issubclass(region_class, NeuralComponent):
             raise ConfigurationError(
-                f"Region class must be a NeuralRegion or NeuralComponent subclass, got {region_class}"
+                f"Region class must be a NeuralRegion or NeuralComponent subclass, "
+                f"got {region_class.__name__}. "
+                f"Ensure your region class inherits from NeuralRegion or NeuralComponent."
             )
 
         # Register primary name
@@ -105,7 +110,11 @@ class RegionRegistry:
         if aliases:
             for alias in aliases:
                 if alias in cls._registry or alias in cls._aliases:
-                    raise ConfigurationError(f"Alias '{alias}' already registered")
+                    existing = cls._aliases.get(alias) or alias
+                    raise ConfigurationError(
+                        f"Alias '{alias}' already registered (points to '{existing}'). "
+                        f"Choose a different alias or remove the existing one."
+                    )
                 cls._aliases[alias] = name
 
     @classmethod

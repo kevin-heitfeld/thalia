@@ -64,6 +64,32 @@ from thalia.regulation.region_constants import (
     STRIATUM_TD_MIN_TRACE,
     STRIATUM_TD_ACCUMULATING,
 )
+from thalia.regulation.region_architecture_constants import (
+    # Hippocampus
+    HIPPOCAMPUS_DG_EXPANSION_FACTOR,
+    HIPPOCAMPUS_CA3_SIZE_RATIO,
+    HIPPOCAMPUS_CA1_SIZE_RATIO,
+    HIPPOCAMPUS_SPARSITY_TARGET,
+    # Cortex
+    CORTEX_L4_RATIO,
+    CORTEX_L23_RATIO,
+    CORTEX_L5_RATIO,
+    CORTEX_L6_RATIO,
+    # Striatum
+    STRIATUM_NEURONS_PER_ACTION,
+    STRIATUM_D1_D2_RATIO,
+    # Prefrontal
+    PFC_WM_CAPACITY_RATIO,
+    # Cerebellum
+    CEREBELLUM_GRANULE_EXPANSION,
+    CEREBELLUM_PURKINJE_PER_DCN,
+    # Metacognition
+    METACOG_ABSTENTION_STAGE1,
+    METACOG_ABSTENTION_STAGE2,
+    METACOG_ABSTENTION_STAGE3,
+    METACOG_ABSTENTION_STAGE4,
+    METACOG_CALIBRATION_LR,
+)
 from thalia.regulation.normalization import (
     DivisiveNormConfig,
     DivisiveNormalization,
@@ -136,6 +162,30 @@ __all__ = [
     "STRIATUM_GAMMA",
     "STRIATUM_TD_MIN_TRACE",
     "STRIATUM_TD_ACCUMULATING",
+    # Region Architecture - Hippocampus
+    "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
+    "HIPPOCAMPUS_CA3_SIZE_RATIO",
+    "HIPPOCAMPUS_CA1_SIZE_RATIO",
+    "HIPPOCAMPUS_SPARSITY_TARGET",
+    # Region Architecture - Cortex
+    "CORTEX_L4_RATIO",
+    "CORTEX_L23_RATIO",
+    "CORTEX_L5_RATIO",
+    "CORTEX_L6_RATIO",
+    # Region Architecture - Striatum
+    "STRIATUM_NEURONS_PER_ACTION",
+    "STRIATUM_D1_D2_RATIO",
+    # Region Architecture - Prefrontal
+    "PFC_WM_CAPACITY_RATIO",
+    # Region Architecture - Cerebellum
+    "CEREBELLUM_GRANULE_EXPANSION",
+    "CEREBELLUM_PURKINJE_PER_DCN",
+    # Region Architecture - Metacognition
+    "METACOG_ABSTENTION_STAGE1",
+    "METACOG_ABSTENTION_STAGE2",
+    "METACOG_ABSTENTION_STAGE3",
+    "METACOG_ABSTENTION_STAGE4",
+    "METACOG_CALIBRATION_LR",
     # Normalization Classes
     "DivisiveNormConfig",
     "DivisiveNormalization",

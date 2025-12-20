@@ -44,6 +44,28 @@ from thalia.core.base.component_config import (
     PathwayConfig,
 )
 
+# Re-export region architecture constants from regulation module
+from thalia.regulation.region_architecture_constants import (
+    HIPPOCAMPUS_DG_EXPANSION_FACTOR,
+    HIPPOCAMPUS_CA3_SIZE_RATIO,
+    HIPPOCAMPUS_CA1_SIZE_RATIO,
+    HIPPOCAMPUS_SPARSITY_TARGET,
+    CORTEX_L4_RATIO,
+    CORTEX_L23_RATIO,
+    CORTEX_L5_RATIO,
+    CORTEX_L6_RATIO,
+    STRIATUM_NEURONS_PER_ACTION,
+    STRIATUM_D1_D2_RATIO,
+    PFC_WM_CAPACITY_RATIO,
+    CEREBELLUM_GRANULE_EXPANSION,
+    CEREBELLUM_PURKINJE_PER_DCN,
+    METACOG_ABSTENTION_STAGE1,
+    METACOG_ABSTENTION_STAGE2,
+    METACOG_ABSTENTION_STAGE3,
+    METACOG_ABSTENTION_STAGE4,
+    METACOG_CALIBRATION_LR,
+)
+
 from .base import BaseConfig
 
 # Note: BaseNeuronConfig not exported here to avoid circular import
@@ -149,4 +171,23 @@ __all__ = [
     "compute_hippocampus_sizes",
     "compute_cortex_layer_sizes",
     "compute_striatum_size",
+    # Region architecture constants
+    "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
+    "HIPPOCAMPUS_CA3_SIZE_RATIO",
+    "HIPPOCAMPUS_CA1_SIZE_RATIO",
+    "HIPPOCAMPUS_SPARSITY_TARGET",
+    "CORTEX_L4_RATIO",
+    "CORTEX_L23_RATIO",
+    "CORTEX_L5_RATIO",
+    "CORTEX_L6_RATIO",
+    "STRIATUM_NEURONS_PER_ACTION",
+    "STRIATUM_D1_D2_RATIO",
+    "PFC_WM_CAPACITY_RATIO",
+    "CEREBELLUM_GRANULE_EXPANSION",
+    "CEREBELLUM_PURKINJE_PER_DCN",
+    "METACOG_ABSTENTION_STAGE1",
+    "METACOG_ABSTENTION_STAGE2",
+    "METACOG_ABSTENTION_STAGE3",
+    "METACOG_ABSTENTION_STAGE4",
+    "METACOG_CALIBRATION_LR",
 ]

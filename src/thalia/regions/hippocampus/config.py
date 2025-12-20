@@ -16,6 +16,12 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponentState
 from thalia.components.synapses.stp import STPType
 from thalia.regulation.learning_constants import LEARNING_RATE_ONE_SHOT
+from thalia.regulation.region_architecture_constants import (
+    HIPPOCAMPUS_DG_EXPANSION_FACTOR,
+    HIPPOCAMPUS_CA3_SIZE_RATIO,
+    HIPPOCAMPUS_CA1_SIZE_RATIO,
+    HIPPOCAMPUS_SPARSITY_TARGET,
+)
 
 
 @dataclass
@@ -51,12 +57,12 @@ class HippocampusConfig(NeuralComponentConfig):
     The hippocampus has ~5x expansion from EC to DG, then compression back.
     """
     # Layer sizes (relative to input)
-    dg_expansion: float = 5.0      # DG has 5x more neurons than input
-    ca3_size_ratio: float = 0.5    # CA3 is half of DG
-    ca1_size_ratio: float = 0.5    # CA1 matches output
+    dg_expansion: float = HIPPOCAMPUS_DG_EXPANSION_FACTOR  # DG has 5x more neurons than input
+    ca3_size_ratio: float = HIPPOCAMPUS_CA3_SIZE_RATIO    # CA3 is half of DG
+    ca1_size_ratio: float = HIPPOCAMPUS_CA1_SIZE_RATIO    # CA1 matches output
 
     # DG sparsity (VERY sparse for pattern separation)
-    dg_sparsity: float = 0.02      # Only 2% active (biological: 1-5%)
+    dg_sparsity: float = HIPPOCAMPUS_SPARSITY_TARGET
     dg_inhibition: float = 5.0     # Strong lateral inhibition
 
     # CA3 recurrent dynamics

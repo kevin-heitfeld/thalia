@@ -116,7 +116,12 @@ class WeightInitializer:
     def get(cls, strategy: InitStrategy) -> Callable:
         """Get initialization function by strategy."""
         if strategy not in cls._registry:
-            raise ConfigurationError(f"Unknown initialization strategy: {strategy}")
+            available = ", ".join([s.name for s in InitStrategy])
+            raise ConfigurationError(
+                f"Unknown initialization strategy: '{strategy}'. "
+                f"Available strategies: {available}. "
+                f"Use InitStrategy enum (e.g., InitStrategy.XAVIER) or register a custom strategy."
+            )
         return cls._registry[strategy]
 
     @staticmethod

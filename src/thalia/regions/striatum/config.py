@@ -11,6 +11,10 @@ from dataclasses import dataclass
 
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.regulation.learning_constants import EMA_DECAY_FAST
+from thalia.regulation.region_architecture_constants import (
+    STRIATUM_NEURONS_PER_ACTION,
+    STRIATUM_D1_D2_RATIO,
+)
 
 
 @dataclass
@@ -40,7 +44,7 @@ class StriatumConfig(NeuralComponentConfig):
     # POPULATION CODING
     # =========================================================================
     population_coding: bool = True
-    neurons_per_action: int = 10
+    neurons_per_action: int = STRIATUM_NEURONS_PER_ACTION
 
     # =========================================================================
     # D1/D2 OPPONENT PATHWAYS
