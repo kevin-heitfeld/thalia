@@ -479,21 +479,40 @@ class MultiLayerGrowthMixin(GrowthMixin):
 
 ## Tier 3 – Major Restructuring (Long-Term Considerations)
 
-### 3.1 Migrate Remaining Regions to Learning Strategy Pattern
+### 3.1 Migrate Remaining Regions to Learning Strategy Pattern ⏸️ DEFER
 
-**Current State**: Most regions use the strategy pattern (`create_strategy()`, `compute_update()`), but some have inline learning logic:
+**Re-evaluation (Dec 2025)**: Investigation revealed learning implementations are highly specialized:
 
 **Regions Using Strategy Pattern** ✅:
-- LayeredCortex (BCM + STDP strategies)
+- LayeredCortex (BCM + STDP strategies via `create_cortex_strategy()`)
 - Prefrontal (Gated Hebbian strategy)
-- Striatum (Three-factor strategy)
+- Striatum (Three-factor strategy with dopamine gating)
 
-**Regions with Inline Learning** ⚠️:
-- TrisynapticHippocampus (STDP logic inline in forward, lines 1100-1300)
-- Cerebellum (Delta rule inline in forward, lines 700-800)
-- Thalamus (No learning, relay only) ✅
+**Regions with Inline Learning** (Justified):
+- **TrisynapticHippocampus**: Hebbian learning with specialized features
+  - One-shot vs continuous learning (mode switching)
+  - Theta-gamma modulation (automatic coupling)
+  - Heterosynaptic plasticity (winner-take-all prevention)
+  - Multiple weight matrices (CA3 recurrent, EC→CA1)
+  - Encoding/retrieval mode switching via acetylcholine
+  - Lines 1237-1280 (CA3 recurrent), 1450-1475 (EC→CA1)
+  
+- **Cerebellum**: Error-corrective learning with circuit-specific features
+  - Climbing fiber error signals
+  - STDP eligibility traces modulated by error
+  - Purkinje cell plasticity
+  - Lines 677-750 (_apply_error_learning)
 
-**Proposed Change**: Extract hippocampus STDP to strategy:
+**Why NOT extract**:
+- **Hippocampus**: Learning is tightly coupled with theta-gamma dynamics, mode switching, and multi-pathway coordination. Extracting would require passing 6+ context variables (theta_phase, gamma_amplitude, encoding_mode, acetylcholine_level, etc.) and would obscure the biological circuit dynamics.
+  
+- **Cerebellum**: Error-corrective learning uses climbing fiber error signals and integrates with motor timing. The learning is the core of cerebellar function, not a separable concern.
+
+- **Available strategies** (HebbianStrategy, ErrorCorrectiveStrategy) exist but lack region-specific modulation features (oscillator coupling, neuromodulator gating, multi-pathway coordination).
+
+**Decision**: DEFER extraction. The inline learning is circuit-specific and well-documented. Extraction would increase complexity without improving clarity.
+
+**Original Proposed Change** (not implemented):
 ```python
 # Before (inline in trisynaptic.py)
 def _apply_stdp_learning(self, pre_spikes, post_spikes):
@@ -520,16 +539,17 @@ new_weights, metrics = self.dg_ca3_strategy.compute_update(
 )
 ```
 
-**Rationale**:
-- Completes strategy pattern migration (consistency across codebase)
-- Simplifies forward() methods (delegates learning to strategies)
-- Enables learning rule ablation studies (swap strategies easily)
+**Rationale for Deferral**:
+- Learning is part of circuit function, not a swappable component
+- Region-specific modulation (oscillators, neuromodulators) is core functionality
+- Current code is clear, well-commented, and maintainable
+- Extraction would obscure biological circuit dynamics
 
-**Impact**:
+**Impact** (if implemented):
 - **Files affected**: `hippocampus/trisynaptic.py`, `cerebellum_region.py`
 - **Breaking change severity**: **Medium** (changes internal learning structure)
 - **Lines changed**: ~400 lines (net reduction after extraction)
-- **Benefit**: Full strategy pattern adoption, improved modularity
+- **Benefit**: Strategy pattern consistency vs **Cost**: Increased abstraction, loss of clarity
 
 ---
 
