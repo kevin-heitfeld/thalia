@@ -13,6 +13,7 @@ from thalia.managers.base_manager import (
     BaseManager,
     ManagerContext,
 )
+from thalia.managers.base_checkpoint_manager import BaseCheckpointManager
 
 __all__ = [
     # Component Registry
@@ -23,4 +24,6 @@ __all__ = [
     # Base Manager
     "BaseManager",
     "ManagerContext",
+    # Checkpoint Manager
+    "BaseCheckpointManager",
 ]

@@ -2043,8 +2043,14 @@ class DynamicBrain(nn.Module):
         elif len(inputs) == 1:
             return inputs[0]
         else:
-            # Multiple inputs - concatenate along feature dimension
-            # TODO: Make this configurable per component (concatenate vs sum)
+            # Multiple inputs - concatenate along feature dimension (generic fallback)
+            # Note: Components implement biologically-appropriate integration via InputRouter:
+            # - Thalamus: Spatial summation (sum EPSPs from multiple sources)
+            # - Cortex: Dendritic compartmentalization (semi-independent processing)
+            # - Striatum: Weighted integration with dopamine modulation
+            # - Superior Colliculus: Winner-take-all (max across modalities)
+            # This concatenation is only used in the generic graph execution path
+            # when components don't override with their own forward() logic.
             return torch.cat(inputs, dim=-1)
 
     def get_component(self, name: str) -> NeuralComponent:

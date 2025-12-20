@@ -1,0 +1,339 @@
+"""Base checkpoint manager with shared serialization logic.
+
+Provides common patterns for neuromorphic (neuron-centric) checkpointing:
+- Synapse extraction with sparsity
+- State packaging with versioning
+- Elastic tensor capacity handling
+- Shared utility methods for state extraction
+
+Region-specific managers should inherit from this base and implement:
+- _get_neurons_data(): Extract per-neuron data and synapses
+- _get_learning_state(): Extract learning-related state (STP, STDP, etc.)
+- _get_neuromodulator_state(): Extract neuromodulator levels
+- _get_region_state(): Extract region-specific state (traces, buffers, etc.)
+- load_neuromorphic_state(): Restore state from neuromorphic format
+
+Design Rationale:
+- Eliminates ~400-500 lines of duplication across 3 checkpoint managers
+- Provides single source of truth for neuromorphic encoding
+- Makes it easy to add new checkpoint formats or features
+- Preserves region-specific customization through abstract methods
+
+Biological Context:
+Different brain regions require different checkpoint strategies:
+- Striatum: D1/D2 pathway separation, eligibility traces, exploration state
+- Hippocampus: 3-layer circuit (DG→CA3→CA1), episode buffer, replay state
+- Prefrontal: Feedforward/recurrent/inhibitory separation, working memory
+"""
+
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
+
+import torch
+
+
+class BaseCheckpointManager(ABC):
+    """Base class for region-specific checkpoint managers.
+
+    Provides shared logic for neuromorphic checkpointing while allowing
+    region-specific customization through abstract methods.
+
+    Usage:
+        class MyRegionCheckpointManager(BaseCheckpointManager):
+            def __init__(self, region):
+                super().__init__(format_version="2.0.0")
+                self.region = region
+
+            def _get_neurons_data(self) -> list[Dict[str, Any]]:
+                # Extract per-neuron data with incoming synapses
+                ...
+
+            def _get_learning_state(self) -> Dict[str, Any]:
+                # Extract STP, STDP, etc.
+                ...
+    """
+
+    def __init__(self, format_version: str = "2.0.0"):
+        """Initialize base checkpoint manager.
+
+        Args:
+            format_version: Checkpoint format version (semantic versioning)
+        """
+        self.format_version = format_version
+
+    # ==================== SHARED UTILITY METHODS ====================
+
+    def extract_synapses_for_neuron(
+        self,
+        neuron_idx: int,
+        weights: torch.Tensor,
+        source_prefix: str,
+        synapse_type: Optional[str] = None,
+        sparsity_threshold: float = 1e-8,
+    ) -> list[Dict[str, Any]]:
+        """Extract incoming synapses for a single neuron.
+
+        Stores only non-zero synapses (sparse format) to reduce checkpoint size.
+
+        Args:
+            neuron_idx: Index of target neuron
+            weights: Weight matrix [n_target, n_source]
+            source_prefix: Prefix for source neuron IDs (e.g., "input", "ec_neuron")
+            synapse_type: Optional synapse type label (e.g., "feedforward", "recurrent")
+            sparsity_threshold: Minimum weight magnitude to store (default: 1e-8)
+
+        Returns:
+            List of synapse dicts with {from, weight, type (optional)}
+        """
+        synapses = []
+        neuron_weights = weights[neuron_idx]
+
+        # Only store non-zero synapses (sparse format)
+        nonzero_mask = neuron_weights.abs() > sparsity_threshold
+        nonzero_indices = torch.nonzero(nonzero_mask, as_tuple=True)[0]
+
+        for source_idx in nonzero_indices:
+            synapse = {
+                "from": f"{source_prefix}_{source_idx.item()}",
+                "weight": neuron_weights[source_idx].item(),
+            }
+            if synapse_type is not None:
+                synapse["type"] = synapse_type
+            synapses.append(synapse)
+
+        return synapses
+
+    def extract_multi_source_synapses(
+        self,
+        neuron_idx: int,
+        weight_source_pairs: list[tuple[torch.Tensor, str]],
+        sparsity_threshold: float = 1e-8,
+    ) -> list[Dict[str, Any]]:
+        """Extract synapses from multiple weight matrices.
+
+        Useful for neurons with multiple input sources (e.g., CA1 from CA3 + EC).
+
+        Args:
+            neuron_idx: Index of target neuron
+            weight_source_pairs: List of (weight_matrix, source_prefix) tuples
+            sparsity_threshold: Minimum weight magnitude to store
+
+        Returns:
+            Combined list of synapses from all sources
+        """
+        all_synapses = []
+        for weights, source_prefix in weight_source_pairs:
+            synapses = self.extract_synapses_for_neuron(
+                neuron_idx, weights, source_prefix, sparsity_threshold=sparsity_threshold
+            )
+            all_synapses.extend(synapses)
+        return all_synapses
+
+    def extract_typed_synapses(
+        self,
+        neuron_idx: int,
+        typed_weights: list[tuple[torch.Tensor, str, str]],
+        sparsity_threshold: float = 1e-8,
+    ) -> list[Dict[str, Any]]:
+        """Extract synapses with type labels from multiple weight matrices.
+
+        Useful for regions with multiple synapse types (e.g., feedforward, recurrent, inhibitory).
+
+        Args:
+            neuron_idx: Index of target neuron
+            typed_weights: List of (weight_matrix, source_prefix, synapse_type) tuples
+            sparsity_threshold: Minimum weight magnitude to store
+
+        Returns:
+            Combined list of synapses with type labels
+        """
+        all_synapses = []
+        for weights, source_prefix, synapse_type in typed_weights:
+            synapses = self.extract_synapses_for_neuron(
+                neuron_idx, weights, source_prefix, synapse_type, sparsity_threshold
+            )
+            all_synapses.extend(synapses)
+        return all_synapses
+
+    # ==================== STATE PACKAGING ====================
+
+    def package_neuromorphic_state(
+        self,
+        neurons: list[Dict[str, Any]],
+        learning_state: Dict[str, Any],
+        neuromodulator_state: Dict[str, Any],
+        region_state: Dict[str, Any],
+        additional_state: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Package region state in standardized neuromorphic format.
+
+        Args:
+            neurons: List of per-neuron data dicts
+            learning_state: Learning-related state (STP, STDP, etc.)
+            neuromodulator_state: Neuromodulator levels and systems
+            region_state: Region-specific state (traces, buffers, etc.)
+            additional_state: Optional additional state sections (e.g., episode_buffer)
+
+        Returns:
+            Complete checkpoint dict with standardized structure
+        """
+        checkpoint = {
+            "format": "neuromorphic",
+            "format_version": self.format_version,
+            "neurons": neurons,
+            "learning_state": learning_state,
+            "neuromodulator_state": neuromodulator_state,
+            "region_state": region_state,
+        }
+
+        # Add optional additional state sections
+        if additional_state is not None:
+            checkpoint.update(additional_state)
+
+        return checkpoint
+
+    # ==================== ABSTRACT METHODS (region-specific) ====================
+
+    @abstractmethod
+    def _get_neurons_data(self) -> list[Dict[str, Any]]:
+        """Extract per-neuron data with incoming synapses.
+
+        Each neuron dict should contain:
+        - id: Stable neuron identifier (e.g., "pfc_neuron_0_step0")
+        - region: Region name (e.g., "prefrontal", "hippocampus")
+        - created_step: Creation timestep (for neurogenesis tracking)
+        - membrane: Current membrane potential
+        - incoming_synapses: List of synapse dicts from extract_synapses_for_neuron()
+        - Additional region-specific fields (e.g., "layer", "working_memory")
+
+        Returns:
+            List of per-neuron data dicts
+        """
+        ...
+
+    @abstractmethod
+    def _get_learning_state(self) -> Dict[str, Any]:
+        """Extract learning-related state (STP, STDP, eligibility traces, etc.).
+
+        Should include:
+        - STP state: stp_*.get_state() for all STP instances
+        - STDP state: stdp_strategy.get_state() if applicable
+        - Eligibility traces: eligibility_d1, eligibility_d2, etc.
+        - Homeostasis state: homeostasis_manager.get_state() if applicable
+
+        Returns:
+            Dict of learning-related state
+        """
+        ...
+
+    @abstractmethod
+    def _get_neuromodulator_state(self) -> Dict[str, Any]:
+        """Extract neuromodulator-related state.
+
+        Should include:
+        - Current modulator levels: dopamine, acetylcholine, norepinephrine
+        - Modulator system state: dopamine_system.get_state(), etc.
+
+        Returns:
+            Dict of neuromodulator state
+        """
+        ...
+
+    @abstractmethod
+    def _get_region_state(self) -> Dict[str, Any]:
+        """Extract region-specific state (traces, buffers, etc.).
+
+        Should include region-specific state that doesn't fit in other categories:
+        - Activity traces: ca3_activity_trace, dg_trace, etc.
+        - Delay buffers: d1_delay_buffer, d2_delay_buffer, etc.
+        - Region-specific flags: pending_theta_reset, exploring, etc.
+        - Spike history: recent_spikes, spikes, etc.
+
+        Returns:
+            Dict of region-specific state
+        """
+        ...
+
+    @abstractmethod
+    def get_neuromorphic_state(self) -> Dict[str, Any]:
+        """Get complete region state in neuromorphic (neuron-centric) format.
+
+        Typically implemented as:
+            neurons = self._get_neurons_data()
+            learning = self._get_learning_state()
+            neuromodulator = self._get_neuromodulator_state()
+            region = self._get_region_state()
+            return self.package_neuromorphic_state(
+                neurons, learning, neuromodulator, region
+            )
+
+        Returns:
+            Complete checkpoint dict in neuromorphic format
+        """
+        ...
+
+    @abstractmethod
+    def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:
+        """Load region state from neuromorphic format.
+
+        Should handle:
+        - Neuron matching by ID
+        - Missing neurons (checkpoint → skip with warning)
+        - Extra neurons (current brain → keep current state)
+        - Weight restoration from synapses
+        - Learning state restoration
+        - Neuromodulator state restoration
+        - Region-specific state restoration
+
+        Args:
+            state: Dict from get_neuromorphic_state()
+        """
+        ...
+
+    # ==================== OPTIONAL METHODS ====================
+
+    def _get_elastic_tensor_metadata(self, n_active: int, n_capacity: int) -> Dict[str, Any]:
+        """Get metadata for elastic tensor format (optional).
+
+        Elastic tensor format supports brain growth by tracking active vs capacity neurons.
+
+        Args:
+            n_active: Number of currently active neurons
+            n_capacity: Total neuron capacity (including inactive/reserved)
+
+        Returns:
+            Metadata dict for capacity tracking
+        """
+        return {
+            "n_neurons_active": n_active,
+            "n_neurons_capacity": n_capacity,
+        }
+
+    def validate_checkpoint_compatibility(self, state: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+        """Validate checkpoint format and version compatibility (optional).
+
+        Args:
+            state: Checkpoint dict to validate
+
+        Returns:
+            (is_compatible, error_message) tuple
+        """
+        # Check format
+        if "format" not in state:
+            return False, "Missing 'format' field in checkpoint"
+
+        # Check version (basic semantic versioning)
+        if "format_version" not in state:
+            return False, "Missing 'format_version' field in checkpoint"
+
+        checkpoint_version = state["format_version"]
+        current_version = self.format_version
+
+        # Simple major version check (e.g., "2.0.0" vs "1.0.0")
+        checkpoint_major = int(checkpoint_version.split(".")[0])
+        current_major = int(current_version.split(".")[0])
+
+        if checkpoint_major != current_major:
+            return False, f"Incompatible major version: checkpoint={checkpoint_version}, current={current_version}"
+
+        return True, None

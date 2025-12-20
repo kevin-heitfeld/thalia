@@ -245,11 +245,24 @@ Used for stable long-term statistics.
 # NOISE PARAMETERS
 # =============================================================================
 
-WM_NOISE_STD_DEFAULT = 0.02
+WM_NOISE_STD_DEFAULT = 0.01
 """Default working memory noise standard deviation.
 
 Adds stochasticity to working memory updates and predictions.
 Based on neural variability in prefrontal cortex.
+
+Note: Changed from 0.02 to 0.01 to match inline usage in prefrontal.py (line 692).
+"""
+
+# =============================================================================
+# PHASE INITIALIZATION
+# =============================================================================
+
+PHASE_RANGE_2PI = 6.283185307179586  # 2π
+"""
+Full phase range [0, 2π) for oscillator phase preferences.
+
+Used for initializing random phase preferences in oscillator-coupled neurons.
 """
 
 
@@ -284,4 +297,6 @@ __all__ = [
     "EMA_DECAY_SLOW",
     # Noise parameters
     "WM_NOISE_STD_DEFAULT",
+    # Phase initialization
+    "PHASE_RANGE_2PI",
 ]

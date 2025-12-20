@@ -39,7 +39,7 @@ Usage:
         TAU_MEM_STANDARD, V_THRESHOLD_STANDARD,
         E_EXCITATORY, E_INHIBITORY
     )
-    
+
     config = LIFConfig(
         tau_mem=TAU_MEM_STANDARD,
         v_threshold=V_THRESHOLD_STANDARD,
@@ -249,7 +249,7 @@ ADAPT_INCREMENT_CORTEX_L23 = 0.30
 Cortical L2/3 pyramidal neurons show particularly strong spike-frequency
 adaptation, critical for:
 1. Preventing frozen attractors in recurrent networks
-2. Temporal decorrelation of neural responses  
+2. Temporal decorrelation of neural responses
 3. Maintaining response selectivity during sustained stimulation
 
 This strong adaptation works synergistically with short-term depression (STD)
@@ -357,19 +357,13 @@ Used for salient or superthreshold stimuli.
 # =============================================================================
 
 NE_MAX_GAIN = 1.5
-"""Maximum norepinephrine gain multiplier.
 
-NE modulates excitability from baseline (1.0) to high arousal (1.5).
-Applied across striatum, PFC, hippocampus, cortex, and cerebellum.
-Biological basis: β-adrenergic receptor effects on neural excitability.
-"""
+# ============================================================================
+# DEPRECATED CONSTANTS - Use thalia.neuromodulation.constants instead
+# ============================================================================
 
-NE_GAIN_RANGE = 0.5
-"""Norepinephrine gain modulation range.
-
-Gain computed as: 1.0 + NE_GAIN_RANGE * ne_level
-Where ne_level ∈ [0, 1], yielding gain ∈ [1.0, 1.5]
-"""
+# NE_GAIN_RANGE has been removed. Use compute_ne_gain() from thalia.neuromodulation.constants
+# Migration: Replace `1.0 + NE_GAIN_RANGE * ne_level` with `compute_ne_gain(ne_level)`
 
 TONIC_D1_GAIN_SCALE = 0.5
 """Tonic dopamine modulation of D1 pathway gain.

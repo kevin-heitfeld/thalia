@@ -98,6 +98,7 @@ import torch.nn as nn
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.regions.base import NeuralComponentState
 from thalia.core.neural_region import NeuralRegion
+from thalia.utils.input_routing import InputRouter
 from thalia.managers.component_registry import register_region
 from thalia.components.neurons.neuron_factory import create_relay_neurons, create_trn_neurons
 from thalia.components.synapses.weight_init import WeightInitializer
@@ -556,10 +557,10 @@ class ThalamicRelay(NeuralRegion):
         """Process sensory input through thalamic relay.
 
         Args:
-            inputs: Multi-port input dict or single tensor:
+            inputs: Multi-port input dict:
                    - Dict: {"sensory": tensor, "l6_feedback": tensor} (multi-port)
-                   - Dict: {"input": tensor} (single port, backward compat)
-                   - Tensor: sensory_input [n_input] (backward compatibility)
+                   - Dict: {"input": tensor} (alias for "sensory")
+                   - Tensor: sensory_input [n_input] (auto-wrapped as {"default": tensor})
             **kwargs: Additional arguments (unused)
 
         Returns:
@@ -571,30 +572,24 @@ class ThalamicRelay(NeuralRegion):
             - "l6_feedback" → TRN neurons (corticothalamic attention modulation)
             These are different post-synaptic targets, NOT concatenated!
         """
-        # Extract sensory input (required)
-        if isinstance(inputs, torch.Tensor):
-            # Backward compatibility: single tensor is sensory input
-            input_spikes = inputs
-            cortical_l6_feedback = None
-        else:
-            # Multi-port dict: extract sensory (optional) and L6 feedback (optional)
-            input_spikes = inputs.get("sensory", inputs.get("input", inputs.get("default")))
+        # Route inputs to canonical port names
+        routed = InputRouter.route(
+            inputs,
+            port_mapping={
+                "sensory": ["sensory", "input", "default"],
+                "l6_feedback": ["l6_feedback", "feedback"],
+            },
+            defaults={"l6_feedback": None},
+            required=["sensory"],
+            component_name="ThalamicRelay",
+        )
+        input_spikes = routed["sensory"]
+        cortical_l6_feedback = routed["l6_feedback"]
 
-            # L6 feedback goes to TRN, not relay neurons (separate target!)
-            cortical_l6_feedback = inputs.get("l6_feedback", None)
-
-            # If no sensory input, relay neurons have nothing to relay
-            # (L6 feedback alone doesn't drive relay - it modulates via TRN)
-            if input_spikes is None:
-                if cortical_l6_feedback is not None:
-                    # L6-only input: TRN is excited but relay has nothing to relay
-                    # Return zeros (no relay output without sensory drive)
-                    return torch.zeros(self.config.n_output, dtype=torch.bool, device=self.device)
-                else:
-                    raise ValueError(
-                        f"ThalamicRelay.forward: No inputs provided. "
-                        f"Available keys: {list(inputs.keys())}"
-                    )
+        # If no sensory input, relay neurons have nothing to relay
+        # (This should not happen due to required=["sensory"], but handle gracefully)
+        if input_spikes is None:
+            return torch.zeros(self.config.n_output, dtype=torch.bool, device=self.device)
 
         # ADR-005: Expect 1D input
         assert input_spikes.dim() == 1, (
@@ -842,7 +837,9 @@ class ThalamicRelay(NeuralRegion):
         old_n_input = self.config.n_input
         new_n_input = old_n_input + n_new
 
-        # Helper to create new weights
+        # Helper to create new input weights (columns)
+        # Note: GrowthMixin._expand_weights is for output (rows) expansion only
+        # Input growth is less common and more region-specific, so inline helper is acceptable
         def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
             if initialization == 'xavier':
                 return WeightInitializer.xavier(n_out, n_in, device=self.device)

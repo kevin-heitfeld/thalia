@@ -1694,7 +1694,9 @@ class CurriculumTrainer:
                 self.brain.learning_rate *= 0.5
                 if self.verbose:
                     print(f"   Learning rate: {original_lr:.4f} → {self.brain.learning_rate:.4f}")
-            # TODO: Reduce task complexity if applicable
+            # TODO(future): Reduce task complexity if applicable
+            # Requires task loaders to support difficulty adjustment
+            # See: docs/design/curriculum_strategy.md for complexity scaling approach
 
         elif intervention == InterventionType.TEMPORAL_SEPARATION:
             # Enable temporal separation of modalities

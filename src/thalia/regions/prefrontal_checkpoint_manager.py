@@ -61,17 +61,21 @@ from typing import TYPE_CHECKING, Dict, Any
 
 import torch
 
+from thalia.managers import BaseCheckpointManager
+
 if TYPE_CHECKING:
     from thalia.regions.prefrontal import Prefrontal
 
 
-class PrefrontalCheckpointManager:
+class PrefrontalCheckpointManager(BaseCheckpointManager):
     """Manages state checkpointing for Prefrontal cortex.
 
     Handles:
     - Elastic tensor format for stable configurations
     - Neuromorphic format for growth-enabled configurations
     - Hybrid auto-selection based on region properties
+
+    Inherits from BaseCheckpointManager for shared synapse extraction logic.
     """
 
     def __init__(self, prefrontal: Prefrontal):
@@ -80,6 +84,7 @@ class PrefrontalCheckpointManager:
         Args:
             prefrontal: The Prefrontal instance to manage
         """
+        super().__init__(format_version="2.0.0")
         self.prefrontal = prefrontal
 
     # =========================================================================
@@ -106,39 +111,15 @@ class PrefrontalCheckpointManager:
         Returns:
             List of synapse dicts with {from, weight, type}
         """
-        synapses = []
-
-        # Extract feedforward synapses (from input)
-        ff_weights = feedforward_weights[neuron_idx]
-        nonzero_ff = torch.nonzero(ff_weights.abs() > 1e-8, as_tuple=True)[0]
-        for input_idx in nonzero_ff:
-            synapses.append({
-                "from": f"{input_prefix}_{input_idx.item()}",
-                "weight": ff_weights[input_idx].item(),
-                "type": "feedforward",
-            })
-
-        # Extract recurrent synapses (from other PFC neurons)
-        rec_weights = recurrent_weights[neuron_idx]
-        nonzero_rec = torch.nonzero(rec_weights.abs() > 1e-8, as_tuple=True)[0]
-        for source_idx in nonzero_rec:
-            synapses.append({
-                "from": f"pfc_neuron_{source_idx.item()}_step0",
-                "weight": rec_weights[source_idx].item(),
-                "type": "recurrent",
-            })
-
-        # Extract inhibitory synapses
-        inhib_weights = inhibition_weights[neuron_idx]
-        nonzero_inhib = torch.nonzero(inhib_weights.abs() > 1e-8, as_tuple=True)[0]
-        for source_idx in nonzero_inhib:
-            synapses.append({
-                "from": f"pfc_neuron_{source_idx.item()}_step0",
-                "weight": inhib_weights[source_idx].item(),
-                "type": "inhibitory",
-            })
-
-        return synapses
+        # Use base class method for typed synapse extraction
+        return self.extract_typed_synapses(
+            neuron_idx,
+            typed_weights=[
+                (feedforward_weights, input_prefix, "feedforward"),
+                (recurrent_weights, "pfc_neuron", "recurrent"),
+                (inhibition_weights, "pfc_neuron", "inhibitory"),
+            ],
+        )
 
     def get_neuromorphic_state(self) -> Dict[str, Any]:
         """Get PFC state in neuromorphic (neuron-centric) format.
@@ -162,78 +143,19 @@ class PrefrontalCheckpointManager:
                 ]
             }
         """
-        pfc = self.prefrontal
-        neurons = []
+        # Use abstract method implementations to extract state
+        neurons = self._get_neurons_data()
+        learning_state = self._get_learning_state()
+        neuromodulator_state = self._get_neuromodulator_state()
+        region_state = self._get_region_state()
 
-        n_neurons = pfc.config.n_output
-        membrane = pfc.state.membrane if pfc.state.membrane is not None else torch.zeros(n_neurons, device=pfc.device)
-        wm = pfc.state.working_memory if pfc.state.working_memory is not None else torch.zeros(n_neurons, device=pfc.device)
-        update_gate = pfc.state.update_gate if pfc.state.update_gate is not None else torch.zeros(n_neurons, device=pfc.device)
-
-        for i in range(n_neurons):
-            # Generate stable neuron ID
-            neuron_id = f"pfc_neuron_{i}_step0"  # TODO: Track actual creation step
-
-            # Determine neuron type (rule vs working memory)
-            # For now, simple heuristic: if update_gate is high, it's a WM neuron
-            neuron_type = "wm_neuron" if update_gate[i].item() > 0.5 else "rule_neuron"
-
-            neuron_data = {
-                "id": neuron_id,
-                "type": neuron_type,
-                "region": "prefrontal",
-                "created_step": 0,
-                "membrane": membrane[i].item(),
-                "working_memory": wm[i].item(),
-                "update_gate": update_gate[i].item(),
-                "incoming_synapses": self._extract_synapses_for_neuron(
-                    i, pfc.synaptic_weights["default"], pfc.rec_weights, pfc.inhib_weights
-                ),
-            }
-            neurons.append(neuron_data)
-
-        return {
-            "format": "neuromorphic",
-            "format_version": "2.0.0",
-            "neurons": neurons,
-            # Global state
-            "learning_state": self._get_learning_state(),
-            "neuromodulator_state": self._get_neuromodulator_state(),
-            "region_state": self._get_region_state(),
-        }
-
-    def _get_learning_state(self) -> Dict[str, Any]:
-        """Extract learning-related state (STDP, STP, etc.)."""
-        pfc = self.prefrontal
-        learning_state = {}
-
-        # STDP eligibility traces
-        if hasattr(pfc, 'learning_strategy') and pfc.learning_strategy is not None:
-            if hasattr(pfc.learning_strategy, 'get_state'):
-                learning_state["stdp_strategy"] = pfc.learning_strategy.get_state()
-
-        # STP state for recurrent connections
-        if pfc.stp_recurrent is not None:
-            learning_state["stp_recurrent"] = pfc.stp_recurrent.get_state()
-
-        return learning_state
-
-    def _get_neuromodulator_state(self) -> Dict[str, Any]:
-        """Extract neuromodulator-related state."""
-        pfc = self.prefrontal
-        return {
-            "dopamine": pfc.state.dopamine,
-            "dopamine_system": pfc.dopamine_system.get_state(),
-        }
-
-    def _get_region_state(self) -> Dict[str, Any]:
-        """Extract region-specific state (spikes, rules, etc.)."""
-        pfc = self.prefrontal
-
-        return {
-            "spikes": pfc.state.spikes.detach().clone() if pfc.state.spikes is not None else None,
-            "active_rule": pfc.state.active_rule.detach().clone() if pfc.state.active_rule is not None else None,
-        }
+        # Package using base class method
+        return self.package_neuromorphic_state(
+            neurons=neurons,
+            learning_state=learning_state,
+            neuromodulator_state=neuromodulator_state,
+            region_state=region_state,
+        )
 
     def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:
         """Load PFC state from neuromorphic format.
@@ -381,9 +303,6 @@ class PrefrontalCheckpointManager:
         Returns:
             Dict with checkpoint metadata
         """
-        import torch
-        from pathlib import Path
-
         path = Path(path)
 
         # Auto-select format
@@ -425,9 +344,6 @@ class PrefrontalCheckpointManager:
         Args:
             path: Path to checkpoint file
         """
-        from pathlib import Path
-        import torch
-
         path = Path(path)
 
         # Load checkpoint
@@ -443,3 +359,77 @@ class PrefrontalCheckpointManager:
             self.load_neuromorphic_state(state)
         else:
             self.prefrontal.load_full_state(state)
+
+    # =========================================================================
+    # ABSTRACT METHOD IMPLEMENTATIONS (from BaseCheckpointManager)
+    # =========================================================================
+
+    def _get_neurons_data(self) -> list[Dict[str, Any]]:
+        """Extract per-neuron data with incoming synapses."""
+        pfc = self.prefrontal
+        neurons = []
+
+        n_neurons = pfc.config.n_output
+        membrane = pfc.state.membrane if pfc.state.membrane is not None else torch.zeros(n_neurons, device=pfc.device)
+        wm = pfc.state.working_memory if pfc.state.working_memory is not None else torch.zeros(n_neurons, device=pfc.device)
+        update_gate = pfc.state.update_gate if pfc.state.update_gate is not None else torch.zeros(n_neurons, device=pfc.device)
+
+        for i in range(n_neurons):
+            # Generate stable neuron ID
+            # TODO(enhancement): Track actual creation step for neurogenesis history
+            # Requires checkpoint manager to record growth events with timestamps
+            # For now, use step0 as default for all neurons at checkpoint time
+            neuron_id = f"pfc_neuron_{i}_step0"
+
+            # Determine neuron type (rule vs working memory)
+            # For now, simple heuristic: if update_gate is high, it's a WM neuron
+            neuron_type = "wm_neuron" if update_gate[i].item() > 0.5 else "rule_neuron"
+
+            neuron_data = {
+                "id": neuron_id,
+                "type": neuron_type,
+                "region": "prefrontal",
+                "created_step": 0,
+                "membrane": membrane[i].item(),
+                "working_memory": wm[i].item(),
+                "update_gate": update_gate[i].item(),
+                "incoming_synapses": self._extract_synapses_for_neuron(
+                    i, pfc.synaptic_weights["default"], pfc.rec_weights, pfc.inhib_weights
+                ),
+            }
+            neurons.append(neuron_data)
+
+        return neurons
+
+    def _get_learning_state(self) -> Dict[str, Any]:
+        """Extract learning-related state (STDP, STP, etc.)."""
+        pfc = self.prefrontal
+        learning_state = {}
+
+        # STDP eligibility traces
+        if hasattr(pfc, 'learning_strategy') and pfc.learning_strategy is not None:
+            if hasattr(pfc.learning_strategy, 'get_state'):
+                learning_state["stdp_strategy"] = pfc.learning_strategy.get_state()
+
+        # STP state for recurrent connections
+        if pfc.stp_recurrent is not None:
+            learning_state["stp_recurrent"] = pfc.stp_recurrent.get_state()
+
+        return learning_state
+
+    def _get_neuromodulator_state(self) -> Dict[str, Any]:
+        """Extract neuromodulator-related state."""
+        pfc = self.prefrontal
+        return {
+            "dopamine": pfc.state.dopamine,
+            "dopamine_system": pfc.dopamine_system.get_state(),
+        }
+
+    def _get_region_state(self) -> Dict[str, Any]:
+        """Extract region-specific state (spikes, rules, etc.)."""
+        pfc = self.prefrontal
+
+        return {
+            "spikes": pfc.state.spikes.detach().clone() if pfc.state.spikes is not None else None,
+            "active_rule": pfc.state.active_rule.detach().clone() if pfc.state.active_rule is not None else None,
+        }

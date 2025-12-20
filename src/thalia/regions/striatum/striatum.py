@@ -106,6 +106,7 @@ from thalia.components.neurons.neuron_constants import (
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import clamp_weights
+from thalia.utils.input_routing import InputRouter
 from thalia.core.neural_region import NeuralRegion
 from thalia.regions.striatum.exploration import ExplorationConfig
 
@@ -1486,9 +1487,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         **Phase 2 Changes**: Now accepts Dict[str, Tensor] instead of concatenated tensor.
         Synaptic weights are applied per-source at target dendrites (biologically accurate).
 
-        **Backward Compatibility**: Still accepts Tensor input for legacy code, automatically
-        converts to {"default": tensor} format.
-
         BIOLOGICAL ARCHITECTURE:
         - D1-MSNs: SEPARATE neuron population, receives synaptic currents
         - D2-MSNs: SEPARATE neuron population, receives same synaptic currents
@@ -1497,10 +1495,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         Args:
             inputs: Either:
-                   - Dict mapping source names to spike tensors (Phase 2)
+                   - Dict mapping source names to spike tensors
                      e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo]}
-                   - Tensor of concatenated spikes (legacy, backward compat)
-                     [n_input] - will be wrapped as {"default": tensor}
+                   - Tensor of spikes (auto-wrapped as {"default": tensor}) [n_input]
                    PFC component (if present) is used for goal modulation.
 
         NOTE: Exploration is handled by finalize_action() at trial end, not per-timestep.
@@ -1513,19 +1510,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - NET = D1_votes - D2_votes
         - Selected action = argmax(NET)
         """
-        # =====================================================================
-        # BACKWARD COMPATIBILITY: Convert Tensor to Dict
-        # =====================================================================
-        if isinstance(inputs, torch.Tensor):
-            # Legacy format: concatenated tensor - pass through directly
-            input_spikes = inputs
-        else:
-            # =====================================================================
-            # PHASE 2: CONCATENATE DICT INPUTS (NO WEIGHT APPLICATION YET)
-            # =====================================================================
-            # D1/D2 pathways will apply their own weights via property access
-            # Just concatenate the raw inputs here
-            input_spikes = torch.cat(list(inputs.values()), dim=0)
+        # Concatenate all input sources (D1/D2 pathways apply their own weights)
+        input_spikes = InputRouter.concatenate_sources(inputs, component_name="Striatum")
 
         # Ensure 1D (ADR-005)
         if input_spikes.dim() != 1:

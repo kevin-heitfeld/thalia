@@ -71,20 +71,18 @@ import torch.nn as nn
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 from thalia.learning.strategy_mixin import LearningStrategyMixin
-
 from thalia.core.base.component_config import NeuralComponentConfig
-
 from thalia.core.errors import CheckpointError, ConfigurationError
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.managers.component_registry import register_region
 from thalia.regulation.learning_constants import LEARNING_RATE_STDP
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
-
+from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.core.neural_region import NeuralRegion
 from thalia.regions.base import NeuralComponentState
 from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
+from thalia.utils.input_routing import InputRouter
 from thalia.regions.prefrontal_hierarchy import (
     Goal,
     GoalHierarchyManager,
@@ -562,7 +560,7 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
 
         Args:
             inputs: Input spikes - Dict mapping source names to spike tensors,
-                   or single Tensor for backward compatibility [n_input]
+                   or single Tensor (auto-wrapped as {"default": tensor}) [n_input]
             dopamine_signal: External DA signal for gating (-1 to 1)
             **kwargs: Additional inputs
 
@@ -572,12 +570,14 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
-        # Backward compatibility: convert Tensor to Dict
-        if isinstance(inputs, torch.Tensor):
-            inputs = {"default": inputs}
-
-        # Get the input spikes (PFC typically has single input source)
-        input_spikes = inputs.get("default", torch.zeros(self.pfc_config.n_input, device=self.device))
+        # Route input to default port
+        routed = InputRouter.route(
+            inputs,
+            port_mapping={"default": ["default", "input"]},
+            defaults={"default": torch.zeros(self.pfc_config.n_input, device=self.device)},
+            component_name="PrefrontalCortex",
+        )
+        input_spikes = routed["default"]
 
         # Get timestep from config for temporal dynamics
         dt = self.config.dt_ms
@@ -633,7 +633,7 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         # working memory flexibility (Arnsten 2009)
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
+        ne_gain = compute_ne_gain(ne_level)
         ff_input = ff_input * ne_gain
 
         # =====================================================================

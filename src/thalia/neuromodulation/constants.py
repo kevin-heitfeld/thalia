@@ -110,7 +110,9 @@ NE_ACH_ENHANCEMENT = 0.2
 
 # NE gain modulation range
 # NE modulates network gain (multiplicative effect on synaptic transmission)
-NE_GAIN_MIN = 0.5   # Low arousal → reduced gain
+# Biological basis: β-adrenergic receptor effects on neural excitability
+# Gain starts at baseline (1.0) and increases with arousal up to 1.5x
+NE_GAIN_MIN = 1.0   # Baseline arousal (no NE modulation)
 NE_GAIN_MAX = 1.5   # High arousal → increased gain
 
 
@@ -154,6 +156,29 @@ def tau_to_decay_constant(tau_ms: float, dt_ms: float = 1.0) -> float:
     return math.exp(-dt_ms / tau_ms)
 
 
+def compute_ne_gain(ne_level: float) -> float:
+    """Compute norepinephrine gain modulation from NE level.
+
+    NE modulates network gain multiplicatively from baseline (1.0) to high arousal (1.5).
+    Biological basis: β-adrenergic receptor effects on neural excitability.
+
+    Args:
+        ne_level: Norepinephrine level in [0, 1]
+
+    Returns:
+        Gain multiplier in [NE_GAIN_MIN, NE_GAIN_MAX]
+
+    Example:
+        >>> compute_ne_gain(0.0)
+        1.0  # Baseline (no NE)
+        >>> compute_ne_gain(1.0)
+        1.5  # Maximum arousal
+        >>> compute_ne_gain(0.5)
+        1.25  # Moderate arousal
+    """
+    return NE_GAIN_MIN + (NE_GAIN_MAX - NE_GAIN_MIN) * ne_level
+
+
 __all__ = [
     # Dopamine constants
     "DA_PHASIC_DECAY_PER_MS",
@@ -184,4 +209,5 @@ __all__ = [
     # Helper functions
     "decay_constant_to_tau",
     "tau_to_decay_constant",
+    "compute_ne_gain",
 ]

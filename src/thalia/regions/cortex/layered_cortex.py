@@ -80,13 +80,14 @@ import torch.nn.functional as F
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.errors import CheckpointError
-from thalia.components.neurons.neuron_constants import NE_GAIN_RANGE
+from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.components.neurons import create_cortical_layer_neurons
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.synapses.traces import update_trace
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
+from thalia.utils.input_routing import InputRouter
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
@@ -412,8 +413,9 @@ class LayeredCortex(NeuralRegion):
         device = torch.device(cfg.device)
 
         # Learnable phase preferences for each L2/3 neuron
+        from thalia.utils.core_utils import initialize_phase_preferences
         self.l23_phase_prefs = nn.Parameter(
-            torch.rand(self.l23_size, device=device) * 2 * torch.pi
+            initialize_phase_preferences(self.l23_size, device=device)
         )
         self.gamma_attention_width = cfg.gamma_attention_width
 
@@ -814,7 +816,8 @@ class LayeredCortex(NeuralRegion):
         self.stp_l23_recurrent.to(self.device)
 
         # 6b. Expand L2/3 phase preferences for gamma attention
-        new_phase_prefs = torch.rand(l23_growth, device=self.device) * 2 * torch.pi
+        from thalia.utils.core_utils import initialize_phase_preferences
+        new_phase_prefs = initialize_phase_preferences(l23_growth, device=self.device)
         self.l23_phase_prefs.data = torch.cat([self.l23_phase_prefs.data, new_phase_prefs])
 
         # 7. Update configs
@@ -905,36 +908,9 @@ class LayeredCortex(NeuralRegion):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
-        # Backward compatibility: accept tensor directly
-        if isinstance(inputs, torch.Tensor):
-            input_spikes = inputs
-        else:
-            # Dict input: extract and concatenate sources in consistent order
-            # Common sources: thalamus (feedforward), hippocampus (memory), cerebellum (predictions), pfc (top-down)
-            # AxonalProjection now returns dict preserving source identity
-            source_keys = ["input", "thalamus", "sensory", "hippocampus", "cerebellum", "pfc", "default"]
-            found_tensors = []
-
-            for key in source_keys:
-                if key in inputs:
-                    tensor = inputs[key]
-                    if tensor is not None:
-                        found_tensors.append(tensor)
-
-            if not found_tensors:
-                # No recognized sources - try any available keys
-                found_tensors = [v for v in inputs.values() if v is not None]
-
-            if not found_tensors:
-                raise ValueError(
-                    f"LayeredCortex.forward: No valid input tensors found in dict keys: {list(inputs.keys())}"
-                )
-
-            # Concatenate all sources
-            if len(found_tensors) == 1:
-                input_spikes = found_tensors[0]
-            else:
-                input_spikes = torch.cat(found_tensors, dim=0)
+        # Concatenate all input sources in consistent order
+        # Common sources: thalamus (feedforward), hippocampus (memory), cerebellum (predictions), pfc (top-down)
+        input_spikes = InputRouter.concatenate_sources(inputs, component_name="LayeredCortex")
 
         # Get timestep from config for temporal dynamics
         dt = self.config.dt_ms
@@ -1023,7 +999,7 @@ class LayeredCortex(NeuralRegion):
         # Biological: β-adrenergic receptors increase neuronal excitability
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
+        ne_gain = compute_ne_gain(ne_level)
         l4_g_exc = l4_g_exc * ne_gain
 
         # ConductanceLIF automatically handles shunting inhibition

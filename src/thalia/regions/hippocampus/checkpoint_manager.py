@@ -59,17 +59,21 @@ from typing import TYPE_CHECKING, Dict, Any
 
 import torch
 
+from thalia.managers import BaseCheckpointManager
+
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
 
 
-class HippocampusCheckpointManager:
+class HippocampusCheckpointManager(BaseCheckpointManager):
     """Manages state checkpointing for Trisynaptic Hippocampus.
 
     Handles:
     - Elastic tensor format for stable configurations
     - Neuromorphic format for neurogenesis-enabled configurations
     - Hybrid auto-selection based on region properties
+
+    Inherits from BaseCheckpointManager for shared synapse extraction logic.
     """
 
     def __init__(self, hippocampus: TrisynapticHippocampus):
@@ -78,43 +82,13 @@ class HippocampusCheckpointManager:
         Args:
             hippocampus: The TrisynapticHippocampus instance to manage
         """
+        super().__init__(format_version="2.0.0")
         self.hippocampus = hippocampus
 
     # =========================================================================
     # NEUROMORPHIC FORMAT - Neuron-Centric Checkpoints
+    # Note: _extract_synapses_for_neuron is provided by BaseCheckpointManager
     # =========================================================================
-
-    def _extract_synapses_for_neuron(
-        self,
-        neuron_idx: int,
-        weights: torch.Tensor,
-        source_prefix: str
-    ) -> list[Dict[str, Any]]:
-        """Extract incoming synapses for a single neuron.
-
-        Args:
-            neuron_idx: Index of target neuron
-            weights: Weight matrix [n_target, n_source]
-            source_prefix: Prefix for source neuron IDs (e.g., "ec_neuron")
-
-        Returns:
-            List of synapse dicts with {from, weight}
-        """
-        synapses = []
-        neuron_weights = weights[neuron_idx]
-
-        # Only store non-zero synapses (sparse format)
-        nonzero_mask = neuron_weights.abs() > 1e-8
-        nonzero_indices = torch.nonzero(nonzero_mask, as_tuple=True)[0]
-
-        for source_idx in nonzero_indices:
-            synapse = {
-                "from": f"{source_prefix}_{source_idx.item()}",
-                "weight": neuron_weights[source_idx].item(),
-            }
-            synapses.append(synapse)
-
-        return synapses
 
     def get_neuromorphic_state(self) -> Dict[str, Any]:
         """Get hippocampus state in neuromorphic (neuron-centric) format.
@@ -137,80 +111,14 @@ class HippocampusCheckpointManager:
             }
         """
         h = self.hippocampus
-        neurons = []
 
-        # Extract DG neurons (Dentate Gyrus)
-        # Use computed size from instance, not config
-        n_dg = h.dg_size
-        dg_membrane = h.dg_neurons.membrane if h.dg_neurons.membrane is not None else torch.zeros(n_dg, device=h.device)
+        # Use abstract method implementations to extract state
+        neurons = self._get_neurons_data()
+        learning_state = self._get_learning_state()
+        neuromodulator_state = self._get_neuromodulator_state()
+        region_state = self._get_region_state()
 
-        for i in range(n_dg):
-            # Generate stable neuron ID
-            neuron_id = f"hippo_dg_neuron_{i}_step0"  # TODO: Track actual creation step
-
-            neuron_data = {
-                "id": neuron_id,
-                "layer": "DG",
-                "region": "hippocampus",
-                "created_step": 0,
-                "membrane": dg_membrane[i].item(),
-                "incoming_synapses": self._extract_synapses_for_neuron(
-                    i, h.synaptic_weights["ec_dg"], "ec_neuron"
-                ),
-            }
-            neurons.append(neuron_data)
-
-        # Extract CA3 neurons
-        n_ca3 = h.ca3_size
-        ca3_membrane = h.ca3_neurons.membrane if h.ca3_neurons.membrane is not None else torch.zeros(n_ca3, device=h.device)
-
-        for i in range(n_ca3):
-            neuron_id = f"hippo_ca3_neuron_{i}_step0"
-
-            # CA3 has two sets of incoming synapses: from DG and from CA3 (recurrent)
-            dg_synapses = self._extract_synapses_for_neuron(i, h.w_dg_ca3, "hippo_dg_neuron")
-            ca3_synapses = self._extract_synapses_for_neuron(i, h.w_ca3_ca3, "hippo_ca3_neuron")
-
-            neuron_data = {
-                "id": neuron_id,
-                "layer": "CA3",
-                "region": "hippocampus",
-                "created_step": 0,
-                "membrane": ca3_membrane[i].item(),
-                "incoming_synapses": dg_synapses + ca3_synapses,  # Combine both sources
-            }
-            neurons.append(neuron_data)
-
-        # Extract CA1 neurons
-        n_ca1 = h.ca1_size
-        ca1_membrane = h.ca1_neurons.membrane if h.ca1_neurons.membrane is not None else torch.zeros(n_ca1, device=h.device)
-
-        for i in range(n_ca1):
-            neuron_id = f"hippo_ca1_neuron_{i}_step0"
-
-            # CA1 has three sets of incoming synapses: from CA3, from EC L3, and from EC direct
-            ca3_synapses = self._extract_synapses_for_neuron(i, h.w_ca3_ca1, "hippo_ca3_neuron")
-            ec_synapses = self._extract_synapses_for_neuron(i, h.synaptic_weights["ec_ca1"], "ec_neuron")
-
-            all_synapses = ca3_synapses + ec_synapses
-
-            # Add EC L3 synapses if present
-            w_ec_l3_ca1 = h.synaptic_weights.get("ec_l3_ca1", None)
-            if w_ec_l3_ca1 is not None:
-                ec_l3_synapses = self._extract_synapses_for_neuron(i, w_ec_l3_ca1, "ec_l3_neuron")
-                all_synapses.extend(ec_l3_synapses)
-
-            neuron_data = {
-                "id": neuron_id,
-                "layer": "CA1",
-                "region": "hippocampus",
-                "created_step": 0,
-                "membrane": ca1_membrane[i].item(),
-                "incoming_synapses": all_synapses,
-            }
-            neurons.append(neuron_data)
-
-        # Get episode buffer state
+        # Get episode buffer state (hippocampus-specific)
         episode_buffer_state = []
         for ep in h.episode_buffer:
             ep_state = {
@@ -226,17 +134,22 @@ class HippocampusCheckpointManager:
             }
             episode_buffer_state.append(ep_state)
 
-        return {
-            "format": "neuromorphic",
-            "format_version": "2.0.0",
-            "neurons": neurons,
-            # Global state
-            "episode_buffer": episode_buffer_state,
-            "learning_state": self._get_learning_state(),
-            "oscillator_state": self._get_oscillator_state(),
-            "neuromodulator_state": h.get_neuromodulator_state(),
-            "region_state": self._get_region_state(),
-        }
+        # Get oscillator state (hippocampus-specific)
+        oscillator_state = {}
+        if h.replay_engine is not None:
+            oscillator_state["replay_engine"] = h.replay_engine.get_state()
+
+        # Package using base class method with additional hippocampus-specific state
+        return self.package_neuromorphic_state(
+            neurons=neurons,
+            learning_state=learning_state,
+            neuromodulator_state=neuromodulator_state,
+            region_state=region_state,
+            additional_state={
+                "episode_buffer": episode_buffer_state,
+                "oscillator_state": oscillator_state,
+            },
+        )
 
     def _get_learning_state(self) -> Dict[str, Any]:
         """Extract learning-related state (STP, traces, etc.)."""
@@ -527,9 +440,6 @@ class HippocampusCheckpointManager:
         Returns:
             Dict with checkpoint metadata
         """
-        import torch
-        from pathlib import Path
-
         path = Path(path)
 
         # Auto-select format
@@ -573,9 +483,6 @@ class HippocampusCheckpointManager:
         Args:
             path: Path to checkpoint file
         """
-        from pathlib import Path
-        import torch
-
         path = Path(path)
 
         # Load checkpoint
@@ -591,3 +498,93 @@ class HippocampusCheckpointManager:
             self.load_neuromorphic_state(state)
         else:
             self.hippocampus.load_full_state(state)
+
+    # =========================================================================
+    # ABSTRACT METHOD IMPLEMENTATIONS (from BaseCheckpointManager)
+    # =========================================================================
+
+    def _get_neurons_data(self) -> list[Dict[str, Any]]:
+        """Extract per-neuron data for all three layers (DG, CA3, CA1)."""
+        h = self.hippocampus
+        neurons = []
+
+        # Extract DG neurons (Dentate Gyrus)
+        n_dg = h.dg_size
+        dg_membrane = h.dg_neurons.membrane if h.dg_neurons.membrane is not None else torch.zeros(n_dg, device=h.device)
+
+        for i in range(n_dg):
+            neuron_id = f"hippo_dg_neuron_{i}_step0"
+
+            neuron_data = {
+                "id": neuron_id,
+                "layer": "DG",
+                "region": "hippocampus",
+                "created_step": 0,
+                "membrane": dg_membrane[i].item(),
+                "incoming_synapses": self.extract_synapses_for_neuron(
+                    i, h.synaptic_weights["ec_dg"], "ec_neuron"
+                ),
+            }
+            neurons.append(neuron_data)
+
+        # Extract CA3 neurons
+        n_ca3 = h.ca3_size
+        ca3_membrane = h.ca3_neurons.membrane if h.ca3_neurons.membrane is not None else torch.zeros(n_ca3, device=h.device)
+
+        for i in range(n_ca3):
+            neuron_id = f"hippo_ca3_neuron_{i}_step0"
+
+            # CA3 has two sets of incoming synapses: from DG and from CA3 (recurrent)
+            all_synapses = self.extract_multi_source_synapses(
+                i,
+                weight_source_pairs=[
+                    (h.w_dg_ca3, "hippo_dg_neuron"),
+                    (h.w_ca3_ca3, "hippo_ca3_neuron"),
+                ],
+            )
+
+            neuron_data = {
+                "id": neuron_id,
+                "layer": "CA3",
+                "region": "hippocampus",
+                "created_step": 0,
+                "membrane": ca3_membrane[i].item(),
+                "incoming_synapses": all_synapses,
+            }
+            neurons.append(neuron_data)
+
+        # Extract CA1 neurons
+        n_ca1 = h.ca1_size
+        ca1_membrane = h.ca1_neurons.membrane if h.ca1_neurons.membrane is not None else torch.zeros(n_ca1, device=h.device)
+
+        for i in range(n_ca1):
+            neuron_id = f"hippo_ca1_neuron_{i}_step0"
+
+            # CA1 has multiple input sources
+            weight_source_pairs = [
+                (h.w_ca3_ca1, "hippo_ca3_neuron"),
+                (h.synaptic_weights["ec_ca1"], "ec_neuron"),
+            ]
+
+            # Add EC L3 synapses if present
+            w_ec_l3_ca1 = h.synaptic_weights.get("ec_l3_ca1", None)
+            if w_ec_l3_ca1 is not None:
+                weight_source_pairs.append((w_ec_l3_ca1, "ec_l3_neuron"))
+
+            all_synapses = self.extract_multi_source_synapses(i, weight_source_pairs)
+
+            neuron_data = {
+                "id": neuron_id,
+                "layer": "CA1",
+                "region": "hippocampus",
+                "created_step": 0,
+                "membrane": ca1_membrane[i].item(),
+                "incoming_synapses": all_synapses,
+            }
+            neurons.append(neuron_data)
+
+        return neurons
+
+    def _get_neuromodulator_state(self) -> Dict[str, Any]:
+        """Extract neuromodulator state (delegate to hippocampus)."""
+        return self.hippocampus.get_neuromodulator_state()

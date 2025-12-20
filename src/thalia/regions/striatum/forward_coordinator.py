@@ -62,8 +62,8 @@ from thalia.components.neurons.neuron_constants import (
     THETA_CONTRAST_RANGE,
     BASELINE_EXCITATION_SCALE,
     TONIC_D1_GAIN_SCALE,
-    NE_GAIN_RANGE,
 )
+from thalia.neuromodulation.constants import compute_ne_gain
 
 if TYPE_CHECKING:
     from .config import StriatumConfig
@@ -208,7 +208,7 @@ class ForwardPassCoordinator:
 
         # Norepinephrine gain modulation (arousal/uncertainty)
         # High NE increases gain for both pathways (more exploration)
-        ne_gain = 1.0 + NE_GAIN_RANGE * self._ne_level
+        ne_gain = compute_ne_gain(self._ne_level)
 
         return d1_gain * ne_gain, d2_gain
 

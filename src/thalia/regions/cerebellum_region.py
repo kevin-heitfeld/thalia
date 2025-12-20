@@ -69,6 +69,7 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.errors import CheckpointError
 from thalia.core.neural_region import NeuralRegion
 from thalia.utils.core_utils import clamp_weights
+from thalia.utils.input_routing import InputRouter
 from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.managers.component_registry import register_region
@@ -80,8 +81,8 @@ from thalia.components.neurons.neuron_constants import (
     E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
-    NE_GAIN_RANGE,
 )
+from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.regulation.learning_constants import LEARNING_RATE_ERROR_CORRECTIVE
 from thalia.regions.base import NeuralComponentState
 from thalia.regions.cerebellum import (
@@ -544,9 +545,9 @@ class Cerebellum(NeuralRegion):
 
         Args:
             inputs: Either:
-                   - Dict mapping source names to spike tensors (Phase 2)
+                   - Dict mapping source names to spike tensors
                      e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo]}
-                   - Tensor of spikes (legacy, backward compat) [n_input]
+                   - Tensor of spikes (auto-wrapped as {"default": tensor}) [n_input]
             **kwargs: Additional arguments (unused)
 
         Returns:
@@ -555,14 +556,8 @@ class Cerebellum(NeuralRegion):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
-        # =====================================================================
-        # BACKWARD COMPATIBILITY: Convert Tensor to Dict
-        # =====================================================================
-        if isinstance(inputs, torch.Tensor):
-            input_spikes = inputs
-        else:
-            # Phase 2: concatenate all source inputs
-            input_spikes = torch.cat(list(inputs.values()), dim=0)
+        # Concatenate all input sources
+        input_spikes = InputRouter.concatenate_sources(inputs, component_name="Cerebellum")
 
         # Assert 1D input
         assert input_spikes.dim() == 1, (
@@ -636,7 +631,7 @@ class Cerebellum(NeuralRegion):
             # Biological: NE modulates cerebellar Purkinje cell excitability
             ne_level = self.state.norepinephrine
             # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-            ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
+            ne_gain = compute_ne_gain(ne_level)
             g_exc = g_exc * ne_gain
 
             # Forward through neurons (returns 1D bool spikes)
@@ -766,7 +761,10 @@ class Cerebellum(NeuralRegion):
             actual_dw = self.weights - old_weights
         else:
             # Enhanced: No global weight update (Purkinje cells learn internally)
-            # TODO: Implement proper learning for individual Purkinje dendritic weights
+            # TODO(research): Implement proper learning for individual Purkinje dendritic weights
+            # Current: Purkinje cells use internal parallel fiber synaptic weights
+            # Goal: Support per-dendrite plasticity for fine-grained cerebellar learning
+            # See: Ito (2001) - Cerebellar long-term depression
             actual_dw = dw  # Use computed dw for metrics only
 
         ltp = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0

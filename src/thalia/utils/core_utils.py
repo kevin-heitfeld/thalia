@@ -178,6 +178,43 @@ def assert_single_instance(batch_size: int, context: str = "This component") -> 
         )
 
 
+def initialize_phase_preferences(
+    n_neurons: int,
+    device: Union[str, torch.device] = "cpu",
+) -> torch.Tensor:
+    """Initialize random phase preferences for oscillator-coupled neurons.
+
+    Many cortical neurons have preferred oscillator phases at which they are
+    most excitable. This function initializes uniformly distributed random
+    phase preferences in the range [0, 2π).
+
+    This consolidates the pattern `torch.rand(n_neurons, device=device) * 2 * torch.pi`
+    that appeared in multiple regions (cortex, thalamus, etc.).
+
+    Args:
+        n_neurons: Number of neurons requiring phase preferences
+        device: Device for tensor creation (CPU or CUDA)
+
+    Returns:
+        Phase preference tensor [n_neurons] with values in [0, 2π)
+
+    Example:
+        >>> # Instead of:
+        >>> phase_prefs = torch.rand(100, device=device) * 2 * torch.pi
+        >>>
+        >>> # Use:
+        >>> from thalia.utils.core_utils import initialize_phase_preferences
+        >>> phase_prefs = initialize_phase_preferences(100, device=device)
+
+    See Also:
+        - `regulation.learning_constants.PHASE_RANGE_2PI`: The 2π constant
+        - Used in: LayeredCortex (L2/3 phase preferences), ThalamicRelay
+    """
+    import math
+    device = torch.device(device) if isinstance(device, str) else device
+    return torch.rand(n_neurons, device=device) * (2 * math.pi)
+
+
 __all__ = [
     "ensure_1d",
     "clamp_weights",
@@ -185,4 +222,5 @@ __all__ = [
     "zeros_like_config",
     "ones_like_config",
     "assert_single_instance",
+    "initialize_phase_preferences",
 ]

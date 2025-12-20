@@ -51,17 +51,21 @@ from pathlib import Path
 
 import torch
 
+from thalia.managers import BaseCheckpointManager
+
 if TYPE_CHECKING:
     from thalia.regions.striatum.striatum import Striatum
 
 
-class CheckpointManager:
+class CheckpointManager(BaseCheckpointManager):
     """Manages state checkpointing for Striatum.
 
     Handles:
     - Full state serialization (weights, eligibility, exploration, etc.)
     - State restoration with backward compatibility
     - Version migration for old checkpoint formats
+
+    Inherits from BaseCheckpointManager for shared synapse extraction logic.
     """
 
     def __init__(self, striatum: Striatum):
@@ -70,6 +74,7 @@ class CheckpointManager:
         Args:
             striatum: The Striatum instance to manage
         """
+        super().__init__(format_version="2.0.0")
         self.striatum = striatum
 
     def get_full_state(self) -> Dict[str, Any]:
@@ -313,7 +318,7 @@ class CheckpointManager:
     # =========================================================================
 
     def _extract_synapses_for_neuron(self, neuron_idx: int, weights: torch.Tensor, eligibility: torch.Tensor, source_prefix: str) -> list[Dict[str, Any]]:
-        """Extract synapses for a single neuron.
+        """Extract synapses for a single neuron (striatum-specific with eligibility).
 
         Args:
             neuron_idx: Index of target neuron
@@ -324,21 +329,20 @@ class CheckpointManager:
         Returns:
             List of synapse dicts with {from, weight, eligibility}
         """
-        synapses = []
-        neuron_weights = weights[neuron_idx]
-        neuron_eligibility = eligibility[neuron_idx] if eligibility is not None else torch.zeros_like(neuron_weights)
+        # Use base class method for weight extraction
+        synapses = self.extract_synapses_for_neuron(neuron_idx, weights, source_prefix)
 
-        # Only store non-zero synapses (sparse format)
-        nonzero_mask = neuron_weights.abs() > 1e-8
-        nonzero_indices = torch.nonzero(nonzero_mask, as_tuple=True)[0]
-
-        for input_idx in nonzero_indices:
-            synapse = {
-                "from": f"{source_prefix}_{input_idx.item()}",
-                "weight": neuron_weights[input_idx].item(),
-                "eligibility": neuron_eligibility[input_idx].item(),
-            }
-            synapses.append(synapse)
+        # Add eligibility traces to each synapse
+        if eligibility is not None:
+            neuron_eligibility = eligibility[neuron_idx]
+            for synapse in synapses:
+                # Parse source index from ID (format: "{source_prefix}_{idx}")
+                source_idx = int(synapse["from"].split("_")[-1])
+                synapse["eligibility"] = neuron_eligibility[source_idx].item()
+        else:
+            # Default to zero eligibility
+            for synapse in synapses:
+                synapse["eligibility"] = 0.0
 
         return synapses
 
@@ -368,71 +372,19 @@ class CheckpointManager:
                 ]
             }
         """
-        s = self.striatum
+        # Use abstract method implementations to extract state
+        neurons = self._get_neurons_data()
+        learning_state = self._get_learning_state()
+        neuromodulator_state = self._get_neuromodulator_state()
+        region_state = self._get_region_state()
 
-        neurons = []
-
-        # Extract D1 pathway neurons
-        d1_weights = s.d1_pathway.weights
-        d1_eligibility = s.d1_pathway.eligibility if s.d1_pathway.eligibility is not None else torch.zeros_like(d1_weights)
-
-        n_d1 = d1_weights.shape[0] // 2  # Half are D1
-
-        for i in range(n_d1):
-            neuron_id = s.neuron_ids[i] if i < len(s.neuron_ids) else f"striatum_d1_neuron_{i}_step0"
-
-            # Extract creation step from ID (format: "..._step{N}")
-            created_step = 0
-            if "_step" in neuron_id:
-                created_step = int(neuron_id.split("_step")[1])
-
-            neuron_data = {
-                "id": neuron_id,
-                "type": "D1-MSN",
-                "region": "striatum",
-                "created_step": created_step,
-                "membrane": s.d1_pathway.neurons.membrane[i].item() if s.d1_pathway.neurons.membrane is not None else 0.0,
-                "incoming_synapses": self._extract_synapses_for_neuron(i, d1_weights, d1_eligibility, source_prefix),
-            }
-            neurons.append(neuron_data)
-
-        # Extract D2 pathway neurons
-        d2_weights = s.d2_pathway.weights
-        d2_eligibility = s.d2_pathway.eligibility if s.d2_pathway.eligibility is not None else torch.zeros_like(d2_weights)
-
-        n_d2 = d2_weights.shape[0] - n_d1  # Remaining are D2
-
-        for i in range(n_d2):
-            neuron_idx = n_d1 + i
-            neuron_id = s.neuron_ids[neuron_idx] if neuron_idx < len(s.neuron_ids) else f"striatum_d2_neuron_{i}_step0"
-
-            # Extract creation step from ID
-            created_step = 0
-            if "_step" in neuron_id:
-                created_step = int(neuron_id.split("_step")[1])
-
-            neuron_data = {
-                "id": neuron_id,
-                "type": "D2-MSN",
-                "region": "striatum",
-                "created_step": created_step,
-                "membrane": s.d2_pathway.neurons.membrane[i].item() if s.d2_pathway.neurons.membrane is not None else 0.0,
-                "incoming_synapses": self._extract_synapses_for_neuron(i, d2_weights, d2_eligibility, source_prefix),
-            }
-            neurons.append(neuron_data)
-
-        return {
-            "format": "neuromorphic",
-            "format_version": "2.0.0",
-            "neurons": neurons,
-            # Also store global state (exploration, action selection, etc.)
-            "exploration_state": {
-                "manager_state": s.exploration.get_state(),
-            },
-            "action_state": {
-                "last_action": s.state_tracker.last_action,
-            },
-        }
+        # Package using base class method
+        return self.package_neuromorphic_state(
+            neurons=neurons,
+            learning_state=learning_state,
+            neuromodulator_state=neuromodulator_state,
+            region_state=region_state,
+        )
 
     def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:
         """Load striatum state from neuromorphic format.
@@ -583,9 +535,6 @@ class CheckpointManager:
         Returns:
             Dict with checkpoint metadata
         """
-        import torch
-        from pathlib import Path
-
         path = Path(path)
 
         # Auto-select format
@@ -626,9 +575,6 @@ class CheckpointManager:
         Args:
             path: Path to checkpoint file
         """
-        from pathlib import Path
-        import torch
-
         path = Path(path)
 
         # Load checkpoint
@@ -644,3 +590,116 @@ class CheckpointManager:
             self.load_neuromorphic_state(state)
         else:
             self.load_full_state(state)
+
+    # =========================================================================
+    # ABSTRACT METHOD IMPLEMENTATIONS (from BaseCheckpointManager)
+    # =========================================================================
+
+    def _get_neurons_data(self) -> list[Dict[str, Any]]:
+        """Extract per-neuron data with incoming synapses for D1 and D2 neurons.
+
+        Returns:
+            List of neuron dicts with membrane, synapses, and eligibility
+        """
+        s = self.striatum
+        neurons = []
+
+        # Extract D1 pathway neurons
+        d1_weights = s.d1_pathway.weights
+        d1_eligibility = s.d1_pathway.eligibility if s.d1_pathway.eligibility is not None else torch.zeros_like(d1_weights)
+
+        n_d1 = d1_weights.shape[0] // 2  # Half are D1
+
+        for i in range(n_d1):
+            neuron_id = s.neuron_ids[i] if i < len(s.neuron_ids) else f"striatum_d1_neuron_{i}_step0"
+
+            # Extract creation step from ID (format: "..._step{N}")
+            created_step = 0
+            if "_step" in neuron_id:
+                created_step = int(neuron_id.split("_step")[1])
+
+            neuron_data = {
+                "id": neuron_id,
+                "type": "D1-MSN",
+                "region": "striatum",
+                "created_step": created_step,
+                "membrane": s.d1_pathway.neurons.membrane[i].item() if s.d1_pathway.neurons.membrane is not None else 0.0,
+                "incoming_synapses": self._extract_synapses_for_neuron(i, d1_weights, d1_eligibility, "input"),
+            }
+            neurons.append(neuron_data)
+
+        # Extract D2 pathway neurons
+        d2_weights = s.d2_pathway.weights
+        d2_eligibility = s.d2_pathway.eligibility if s.d2_pathway.eligibility is not None else torch.zeros_like(d2_weights)
+
+        n_d2 = d2_weights.shape[0] - n_d1  # Remaining are D2
+
+        for i in range(n_d2):
+            neuron_idx = n_d1 + i
+            neuron_id = s.neuron_ids[neuron_idx] if neuron_idx < len(s.neuron_ids) else f"striatum_d2_neuron_{i}_step0"
+
+            # Extract creation step from ID
+            created_step = 0
+            if "_step" in neuron_id:
+                created_step = int(neuron_id.split("_step")[1])
+
+            neuron_data = {
+                "id": neuron_id,
+                "type": "D2-MSN",
+                "region": "striatum",
+                "created_step": created_step,
+                "membrane": s.d2_pathway.neurons.membrane[i].item() if s.d2_pathway.neurons.membrane is not None else 0.0,
+                "incoming_synapses": self._extract_synapses_for_neuron(i, d2_weights, d2_eligibility, "input"),
+            }
+            neurons.append(neuron_data)
+
+        return neurons
+
+    def _get_learning_state(self) -> Dict[str, Any]:
+        """Extract learning-related state for striatum (homeostasis, trial stats)."""
+        s = self.striatum
+        return {
+            # Trial accumulators (managed by state_tracker)
+            "d1_votes_accumulated": s.state_tracker._d1_votes_accumulated.detach().clone(),
+            "d2_votes_accumulated": s.state_tracker._d2_votes_accumulated.detach().clone(),
+            # Homeostatic state
+            "activity_ema": s._activity_ema,
+            "trial_spike_count": s._trial_spike_count,
+            "trial_timesteps": s._trial_timesteps,
+            "homeostatic_scaling_applied": s._homeostatic_scaling_applied,
+            # Homeostasis manager state (if enabled)
+            "homeostasis_manager_state": s.homeostasis.unified_homeostasis.get_state() if (s.homeostasis is not None and s.homeostasis.unified_homeostasis is not None) else None,
+        }
+
+    def _get_neuromodulator_state(self) -> Dict[str, Any]:
+        """Extract neuromodulator state for striatum (dopamine)."""
+        s = self.striatum
+        return {
+            "dopamine": s.state_tracker._last_dopamine,
+        }
+
+    def _get_region_state(self) -> Dict[str, Any]:
+        """Extract striatum-specific state (exploration, action selection, delays)."""
+        s = self.striatum
+        return {
+            # Exploration state
+            "exploring": s.state_tracker.exploring,
+            "last_uncertainty": s.state_tracker._last_uncertainty,
+            "last_exploration_prob": s.state_tracker._last_exploration_prob,
+            "exploration_manager": s.exploration.get_state(),
+            # Action selection state
+            "last_action": s.state_tracker.last_action,
+            "recent_spikes": s.state_tracker.recent_spikes.detach().clone(),
+            # Value estimation state (if RPE enabled)
+            "value_estimates": s.value_estimates.detach().clone() if s.value_estimates is not None else None,
+            "last_rpe": s.state_tracker._last_rpe,
+            "last_expected": s.state_tracker._last_expected,
+            # Goal modulation state (if enabled)
+            "pfc_modulation_d1": s.pfc_modulation_d1.detach().clone() if hasattr(s, 'pfc_modulation_d1') and s.pfc_modulation_d1 is not None else None,
+            "pfc_modulation_d2": s.pfc_modulation_d2.detach().clone() if hasattr(s, 'pfc_modulation_d2') and s.pfc_modulation_d2 is not None else None,
+            # D1/D2 pathway delay buffers (temporal competition)
+            "d1_delay_buffer": s._d1_delay_buffer.detach().clone() if s._d1_delay_buffer is not None else None,
+            "d2_delay_buffer": s._d2_delay_buffer.detach().clone() if s._d2_delay_buffer is not None else None,
+            "d1_delay_ptr": s._d1_delay_ptr,
+            "d2_delay_ptr": s._d2_delay_ptr,
+        }

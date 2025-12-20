@@ -77,15 +77,14 @@ from thalia.components.neurons import create_pyramidal_neurons
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
 from thalia.core.errors import CheckpointError, ComponentError
-from thalia.components.neurons.neuron_constants import (
-    NE_GAIN_RANGE,
-)
+from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.components.synapses.stp import ShortTermPlasticity
 from thalia.components.synapses.stp_presets import get_stp_config
 from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
 from thalia.components.synapses.traces import update_trace
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.utils.input_routing import InputRouter
 from thalia.core.neural_region import NeuralRegion
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
@@ -792,7 +791,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
         Args:
             inputs: Input spikes - Dict mapping source names to spike tensors,
-                   or single Tensor for backward compatibility [n_input]
+                   or single Tensor (auto-wrapped as {"default": tensor}) [n_input]
             ec_direct_input: Optional separate input for EC→CA1 direct pathway [n_input] (1D)
                             If None, uses input_spikes (original behavior).
                             When provided, this models EC layer III input which
@@ -811,19 +810,16 @@ class TrisynapticHippocampus(NeuralRegion):
             - EC layer III: Optional separate input for direct EC→CA1 (biologically
               accurate - EC L3 carries raw sensory info, EC L2 goes through DG)
         """
-        # Backward compatibility: convert Tensor to Dict
-        if isinstance(inputs, torch.Tensor):
-            inputs = {"ec": inputs}
-
-        # Get the input spikes (hippocampus typically receives from EC or cortex)
-        # Try common source keys: ec (entorhinal cortex), cortex, input, default
-        input_spikes = inputs.get("ec") or inputs.get("cortex") or inputs.get("input")
-        if input_spikes is None:
-            # No recognized source - use zeros or first available
-            if inputs:
-                input_spikes = next(iter(inputs.values()))
-            else:
-                input_spikes = torch.zeros(self.tri_config.n_input, device=self.device)
+        # Route inputs - try common aliases for entorhinal cortex input
+        routed = InputRouter.route(
+            inputs,
+            port_mapping={
+                "ec": ["ec", "cortex", "input", "default"],
+            },
+            defaults={"ec": torch.zeros(self.tri_config.n_input, device=self.device)},
+            component_name="TrisynapticHippocampus",
+        )
+        input_spikes = routed["ec"]
 
         # Ensure 1D input (single sample, no batch)
         input_spikes = input_spikes.squeeze()
@@ -1104,7 +1100,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # Biological: β-adrenergic receptors increase neuronal excitability
         ne_level = self.state.norepinephrine
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
-        ne_gain = 1.0 + NE_GAIN_RANGE * ne_level
+        ne_gain = compute_ne_gain(ne_level)
         ca3_input = ca3_input * ne_gain
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset

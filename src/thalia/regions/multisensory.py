@@ -723,25 +723,31 @@ class MultimodalIntegration(NeuralRegion):
         self.multisensory_config = replace(self.multisensory_config, n_output=new_n_output)
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information.
+        """Get diagnostic information using DiagnosticsMixin helpers.
 
         Returns:
             Dict with visual/auditory/language firing rates, integration activity
         """
-        return {
-            "visual_pool_firing_rate": float(self.visual_pool_spikes.mean()),
-            "auditory_pool_firing_rate": float(self.auditory_pool_spikes.mean()),
-            "language_pool_firing_rate": float(self.language_pool_spikes.mean()),
-            "integration_firing_rate": float(self.integration_spikes.mean()),
-            "visual_pool_active_fraction": float((self.visual_pool_spikes > 0).float().mean()),
-            "auditory_pool_active_fraction": float((self.auditory_pool_spikes > 0).float().mean()),
-            "language_pool_active_fraction": float((self.language_pool_spikes > 0).float().mean()),
+        # Custom metrics specific to multisensory region
+        custom = {
             "cross_modal_weight_mean": float(
                 (self.visual_to_auditory.mean() +
                  self.visual_to_language.mean() +
                  self.auditory_to_language.mean()) / 3.0
             ),
         }
+
+        # Use collect_standard_diagnostics for spike statistics
+        return self.collect_standard_diagnostics(
+            region_name="multisensory",
+            spike_tensors={
+                "visual_pool": self.visual_pool_spikes,
+                "auditory_pool": self.auditory_pool_spikes,
+                "language_pool": self.language_pool_spikes,
+                "integration": self.integration_spikes,
+            },
+            custom_metrics=custom,
+        )
 
     def check_health(self):
         """Check region health.

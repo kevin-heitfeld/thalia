@@ -490,9 +490,10 @@ class LiveDiagnostics:
         """
         print(f"Creating animated diagnostics... ({duration_seconds}s at {fps} fps)")
 
-        # TODO: Implement animated GIF creation
+        # TODO(low-priority): Implement animated GIF creation
         # Would require storing snapshots at regular intervals
-        # and combining them into an animation
+        # and combining them into an animation using imageio or matplotlib animation
+        # Current workaround: Use save_snapshot() at regular intervals instead
 
         print("⚠️  Animated GIF creation not yet implemented")
         print("   Use save_snapshot() at regular intervals instead")
