@@ -157,15 +157,18 @@ class AxonalProjection(RoutingComponent):
         self,
         source_outputs: Dict[str, torch.Tensor],
         apply_delays: bool = True,
-    ) -> torch.Tensor:
-        """Route spikes from sources to concatenated output.
+    ) -> Dict[str, torch.Tensor]:
+        """Route spikes from sources preserving source identity.
+
+        Biologically accurate: Returns dict so target regions can route inputs
+        to different neuron populations (e.g., thalamus sensory→relay, L6→TRN).
 
         Args:
             source_outputs: Dict mapping region names to spike tensors
             apply_delays: Whether to apply axonal delays (False for testing)
 
         Returns:
-            Concatenated spike tensor [n_output] with axonal delays applied
+            Dict mapping source names to delayed spike tensors (NOT concatenated)
 
         Example:
             outputs = {
@@ -173,9 +176,13 @@ class AxonalProjection(RoutingComponent):
                 "hippocampus": hipp_spikes,   # [64]
                 "pfc": pfc_spikes,            # [32]
             }
-            concatenated = projection.forward(outputs)  # [224]
+            delayed = projection.forward(outputs)
+            # Returns: {"cortex": [128], "hippocampus": [64], "pfc": [32]}
+
+            # Target regions can concatenate if needed:
+            concatenated = torch.cat([delayed["cortex"], delayed["hippocampus"]])
         """
-        concatenated_spikes = []
+        delayed_outputs = {}
 
         for source_spec in self.sources:
             # Get spikes from source
@@ -203,10 +210,10 @@ class AxonalProjection(RoutingComponent):
             else:
                 delayed_spikes = spikes
 
-            concatenated_spikes.append(delayed_spikes)
+            # Store in dict preserving source identity
+            delayed_outputs[source_spec.region_name] = delayed_spikes
 
-        # Concatenate in consistent order (same as sources list)
-        return torch.cat(concatenated_spikes, dim=0)
+        return delayed_outputs
 
     def _apply_delay(self, source_name: str, spikes: torch.Tensor) -> torch.Tensor:
         """Apply axonal conduction delay using circular buffer.

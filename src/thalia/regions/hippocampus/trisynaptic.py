@@ -87,7 +87,6 @@ from thalia.components.synapses.traces import update_trace
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.core.neural_region import NeuralRegion
-from thalia.regions.base import NeuralComponent
 from thalia.regions.feedforward_inhibition import FeedforwardInhibition
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
@@ -524,9 +523,6 @@ class TrisynapticHippocampus(NeuralRegion):
         with torch.no_grad():
             self.w_ca1_inhib.data.fill_diagonal_(0.0)
 
-        # Store main weights reference for compatibility (points to default external input)
-        self.weights = self.synaptic_weights["ec"]
-
     def _reset_subsystems(self, *names: str) -> None:
         """Reset state of named subsystems that have reset_state() method."""
         for name in names:
@@ -715,9 +711,6 @@ class TrisynapticHippocampus(NeuralRegion):
             torch.cat([expanded_ca1_rows, new_ca3_cols_to_ca1], dim=1)
         )
 
-        # Update main weights reference (for base class compatibility)
-        self.weights = self.w_ca3_ca1
-
         # 5. Expand neurons for all layers using factory functions
         self.dg_size = new_dg_size
         self.dg_neurons = create_pyramidal_neurons(self.dg_size, self.device)
@@ -822,8 +815,15 @@ class TrisynapticHippocampus(NeuralRegion):
         if isinstance(inputs, torch.Tensor):
             inputs = {"ec": inputs}
 
-        # Get the input spikes (hippocampus typically receives from EC)
-        input_spikes = inputs.get("ec", torch.zeros(self.tri_config.n_input, device=self.device))
+        # Get the input spikes (hippocampus typically receives from EC or cortex)
+        # Try common source keys: ec (entorhinal cortex), cortex, input, default
+        input_spikes = inputs.get("ec") or inputs.get("cortex") or inputs.get("input")
+        if input_spikes is None:
+            # No recognized source - use zeros or first available
+            if inputs:
+                input_spikes = next(iter(inputs.values()))
+            else:
+                input_spikes = torch.zeros(self.tri_config.n_input, device=self.device)
 
         # Ensure 1D input (single sample, no batch)
         input_spikes = input_spikes.squeeze()
@@ -1510,12 +1510,10 @@ class TrisynapticHippocampus(NeuralRegion):
             # Oscillators advance centrally in Brain, so we just track position here.
             # The position is used for diagnostics and can be reset by new_trial().
 
-        # Apply axonal delay (biological reality: ALL neural connections have delays)
-        delayed_spikes = self._apply_axonal_delay(ca1_spikes, dt)
-
+        # Axonal delays are handled by AxonalProjection pathways, not within regions
         # Ensure bool output (CA1 neurons already return bool from Phase 1)
         # WTA sparsity also returns bool
-        return delayed_spikes
+        return ca1_spikes
 
     def _apply_wta_sparsity(
         self,
@@ -2231,7 +2229,6 @@ class TrisynapticHippocampus(NeuralRegion):
         if weights["w_ec_l3_ca1"] is not None and "ec_l3_ca1" in self.synaptic_weights:
             self.synaptic_weights["ec_l3_ca1"].data = weights["w_ec_l3_ca1"].to(self.device)
         self.w_ca1_inhib.data = weights["w_ca1_inhib"].to(self.device)
-        self.weights = self.w_ca3_ca1  # Update reference
 
         # 2. RESTORE REGION STATE
         region_state = state["region_state"]

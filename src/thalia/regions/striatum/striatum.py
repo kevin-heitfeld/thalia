@@ -1691,8 +1691,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         Returns:
             Metrics dict with dopamine level and weight changes.
         """
-        # Use dopamine from Brain (VTA) - already computed and set via set_dopamine()
-        da_level = self.state.dopamine
+        # Use dopamine from forward_coordinator (set via set_neuromodulators)
+        da_level = self.forward_coordinator._tonic_dopamine
 
         # Store for diagnostics
         self._last_rpe = da_level
@@ -1887,9 +1887,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             "net_weight_std": net_weights.std().item(),
         }
 
-        # Dopamine state (now managed by Brain, but we track local state)
+        # Dopamine state (now managed by Brain via forward_coordinator)
         dopamine_state = {
-            "current_level": self.state.dopamine,
+            "current_level": self.forward_coordinator._tonic_dopamine,
             "tonic_dopamine": self.tonic_dopamine,
         }
 

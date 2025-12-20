@@ -370,6 +370,7 @@ class BrainBuilder:
             topdown_sources = []
             sensory_sources = []
             modulation_sources = []
+            feedback_sources = []  # For L6 feedback to thalamus
 
             for source_name, conn in sources:
                 target_port = conn.target_port
@@ -384,6 +385,9 @@ class BrainBuilder:
                     sensory_sources.append((source_name, conn))
                 elif target_port == "pfc_modulation":
                     modulation_sources.append((source_name, conn))
+                elif target_port == "l6_feedback":
+                    # L6 corticothalamic feedback (separate from feedforward)
+                    feedback_sources.append((source_name, conn))
                 else:
                     # Unknown port - treat as feedforward with warning
                     print(f"Warning: Unknown target_port '{target_port}' on connection to '{name}', treating as feedforward")
@@ -405,12 +409,14 @@ class BrainBuilder:
                                 for src, conn in sensory_sources)
                 spec.config_params["ec_l3_input_size"] = ec_l3_size
 
-            # Note: top_down and pfc_modulation are handled separately in forward pass
+            # Note: top_down, pfc_modulation, and l6_feedback are handled separately in forward pass
             # They don't contribute to n_input but are stored for reference
             if topdown_sources:
                 spec.config_params["_has_topdown"] = True
             if modulation_sources:
                 spec.config_params["_has_modulation"] = True
+            if feedback_sources:
+                spec.config_params["_has_feedback"] = True
 
     def _get_source_output_size(self, source_name: str, source_port: Optional[str]) -> int:
         """Get output size from source component, optionally from specific port.
@@ -1086,7 +1092,8 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
 
     # Cortex L6 → Thalamus: Corticothalamic feedback for attentional modulation
     # L6 projects to TRN to implement selective attention (feedback loop)
-    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6")
+    # Uses target_port to indicate this goes to TRN, not relay neurons (no concatenation)
+    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6", target_port="l6_feedback")
 
     # Cortex ⇄ Hippocampus: Bidirectional memory integration
     builder.connect("cortex", "hippocampus", pathway_type="axonal")

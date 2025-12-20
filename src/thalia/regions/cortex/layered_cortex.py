@@ -579,26 +579,6 @@ class LayeredCortex(NeuralRegion):
 
         return base_lr * modulation
 
-    def _apply_axonal_delay(
-        self,
-        output_spikes: torch.Tensor,
-        dt: float,
-    ) -> torch.Tensor:
-        """Apply axonal delay to output spikes.
-
-        Note: LayeredCortex already implements detailed inter-layer delays
-        (L4→L2/3, L2/3→L5, L2/3→L6) internally. This method is a pass-through
-        for backward compatibility with base class expectations.
-
-        Args:
-            output_spikes: Binary spike tensor [n_neurons]
-            dt: Timestep in milliseconds
-
-        Returns:
-            Spikes (no additional delay - internal delays already applied)
-        """
-        return output_spikes
-
     def reset_state(self) -> None:
         """Reset all layer states.
 
@@ -929,9 +909,32 @@ class LayeredCortex(NeuralRegion):
         if isinstance(inputs, torch.Tensor):
             input_spikes = inputs
         else:
-            input_spikes = inputs.get("input")
-            if input_spikes is None:
-                raise ValueError("LayeredCortex.forward: 'input' key not found in inputs dict")
+            # Dict input: extract and concatenate sources in consistent order
+            # Common sources: thalamus (feedforward), hippocampus (memory), cerebellum (predictions), pfc (top-down)
+            # AxonalProjection now returns dict preserving source identity
+            source_keys = ["input", "thalamus", "sensory", "hippocampus", "cerebellum", "pfc", "default"]
+            found_tensors = []
+
+            for key in source_keys:
+                if key in inputs:
+                    tensor = inputs[key]
+                    if tensor is not None:
+                        found_tensors.append(tensor)
+
+            if not found_tensors:
+                # No recognized sources - try any available keys
+                found_tensors = [v for v in inputs.values() if v is not None]
+
+            if not found_tensors:
+                raise ValueError(
+                    f"LayeredCortex.forward: No valid input tensors found in dict keys: {list(inputs.keys())}"
+                )
+
+            # Concatenate all sources
+            if len(found_tensors) == 1:
+                input_spikes = found_tensors[0]
+            else:
+                input_spikes = torch.cat(found_tensors, dim=0)
 
         # Get timestep from config for temporal dynamics
         dt = self.config.dt_ms
@@ -1309,11 +1312,9 @@ class LayeredCortex(NeuralRegion):
         # Construct output: always concatenate L2/3 and L5 (biological cortex has both pathways)
         output = torch.cat([l23_spikes, l5_spikes], dim=-1)
 
-        # Apply axonal delay (biological reality: ALL neural connections have delays)
-        delayed_output = self._apply_axonal_delay(output.bool(), dt)
-
+        # Axonal delays are handled by AxonalProjection pathways, not within regions
         # ADR-005: Return 1D tensor as bool spikes
-        return delayed_output
+        return output.bool()
 
     def get_l6_spikes(self) -> Optional[torch.Tensor]:
         """Get L6 corticothalamic feedback spikes.
@@ -1329,6 +1330,14 @@ class LayeredCortex(NeuralRegion):
             L6 is a dedicated feedback pathway that must be explicitly accessed.
         """
         return self.state.l6_spikes if self.state.l6_spikes is not None else None
+
+    def get_l6_feedback(self) -> Optional[torch.Tensor]:
+        """Alias for get_l6_spikes for compatibility with DynamicBrain port extraction.
+
+        Returns:
+            L6 feedback spikes [l6_size] or None if not available
+        """
+        return self.get_l6_spikes()
 
     # =========================================================================
     # TEST COMPATIBILITY PROPERTIES

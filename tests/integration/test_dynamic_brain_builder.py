@@ -749,8 +749,12 @@ class TestStateManagement:
         state = brain.get_full_state()
         original_weights = {}
         for name, component in brain.components.items():
-            if hasattr(component, 'weights'):
-                original_weights[name] = component.weights.clone()
+            # Save all nn.Parameters, not just 'weights' attribute
+            # (hippocampus has multiple weight matrices, and .weights can point to different ones)
+            original_weights[name] = {
+                param_name: param.data.clone()
+                for param_name, param in component.named_parameters()
+            }
 
         # Modify brain
         for _ in range(10):
@@ -762,12 +766,19 @@ class TestStateManagement:
         brain.load_full_state(state)
 
         # Verify weights restored
-        for name, original_w in original_weights.items():
+        for name, saved_params in original_weights.items():
             component = brain.components[name]
-            if hasattr(component, 'weights'):
-                current_w = component.weights
-                assert torch.allclose(current_w, original_w, atol=1e-6), \
-                    f"Weights for {name} not restored correctly"
+            for param_name, original_param in saved_params.items():
+                # Get current parameter value
+                current_param = dict(component.named_parameters())[param_name]
+                try:
+                    assert torch.allclose(current_param, original_param, atol=1e-6), \
+                        f"Parameter {name}.{param_name} not restored correctly"
+                except RuntimeError as e:
+                    raise RuntimeError(
+                        f"Parameter {name}.{param_name} has incompatible shapes: "
+                        f"current={current_param.shape}, original={original_param.shape}"
+                    ) from e
 
     def test_state_fidelity_neuromodulators(self, simple_brain):
         """Test that neuromodulator states are preserved through save/load."""

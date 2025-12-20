@@ -474,7 +474,7 @@ class PredictiveCortex(NeuralRegion):
         Process input through predictive cortex (ADR-005: 1D tensors).
 
         Args:
-            input_spikes: Input spike pattern [n_input] (1D)
+            input_spikes: Input spike pattern [n_input] (1D) or dict of inputs
             top_down: Optional top-down modulation from higher areas [l23_size] (1D)
                       NOTE: This is for L2/3 modulation, NOT L4 prediction!
             **kwargs: Additional arguments for compatibility
@@ -485,6 +485,11 @@ class PredictiveCortex(NeuralRegion):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
+        # Handle dict inputs (pass through to LayeredCortex which will concatenate)
+        if not isinstance(input_spikes, torch.Tensor):
+            # Dict input - let LayeredCortex handle extraction and concatenation
+            return self.cortex.forward(input_spikes, top_down=top_down)
+
         # ADR-005: Expect 1D tensors
         assert input_spikes.dim() == 1, (
             f"PredictiveCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
@@ -754,6 +759,30 @@ class PredictiveCortex(NeuralRegion):
             L6 spikes [l6_size] or None if not available
         """
         return self.cortex.get_l6_spikes()
+
+    def get_l6_feedback(self) -> Optional[torch.Tensor]:
+        """Alias for get_l6_spikes for compatibility with dynamic_brain port extraction.
+
+        Returns:
+            L6 feedback spikes [l6_size] or None if not available
+        """
+        return self.cortex.get_l6_spikes()
+
+    def get_effective_learning_rate(
+        self,
+        base_lr: Optional[float] = None,
+        dopamine_sensitivity: float = 1.0,
+    ) -> float:
+        """Delegate to inner cortex for dopamine-modulated learning rate.
+
+        Args:
+            base_lr: Base learning rate
+            dopamine_sensitivity: How much dopamine affects learning
+
+        Returns:
+            Effective learning rate modulated by dopamine
+        """
+        return self.cortex.get_effective_learning_rate(base_lr, dopamine_sensitivity)
 
     @property
     def output_size(self) -> int:

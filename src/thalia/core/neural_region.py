@@ -22,6 +22,10 @@ import torch.nn as nn
 from thalia.learning import create_strategy
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
+from thalia.mixins.growth_mixin import GrowthMixin
+from thalia.mixins.resettable_mixin import ResettableMixin
+from thalia.neuromodulation.mixin import NeuromodulatorMixin
 
 
 # Type hint for learning strategies (duck typing)
@@ -37,12 +41,22 @@ class LearningStrategy(Protocol):
         ...
 
 
-class NeuralRegion(nn.Module):
+class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin):
     """Base class for brain regions with biologically accurate synaptic inputs.
 
-    This is a NEW hierarchy for v2.0 architecture, independent of the legacy
-    component system (LearnableComponent, etc.). Regions are just nn.Module
-    with specialized structure for multi-source synaptic inputs.
+    This is a NEW hierarchy for v3.0 architecture, independent of the legacy
+    BrainComponent system. Regions are nn.Module with specialized mixins.
+
+    **Note**: NeuralRegion does NOT inherit from BrainComponentBase. It's a simpler,
+    cleaner architecture for v3.0. Regions informally implement the BrainComponent
+    protocol through mixins, but aren't bound by the abstract base class.
+
+    Mixins provide (MRO order):
+    - nn.Module: PyTorch module functionality (FIRST for proper __init__)
+    - NeuromodulatorMixin: Dopamine, acetylcholine, norepinephrine control
+    - GrowthMixin: Dynamic expansion (grow_input/grow_output)
+    - ResettableMixin: State reset helpers
+    - DiagnosticsMixin: Health monitoring and metrics
 
     Regions in the new architecture:
     1. Own their synaptic weights (one weight matrix per input source)
@@ -118,13 +132,13 @@ class NeuralRegion(nn.Module):
             dt_ms: Simulation timestep in milliseconds
             **kwargs: Additional arguments for NeuralComponent compatibility
         """
-        # Initialize as nn.Module (new v2.0 hierarchy)
+        # Initialize as nn.Module (new v3.0 hierarchy)
         super().__init__()
 
         self.n_neurons = n_neurons
         self.n_input = 0  # Updated as sources are added
         self.n_output = n_neurons
-        self.device = device
+        self.device = torch.device(device)  # Regular attribute, not property
         self.dt_ms = dt_ms
         self.default_learning_rule = default_learning_rule
 
@@ -143,6 +157,9 @@ class NeuralRegion(nn.Module):
 
         # Track which sources have been added
         self.input_sources: Dict[str, int] = {}  # {source_name: n_input}
+
+        # Learning control
+        self.plasticity_enabled: bool = True
 
         # State
         self.output_spikes: Optional[torch.Tensor] = None
@@ -310,6 +327,193 @@ class NeuralRegion(nn.Module):
                 subsystem = getattr(self, name)
                 if subsystem is not None and hasattr(subsystem, 'reset_state'):
                     subsystem.reset_state()
+
+    # =========================================================================
+    # BrainComponent Protocol Implementation (Required Methods)
+    # =========================================================================
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get current activity and health metrics.
+
+        Returns basic diagnostics. Subclasses should override to add region-specific metrics.
+
+        Returns:
+            Dictionary with firing rates, weight stats, and other metrics
+        """
+        diagnostics = {}
+
+        # Firing rate
+        if self.output_spikes is not None:
+            firing_rate = self.output_spikes.float().mean().item()
+            diagnostics['firing_rate'] = firing_rate
+
+        # Weight statistics for each source
+        for source_name, weights in self.synaptic_weights.items():
+            w = weights.detach()
+            diagnostics[f'{source_name}_weight_mean'] = w.mean().item()
+            diagnostics[f'{source_name}_weight_std'] = w.std().item()
+
+        # Neuron count
+        diagnostics['n_neurons'] = self.n_neurons
+        diagnostics['n_sources'] = len(self.input_sources)
+
+        return diagnostics
+
+    def check_health(self) -> Any:
+        """Check for pathological states.
+
+        Returns basic health report. Uses DiagnosticsMixin if available.
+
+        Returns:
+            HealthReport with detected issues
+        """
+        from thalia.diagnostics.health_monitor import HealthReport
+
+        # Basic healthy report - subclasses can override for detailed checks
+        return HealthReport(
+            is_healthy=True,
+            overall_severity=0.0,
+            issues=[],
+            summary=f"{self.__class__.__name__}: Healthy",
+            metrics=self.get_diagnostics()
+        )
+
+    def get_capacity_metrics(self) -> Any:
+        """Get capacity utilization metrics for growth decisions.
+
+        Returns:
+            CapacityMetrics with growth recommendations
+        """
+        from thalia.coordination.growth import CapacityMetrics
+
+        # Basic metrics - subclasses can override for sophisticated analysis
+        firing_rate = 0.0
+        if self.output_spikes is not None:
+            firing_rate = self.output_spikes.float().mean().item()
+
+        return CapacityMetrics(
+            firing_rate=firing_rate,
+            weight_saturation=0.0,
+            synapse_usage=0.0,
+            neuron_count=self.n_neurons,
+            synapse_count=sum(self.input_sources.values()) * self.n_neurons,
+            growth_recommended=False,
+            growth_reason="",
+        )
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Serialize complete component state for checkpointing.
+
+        Returns:
+            Dictionary with weights, config, and metadata
+        """
+        state = {
+            'type': self.__class__.__name__,
+            'n_neurons': self.n_neurons,
+            'n_input': self.n_input,
+            'n_output': self.n_output,
+            'device': str(self.device),
+            'dt_ms': self.dt_ms,
+            'default_learning_rule': self.default_learning_rule,
+            'input_sources': self.input_sources.copy(),
+            'synaptic_weights': {
+                name: weights.detach().cpu()
+                for name, weights in self.synaptic_weights.items()
+            },
+            'plasticity_enabled': self.plasticity_enabled,
+        }
+        return state
+
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore component from checkpoint.
+
+        Args:
+            state: Dictionary from get_full_state()
+        """
+        # Validate compatibility
+        if state['n_neurons'] != self.n_neurons:
+            raise ValueError(
+                f"State mismatch: saved {state['n_neurons']} neurons, "
+                f"current has {self.n_neurons}"
+            )
+
+        # Restore synaptic weights
+        for name, weights_cpu in state['synaptic_weights'].items():
+            if name in self.synaptic_weights:
+                self.synaptic_weights[name].data = weights_cpu.to(self.device)
+            else:
+                # Add missing source
+                n_input = weights_cpu.shape[1]
+                self.add_input_source(name, n_input=n_input, learning_rule=None)
+                self.synaptic_weights[name].data = weights_cpu.to(self.device)
+
+        # Restore flags
+        self.plasticity_enabled = state.get('plasticity_enabled', True)
+
+    def set_oscillator_phases(
+        self,
+        phases: Dict[str, float],
+        signals: Dict[str, float] | None = None,
+        theta_slot: int = 0,
+        coupled_amplitudes: Dict[str, float] | None = None,
+    ) -> None:
+        """Set oscillator phases for neural oscillations (default: no-op).
+
+        Subclasses with oscillators should override to update phase state.
+
+        Args:
+            phases: Dictionary of oscillator phases (e.g., {'theta': 0.5, 'gamma': 0.25})
+            signals: Optional oscillator signals (amplitudes)
+            theta_slot: Current theta slot for sequence learning
+            coupled_amplitudes: Optional coupled oscillator amplitudes
+        """
+        pass  # Default: no oscillators, subclasses override if needed
+
+    def grow_input(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow component's input dimension.
+
+        For NeuralRegion, this adds columns to existing synaptic weight matrices.
+
+        Args:
+            n_new: Number of input neurons to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity for new inputs
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__}.grow_input() not yet implemented. "
+            f"Regions typically grow inputs by growing specific sources. "
+            f"Override this method if your region supports generic input growth."
+        )
+
+    def grow_output(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow component's output dimension by adding neurons.
+
+        For NeuralRegion, this adds neurons and rows to synaptic weight matrices.
+
+        Args:
+            n_new: Number of output neurons to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity for new neurons
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__}.grow_output() not yet implemented. "
+            f"See docs/patterns/unified-growth-api.md for implementation guide."
+        )
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Data type for floating point tensors."""
+        return torch.float32
 
 
 __all__ = ["NeuralRegion"]

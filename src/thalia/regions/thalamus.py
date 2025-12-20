@@ -551,32 +551,51 @@ class ThalamicRelay(NeuralRegion):
     def forward(
         self,
         inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
-        cortical_l6_feedback: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process sensory input through thalamic relay.
 
         Args:
-            inputs: Sensory input - dict {"input": tensor} or tensor [n_input] (1D, ADR-005)
-            cortical_l6_feedback: Optional L6 corticothalamic feedback [n_l6] (1D)
-                                  Provided by cortex_l6_to_thalamus pathway if wired
+            inputs: Multi-port input dict or single tensor:
+                   - Dict: {"sensory": tensor, "l6_feedback": tensor} (multi-port)
+                   - Dict: {"input": tensor} (single port, backward compat)
+                   - Tensor: sensory_input [n_input] (backward compatibility)
             **kwargs: Additional arguments (unused)
 
         Returns:
             Relay output spikes [n_relay] (bool, ADR-004/005)
 
         Note:
-            L6 feedback is provided via a dedicated pathway (cortex_l6_to_thalamus)
-            that routes L6 output from cortex to this component's forward().
-            The pathway system handles this routing automatically.
+            Multi-port architecture (biologically accurate):
+            - "sensory" or "input" → relay neurons (thalamocortical projection)
+            - "l6_feedback" → TRN neurons (corticothalamic attention modulation)
+            These are different post-synaptic targets, NOT concatenated!
         """
-        # Backward compatibility: accept tensor directly
+        # Extract sensory input (required)
         if isinstance(inputs, torch.Tensor):
+            # Backward compatibility: single tensor is sensory input
             input_spikes = inputs
+            cortical_l6_feedback = None
         else:
-            input_spikes = inputs.get("input", inputs.get("default"))
+            # Multi-port dict: extract sensory (optional) and L6 feedback (optional)
+            input_spikes = inputs.get("sensory", inputs.get("input", inputs.get("default")))
+
+            # L6 feedback goes to TRN, not relay neurons (separate target!)
+            cortical_l6_feedback = inputs.get("l6_feedback", None)
+
+            # If no sensory input, relay neurons have nothing to relay
+            # (L6 feedback alone doesn't drive relay - it modulates via TRN)
             if input_spikes is None:
-                raise ValueError("ThalamicRelay.forward: 'input' or 'default' key not found in inputs dict")
+                if cortical_l6_feedback is not None:
+                    # L6-only input: TRN is excited but relay has nothing to relay
+                    # Return zeros (no relay output without sensory drive)
+                    return torch.zeros(self.config.n_output, dtype=torch.bool, device=self.device)
+                else:
+                    raise ValueError(
+                        f"ThalamicRelay.forward: No inputs provided. "
+                        f"Available keys: {list(inputs.keys())}"
+                    )
+
         # ADR-005: Expect 1D input
         assert input_spikes.dim() == 1, (
             f"Thalamus.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"

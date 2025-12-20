@@ -678,10 +678,8 @@ class Cerebellum(NeuralRegion):
         # Store output (NeuralRegion pattern - no state.t tracking)
         self.output_spikes = output_spikes
 
-        # Apply axonal delay (biological reality: ALL neural connections have delays)
-        delayed_spikes = self._apply_axonal_delay(output_spikes, dt)
-
-        return delayed_spikes
+        # Axonal delays are handled by AxonalProjection pathways, not within regions
+        return output_spikes
 
     def _apply_error_learning(
         self,

@@ -800,12 +800,20 @@ class DynamicBrain(nn.Module):
         # Schedule initial sensory inputs
         for component_name, sensory_spikes in input_data.items():
             if component_name in self.components:
+                # Wrap tensor in dict for consistent format with pathway outputs
+                # External input uses "input" key (semantic: primary sensory input)
+                if isinstance(sensory_spikes, torch.Tensor):
+                    spike_payload = {"input": sensory_spikes}
+                else:
+                    # Already a dict (advanced usage)
+                    spike_payload = sensory_spikes
+
                 event = Event(
                     time=self._current_time,
                     event_type=EventType.SENSORY,
                     source="external",
                     target=component_name,
-                    payload=SpikePayload(spikes=sensory_spikes),
+                    payload=SpikePayload(spikes=spike_payload),
                 )
                 self._scheduler.schedule(event)
 
@@ -824,31 +832,53 @@ class DynamicBrain(nn.Module):
             # Get next batch of simultaneous events
             events = self._scheduler.pop_simultaneous(tolerance_ms=0.01)
 
+            # Group events by target to merge multi-port inputs
+            events_by_target: Dict[str, List[Event]] = {}
             for event in events:
+                if event.target not in events_by_target:
+                    events_by_target[event.target] = []
+                events_by_target[event.target].append(event)
+
+            # Process each target once with merged inputs
+            for target_name, target_events in events_by_target.items():
                 # Get event adapter (not raw component)
-                adapter = adapters.get(event.target)
+                adapter = adapters.get(target_name)
                 if adapter is None:
                     continue
 
-                # Process event through adapter to get output spikes
-                if event.event_type == EventType.SPIKE or event.event_type == EventType.SENSORY:
-                    if not isinstance(event.payload, SpikePayload):
-                        continue
+                # Merge payloads from all events to this target
+                merged_spikes: Dict[str, torch.Tensor] = {}
+                for event in target_events:
+                    # Process event through adapter to get output spikes
+                    if event.event_type == EventType.SPIKE or event.event_type == EventType.SENSORY:
+                        if not isinstance(event.payload, SpikePayload):
+                            continue
 
-                    # Apply decay and process spikes through adapter
-                    dt = event.time - adapter._last_update_time
-                    if dt > 0:
-                        adapter._apply_decay(dt)
-                    adapter._last_update_time = event.time
+                        # Apply decay once for this target (before first event)
+                        if len(merged_spikes) == 0:
+                            dt = event.time - adapter._last_update_time
+                            if dt > 0:
+                                adapter._apply_decay(dt)
+                            adapter._last_update_time = event.time
 
+                        # Merge spike dict into accumulated inputs
+                        spike_payload = event.payload.spikes
+                        if isinstance(spike_payload, dict):
+                            merged_spikes.update(spike_payload)
+                        else:
+                            # Shouldn't happen after external input wrapping, but handle gracefully
+                            merged_spikes["input"] = spike_payload
+
+                # Process merged inputs through adapter
+                if merged_spikes:
                     # Get output spikes (use impl for regions, forward for pathways)
                     # Pass brain reference for L6 feedback access
                     if hasattr(adapter, 'impl'):
-                        output_spikes = adapter.impl.forward(event.payload.spikes, brain=self)
+                        output_spikes = adapter.impl.forward(merged_spikes, brain=self)
                     else:
-                        output_spikes = adapter.forward(event.payload.spikes, brain=self)
+                        output_spikes = adapter.forward(merged_spikes, brain=self)
 
-                    outputs[event.target] = output_spikes
+                    outputs[target_name] = output_spikes
 
                     # Track spike counts
                     if output_spikes is not None:
@@ -2146,9 +2176,39 @@ class DynamicBrain(nn.Module):
                 # Route spikes through pathway (AxonalProjection expects Dict)
                 pathway_output = pathway.forward(source_dict)
 
+                # Determine dict key for target region based on target_port
+                # If target_port specified, use it as semantic key (e.g., "l6_feedback", "top_down")
+                # Otherwise use source name (e.g., "thalamus", "cortex")
+                if conn_spec and conn_spec.target_port:
+                    # target_port provides semantic meaning for this input
+                    target_key = conn_spec.target_port
+                else:
+                    # No target_port - use source name or "input" for single-source
+                    target_key = source if len(target_sources) > 1 else "input"
+
+                # Extract payload for event:
+                # - Single-source: Extract tensor and wrap in dict with appropriate key
+                # - Multi-source: Remap dict keys using target_port semantics
+                if len(target_sources) == 1:
+                    # Single source - create dict with semantic key
+                    event_payload_spikes = {target_key: pathway_output[source]}
+                else:
+                    # Multi-source - remap each source to its target_port key
+                    # This allows regions to receive: {"input": sensory, "l6_feedback": L6}
+                    # instead of: {"external": sensory, "cortex": L6}
+                    event_payload_spikes = {}
+                    for src_name, spikes in pathway_output.items():
+                        # Get target_port for this specific source→target connection
+                        src_conn_spec = self._connection_specs.get((src_name, tgt))
+                        if src_conn_spec and src_conn_spec.target_port:
+                            key = src_conn_spec.target_port
+                        else:
+                            key = src_name  # Fallback to source name
+                        event_payload_spikes[key] = spikes
+
                 # Schedule event to target with delay
                 if len(target_sources) > 1:
-                    available_sources = list(source_dict.keys())
+                    available_sources = list(pathway_output.keys())
                     source_label = f"multi:{','.join(available_sources)}"
                 else:
                     source_label = source
@@ -2158,7 +2218,7 @@ class DynamicBrain(nn.Module):
                     event_type=EventType.SPIKE,
                     source=source_label,
                     target=tgt,
-                    payload=SpikePayload(spikes=pathway_output),
+                    payload=SpikePayload(spikes=event_payload_spikes),
                 )
                 self._scheduler.schedule(event)
 
@@ -2168,7 +2228,7 @@ class DynamicBrain(nn.Module):
         Args:
             component: Source component
             output: Full component output
-            port: Port name ('l23', 'l5', 'l4')
+            port: Port name ('l23', 'l5', 'l6')
 
         Returns:
             Sliced output for the specified port
@@ -2182,6 +2242,15 @@ class DynamicBrain(nn.Module):
             elif port == "l4":
                 # L4 is internal, not in output
                 raise ValueError("L4 is not part of cortex output")
+            elif port == "l6":
+                # L6 is internal feedback, use dedicated getter
+                if hasattr(component, 'get_l6_feedback'):
+                    l6_spikes = component.get_l6_feedback()
+                    if l6_spikes is None:
+                        # No L6 activity yet, return zeros
+                        return torch.zeros(component.l6_size, dtype=torch.bool, device=component.device)
+                    return l6_spikes
+                raise ValueError("Component does not support L6 feedback access")
 
         raise ValueError(f"Component {type(component).__name__} does not support port '{port}'")
 

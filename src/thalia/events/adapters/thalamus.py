@@ -1,7 +1,11 @@
-"""
-Event-Driven Thalamus Adapter.
+"""Event-driven adapter for ThalamicRelay with multi-port input handling.
 
-Wraps ThalamicRelay for event-driven simulation.
+The thalamus receives inputs on multiple anatomical pathways that target
+different neuron populations:
+- Sensory input → Relay neurons (thalamocortical projection)
+- L6 cortical feedback → TRN neurons (corticothalamic attention modulation)
+
+These inputs should NOT be concatenated - they go to separate post-synaptic targets!
 
 Author: Thalia Project
 Date: December 2025
@@ -10,7 +14,7 @@ Date: December 2025
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 
 import torch
 
@@ -19,23 +23,28 @@ from .base import EventDrivenRegionBase, EventRegionConfig
 
 
 class EventDrivenThalamus(EventDrivenRegionBase):
-    """Event-driven wrapper for ThalamicRelay.
+    """Event-driven adapter for thalamic relay with multi-port input handling.
 
-    Adapts the ThalamicRelay to work with the event-driven
-    simulation framework. Handles:
-    - Sensory input relay to cortex
-    - Alpha oscillation-based attentional gating
-    - Burst vs tonic mode switching
-    - TRN-mediated inhibitory coordination
-    - Membrane decay between events
+    Unlike striatum (which concatenates cortex+hippocampus+PFC), thalamus has
+    inputs that target DIFFERENT neuron populations:
+    - "external" (sensory) → relay neurons
+    - "cortex" (L6 feedback) → TRN neurons
+
+    This adapter buffers both inputs and packages them into a named dict for
+    the thalamus, avoiding incorrect concatenation.
+
+    Input Ports:
+    ===========
+    - sensory (external): Sensory input to relay neurons [n_input]
+    - l6_feedback (cortex): L6 corticothalamic feedback to TRN [n_l6]
 
     Architecture:
-        Sensory Input → Thalamus → Cortex L4
-                         ↓
-                       (TRN inhibition)
-
-    The thalamus acts as a sensory gateway, modulating
-    input based on attention (alpha) and arousal (NE).
+    ============
+    Sensory → Relay Neurons → Cortex
+                ↓ (collateral)
+               TRN ← L6 Cortical Feedback
+                ↓ (inhibition)
+            Relay Neurons (attentional gating)
     """
 
     def __init__(
@@ -43,10 +52,14 @@ class EventDrivenThalamus(EventDrivenRegionBase):
         config: EventRegionConfig,
         thalamus: Any,  # ThalamicRelay instance
     ):
-        super().__init__(config)
-        self.impl_module = thalamus  # Register as public attribute for nn.Module
+        """Initialize thalamus adapter.
 
-        # No accumulated input needed - thalamus has single input source (sensory)
+        Args:
+            config: Event region configuration
+            thalamus: ThalamicRelay instance to wrap
+        """
+        super().__init__(config)
+        self.impl_module = thalamus  # Register as nn.Module submodule
 
     @property
     def impl(self) -> Any:
@@ -59,49 +72,56 @@ class EventDrivenThalamus(EventDrivenRegionBase):
         return getattr(self.impl, "state", None)
 
     def _apply_decay(self, dt_ms: float) -> None:
-        """Apply decay to thalamus neurons.
-
-        Directly decay the membrane potentials of the relay and TRN neurons.
-        """
+        """Apply decay to relay and TRN neurons."""
         decay_factor = math.exp(-dt_ms / self._membrane_tau)
 
         # Decay relay neurons
-        if hasattr(self.impl, "relay_neurons") and self.impl.relay_neurons is not None:
-            if hasattr(self.impl.relay_neurons, "membrane"):
-                if self.impl.relay_neurons.membrane is not None:
-                    self.impl.relay_neurons.membrane *= decay_factor
+        if (
+            hasattr(self.impl, "relay_neurons")
+            and self.impl.relay_neurons.membrane is not None
+        ):
+            self.impl.relay_neurons.membrane *= decay_factor
 
         # Decay TRN neurons
-        if hasattr(self.impl, "trn_neurons") and self.impl.trn_neurons is not None:
-            if hasattr(self.impl.trn_neurons, "membrane"):
-                if self.impl.trn_neurons.membrane is not None:
-                    self.impl.trn_neurons.membrane *= decay_factor
+        if (
+            hasattr(self.impl, "trn_neurons")
+            and self.impl.trn_neurons.membrane is not None
+        ):
+            self.impl.trn_neurons.membrane *= decay_factor
 
     def _process_spikes(
         self,
-        input_spikes: torch.Tensor,
+        input_spikes: Union[torch.Tensor, Dict[str, torch.Tensor]],
         source: str,
     ) -> Optional[torch.Tensor]:
-        """Process input through thalamus relay.
+        """Forward multi-port inputs to thalamus.
+
+        With target_port routing, input_spikes is already a dict with proper keys:
+        - {"input": sensory_tensor} for single-source (sensory only)
+        - {"input": sensory, "l6_feedback": l6} for multi-source
 
         Args:
-            input_spikes: Sensory input spikes [n_neurons] (1D, ADR-005)
-            source: Input source name (typically "sensory_input")
+            input_spikes: Input dict with target_port keys or single tensor
+            source: Source label (may be "multi:external,cortex")
 
         Returns:
-            Relay output spikes [n_relay] (bool, ADR-004/005)
+            Relay output spikes
         """
-        # ADR-005: Keep 1D tensors, no batch dimension
-        # ADR-004: Spikes are bool
-        assert input_spikes.dim() == 1, (
-            f"Thalamus adapter expects 1D input (ADR-005), got {input_spikes.shape}"
-        )
+        # DynamicBrain now uses target_port to create proper dict keys
+        # Just pass through to thalamus (it handles dict/tensor)
+        try:
+            output = self.impl.forward(input_spikes)
+            return output
+        except Exception as e:
+            raise RuntimeError(
+                f"EventDrivenThalamus: Error processing spikes from {source}: {e}"
+            ) from e
 
-        # Forward through thalamus (oscillator phases set by brain)
-        output = self.impl.forward(input_spikes)
-
-        # Output is already 1D bool (ADR-004/005)
-        return output
+    def reset_state(self) -> None:
+        """Reset adapter and thalamus state."""
+        super().reset_state()
+        if hasattr(self.impl, "reset_state"):
+            self.impl.reset_state()
 
     def _create_output_events(self, spikes: torch.Tensor) -> List[Event]:
         """Create relay output events to cortex.

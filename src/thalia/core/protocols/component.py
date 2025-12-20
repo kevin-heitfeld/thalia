@@ -1107,11 +1107,16 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
             setattr(self, name, value)
 
 
-class RoutingComponent(BrainComponentBase, nn.Module):
+class RoutingComponent(nn.Module):
     """
     Abstract base for non-learnable routing components.
 
-    RoutingComponent extends BrainComponentBase WITHOUT learning:
+    **Note**: RoutingComponent does NOT inherit from BrainComponentBase, similar to
+    NeuralRegion. It's a simpler architecture that informally implements the
+    BrainComponent protocol without strict enforcement. This provides flexibility
+    for lightweight routing components that don't need all the machinery.
+
+    RoutingComponent provides routing WITHOUT learning:
     - NO synaptic weights (pure spike routing)
     - NO neurons (transmission only, no computation)
     - NO plasticity (fixed connectivity)

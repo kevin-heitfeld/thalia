@@ -157,7 +157,7 @@ class GenericEventAdapter(EventDrivenRegionBase):
 
     def _process_spikes(
         self,
-        input_spikes: torch.Tensor,
+        input_spikes: Union[torch.Tensor, Dict[str, torch.Tensor]],
         source: str,
     ) -> Optional[torch.Tensor]:
         """Forward spikes through component.
@@ -167,7 +167,7 @@ class GenericEventAdapter(EventDrivenRegionBase):
         create a custom adapter.
 
         Args:
-            input_spikes: Input spike tensor [n_neurons]
+            input_spikes: Input spike tensor [n_neurons] or dict of tensors
             source: Source component name (unused in generic adapter)
 
         Returns:
@@ -176,6 +176,7 @@ class GenericEventAdapter(EventDrivenRegionBase):
         try:
             # Call component's forward method
             # Note: source is ignored - custom adapters can use it for routing
+            # Pass through dict or tensor as-is
             output = self._component.forward(input_spikes)
 
             # Validate output

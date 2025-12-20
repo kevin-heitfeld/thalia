@@ -70,6 +70,7 @@ import torch.nn as nn
 
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig
+from thalia.learning.strategy_mixin import LearningStrategyMixin
 
 from thalia.core.base.component_config import NeuralComponentConfig
 
@@ -271,7 +272,7 @@ class DopamineGatingSystem:
     author="Thalia Project",
     config_class=PrefrontalConfig,
 )
-class Prefrontal(NeuralRegion):
+class Prefrontal(LearningStrategyMixin, NeuralRegion):
     """Prefrontal cortex with dopamine-gated working memory.
 
     Implements:
@@ -427,9 +428,6 @@ class Prefrontal(NeuralRegion):
             if config.use_hyperbolic_discounting:
                 hd_config = config.hyperbolic_config or HyperbolicDiscountingConfig()
                 self.discounter = HyperbolicDiscounter(hd_config)
-
-        # Enable plasticity by default
-        self.plasticity_enabled = True
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create conductance-based LIF neurons with slow dynamics and SFA."""
