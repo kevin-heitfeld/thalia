@@ -557,7 +557,12 @@ class Cerebellum(NeuralRegion):
             Theta modulation and timestep (dt_ms) computed internally from config
         """
         # Concatenate all input sources
-        input_spikes = InputRouter.concatenate_sources(inputs, component_name="Cerebellum")
+        input_spikes = InputRouter.concatenate_sources(
+            inputs,
+            component_name="Cerebellum",
+            n_input=self.config.n_input,
+            device=self.device,
+        )
 
         # Assert 1D input
         assert input_spikes.dim() == 1, (

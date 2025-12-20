@@ -502,6 +502,10 @@ class OscillatorManager:
     ):
         """Initialize oscillator manager with all brain rhythms.
 
+        Gamma oscillator is DISABLED by default to allow emergence from
+        circuit dynamics (L6→TRN→Thalamus feedback loop ~25ms = 40 Hz).
+        Enable explicitly if needed via enable_oscillator('gamma', True).
+
         Args:
             dt_ms: Timestep in milliseconds
             device: Device for tensor operations (cpu/cuda)
@@ -618,7 +622,7 @@ class OscillatorManager:
             'theta': True,
             'alpha': True,
             'beta': True,
-            'gamma': True,
+            'gamma': False,  # Disabled: Should emerge from L6→TRN loop (~25ms)
             'ripple': True,
         }
 

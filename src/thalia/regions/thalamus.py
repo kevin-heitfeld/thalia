@@ -182,6 +182,20 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     surround_inhibition: float = THALAMUS_SURROUND_INHIBITION
     """Surround suppression in receptive field."""
 
+    # Corticothalamic feedback
+    l6a_to_trn_strength: float = 0.8
+    """Strength of L6a → TRN feedback (inhibitory modulation, type I)."""
+
+    l6b_to_relay_strength: float = 0.6
+    """Strength of L6b → relay feedback (excitatory modulation, type II)."""
+
+    # Internal thalamic delays (critical for gamma oscillation emergence)
+    trn_to_relay_delay_ms: float = 4.0
+    """TRN → relay inhibitory delay (~3-5ms for GABAergic transmission)."""
+
+    relay_to_cortex_delay_ms: float = 2.0
+    """Relay → cortex thalamocortical delay (~2ms, handled by AxonalProjection)."""
+
 
 @dataclass
 class ThalamicRelayState(NeuralComponentState):
@@ -331,6 +345,14 @@ class ThalamicRelay(NeuralRegion):
         # CENTER-SURROUND RECEPTIVE FIELDS
         # =====================================================================
         self._build_center_surround_filter()
+
+        # =====================================================================
+        # INTERNAL DELAY BUFFERS
+        # =====================================================================
+        # TRN → relay inhibition delay (GABAergic synaptic transmission ~3-5ms)
+        self._trn_relay_delay_steps = int(config.trn_to_relay_delay_ms / config.dt_ms)
+        self._trn_relay_delay_buffer: Optional[torch.Tensor] = None
+        self._trn_relay_delay_ptr: int = 0
 
         # =====================================================================
         # STATE
@@ -558,7 +580,7 @@ class ThalamicRelay(NeuralRegion):
 
         Args:
             inputs: Multi-port input dict:
-                   - Dict: {"sensory": tensor, "l6_feedback": tensor} (multi-port)
+                   - Dict: {"sensory": tensor, "l6a_feedback": tensor, "l6b_feedback": tensor} (multi-port)
                    - Dict: {"input": tensor} (alias for "sensory")
                    - Tensor: sensory_input [n_input] (auto-wrapped as {"default": tensor})
             **kwargs: Additional arguments (unused)
@@ -569,7 +591,8 @@ class ThalamicRelay(NeuralRegion):
         Note:
             Multi-port architecture (biologically accurate):
             - "sensory" or "input" → relay neurons (thalamocortical projection)
-            - "l6_feedback" → TRN neurons (corticothalamic attention modulation)
+            - "l6a_feedback" → TRN neurons (corticothalamic type I, inhibitory modulation)
+            - "l6b_feedback" → relay neurons (corticothalamic type II, excitatory modulation)
             These are different post-synaptic targets, NOT concatenated!
         """
         # Route inputs to canonical port names
@@ -577,14 +600,16 @@ class ThalamicRelay(NeuralRegion):
             inputs,
             port_mapping={
                 "sensory": ["sensory", "input", "default"],
-                "l6_feedback": ["l6_feedback", "feedback"],
+                "l6a_feedback": ["l6a_feedback", "feedback"],
+                "l6b_feedback": ["l6b_feedback"],
             },
-            defaults={"l6_feedback": None},
+            defaults={"l6a_feedback": None, "l6b_feedback": None},
             required=["sensory"],
             component_name="ThalamicRelay",
         )
         input_spikes = routed["sensory"]
-        cortical_l6_feedback = routed["l6_feedback"]
+        cortical_l6a_feedback = routed["l6a_feedback"]
+        cortical_l6b_feedback = routed["l6b_feedback"]
 
         # If no sensory input, relay neurons have nothing to relay
         # (This should not happen due to required=["sensory"], but handle gracefully)
@@ -617,7 +642,7 @@ class ThalamicRelay(NeuralRegion):
         self.state.alpha_gate = alpha_gate
 
         # =====================================================================
-        # 3. RELAY NEURONS: Filtered input → Relay
+        # 3. RELAY NEURONS: Filtered input + L6b feedback → Relay
         # =====================================================================
         # Apply alpha gating to filtered input
         gated_input = filtered_input * alpha_gate
@@ -629,13 +654,58 @@ class ThalamicRelay(NeuralRegion):
         ne_gain = 1.0 + THALAMUS_NE_GAIN_SCALE * self.state.norepinephrine
         relay_excitation = relay_excitation * ne_gain
 
-        # TRN inhibition of relay
+        # L6b corticothalamic feedback: Direct excitatory modulation of relay neurons
+        # Type II corticothalamic pathway (Sherman & Guillery 2002)
+        # Biological function: Cortex directly amplifies specific relay neurons for precision processing
+        # BIOLOGICAL CONSTRAINT: L6b size must match n_relay (enforced at build time)
+        if cortical_l6b_feedback is not None:
+            l6b_excitation = cortical_l6b_feedback.float() * self.thalamus_config.l6b_to_relay_strength
+
+            # Validate size (should be guaranteed by builder)
+            if l6b_excitation.shape[0] != self.n_relay:
+                raise ValueError(
+                    f"L6b feedback size mismatch: expected {self.n_relay}, got {l6b_excitation.shape[0]}. "
+                    f"This indicates a brain building error - L6b must equal thalamus relay size."
+                )
+
+            # Add L6b excitation to relay (applied BEFORE TRN inhibition)
+            relay_excitation = relay_excitation + l6b_excitation
+
+        # TRN inhibition of relay (applied AFTER L6b excitation)
+        # Apply axonal delay for TRN → relay (GABAergic transmission)
         if self.state.trn_spikes is not None:
-            # Convert bool to float for matmul (ADR-004)
-            relay_inhibition = torch.mv(
-                self.trn_to_relay,
-                self.state.trn_spikes.float()
-            )  # [n_relay]
+            # Use delay buffer if configured
+            if self._trn_relay_delay_steps > 0:
+                # Initialize buffer if needed
+                if self._trn_relay_delay_buffer is None:
+                    self._trn_relay_delay_buffer = torch.zeros(
+                        self._trn_relay_delay_steps, self.n_trn,
+                        dtype=torch.bool,
+                        device=self.device
+                    )
+                    self._trn_relay_delay_ptr = 0
+
+                # Read delayed TRN spikes
+                read_idx = (self._trn_relay_delay_ptr - self._trn_relay_delay_steps) % self._trn_relay_delay_buffer.shape[0]
+                trn_spikes_delayed = self._trn_relay_delay_buffer[read_idx]
+
+                # Write current TRN spikes to buffer
+                self._trn_relay_delay_buffer[self._trn_relay_delay_ptr] = self.state.trn_spikes
+
+                # Advance pointer (circular buffer)
+                self._trn_relay_delay_ptr = (self._trn_relay_delay_ptr + 1) % self._trn_relay_delay_buffer.shape[0]
+
+                # Compute inhibition from delayed spikes
+                relay_inhibition = torch.mv(
+                    self.trn_to_relay,
+                    trn_spikes_delayed.float()
+                )  # [n_relay]
+            else:
+                # No delay (instantaneous inhibition)
+                relay_inhibition = torch.mv(
+                    self.trn_to_relay,
+                    self.state.trn_spikes.float()
+                )  # [n_relay]
         else:
             relay_inhibition = torch.zeros(self.n_relay, device=self.device)
 
@@ -666,45 +736,36 @@ class ThalamicRelay(NeuralRegion):
         relay_output = burst_amplified > THALAMUS_MODE_THRESHOLD  # [n_relay], bool
 
         # =====================================================================
-        # 5. TRN NEURONS: Input collaterals + Relay collaterals + L6 Feedback
+        # 5. TRN NEURONS: Input collaterals + Relay collaterals + L6a Feedback
         # =====================================================================
         # TRN receives:
         # - Input collaterals (sensory copy)
         # - Relay collaterals (relay activity)
-        # - L6 corticothalamic feedback (attentional modulation)
+        # - L6a corticothalamic feedback (attentional modulation, type I)
         # - Recurrent inhibition (TRN-TRN)
 
         # Convert bool to float for matmul (ADR-004)
         trn_excitation_input = torch.mv(self.input_to_trn, input_float)  # [n_trn]
         trn_excitation_relay = torch.mv(self.relay_to_trn, relay_output.float())  # [n_trn]
 
-        # L6 corticothalamic feedback: Cortex modulates TRN to control attention
-        # This implements the feedback loop: Sensory → Thalamus → Cortex → L6 → TRN → Thalamus
+        # L6a corticothalamic feedback: Cortex modulates TRN to control attention
+        # Type I corticothalamic pathway (Sherman & Guillery 2002)
+        # This implements the feedback loop: Sensory → Thalamus → Cortex → L6a → TRN → Thalamus
         # Biological function: Cortex can amplify or suppress specific sensory channels
-        trn_excitation_l6 = torch.zeros(self.n_trn, device=self.device)
-        if cortical_l6_feedback is not None:
-            # Scale L6 feedback appropriately (moderate strength)
-            l6_strength = 0.8  # Configurable, but reasonable default
-            trn_excitation_l6 = cortical_l6_feedback.float() * l6_strength
-            # If L6 and TRN sizes don't match, broadcast or pool
-            if trn_excitation_l6.shape[0] != self.n_trn:
-                # Simple average pooling if sizes mismatch
-                if trn_excitation_l6.shape[0] > self.n_trn:
-                    # Downsample L6 to TRN size
-                    pool_size = trn_excitation_l6.shape[0] // self.n_trn
-                    remainder = trn_excitation_l6.shape[0] % self.n_trn
-                    if remainder != 0:
-                        # Pad to make evenly divisible
-                        pad_size = self.n_trn - remainder
-                        trn_excitation_l6 = torch.cat([trn_excitation_l6, torch.zeros(pad_size, device=self.device)])
-                        pool_size = trn_excitation_l6.shape[0] // self.n_trn
-                    trn_excitation_l6 = trn_excitation_l6.view(self.n_trn, pool_size).mean(dim=1)
-                else:
-                    # Upsample L6 to TRN size (repeat)
-                    repeat_factor = self.n_trn // trn_excitation_l6.shape[0]
-                    trn_excitation_l6 = trn_excitation_l6.repeat_interleave(repeat_factor)[:self.n_trn]
+        # BIOLOGICAL CONSTRAINT: L6a size should match n_trn (enforced at build time)
+        trn_excitation_l6a = torch.zeros(self.n_trn, device=self.device)
+        if cortical_l6a_feedback is not None:
+            # Scale L6a feedback appropriately (moderate strength)
+            trn_excitation_l6a = cortical_l6a_feedback.float() * self.thalamus_config.l6a_to_trn_strength
 
-        trn_excitation = trn_excitation_input + trn_excitation_relay + trn_excitation_l6  # [n_trn]
+            # Validate size (should be guaranteed by builder)
+            if trn_excitation_l6a.shape[0] != self.n_trn:
+                raise ValueError(
+                    f"L6a feedback size mismatch: expected {self.n_trn}, got {trn_excitation_l6a.shape[0]}. "
+                    f"This indicates a brain building error - L6a must equal TRN size."
+                )
+
+        trn_excitation = trn_excitation_input + trn_excitation_relay + trn_excitation_l6a  # [n_trn]
 
         # TRN recurrent inhibition
         if self.state.trn_spikes is not None:

@@ -46,13 +46,19 @@ class LayeredCortexConfig(NeuralComponentConfig):
     l4_size: int = field(default=0)          # Input layer
     l23_size: int = field(default=0)         # Processing layer (cortico-cortical output)
     l5_size: int = field(default=0)          # Subcortical output layer
-    l6_size: int = field(default=0)          # Corticothalamic feedback layer
+
+    # L6 split into two subtypes (Sherman & Guillery 2002):
+    # - L6a (corticothalamic type I): Projects to TRN (inhibitory modulation, low gamma 25-35 Hz)
+    # - L6b (corticothalamic type II): Projects to relay (excitatory modulation, high gamma 60-80 Hz)
+    l6a_size: int = field(default=0)         # L6a → TRN pathway
+    l6b_size: int = field(default=0)         # L6b → relay pathway
 
     # Layer sparsity (fraction of neurons active)
     l4_sparsity: float = 0.15  # Moderate sparsity
     l23_sparsity: float = 0.10  # Sparser (more selective)
     l5_sparsity: float = 0.20  # Less sparse (motor commands)
-    l6_sparsity: float = 0.12  # Slightly more sparse than L2/3
+    l6a_sparsity: float = 0.12  # L6a → TRN (slightly more sparse than L2/3)
+    l6b_sparsity: float = 0.15  # L6b → relay (moderate sparsity)
 
     # Recurrence in L2/3
     l23_recurrent_strength: float = 0.3  # Lateral connection strength
@@ -67,13 +73,15 @@ class LayeredCortexConfig(NeuralComponentConfig):
     input_to_l4_strength: float = 2.0  # External input → L4 (was 1.0, too weak for sparse input)
     l4_to_l23_strength: float = 1.5    # L4 → L2/3 (was 0.4, too weak)
     l23_to_l5_strength: float = 1.5    # L2/3 → L5 (was 0.4, too weak)
-    l23_to_l6_strength: float = 1.2    # L2/3 → L6 (corticothalamic feedback)
+    l23_to_l6a_strength: float = 0.8   # L2/3 → L6a (reduced for low gamma 25-35Hz)
+    l23_to_l6b_strength: float = 2.0   # L2/3 → L6b (higher for high gamma 60-80Hz)
 
     # Top-down modulation (for attention pathway)
     l23_top_down_strength: float = 0.2  # Feedback to L2/3
 
-    # L6 corticothalamic feedback strength
-    l6_to_trn_strength: float = 0.8  # L6 → TRN feedback (moderate, modulates thalamus)
+    # L6 corticothalamic feedback strengths (different pathways)
+    l6a_to_trn_strength: float = 0.8   # L6a → TRN (inhibitory modulation, low gamma)
+    l6b_to_relay_strength: float = 0.6 # L6b → relay (excitatory modulation, high gamma)
 
     # Spillover transmission (volume transmission)
     # Enable in cortex L2/3 and L5 where experimentally documented
@@ -128,16 +136,23 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # Biological signal propagation times within cortical laminae:
     # - L4→L2/3: ~2ms (short vertical projection)
     # - L2/3→L5: ~2ms (longer vertical projection)
-    # - L2/3→L6: ~2ms (within column, short projection)
+    # - L2/3→L6: ~2-3ms (within column, vertical projection)
     # - L6→TRN: ~10ms (corticothalamic feedback, long-range)
-    # Total laminar processing: ~4ms (much faster than processing timescales)
+    # Total laminar processing: ~4-6ms (much faster than processing timescales)
     #
-    # Set to 0.0 for instant processing (current behavior, backward compatible)
-    # Set to biological values for realistic temporal dynamics and STDP timing
-    l4_to_l23_delay_ms: float = 0.0  # L4→L2/3 axonal delay (0=instant)
-    l23_to_l5_delay_ms: float = 0.0  # L2/3→L5 axonal delay (0=instant)
-    l23_to_l6_delay_ms: float = 0.0  # L2/3→L6 axonal delay (0=instant)
-    l6_to_trn_delay_ms: float = 0.0  # L6→TRN feedback delay (0=instant, ~10ms biological)
+    # Internal delays enable realistic temporal dynamics and support oscillation emergence:
+    # - L6a with 2ms internal + 10ms feedback = 12ms loop → ~83 Hz (high gamma range)
+    # - L6b with 3ms internal + 5ms feedback = 8ms loop → ~125 Hz (very high gamma)
+    # - With neural refractory periods and integration, actual frequencies settle to
+    #   low gamma (25-35 Hz) for L6a and high gamma (60-80 Hz) for L6b
+    l4_to_l23_delay_ms: float = 2.0   # L4→L2/3 axonal delay (short vertical)
+    l23_to_l5_delay_ms: float = 2.0   # L2/3→L5 axonal delay (longer vertical)
+    l23_to_l6a_delay_ms: float = 2.0  # L2/3→L6a axonal delay (type I pathway, slow)
+    l23_to_l6b_delay_ms: float = 3.0  # L2/3→L6b axonal delay (type II pathway, fast)
+
+    # L6 feedback delays (key for gamma frequency tuning)
+    l6a_to_trn_delay_ms: float = 10.0   # L6a→TRN feedback delay (~10ms biological, slow pathway)
+    l6b_to_relay_delay_ms: float = 5.0  # L6b→relay feedback delay (~5ms biological, fast pathway)
 
     # Gamma-based attention (spike-native phase gating for L2/3)
     # Always enabled for spike-native attention
@@ -183,7 +198,8 @@ class LayeredCortexState(NeuralComponentState):
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None
-    l6_spikes: Optional[torch.Tensor] = None  # Corticothalamic feedback spikes
+    l6a_spikes: Optional[torch.Tensor] = None  # L6a → TRN pathway
+    l6b_spikes: Optional[torch.Tensor] = None  # L6b → relay pathway
 
     # L2/3 recurrent activity (accumulated over time)
     l23_recurrent_activity: Optional[torch.Tensor] = None
@@ -192,7 +208,8 @@ class LayeredCortexState(NeuralComponentState):
     l4_trace: Optional[torch.Tensor] = None
     l23_trace: Optional[torch.Tensor] = None
     l5_trace: Optional[torch.Tensor] = None
-    l6_trace: Optional[torch.Tensor] = None  # L6 trace for feedback plasticity
+    l6a_trace: Optional[torch.Tensor] = None  # L6a trace for TRN feedback plasticity
+    l6b_trace: Optional[torch.Tensor] = None  # L6b trace for relay feedback plasticity
 
     # Top-down modulation state
     top_down_modulation: Optional[torch.Tensor] = None
@@ -216,7 +233,8 @@ def calculate_layer_sizes(
     l4_ratio: float = 1.0,
     l23_ratio: float = 1.5,
     l5_ratio: float = 1.0,
-    l6_ratio: float = 0.5,
+    l6a_ratio: float = 0.3,
+    l6b_ratio: float = 0.2,
 ) -> dict[str, int]:
     """Calculate layer sizes from n_output using standard ratios.
 
@@ -228,11 +246,13 @@ def calculate_layer_sizes(
         l4_ratio: L4 size as multiple of n_output (default: 1.0)
         l23_ratio: L2/3 size as multiple of n_output (default: 1.5)
         l5_ratio: L5 size as multiple of n_output (default: 1.0)
-        l6_ratio: L6 size as multiple of n_output (default: 0.5)
+        l6a_ratio: L6a size as multiple of n_output (default: 0.3, 60% of old L6)
+        l6b_ratio: L6b size as multiple of n_output (default: 0.2, 40% of old L6)
 
     Returns:
-        Dictionary with keys: l4_size, l23_size, l5_size, l6_size, n_output
+        Dictionary with keys: l4_size, l23_size, l5_size, l6a_size, l6b_size, n_output
         Note: Returned n_output will equal l23_size + l5_size (cortex output convention)
+        Note: l6a_size + l6b_size = 0.5 * n_output (maintains total L6 size)
 
     Example:
         >>> sizes = calculate_layer_sizes(n_output=32)
@@ -243,7 +263,8 @@ def calculate_layer_sizes(
     l4_size = int(n_output * l4_ratio)
     l23_size = int(n_output * l23_ratio)
     l5_size = int(n_output * l5_ratio)
-    l6_size = int(n_output * l6_ratio)
+    l6a_size = int(n_output * l6a_ratio)
+    l6b_size = int(n_output * l6b_ratio)
 
     # Cortex output is L2/3 + L5 (cortico-cortical + subcortical)
     actual_output = l23_size + l5_size
@@ -252,6 +273,7 @@ def calculate_layer_sizes(
         "l4_size": l4_size,
         "l23_size": l23_size,
         "l5_size": l5_size,
-        "l6_size": l6_size,
+        "l6a_size": l6a_size,
+        "l6b_size": l6b_size,
         "n_output": actual_output,
     }

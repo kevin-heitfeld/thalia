@@ -503,7 +503,7 @@ class MultiLayerGrowthMixin(GrowthMixin):
   - Multiple weight matrices (CA3 recurrent, EC→CA1)
   - Encoding/retrieval mode switching via acetylcholine
   - Lines 1237-1280 (CA3 recurrent), 1450-1475 (EC→CA1)
-  
+
 - **Cerebellum**: Error-corrective learning with circuit-specific features
   - Climbing fiber error signals
   - STDP eligibility traces modulated by error
@@ -512,7 +512,7 @@ class MultiLayerGrowthMixin(GrowthMixin):
 
 **Why NOT extract**:
 - **Hippocampus**: Learning is tightly coupled with theta-gamma dynamics, mode switching, and multi-pathway coordination. Extracting would require passing 6+ context variables (theta_phase, gamma_amplitude, encoding_mode, acetylcholine_level, etc.) and would obscure the biological circuit dynamics.
-  
+
 - **Cerebellum**: Error-corrective learning uses climbing fiber error signals and integrates with motor timing. The learning is the core of cerebellar function, not a separable concern.
 
 - **Available strategies** (HebbianStrategy, ErrorCorrectiveStrategy) exist but lack region-specific modulation features (oscillator coupling, neuromodulator gating, multi-pathway coordination).

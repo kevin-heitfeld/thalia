@@ -191,11 +191,15 @@ Used for some hippocampal and prefrontal neurons.
 # REFRACTORY PERIODS (milliseconds)
 # =============================================================================
 
-TAU_REF_STANDARD = 2.0
+TAU_REF_STANDARD = 5.0
 """Standard absolute refractory period (ms).
 
-Duration during which neuron cannot fire after a spike.
-Based on Na+ channel inactivation kinetics.
+Typical refractory period for cortical pyramidal neurons (3-7ms biological range).
+Increased from 2ms to 5ms to prevent instant re-firing and allow proper
+temporal integration. This ensures oscillations are driven by feedback loop
+delays rather than just refractory period cycling.
+
+Biological basis: Na+ channel inactivation + K+ afterhyperpolarization
 """
 
 TAU_REF_FAST = 1.0
@@ -205,11 +209,12 @@ Used for fast-spiking interneurons.
 Shorter refractory period enables higher firing rates.
 """
 
-TAU_REF_SLOW = 3.0
+TAU_REF_SLOW = 7.0
 """Slow refractory period (ms).
 
-Used for slowly-adapting neurons.
-Longer refractory period limits maximum firing rate.
+Used for slowly-adapting neurons with strong adaptation.
+Longer refractory period limits maximum firing rate and enforces
+longer inter-spike intervals for proper temporal coding.
 """
 
 # =============================================================================

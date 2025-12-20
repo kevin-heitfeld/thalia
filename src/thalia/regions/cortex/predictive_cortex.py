@@ -219,7 +219,9 @@ class PredictiveCortex(NeuralRegion):
         l4_size = config.l4_size
         l23_size = config.l23_size
         l5_size = config.l5_size
-        l6_size = config.l6_size
+        l6a_size = config.l6a_size  # L6a → TRN pathway
+        l6b_size = config.l6b_size  # L6b → thalamic relay
+        l6_total = l6a_size + l6b_size  # Total L6 size
 
         # Validate n_output matches total
         _output_size = l23_size + l5_size
@@ -253,12 +255,16 @@ class PredictiveCortex(NeuralRegion):
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
-        self.l6_size = self.cortex.l6_size  # Track L6 for prediction neurons
+        self.l6a_size = self.cortex.l6a_size  # L6a → TRN pathway
+        self.l6b_size = self.cortex.l6b_size  # L6b → thalamic relay
+        self.l6_size = self.l6a_size + self.l6b_size  # Total L6 for prediction neurons
         self._output_size = _output_size  # Track output size for growth
         assert self.l4_size == l4_size, f"L4 size mismatch: {self.l4_size} != {l4_size}"
         assert self.l23_size == l23_size, f"L2/3 size mismatch: {self.l23_size} != {l23_size}"
         assert self.l5_size == l5_size, f"L5 size mismatch: {self.l5_size} != {l5_size}"
-        assert self.l6_size == l6_size, f"L6 size mismatch: {self.l6_size} != {l6_size}"
+        assert self.l6a_size == l6a_size, f"L6a size mismatch: {self.l6a_size} != {l6a_size}"
+        assert self.l6b_size == l6b_size, f"L6b size mismatch: {self.l6b_size} != {l6b_size}"
+        assert self.l6_size == l6_total, f"L6 total mismatch: {self.l6_size} != {l6_total}"
 
         # =====================================================================
         # PREDICTIVE CODING MODULE

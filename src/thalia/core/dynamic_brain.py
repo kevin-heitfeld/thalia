@@ -41,6 +41,7 @@ from thalia.core.diagnostics import (
     HippocampusDiagnostics,
     BrainSystemDiagnostics,
 )
+from thalia.stimuli.base import StimulusPattern
 
 if TYPE_CHECKING:
     from thalia.config import GlobalConfig, ThaliaConfig
@@ -612,51 +613,149 @@ class DynamicBrain(nn.Module):
 
     def forward(
         self,
-        sensory_input: Optional[torch.Tensor] = None,
+        sensory_input: Optional[Union[torch.Tensor, Dict[str, Union[torch.Tensor, List[torch.Tensor], "StimulusPattern"]]]] = None,
         n_timesteps: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Execute brain for n_timesteps (EventDrivenBrain-compatible signature).
+        """Execute brain for n_timesteps.
+
+        Supports multiple input modes:
+
+        **1. Stimulus Pattern (recommended)** - Explicit temporal structure:
+           ```python
+           from thalia.stimuli import Sustained, Sequential, Transient
+
+           # Sustained: constant input over duration
+           brain.forward({"thalamus": Sustained(pattern, duration_ms=500)})
+
+           # Sequential: explicit per-frame input
+           brain.forward({"thalamus": Sequential(frames=[f1, f2, f3])})
+
+           # Transient: brief pulse
+           brain.forward({"thalamus": Transient(pattern, onset_ms=0)})
+           ```
+
+        **2. List of tensors** - Explicit per-timestep inputs:
+           ```python
+           brain.forward({"thalamus": [input_t1, input_t2, input_t3]})
+           ```
+           n_timesteps inferred from list length
+
+        **3. Single tensor + n_timesteps** - Broadcast mode (backward compat):
+           ```python
+           brain.forward({"thalamus": input}, n_timesteps=10)
+           ```
+           Same input sustained for all timesteps
+
+        **4. Single tensor** - One timestep:
+           ```python
+           brain.forward({"thalamus": input})
+           ```
 
         Args:
-            sensory_input: Input pattern [input_size], or None for maintenance
-                          Will be routed to thalamus automatically
-            n_timesteps: Number of timesteps to process (default: 10 if not configured)
+            sensory_input: Input pattern(s):
+                          - StimulusPattern: Sustained/Transient/Sequential/Programmatic
+                          - List[Tensor]: Explicit per-timestep inputs
+                          - Tensor: Single timestep or broadcast with n_timesteps
+                          - Dict: Multi-component inputs (any of above types)
+                          - None: Maintenance mode
+            n_timesteps: Number of timesteps (optional):
+                        - If StimulusPattern: inferred from pattern duration
+                        - If List: inferred from list length
+                        - If Tensor + n_timesteps: broadcasts input
+                        - If None and Tensor: defaults to 1 timestep
 
         Returns:
             Dict containing:
                 - "outputs": Dict[component_name -> final output]
-                - "history": Optional list of timestep outputs
                 - "time": Final simulation time
+                - "spike_counts": Total spike counts per component
 
         Example:
-            brain = DynamicBrain.from_thalia_config(config)
-
-            sensory_input = torch.randn(128, device=device)
-            result = brain.forward(sensory_input, n_timesteps=10)
-
-            # Alternative: Dict-based input
-            result = brain.forward({"thalamus": sensory_input}, n_timesteps=10)
+            >>> from thalia.stimuli import Sustained, Sequential
+            >>>
+            >>> # Sustained visual input
+            >>> pattern = torch.randn(128)
+            >>> stim = Sustained(pattern, duration_ms=500)
+            >>> result = brain.forward({"thalamus": stim})
+            >>>
+            >>> # Movie frames
+            >>> frames = [torch.randn(128) for _ in range(100)]
+            >>> stim = Sequential(frames)
+            >>> result = brain.forward({"thalamus": stim})
         """
         # Handle default n_timesteps
         if n_timesteps is None:
-            n_timesteps = 10  # Reasonable default
+            n_timesteps = 1  # Single timestep default (sensory input provided once)
 
-        # Convert sensory_input to input_data dict format
+        # Convert sensory_input to input_data dict format and detect mode
+        sequence_mode = False
+        input_sequences: Dict[str, List[torch.Tensor]] = {}
+        dt_ms = self.global_config.dt_ms
+
         if sensory_input is not None:
             if isinstance(sensory_input, dict):
-                # Already in dict format
-                input_data = sensory_input
+                # Check if any values are lists or StimulusPattern (sequence mode)
+                for key, value in sensory_input.items():
+                    if isinstance(value, StimulusPattern):
+                        # Convert StimulusPattern to sequence of tensors
+                        sequence_mode = True
+                        n_steps = value.duration_timesteps(dt_ms)
+                        if n_timesteps is not None and n_timesteps != 1 and n_timesteps != n_steps:
+                            raise ValueError(
+                                f"StimulusPattern for '{key}' has duration {n_steps} timesteps, "
+                                f"but n_timesteps={n_timesteps} specified. Remove n_timesteps argument."
+                            )
+                        n_timesteps = n_steps
+
+                        # Generate sequence from stimulus pattern
+                        frames = []
+                        for t in range(n_steps):
+                            frame = value.get_input(t, dt_ms)
+                            if frame is None:
+                                # Pattern returns None (silence) - use zeros
+                                frame = torch.zeros(value.shape, dtype=torch.bool, device=value.device)
+                            frames.append(frame)
+                        input_sequences[key] = frames
+                    elif isinstance(value, list):
+                        sequence_mode = True
+                        input_sequences[key] = value
+                        # Infer n_timesteps from sequence length
+                        n_timesteps = len(value)
+                    else:
+                        # Single tensor (will be broadcast in broadcast mode)
+                        input_sequences[key] = [value]  # Wrap for uniform handling
+
+                input_data = sensory_input  # Keep original for first timestep
             else:
                 # Convert tensor to dict with thalamus as input
                 input_data = {"thalamus": sensory_input}
+                input_sequences = {"thalamus": [sensory_input]}  # Wrap for broadcast
         else:
             # No input (maintenance mode)
             input_data = {}
+            input_sequences = {}
+
+        # Validate sequence mode consistency
+        if sequence_mode:
+            seq_lengths = [len(seq) for seq in input_sequences.values() if isinstance(seq, list)]
+            if len(set(seq_lengths)) > 1:
+                raise ValueError(
+                    f"Sequence mode: All input sequences must have same length. "
+                    f"Got lengths: {seq_lengths}"
+                )
+
         # Choose execution mode
         if self.use_parallel:
+            # Parallel mode: convert sequences if needed
+            # For now, only support broadcast mode in parallel
+            if sequence_mode:
+                raise NotImplementedError(
+                    "Sequence mode not yet supported in parallel execution. "
+                    "Use use_parallel=False or provide single tensor with n_timesteps."
+                )
             return self._forward_parallel(input_data, n_timesteps)
         else:
-            return self._forward_event_driven(input_data, n_timesteps)
+            return self._forward_event_driven(input_sequences, n_timesteps, sequence_mode)
 
     # =================================================================
     # EVENT ADAPTER SYSTEM
@@ -780,8 +879,9 @@ class DynamicBrain(nn.Module):
 
     def _forward_event_driven(
         self,
-        input_data: Dict[str, torch.Tensor],
+        input_sequences: Dict[str, List[torch.Tensor]],
         n_timesteps: int,
+        sequence_mode: bool,
     ) -> Dict[str, Any]:
         """Event-driven execution with realistic axonal delays.
 
@@ -790,118 +890,125 @@ class DynamicBrain(nn.Module):
         - Apply membrane decay between events
         - Translate events to component forward calls
         - Route output spikes to downstream targets
+
+        Args:
+            input_sequences: Dict mapping component names to lists of input tensors
+                           In broadcast mode: lists have 1 element (repeated)
+                           In sequence mode: lists have n_timesteps elements
+            n_timesteps: Number of timesteps to execute
+            sequence_mode: If True, use input_sequences[t] for each timestep
+                         If False, repeat input_sequences[0] for all timesteps
         """
         # Ensure event adapters are initialized
         adapters = self._ensure_adapters()
 
-        # Clear scheduler state
-        self._scheduler.clear()
-
-        # Schedule initial sensory inputs
-        for component_name, sensory_spikes in input_data.items():
-            if component_name in self.components:
-                # Wrap tensor in dict for consistent format with pathway outputs
-                # External input uses "input" key (semantic: primary sensory input)
-                if isinstance(sensory_spikes, torch.Tensor):
-                    spike_payload = {"input": sensory_spikes}
-                else:
-                    # Already a dict (advanced usage)
-                    spike_payload = sensory_spikes
-
-                event = Event(
-                    time=self._current_time,
-                    event_type=EventType.SENSORY,
-                    source="external",
-                    target=component_name,
-                    payload=SpikePayload(spikes=spike_payload),
-                )
-                self._scheduler.schedule(event)
+        # DO NOT clear scheduler - events persist across forward() calls
+        # This is critical for clock-driven execution: delayed events from previous
+        # timesteps must be delivered in future timesteps
 
         # Storage for component outputs
         outputs = {name: None for name in self.components.keys()}
 
-        # Process events until end time
-        end_time = self._current_time + (n_timesteps * self.global_config.dt_ms)
+        # CLOCK-DRIVEN EXECUTION (ADR-003)
+        # Execute all regions at every timestep, regardless of events
+        # This ensures: recurrent connections, membrane dynamics, spontaneous activity
+        dt_ms = self.global_config.dt_ms
 
-        while not self._scheduler.is_empty:
-            # Check if next event is within our time window
-            next_time = self._scheduler.peek_time()
-            if next_time is None or next_time > end_time:
-                break
+        for timestep in range(n_timesteps):
+            current_time = self._current_time + (timestep * dt_ms)
 
-            # Get next batch of simultaneous events
-            events = self._scheduler.pop_simultaneous(tolerance_ms=0.01)
-
-            # Group events by target to merge multi-port inputs
-            events_by_target: Dict[str, List[Event]] = {}
-            for event in events:
-                if event.target not in events_by_target:
-                    events_by_target[event.target] = []
-                events_by_target[event.target].append(event)
-
-            # Process each target once with merged inputs
-            for target_name, target_events in events_by_target.items():
-                # Get event adapter (not raw component)
-                adapter = adapters.get(target_name)
-                if adapter is None:
-                    continue
-
-                # Merge payloads from all events to this target
-                merged_spikes: Dict[str, torch.Tensor] = {}
-                for event in target_events:
-                    # Process event through adapter to get output spikes
-                    if event.event_type == EventType.SPIKE or event.event_type == EventType.SENSORY:
-                        if not isinstance(event.payload, SpikePayload):
-                            continue
-
-                        # Apply decay once for this target (before first event)
-                        if len(merged_spikes) == 0:
-                            dt = event.time - adapter._last_update_time
-                            if dt > 0:
-                                adapter._apply_decay(dt)
-                            adapter._last_update_time = event.time
-
-                        # Merge spike dict into accumulated inputs
-                        spike_payload = event.payload.spikes
-                        if isinstance(spike_payload, dict):
-                            merged_spikes.update(spike_payload)
-                        else:
-                            # Shouldn't happen after external input wrapping, but handle gracefully
-                            merged_spikes["input"] = spike_payload
-
-                # Process merged inputs through adapter
-                if merged_spikes:
-                    # Get output spikes (use impl for regions, forward for pathways)
-                    # Pass brain reference for L6 feedback access
-                    if hasattr(adapter, 'impl'):
-                        output_spikes = adapter.impl.forward(merged_spikes, brain=self)
+            # Schedule sensory inputs for THIS timestep
+            # In sequence mode: use input_sequences[component][timestep]
+            # In broadcast mode: use input_sequences[component][0] (repeated)
+            for component_name, sequence in input_sequences.items():
+                if component_name in self.components:
+                    # Get input for this timestep
+                    if sequence_mode:
+                        sensory_spikes = sequence[timestep]
                     else:
-                        output_spikes = adapter.forward(merged_spikes, brain=self)
+                        # Broadcast mode: repeat first (only) element
+                        sensory_spikes = sequence[0]
 
-                    outputs[target_name] = output_spikes
+                    # Wrap tensor in dict for consistent format with pathway outputs
+                    # External input uses "input" key (semantic: primary sensory input)
+                    if isinstance(sensory_spikes, torch.Tensor):
+                        spike_payload = {"input": sensory_spikes}
+                    else:
+                        # Already a dict (advanced usage)
+                        spike_payload = sensory_spikes
 
-                    # Track spike counts
-                    if output_spikes is not None:
-                        spike_count = int(output_spikes.sum().item())
-                        self._spike_counts[event.target] += spike_count
+                    event = Event(
+                        time=current_time,
+                        event_type=EventType.SENSORY,
+                        source="external",
+                        target=component_name,
+                        payload=SpikePayload(spikes=spike_payload),
+                    )
+                    self._scheduler.schedule(event)
 
-                    # Schedule output events to downstream components
-                    if output_spikes is not None and output_spikes.sum() > 0:
+            # Step 1: Collect all pending events for this timestep
+            events_by_target: Dict[str, List[Event]] = {}
+            while not self._scheduler.is_empty:
+                next_time = self._scheduler.peek_time()
+                if next_time is None or next_time > current_time + 0.01:  # tolerance
+                    break
+
+                events = self._scheduler.pop_simultaneous(tolerance_ms=0.01)
+                for event in events:
+                    if event.target not in events_by_target:
+                        events_by_target[event.target] = []
+                    events_by_target[event.target].append(event)
+
+            # Step 2: Execute ALL regions at this timestep (clock-driven)
+            for region_name, adapter in adapters.items():
+                # Collect inputs from events targeting this region
+                merged_spikes: Dict[str, torch.Tensor] = {}
+
+                if region_name in events_by_target:
+                    for event in events_by_target[region_name]:
+                        if event.event_type == EventType.SPIKE or event.event_type == EventType.SENSORY:
+                            if not isinstance(event.payload, SpikePayload):
+                                continue
+
+                            spike_payload = event.payload.spikes
+                            if isinstance(spike_payload, dict):
+                                merged_spikes.update(spike_payload)
+                            else:
+                                merged_spikes["input"] = spike_payload
+
+                # Apply decay for time elapsed since last update
+                dt = current_time - adapter._last_update_time
+                if dt > 0:
+                    adapter._apply_decay(dt)
+                adapter._last_update_time = current_time
+
+                # Execute region with merged inputs (or empty dict for zero-input)
+                # All regions support zero-input execution (required for clock-driven architecture)
+                if hasattr(adapter, 'impl'):
+                    output_spikes = adapter.impl.forward(merged_spikes)
+                else:
+                    output_spikes = adapter.forward(merged_spikes)
+
+                outputs[region_name] = output_spikes
+
+                # Track spike counts
+                if output_spikes is not None:
+                    spike_count = int(output_spikes.sum().item())
+                    self._spike_counts[region_name] += spike_count
+
+                    # Schedule downstream events for next timestep(s)
+                    if spike_count > 0:
                         self._schedule_downstream_events(
-                            source=event.target,
+                            source=region_name,
                             output_spikes=output_spikes,
-                            current_time=event.time,
+                            current_time=current_time,
                         )
-
-            # Advance scheduler time
-            if events:
-                self._current_time = events[0].time
 
             # Broadcast oscillator phases every timestep
             self._broadcast_oscillator_phases()
 
-        # Ensure time advances to end_time even if no more events
-        self._current_time = end_time
+        # Update final time
+        self._current_time += (n_timesteps * dt_ms)
 
         # Count total events processed for compatibility with EventDrivenBrain
         events_processed = len([v for v in outputs.values() if v is not None])
@@ -2118,14 +2225,21 @@ class DynamicBrain(nn.Module):
         """
         if source not in self.components:
             raise ValueError(f"Source component '{source}' not found")
-        if target not in self.components:
-            raise ValueError(f"Target component '{target}' not found")
+        # Extract base target name (may have port suffix like "thalamus:l6a_feedback")
+        target_base = target.split(":")[0]
+        if target_base not in self.components:
+            raise ValueError(f"Target component '{target_base}' not found")
 
-        # Store with tuple key
+        # Store with tuple key (target may be compound like "thalamus:l6a_feedback")
         self.connections[(source, target)] = pathway
 
         # Also register in ModuleDict for parameter tracking
-        conn_key = f"{source}_to_{target}"
+        # Strip port suffix for module key (PyTorch doesn't like colons in keys)
+        conn_key = f"{source}_to_{target_base}"
+        # Make key unique if port specified
+        if ":" in target:
+            port = target.split(":")[1]
+            conn_key = f"{conn_key}_{port}"
         self._connection_modules[conn_key] = pathway
 
         # Update topology
@@ -2153,7 +2267,10 @@ class DynamicBrain(nn.Module):
             current_time: Current simulation time
         """
         # Find all connections from this source
+        # Note: tgt may be compound (e.g., "thalamus:l6a_feedback") for port-based routing
         for (src, tgt), pathway in self.connections.items():
+            # Extract base target name (strip port suffix if present)
+            tgt_base = tgt.split(":")[0]
             if src == source:
                 # Extract port-specific output if specified
                 conn_spec = self._connection_specs.get((src, tgt))
@@ -2166,51 +2283,57 @@ class DynamicBrain(nn.Module):
 
                 # Check if this is a multi-source target
                 # (multiple pathways going to same target)
-                target_sources = [s for (s, t) in self.connections.keys() if t == tgt]
+                # Compare base target names (strip ports) to count sources
+                target_sources = [s for (s, t) in self.connections.keys() if t.split(":")[0] == tgt_base]
 
-                if len(target_sources) > 1:
-                    # Multi-source target - create dict with only this source
-                    # AxonalProjection will fill missing sources with zeros
-                    source_dict = {source: port_output}
+                # For port-based connections, use compound key "region:port"
+                # For non-port connections, use simple key "region"
+                # This allows AxonalProjection to distinguish L6a from L6b
+                if conn_spec and conn_spec.source_port:
+                    source_key = f"{source}:{conn_spec.source_port}"
                 else:
-                    # Single-source target - create dict with single entry
-                    source_dict = {source: port_output}
+                    source_key = source
 
-                # Get delay from pathway config
-                delay_ms = getattr(pathway.config, 'axonal_delay_ms', 1.0)
+                source_dict = {source_key: port_output}
+
+                # Get axonal delay from AxonalProjection.sources (preferred) or config
+                delay_ms = 1.0  # Default
+
+                # Check if pathway has sources list (AxonalProjection)
+                if hasattr(pathway, 'sources') and pathway.sources:
+                    # Match source_key to compound_key from sources
+                    for src_spec in pathway.sources:
+                        src_spec_key = src_spec.compound_key()
+                        if src_spec_key == source_key:
+                            delay_ms = src_spec.delay_ms
+                            break
+                # Otherwise check config (other pathway types)
+                elif hasattr(pathway, 'config') and hasattr(pathway.config, 'axonal_delay_ms'):
+                    delay_ms = pathway.config.axonal_delay_ms
 
                 # Route spikes through pathway (AxonalProjection expects Dict)
-                pathway_output = pathway.forward(source_dict)
+                # Note: Delays handled by EventScheduler, not by pathway
+                pathway_output = pathway.forward(source_dict)                # Extract payload for event:
+                # pathway_output is already a dict with all sources (zeros for missing)
+                # We need to remap keys based on target_port semantics
+                event_payload_spikes = {}
+                for src_key, spikes in pathway_output.items():
+                    # Extract region name from compound key (e.g., "cortex:l6a" → "cortex")
+                    src_region = src_key.split(":")[0]
+                    # Get target_port for this specific source→target connection
+                    # Try compound key first (for port-based connections), then simple key
+                    src_conn_spec = self._connection_specs.get((src, tgt))
+                    if not src_conn_spec:
+                        # Fallback for non-port connections
+                        src_conn_spec = self._connection_specs.get((src_region, tgt_base))
 
-                # Determine dict key for target region based on target_port
-                # If target_port specified, use it as semantic key (e.g., "l6_feedback", "top_down")
-                # Otherwise use source name (e.g., "thalamus", "cortex")
-                if conn_spec and conn_spec.target_port:
-                    # target_port provides semantic meaning for this input
-                    target_key = conn_spec.target_port
-                else:
-                    # No target_port - use source name or "input" for single-source
-                    target_key = source if len(target_sources) > 1 else "input"
-
-                # Extract payload for event:
-                # - Single-source: Extract tensor and wrap in dict with appropriate key
-                # - Multi-source: Remap dict keys using target_port semantics
-                if len(target_sources) == 1:
-                    # Single source - create dict with semantic key
-                    event_payload_spikes = {target_key: pathway_output[source]}
-                else:
-                    # Multi-source - remap each source to its target_port key
-                    # This allows regions to receive: {"input": sensory, "l6_feedback": L6}
-                    # instead of: {"external": sensory, "cortex": L6}
-                    event_payload_spikes = {}
-                    for src_name, spikes in pathway_output.items():
-                        # Get target_port for this specific source→target connection
-                        src_conn_spec = self._connection_specs.get((src_name, tgt))
-                        if src_conn_spec and src_conn_spec.target_port:
-                            key = src_conn_spec.target_port
-                        else:
-                            key = src_name  # Fallback to source name
-                        event_payload_spikes[key] = spikes
+                    if src_conn_spec and src_conn_spec.target_port:
+                        key = src_conn_spec.target_port
+                    else:
+                        # For multi-source pathways without target_port, use source name
+                        # For single-source without target_port, use "input"
+                        key = src_region if len(pathway_output) > 1 else "input"
+                    event_payload_spikes[key] = spikes
 
                 # Schedule event to target with delay
                 if len(target_sources) > 1:
@@ -2219,11 +2342,12 @@ class DynamicBrain(nn.Module):
                 else:
                     source_label = source
 
+                # Use base target name (strip port) for event routing
                 event = Event(
                     time=current_time + delay_ms,
                     event_type=EventType.SPIKE,
                     source=source_label,
-                    target=tgt,
+                    target=tgt_base,  # Base name without port suffix
                     payload=SpikePayload(spikes=event_payload_spikes),
                 )
                 self._scheduler.schedule(event)
@@ -2234,11 +2358,20 @@ class DynamicBrain(nn.Module):
         Args:
             component: Source component
             output: Full component output
-            port: Port name ('l23', 'l5', 'l6')
+            port: Port name ('l23', 'l5', 'l6a', 'l6b', 'l6')
 
         Returns:
             Sliced output for the specified port
         """
+        # Use component's get_output() method if available (preferred for port routing)
+        if hasattr(component, 'get_output') and callable(component.get_output):
+            try:
+                return component.get_output(port=port)
+            except ValueError:
+                # get_output() raised error (invalid port), fall through to manual slicing
+                pass
+
+        # Fallback: Manual slicing for legacy components without get_output()
         # For LayeredCortex: output is [L2/3, L5] concatenated
         if hasattr(component, 'l23_size') and hasattr(component, 'l5_size'):
             if port == "l23":
@@ -2248,15 +2381,8 @@ class DynamicBrain(nn.Module):
             elif port == "l4":
                 # L4 is internal, not in output
                 raise ValueError("L4 is not part of cortex output")
-            elif port == "l6":
-                # L6 is internal feedback, use dedicated getter
-                if hasattr(component, 'get_l6_feedback'):
-                    l6_spikes = component.get_l6_feedback()
-                    if l6_spikes is None:
-                        # No L6 activity yet, return zeros
-                        return torch.zeros(component.l6_size, dtype=torch.bool, device=component.device)
-                    return l6_spikes
-                raise ValueError("Component does not support L6 feedback access")
+            else:
+                raise ValueError(f"Port '{port}' not supported for manual slicing. Use get_output() method.")
 
         raise ValueError(f"Component {type(component).__name__} does not support port '{port}'")
 

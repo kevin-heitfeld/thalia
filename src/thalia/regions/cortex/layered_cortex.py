@@ -196,7 +196,8 @@ class LayeredCortex(NeuralRegion):
         self.l4_size = config.l4_size
         self.l23_size = config.l23_size
         self.l5_size = config.l5_size
-        self.l6_size = config.l6_size
+        self.l6a_size = config.l6a_size  # L6a → TRN pathway
+        self.l6b_size = config.l6b_size  # L6b → relay pathway
 
         # Validate n_output matches total (output is both L2/3 and L5)
         actual_output = self.l23_size + self.l5_size
@@ -263,12 +264,14 @@ class LayeredCortex(NeuralRegion):
             self.bcm_l4 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
             self.bcm_l23 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
             self.bcm_l5 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
-            self.bcm_l6 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
+            self.bcm_l6a = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
+            self.bcm_l6b = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
         else:
             self.bcm_l4 = None
             self.bcm_l23 = None
             self.bcm_l5 = None
-            self.bcm_l6 = None
+            self.bcm_l6a = None
+            self.bcm_l6b = None
 
         # State
         self.state = LayeredCortexState()
@@ -280,7 +283,8 @@ class LayeredCortex(NeuralRegion):
         self._cumulative_l4_spikes = 0
         self._cumulative_l23_spikes = 0
         self._cumulative_l5_spikes = 0
-        self._cumulative_l6_spikes = 0
+        self._cumulative_l6a_spikes = 0
+        self._cumulative_l6b_spikes = 0
 
         # Intrinsic plasticity tracking (initialized in _init_layers)
         self._l23_threshold_offset: Optional[torch.Tensor] = None
@@ -335,7 +339,12 @@ class LayeredCortex(NeuralRegion):
             tau_adapt=cfg.adapt_tau,
         )
         self.l5_neurons = create_cortical_layer_neurons(self.l5_size, "L5", self.device)
-        self.l6_neurons = create_cortical_layer_neurons(self.l6_size, "L6", self.device)
+
+        # L6 split into two subtypes:
+        # - L6a (corticothalamic type I): Projects to TRN (inhibitory modulation)
+        # - L6b (corticothalamic type II): Projects to relay (excitatory modulation)
+        self.l6a_neurons = create_cortical_layer_neurons(self.l6a_size, "L6a", self.device)
+        self.l6b_neurons = create_cortical_layer_neurons(self.l6b_size, "L6b", self.device)
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for L2/3 recurrent connections
@@ -358,19 +367,22 @@ class LayeredCortex(NeuralRegion):
         # Create delay buffers for biological signal propagation within layers
         # L4→L2/3 delay: Short vertical projection (~2ms biologically)
         # L2/3→L5: Longer vertical projection (~2ms biologically)
-        # L2/3→L6: Within column (~2ms biologically)
+        # L2/3→L6a/L6b: Within column (~2ms biologically)
         # Uses circular buffer mechanism from AxonalDelaysMixin
         self._l4_l23_delay_steps = int(cfg.l4_to_l23_delay_ms / cfg.dt_ms)
         self._l23_l5_delay_steps = int(cfg.l23_to_l5_delay_ms / cfg.dt_ms)
-        self._l23_l6_delay_steps = int(cfg.l23_to_l6_delay_ms / cfg.dt_ms)
+        self._l23_l6a_delay_steps = int(cfg.l23_to_l6a_delay_ms / cfg.dt_ms)
+        self._l23_l6b_delay_steps = int(cfg.l23_to_l6b_delay_ms / cfg.dt_ms)
 
         # Initialize delay buffers (lazily initialized on first use)
         self._l4_l23_delay_buffer: Optional[torch.Tensor] = None
         self._l4_l23_delay_ptr: int = 0
         self._l23_l5_delay_buffer: Optional[torch.Tensor] = None
         self._l23_l5_delay_ptr: int = 0
-        self._l23_l6_delay_buffer: Optional[torch.Tensor] = None
-        self._l23_l6_delay_ptr: int = 0
+        self._l23_l6a_delay_buffer: Optional[torch.Tensor] = None
+        self._l23_l6a_delay_ptr: int = 0
+        self._l23_l6b_delay_buffer: Optional[torch.Tensor] = None
+        self._l23_l6b_delay_ptr: int = 0
 
     def _init_robustness_mechanisms(self) -> None:
         """Initialize robustness mechanisms from RobustnessConfig.
@@ -502,15 +514,29 @@ class LayeredCortex(NeuralRegion):
             )
         )
 
-        # L2/3 → L6: positive excitatory weights (corticothalamic feedback pathway)
-        w_scale_l23_l6 = 1.0 / expected_active_l23
-        self.w_l23_l6 = nn.Parameter(
+        # L2/3 → L6a: positive excitatory weights (corticothalamic type I → TRN)
+        w_scale_l23_l6a = 1.0 / expected_active_l23
+        self.w_l23_l6a = nn.Parameter(
             torch.abs(
                 WeightInitializer.gaussian(
-                    n_output=self.l6_size,
+                    n_output=self.l6a_size,
                     n_input=self.l23_size,
                     mean=0.0,
-                    std=w_scale_l23_l6,
+                    std=w_scale_l23_l6a,
+                    device=device
+                )
+            )
+        )
+
+        # L2/3 → L6b: positive excitatory weights (corticothalamic type II → relay)
+        w_scale_l23_l6b = 1.0 / expected_active_l23
+        self.w_l23_l6b = nn.Parameter(
+            torch.abs(
+                WeightInitializer.gaussian(
+                    n_output=self.l6b_size,
+                    n_input=self.l23_size,
+                    mean=0.0,
+                    std=w_scale_l23_l6b,
                     device=device
                 )
             )
@@ -589,7 +615,7 @@ class LayeredCortex(NeuralRegion):
         dev = self.device
 
         # Reset neuron populations and STP using helpers
-        self._reset_subsystems('l4_neurons', 'l23_neurons', 'l5_neurons', 'l6_neurons', 'stp_l23_recurrent')
+        self._reset_subsystems('l4_neurons', 'l23_neurons', 'l5_neurons', 'l6a_neurons', 'l6b_neurons', 'stp_l23_recurrent')
 
         # Note: No local oscillators to reset - phases come from Brain
 
@@ -601,12 +627,14 @@ class LayeredCortex(NeuralRegion):
             l4_spikes=torch.zeros(self.l4_size, device=dev),
             l23_spikes=torch.zeros(self.l23_size, device=dev),
             l5_spikes=torch.zeros(self.l5_size, device=dev),
-            l6_spikes=torch.zeros(self.l6_size, device=dev),
+            l6a_spikes=torch.zeros(self.l6a_size, device=dev),
+            l6b_spikes=torch.zeros(self.l6b_size, device=dev),
             l23_recurrent_activity=torch.zeros(self.l23_size, device=dev),
             l4_trace=torch.zeros(self.l4_size, device=dev),
             l23_trace=torch.zeros(self.l23_size, device=dev),
             l5_trace=torch.zeros(self.l5_size, device=dev),
-            l6_trace=torch.zeros(self.l6_size, device=dev),
+            l6a_trace=torch.zeros(self.l6a_size, device=dev),
+            l6b_trace=torch.zeros(self.l6b_size, device=dev),
             top_down_modulation=None,
             ffi_strength=0.0,
         )
@@ -620,7 +648,8 @@ class LayeredCortex(NeuralRegion):
             _cumulative_l4_spikes=0,
             _cumulative_l23_spikes=0,
             _cumulative_l5_spikes=0,
-            _cumulative_l6_spikes=0
+            _cumulative_l6a_spikes=0,
+            _cumulative_l6b_spikes=0
         )
 
         # Initialize all delay buffers if delays are configured
@@ -638,12 +667,21 @@ class LayeredCortex(NeuralRegion):
             )
             self._l23_l5_delay_ptr = 0
 
-        if self._l23_l6_delay_steps > 0:
-            self._l23_l6_delay_buffer = torch.zeros(
-                self._l23_l6_delay_steps, self.l23_size,
+        # L6a delay buffer (L2/3 → L6a)
+        if self._l23_l6a_delay_steps > 0:
+            self._l23_l6a_delay_buffer = torch.zeros(
+                self._l23_l6a_delay_steps, self.l23_size,
                 device=dev, dtype=torch.bool
             )
-            self._l23_l6_delay_ptr = 0
+            self._l23_l6a_delay_ptr = 0
+
+        # L6b delay buffer (L2/3 → L6b)
+        if self._l23_l6b_delay_steps > 0:
+            self._l23_l6b_delay_buffer = torch.zeros(
+                self._l23_l6b_delay_steps, self.l23_size,
+                device=dev, dtype=torch.bool
+            )
+            self._l23_l6b_delay_ptr = 0
 
         # Note: FFI state decays naturally, no hard reset needed
 
@@ -707,21 +745,24 @@ class LayeredCortex(NeuralRegion):
         """
         # Calculate proportional growth based on current layer sizes
         # Maintain current ratios between layers
-        total_current = self.l4_size + self.l23_size + self.l5_size + self.l6_size
+        total_current = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
         l4_growth = int(n_new * self.l4_size / total_current)
         l23_growth = int(n_new * self.l23_size / total_current)
         l5_growth = int(n_new * self.l5_size / total_current)
-        l6_growth = int(n_new * self.l6_size / total_current)
+        l6a_growth = int(n_new * self.l6a_size / total_current)
+        l6b_growth = int(n_new * self.l6b_size / total_current)
 
         old_l4_size = self.l4_size
         old_l23_size = self.l23_size
         old_l5_size = self.l5_size
-        old_l6_size = self.l6_size
+        old_l6a_size = self.l6a_size
+        old_l6b_size = self.l6b_size
 
         new_l4_size = old_l4_size + l4_growth
         new_l23_size = old_l23_size + l23_growth
         new_l5_size = old_l5_size + l5_growth
-        new_l6_size = old_l6_size + l6_growth
+        new_l6a_size = old_l6a_size + l6a_growth
+        new_l6b_size = old_l6b_size + l6b_growth
 
         # Helper to create new weights
         def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
@@ -775,13 +816,22 @@ class LayeredCortex(NeuralRegion):
             torch.cat([expanded_l5_rows, new_l23_cols_to_l5], dim=1)
         )
 
-        # 4b. Expand L2/3→L6 weights [l6, l23]
-        # Add rows for new L6 neurons, columns for new L2/3 neurons
-        new_l6_rows = new_weights_for(l6_growth, old_l23_size)
-        expanded_l6_rows = torch.cat([self.w_l23_l6.data, new_l6_rows], dim=0)
-        new_l23_cols_to_l6 = new_weights_for(new_l6_size, l23_growth)
-        self.w_l23_l6 = nn.Parameter(
-            torch.cat([expanded_l6_rows, new_l23_cols_to_l6], dim=1)
+        # 4b. Expand L2/3→L6a weights [l6a, l23]
+        # Add rows for new L6a neurons, columns for new L2/3 neurons
+        new_l6a_rows = new_weights_for(l6a_growth, old_l23_size)
+        expanded_l6a_rows = torch.cat([self.w_l23_l6a.data, new_l6a_rows], dim=0)
+        new_l23_cols_to_l6a = new_weights_for(new_l6a_size, l23_growth)
+        self.w_l23_l6a = nn.Parameter(
+            torch.cat([expanded_l6a_rows, new_l23_cols_to_l6a], dim=1)
+        )
+
+        # 4c. Expand L2/3→L6b weights [l6b, l23]
+        # Add rows for new L6b neurons, columns for new L2/3 neurons
+        new_l6b_rows = new_weights_for(l6b_growth, old_l23_size)
+        expanded_l6b_rows = torch.cat([self.w_l23_l6b.data, new_l6b_rows], dim=0)
+        new_l23_cols_to_l6b = new_weights_for(new_l6b_size, l23_growth)
+        self.w_l23_l6b = nn.Parameter(
+            torch.cat([expanded_l6b_rows, new_l23_cols_to_l6b], dim=1)
         )
 
         # Update main weights reference (for base class compatibility)
@@ -803,8 +853,11 @@ class LayeredCortex(NeuralRegion):
         self.l5_size = new_l5_size
         self.l5_neurons = create_cortical_layer_neurons(self.l5_size, "L5", self.device)
 
-        self.l6_size = new_l6_size
-        self.l6_neurons = create_cortical_layer_neurons(self.l6_size, "L6", self.device)
+        self.l6a_size = new_l6a_size
+        self.l6a_neurons = create_cortical_layer_neurons(self.l6a_size, "L6a", self.device)
+
+        self.l6b_size = new_l6b_size
+        self.l6b_neurons = create_cortical_layer_neurons(self.l6b_size, "L6b", self.device)
 
         # 6. Update STP module to match L2/3 growth
         self.stp_l23_recurrent = ShortTermPlasticity(
@@ -910,7 +963,13 @@ class LayeredCortex(NeuralRegion):
         """
         # Concatenate all input sources in consistent order
         # Common sources: thalamus (feedforward), hippocampus (memory), cerebellum (predictions), pfc (top-down)
-        input_spikes = InputRouter.concatenate_sources(inputs, component_name="LayeredCortex")
+        # Supports zero-input execution for clock-driven architecture
+        input_spikes = InputRouter.concatenate_sources(
+            inputs,
+            component_name="LayeredCortex",
+            n_input=self.layer_config.n_input,
+            device=self.device,
+        )
 
         # Get timestep from config for temporal dynamics
         dt = self.config.dt_ms
@@ -1211,61 +1270,95 @@ class LayeredCortex(NeuralRegion):
         )
 
         # =====================================================================
-        # LAYER 6: CORTICOTHALAMIC FEEDBACK
+        # LAYER 6: CORTICOTHALAMIC FEEDBACK (SPLIT INTO L6a AND L6b)
         # =====================================================================
-        # L6 receives from L2/3 (associative layer) and projects to TRN
-        # in thalamus to provide top-down attentional modulation.
-        # This feedback loop implements selective attention: cortex can
-        # amplify or suppress specific sensory channels via TRN inhibition.
+        # L6a (corticothalamic type I): Projects to TRN (inhibitory modulation, low gamma)
+        # L6b (corticothalamic type II): Projects to relay (excitatory modulation, high gamma)
+        # This dual feedback implements both spatial attention (via TRN) and
+        # fast gain modulation (direct relay excitation).
 
-        # Apply L2/3→L6 axonal delay
-        if self._l23_l6_delay_steps > 0:
-            # Initialize buffer on first use (should be initialized in reset_state)
-            if self._l23_l6_delay_buffer is None:
-                # Use exact delay size (no safety margin) for memory efficiency
-                self._l23_l6_delay_buffer = torch.zeros(
-                    self._l23_l6_delay_steps, self.l23_size,
+        # =====================================================================
+        # L6a: Apply L2/3→L6a axonal delay
+        # =====================================================================
+        if self._l23_l6a_delay_steps > 0:
+            # Initialize buffer on first use
+            if self._l23_l6a_delay_buffer is None:
+                self._l23_l6a_delay_buffer = torch.zeros(
+                    self._l23_l6a_delay_steps, self.l23_size,
                     device=l23_spikes.device, dtype=torch.bool
                 )
-                self._l23_l6_delay_ptr = 0
+                self._l23_l6a_delay_ptr = 0
 
-            # Retrieve delayed spikes FIRST (before storing new ones)
-            read_idx = (self._l23_l6_delay_ptr - self._l23_l6_delay_steps) % self._l23_l6_delay_buffer.shape[0]
-            l23_spikes_for_l6 = self._l23_l6_delay_buffer[read_idx]
+            # Retrieve delayed spikes
+            read_idx = (self._l23_l6a_delay_ptr - self._l23_l6a_delay_steps) % self._l23_l6a_delay_buffer.shape[0]
+            l23_spikes_for_l6a = self._l23_l6a_delay_buffer[read_idx]
 
-            # Then store current L2/3 spikes for future retrieval
-            self._l23_l6_delay_buffer[self._l23_l6_delay_ptr] = l23_spikes
-
-            # Advance pointer
-            self._l23_l6_delay_ptr = (self._l23_l6_delay_ptr + 1) % self._l23_l6_delay_buffer.shape[0]
+            # Store current L2/3 spikes
+            self._l23_l6a_delay_buffer[self._l23_l6a_delay_ptr] = l23_spikes
+            self._l23_l6a_delay_ptr = (self._l23_l6a_delay_ptr + 1) % self._l23_l6a_delay_buffer.shape[0]
         else:
-            l23_spikes_for_l6 = l23_spikes
+            l23_spikes_for_l6a = l23_spikes
 
-        # L6 forward pass (corticothalamic neurons)
-        l6_g_exc = (
-            torch.matmul(self.w_l23_l6, l23_spikes_for_l6.float())
-            * cfg.l23_to_l6_strength
+        # L6a forward pass (corticothalamic type I → TRN)
+        l6a_g_exc = (
+            torch.matmul(self.w_l23_l6a, l23_spikes_for_l6a.float())
+            * cfg.l23_to_l6a_strength
         )
+        l6a_g_inh = l6a_g_exc * 0.8  # Strong local inhibition for sparse low-gamma firing
 
-        # L6 has minimal local inhibition (primarily feedback pathway)
-        l6_g_inh = l6_g_exc * 0.15  # Less than other layers
+        l6a_spikes, _ = self.l6a_neurons(l6a_g_exc, l6a_g_inh)
+        l6a_spikes = self._apply_sparsity_1d(l6a_spikes, cfg.l6a_sparsity)
+        self.state.l6a_spikes = l6a_spikes
 
-        l6_spikes, _ = self.l6_neurons(l6_g_exc, l6_g_inh)
-        l6_spikes = self._apply_sparsity_1d(l6_spikes, cfg.l6_sparsity)
-        self.state.l6_spikes = l6_spikes
+        # =====================================================================
+        # L6b: Apply L2/3→L6b axonal delay
+        # =====================================================================
+        if self._l23_l6b_delay_steps > 0:
+            # Initialize buffer on first use
+            if self._l23_l6b_delay_buffer is None:
+                self._l23_l6b_delay_buffer = torch.zeros(
+                    self._l23_l6b_delay_steps, self.l23_size,
+                    device=l23_spikes.device, dtype=torch.bool
+                )
+                self._l23_l6b_delay_ptr = 0
 
-        # Inter-layer shape check: L6 output
-        assert l6_spikes.shape == (self.l6_size,), (
-            f"LayeredCortex: L6 spikes have shape {l6_spikes.shape} "
-            f"but expected ({self.l6_size},). "
-            f"Check L6 sparsity or L2/3→L6 weights shape."
+            # Retrieve delayed spikes
+            read_idx = (self._l23_l6b_delay_ptr - self._l23_l6b_delay_steps) % self._l23_l6b_delay_buffer.shape[0]
+            l23_spikes_for_l6b = self._l23_l6b_delay_buffer[read_idx]
+
+            # Store current L2/3 spikes
+            self._l23_l6b_delay_buffer[self._l23_l6b_delay_ptr] = l23_spikes
+            self._l23_l6b_delay_ptr = (self._l23_l6b_delay_ptr + 1) % self._l23_l6b_delay_buffer.shape[0]
+        else:
+            l23_spikes_for_l6b = l23_spikes
+
+        # L6b forward pass (corticothalamic type II → relay)
+        l6b_g_exc = (
+            torch.matmul(self.w_l23_l6b, l23_spikes_for_l6b.float())
+            * cfg.l23_to_l6b_strength
+        )
+        l6b_g_inh = l6b_g_exc * 0.15  # Minimal local inhibition
+
+        l6b_spikes, _ = self.l6b_neurons(l6b_g_exc, l6b_g_inh)
+        l6b_spikes = self._apply_sparsity_1d(l6b_spikes, cfg.l6b_sparsity)
+        self.state.l6b_spikes = l6b_spikes
+
+        # Inter-layer shape checks
+        assert l6a_spikes.shape == (self.l6a_size,), (
+            f"LayeredCortex: L6a spikes have shape {l6a_spikes.shape} "
+            f"but expected ({self.l6a_size},)."
+        )
+        assert l6b_spikes.shape == (self.l6b_size,), (
+            f"LayeredCortex: L6b spikes have shape {l6b_spikes.shape} "
+            f"but expected ({self.l6b_size},)."
         )
 
         # Update cumulative spike counters (for diagnostics)
         self._cumulative_l4_spikes += int(l4_spikes.sum().item())
         self._cumulative_l23_spikes += int(l23_spikes.sum().item())
         self._cumulative_l5_spikes += int(l5_spikes.sum().item())
-        self._cumulative_l6_spikes += int(l6_spikes.sum().item())
+        self._cumulative_l6a_spikes += int(l6a_spikes.sum().item())
+        self._cumulative_l6b_spikes += int(l6b_spikes.sum().item())
 
         # Update STDP traces using utility function
         if self.state.l4_trace is not None:
@@ -1274,8 +1367,10 @@ class LayeredCortex(NeuralRegion):
             update_trace(self.state.l23_trace, l23_spikes, tau=cfg.tau_plus_ms, dt=dt)
         if self.state.l5_trace is not None:
             update_trace(self.state.l5_trace, l5_spikes, tau=cfg.tau_plus_ms, dt=dt)
-        if self.state.l6_trace is not None:
-            update_trace(self.state.l6_trace, l6_spikes, tau=cfg.tau_plus_ms, dt=dt)
+        if self.state.l6a_trace is not None:
+            update_trace(self.state.l6a_trace, l6a_spikes, tau=cfg.tau_plus_ms, dt=dt)
+        if self.state.l6b_trace is not None:
+            update_trace(self.state.l6b_trace, l6b_spikes, tau=cfg.tau_plus_ms, dt=dt)
 
         self.state.spikes = l5_spikes
 
@@ -1293,27 +1388,82 @@ class LayeredCortex(NeuralRegion):
         return output.bool()
 
     def get_l6_spikes(self) -> Optional[torch.Tensor]:
-        """Get L6 corticothalamic feedback spikes.
+        """Get L6 corticothalamic feedback spikes (combined L6a + L6b).
 
         This method is called by DynamicBrain to retrieve L6 spikes
-        for routing to thalamus TRN for attentional modulation.
+        for routing to thalamus. Returns combined L6a + L6b for backward
+        compatibility with existing brain configurations.
+
+        For port-based routing, use get_output() with:
+        - port="l6a" for L6a→TRN pathway only
+        - port="l6b" for L6b→relay pathway only
 
         Returns:
-            L6 spikes [l6_size] or None if not available
+            Combined L6a + L6b spikes [l6a_size + l6b_size] or None if not available
 
         Note:
             L6 spikes are NOT part of cortex output (forward() returns L2/3+L5).
             L6 is a dedicated feedback pathway that must be explicitly accessed.
         """
-        return self.state.l6_spikes if self.state.l6_spikes is not None else None
+        if self.state.l6a_spikes is None or self.state.l6b_spikes is None:
+            return None
+        return torch.cat([self.state.l6a_spikes, self.state.l6b_spikes], dim=-1)
 
     def get_l6_feedback(self) -> Optional[torch.Tensor]:
         """Alias for get_l6_spikes for compatibility with DynamicBrain port extraction.
 
         Returns:
-            L6 feedback spikes [l6_size] or None if not available
+            Combined L6a + L6b feedback spikes [l6a_size + l6b_size] or None
         """
         return self.get_l6_spikes()
+
+    def get_output(self, port: Optional[str] = None) -> torch.Tensor:
+        """Get layer output with port-based routing support.
+
+        Supports multiple output ports for flexible brain connectivity:
+        - port="l6a": L6a→TRN pathway spikes (low gamma, inhibitory modulation)
+        - port="l6b": L6b→relay pathway spikes (high gamma, excitatory modulation)
+        - port="l23": L2/3 cortico-cortical pathway
+        - port="l5": L5 subcortical pathway
+        - port=None: Default cortex output (L2/3 + L5)
+
+        Args:
+            port: Output port name (None for default)
+
+        Returns:
+            Spikes from requested port [port_size], bool tensor
+
+        Raises:
+            ValueError: If port is not recognized
+        """
+        if port == "l6a":
+            if self.state.l6a_spikes is not None:
+                return self.state.l6a_spikes
+            return torch.zeros(self.l6a_size, device=self.device, dtype=torch.bool)
+        elif port == "l6b":
+            if self.state.l6b_spikes is not None:
+                return self.state.l6b_spikes
+            return torch.zeros(self.l6b_size, device=self.device, dtype=torch.bool)
+        elif port == "l23":
+            if self.state.l23_spikes is not None:
+                return self.state.l23_spikes
+            return torch.zeros(self.l23_size, device=self.device, dtype=torch.bool)
+        elif port == "l5":
+            if self.state.l5_spikes is not None:
+                return self.state.l5_spikes
+            return torch.zeros(self.l5_size, device=self.device, dtype=torch.bool)
+        elif port is None:
+            # Default: L2/3 + L5 output
+            if self.state.l23_spikes is None or self.state.l5_spikes is None:
+                return torch.zeros(self.l23_size + self.l5_size, device=self.device, dtype=torch.bool)
+            return torch.cat([self.state.l23_spikes, self.state.l5_spikes], dim=-1)
+        else:
+            # Invalid port - raise error
+            valid_ports = ["l6a", "l6b", "l23", "l5", None]
+            raise ValueError(
+                f"LayeredCortex.get_output: Invalid port '{port}'. "
+                f"Valid ports: {valid_ports}"
+            )
 
     # =========================================================================
     # TEST COMPATIBILITY PROPERTIES
@@ -1506,19 +1656,34 @@ class LayeredCortex(NeuralRegion):
                     clamp_weights(self.w_l23_l5.data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 
-            # L2/3 → L6 (corticothalamic feedback pathway)
-            l6_spikes = self.state.l6_spikes
-            if l6_spikes is not None and self.bcm_l6 is not None:
-                updated_weights, _ = self.bcm_l6.compute_update(
-                    weights=self.w_l23_l6.data,
+            # L2/3 → L6a (corticothalamic type I → TRN)
+            l6a_spikes = self.state.l6a_spikes
+            if l6a_spikes is not None and self.bcm_l6a is not None:
+                updated_weights, _ = self.bcm_l6a.compute_update(
+                    weights=self.w_l23_l6a.data,
                     pre=l23_spikes,
-                    post=l6_spikes,
+                    post=l6a_spikes,
                     learning_rate=effective_lr,
                 )
-                dw = updated_weights - self.w_l23_l6.data
+                dw = updated_weights - self.w_l23_l6a.data
                 with torch.no_grad():
-                    self.w_l23_l6.data.copy_(updated_weights)
-                    clamp_weights(self.w_l23_l6.data, cfg.w_min, cfg.w_max)
+                    self.w_l23_l6a.data.copy_(updated_weights)
+                    clamp_weights(self.w_l23_l6a.data, cfg.w_min, cfg.w_max)
+                total_change += dw.abs().mean().item()
+
+            # L2/3 → L6b (corticothalamic type II → relay)
+            l6b_spikes = self.state.l6b_spikes
+            if l6b_spikes is not None and self.bcm_l6b is not None:
+                updated_weights, _ = self.bcm_l6b.compute_update(
+                    weights=self.w_l23_l6b.data,
+                    pre=l23_spikes,
+                    post=l6b_spikes,
+                    learning_rate=effective_lr,
+                )
+                dw = updated_weights - self.w_l23_l6b.data
+                with torch.no_grad():
+                    self.w_l23_l6b.data.copy_(updated_weights)
+                    clamp_weights(self.w_l23_l6b.data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 
         # Store for monitoring
@@ -1532,19 +1697,22 @@ class LayeredCortex(NeuralRegion):
             - "L4": Input layer spikes
             - "L2/3": Processing/cortico-cortical layer spikes
             - "L5": Subcortical output layer spikes
-            - "L6": Corticothalamic feedback layer spikes
+            - "L6a": Corticothalamic type I feedback (to TRN)
+            - "L6b": Corticothalamic type II feedback (to relay)
 
         Note:
             Layer outputs can be accessed via port-based routing:
             >>> builder.connect("cortex", "hippocampus", source_port="l23")
             >>> builder.connect("cortex", "striatum", source_port="l5")
-            >>> builder.connect("cortex", "thalamus", source_port="l6")
+            >>> builder.connect("cortex", "thalamus", source_port="l6a", target_port="l6a_feedback")
+            >>> builder.connect("cortex", "thalamus", source_port="l6b", target_port="l6b_feedback")
         """
         return {
             "L4": self.state.l4_spikes,
             "L2/3": self.state.l23_spikes,
             "L5": self.state.l5_spikes,
-            "L6": self.state.l6_spikes,
+            "L6a": self.state.l6a_spikes,
+            "L6b": self.state.l6b_spikes,
         }
 
     def get_cortical_output(self) -> Optional[torch.Tensor]:
@@ -1574,7 +1742,8 @@ class LayeredCortex(NeuralRegion):
             "l4_size": self.l4_size,
             "l23_size": self.l23_size,
             "l5_size": self.l5_size,
-            "l6_size": self.l6_size,
+            "l6a_size": self.l6a_size,
+            "l6b_size": self.l6b_size,
             # Config weight bounds for reference
             "config_w_min": cfg.w_min,
             "config_w_max": cfg.w_max,
@@ -1584,7 +1753,8 @@ class LayeredCortex(NeuralRegion):
             "l4_cumulative_spikes": getattr(self, "_cumulative_l4_spikes", 0),
             "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
             "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
-            "l6_cumulative_spikes": getattr(self, "_cumulative_l6_spikes", 0),
+            "l6a_cumulative_spikes": getattr(self, "_cumulative_l6a_spikes", 0),
+            "l6b_cumulative_spikes": getattr(self, "_cumulative_l6b_spikes", 0),
         }
 
         # Recurrent activity
@@ -1606,13 +1776,15 @@ class LayeredCortex(NeuralRegion):
                 "l4_l23": self.w_l4_l23.data,
                 "l23_rec": self.w_l23_recurrent.data,
                 "l23_l5": self.w_l23_l5.data,
-                "l23_l6": self.w_l23_l6.data,
+                "l23_l6a": self.w_l23_l6a.data,
+                "l23_l6b": self.w_l23_l6b.data,
             },
             spike_tensors={
                 "l4": self.state.l4_spikes,
                 "l23": self.state.l23_spikes,
                 "l5": self.state.l5_spikes,
-                "l6": self.state.l6_spikes,
+                "l6a": self.state.l6a_spikes,
+                "l6b": self.state.l6b_spikes,
             },
             custom_metrics=custom,
         )
@@ -1633,30 +1805,36 @@ class LayeredCortex(NeuralRegion):
                 "w_l4_l23": self.w_l4_l23.data.clone(),
                 "w_l23_recurrent": self.w_l23_recurrent.data.clone(),
                 "w_l23_l5": self.w_l23_l5.data.clone(),
-                "w_l23_l6": self.w_l23_l6.data.clone(),
+                "w_l23_l6a": self.w_l23_l6a.data.clone(),
+                "w_l23_l6b": self.w_l23_l6b.data.clone(),
                 "w_l23_inhib": self.w_l23_inhib.data.clone(),
             },
             "region_state": {
                 "l4_neurons": self.l4_neurons.get_state(),
                 "l23_neurons": self.l23_neurons.get_state(),
                 "l5_neurons": self.l5_neurons.get_state(),
-                "l6_neurons": self.l6_neurons.get_state(),
+                "l6a_neurons": self.l6a_neurons.get_state(),
+                "l6b_neurons": self.l6b_neurons.get_state(),
                 "l4_spikes": self.state.l4_spikes.clone() if self.state.l4_spikes is not None else None,
                 "l23_spikes": self.state.l23_spikes.clone() if self.state.l23_spikes is not None else None,
                 "l5_spikes": self.state.l5_spikes.clone() if self.state.l5_spikes is not None else None,
-                "l6_spikes": self.state.l6_spikes.clone() if self.state.l6_spikes is not None else None,
+                "l6a_spikes": self.state.l6a_spikes.clone() if self.state.l6a_spikes is not None else None,
+                "l6b_spikes": self.state.l6b_spikes.clone() if self.state.l6b_spikes is not None else None,
                 "l4_trace": self.state.l4_trace.clone() if self.state.l4_trace is not None else None,
                 "l23_trace": self.state.l23_trace.clone() if self.state.l23_trace is not None else None,
                 "l5_trace": self.state.l5_trace.clone() if self.state.l5_trace is not None else None,
-                "l6_trace": self.state.l6_trace.clone() if self.state.l6_trace is not None else None,
+                "l6a_trace": self.state.l6a_trace.clone() if self.state.l6a_trace is not None else None,
+                "l6b_trace": self.state.l6b_trace.clone() if self.state.l6b_trace is not None else None,
                 "l23_recurrent_activity": self.state.l23_recurrent_activity.clone() if self.state.l23_recurrent_activity is not None else None,
                 # Inter-layer axonal delay buffers
                 "l4_l23_delay_buffer": self._l4_l23_delay_buffer.clone() if self._l4_l23_delay_buffer is not None else None,
                 "l4_l23_delay_ptr": self._l4_l23_delay_ptr,
                 "l23_l5_delay_buffer": self._l23_l5_delay_buffer.clone() if self._l23_l5_delay_buffer is not None else None,
                 "l23_l5_delay_ptr": self._l23_l5_delay_ptr,
-                "l23_l6_delay_buffer": self._l23_l6_delay_buffer.clone() if self._l23_l6_delay_buffer is not None else None,
-                "l23_l6_delay_ptr": self._l23_l6_delay_ptr,
+                "l23_l6a_delay_buffer": self._l23_l6a_delay_buffer.clone() if self._l23_l6a_delay_buffer is not None else None,
+                "l23_l6a_delay_ptr": self._l23_l6a_delay_ptr,
+                "l23_l6b_delay_buffer": self._l23_l6b_delay_buffer.clone() if self._l23_l6b_delay_buffer is not None else None,
+                "l23_l6b_delay_ptr": self._l23_l6b_delay_ptr,
             },
             "learning_state": {},
             "neuromodulator_state": {
@@ -1670,7 +1848,8 @@ class LayeredCortex(NeuralRegion):
                 "l4_size": self.l4_size,
                 "l23_size": self.l23_size,
                 "l5_size": self.l5_size,
-                "l6_size": self.l6_size,
+                "l6a_size": self.l6a_size,
+                "l6b_size": self.l6b_size,
             },
         }
 
@@ -1681,8 +1860,10 @@ class LayeredCortex(NeuralRegion):
             state_dict["learning_state"]["bcm_l23_theta"] = self.bcm_l23.theta.clone()
         if self.bcm_l5 is not None and hasattr(self.bcm_l5, 'theta') and self.bcm_l5.theta is not None:
             state_dict["learning_state"]["bcm_l5_theta"] = self.bcm_l5.theta.clone()
-        if self.bcm_l6 is not None and hasattr(self.bcm_l6, 'theta') and self.bcm_l6.theta is not None:
-            state_dict["learning_state"]["bcm_l6_theta"] = self.bcm_l6.theta.clone()
+        if self.bcm_l6a is not None and hasattr(self.bcm_l6a, 'theta') and self.bcm_l6a.theta is not None:
+            state_dict["learning_state"]["bcm_l6a_theta"] = self.bcm_l6a.theta.clone()
+        if self.bcm_l6b is not None and hasattr(self.bcm_l6b, 'theta') and self.bcm_l6b.theta is not None:
+            state_dict["learning_state"]["bcm_l6b_theta"] = self.bcm_l6b.theta.clone()
 
         # STP state (always present)
         state_dict["learning_state"]["stp_l23_recurrent"] = self.stp_l23_recurrent.get_state()

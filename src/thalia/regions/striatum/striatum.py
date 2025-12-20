@@ -1511,7 +1511,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - Selected action = argmax(NET)
         """
         # Concatenate all input sources (D1/D2 pathways apply their own weights)
-        input_spikes = InputRouter.concatenate_sources(inputs, component_name="Striatum")
+        input_spikes = InputRouter.concatenate_sources(
+            inputs,
+            component_name="Striatum",
+            n_input=self.config.n_input,
+            device=self.device,
+        )
 
         # Ensure 1D (ADR-005)
         if input_spikes.dim() != 1:

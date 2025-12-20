@@ -153,6 +153,8 @@ class InputRouter:
     def concatenate_sources(
         inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
         component_name: str = "Component",
+        n_input: Optional[int] = None,
+        device: Optional[torch.device] = None,
     ) -> torch.Tensor:
         """
         Concatenate all source inputs into single tensor.
@@ -160,24 +162,38 @@ class InputRouter:
         This is a common pattern for regions that accept multiple sources but
         treat them uniformly (e.g., striatum, cerebellum).
 
+        Supports zero-input execution for clock-driven architecture:
+        when empty dict provided, returns zeros of size n_input.
+
         Args:
             inputs: Either dict of named inputs or single tensor (backward compat)
             component_name: Name of component for error messages
+            n_input: Expected input size (required for empty dict handling)
+            device: Device for zero tensor creation (required for empty dict)
 
         Returns:
-            Concatenated 1D tensor of all inputs
+            Concatenated 1D tensor of all inputs, or zeros if empty
 
         Example:
             >>> input_spikes = InputRouter.concatenate_sources(
             ...     {"cortex": cortex_spikes, "hippocampus": hippo_spikes}
             ... )
-            >>> # Returns: torch.cat([cortex_spikes, hippo_spikes], dim=0)
+            >>> # Zero-input execution (clock-driven)
+            >>> input_spikes = InputRouter.concatenate_sources(
+            ...     {}, n_input=128, device=device
+            ... )
         """
         if isinstance(inputs, torch.Tensor):
             return inputs
         elif isinstance(inputs, dict):
             if not inputs:
-                raise ValueError(f"{component_name}.forward: Empty input dict provided")
+                # Empty input: return zeros for clock-driven execution
+                if n_input is None or device is None:
+                    raise ValueError(
+                        f"{component_name}.forward: Empty input dict requires n_input and device "
+                        f"for zero-input execution (clock-driven architecture)"
+                    )
+                return torch.zeros(n_input, dtype=torch.bool, device=device)
             return torch.cat(list(inputs.values()), dim=0)
         else:
             raise TypeError(

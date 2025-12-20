@@ -130,31 +130,54 @@ class TestL6TRNFeedbackIntegration:
         # Feedback loop: thalamus→cortex (5-8ms) + L2/3→L6 (2ms) + L6→TRN (10ms) + TRN→relay (3-5ms)
         # Total: ~20-25ms
 
+        from thalia.diagnostics.oscillation_detection import measure_oscillation
+
         brain = BrainBuilder.preset("sensorimotor", global_config)
         cortex = brain.components["cortex"]
+
+        # Note: Gamma oscillator disabled by default (should emerge from L6→TRN loop)
 
         # Strong periodic input at gamma frequency
         sensory_input = torch.rand(128, device=device) > 0.8
 
-        # Track L6 activity over time
+        # Track L6 activity over time (need longer window for FFT)
         l6_activities = []
 
-        for t in range(50):  # 50ms = 2 gamma cycles
+        for _ in range(200):  # 200ms = 8 gamma cycles (better FFT resolution)
             brain(sensory_input, n_timesteps=1)
 
             l6_spikes = cortex.get_l6_spikes()
             if l6_spikes is not None:
                 l6_activities.append(l6_spikes.sum().item())
             else:
-                l6_activities.append(0)
+                l6_activities.append(0.0)
 
-        # Contract: L6 should show some activity over time
+        # Contract 1: L6 should show activity over time
         total_l6_activity = sum(l6_activities)
         assert total_l6_activity > 0, \
-            "L6 should generate feedback activity over 50ms"
+            "L6 should generate feedback activity over 200ms"
 
-        # Note: Detecting exact 40 Hz oscillation would require FFT analysis
-        # Here we just verify the loop is active
+        # Contract 2: FFT should detect gamma-band oscillation
+        freq, power = measure_oscillation(
+            l6_activities,
+            dt_ms=1.0,
+            freq_range=(25.0, 60.0),  # Gamma range
+        )
+
+        assert 25 <= freq <= 60, \
+            f"Expected gamma-range frequency (25-60 Hz), got {freq:.1f} Hz"
+
+        # Log for diagnostics
+        print(f"\n✅ L6→TRN loop oscillates at {freq:.1f} Hz (power={power:.3f})")
+
+        # Ideal range is 35-50 Hz (circuit delay ~20-28ms)
+        if 35 <= freq <= 50:
+            print("   Perfect gamma band oscillation!")
+        elif 25 <= freq < 35:
+            print("   Slightly slow (may need stronger L6 feedback)")
+        elif 50 < freq <= 60:
+            print("   Slightly fast (may need longer TRN delays)")
+
 
     def test_spatial_attention_modulation(self, global_config, device):
         """Test that L6 enables spatial attention (channel-specific modulation)."""

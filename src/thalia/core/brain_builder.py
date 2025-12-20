@@ -25,7 +25,7 @@ Use fluent builder pattern:
     )
 
 Or use preset architectures:
-    brain = BrainBuilder.preset("sensorimotor", config)
+    brain = BrainBuilder.preset("default", config)
 
 ## Architecture v2.0: Axonal Projections vs Spiking Pathways
 
@@ -112,7 +112,7 @@ class BrainBuilder:
         brain = builder.build()
 
     Example - Preset Brain:
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
     Example - Chained Construction:
         brain = (
@@ -385,8 +385,10 @@ class BrainBuilder:
                     sensory_sources.append((source_name, conn))
                 elif target_port == "pfc_modulation":
                     modulation_sources.append((source_name, conn))
-                elif target_port == "l6_feedback":
+                elif target_port in ("l6a_feedback", "l6b_feedback"):
                     # L6 corticothalamic feedback (separate from feedforward)
+                    # l6a_feedback: type I corticothalamic (L6a → TRN)
+                    # l6b_feedback: type II corticothalamic (L6b → relay)
                     feedback_sources.append((source_name, conn))
                 else:
                     # Unknown port - treat as feedforward with warning
@@ -444,16 +446,17 @@ class BrainBuilder:
             config = source_spec.config_params
 
             # All layer sizes are now required
-            if not all(k in config for k in ["l4_size", "l23_size", "l5_size", "l6_size"]):
+            if not all(k in config for k in ["l4_size", "l23_size", "l5_size", "l6a_size", "l6b_size"]):
                 raise ValueError(
                     f"BrainBuilder: Cortex '{source_name}' must specify all layer sizes "
-                    f"(l4_size, l23_size, l5_size, l6_size)"
+                    f"(l4_size, l23_size, l5_size, l6a_size, l6b_size)"
                 )
 
             l4_size = config["l4_size"]
             l23_size = config["l23_size"]
             l5_size = config["l5_size"]
-            l6_size = config["l6_size"]
+            l6a_size = config["l6a_size"]
+            l6b_size = config["l6b_size"]
 
             # Return layer-specific size
             if source_port == "l23":
@@ -462,8 +465,10 @@ class BrainBuilder:
                 return l5_size
             elif source_port == "l4":
                 return l4_size
-            elif source_port == "l6":
-                return l6_size
+            elif source_port == "l6a":
+                return l6a_size
+            elif source_port == "l6b":
+                return l6b_size
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -497,8 +502,10 @@ class BrainBuilder:
                 return source_comp.l5_size
             elif source_port == "l4" and hasattr(source_comp, 'l4_size'):
                 return source_comp.l4_size
-            elif source_port == "l6" and hasattr(source_comp, 'l6_size'):
-                return source_comp.l6_size
+            elif source_port == "l6a" and hasattr(source_comp, 'l6a_size'):
+                return source_comp.l6a_size
+            elif source_port == "l6b" and hasattr(source_comp, 'l6b_size'):
+                return source_comp.l6b_size
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -665,18 +672,21 @@ class BrainBuilder:
             spec.instance = component
 
         # === MULTI-SOURCE PATHWAY CONSTRUCTION ===
-        # Instantiate pathways - GROUP BY TARGET for multi-source pathways
+        # Instantiate pathways - GROUP BY (TARGET, TARGET_PORT) for multi-source pathways
+        # This allows multiple independent pathways to the same target (e.g., L6a and L6b to thalamus)
         connections: Dict[Tuple[str, str], NeuralComponent] = {}
 
-        # Group connections by target to create multi-source pathways
-        connections_by_target: Dict[str, List[ConnectionSpec]] = {}
+        # Group connections by (target, target_port) to create multi-source pathways
+        # Key is (target_name, target_port) so L6a and L6b are separate groups
+        connections_by_target_port: Dict[Tuple[str, Optional[str]], List[ConnectionSpec]] = {}
         for spec in self._connections:
-            if spec.target not in connections_by_target:
-                connections_by_target[spec.target] = []
-            connections_by_target[spec.target].append(spec)
+            group_key = (spec.target, spec.target_port)
+            if group_key not in connections_by_target_port:
+                connections_by_target_port[group_key] = []
+            connections_by_target_port[group_key].append(spec)
 
-        # Create one pathway per target (multi-source if multiple inputs)
-        for target_name, target_specs in connections_by_target.items():
+        # Create one pathway per (target, target_port) group (multi-source if multiple inputs)
+        for (target_name, target_port), target_specs in connections_by_target_port.items():
             target_comp = components[target_name]
 
             if len(target_specs) == 1:
@@ -689,7 +699,10 @@ class BrainBuilder:
                     pathway = self._create_axonal_projection(
                         target_specs, components, target_name
                     )
-                    connections[(spec.source, spec.target)] = pathway
+                    # Use compound key if target_port specified (e.g., cortex→thalamus with l6a vs l6b)
+                    # This allows multiple pathways with same (source, target) but different ports
+                    conn_key = (spec.source, f"{spec.target}:{target_port}") if target_port else (spec.source, spec.target)
+                    connections[conn_key] = pathway
                     spec.instance = pathway
                     continue
 
@@ -747,7 +760,9 @@ class BrainBuilder:
                 if hasattr(pathway, 'to'):
                     pathway.to(self.global_config.device)
 
-                connections[(spec.source, spec.target)] = pathway
+                # Use compound key if target_port specified
+                conn_key = (spec.source, f"{spec.target}:{target_port}") if target_port else (spec.source, spec.target)
+                connections[conn_key] = pathway
                 spec.instance = pathway
 
             else:
@@ -756,18 +771,31 @@ class BrainBuilder:
                 pathway = self._create_axonal_projection(
                     target_specs, components, target_name
                 )
+                # Use compound key if target_port specified
+                first_spec = target_specs[0]
+                conn_key = (first_spec.source, f"{first_spec.target}:{target_port}") if target_port else (first_spec.source, first_spec.target)
+                connections[conn_key] = pathway
                 for spec in target_specs:
-                    connections[(spec.source, spec.target)] = pathway
                     spec.instance = pathway
 
         # Create DynamicBrain
+        # Build connection_specs dict with compound keys matching connections dict
+        # For connections with target_port, use "target:port" key to avoid collisions
+        connection_specs_dict = {}
+        for spec in self._connections:
+            if spec.target_port:
+                key = (spec.source, f"{spec.target}:{spec.target_port}")
+            else:
+                key = (spec.source, spec.target)
+            connection_specs_dict[key] = spec
+
         brain = DynamicBrain(
             components=components,
             connections=connections,
             global_config=self.global_config,
             use_parallel=final_use_parallel,
             n_workers=final_n_workers,
-            connection_specs={(spec.source, spec.target): spec for spec in self._connections},
+            connection_specs=connection_specs_dict,
         )
 
         # Store component specs for event adapter lookup
@@ -915,11 +943,11 @@ class BrainBuilder:
             KeyError: If preset name not found
 
         Example:
-            brain = BrainBuilder.preset("sensorimotor", global_config)
+            brain = BrainBuilder.preset("default", global_config)
 
             # With parallel execution
             brain = BrainBuilder.preset(
-                "sensorimotor",
+                "default",
                 global_config,
                 use_parallel=True,
                 n_workers=4,
@@ -927,7 +955,7 @@ class BrainBuilder:
 
             # With overrides
             brain = BrainBuilder.preset(
-                "sensorimotor",
+                "default",
                 global_config,
                 cortex_neurons=1024,  # Override default
             )
@@ -1050,8 +1078,8 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     builder.connect("process", "output", pathway_type="axonal")
 
 
-def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
-    """Sensorimotor architecture (6-region default).
+def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
+    """Default 6-region architecture for general-purpose learning.
 
     Architecture:
         Thalamus → Cortex ⇄ Hippocampus
@@ -1060,7 +1088,12 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
                      ↓
                 Cerebellum
 
-    This preset provides the standard 6-region sensorimotor architecture.
+    This preset provides a balanced 6-region architecture suitable for:
+    - Vision and audition (thalamocortical processing)
+    - Sequential learning (hippocampal episodic memory)
+    - Planning and working memory (prefrontal cortex)
+    - Reinforcement learning (striatal reward processing)
+    - Motor control and predictions (cerebellar forward models)
 
     **Pathway Types** (v2.0 Architecture):
     - Thalamus is a REGION (has relay neurons), not a pathway
@@ -1075,9 +1108,17 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
     n_striatum = overrides.get("n_striatum", 150)
     n_cerebellum = overrides.get("n_cerebellum", 100)
 
+    # Calculate cortex layer sizes
+    # BIOLOGICAL CONSTRAINTS for corticothalamic feedback:
+    # - L6b must match thalamus relay size (one-to-one direct modulation)
+    # - L6a must match TRN size (which is trn_ratio * relay size, typically 20%)
+    cortex_sizes = calculate_layer_sizes(n_cortex)
+    cortex_sizes["l6b_size"] = n_thalamus  # Override to match relay neurons
+    cortex_sizes["l6a_size"] = int(n_thalamus * 0.2)  # Match TRN size (20% of relay)
+
     # Add regions (only thalamus needs n_input as it's the input interface)
     builder.add_component("thalamus", "thalamus", n_input=n_thalamus, n_output=n_thalamus)
-    builder.add_component("cortex", "cortex", **calculate_layer_sizes(n_cortex))
+    builder.add_component("cortex", "cortex", **cortex_sizes)
     builder.add_component("hippocampus", "hippocampus", n_output=n_hippocampus)
     builder.add_component("pfc", "prefrontal", n_output=n_pfc)
     builder.add_component("striatum", "striatum", n_output=n_striatum)
@@ -1090,10 +1131,25 @@ def _build_sensorimotor(builder: BrainBuilder, **overrides: Any) -> None:
     # Thalamus → Cortex: Thalamocortical projection
     builder.connect("thalamus", "cortex", pathway_type="axonal")
 
-    # Cortex L6 → Thalamus: Corticothalamic feedback for attentional modulation
-    # L6 projects to TRN to implement selective attention (feedback loop)
-    # Uses target_port to indicate this goes to TRN, not relay neurons (no concatenation)
-    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6", target_port="l6_feedback")
+    # Cortex L6a/L6b → Thalamus: Dual corticothalamic feedback pathways
+    # L6a (type I) → TRN: Inhibitory modulation for selective attention (slow pathway, low gamma 25-35 Hz)
+    # L6b (type II) → Relay: Excitatory modulation for precision processing (fast pathway, high gamma 60-80 Hz)
+    # Sherman & Guillery (2002): Dual pathways implement complementary feedback mechanisms
+    #
+    # Biologically realistic delays (Sherman & Guillery 2002):
+    # - Corticothalamic axons: 8-12ms (documented in L6_TRN_FEEDBACK_LOOP.md)
+    # - L6a→TRN: ~10ms (type I pathway, standard corticothalamic)
+    # - L6b→Relay: ~5ms (type II pathway, slightly faster direct projection)
+    #
+    # Total feedback loop timing includes:
+    # - Axonal delays (specified here): 10ms + 5ms
+    # - Synaptic delays (~1-2ms per synapse): multiple synapses in loop
+    # - Neural integration (tau_E=5ms, tau_I=10ms): conductance buildup/decay
+    # - Membrane dynamics (tau_mem~20ms): integration to threshold
+    # - Refractory periods (tau_ref): post-spike delays
+    # These neural dynamics add ~10-20ms to total loop period, producing gamma oscillations
+    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6a", target_port="l6a_feedback", axonal_delay_ms=10.0)
+    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6b", target_port="l6b_feedback", axonal_delay_ms=5.0)
 
     # Cortex ⇄ Hippocampus: Bidirectional memory integration
     builder.connect("cortex", "hippocampus", pathway_type="axonal")
@@ -1126,9 +1182,15 @@ BrainBuilder.register_preset(
 )
 
 BrainBuilder.register_preset(
+    name="default",
+    description="Default 6-region architecture for general-purpose learning",
+    builder_fn=_build_default,
+)
+
+BrainBuilder.register_preset(
     name="sensorimotor",
-    description="6-region sensorimotor architecture (standard default)",
-    builder_fn=_build_sensorimotor,
+    description="Alias for 'default' (6-region architecture)",
+    builder_fn=_build_default,  # Same as default, just an alias
 )
 
 

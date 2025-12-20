@@ -188,10 +188,12 @@ def create_cortical_layer_neurons(
     - L4: Fast sensory integration, standard threshold
     - L2/3: Recurrent processing with strong adaptation (prevents frozen attractors)
     - L5: Output layer, slightly lower threshold for reliable output
+    - L6a: Corticothalamic type I (projects to TRN, inhibitory modulation)
+    - L6b: Corticothalamic type II (projects to relay, excitatory modulation)
 
     Args:
         n_neurons: Number of neurons in the layer
-        layer: Layer identifier ("L4", "L2/3", "L5")
+        layer: Layer identifier ("L4", "L2/3", "L5", "L6a", "L6b", or legacy "L6")
         device: Device for tensor allocation
         **overrides: Custom parameters to override layer defaults
 
@@ -210,8 +212,12 @@ def create_cortical_layer_neurons(
         # L5 output layer
         >>> l5 = create_cortical_layer_neurons(128, "L5", device)
 
+        # L6a/L6b corticothalamic feedback
+        >>> l6a = create_cortical_layer_neurons(32, "L6a", device)
+        >>> l6b = create_cortical_layer_neurons(16, "L6b", device)
+
     Raises:
-        ValueError: If layer is not one of "L4", "L2/3", "L5"
+        ValueError: If layer is not one of "L4", "L2/3", "L5", "L6a", "L6b", "L6"
     """
     # Base config for all layers
     base_config = {
@@ -244,16 +250,31 @@ def create_cortical_layer_neurons(
             **base_config,
             "v_threshold": 0.9,
         }
-    elif layer == "L6":
-        # L6: Corticothalamic feedback layer, moderate threshold
-        layer_config = {
-            **base_config,
-            "v_threshold": 1.0,
-            "tau_mem": 15.0,  # Slightly slower dynamics for feedback control
-        }
+    elif layer in ["L6", "L6a", "L6b"]:
+        # L6/L6a/L6b: Corticothalamic feedback layers
+        # L6a (type I) → TRN: Inhibitory modulation, low gamma (25-35 Hz)
+        # L6b (type II) → relay: Excitatory modulation, high gamma (60-80 Hz)
+
+        if layer == "L6a":
+            # L6a: Slower firing for low gamma (25-35 Hz)
+            # Longer refractory period (10ms) limits maximum rate to ~100Hz
+            # Combined with inhibition → sparse firing → low gamma oscillations
+            layer_config = {
+                **base_config,
+                "v_threshold": 1.0,
+                "tau_mem": 15.0,      # Slower dynamics
+                "tau_ref": 10.0,      # Long refractory for low-frequency firing
+            }
+        else:
+            # L6b/L6: Standard configuration for higher frequency firing
+            layer_config = {
+                **base_config,
+                "v_threshold": 1.0,
+                "tau_mem": 15.0,      # Slower dynamics for feedback control
+            }
     else:
         raise ValueError(
-            f"Unknown cortical layer '{layer}'. Must be one of: 'L4', 'L2/3', 'L5', 'L6'"
+            f"Unknown cortical layer '{layer}'. Must be one of: 'L4', 'L2/3', 'L5', 'L6a', 'L6b', 'L6'"
         )
 
     # Apply overrides

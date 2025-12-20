@@ -67,10 +67,16 @@ self.neuromodulator_manager.broadcast_to_regions({
 
 **Oscillators**:
 - **Delta** (2 Hz) - Sleep consolidation, NREM gating
-- **Theta** (8 Hz) - Working memory slots, encoding/retrieval
+- **Theta** (8 Hz) - Working memory slots, encoding/retrieval (acts as biological septum)
 - **Alpha** (10 Hz) - Attention suppression, sensory gating
 - **Beta** (20 Hz) - Motor control, action maintenance
-- **Gamma** (40 Hz) - Feature binding, synchronization
+- **Gamma** (40 Hz) - ⚠️ **DISABLED BY DEFAULT** - Should emerge from L6→TRN loop (~25ms)
+
+**Gamma Emergence** (Dec 20, 2025):
+- Explicit gamma oscillator disabled by default in `OscillatorManager.__init__()`
+- Gamma should emerge from local circuit timing (L6→TRN→Thalamus feedback)
+- Enable explicitly if needed: `brain.oscillators.enable_oscillator('gamma', True)`
+- See: `OSCILLATION_EMERGENCE_ANALYSIS.md` for full rationale
 
 **Cross-Frequency Coupling**:
 1. **Theta-Gamma** - Working memory capacity (~7±2 items)
