@@ -15,7 +15,11 @@ This comprehensive architectural analysis of the Thalia codebase (`src/thalia/`)
 
 **Implementation Status** (Updated December 20, 2025):
 - ✅ **Tier 1 Complete**: All high-impact, low-disruption improvements implemented
-- 🔄 **Tier 2 In Progress**: Starting state management standardization
+  - 1.1: Wildcard imports replaced with explicit imports ✅
+  - 1.2: Magic numbers extracted to `regulation/region_architecture_constants.py` ✅
+  - 1.3: Error messages enhanced with actionable guidance ✅
+  - 1.4: Checkpoint manager pattern consolidated (save/load in base class) ✅
+- 🔄 **Tier 2 Ready**: Strategic improvements ready to implement
 
 ---
 
@@ -203,62 +207,87 @@ raise ConfigurationError(
 
 ---
 
-### 1.4 Consolidate Checkpoint Manager Pattern ⏸️
+### 1.4 Consolidate Checkpoint Manager Pattern ✅
 
-**Status**: **DEFERRED** - Pending decision on checkpoint strategy
+**Status**: **COMPLETE** (December 20, 2025)
 
-**Current State**: Three regions have specialized checkpoint managers with similar functionality:
+**Implementation**: Consolidated save/load logic in `managers/base_checkpoint_manager.py`:
+- Added `save()` method with automatic format selection (hybrid metadata handling)
+- Added `load()` method with automatic format detection and dispatch
+- Added abstract methods: `_should_use_neuromorphic()`, `_get_region()`, `_get_selection_criteria()`
+- All 3 checkpoint managers now inherit these methods (removed ~240 lines of duplication)
+
+**Current State**: ~~Three regions have specialized checkpoint managers with similar functionality~~
 
 **Checkpoint Managers**:
-- `regions/hippocampus/checkpoint_manager.py` (385 lines)
-- `regions/prefrontal_checkpoint_manager.py` (410 lines)
-- `regions/striatum/checkpoint_manager.py` (297 lines)
+- `regions/hippocampus/checkpoint_manager.py` (591 lines → ~510 lines)
+- `regions/prefrontal_checkpoint_manager.py` (436 lines → ~360 lines)
+- `regions/striatum/checkpoint_manager.py` (706 lines → ~630 lines)
 
-**Common Patterns** (duplicated across all three):
-- `_validate_checkpoint()` - Schema validation
-- `_restore_weights()` - Weight tensor restoration
-- `_restore_state()` - State dict restoration
-- `_save_metadata()` - Training step/stage tracking
-- Version compatibility checks
+**Common Patterns** ~~(duplicated across all three)~~ **(now consolidated in base class)**:
+- ~~`_validate_checkpoint()` - Schema validation~~
+- ~~`_restore_weights()` - Weight tensor restoration~~
+- ~~`_restore_state()` - State dict restoration~~
+- ~~`_save_metadata()` - Training step/stage tracking~~
+- ~~Version compatibility checks~~
+- `save()` - Hybrid format selection and metadata generation ✅
+- `load()` - Format detection and dispatch ✅
+- `_should_use_neuromorphic()` - Format selection logic (region-specific implementation) ✅
 
-**Proposed Change**: Create `managers/base_checkpoint_manager.py` base class:
+**Proposed Change**: ~~Create `managers/base_checkpoint_manager.py` base class~~
+
+**Implementation**: Created `managers/base_checkpoint_manager.py` base class with:
 ```python
 # managers/base_checkpoint_manager.py
 class BaseCheckpointManager(ABC):
     """Base class for region-specific checkpoint managers.
 
     Consolidates common checkpoint operations:
-    - Schema validation
-    - Weight restoration
-    - State restoration
+    - Synapse extraction utilities
+    - Save/load orchestration with hybrid format support
+    - Format selection logic (region-specific via abstract methods)
     - Metadata tracking
     """
 
+    def save(self, path: str) -> Dict[str, Any]:
+        """Save checkpoint with automatic format selection."""
+        # Auto-select format using _should_use_neuromorphic()
+        # Add hybrid_metadata
+        # Save to disk
+        # Return metadata
+
+    def load(self, path: str) -> None:
+        """Load checkpoint with automatic format detection."""
+        # Load from disk
+        # Validate hybrid_metadata
+        # Dispatch to neuromorphic or elastic loader
+
     @abstractmethod
-    def _get_region_specific_keys(self) -> List[str]:
-        """Return list of region-specific state keys."""
+    def _should_use_neuromorphic(self) -> bool:
+        """Region-specific format selection logic."""
         pass
 
-    def validate_checkpoint(self, checkpoint: Dict) -> bool:
-        """Validate checkpoint schema (common logic)."""
-        # Common validation logic here
+    @abstractmethod
+    def _get_region(self) -> Any:
+        """Get the region instance."""
         pass
 
-    def restore_weights(self, checkpoint: Dict) -> None:
-        """Restore weight tensors (common logic)."""
-        # Common restoration logic here
+    @abstractmethod
+    def _get_selection_criteria(self) -> Dict[str, Any]:
+        """Get criteria used for format selection."""
         pass
 ```
 
 **Rationale**:
-- Eliminates ~200 lines of duplicated validation/restoration code
+- Eliminates ~240 lines of duplicated save/load orchestration code
 - Ensures consistent checkpoint format across regions
 - Easier to add new checkpoint features (compression, versioning)
+- Maintains region-specific format selection logic via abstract methods
 
 **Impact**:
-- **Files affected**: 3 checkpoint managers + 1 new base class
-- **Breaking change severity**: **Low** (internal refactoring, may affect custom checkpoint handlers)
-- **Lines changed**: ~250 lines (net reduction after consolidation)
+- **Files affected**: 3 checkpoint managers + base class enhancements
+- **Breaking change severity**: **None** (internal refactoring, API unchanged)
+- **Lines changed**: ~240 lines removed (net reduction after consolidation)
 - **Benefit**: Reduced duplication, consistent checkpoint handling
 
 ---

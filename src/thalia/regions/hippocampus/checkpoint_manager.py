@@ -54,7 +54,6 @@ Date: December 13, 2025 (hippocampus neuromorphic checkpoint support)
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Any
 
 import torch
@@ -400,6 +399,20 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
     # HYBRID FORMAT - Auto-Selection Between Elastic and Neuromorphic
     # =========================================================================
 
+    def _get_region(self) -> Any:
+        """Get the region instance managed by this checkpoint manager."""
+        return self.hippocampus
+
+    def _get_selection_criteria(self) -> Dict[str, Any]:
+        """Get region-specific criteria used for format selection."""
+        h = self.hippocampus
+        return {
+            "n_total_neurons": h.dg_size + h.ca3_size + h.ca1_size,
+            "n_dg": h.dg_size,
+            "n_ca3": h.ca3_size,
+            "n_ca1": h.ca1_size,
+        }
+
     def _should_use_neuromorphic(self) -> bool:
         """Determine if neuromorphic format should be used.
 
@@ -428,76 +441,7 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         # For now, default to neuromorphic for all hippocampus (it's usually small)
         return True
 
-    def save(self, path: str | Path) -> Dict[str, Any]:
-        """Save checkpoint with automatic format selection.
-
-        Automatically chooses between elastic tensor and neuromorphic formats
-        based on region size and neurogenesis settings.
-
-        Args:
-            path: Path where checkpoint will be saved
-
-        Returns:
-            Dict with checkpoint metadata
-        """
-        path = Path(path)
-
-        # Auto-select format
-        use_neuromorphic = self._should_use_neuromorphic()
-
-        if use_neuromorphic:
-            state = self.get_neuromorphic_state()
-            format_name = "neuromorphic"
-        else:
-            state = self.hippocampus.get_full_state()
-            format_name = "elastic_tensor"
-
-        # Add hybrid format metadata
-        h = self.hippocampus
-        state["hybrid_metadata"] = {
-            "auto_selected": True,
-            "selected_format": format_name,
-            "selection_criteria": {
-                "n_total_neurons": h.dg_size + h.ca3_size + h.ca1_size,
-                "n_dg": h.dg_size,
-                "n_ca3": h.ca3_size,
-                "n_ca1": h.ca1_size,
-            }
-        }
-
-        # Save to disk
-        torch.save(state, path)
-
-        return {
-            "path": str(path),
-            "format": format_name,
-            "n_total_neurons": h.dg_size + h.ca3_size + h.ca1_size,
-            "file_size": path.stat().st_size if path.exists() else 0,
-        }
-
-    def load(self, path: str | Path) -> None:
-        """Load checkpoint with automatic format detection.
-
-        Detects format from hybrid_metadata and loads accordingly.
-
-        Args:
-            path: Path to checkpoint file
-        """
-        path = Path(path)
-
-        # Load checkpoint
-        state = torch.load(path, weights_only=False)
-
-        # Check hybrid metadata for format
-        if "hybrid_metadata" not in state:
-            raise ValueError("Checkpoint missing hybrid_metadata - not a valid hybrid format checkpoint")
-
-        # Load based on selected format
-        selected_format = state["hybrid_metadata"]["selected_format"]
-        if selected_format == "neuromorphic":
-            self.load_neuromorphic_state(state)
-        else:
-            self.hippocampus.load_full_state(state)
+    # save() and load() methods inherited from BaseCheckpointManager
 
     # =========================================================================
     # ABSTRACT METHOD IMPLEMENTATIONS (from BaseCheckpointManager)

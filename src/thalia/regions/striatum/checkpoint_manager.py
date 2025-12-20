@@ -47,7 +47,6 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, Any
-from pathlib import Path
 
 import torch
 
@@ -492,6 +491,17 @@ class CheckpointManager(BaseCheckpointManager):
     # Phase 3: Hybrid Format (Auto-Selection)
     # =========================================================================
 
+    def _get_region(self) -> Any:
+        """Get the region instance managed by this checkpoint manager."""
+        return self.striatum
+
+    def _get_selection_criteria(self) -> Dict[str, Any]:
+        """Get region-specific criteria used for format selection."""
+        return {
+            "n_neurons": self.striatum.config.n_output,
+            "growth_enabled": self.striatum.config.growth_enabled,
+        }
+
     def _should_use_neuromorphic(self) -> bool:
         """Determine if neuromorphic format should be used.
 
@@ -523,73 +533,7 @@ class CheckpointManager(BaseCheckpointManager):
         # For large stable regions, elastic tensor is more efficient
         return False
 
-    def save(self, path: str | Path) -> Dict[str, Any]:
-        """Save checkpoint with automatic format selection.
-
-        Automatically chooses between elastic tensor and neuromorphic formats
-        based on region size and properties.
-
-        Args:
-            path: Path where checkpoint will be saved
-
-        Returns:
-            Dict with checkpoint metadata
-        """
-        path = Path(path)
-
-        # Auto-select format
-        use_neuromorphic = self._should_use_neuromorphic()
-
-        if use_neuromorphic:
-            state = self.get_neuromorphic_state()
-            format_name = "neuromorphic"
-        else:
-            state = self.get_full_state()
-            format_name = "elastic_tensor"
-
-        # Add hybrid format metadata
-        state["hybrid_metadata"] = {
-            "auto_selected": True,
-            "selected_format": format_name,
-            "selection_criteria": {
-                "n_neurons": self.striatum.config.n_output,
-                "growth_enabled": self.striatum.config.growth_enabled,
-            }
-        }
-
-        # Save to disk
-        torch.save(state, path)
-
-        return {
-            "path": str(path),
-            "format": format_name,
-            "n_neurons": self.striatum.config.n_output,
-            "file_size": path.stat().st_size if path.exists() else 0,
-        }
-
-    def load(self, path: str | Path) -> None:
-        """Load checkpoint with automatic format detection.
-
-        Detects format from hybrid_metadata and loads accordingly.
-
-        Args:
-            path: Path to checkpoint file
-        """
-        path = Path(path)
-
-        # Load checkpoint
-        state = torch.load(path, weights_only=False)
-
-        # Check hybrid metadata for format
-        if "hybrid_metadata" not in state:
-            raise ValueError("Checkpoint missing hybrid_metadata - not a valid hybrid format checkpoint")
-
-        # Load based on selected format
-        selected_format = state["hybrid_metadata"]["selected_format"]
-        if selected_format == "neuromorphic":
-            self.load_neuromorphic_state(state)
-        else:
-            self.load_full_state(state)
+    # save() and load() methods inherited from BaseCheckpointManager
 
     # =========================================================================
     # ABSTRACT METHOD IMPLEMENTATIONS (from BaseCheckpointManager)

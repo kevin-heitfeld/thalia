@@ -337,3 +337,125 @@ class BaseCheckpointManager(ABC):
             return False, f"Incompatible major version: checkpoint={checkpoint_version}, current={current_version}"
 
         return True, None
+
+    # ==================== HYBRID FORMAT SUPPORT ====================
+
+    @abstractmethod
+    def _should_use_neuromorphic(self) -> bool:
+        """Determine if neuromorphic format should be used for this region.
+
+        Decision criteria (region-specific):
+        - Small regions: Use neuromorphic (more inspectable)
+        - Growth-enabled: Use neuromorphic (ID-based matching)
+        - Large stable regions: Use elastic tensor (more efficient)
+
+        Returns:
+            bool: True if neuromorphic format should be used
+        """
+        ...
+
+    @abstractmethod
+    def _get_region(self) -> Any:
+        """Get the region instance managed by this checkpoint manager.
+
+        Returns:
+            The region instance (e.g., self.striatum, self.hippocampus, self.prefrontal)
+        """
+        ...
+
+    @abstractmethod
+    def _get_selection_criteria(self) -> Dict[str, Any]:
+        """Get region-specific criteria used for format selection.
+
+        Returns:
+            Dict with selection criteria (e.g., {"n_neurons": 100, "growth_enabled": True})
+        """
+        ...
+
+    def save(self, path: str) -> Dict[str, Any]:
+        """Save checkpoint with automatic format selection.
+
+        Automatically chooses between elastic tensor and neuromorphic formats
+        based on region size and properties. This is the primary save method
+        that should be used by all regions.
+
+        Args:
+            path: Path where checkpoint will be saved
+
+        Returns:
+            Dict with checkpoint metadata (path, format, size, etc.)
+        """
+        from pathlib import Path
+        path = Path(path)
+
+        # Auto-select format using region-specific logic
+        use_neuromorphic = self._should_use_neuromorphic()
+
+        if use_neuromorphic:
+            state = self.get_neuromorphic_state()
+            format_name = "neuromorphic"
+        else:
+            # Delegate to region's get_full_state() for elastic tensor format
+            region = self._get_region()
+            state = region.get_full_state()
+            format_name = "elastic_tensor"
+
+        # Add hybrid format metadata for automatic detection during load
+        state["hybrid_metadata"] = {
+            "auto_selected": True,
+            "selected_format": format_name,
+            "selection_criteria": self._get_selection_criteria(),
+        }
+
+        # Save to disk
+        torch.save(state, path)
+
+        # Get region for metadata
+        region = self._get_region()
+        n_neurons = getattr(region.config, "n_output", None)
+
+        return {
+            "path": str(path),
+            "format": format_name,
+            "n_neurons": n_neurons,
+            "file_size": path.stat().st_size if path.exists() else 0,
+        }
+
+    def load(self, path: str) -> None:
+        """Load checkpoint with automatic format detection.
+
+        Detects format from hybrid_metadata and loads accordingly.
+        This is the primary load method that should be used by all regions.
+
+        Args:
+            path: Path to checkpoint file
+
+        Raises:
+            ValueError: If checkpoint is missing hybrid_metadata or has invalid format
+        """
+        from pathlib import Path
+        path = Path(path)
+
+        # Load checkpoint from disk
+        state = torch.load(path, weights_only=False)
+
+        # Validate hybrid metadata presence
+        if "hybrid_metadata" not in state:
+            raise ValueError(
+                f"Checkpoint missing hybrid_metadata - not a valid hybrid format checkpoint. "
+                f"Checkpoint may be from an older version. Keys present: {list(state.keys())}"
+            )
+
+        # Detect format and dispatch to appropriate loader
+        selected_format = state["hybrid_metadata"]["selected_format"]
+        if selected_format == "neuromorphic":
+            self.load_neuromorphic_state(state)
+        elif selected_format == "elastic_tensor":
+            # Delegate to region's load_full_state() for elastic tensor format
+            region = self._get_region()
+            region.load_full_state(state)
+        else:
+            raise ValueError(
+                f"Unknown checkpoint format: '{selected_format}'. "
+                f"Expected 'neuromorphic' or 'elastic_tensor'."
+            )
