@@ -1001,14 +1001,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # 1. EXPAND D1 AND D2 WEIGHT MATRICES using base helper
         # =====================================================================
         # Use base class helper with striatum-specific scale (w_max * 0.2)
-        self.d1_pathway.weights = self._expand_weights(
+        # CRITICAL: Use .data to update Parameter in-place, not direct assignment
+        self.d1_pathway.weights.data = self._expand_weights(
             current_weights=self.d1_pathway.weights,
             n_new=n_new_neurons,
             initialization=initialization,
             sparsity=sparsity,
             scale=self.config.w_max * 0.2,
         )
-        self.d2_pathway.weights = self._expand_weights(
+        self.d2_pathway.weights.data = self._expand_weights(
             current_weights=self.d2_pathway.weights,
             n_new=n_new_neurons,
             initialization=initialization,

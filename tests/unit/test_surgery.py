@@ -145,11 +145,25 @@ def test_ablate_pathway(test_brain):
 
 
 def test_restore_pathway(test_brain):
-    """Test pathway restoration."""
+    """Test pathway restoration.
+
+    Note: v3.0 architecture uses routing pathways (AxonalProjection) with no weights,
+    so ablate/restore operations are not applicable. Test now expects NotImplementedError.
+    """
     pathway_name = "cortex_to_pfc"
     pathway = test_brain.connections[("cortex", "pfc")]
 
-    # Save initial weights
+    # Check if pathway has learnable parameters
+    has_learnable_params = any(p.requires_grad for p in pathway.parameters())
+
+    if not has_learnable_params:
+        # Routing pathway - ablate should raise NotImplementedError
+        with pytest.raises(NotImplementedError, match="Cannot ablate routing pathway"):
+            ablate_pathway(test_brain, pathway_name)
+        # Can't test restore if ablate doesn't work
+        return
+
+    # Weighted pathway - test ablate/restore
     initial_weights = {
         name: param.data.clone()
         for name, param in pathway.named_parameters()

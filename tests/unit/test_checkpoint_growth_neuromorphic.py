@@ -599,10 +599,10 @@ class TestNeuromorphicPerformance:
         # Make region2 more sparse by zeroing out most weights
         with torch.no_grad():
             mask = torch.rand_like(region2.d1_pathway.weights) > 0.9  # Keep only 10%
-            region2.d1_pathway.weights *= mask.float()
+            region2.d1_pathway.weights.data *= mask.float()
 
             mask = torch.rand_like(region2.d2_pathway.weights) > 0.9
-            region2.d2_pathway.weights *= mask.float()
+            region2.d2_pathway.weights.data *= mask.float()
 
         state1 = region1.checkpoint_manager.get_neuromorphic_state()
         state2 = region2.checkpoint_manager.get_neuromorphic_state()

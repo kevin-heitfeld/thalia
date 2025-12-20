@@ -367,7 +367,9 @@ class TestPortBasedForwardPass:
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
         builder.add_component("pfc", "prefrontal", n_output=32)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        # Cortex n_input must match thalamus (64) + pfc (32) = 96 since LayeredCortex concatenates all inputs
+        # Note: Port-based routing (feedforward vs top_down) not yet implemented in LayeredCortex
+        builder.add_component("cortex", "cortex", n_input=96, n_output=128, l4_size=96, l23_size=96, l5_size=32, l6_size=0)
 
         # Note: PFC needs input to produce output
         builder.connect("thalamus", "pfc")

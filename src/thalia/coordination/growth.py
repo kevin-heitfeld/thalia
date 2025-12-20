@@ -520,6 +520,12 @@ class GrowthCoordinator:
         # Need to add neurons to target side to match region growth
         for pathway_name, pathway in input_pathways:
             if hasattr(pathway, 'grow_output'):
+                # Skip routing pathways (AxonalProjection) - they have no learnable weights
+                # v3.0 architecture: routing pathways just transmit spikes, regions handle learning
+                has_learnable_params = any(p.requires_grad for p in pathway.parameters())
+                if not has_learnable_params:
+                    continue  # Skip routing pathways
+
                 # Get source size before growth to calculate synapses added
                 n_source = pathway.config.n_input if hasattr(pathway, 'config') else 0
 
@@ -552,6 +558,12 @@ class GrowthCoordinator:
         # Need to add neurons to source side to match region growth
         for pathway_name, pathway in output_pathways:
             if hasattr(pathway, 'grow_input'):
+                # Skip routing pathways (AxonalProjection) - they have no learnable weights
+                # v3.0 architecture: routing pathways just transmit spikes, regions handle learning
+                has_learnable_params = any(p.requires_grad for p in pathway.parameters())
+                if not has_learnable_params:
+                    continue  # Skip routing pathways
+
                 # Get target size before growth to calculate synapses added
                 n_target = pathway.config.n_output if hasattr(pathway, 'config') else 0
 
