@@ -19,8 +19,15 @@ This comprehensive architectural analysis of the Thalia codebase (`src/thalia/`)
   - 1.2: Magic numbers extracted to `regulation/region_architecture_constants.py` ✅
   - 1.3: Error messages enhanced with actionable guidance ✅
   - 1.4: Checkpoint manager pattern consolidated (save/load in base class) ✅
-- ✅ **Tier 2.1 Complete**: State management already standardized (no migration needed) ✅
-- 🔄 **Tier 2 In Progress**: Ready for tasks 2.2, 2.3, 2.4
+- ✅ **Tier 2 Complete** (4/4): Strategic improvements completed (2 implemented, 2 deferred with rationale)
+  - 2.1: State management already standardized (no migration needed) ✅
+  - 2.2: Growth orchestration deferred (structural pattern) ⏸️
+  - 2.3: Port-based routing documentation (~450 lines) ✅
+  - 2.4: FeedforwardInhibition → StimulusGating rename ✅
+- ⏸️ **Tier 3 Evaluated** (3/3): Long-term considerations appropriately deferred
+  - 3.1: Learning strategy extraction deferred ⏸️
+  - 3.2: Pathways restructuring deferred (only 5 files, contradicts recent architectural decisions) ⏸️
+  - 3.3: Oscillator coupling (defer for next major version)
 
 ---
 
@@ -553,16 +560,27 @@ new_weights, metrics = self.dg_ca3_strategy.compute_update(
 
 ---
 
-### 3.2 Consider Splitting `pathways/` by Category
+### 3.2 Consider Splitting `pathways/` by Category ⏸️ DEFERRED
 
-**Current State**: `src/thalia/pathways/` contains diverse pathway types:
-- `sensory_pathways.py` - Sensory processing (Visual, Auditory)
+**Status**: **DEFERRED** (December 20, 2025) - Current structure appropriate for scale
+
+**Re-evaluation**: Investigation reveals premature optimization:
+
+**Current State**: `src/thalia/pathways/` contains **5 files**:
+- `sensory_pathways.py` - Sensory processing (Visual, Auditory, Language, Touch)
 - `axonal_projection.py` - Generic weighted projection
-- `attention/` - Attention mechanisms (subdirectory)
+- `attention/` - Attention mechanisms (subdirectory with 2 files)
 - `dynamic_pathway_manager.py` - Runtime pathway management
 - `protocol.py` - Abstract pathway interface
 
-**Proposed Structure**:
+**Why NOT restructure**:
+1. **Small scale**: Only 2 concrete pathway types (sensory, axonal) - insufficient for category splitting
+2. **Recent architectural decision**: `sensory_pathways.py:24` explicitly states: *"Import directly: `from thalia.pathways.sensory_pathways import VisualPathway`"* - contradicts proposed split
+3. **Breaking change**: 18+ import locations would break
+4. **Current structure works**: Flat structure with one subdirectory (`attention/`) is clear and maintainable
+5. **No growth pressure**: Not adding new pathway types frequently
+
+**Proposed Structure** (original, NOT implemented):
 ```
 pathways/
 ├── sensory/
@@ -582,23 +600,15 @@ pathways/
 └── protocol.py
 ```
 
-**Rationale**:
-- Groups related pathway types together
-- Easier to locate specific pathway implementations
-- Follows package-by-feature pattern
+**Decision**: DEFER until adding 10+ new pathway types. Current flat structure is appropriate.
 
-**Caution**:
-- Breaks existing imports (`from thalia.pathways.sensory_pathways import VisualPathway`)
-- Requires migration guide for external users
-- Benefits may not justify breaking change
-
-**Impact**:
-- **Files affected**: All pathway files + all import sites (~30 files)
+**Impact** (if implemented):
+- **Files affected**: All pathway files + all import sites (~18 files)
 - **Breaking change severity**: **High** (breaking API change)
 - **Lines changed**: ~100 lines (imports only)
-- **Benefit**: Better organization, but HIGH disruption
+- **Benefit**: Organization improvement vs **Cost**: High disruption, contradicts recent architectural decisions
 
-**Recommendation**: **DEFER** - Not worth breaking change unless adding 10+ new pathway types
+**Recommendation**: **DEFER** - Revisit only if pathway count exceeds 10 concrete types
 
 ---
 
