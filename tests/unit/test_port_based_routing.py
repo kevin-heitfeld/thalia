@@ -148,7 +148,7 @@ class TestBrainBuilderPortBasedConnections:
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
         builder.add_component("pfc", "prefrontal", n_input=64, n_output=32)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
 
         # Feedforward path
         builder.connect(
@@ -177,7 +177,7 @@ class TestLayerSpecificCorticalRouting:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
         builder.add_component("hippocampus", "hippocampus", n_output=64)
 
         builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
@@ -200,7 +200,7 @@ class TestLayerSpecificCorticalRouting:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
         builder.add_component("striatum", "striatum", n_output=4)
 
         builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
@@ -219,7 +219,7 @@ class TestLayerSpecificCorticalRouting:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
         builder.add_component("hippocampus", "hippocampus", n_output=64)
         builder.add_component("striatum", "striatum", n_output=4)
 
@@ -247,7 +247,7 @@ class TestMultipleInputPorts:
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
         builder.add_component("pfc", "prefrontal", n_input=64, n_output=32)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
 
         # Feedforward from thalamus
         builder.connect("thalamus", "cortex", target_port="feedforward")
@@ -268,7 +268,7 @@ class TestMultipleInputPorts:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
         builder.add_component("hippocampus", "hippocampus", n_output=64)
 
         # Main cortical input (L2/3)
@@ -294,7 +294,7 @@ class TestMultipleInputPorts:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
         builder.add_component("hippocampus", "hippocampus", n_output=64)
         builder.add_component("pfc", "prefrontal", n_output=32)
         builder.add_component("striatum", "striatum", n_output=4)
@@ -330,7 +330,7 @@ class TestPortBasedForwardPass:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
         builder.add_component("hippocampus", "hippocampus", n_output=64)
         builder.add_component("striatum", "striatum", n_output=4)
 
@@ -369,7 +369,7 @@ class TestPortBasedForwardPass:
         builder.add_component("pfc", "prefrontal", n_output=32)
         # Cortex n_input must match thalamus (64) + pfc (32) = 96 since LayeredCortex concatenates all inputs
         # Note: Port-based routing (feedforward vs top_down) not yet implemented in LayeredCortex
-        builder.add_component("cortex", "cortex", n_input=96, n_output=128, l4_size=96, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_input=96, n_output=128, l4_size=96, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
 
         # Note: PFC needs input to produce output
         builder.connect("thalamus", "pfc")
@@ -397,7 +397,7 @@ class TestBackwardCompatibility:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
 
         # Old-style connection without ports
         builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
@@ -417,7 +417,7 @@ class TestBackwardCompatibility:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6_size=0)
+        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
         builder.add_component("hippocampus", "hippocampus", n_output=64)
         builder.add_component("striatum", "striatum", n_output=4)
 

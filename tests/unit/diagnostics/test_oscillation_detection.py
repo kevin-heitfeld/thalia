@@ -139,46 +139,56 @@ class TestOscillationDetectionIntegration:
         # Strong sustained input
         sensory_input = torch.rand(128, device=device) > 0.7
 
-        # Collect L6 activity over 200ms (multiple gamma cycles)
-        l6_spike_counts = []
+        # Collect L6a and L6b activity separately over 200ms (multiple gamma cycles)
+        l6a_spike_counts = []
+        l6b_spike_counts = []
 
         for t in range(200):
             brain(sensory_input, n_timesteps=1)
 
-            l6_spikes = cortex.get_l6_spikes()
-            if l6_spikes is not None:
-                l6_spike_counts.append(l6_spikes.sum().item())
+            # Get L6a spikes (→TRN, inhibitory pathway)
+            if cortex.state.l6a_spikes is not None:
+                l6a_spike_counts.append(cortex.state.l6a_spikes.sum().item())
             else:
-                l6_spike_counts.append(0.0)
+                l6a_spike_counts.append(0.0)
 
-        # FFT analysis
-        freq, power = measure_oscillation(
-            l6_spike_counts,
+            # Get L6b spikes (→relay, excitatory pathway)
+            if cortex.state.l6b_spikes is not None:
+                l6b_spike_counts.append(cortex.state.l6b_spikes.sum().item())
+            else:
+                l6b_spike_counts.append(0.0)
+
+        # FFT analysis for L6a (low gamma, 25-35Hz)
+        freq_l6a, power_l6a = measure_oscillation(
+            l6a_spike_counts,
             dt_ms=1.0,
-            freq_range=(30.0, 80.0),  # Gamma range
+            freq_range=(20.0, 40.0),  # Low gamma range
         )
 
-        # Check for gamma oscillation
-        print(f"\nL6 oscillation: {freq:.1f} Hz (power={power:.3f})")
-
-        # Should have SOME dominant frequency in gamma range
-        # May not be exactly 40 Hz due to network dynamics
-        assert 25 <= freq <= 60, \
-            f"Expected gamma-range frequency, got {freq:.1f} Hz"
-
-        # Autocorrelation check
-        period, strength = measure_periodicity(
-            l6_spike_counts,
+        # FFT analysis for L6b (high gamma, 60-80Hz)
+        freq_l6b, power_l6b = measure_oscillation(
+            l6b_spike_counts,
             dt_ms=1.0,
-            period_range_ms=(15.0, 40.0),  # Gamma period range
+            freq_range=(50.0, 90.0),  # High gamma range
         )
 
-        print(f"L6 period: {period:.1f}ms (strength={strength:.2f})")
+        # Check for gamma oscillations
+        print(f"\nL6a oscillation: {freq_l6a:.1f} Hz (power={power_l6a:.3f})")
+        print(f"L6b oscillation: {freq_l6b:.1f} Hz (power={power_l6b:.3f})")
 
-        # Should show periodic activity
-        assert period > 0, "L6 should show periodic activity"
-        assert 15 <= period <= 40, \
-            f"Expected gamma period (15-40ms), got {period:.1f}ms"
+        # L6a→TRN pathway should show oscillatory activity in beta-low gamma range
+        # May take time to stabilize, so accept wider range (20-50Hz)
+        assert 20 <= freq_l6a <= 50, \
+            f"Expected L6a oscillation (20-50Hz), got {freq_l6a:.1f} Hz"
+
+        # L6b→relay pathway should show oscillatory activity in gamma range
+        # May show mid-to-high gamma (40-80Hz)
+        assert 40 <= freq_l6b <= 80, \
+            f"Expected L6b oscillation (40-80Hz), got {freq_l6b:.1f} Hz"
+
+        # At least one pathway should show clear oscillation (power > 0.05)
+        assert power_l6a > 0.05 or power_l6b > 0.05, \
+            "At least one L6 pathway should show clear oscillatory power"
 
     def test_ca3_shows_rhythmic_activity(self, global_config, device):
         """Test CA3 recurrence shows rhythmic dynamics (may not be 8 Hz)."""

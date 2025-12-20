@@ -1468,8 +1468,7 @@ class LayeredCortex(NeuralRegion):
     # =========================================================================
     # TEST COMPATIBILITY PROPERTIES
     # =========================================================================
-    # These properties expose internal attributes with test-friendly names
-    # to avoid breaking existing tests while maintaining internal consistency.
+    # Config property
 
     @property
     def config(self) -> LayeredCortexConfig:
@@ -1486,21 +1485,6 @@ class LayeredCortex(NeuralRegion):
         """
         # Don't overwrite layer_config - it's already set correctly
         pass
-
-    @property
-    def l23_to_l6(self) -> nn.Parameter:
-        """Alias for w_l23_l6 weights (for test compatibility)."""
-        return self.w_l23_l6
-
-    @property
-    def l23_to_l6_delay_buffer(self) -> Optional[torch.Tensor]:
-        """Alias for _l23_l6_delay_buffer (for test compatibility)."""
-        return self._l23_l6_delay_buffer
-
-    @property
-    def l6_pre_trace(self) -> Optional[torch.Tensor]:
-        """Alias for L6 synaptic trace (for test compatibility)."""
-        return self.state.l6_trace if self.state.l6_trace is not None else None
 
     def _apply_sparsity_1d(
         self,

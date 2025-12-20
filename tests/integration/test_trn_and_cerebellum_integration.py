@@ -38,7 +38,7 @@ def enhanced_cerebellum_brain(global_config, device):
     # Add components with proper sizes
     builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
     builder.add_component("cortex", "cortex", n_output=256,
-                         l4_size=64, l23_size=128, l5_size=128, l6_size=0)
+                         l4_size=64, l23_size=128, l5_size=128, l6a_size=0, l6b_size=0)
     builder.add_component("cerebellum", "cerebellum",
                          n_input=256, n_output=64,
                          use_enhanced_microcircuit=True,
@@ -65,10 +65,12 @@ class TestL6TRNFeedbackIntegration:
         assert "cortex" in brain.components, "Brain should have cortex"
         assert "thalamus" in brain.components, "Brain should have thalamus"
 
-        # Contract: cortex should have L6 layer
+        # Contract: cortex should have L6a and L6b layers
         cortex = brain.components["cortex"]
-        assert hasattr(cortex, 'l6_size'), "Cortex should have L6 layer"
-        assert cortex.l6_size > 0, "L6 should have neurons"
+        assert hasattr(cortex, 'l6a_size'), "Cortex should have L6a layer"
+        assert hasattr(cortex, 'l6b_size'), "Cortex should have L6b layer"
+        assert cortex.l6a_size > 0, "L6a should have neurons"
+        assert cortex.l6b_size > 0, "L6b should have neurons"
 
     def test_end_to_end_attention_loop(self, global_config, device):
         """Test complete attention loop: thalamus→cortex→L6→TRN→thalamus."""
@@ -95,8 +97,9 @@ class TestL6TRNFeedbackIntegration:
         l6_spikes = cortex.get_l6_spikes()
 
         if l6_spikes is not None:
-            assert l6_spikes.shape[0] == cortex.l6_size, \
-                "L6 spikes should match L6 size"
+            total_l6_size = cortex.l6a_size + cortex.l6b_size
+            assert l6_spikes.shape[0] == total_l6_size, \
+                "L6 spikes should match total L6 size (L6a + L6b)"
 
     def test_l6_affects_thalamic_relay(self, global_config, device):
         """Test that L6 feedback measurably affects thalamic relay."""
@@ -351,7 +354,7 @@ class TestMultiRegionCoordination:
         builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
         builder.add_component("cortex", "cortex",
                              n_input=128, n_output=256,
-                             l4_size=64, l23_size=128, l5_size=128, l6_size=128)
+                             l4_size=64, l23_size=128, l5_size=128, l6a_size=64, l6b_size=64)
         builder.add_component("cerebellum", "cerebellum",
                              n_input=256, n_output=64,
                              use_enhanced_microcircuit=True)
@@ -396,11 +399,15 @@ class TestSystemRobustness:
 
         # Contract: L6 state should be reset
         cortex = brain.components["cortex"]
-        if hasattr(cortex, 'l6_neurons'):
-            if cortex.l6_neurons.membrane is not None:
+        if hasattr(cortex, 'l6a_neurons'):
+            if cortex.l6a_neurons.membrane is not None:
                 # After reset, membrane should be at resting potential
-                assert (cortex.l6_neurons.membrane == cortex.l6_neurons.config.v_reset).all(), \
-                    "L6 neurons should be reset"
+                assert (cortex.l6a_neurons.membrane == cortex.l6a_neurons.config.v_reset).all(), \
+                    "L6a neurons should be reset"
+        if hasattr(cortex, 'l6b_neurons'):
+            if cortex.l6b_neurons.membrane is not None:
+                assert (cortex.l6b_neurons.membrane == cortex.l6b_neurons.config.v_reset).all(), \
+                    "L6b neurons should be reset"
 
     def test_checkpoint_with_enhanced_features(self, global_config, device):
         """Test checkpointing works with L6 and enhanced cerebellum."""
@@ -410,7 +417,7 @@ class TestSystemRobustness:
         builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
         builder.add_component("cortex", "cortex",
                              n_input=128, n_output=256,
-                             l4_size=64, l23_size=128, l5_size=128, l6_size=128)
+                             l4_size=64, l23_size=128, l5_size=128, l6a_size=64, l6b_size=64)
         builder.add_component("cerebellum", "cerebellum",
                              n_input=256, n_output=64,
                              use_enhanced_microcircuit=True)

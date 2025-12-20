@@ -130,7 +130,7 @@ class TestDynamicBrainIntegration:
             l4_size=4,
             l23_size=6,
             l5_size=4,
-            l6_size=2,
+            l6a_size=1, l6b_size=1,
             device=device,
             dt_ms=1.0,
         )

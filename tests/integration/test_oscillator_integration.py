@@ -64,7 +64,6 @@ class TestOscillatorManagerIntegration:
         # Get initial phases
         initial_theta_phase = simple_brain.oscillators.theta.phase
         initial_alpha_phase = simple_brain.oscillators.alpha.phase
-        initial_gamma_phase = simple_brain.oscillators.gamma.phase
 
         # Run forward pass
         input_data = {"input": torch.randn(64)}
@@ -73,7 +72,10 @@ class TestOscillatorManagerIntegration:
         # Phases should have advanced
         assert simple_brain.oscillators.theta.phase != initial_theta_phase
         assert simple_brain.oscillators.alpha.phase != initial_alpha_phase
-        assert simple_brain.oscillators.gamma.phase != initial_gamma_phase
+
+        # Note: Gamma oscillator is disabled by default (amplitude=0) as it should
+        # emerge from the L6→TRN feedback loop. If gamma is explicitly enabled,
+        # its phase would advance, but we don't test that here.
 
     def test_oscillator_phases_wrap(self, simple_brain):
         """Test that oscillator phases wrap around 2π."""
