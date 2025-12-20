@@ -85,7 +85,7 @@ from thalia.regions.hippocampus import (
     HippocampusConfig,
     HippocampusState,
 )
-from thalia.regions.feedforward_inhibition import FeedforwardInhibition
+from thalia.regions.stimulus_gating import StimulusGating
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig, ThalamicRelayState
 
 __all__ = [
@@ -122,5 +122,5 @@ __all__ = [
     "ThalamicRelayConfig",
     "ThalamicRelayState",
     # Theta dynamics
-    "FeedforwardInhibition",
+    "StimulusGating",
 ]

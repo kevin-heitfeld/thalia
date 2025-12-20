@@ -58,7 +58,7 @@ Splitting by layer would:
 
 Components ARE extracted where orthogonal:
 - Learning strategies: BCM and STDP in learning/strategies.py
-- FeedforwardInhibition: Stimulus-triggered inhibition (shared with hippocampus)
+- StimulusGating: Stimulus-triggered inhibition (shared with hippocampus)
 - LayerEIBalance: E/I balance (shared concern)
 
 See: docs/decisions/adr-011-large-file-justification.md
@@ -88,7 +88,7 @@ from thalia.components.synapses.traces import update_trace
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
 from thalia.utils.input_routing import InputRouter
-from thalia.regions.feedforward_inhibition import FeedforwardInhibition
+from thalia.regions.stimulus_gating import StimulusGating
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
@@ -229,8 +229,8 @@ class LayeredCortex(NeuralRegion):
         # Initialize inter-layer weights
         self._init_weights()
 
-        # Initialize feedforward inhibition (FFI) - always enabled
-        self.feedforward_inhibition = FeedforwardInhibition(
+        # Initialize stimulus gating (transient inhibition) - always enabled
+        self.stimulus_gating = StimulusGating(
             threshold=config.ffi_threshold,
             max_inhibition=config.ffi_strength * 10.0,
             decay_rate=1.0 - (1.0 / config.ffi_tau),
@@ -1048,11 +1048,11 @@ class LayeredCortex(NeuralRegion):
             * cfg.l4_to_l23_strength
         )
 
-        # Feedforward inhibition (always enabled)
-        ffi = self.feedforward_inhibition.compute(input_spikes, return_tensor=False)
+        # Stimulus gating (transient inhibition - always enabled)
+        ffi = self.stimulus_gating.compute(input_spikes, return_tensor=False)
         raw_ffi = ffi.item() if hasattr(ffi, "item") else float(ffi)
         self.state.ffi_strength = min(
-            1.0, raw_ffi / self.feedforward_inhibition.max_inhibition
+            1.0, raw_ffi / self.stimulus_gating.max_inhibition
         )
         ffi_suppression = 1.0 - self.state.ffi_strength * cfg.ffi_strength
 

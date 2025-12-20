@@ -54,7 +54,7 @@ within one theta cycle (~100-150ms). Splitting would:
 Components ARE extracted where orthogonal:
 - HippocampusMemoryComponent: Episodic storage/retrieval (shared concern)
 - ReplayEngine: Sequence replay (shared with sleep system)
-- FeedforwardInhibition: Stimulus-triggered inhibition (used by multiple regions)
+- StimulusGating: Stimulus-triggered inhibition (used by multiple regions)
 
 See: docs/decisions/adr-011-large-file-justification.md
 
@@ -86,7 +86,7 @@ from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.utils.input_routing import InputRouter
 from thalia.core.neural_region import NeuralRegion
-from thalia.regions.feedforward_inhibition import FeedforwardInhibition
+from thalia.regions.stimulus_gating import StimulusGating
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
 from .memory_component import HippocampusMemoryComponent
@@ -202,8 +202,8 @@ class TrisynapticHippocampus(NeuralRegion):
         )
         self.ca1_neurons = create_pyramidal_neurons(self.ca1_size, self.device)
 
-        # Feedforward inhibition module
-        self.feedforward_inhibition = FeedforwardInhibition(
+        # Stimulus gating module (transient inhibition at stimulus changes)
+        self.stimulus_gating = StimulusGating(
             threshold=config.ffi_threshold,
             max_inhibition=config.ffi_strength * 10.0,  # Scale to appropriate range
             decay_rate=1.0 - (1.0 / config.ffi_tau),  # Convert tau to rate
@@ -888,13 +888,13 @@ class TrisynapticHippocampus(NeuralRegion):
                 self.state.ca3_persistent = self.state.ca3_persistent * (1.0 - reset_fraction)
 
         # =====================================================================
-        # FEEDFORWARD INHIBITION
+        # STIMULUS GATING (TRANSIENT INHIBITION)
         # =====================================================================
-        # Compute feedforward inhibition based on input change
-        ffi = self.feedforward_inhibition.compute(input_spikes, return_tensor=False)
+        # Compute stimulus-onset inhibition based on input change
+        ffi = self.stimulus_gating.compute(input_spikes, return_tensor=False)
         raw_ffi = ffi.item() if hasattr(ffi, 'item') else float(ffi)
         # Normalize to [0, 1] by dividing by max_inhibition
-        self.state.ffi_strength = min(1.0, raw_ffi / self.feedforward_inhibition.max_inhibition)
+        self.state.ffi_strength = min(1.0, raw_ffi / self.stimulus_gating.max_inhibition)
 
         # =====================================================================
         # 1. DENTATE GYRUS: Pattern Separation

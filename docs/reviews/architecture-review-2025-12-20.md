@@ -450,49 +450,30 @@ class MultiLayerGrowthMixin(GrowthMixin):
 
 ---
 
-### 2.4 Rename `feedforward_inhibition.py` to `stimulus_gating.py`
+### 2.4 Rename `feedforward_inhibition.py` to `stimulus_gating.py` ✅ COMPLETE
 
-**Current State**: `regions/feedforward_inhibition.py` implements stimulus-triggered transient inhibition (not feedforward inhibition in the canonical sense).
+**Completed**: Renamed `FeedforwardInhibition` class to `StimulusGating` throughout codebase (December 20, 2025).
+
+**Original State**: `regions/feedforward_inhibition.py` implemented stimulus-triggered transient inhibition (not feedforward inhibition in the canonical sense).
 
 **Confusion**:
 - "Feedforward inhibition" in neuroscience typically refers to **interneuron-mediated lateral inhibition** (e.g., basket cells in hippocampus)
 - This module implements **stimulus-onset inhibition** (clearing residual activity)
 
-**Current Usage**:
-```python
-# Hippocampus and Cortex use this for stimulus onset gating
-self.feedforward_inhibition = FeedforwardInhibition(
-    threshold=config.ffi_threshold,
-    max_inhibition=config.ffi_strength * 10.0,
-)
-```
-
-**Proposed Change**: Rename to `stimulus_gating.py` with backward compatibility:
-```python
-# regions/stimulus_gating.py (new name)
-class StimulusGating:
-    """Stimulus-onset transient inhibition for activity reset."""
-    pass
-
-# regions/feedforward_inhibition.py (deprecated)
-from thalia.regions.stimulus_gating import StimulusGating as FeedforwardInhibition
-# Deprecation warning
-warnings.warn(
-    "FeedforwardInhibition is deprecated, use StimulusGating instead",
-    DeprecationWarning
-)
-```
-
-**Rationale**:
-- Aligns naming with actual function (stimulus gating, not feedforward inhibition)
-- Reduces confusion for neuroscientists familiar with canonical terminology
-- Maintains backward compatibility during deprecation period
+**Changes Made**:
+1. Created `regions/stimulus_gating.py` with `StimulusGating` class
+2. Updated imports in `regions/__init__.py`
+3. Updated imports and usage in `hippocampus/trisynaptic.py`
+4. Updated imports and usage in `cortex/layered_cortex.py`
+5. Renamed `self.feedforward_inhibition` → `self.stimulus_gating` (all instances)
+6. Updated comments: "Feedforward inhibition" → "Stimulus gating (transient inhibition)"
+7. Deleted old `feedforward_inhibition.py` file
 
 **Impact**:
-- **Files affected**: `regions/feedforward_inhibition.py` → `regions/stimulus_gating.py`, import sites in hippocampus/cortex
-- **Breaking change severity**: **Low** (deprecated alias provided for 2 versions)
-- **Lines changed**: ~50 lines
-- **Benefit**: Clearer naming, reduced confusion
+- **Files affected**: 1 deleted, 1 created, 3 updated (regions/__init__.py, hippocampus, cortex)
+- **Breaking change severity**: **Medium** (renames class, no backward compatibility wrapper)
+- **Lines changed**: ~15 lines across 3 files
+- **Benefit**: Clearer naming aligned with neuroscience terminology, reduced confusion
 
 ---
 

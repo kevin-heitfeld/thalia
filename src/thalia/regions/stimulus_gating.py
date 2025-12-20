@@ -1,9 +1,9 @@
 """
-Feedforward inhibition and temporal integration for cortical processing.
+Stimulus gating and temporal integration for cortical processing.
 
 This module provides utilities for transient inhibition and temporal buffering:
 
-1. **FeedforwardInhibition**: Computes transient inhibition at stimulus changes
+1. **StimulusGating**: Computes transient inhibition at stimulus changes
    - Clears ongoing activity when new stimulus arrives
    - Sharpens temporal precision of responses
    - Enables clean separation between stimuli
@@ -12,6 +12,12 @@ This module provides utilities for transient inhibition and temporal buffering:
    - Integrates sparse cortex spikes over time (~100ms)
    - Provides stable representation for hippocampal pattern completion
    - Acts as buffer with slow membrane dynamics
+
+Note:
+    Previously named "FeedforwardInhibition", which was confusing since
+    canonical feedforward inhibition refers to interneuron-mediated lateral
+    inhibition (e.g., basket cells). This module implements stimulus-onset
+    inhibition (clearing residual activity), not lateral inhibition.
 
 References:
 - Hasselmo et al. (2002): Theta rhythm and encoding/retrieval
@@ -24,16 +30,15 @@ import math
 
 import torch
 
-# Export for backward compatibility
 __all__ = [
-    "FeedforwardInhibition",
+    "StimulusGating",
     "TemporalIntegrationLayer",
 ]
 
 
-class FeedforwardInhibition:
+class StimulusGating:
     """
-    Computes feedforward inhibition triggered by stimulus changes.
+    Computes stimulus-onset inhibition triggered by stimulus changes.
 
     In biological circuits, the arrival of a new stimulus triggers
     strong transient inhibition via fast-spiking interneurons. This:
@@ -44,12 +49,17 @@ class FeedforwardInhibition:
 
     The inhibition strength is proportional to how much the input changed.
 
+    Note:
+        This is NOT canonical "feedforward inhibition" (lateral inhibition
+        via interneurons). This is stimulus-onset gating that clears
+        residual activity when a new stimulus arrives.
+
     Example:
-        ffi = FeedforwardInhibition(threshold=0.5, decay=0.9)
+        gating = StimulusGating(threshold=0.5, decay=0.9)
 
         for stimulus in stimuli:
             # Compute inhibition based on stimulus change
-            inhibition = ffi.compute(stimulus)
+            inhibition = gating.compute(stimulus)
 
             # Apply to membrane potentials
             membrane = membrane - inhibition * max_inhibition
@@ -63,7 +73,7 @@ class FeedforwardInhibition:
         steepness: float = 10.0,
     ):
         """
-        Initialize feedforward inhibition.
+        Initialize stimulus gating.
 
         Args:
             threshold: Input change threshold to trigger inhibition
@@ -86,7 +96,7 @@ class FeedforwardInhibition:
         return_tensor: bool = True,
     ) -> torch.Tensor:
         """
-        Compute feedforward inhibition for current input.
+        Compute stimulus-onset inhibition for current input.
 
         Args:
             current_input: Current input tensor
