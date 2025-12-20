@@ -257,6 +257,10 @@ class Cerebellum(NeuralRegion):
         # Store full config for cerebellum-specific settings
         self.config = config
 
+        # Initialize state for NeuromodulatorMixin
+        from thalia.regions.base import NeuralComponentState
+        self.state = NeuralComponentState()
+
         self.climbing_fiber = ClimbingFiberSystem(
             n_output=config.n_output,
             device=config.device,

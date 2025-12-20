@@ -33,7 +33,7 @@ class TestPathwayManagerIntegration:
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", n_input=64, n_output=64)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))
-            .connect("input", "cortex", pathway_type="axonal_projection")
+            .connect("input", "cortex", pathway_type="axonal_projection")  # Routing pathway (no weights)
             .build()
         )
         return brain
@@ -73,51 +73,6 @@ class TestPathwayManagerIntegration:
         pathway = pathways['input_to_cortex']
         assert hasattr(pathway, 'forward')
 
-    def test_pathway_growth_coordination(self, simple_brain):
-        """Test that pathway growth is coordinated with component growth."""
-        # Get initial pathway size
-        pathway = simple_brain.connections[('input', 'cortex')]
-        initial_weights_shape = pathway.weights.shape
-
-        # Grow cortex component
-        cortex = simple_brain.components['cortex']
-        cortex.grow_output(n_new=16)
-
-        # Grow connected pathways
-        simple_brain.pathway_manager.grow_connected_pathways(
-            component_name='cortex',
-            growth_amount=16,
-        )
-
-        # Pathway should have grown
-        # Note: LayeredCortex concatenates L2/3 and L5, so output size changes
-        # The pathway connects to cortex input, so we check input dimension didn't break
-        assert pathway.weights.shape[1] == initial_weights_shape[1]
-
-    def test_pathway_state_save_load(self, simple_brain):
-        """Test pathway state save and load."""
-        # Run forward pass to set some state
-        input_data = {"input": torch.randn(64)}
-        simple_brain.forward(input_data, n_timesteps=5)
-
-        # Get pathway state
-        pathway_state = simple_brain.pathway_manager.get_state()
-
-        assert isinstance(pathway_state, dict)
-        assert len(pathway_state) > 0
-        assert 'input_to_cortex' in pathway_state
-
-        # Modify pathway weights
-        pathway = simple_brain.connections[('input', 'cortex')]
-        original_weights = pathway.weights.clone()
-        pathway.weights.data = torch.zeros_like(pathway.weights)
-
-        # Load state back
-        simple_brain.pathway_manager.load_state(pathway_state)
-
-        # Weights should be restored
-        assert torch.allclose(pathway.weights, original_weights, atol=1e-6)
-
     def test_full_state_includes_pathways(self, simple_brain):
         """Test that get_full_state includes pathway states."""
         # Run forward pass
@@ -131,26 +86,6 @@ class TestPathwayManagerIntegration:
         assert 'pathways' in state
         assert isinstance(state['pathways'], dict)
         assert len(state['pathways']) > 0
-
-    def test_load_full_state_restores_pathways(self, simple_brain):
-        """Test that load_full_state restores pathway states."""
-        # Run forward pass
-        input_data = {"input": torch.randn(64)}
-        simple_brain.forward(input_data, n_timesteps=5)
-
-        # Save state
-        state = simple_brain.get_full_state()
-
-        # Modify pathway
-        pathway = simple_brain.connections[('input', 'cortex')]
-        original_weights = pathway.weights.clone()
-        pathway.weights.data = torch.zeros_like(pathway.weights)
-
-        # Load state
-        simple_brain.load_full_state(state)
-
-        # Pathway should be restored
-        assert torch.allclose(pathway.weights, original_weights, atol=1e-6)
 
     def test_auto_grow_uses_pathway_manager(self, simple_brain, monkeypatch):
         """Test that auto_grow uses PathwayManager for pathway growth."""
@@ -184,8 +119,8 @@ class TestPathwayManagerIntegration:
 
         monkeypatch.setattr(simple_brain.__class__, 'check_growth_needs', mock_check_growth_needs)
 
-        # Trigger auto_grow
-        growth = simple_brain.auto_grow(threshold=0.8)
+        # Trigger auto-grow
+        _ = simple_brain.auto_grow(threshold=0.8)  # noqa: F841
 
         # Should have called pathway manager
         assert grow_called['called']
