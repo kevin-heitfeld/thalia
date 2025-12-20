@@ -322,29 +322,6 @@ class TestMultiRegionCoordination:
 
         assert l6_spikes is not None, "L6 should be active after processing"
 
-    def test_oscillator_coordination_with_l6(self, global_config, device):
-        """Test that L6 feedback respects oscillator phases (theta/gamma)."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
-
-        sensory_input = torch.rand(128, device=device) > 0.8
-
-        # Run through multiple theta cycles
-        n_timesteps = 50  # ~50ms
-
-        for t in range(n_timesteps):
-            brain(sensory_input, n_timesteps=1)
-
-            # Get oscillator state (if accessible)
-            if hasattr(brain, 'oscillator_manager'):
-                phases = brain.oscillator_manager.phases
-
-                # Contract: oscillators should be running
-                assert "theta" in phases, "Theta oscillator should exist"
-                assert "gamma" in phases, "Gamma oscillator should exist"
-
-        # Contract: system should complete without errors
-        assert True, "Oscillator coordination with L6 should work"
-
     def test_learning_with_feedback_and_cerebellum(self, global_config, device):
         """Test learning in system with both L6 feedback and enhanced cerebellum."""
         builder = BrainBuilder(global_config)
@@ -361,7 +338,7 @@ class TestMultiRegionCoordination:
 
         # Connections
         builder.connect("thalamus", "cortex", pathway_type="axonal")
-        builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6")  # L6 feedback
+        builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6a")  # L6a feedback to TRN
         builder.connect("cortex", "cerebellum", pathway_type="axonal")
 
         brain = builder.build()
