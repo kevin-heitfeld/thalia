@@ -355,44 +355,29 @@ self.state_tracker = StriatumStateTracker(...)
 
 ---
 
-### 2.2 Extract Common Growth Orchestration from Multi-Layer Regions
+### 2.2 Extract Common Growth Orchestration from Multi-Layer Regions ⏸️ DEFERRED
 
-**Current State**: Multi-layer regions (Hippocampus, LayeredCortex) have custom `grow_output()` implementations with similar orchestration patterns:
 
-**Common Pattern** (repeated in both):
-1. Validate growth request
-2. Calculate new layer sizes
-3. Expand weights for each layer
-4. Update neuron populations
-5. Update config
-6. Emit diagnostics
+**Re-evaluation (Dec 2025)**: Investigation revealed structural similarity (~40%), not code duplication:
 
-**Duplication Example**:
-```python
-# hippocampus/trisynaptic.py:628 (grow_output)
-def grow_output(self, n_new: int, **kwargs):
-    # Validation
-    if n_new <= 0:
-        return
-    # Calculate new sizes (DG, CA3, CA1)
-    # Expand weights for DG→CA3, CA3→CA1, etc.
-    # Recreate neurons with state
-    # Update config
-    # Emit metrics
+**Hippocampus** (102 lines): 3 layers (DG→CA3→CA1), 5 weight matrices, expansion factor 3.0x for DG, ratio 0.5 for CA3
+**LayeredCortex** (139 lines): 4 layers (L4→L2/3→L5→L6), 7 weight matrices + inhibitory + STP + phase preferences
 
-# cortex/layered_cortex.py:690 (grow_output)
-def grow_output(self, n_new: int, **kwargs):
-    # Validation (same pattern)
-    if n_new <= 0:
-        return
-    # Calculate new sizes (L4, L2/3, L5, L6)
-    # Expand weights for L4→L2/3, L2/3→L5, etc.
-    # Recreate neurons with state (same pattern)
-    # Update config
-    # Emit metrics
-```
+**Shared pattern** (structural only):
+1. Calculate layer sizes (circuit-specific ratios)
+2. Expand weights (different connectivity)
+3. Recreate neurons (different types/configs)
+4. Update config (different fields)
 
-**Proposed Change**: Extend `GrowthMixin` with `MultiLayerGrowthMixin`:
+**Why NOT extract**:
+- Circuit-specific logic dominates (~60% of code)
+- Would require 8+ abstract methods (`_get_layer_ratios()`, `_get_weight_matrices()`, `_get_neuron_factories()`, etc.)
+- Abstraction cost > duplication cost
+- Current code is clear and maintainable
+
+**Decision**: DEFER extraction. Add cross-reference comments instead.
+
+**Original Proposed Change** (not implemented):
 ```python
 # mixins/multi_layer_growth_mixin.py
 class MultiLayerGrowthMixin(GrowthMixin):
