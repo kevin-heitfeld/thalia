@@ -217,8 +217,8 @@ class TestEnhancedCerebellumIntegration:
         for epoch in range(5):
             input_pattern = torch.rand(128, device=device) > 0.8
 
-            # Forward pass
-            brain(input_pattern, n_timesteps=1)
+            # Forward pass - use more timesteps to allow spikes to propagate through delays
+            brain(input_pattern, n_timesteps=10)
 
             # Error signal (target motor command)
             target = torch.rand(64, device=device) > 0.5
@@ -230,6 +230,8 @@ class TestEnhancedCerebellumIntegration:
             assert isinstance(metrics, dict), "Should return learning metrics"
 
         # Contract: cerebellum should have processed through enhanced pathway
+        # Note: Membrane initialization occurs when cerebellum receives spikes
+        # With axonal delays, this requires enough timesteps for propagation
         assert cerebellum.granule_layer.neurons.membrane is not None, \
             "Granule layer should be active after processing"
 
@@ -322,10 +324,11 @@ class TestMultiRegionCoordination:
         builder = BrainBuilder(global_config)
 
         # Add components with proper sizes (pass parameters directly)
+        # Note: L6 size must match thalamus n_input for feedback pathway
         builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
         builder.add_component("cortex", "cortex",
                              n_input=128, n_output=256,
-                             l4_size=64, l23_size=160, l5_size=96, l6_size=80)
+                             l4_size=64, l23_size=128, l5_size=128, l6_size=128)
         builder.add_component("cerebellum", "cerebellum",
                              n_input=256, n_output=64,
                              use_enhanced_microcircuit=True)
@@ -338,7 +341,7 @@ class TestMultiRegionCoordination:
         brain = builder.build()
 
         # Training loop
-        for trial in range(10):
+        for _ in range(10):
             sensory_input = torch.rand(128, device=device) > 0.8
 
             # Process
