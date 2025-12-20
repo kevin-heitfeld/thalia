@@ -16,8 +16,8 @@ Date: December 2025
 
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
+
 import torch
-import torch.nn as nn
 
 from thalia.core.protocols.component import RoutingComponent
 from thalia.managers.component_registry import register_pathway

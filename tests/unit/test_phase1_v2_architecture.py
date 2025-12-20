@@ -64,8 +64,22 @@ class TestAxonalProjection:
         }
 
         # Forward without delays for testing
-        concatenated = projection.forward(source_outputs, apply_delays=False)
+        # AxonalProjection now returns dict preserving source identity
+        delayed_outputs = projection.forward(source_outputs, apply_delays=False)
 
+        # Check dict structure
+        assert isinstance(delayed_outputs, dict)
+        assert "cortex" in delayed_outputs
+        assert "hippocampus" in delayed_outputs
+
+        # Check individual outputs
+        assert delayed_outputs["cortex"].shape == (10,)
+        assert delayed_outputs["hippocampus"].shape == (5,)
+        assert delayed_outputs["cortex"].all()  # All ones
+        assert not delayed_outputs["hippocampus"].any()  # All zeros
+
+        # Test concatenation (if target region needs it)
+        concatenated = torch.cat([delayed_outputs["cortex"], delayed_outputs["hippocampus"]])
         assert concatenated.shape == (15,)
         assert concatenated[:10].all()  # First 10 are ones
         assert not concatenated[10:].any()  # Last 5 are zeros
@@ -82,18 +96,19 @@ class TestAxonalProjection:
         spikes_t0 = torch.ones(5, dtype=torch.bool)
         output_t0 = projection.forward({"cortex": spikes_t0}, apply_delays=True)
 
-        # Delays cause zeros initially
-        assert not output_t0.any()
+        # Delays cause zeros initially (dict output)
+        assert isinstance(output_t0, dict)
+        assert not output_t0["cortex"].any()
 
         # Second timestep: no input
         output_t1 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)}, apply_delays=True)
 
         # Still zeros (delay = 2 steps)
-        assert not output_t1.any()
+        assert not output_t1["cortex"].any()
 
         # Third timestep: delayed spikes appear
         output_t2 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)}, apply_delays=True)
-        assert output_t2.all()  # Original spikes now appear
+        assert output_t2["cortex"].all()  # Original spikes now appear
 
     def test_grow_source(self):
         """Test growing a source."""
@@ -299,8 +314,16 @@ class TestIntegration:
             "pfc": torch.ones(32, dtype=torch.bool),
         }
 
-        # Route spikes
-        concatenated = projection.forward(source_outputs, apply_delays=False)
+        # Route spikes (now returns dict)
+        routed_spikes = projection.forward(source_outputs, apply_delays=False)
+        assert isinstance(routed_spikes, dict)
+
+        # Concatenate for synaptic processing
+        concatenated = torch.cat([
+            routed_spikes["cortex"],
+            routed_spikes["hippocampus"],
+            routed_spikes["pfc"]
+        ])
         assert concatenated.shape == (224,)
 
         # Integrate through synapses

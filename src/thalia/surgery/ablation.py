@@ -33,30 +33,46 @@ def ablate_pathway(
 ) -> None:
     """Remove a pathway connection between regions.
 
-    Effects:
-    - Zero pathway weights
-    - Disable pathway plasticity
-    - Spikes no longer propagate through pathway
+    **DEPRECATED**: This function was designed for weighted pathways, but the current
+    v3.0 architecture uses axonal routing pathways with no learnable parameters.
+
+    To remove connections in v3.0:
+    - Use lesion_region() to silence the source region
+    - Manually remove from brain.connections dict
+    - Use BrainBuilder to construct networks without unwanted connections
+
+    This function is kept for backward compatibility but will raise an error
+    for routing-only pathways (AxonalProjection).
 
     Args:
         brain: The brain to modify
         pathway_name: Name of pathway to ablate
-                     Common pathways:
-                     - "thalamus_to_cortex"
-                     - "cortex_to_hippocampus"
-                     - "cortex_to_pfc"
-                     - "cortex_to_striatum"
-                     - "hippocampus_to_pfc"
-                     - "pfc_to_striatum"
-                     - "striatum_to_cerebellum"
         save_for_restore: Whether to save state for restoration
 
+    Raises:
+        NotImplementedError: For routing pathways (AxonalProjection)
+
     Example:
+        >>> # Old weighted pathways (deprecated architecture)
         >>> ablate_pathway(brain, "cortex_to_pfc")
-        >>> # Cortex can no longer influence working memory
+        >>>
+        >>> # New v3.0 approach: lesion the source region instead
+        >>> from thalia.surgery import lesion_region
+        >>> lesion_region(brain, "cortex")
     """
     # Get pathway
     pathway = _get_pathway(brain, pathway_name)
+
+    # Check if pathway has learnable parameters
+    has_learnable_params = any(p.requires_grad for p in pathway.parameters())
+
+    if not has_learnable_params:
+        raise NotImplementedError(
+            f"Cannot ablate routing pathway '{pathway_name}' ({type(pathway).__name__}). "
+            f"Routing pathways have no weights to ablate. "
+            f"Use lesion_region() to silence the source region instead, "
+            f"or manually remove the pathway from brain.connections."
+        )
 
     # Save state if requested
     if save_for_restore:
