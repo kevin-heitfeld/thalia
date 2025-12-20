@@ -447,25 +447,85 @@ class RegionNameState(NeuralComponentState):
 
 ---
 
-### 3.3 Pathway Growth Coordination (Future Enhancement)
+### 3.3 Pathway Growth Coordination ✅ **VALIDATION ADDED** (December 20, 2025)
 
-**Current State**: When regions grow, connected pathways must manually grow inputs. This is handled by brain builders but not enforced by type system.
+**Status**: ✅ **Runtime validation implemented** - Added validation functions, existing infrastructure is solid
 
-**Potential Issue**: Growing a region without growing connected pathways causes dimension mismatches.
+**Current State**: When regions grow, connected pathways must be coordinated. This is already **well-handled** by existing infrastructure:
 
-**Proposed Solution** (Future):
-- Add `@requires_growth_coordination` decorator to regions
-- Brain tracks region→pathway dependencies
-- Auto-coordinate growth calls when region grows
+**Existing Coordination Mechanisms** ✅:
+1. **`GrowthCoordinator.coordinate_growth()`** (`coordination/growth.py`):
+   - Automatically finds input/output pathways
+   - Grows pathways to match region dimensions
+   - Propagates growth to downstream target regions
+   - Records coordinated growth events
 
-**Recommendation**: **DEFER** - Current manual coordination works but requires discipline. Add validation layer first (check dimension compatibility) before full auto-coordination.
+2. **`DynamicPathwayManager.grow_connected_pathways()`** (`pathways/dynamic_pathway_manager.py`):
+   - Handles multi-source pathway growth
+   - Automatically updates pathway dimensions when components grow
+   - Supports both `grow_source()` and `grow_input()`/`grow_output()`
+
+3. **`test_network_integrity_dynamic.py`** (426 lines):
+   - Tests pathway dimensions match regions
+   - Tests growth coordination
+   - Tests forward pass after growth
+
+**New Validation Added** (December 20, 2025) ✅:
+
+Added two new validation functions to `core/errors.py`:
+
+1. **`validate_pathway_dimensions()`** - Pre-growth validation
+   - Checks pathway input matches source output
+   - Checks pathway output matches target input
+   - Raises `IntegrationError` with clear fix suggestions
+   - Use before forwarding to catch mismatches early
+
+2. **`validate_growth_coordination()`** - Post-growth validation
+   - Verifies all connected pathways were updated after growth
+   - Detects forgotten pathway growth calls
+   - Provides clear error messages with pathway names
+   - Use after growth to ensure connectivity integrity
+
+**Usage Example**:
+```python
+# Pre-growth: Check dimensions before forwarding
+from thalia.core.errors import validate_pathway_dimensions
+
+pathway = brain.connections[("cortex", "hippocampus")]
+validate_pathway_dimensions(
+    pathway.config.n_input,
+    cortex.config.n_output,
+    pathway.config.n_output,
+    hippocampus.config.n_input,
+    pathway_name="cortex_to_hippocampus"
+)
+
+# Post-growth: Verify coordination succeeded
+from thalia.core.errors import validate_growth_coordination
+
+cortex.grow_output(20)  # Grow by 20 neurons
+brain.pathway_manager.grow_connected_pathways("cortex", 20)
+
+validate_growth_coordination(
+    "cortex",
+    old_size=256,
+    new_size=276,
+    connected_pathways={
+        "thalamus_to_cortex": (100, 276),
+        "cortex_to_hippocampus": (276, 150),
+    }
+)
+```
+
+**Recommendation**: ✅ **Validation complete** - Current approach is explicit and auditable. The new validation functions catch dimension mismatches early and provide clear error messages. No further automation needed at this time.
 
 **Impact**:
-- Affected files: Core brain, all regions/pathways
-- Breaking change: **Medium** (changes growth API)
-- Benefit: Prevents dimension mismatch bugs
+- Files changed: 1 (`core/errors.py` - added 2 validation functions)
+- Breaking change: **None** (new validation is opt-in)
+- Lines added: ~140 lines of validation logic with documentation
+- Benefit: Catches growth coordination errors early with actionable error messages
 
-**Rationale**: Growth coordination is complex and error-prone. However, current approach is explicit and auditable. Add runtime validation before full automation.
+**Rationale**: Growth coordination is already well-handled by `GrowthCoordinator` and `DynamicPathwayManager`. The new validation functions provide an optional safety net for manual growth operations and make debugging easier when coordination fails. The explicit approach (manual coordination + validation) is preferable to full automation because it keeps growth operations visible and auditable.
 
 ---
 

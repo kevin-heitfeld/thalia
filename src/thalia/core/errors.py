@@ -335,6 +335,132 @@ def validate_temporal_causality(
         )
 
 
+def validate_pathway_dimensions(
+    pathway_input_size: int,
+    source_output_size: int,
+    pathway_output_size: int,
+    target_input_size: int,
+    pathway_name: str = "pathway",
+) -> None:
+    """Validate that pathway dimensions match connected regions.
+
+    Pre-growth validation to catch dimension mismatches before they cause
+    runtime errors. Critical for growth coordination.
+
+    Args:
+        pathway_input_size: Pathway's input dimension
+        source_output_size: Source region's output dimension
+        pathway_output_size: Pathway's output dimension
+        target_input_size: Target region's input dimension
+        pathway_name: Pathway name for error messages
+
+    Raises:
+        IntegrationError: If dimensions don't match
+
+    Example:
+        >>> # Before growing cortex from 256 to 276 neurons
+        >>> pathway = brain.connections[("cortex", "hippocampus")]
+        >>> validate_pathway_dimensions(
+        ...     pathway.config.n_input,
+        ...     256,  # Current cortex size
+        ...     pathway.config.n_output,
+        ...     hippocampus.config.n_input,
+        ...     pathway_name="cortex_to_hippocampus"
+        ... )
+    """
+    errors = []
+
+    if pathway_input_size != source_output_size:
+        errors.append(
+            f"Source mismatch: pathway expects {pathway_input_size} inputs, "
+            f"but source provides {source_output_size} outputs"
+        )
+
+    if pathway_output_size != target_input_size:
+        errors.append(
+            f"Target mismatch: pathway provides {pathway_output_size} outputs, "
+            f"but target expects {target_input_size} inputs"
+        )
+
+    if errors:
+        raise IntegrationError(
+            f"Pathway '{pathway_name}' dimension mismatch:\n" +
+            "\n".join(f"  • {e}" for e in errors) +
+            "\n\nSuggested fix: Call pathway.grow_input() or pathway.grow_output() "
+            "to match region dimensions before forwarding data."
+        )
+
+
+def validate_growth_coordination(
+    region_name: str,
+    old_size: int,
+    new_size: int,
+    connected_pathways: Dict[str, tuple[int, int]],
+) -> None:
+    """Validate that growth maintains connectivity integrity.
+
+    Post-growth validation to ensure all connected pathways were updated.
+    Catches forgotten pathway growth calls.
+
+    Args:
+        region_name: Name of region that grew
+        old_size: Region size before growth
+        new_size: Region size after growth
+        connected_pathways: Dict of {pathway_name: (input_size, output_size)}
+                           for all connected pathways
+
+    Raises:
+        IntegrationError: If any connected pathway has wrong dimensions
+
+    Example:
+        >>> # After growing cortex
+        >>> validate_growth_coordination(
+        ...     "cortex",
+        ...     old_size=256,
+        ...     new_size=276,
+        ...     connected_pathways={
+        ...         "thalamus_to_cortex": (100, 276),  # Target grew ✓
+        ...         "cortex_to_hippocampus": (276, 150),  # Source grew ✓
+        ...     }
+        ... )
+    """
+    if new_size <= old_size:
+        raise ValueError(
+            f"Region '{region_name}' size did not grow: {old_size} → {new_size}"
+        )
+
+    growth_amount = new_size - old_size
+    errors = []
+
+    for pathway_name, (pw_input, pw_output) in connected_pathways.items():
+        # Check if pathway is an input pathway (feeds INTO the region)
+        if pathway_name.endswith(f"_to_{region_name}"):
+            # Output side should match new region size
+            if pw_output != new_size:
+                errors.append(
+                    f"{pathway_name}: output should be {new_size} (region target), "
+                    f"but is {pw_output} (forgot pathway.grow_output?)"
+                )
+
+        # Check if pathway is an output pathway (feeds FROM the region)
+        elif pathway_name.startswith(f"{region_name}_to_"):
+            # Input side should match new region size
+            if pw_input != new_size:
+                errors.append(
+                    f"{pathway_name}: input should be {new_size} (region source), "
+                    f"but is {pw_input} (forgot pathway.grow_input?)"
+                )
+
+    if errors:
+        raise IntegrationError(
+            f"Growth of '{region_name}' broke {len(errors)} pathway(s):\n" +
+            "\n".join(f"  • {e}" for e in errors) +
+            f"\n\nRegion grew by {growth_amount} neurons ({old_size} → {new_size}), "
+            "but connected pathways were not updated. Use GrowthCoordinator "
+            "or DynamicPathwayManager.grow_connected_pathways() to coordinate growth."
+        )
+
+
 __all__ = [
     # Exception classes
     "ThaliaError",
@@ -350,4 +476,6 @@ __all__ = [
     "validate_positive",
     "validate_probability",
     "validate_temporal_causality",
+    "validate_pathway_dimensions",
+    "validate_growth_coordination",
 ]
