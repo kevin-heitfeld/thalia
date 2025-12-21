@@ -117,14 +117,22 @@ class GranuleCellLayer(nn.Module):
         # Granule cell spiking (minimal inhibition - granule layer is excitatory)
         parallel_fiber_spikes, _ = self.granule_neurons(g_exc, None)
 
-        # Enforce sparsity (top-k activation)
+        # Enforce sparsity (top-k activation based on excitation)
+        # Always select the k most excited neurons that spiked
         k = int(self.n_granule * self.sparsity)
-        if parallel_fiber_spikes.sum() > k:
-            # Keep only top-k most excited neurons
-            _, top_k_idx = torch.topk(g_exc, k)
+        n_spiking = parallel_fiber_spikes.sum().item()
+
+        if n_spiking > k:
+            # More neurons spiked than target, select top-k by excitation
+            # Only consider neurons that actually spiked
+            spiking_mask = parallel_fiber_spikes.bool()
+            g_exc_spiking = g_exc.clone()
+            g_exc_spiking[~spiking_mask] = -float('inf')  # Exclude non-spiking
+            _, top_k_idx = torch.topk(g_exc_spiking, k)
             sparse_spikes = torch.zeros_like(parallel_fiber_spikes, dtype=torch.bool)
-            sparse_spikes[top_k_idx] = parallel_fiber_spikes[top_k_idx]
+            sparse_spikes[top_k_idx] = True
             parallel_fiber_spikes = sparse_spikes
+        # else: Fewer than k neurons spiked naturally, keep them all
 
         return parallel_fiber_spikes
 

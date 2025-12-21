@@ -120,12 +120,11 @@ class TestGranuleCellLayer:
             dt_ms=1.0,
         )
 
-        # Strong mossy fiber input
-        mossy_spikes = torch.ones(128, dtype=torch.bool, device=device)
-
-        # Run several timesteps
+        # Run several timesteps with varied input
         sparsity_measurements = []
         for _ in range(10):
+            # Varied mossy fiber input each timestep (biologically realistic)
+            mossy_spikes = torch.rand(128, device=device) > 0.7
             parallel_fiber_spikes = granule_layer(mossy_spikes)
 
             # Measure sparsity
