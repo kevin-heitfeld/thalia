@@ -1,7 +1,14 @@
 # Thalia Documentation
 
 **Status**: 🚧 Active Development — Documentation evolving with the codebase
-**Last Updated**: December 21, 2025
+**Last Updated**: December 21, 2025 (Post-Consolidation)
+
+**Recent Updates**:
+- ✅ December 21, 2025: Documentation consolidation complete
+  - Archived 9 completed implementation documents
+  - Fixed broken code references
+  - Reduced active documentation by 18% (67→55 active files)
+  - All validation checks passing
 
 ## Overview
 
@@ -109,6 +116,28 @@ When adding documentation:
 2. Use clear, concise language
 3. Add status indicators
 4. Update this README with links to new docs
+
+### 📦 [Archive](./archive/)
+
+Completed implementations, superseded designs, and historical documentation.
+
+**Contents**:
+- Completed implementation summaries (noise system, spillover, oscillator monitoring)
+- Finished architecture specifications (L6_TRN feedback, biological spec, oscillation analysis)
+- Superseded design documents (clock optimizations, TRN enhancement plans)
+- Completed review sessions
+
+**See**: [archive/README.md](./archive/README.md) for full inventory and consolidation history
+
+**When to reference**:
+- Understanding implementation history
+- Reviewing design decisions and rationale
+- Finding completed feature details
+
+**When NOT to reference**:
+- Active development (use current docs instead)
+- New contributor onboarding (use getting started guides)
+- API usage (use quick references)
 
 ## Notes
 

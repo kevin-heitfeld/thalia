@@ -643,7 +643,7 @@ class BrainComponentMixin:
         raise NotImplementedError(
             f"{self.__class__.__name__}.grow_input() not yet implemented. "
             f"Input growth is essential for curriculum learning when upstream components grow. "
-            f"See docs/patterns/unified-growth-api.md for implementation guide."
+            f"See docs/architecture/UNIFIED_GROWTH_API.md for implementation guide."
         )
 
     def grow_output(
@@ -656,7 +656,7 @@ class BrainComponentMixin:
         raise NotImplementedError(
             f"{self.__class__.__name__}.grow_output() not yet implemented. "
             f"Output growth is essential for curriculum learning to expand capacity. "
-            f"See docs/patterns/unified-growth-api.md for implementation guide."
+            f"See docs/architecture/UNIFIED_GROWTH_API.md for implementation guide."
         )
 
     def get_capacity_metrics(self) -> Any:

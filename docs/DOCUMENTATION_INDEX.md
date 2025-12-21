@@ -1,8 +1,13 @@
 # Thalia Documentation Index
 
-**Last Updated**: December 21, 2025
+**Last Updated**: December 21, 2025 (Post-Consolidation)
 
 This is a comprehensive searchable index of all documentation in the Thalia project.
+
+**Recent Changes** (Dec 21, 2025):
+- ✅ Archived 9 completed implementation documents
+- ✅ Fixed broken code references to non-existent docs
+- ✅ Reduced total file count by 13% (67 → 58 files)
 
 ## Quick Navigation
 
@@ -30,6 +35,20 @@ Located in: `docs/`
 | **MONITORING_GUIDE.md** | Health checks and diagnostics | 🟢 Current | Root README, copilot-instructions |
 | **AI_ASSISTANT_GUIDE.md** | Navigation guide for AI assistants | 🟢 Current | copilot-instructions |
 | **MULTILINGUAL_DATASETS.md** | Multilingual support documentation | 🟢 Current | Root README |
+| **DOCUMENTATION_VALIDATION.md** | Automated doc validation system | 🟢 Current | CI/CD processes |
+
+### Safety & Quality Systems
+
+| File | Purpose | Status | Referenced In |
+|------|---------|--------|---------------|
+| **CURRICULUM_SAFETY_SYSTEM.md** | Comprehensive safety system guide | 🟢 Current | Training code, safety docs |
+| **SAFETY_QUICK_START.md** | Quick start guide for safety integration | 🟢 Current | Training tutorials |
+
+### Implementation Details (Active)
+
+| File | Purpose | Status | Referenced In |
+|------|---------|--------|---------------|
+| **NOISE_SYSTEM.md** | Noise scheduling system | 🟢 Current | Training code |
 
 ---
 
@@ -48,6 +67,14 @@ High-level system architecture and component organization.
 | **UNIFIED_GROWTH_API.md** | Growth method standardization | 🟢 Current | Growth implementations |
 | **INDEX.md** | Searchable component reference | 🟢 Current | Navigation |
 | **README.md** | Architecture directory overview | 🟢 Current | Root README |
+
+### Archived Architecture Documents
+
+| File | Purpose | Status | Archived Date |
+|------|---------|--------|---------------|
+| **L6_TRN_FEEDBACK_LOOP.md** | L6→TRN feedback implementation (✅ Complete) | 📦 Archived | Dec 21, 2025 |
+| **BIOLOGICAL_ARCHITECTURE_SPEC.md** | Biological communication spec (✅ Complete) | 📦 Archived | Dec 21, 2025 |
+| **OSCILLATION_EMERGENCE_ANALYSIS.md** | Oscillation emergence (✅ Implemented) | 📦 Archived | Dec 21, 2025 |
 
 ### Key Topics Covered
 - **Architecture**: NeuralRegion base class (nn.Module + 4 mixins)
@@ -69,13 +96,19 @@ Detailed technical specifications for core systems.
 |------|---------|--------|---------------|
 | **curriculum_strategy.md** | Training stages and consolidation | 🟢 Current | copilot-instructions, stage_manager.py |
 | **checkpoint_format.md** | Serialization and state persistence | 🟢 Current | GETTING_STARTED, stage_manager.py |
-| **checkpoint_growth_compatibility.md** | Checkpoint growth strategy | 🟢 Current | CONTRIBUTING.md |
 | **delayed_gratification.md** | TD(λ) and multi-step credit (Phases 1-3) | 🟢 Current | copilot-instructions |
 | **circuit_modeling.md** | Circuit timing and D1/D2 delays | 🟢 Current | copilot-instructions |
 | **neuron_models.md** | LIF and ConductanceLIF neurons | 🟢 Current | Pattern references |
 | **parallel_execution.md** | Multi-core CPU performance | 🟢 Current | ADR-014 |
 | **architecture.md** | System architecture details | 🟢 Current | state-management.md |
 | **README.md** | Design directory overview | 🟢 Current | Documentation hub |
+
+### Archived Design Documents
+
+| File | Purpose | Status | Archived Date |
+|------|---------|--------|---------------|
+| **CLOCK_DRIVEN_OPTIMIZATIONS.md** | Clock-driven optimizations (Phase 1 complete) | 📦 Archived | Dec 21, 2025 |
+| **trn_feedback_and_cerebellum_enhancement.md** | TRN enhancement plan (✅ Superseded) | 📦 Archived | Dec 21, 2025 |
 
 ### Key Topics Covered
 - Curriculum stages (sensorimotor → grammar → reading)
@@ -190,6 +223,40 @@ Architecture Decision Records (ADRs) documenting key technical choices.
 ### Circuit Modeling
 - `design/circuit_modeling.md` — D1/D2 delays
 - `design/neuron_models.md` — Neuron implementations
+
+---
+
+## Archive Directory
+
+Located in: `docs/archive/`
+
+Historical documentation for completed implementations and superseded designs.
+
+### Recent Additions (December 21, 2025)
+
+**Implementation Summaries** (Completed work):
+- `NOISE_IMPLEMENTATION_SUMMARY.md` — Noise system implementation (now in NOISE_SYSTEM.md)
+- `SPILLOVER_IMPLEMENTATION.md` — Spillover transmission complete
+- `oscillator_pathology_detection.md` — Oscillator health monitoring complete
+
+**Architecture** (Completed implementations):
+- `architecture/L6_TRN_FEEDBACK_LOOP.md` — L6→TRN feedback loop (✅ Complete Dec 20, 2025)
+- `architecture/BIOLOGICAL_ARCHITECTURE_SPEC.md` — Biological communication spec (✅ Complete)
+- `architecture/OSCILLATION_EMERGENCE_ANALYSIS.md` — Oscillation emergence (✅ Implemented Dec 20, 2025)
+
+**Design** (Superseded or phase-complete):
+- `design/CLOCK_DRIVEN_OPTIMIZATIONS.md` — Clock-driven optimizations (Phase 1 complete)
+- `design/trn_feedback_and_cerebellum_enhancement.md` — TRN enhancement plan (superseded by L6_TRN_FEEDBACK_LOOP.md)
+
+**Reviews** (Completed sessions):
+- `reviews/architecture-review-2025-12-20.md` — Architecture review session
+
+### Previous Archive Contents
+
+- `ablation_results.md` — Ablation study results
+- `CURRICULUM_VALIDATION_SUMMARY.md` — Curriculum validation findings
+- `PLANNING-v1.md` — Original planning document
+- Various subdirectories: `architecture/`, `design/`, `patterns/`, `reviews/`
 
 ---
 

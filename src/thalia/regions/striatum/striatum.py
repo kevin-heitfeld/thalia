@@ -164,7 +164,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
-        docs/architecture/PHASE2_MIGRATION_GUIDE.md for migration details
+        docs/patterns/component-parity.md for component design patterns
     """
 
     def __init__(self, config: NeuralComponentConfig):

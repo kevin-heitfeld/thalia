@@ -155,6 +155,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
     See Also:
         docs/patterns/mixins.md for detailed mixin patterns
+        docs/patterns/component-parity.md for component design patterns
     """
 
     def __init__(self, config: HippocampusConfig):

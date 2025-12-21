@@ -511,7 +511,7 @@ class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin,
         """
         raise NotImplementedError(
             f"{self.__class__.__name__}.grow_output() not yet implemented. "
-            f"See docs/patterns/unified-growth-api.md for implementation guide."
+            f"See docs/architecture/UNIFIED_GROWTH_API.md for implementation guide."
         )
 
     @property
