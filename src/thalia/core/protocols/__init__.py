@@ -19,6 +19,10 @@ from thalia.core.protocols.neural import (
     Configurable,
     NeuralComponentProtocol,
 )
+from thalia.core.protocols.checkpoint import (
+    Checkpointable,
+    CheckpointableWithNeuromorphic,
+)
 
 __all__ = [
     # Component Protocol
@@ -35,4 +39,7 @@ __all__ = [
     "WeightContainer",
     "Configurable",
     "NeuralComponentProtocol",
+    # Checkpoint Protocols
+    "Checkpointable",
+    "CheckpointableWithNeuromorphic",
 ]
