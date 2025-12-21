@@ -75,7 +75,18 @@ def striatum_no_delays(striatum_config_no_delays):
 
 
 def test_delay_configuration_affects_temporal_competition(striatum_config_with_delays):
-    """Test that configured delays create temporal competition between D1 and D2."""
+    """Test that configured delays create temporal competition between D1 and D2.
+
+    Why this test exists: Validates the core biological mechanism where D1 "Go"
+    signals arrive before D2 "No-Go" signals, creating a temporal window for
+    action initiation. This temporal competition is critical for reaction time,
+    impulsivity, and decision-making dynamics.
+
+    Expected behavior:
+    - D1 vote arrives at t=15ms (direct pathway)
+    - D2 vote arrives at t=25ms (indirect pathway)
+    - 10ms window where D1 can initiate action before D2 inhibition
+    """
     striatum = Striatum(striatum_config_with_delays)
     striatum.reset_state()
 
@@ -124,6 +135,8 @@ def test_delays_work_from_first_forward(striatum_with_delays):
 
     # Behavioral contract: output should be valid even on first pass
     assert output is not None
+    assert output.shape == (striatum_with_delays.config.n_output,)
+    assert output.dtype == torch.bool
     assert not torch.isnan(output).any(), "No NaN in output"
 
     # Behavioral contract: votes don't appear until delay passes

@@ -5,11 +5,11 @@ Tests that checkpoints track version information correctly and that
 version compatibility checking works during load.
 """
 
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import torch
 
 from thalia.io.checkpoint import BrainCheckpoint
@@ -108,8 +108,21 @@ def test_checkpoint_info_shows_versions():
         Path(checkpoint_path).unlink(missing_ok=True)
 
 
-def test_load_incompatible_major_version():
-    """Loading checkpoint with different major version should raise error."""
+@pytest.mark.parametrize("version_patch,expect_error,error_match", [
+    ("major", True, "Incompatible checkpoint format version"),
+    ("minor", False, "Checkpoint format version mismatch"),
+])
+def test_load_different_version(version_patch, expect_error, error_match):
+    """Test loading checkpoints with different version components.
+
+    Why this test exists: Validates version compatibility checking to ensure
+    that incompatible checkpoints (major version mismatch) fail fast, while
+    compatible checkpoints (minor version mismatch) warn but succeed.
+
+    Cases:
+    - major: Incompatible format - should raise ValueError
+    - minor: Compatible but different - should warn but load
+    """
     brain = MockBrain()
 
     with tempfile.NamedTemporaryFile(delete=False, suffix='.thalia') as f:
@@ -119,32 +132,23 @@ def test_load_incompatible_major_version():
         # Save checkpoint
         BrainCheckpoint.save(brain, checkpoint_path)
 
-        # Monkey-patch MAJOR_VERSION to simulate incompatible version
-        with patch('thalia.io.checkpoint.MAJOR_VERSION', MAJOR_VERSION + 1):
-            with pytest.raises(ValueError, match="Incompatible checkpoint format version"):
-                BrainCheckpoint.load(checkpoint_path)
+        # Monkey-patch version to simulate different version
+        if version_patch == "major":
+            patch_target = 'thalia.io.checkpoint.MAJOR_VERSION'
+            patch_value = MAJOR_VERSION + 1
+        else:  # minor
+            patch_target = 'thalia.io.checkpoint.MINOR_VERSION'
+            patch_value = MINOR_VERSION + 1
 
-    finally:
-        Path(checkpoint_path).unlink(missing_ok=True)
-
-
-def test_load_different_minor_version_warns():
-    """Loading checkpoint with different minor version should warn but succeed."""
-    brain = MockBrain()
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.thalia') as f:
-        checkpoint_path = f.name
-
-    try:
-        # Save checkpoint
-        BrainCheckpoint.save(brain, checkpoint_path)
-
-        # Monkey-patch MINOR_VERSION to simulate different minor version
-        with patch('thalia.io.checkpoint.MINOR_VERSION', MINOR_VERSION + 1):
-            with pytest.warns(UserWarning, match="Checkpoint format version mismatch"):
-                state = BrainCheckpoint.load(checkpoint_path)
-                assert state is not None
-                assert "regions" in state
+        with patch(patch_target, patch_value):
+            if expect_error:
+                with pytest.raises(ValueError, match=error_match):
+                    BrainCheckpoint.load(checkpoint_path)
+            else:
+                with pytest.warns(UserWarning, match=error_match):
+                    state = BrainCheckpoint.load(checkpoint_path)
+                    assert state is not None
+                    assert "regions" in state
 
     finally:
         Path(checkpoint_path).unlink(missing_ok=True)

@@ -47,21 +47,38 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 
 6. **Tests That Are Duplicates or Highly Redundant**
    - Multiple tests asserting the same contract
+   - Example: `test_forward_visual()`, `test_forward_auditory()`, `test_forward_language()` - identical logic, different inputs
+   - Example: `test_grow_neurons_50()`, `test_grow_neurons_100()`, `test_grow_neurons_200()` - same test, different sizes
+   - **Fix**: Consolidate into parameterized tests using `@pytest.mark.parametrize`
 
-7. **Mock-Heavy Tests That Don't Test Real Behavior**
+7. **Tests That Could Be Parameterized But Aren't**
+   - Repetitive test code with only input values changing
+   - Example: Separate tests for different learning rates, delay values, or growth amounts
+   - Problem: Code duplication makes maintenance harder, adds to test count without adding coverage
+   - **Fix**: Use `@pytest.mark.parametrize` to test multiple cases with single test function
+   - Pattern:
+     ```python
+     @pytest.mark.parametrize("learning_rate,expected_change", [
+         (0.001, "small"), (0.01, "medium"), (0.1, "large")
+     ])
+     def test_learning_with_various_rates(learning_rate, expected_change):
+         # Single test function handles all cases
+     ```
+
+8. **Mock-Heavy Tests That Don't Test Real Behavior**
    - Over-mocked to the point where test doesn't validate actual code path
    - Example: Mocking return values that match code exactly (not testing error handling)
    - **Fix**: Use real services when possible (stateless services), mock only external dependencies
 
-8. **No Validation of Intermediate States**
+9. **No Validation of Intermediate States**
    - Tests only check final result, not state during operations
    - Example: Batch operations should validate intermediate states during processing
    - **Fix**: Add assertions for state transitions, partial completion, rollback scenarios
 
-9. **Weak Assertions on Error Conditions**
+10. **Weak Assertions on Error Conditions**
    - Tests that error occurred but don't validate error message or type
 
-10. **Tests Coupled to Internal Implementation Details**
+11. **Tests Coupled to Internal Implementation Details**
     - Asserts internal state variables instead of observable behavior
     - Example: `assert region._internal_buffer.shape == (100,)` (private attribute)
     - Problem: Refactoring internal implementation breaks tests (but learning still works)
@@ -122,6 +139,8 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
    - Only happy-path tests
    - Internal state assertions (private attributes)
    - Over-mocking without validation
+   - Redundant/duplicate tests
+   - Tests that could be parameterized
 
 2. Create inventory of issues by file
 
@@ -129,7 +148,7 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
    - **P0**: Tests that failed to catch real bugs (biological implausibility, dimension mismatches)
    - **P1**: Tests coupling to implementation details (brittle)
    - **P2**: Tests missing edge cases (silent/saturated neurons, extreme parameters)
-   - **P3**: Tests with redundant assertions
+   - **P3**: Tests with redundant assertions or duplicate test logic
 
 ### Phase 2: Coverage Analysis
 1. Map test files to core components (regions, pathways, services)
@@ -138,12 +157,13 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 
 ### Phase 3: Create Improvement Plan
 For each test file:
-1. Remove trivial/duplicate tests
-2. Replace hardcoded assertions with contract assertions
-3. Add edge case tests (silent/saturated neurons, extreme parameters)
-4. Add network integrity/invariant tests (dimension compatibility, weight bounds)
-5. Replace internal state assertions with behavioral assertions (spike patterns, learning)
-6. Reduce mock depth where possible
+1. **Identify and remove redundant tests** (exact duplicates or tests covered by other tests)
+2. **Consolidate repetitive tests into parameterized tests** (same logic, different inputs)
+3. Replace hardcoded assertions with contract assertions
+4. Add edge case tests (silent/saturated neurons, extreme parameters)
+5. Add network integrity/invariant tests (dimension compatibility, weight bounds)
+6. Replace internal state assertions with behavioral assertions (spike patterns, learning)
+7. Reduce mock depth where possible
 
 ### Phase 4: Implement Improvements
 1. Start with highest priority/impact files
@@ -159,6 +179,14 @@ For each test file:
 - Search for Incomplete Error Testing: Find error tests that don't validate error type
 - Search for Mock Over-Use: Review if real neural components could be used instead
 - Search for Missing Edge Case Tests: Verify each positive test has corresponding edge case test
+- **Search for Redundant Tests**: Look for duplicate tests or tests with identical logic and different inputs
+  - Pattern: `test_X_with_Y`, `test_X_with_Z` - same function, different parameter
+  - Pattern: `test_X_size_10`, `test_X_size_20`, `test_X_size_50` - same test, different size
+  - Pattern: `test_forward_visual`, `test_forward_auditory` - same logic, different modality
+- **Search for Parameterization Opportunities**: Look for repetitive test patterns
+  - Multiple tests with same structure but different input values
+  - Tests that only differ in one or two parameters
+  - Consolidate using `@pytest.mark.parametrize` decorator
 
 ## Expected Output
 
@@ -179,18 +207,22 @@ For each test file:
   - Edge case testing (silent/saturated neurons, extreme parameters)
   - Network integrity testing (dimension compatibility, weight bounds)
   - State transition testing (reset, learning, neuromodulation)
+  - **Parameterized testing** (consolidating repetitive tests)
+  - **Test consolidation patterns** (identifying and removing redundancy)
 
 ## Success Criteria
 
 1. ✅ All weak test patterns identified and documented
 2. ✅ Improvement plan created with priority order
 3. ✅ At least 20% reduction in trivial/hardcoded assertions
-4. ✅ All core region/pathway tests include edge case coverage
-5. ✅ All network architecture tests include connectivity validation
-6. ✅ No internal state assertions (testing private attributes)
-7. ✅ Tests maintain current coverage or increase (from adding edge case tests)
-8. ✅ All tests continue to pass
-9. ✅ Type checking (Pyright) succeeds with no critical errors
+4. ✅ **Redundant tests identified and consolidated/removed**
+5. ✅ **Parameterization opportunities identified and implemented where beneficial**
+6. ✅ All core region/pathway tests include edge case coverage
+7. ✅ All network architecture tests include connectivity validation
+8. ✅ No internal state assertions (testing private attributes)
+9. ✅ Tests maintain current coverage or increase (from adding edge case tests)
+10. ✅ All tests continue to pass
+11. ✅ Type checking (Pyright) succeeds with no critical errors
 
 ## Instructions to AI
 
@@ -199,10 +231,14 @@ For each test file:
 3. **Document**: Create comprehensive audit report
 4. **Recommend**: Propose specific improvements with examples
 5. **Prioritize**: Rank improvements by impact and effort
+6. **Identify Redundancy**: Find duplicate tests and parameterization opportunities
 
 Use semantic search across the test suite to understand:
 - Which tests lack edge case coverage
 - Which tests are tightly coupled to implementation
 - Which tests have redundant assertions
+- Which tests are duplicates or near-duplicates
+- Which test patterns repeat across multiple test functions
+- Which tests could benefit from parameterization
 
 Output should be suitable for implementation in follow-up sessions.

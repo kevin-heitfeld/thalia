@@ -1000,6 +1000,158 @@ def test_coordinate_growth_updates_input_pathways():
 
 ---
 
+## Test Quality Audit (December 21, 2025)
+
+### Audit Summary
+
+A comprehensive audit was conducted on December 21, 2025, analyzing 50+ test files to identify weak patterns and improvement opportunities. The audit revealed the test suite has **STRONG fundamentals** with excellent edge case coverage, but contains opportunities to reduce brittleness.
+
+**Overall Assessment:** B+ (Good, with improvement opportunities)
+
+**Key Findings:**
+
+1. ✅ **Strengths:**
+   - Comprehensive edge case testing (silent/saturated input)
+   - Excellent network integrity validation
+   - Good use of behavioral assertions
+   - Well-documented patterns in `WRITING_TESTS.md`
+
+2. ⚠️ **Areas for Improvement:**
+   - 20+ hardcoded value assertions (brittle)
+   - 18 private attribute tests (coupled to implementation)
+   - 19 trivial "not None" checks (low value)
+   - Limited learning strategy stress tests
+   - Some tests lack intermediate state validation
+
+**Full Reports:**
+- `TEST_QUALITY_AUDIT_REPORT.md` - Detailed findings and analysis
+- `TEST_IMPROVEMENT_CHECKLIST.md` - Step-by-step implementation plan
+
+---
+
+### Critical Anti-Patterns Identified
+
+#### Anti-Pattern 1: Hardcoded Default Values ❌
+
+**Found in:** 14 test files | **Severity:** Medium
+
+```python
+# ❌ BRITTLE: Breaks when default changes
+def test_initialization():
+    region = NeuralRegion(n_neurons=100, device="cpu")
+    assert region.n_neurons == 100  # Hardcoded exact value
+
+# ✅ ROBUST: Tests contract, survives refactoring
+def test_initialization():
+    config = NeuralRegionConfig(n_neurons=100)
+    region = NeuralRegion(config=config, device="cpu")
+    assert region.n_neurons == config.n_neurons  # Matches config
+    assert region.n_neurons > 0  # Positive count invariant
+```
+
+**Fix:** Replace exact assertions with config-based or range checks.
+
+---
+
+#### Anti-Pattern 2: Private Attribute Testing ❌
+
+**Found in:** 5 test files, 18 assertions | **Severity:** High
+
+```python
+# ❌ BRITTLE: Coupled to internal implementation
+def test_dopamine_storage():
+    striatum = Striatum(config)
+    striatum.set_neuromodulators(dopamine=1.0)
+    assert striatum._tonic_dopamine == 1.0  # PRIVATE
+
+# ✅ ROBUST: Tests through public API
+def test_dopamine_affects_behavior():
+    striatum = Striatum(config)
+    striatum.set_neuromodulators(dopamine=1.0)
+
+    # Verify dopamine propagated (public API)
+    diagnostics = striatum.get_diagnostics()
+    assert "dopamine" in diagnostics
+    assert 0.5 <= diagnostics["dopamine"] <= 1.5  # Valid range
+```
+
+**Fix:** Use public APIs or test observable behavior instead of internals.
+
+---
+
+#### Anti-Pattern 3: Trivial "not None" Checks ❌
+
+**Found in:** 7 test files, 19 assertions | **Severity:** Low
+
+```python
+# ❌ TRIVIAL: Checks existence, not validity
+def test_output():
+    output = region(input_spikes)
+    assert output is not None  # Low value
+
+# ✅ MEANINGFUL: Validates the value
+def test_output():
+    output = region(input_spikes)
+    assert output.shape == (region.n_neurons,)
+    assert output.dtype == torch.bool
+    assert not torch.isnan(output.float()).any()
+    assert 0 <= output.sum() <= region.n_neurons
+```
+
+**Fix:** Either remove or enhance with actual validation.
+
+---
+
+### Improvement Roadmap
+
+**Phase 1 (P1 - High Priority):** 12-16 hours
+1. Replace hardcoded value assertions (14 files)
+2. Remove private attribute tests (5 files, 18 assertions)
+3. Add learning strategy stress tests (15-20 new tests)
+
+**Phase 2 (P2 - Medium Priority):** 8-10 hours
+1. Enhance/remove trivial assertions (7 files, 19 assertions)
+2. Add value validation to shape assertions (30+ occurrences)
+3. Add neuromodulator edge case tests (15+ new tests)
+
+**Phase 3 (P3 - Low Priority):** 4-6 hours
+1. Parameterize similar tests
+2. Improve test documentation
+3. Remove redundant assertions
+
+**Detailed Plan:** See `TEST_IMPROVEMENT_CHECKLIST.md` for step-by-step actions.
+
+---
+
+### Key Lessons from Audit
+
+1. **Test Contracts, Not Defaults**
+   - ❌ Don't assert `region.n_neurons == 100`
+   - ✅ Do assert `region.n_neurons == config.n_neurons`
+
+2. **Avoid Private Attributes**
+   - ❌ Don't access `region._internal_buffer`
+   - ✅ Do use `diagnostics = region.get_diagnostics()`
+
+3. **Meaningful Assertions Only**
+   - ❌ Don't assert `output is not None`
+   - ✅ Do validate shape, dtype, NaN, and range
+
+4. **Comprehensive Edge Cases**
+   - Silent input (zero spikes)
+   - Saturated input (all spikes)
+   - Extreme parameters (LR=100.0)
+   - Boundary conditions (weights at w_min/w_max)
+   - Invalid inputs (dimension mismatches)
+
+5. **Behavioral Validation**
+   - Test what the component does (behavior)
+   - Not how it does it (implementation)
+   - Use public APIs exclusively
+   - Verify observable effects
+
+---
+
 ## Getting Help
 
 - **Questions?** Ask in team channel or open GitHub discussion
@@ -1012,3 +1164,4 @@ def test_coordinate_growth_updates_input_pathways():
 
 - **1.0** (2025-12-13): Initial version based on test quality audit
 - **1.1** (2025-12-13): Added Phase 2 refactoring patterns (6 patterns established)
+- **1.2** (2025-12-21): Added comprehensive audit findings and improvement roadmap

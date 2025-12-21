@@ -30,9 +30,15 @@ def test_noise_scheduler_init():
     )
     scheduler = NoiseScheduler(config)
 
+    # Test public contract - config is set correctly
     assert scheduler.config.enabled is True
-    assert scheduler._current_stage == CurriculumStage.SENSORIMOTOR
-    assert scheduler._adaptation_multiplier == 1.0
+    assert scheduler.config.enable_criticality_adaptation is True
+    assert scheduler.config.enable_performance_adaptation is True
+
+    # Test behavior - should start with sensorimotor profile
+    initial_profile = scheduler.get_current_profile()
+    assert initial_profile.membrane_noise_std == NOISE_STD_LOW
+    assert initial_profile.enable_weight_noise is False
 
 
 def test_stage_specific_profiles():
@@ -239,9 +245,13 @@ def test_rem_noise_scaling():
 
 
 def test_adaptation_clamping():
-    """Test that adaptation multiplier is clamped to reasonable range."""
+    """Test that adaptation is bounded to reasonable range."""
     scheduler = NoiseScheduler(NoiseSchedulerConfig(verbose=False))
     scheduler.set_stage(CurriculumStage.GRAMMAR)
+
+    # Get baseline profile
+    baseline_profile = scheduler.get_current_profile()
+    baseline_noise = baseline_profile.membrane_noise_std
 
     # Extreme conditions
     scheduler.update(
@@ -250,8 +260,12 @@ def test_adaptation_clamping():
         criticality=0.5,   # Very subcritical
     )
 
-    # Multiplier should be clamped
-    assert 0.5 <= scheduler._adaptation_multiplier <= 2.0
+    # Profile should still be reasonable (multiplier is clamped)
+    adapted_profile = scheduler.get_current_profile()
+    adapted_noise = adapted_profile.membrane_noise_std
+
+    # Noise should be adapted but within reasonable bounds (0.5x to 2x)
+    assert 0.5 * baseline_noise <= adapted_noise <= 2.0 * baseline_noise
 
 
 def test_oscillator_phase_noise_progression():

@@ -131,7 +131,8 @@ class TestElasticTensorMetadata:
             "Capacity should provide headroom for growth"
 
         # Verify actions are tracked separately
-        assert neuron_state["n_output"] == 50  # Total neurons in config
+        expected_n_output = base_config_population.n_output
+        assert neuron_state["n_output"] == expected_n_output  # Total neurons in config
 
     def test_growth_works_with_population_coding(self, base_config_population, tmp_path):
         """Growing brain should work correctly with population coding."""
@@ -273,12 +274,9 @@ class TestLoadingSmallerCheckpoint:
 
         # After partial restore, pathways are updated to match checkpoint size
         # This is expected behavior - pathway.load_state() updates sizes
-        assert striatum_large.n_neurons_active == 10  # Brain thinks it has 10
+        expected_active = striatum_large.config.n_output
+        assert striatum_large.n_neurons_active == expected_active  # Brain thinks it has correct size
         assert striatum_large.d1_pathway.neurons.membrane.shape[0] == 5  # But pathways loaded 5
-
-    # Note: test_learning_state_partial_restore removed because eligibility traces
-    # are None until first learning update. Testing partial restore with membrane
-    # potential (test_partial_state_restoration) is sufficient.
 
 
 class TestLoadingLargerCheckpoint:
@@ -361,42 +359,51 @@ class TestLoadingLargerCheckpoint:
 class TestReservedSpaceUtilization:
     """Test how reserved capacity is used during growth."""
 
-    def test_growth_within_capacity_no_reallocation(self, striatum_small):
-        """Growing within reserved capacity should increase neuron count correctly.
+    @pytest.mark.parametrize("growth_amount,expect_reallocation,description", [
+        (2, False, "within_capacity"),
+        (4, True, "beyond_capacity"),
+        (10, True, "exceeding_capacity"),
+    ])
+    def test_growth_with_various_amounts(self, striatum_small, growth_amount, expect_reallocation, description):
+        """Test growth behavior with various amounts relative to capacity.
 
-        Note: With ConductanceLIF.grow_neurons(), we use torch.cat() which reallocates
-        tensors instead of growing in-place within reserved capacity. This is more
-        memory-efficient as we don't pre-allocate unused space.
+        Why this test exists: Validates that growth correctly handles both
+        cases where growth fits within reserved capacity vs. requiring reallocation.
+        This is critical for efficient memory usage during curriculum learning.
+
+        Cases:
+        - within_capacity (2): Growth fits in reserved space (5 + 2 < ~7.5 capacity)
+        - beyond_capacity (4): Growth requires reallocation (5 + 4 > ~7.5 capacity)
+        - exceeding_capacity (10): Growth far exceeds initial capacity
         """
-        # Initial capacity (5 * 1.5 = 7-8)
         initial_capacity = striatum_small.n_neurons_capacity
+        initial_active = striatum_small.n_neurons_active
 
-        # Grow by 2 (within initial capacity)
-        striatum_small.grow_output(n_new=2)
+        # Grow by specified amount
+        striatum_small.grow_output(n_new=growth_amount)
 
-        # Test contract: active neurons should increase by growth amount
-        expected_active = 5 + 2  # initial + growth
+        # Active neurons should always increase by growth amount
+        expected_active = initial_active + growth_amount
         assert striatum_small.n_neurons_active == expected_active, \
-            f"Active neurons should be {expected_active} after adding 2"
+            f"Active neurons should be {expected_active} after adding {growth_amount}"
 
         # Neurons should be functional after growth
-        assert striatum_small.d1_pathway.neurons.n_neurons == 7
-        assert striatum_small.d2_pathway.neurons.n_neurons == 7
+        assert striatum_small.d1_pathway.neurons.n_neurons == expected_active
+        assert striatum_small.d2_pathway.neurons.n_neurons == expected_active
 
-    def test_growth_beyond_capacity_reallocates(self, striatum_small):
-        """Growing beyond reserved capacity should reallocate with new headroom."""
-        initial_capacity = striatum_small.n_neurons_capacity
-
-        # Grow beyond capacity
-        n_grow = initial_capacity - striatum_small.n_neurons_active + 1
-        striatum_small.grow_output(n_new=n_grow)
-
-        # Capacity should increase (reallocation happened)
-        assert striatum_small.n_neurons_capacity > initial_capacity
-
-        # New capacity should have headroom again
-        expected_capacity = int((striatum_small.n_neurons_active) * 1.5)
-        assert striatum_small.n_neurons_capacity >= expected_capacity
+        # Capacity behavior depends on whether reallocation was needed
+        if expect_reallocation:
+            # Capacity should increase with new headroom
+            assert striatum_small.n_neurons_capacity > initial_capacity, \
+                f"Capacity should increase for {description}"
+            expected_capacity = int(expected_active * 1.5)
+            assert striatum_small.n_neurons_capacity >= expected_capacity, \
+                f"New capacity should have 1.5x headroom for {description}"
+        else:
+            # Capacity might stay same or increase (implementation dependent)
+            # Key invariant: capacity >= active neurons
+            assert striatum_small.n_neurons_capacity >= expected_active, \
+                f"Capacity should accommodate active neurons for {description}"
 
     def test_checkpoint_after_growth_has_correct_capacity(self, striatum_small, tmp_path):
         """Checkpoint after growth should reflect new capacity."""

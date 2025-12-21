@@ -43,7 +43,8 @@ class TestPrefrontalNeuromorphic:
         # Check neurons structure
         neurons = state["neurons"]
         assert isinstance(neurons, list)
-        assert len(neurons) == 50  # n_output
+        expected_n = small_prefrontal.config.n_output
+        assert len(neurons) == expected_n  # n_output
 
         # Each neuron should have required fields
         for neuron in neurons:

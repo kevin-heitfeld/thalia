@@ -135,7 +135,10 @@ class TestNeuronIDPersistence:
         state1 = striatum_neuromorphic_population.checkpoint_manager.get_neuromorphic_state()
         ids1 = [n["id"] for n in state1["neurons"]]
 
-        assert len(ids1) == 50  # 5 actions × 10 neurons/action
+        # Calculate expected: n_actions * neurons_per_action
+        config = striatum_neuromorphic_population.config
+        expected_count = config.n_output  # Total neurons
+        assert len(ids1) == expected_count
 
         # Reset
         striatum_neuromorphic_population.reset_state()

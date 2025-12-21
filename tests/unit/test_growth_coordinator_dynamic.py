@@ -116,17 +116,18 @@ def test_coordinate_growth_with_real_brain():
     initial_cortex_size = brain.components['cortex'].config.n_output
 
     # Coordinate growth on cortex
+    growth_amount = 10
     coordinator = GrowthCoordinator(brain)
     events = coordinator.coordinate_growth(
         region_name='cortex',
-        n_new_neurons=10,
+        n_new_neurons=growth_amount,
         reason='integration test'
     )
 
     # Contract: Should return events for region + connected pathways
     assert len(events) > 0, "Should return growth events"
     assert events[0].component_name == 'cortex', "First event should be cortex region"
-    assert events[0].n_neurons_added == 10, "Should add 10 neurons to cortex"
+    assert events[0].n_neurons_added == growth_amount, f"Should add {growth_amount} neurons to cortex"
 
     # Contract: Region should have grown
     new_cortex_size = brain.components['cortex'].config.n_output
@@ -139,5 +140,5 @@ def test_coordinate_growth_with_real_brain():
     assert len(coordinator.history) > 0, "Should have history entry"
     assert coordinator.history[-1]['region'] == 'cortex', \
         "History should record cortex growth"
-    assert coordinator.history[-1]['n_neurons_added'] == 10, \
-        "History should record correct neuron count"
+    assert coordinator.history[-1]['n_neurons_added'] == growth_amount, \
+        f"History should record {growth_amount} neurons"

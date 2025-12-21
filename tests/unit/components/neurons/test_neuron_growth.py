@@ -13,75 +13,89 @@ from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfi
 class TestNeuronGrowth:
     """Test suite for ConductanceLIF.grow_neurons() method."""
 
-    def test_grow_neurons_basic(self):
-        """Test basic neuron growth increases population size."""
+    @pytest.mark.parametrize("initial_n,growth_amount", [
+        (50, 10),
+        (100, 20),
+        (200, 50),
+        (500, 100),
+    ])
+    def test_grow_neurons_various_sizes(self, initial_n, growth_amount):
+        """Test growth works with various population sizes."""
         config = ConductanceLIFConfig()
-        neurons = ConductanceLIF(n_neurons=100, config=config)
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
         neurons.reset_state()
 
-        # Grow by 20 neurons
-        neurons.grow_neurons(20)
+        neurons.grow_neurons(growth_amount)
 
-        assert neurons.n_neurons == 120
-        assert neurons.v_threshold.shape[0] == 120
+        expected_n = initial_n + growth_amount
+        assert neurons.n_neurons == expected_n
+        assert neurons.v_threshold.shape[0] == expected_n
+        assert neurons.membrane.shape[0] == expected_n
 
     def test_grow_neurons_preserves_state(self):
         """Test that growth preserves existing neuron state."""
         config = ConductanceLIFConfig()
-        neurons = ConductanceLIF(n_neurons=50, config=config)
+        initial_n = 50
+        growth_amount = 30
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
         neurons.reset_state()
 
         # Simulate some activity
-        g_exc = torch.rand(50) * 0.5
+        g_exc = torch.rand(initial_n) * 0.5
         _ = neurons(g_exc)  # Simulate forward pass
 
         # Save old state
-        old_membrane = neurons.membrane[:50].clone()
-        old_g_E = neurons.g_E[:50].clone()
-        old_g_I = neurons.g_I[:50].clone()
-        old_refractory = neurons.refractory[:50].clone()
+        old_membrane = neurons.membrane[:initial_n].clone()
+        old_g_E = neurons.g_E[:initial_n].clone()
+        old_g_I = neurons.g_I[:initial_n].clone()
+        old_refractory = neurons.refractory[:initial_n].clone()
 
         # Grow population
-        neurons.grow_neurons(30)
+        neurons.grow_neurons(growth_amount)
 
         # Check that old neuron state is preserved
-        assert neurons.n_neurons == 80
-        torch.testing.assert_close(neurons.membrane[:50], old_membrane)
-        torch.testing.assert_close(neurons.g_E[:50], old_g_E)
-        torch.testing.assert_close(neurons.g_I[:50], old_g_I)
-        torch.testing.assert_close(neurons.refractory[:50], old_refractory)
+        assert neurons.n_neurons == initial_n + growth_amount
+        torch.testing.assert_close(neurons.membrane[:initial_n], old_membrane)
+        torch.testing.assert_close(neurons.g_E[:initial_n], old_g_E)
+        torch.testing.assert_close(neurons.g_I[:initial_n], old_g_I)
+        torch.testing.assert_close(neurons.refractory[:initial_n], old_refractory)
 
     def test_grow_neurons_initializes_new_neurons(self):
         """Test that new neurons start at resting potential."""
         config = ConductanceLIFConfig(E_L=0.0)
-        neurons = ConductanceLIF(n_neurons=50, config=config)
+        initial_n = 50
+        growth_amount = 30
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
         neurons.reset_state()
 
         # Grow population
-        neurons.grow_neurons(30)
+        neurons.grow_neurons(growth_amount)
 
         # New neurons should start at resting potential (E_L)
-        assert neurons.membrane[50:].allclose(torch.full((30,), config.E_L))
-        assert neurons.g_E[50:].allclose(torch.zeros(30))
-        assert neurons.g_I[50:].allclose(torch.zeros(30))
-        assert neurons.g_adapt[50:].allclose(torch.zeros(30))
-        assert neurons.refractory[50:].allclose(torch.zeros(30, dtype=torch.int32))
+        assert neurons.membrane[initial_n:].allclose(torch.full((growth_amount,), config.E_L))
+        assert neurons.g_E[initial_n:].allclose(torch.zeros(growth_amount))
+        assert neurons.g_I[initial_n:].allclose(torch.zeros(growth_amount))
+        assert neurons.g_adapt[initial_n:].allclose(torch.zeros(growth_amount))
+        assert neurons.refractory[initial_n:].allclose(torch.zeros(growth_amount, dtype=torch.int32))
 
     def test_grow_neurons_functional_after_growth(self):
         """Test that neurons remain functional after growth."""
         config = ConductanceLIFConfig()
-        neurons = ConductanceLIF(n_neurons=100, config=config)
+        initial_n = 100
+        growth_amount = 50
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
         neurons.reset_state()
 
         # Grow population
-        neurons.grow_neurons(50)
+        neurons.grow_neurons(growth_amount)
 
-        # Should be able to process input for all 150 neurons
-        g_exc = torch.rand(150) * 0.3
+        # Should be able to process input for all neurons
+        total_n = initial_n + growth_amount
+        g_exc = torch.rand(total_n) * 0.3
         spikes, voltage = neurons(g_exc)
 
-        assert spikes.shape[0] == 150
-        assert voltage.shape[0] == 150
+        assert spikes.shape[0] == total_n
+        assert voltage.shape[0] == total_n
         assert spikes.dtype == torch.bool
 
     def test_grow_neurons_zero_growth(self):
@@ -98,43 +112,50 @@ class TestNeuronGrowth:
     def test_grow_neurons_multiple_times(self):
         """Test that neurons can be grown multiple times."""
         config = ConductanceLIFConfig()
-        neurons = ConductanceLIF(n_neurons=50, config=config)
+        initial_n = 50
+        first_growth = 25
+        second_growth = 25
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
         neurons.reset_state()
 
         # First growth
-        neurons.grow_neurons(25)
-        assert neurons.n_neurons == 75
+        neurons.grow_neurons(first_growth)
+        after_first = initial_n + first_growth
+        assert neurons.n_neurons == after_first
 
         # Simulate activity
-        g_exc = torch.rand(75) * 0.3
+        g_exc = torch.rand(after_first) * 0.3
         _ = neurons(g_exc)  # Forward pass
 
         # Second growth
-        neurons.grow_neurons(25)
-        assert neurons.n_neurons == 100
+        neurons.grow_neurons(second_growth)
+        total_n = after_first + second_growth
+        assert neurons.n_neurons == total_n
 
         # Should still work
-        g_exc = torch.rand(100) * 0.3
+        g_exc = torch.rand(total_n) * 0.3
         spikes, voltage = neurons(g_exc)
-        assert spikes.shape[0] == 100
+        assert spikes.shape[0] == total_n
 
     def test_grow_neurons_preserves_thresholds(self):
         """Test that per-neuron thresholds are properly expanded."""
         config = ConductanceLIFConfig(v_threshold=1.0)
-        neurons = ConductanceLIF(n_neurons=50, config=config)
+        initial_n = 50
+        growth_amount = 30
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
 
         # Modify some thresholds for testing
         neurons.v_threshold[:10] = 0.8
         old_thresholds = neurons.v_threshold.clone()
 
         # Grow
-        neurons.grow_neurons(30)
+        neurons.grow_neurons(growth_amount)
 
         # Old thresholds preserved
-        torch.testing.assert_close(neurons.v_threshold[:50], old_thresholds)
+        torch.testing.assert_close(neurons.v_threshold[:initial_n], old_thresholds)
 
         # New thresholds use default
-        assert neurons.v_threshold[50:].allclose(torch.full((30,), config.v_threshold))
+        assert neurons.v_threshold[initial_n:].allclose(torch.full((growth_amount,), config.v_threshold))
 
     def test_grow_neurons_device_consistency(self):
         """Test that growth respects device placement."""
@@ -142,13 +163,15 @@ class TestNeuronGrowth:
             pytest.skip("CUDA not available")
 
         config = ConductanceLIFConfig()
+        initial_n = 50
+        growth_amount = 30
         device = torch.device("cuda")
-        neurons = ConductanceLIF(n_neurons=50, config=config)
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
         neurons.to(device)
         neurons.reset_state()
 
         # Grow
-        neurons.grow_neurons(30)
+        neurons.grow_neurons(growth_amount)
 
         # All tensors should be on CUDA
         assert neurons.membrane.device.type == "cuda"
@@ -158,17 +181,20 @@ class TestNeuronGrowth:
     def test_grow_neurons_before_reset(self):
         """Test growing neurons before reset_state() is called."""
         config = ConductanceLIFConfig()
-        neurons = ConductanceLIF(n_neurons=50, config=config)
+        initial_n = 50
+        growth_amount = 30
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
 
         # Grow before reset (state is None)
-        neurons.grow_neurons(30)
+        neurons.grow_neurons(growth_amount)
 
-        assert neurons.n_neurons == 80
+        total_n = initial_n + growth_amount
+        assert neurons.n_neurons == total_n
         assert neurons.membrane is None  # State not initialized yet
 
         # Reset should create state for all neurons
         neurons.reset_state()
-        assert neurons.membrane.shape[0] == 80
+        assert neurons.membrane.shape[0] == total_n
 
 
 class TestGrowthIntegrationWithRegions:
@@ -178,16 +204,19 @@ class TestGrowthIntegrationWithRegions:
         """Test that Prefrontal region uses neuron growth properly."""
         from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 
-        pfc_config = PrefrontalConfig(n_output=64, n_input=128)
+        initial_n = 64
+        growth_amount = 32
+        pfc_config = PrefrontalConfig(n_output=initial_n, n_input=128)
         pfc = Prefrontal(pfc_config)
-        assert pfc.neurons.n_neurons == 64
+        assert pfc.neurons.n_neurons == initial_n
 
         # Grow region
-        pfc.grow_output(n_new=32)
+        pfc.grow_output(n_new=growth_amount)
 
         # Neurons should be grown, not recreated
-        assert pfc.neurons.n_neurons == 96
-        assert pfc.config.n_output == 96
+        total_n = initial_n + growth_amount
+        assert pfc.neurons.n_neurons == total_n
+        assert pfc.config.n_output == total_n
 
 
 if __name__ == "__main__":

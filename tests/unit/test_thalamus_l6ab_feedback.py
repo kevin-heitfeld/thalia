@@ -60,9 +60,14 @@ class TestThalamusL6abFeedback:
             l6b_feedback=l6b_feedback,
         )
 
-        # Should execute without error
+        # Validate outputs are generated with correct properties
         assert thalamus.state.relay_spikes is not None
+        assert thalamus.state.relay_spikes.shape == (thalamus.n_relay,)
+        assert thalamus.state.relay_spikes.dtype == torch.bool
+
         assert thalamus.state.trn_spikes is not None
+        assert thalamus.state.trn_spikes.shape == (thalamus.n_trn,)
+        assert thalamus.state.trn_spikes.dtype == torch.bool
 
     def test_only_l6a_feedback(self, thalamus_config, device):
         """Test thalamus with only L6a feedback (TRN pathway)."""
@@ -78,10 +83,13 @@ class TestThalamusL6abFeedback:
 
         _ = thalamus(sensory, l6a_feedback=l6a_feedback)
 
-        # TRN should receive L6a input
+        # TRN should receive L6a input and generate output
         assert thalamus.state.trn_spikes is not None
+        assert thalamus.state.trn_spikes.shape == (thalamus.n_trn,)
+
         # Relay should still function (may be inhibited by TRN)
         assert thalamus.state.relay_spikes is not None
+        assert thalamus.state.relay_spikes.shape == (thalamus.n_relay,)
 
     def test_only_l6b_feedback(self, thalamus_config, device):
         """Test thalamus with only L6b feedback (relay pathway)."""
@@ -97,10 +105,13 @@ class TestThalamusL6abFeedback:
 
         _ = thalamus(sensory, l6b_feedback=l6b_feedback)
 
-        # Relay should receive L6b input
+        # Relay should receive L6b input and generate output
         assert thalamus.state.relay_spikes is not None
+        assert thalamus.state.relay_spikes.shape == (thalamus.n_relay,)
+
         # TRN should still function (may not be as active without L6a)
         assert thalamus.state.trn_spikes is not None
+        assert thalamus.state.trn_spikes.shape == (thalamus.n_trn,)
 
     def test_no_l6_feedback(self, thalamus_config, device):
         """Test thalamus operates without L6 feedback."""
@@ -116,7 +127,12 @@ class TestThalamusL6abFeedback:
 
         # Should still function (default feedforward processing)
         assert thalamus.state.relay_spikes is not None
+        assert thalamus.state.relay_spikes.shape == (thalamus.n_relay,)
+        assert thalamus.state.relay_spikes.dtype == torch.bool
+
         assert thalamus.state.trn_spikes is not None
+        assert thalamus.state.trn_spikes.shape == (thalamus.n_trn,)
+        assert thalamus.state.trn_spikes.dtype == torch.bool
 
     def test_l6ab_feedback_dynamics(self, thalamus_config, device):
         """Test that L6a and L6b feedback affect thalamic dynamics."""

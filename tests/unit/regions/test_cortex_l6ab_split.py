@@ -57,15 +57,21 @@ class TestL6abSplit:
         """Test that L6a and L6b are initialized as separate neuron populations."""
         cortex = LayeredCortex(cortex_config_l6ab)
 
+        # Extract expected sizes from config
+        expected_l6a = cortex_config_l6ab.l6a_size
+        expected_l6b = cortex_config_l6ab.l6b_size
+
         # Check L6a neurons
         assert hasattr(cortex, "l6a_neurons")
         assert cortex.l6a_neurons is not None
-        assert cortex.l6a_size == 150
+        assert cortex.l6a_size == expected_l6a
+        assert cortex.l6a_size > 0  # Invariant
 
         # Check L6b neurons
         assert hasattr(cortex, "l6b_neurons")
         assert cortex.l6b_neurons is not None
-        assert cortex.l6b_size == 100
+        assert cortex.l6b_size == expected_l6b
+        assert cortex.l6b_size > 0  # Invariant
 
         # Verify separate populations (not shared)
         assert cortex.l6a_neurons is not cortex.l6b_neurons
@@ -74,23 +80,34 @@ class TestL6abSplit:
         """Test that L6a and L6b have separate weight matrices."""
         cortex = LayeredCortex(cortex_config_l6ab)
 
+        # Extract expected dimensions from config
+        l6a_size = cortex_config_l6ab.l6a_size
+        l6b_size = cortex_config_l6ab.l6b_size
+        l23_size = cortex_config_l6ab.l23_size
+
         # L2/3 → L6a weights
-        assert cortex.synaptic_weights["l23_l6a"].shape == (150, 192)
+        assert cortex.synaptic_weights["l23_l6a"].shape == (l6a_size, l23_size)
 
         # L2/3 → L6b weights
-        assert cortex.synaptic_weights["l23_l6b"].shape == (100, 192)
+        assert cortex.synaptic_weights["l23_l6b"].shape == (l6b_size, l23_size)
 
         # Weights should be different (not shared)
+        min_size = min(l6a_size, l6b_size)
         assert not torch.equal(
-            cortex.synaptic_weights["l23_l6a"][:100, :],  # First 100 rows of L6a
-            cortex.synaptic_weights["l23_l6b"]  # L6b weights
+            cortex.synaptic_weights["l23_l6a"][:min_size, :],  # First rows of L6a
+            cortex.synaptic_weights["l23_l6b"][:min_size, :]  # Matching rows of L6b
         )
 
     def test_l6ab_forward_pass(self, cortex_config_l6ab, device):
         """Test that forward pass generates separate L6a and L6b spikes."""
         cortex = LayeredCortex(cortex_config_l6ab)
 
-        sensory_input = torch.zeros(128, dtype=torch.bool, device=device)
+        # Extract dimensions from config
+        n_input = cortex_config_l6ab.n_input
+        l6a_size = cortex_config_l6ab.l6a_size
+        l6b_size = cortex_config_l6ab.l6b_size
+
+        sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True  # Activate some inputs
 
         cortex.reset_state()
@@ -101,23 +118,28 @@ class TestL6abSplit:
 
         # Check that L6a spikes are generated
         assert cortex.state.l6a_spikes is not None
-        assert cortex.state.l6a_spikes.shape == (150,)
+        assert cortex.state.l6a_spikes.shape == (l6a_size,)
         assert cortex.state.l6a_spikes.dtype == torch.bool
 
         # Check that L6b spikes are generated
         assert cortex.state.l6b_spikes is not None
-        assert cortex.state.l6b_spikes.shape == (100,)
+        assert cortex.state.l6b_spikes.shape == (l6b_size,)
         assert cortex.state.l6b_spikes.dtype == torch.bool
 
-        # Spikes should be independent
-        # (not guaranteed to differ every timestep, but check shape/type)
+        # Spikes should be independent (different population sizes)
+        assert l6a_size != l6b_size
         assert cortex.state.l6a_spikes.shape != cortex.state.l6b_spikes.shape
 
     def test_l6ab_port_routing(self, cortex_config_l6ab, device):
         """Test that get_output() correctly routes L6a and L6b ports."""
         cortex = LayeredCortex(cortex_config_l6ab)
 
-        sensory_input = torch.zeros(128, dtype=torch.bool, device=device)
+        # Extract dimensions from config
+        n_input = cortex_config_l6ab.n_input
+        l6a_size = cortex_config_l6ab.l6a_size
+        l6b_size = cortex_config_l6ab.l6b_size
+
+        sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True
 
         cortex.reset_state()
@@ -126,13 +148,13 @@ class TestL6abSplit:
         # Get L6a output via port
         l6a_output = cortex.get_output("l6a")
         assert l6a_output is not None
-        assert l6a_output.shape == (150,)
+        assert l6a_output.shape == (l6a_size,)
         assert torch.equal(l6a_output, cortex.state.l6a_spikes)
 
         # Get L6b output via port
         l6b_output = cortex.get_output("l6b")
         assert l6b_output is not None
-        assert l6b_output.shape == (100,)
+        assert l6b_output.shape == (l6b_size,)
         assert torch.equal(l6b_output, cortex.state.l6b_spikes)
 
         # Verify outputs are different tensors
@@ -157,7 +179,8 @@ class TestL6abSplit:
         """Test that legacy 'l6' and 'l6_feedback' ports raise ValueError."""
         cortex = LayeredCortex(cortex_config_l6ab)
 
-        sensory_input = torch.zeros(128, dtype=torch.bool, device=device)
+        n_input = cortex_config_l6ab.n_input
+        sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         cortex.reset_state()
         _ = cortex(sensory_input)
 
@@ -172,7 +195,8 @@ class TestL6abSplit:
         """Test that reset_state() properly clears L6a and L6b state."""
         cortex = LayeredCortex(cortex_config_l6ab)
 
-        sensory_input = torch.zeros(128, dtype=torch.bool, device=device)
+        n_input = cortex_config_l6ab.n_input
+        sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True
 
         cortex.reset_state()

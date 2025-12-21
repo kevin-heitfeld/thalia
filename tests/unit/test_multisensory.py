@@ -103,38 +103,40 @@ def test_multimodal_pool_sizes(multimodal_region, multimodal_config):
     assert total_pool == multimodal_config.n_output
 
 
-def test_multimodal_forward_visual_only(multimodal_region):
-    """Test forward pass with only visual input."""
-    visual_input = torch.randn(30)
+@pytest.mark.parametrize("modality,input_size,pool_attr", [
+    ("visual", 30, "visual_pool_spikes"),
+    ("auditory", 30, "auditory_pool_spikes"),
+    ("language", 40, "language_pool_spikes"),
+])
+def test_multimodal_forward_single_modality(multimodal_region, modality, input_size, pool_attr):
+    """Test forward pass with a single modality input.
 
-    output = multimodal_region.forward(visual_input=visual_input)
+    Why this test exists: Validates that each sensory pathway can process
+    information independently, which is critical for understanding how
+    multimodal integration handles partial sensory information.
 
+    Cases tested:
+    - Visual only: Tests visual pathway in isolation
+    - Auditory only: Tests auditory pathway in isolation
+    - Language only: Tests language pathway in isolation
+    """
+    # Create input for the specified modality
+    input_tensor = torch.randn(input_size)
+    kwargs = {f"{modality}_input": input_tensor}
+
+    output = multimodal_region.forward(**kwargs)
+
+    # Shape and type validation
     assert output.shape == (100,)
     assert output.dtype == torch.float32
-    # Should have some visual activity
-    assert multimodal_region.visual_pool_spikes.sum() >= 0
 
+    # Value validation: output should be bounded (firing rates)
+    assert output.min() >= 0.0, "Firing rates should be non-negative"
+    assert output.max() <= 1.0, "Firing rates should not exceed 1.0"
 
-def test_multimodal_forward_auditory_only(multimodal_region):
-    """Test forward pass with only auditory input."""
-    auditory_input = torch.randn(30)
-
-    output = multimodal_region.forward(auditory_input=auditory_input)
-
-    assert output.shape == (100,)
-    # Should have some auditory activity
-    assert multimodal_region.auditory_pool_spikes.sum() >= 0
-
-
-def test_multimodal_forward_language_only(multimodal_region):
-    """Test forward pass with only language input."""
-    language_input = torch.randn(40)
-
-    output = multimodal_region.forward(language_input=language_input)
-
-    assert output.shape == (100,)
-    # Should have some language activity
-    assert multimodal_region.language_pool_spikes.sum() >= 0
+    # Should have some activity in the corresponding pool
+    pool_spikes = getattr(multimodal_region, pool_attr)
+    assert pool_spikes.sum() >= 0, f"{modality} pool should have activity"
 
 
 def test_multimodal_forward_all_modalities(multimodal_region):
@@ -149,7 +151,15 @@ def test_multimodal_forward_all_modalities(multimodal_region):
         language_input=language_input,
     )
 
+    # Shape and type validation
     assert output.shape == (100,)
+    assert output.dtype == torch.float32
+
+    # Value validation: with multiple inputs, output should be in valid range
+    assert output.min() >= 0.0
+    assert output.max() <= 1.0
+    assert not torch.isnan(output).any(), "Output should not contain NaN"
+
     # All pools should have activity
     assert multimodal_region.visual_pool_spikes.sum() >= 0
     assert multimodal_region.auditory_pool_spikes.sum() >= 0

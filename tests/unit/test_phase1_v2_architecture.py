@@ -7,7 +7,7 @@ Tests AxonalProjection (pure routing) and AfferentSynapses (weights + learning).
 import pytest
 import torch
 
-from thalia.pathways.axonal_projection import AxonalProjection, SourceSpec
+from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.synapses import AfferentSynapses, AfferentSynapsesConfig
 
 
@@ -16,32 +16,35 @@ class TestAxonalProjection:
 
     def test_single_source_routing(self):
         """Test basic single-source routing."""
+        source_size = 128
         projection = AxonalProjection(
-            sources=[("cortex", "l5", 128, 2.0)],
+            sources=[("cortex", "l5", source_size, 2.0)],
             device="cpu",
             dt_ms=1.0,
         )
 
-        assert projection.n_output == 128
+        assert projection.n_output == source_size
         assert len(projection.sources) == 1
         assert projection.sources[0].region_name == "cortex"
         assert projection.sources[0].port == "l5"
 
     def test_multi_source_concatenation(self):
         """Test multi-source concatenation."""
+        sizes = [128, 64, 32]
         projection = AxonalProjection(
             sources=[
-                ("cortex", "l5", 128, 2.0),
-                ("hippocampus", None, 64, 3.0),
-                ("pfc", None, 32, 2.0),
+                ("cortex", "l5", sizes[0], 2.0),
+                ("hippocampus", None, sizes[1], 3.0),
+                ("pfc", None, sizes[2], 2.0),
             ],
             device="cpu",
             dt_ms=1.0,
         )
 
-        # Total output: 128 + 64 + 32 = 224
-        assert projection.n_output == 224
-        assert len(projection.sources) == 3
+        # Total output: sum of all source sizes
+        expected_total = sum(sizes)
+        assert projection.n_output == expected_total
+        assert len(projection.sources) == len(sizes)
 
     def test_forward_concatenation(self):
         """Test that forward() properly concatenates spikes."""
@@ -86,15 +89,53 @@ class TestAxonalProjection:
 
         # Check individual outputs
         assert delayed_outputs["cortex"].shape == (10,)
+        assert delayed_outputs["cortex"].dtype == torch.bool
         assert delayed_outputs["hippocampus"].shape == (5,)
+        assert delayed_outputs["hippocampus"].dtype == torch.bool
+
         assert delayed_outputs["cortex"].all()  # Cortex ones appear after 2ms delay
         assert not delayed_outputs["hippocampus"].any()  # Hippocampus zeros (3ms delay, not reached yet)
 
         # Test concatenation (if target region needs it)
         concatenated = torch.cat([delayed_outputs["cortex"], delayed_outputs["hippocampus"]])
         assert concatenated.shape == (15,)
+        assert concatenated.dtype == torch.bool
         assert concatenated[:10].all()  # First 10 are ones from cortex
         assert not concatenated[10:].any()  # Last 5 are zeros from hippocampus
+
+    @pytest.mark.parametrize("delay_ms,expected_steps", [
+        (1.0, 2),  # 1ms delay = 2 steps to see spikes
+        (2.0, 3),  # 2ms delay = 3 steps
+        (5.0, 6),  # 5ms delay = 6 steps
+    ])
+    def test_axonal_delays_various_durations(self, delay_ms, expected_steps):
+        """Test axonal delays with various durations.
+
+        Why this test exists: Validates that CircularDelayBuffer correctly
+        implements axonal transmission delays across different timescales.
+        Biologically, different fiber types have different conduction velocities.
+        """
+        projection = AxonalProjection(
+            sources=[("cortex", None, 5, delay_ms)],
+            device="cpu",
+            dt_ms=1.0,
+        )
+
+        # First timestep: input spikes
+        spikes_t0 = torch.ones(5, dtype=torch.bool)
+        output_t0 = projection.forward({"cortex": spikes_t0})
+
+        # Delays cause zeros initially
+        assert not output_t0["cortex"].any()
+
+        # Advance until expected_steps - 1
+        for step in range(1, expected_steps - 1):
+            output = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
+            assert not output["cortex"].any(), f"Spikes appeared too early at step {step}"
+
+        # At expected_steps, delayed spikes should appear
+        final_output = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
+        assert final_output["cortex"].all(), f"Spikes didn't appear at expected step {expected_steps}"
 
     def test_axonal_delays(self):
         """Test that axonal delays work."""
@@ -122,23 +163,40 @@ class TestAxonalProjection:
         output_t2 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
         assert output_t2["cortex"].all()  # Original spikes now appear
 
-    def test_grow_source(self):
-        """Test growing a source."""
+    @pytest.mark.parametrize("initial_size,growth_amount", [
+        (64, 16),
+        (128, 20),
+        (256, 50),
+    ])
+    def test_grow_source_various_sizes(self, initial_size, growth_amount):
+        """Test growing sources with various initial sizes and growth amounts.
+
+        Why this test exists: Validates that axonal projections correctly handle
+        growth at different scales, which is critical for curriculum learning
+        where brain regions expand during training.
+        """
         projection = AxonalProjection(
-            sources=[("cortex", None, 128, 2.0)],
+            sources=[("cortex", None, initial_size, 2.0)],
             device="cpu",
             dt_ms=1.0,
         )
 
-        assert projection.n_output == 128
+        assert projection.n_output == initial_size
 
-        # Grow cortex by 20 neurons
-        projection.grow_source("cortex", new_size=148)
+        # Grow cortex
+        new_size = initial_size + growth_amount
+        projection.grow_source("cortex", new_size=new_size)
 
-        assert projection.n_output == 148
-        assert projection.sources[0].size == 148
+        assert projection.n_output == new_size
+        assert projection.sources[0].size == new_size
 
-    def test_reset(self):
+        # Validate that forward pass works after growth
+        test_spikes = torch.zeros(new_size, dtype=torch.bool)
+        test_spikes[:10] = True
+        output = projection.forward({"cortex": test_spikes})
+        assert output["cortex"].shape == (new_size,)
+
+    def test_grow_output(self):
         """Test that reset clears delay buffers."""
         projection = AxonalProjection(
             sources=[("cortex", None, 5, 2.0)],
@@ -226,22 +284,26 @@ class TestAfferentSynapses:
 
     def test_grow_input(self):
         """Test growing input dimension."""
+        n_neurons = 70
+        initial_inputs = 224
+        growth_amount = 20
         config = AfferentSynapsesConfig(
-            n_neurons=70,
-            n_inputs=224,
+            n_neurons=n_neurons,
+            n_inputs=initial_inputs,
             learning_rule="hebbian",
             device="cpu",
         )
 
         synapses = AfferentSynapses(config)
 
-        assert synapses.weights.shape == (70, 224)
+        assert synapses.weights.shape == (n_neurons, initial_inputs)
 
-        # Grow by 20 inputs
-        synapses.grow_input(n_new=20)
+        # Grow inputs
+        synapses.grow_input(n_new=growth_amount)
 
-        assert synapses.weights.shape == (70, 244)
-        assert synapses.config.n_inputs == 244
+        new_inputs = initial_inputs + growth_amount
+        assert synapses.weights.shape == (n_neurons, new_inputs)
+        assert synapses.config.n_inputs == new_inputs
 
     def test_grow_output(self):
         """Test growing output dimension."""
@@ -345,28 +407,31 @@ class TestIntegration:
     def test_growth_coordination(self):
         """Test coordinated growth of projection and synapses."""
         # Initial setup
+        initial_size = 128
+        growth_amount = 20
         projection = AxonalProjection(
-            sources=[("cortex", None, 128, 2.0)],
+            sources=[("cortex", None, initial_size, 2.0)],
             device="cpu",
             dt_ms=1.0,
         )
 
         synapses_config = AfferentSynapsesConfig(
             n_neurons=70,
-            n_inputs=128,
+            n_inputs=initial_size,
             learning_rule="hebbian",
             device="cpu",
         )
         synapses = AfferentSynapses(synapses_config)
 
-        # Cortex grows by 20 neurons
-        projection.grow_source("cortex", new_size=148)
-        synapses.grow_input(n_new=20)
+        # Cortex grows
+        new_size = initial_size + growth_amount
+        projection.grow_source("cortex", new_size=new_size)
+        synapses.grow_input(n_new=growth_amount)
 
         # Verify sizes match
-        assert projection.n_output == 148
-        assert synapses.config.n_inputs == 148
-        assert synapses.weights.shape == (70, 148)
+        assert projection.n_output == new_size
+        assert synapses.config.n_inputs == new_size
+        assert synapses.weights.shape == (70, new_size)
 
 
 if __name__ == "__main__":

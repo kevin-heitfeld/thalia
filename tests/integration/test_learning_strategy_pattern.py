@@ -36,6 +36,24 @@ from thalia.core.errors import ConfigurationError
 class TestLearningStrategyBasics:
     """Test basic strategy functionality."""
 
+    @pytest.mark.parametrize("learning_rate", [0.001, 0.01, 0.1])
+    def test_hebbian_with_various_learning_rates(self, learning_rate):
+        """Test Hebbian strategy with different learning rates."""
+        config = HebbianConfig(learning_rate=learning_rate, w_min=0.0, w_max=1.0)
+        strategy = HebbianStrategy(config)
+
+        weights = torch.ones(3, 4) * 0.5
+        pre = torch.tensor([1.0, 0.0, 1.0, 0.0])
+        post = torch.tensor([0.5, 0.2, 0.8])
+
+        new_weights, metrics = strategy.compute_update(weights, pre, post)
+
+        # Weight change should scale with learning rate
+        weight_change = (new_weights - weights).abs().mean().item()
+        assert weight_change > 0
+        assert weight_change < learning_rate * 2.0  # Reasonable bound
+        assert 0.0 <= new_weights.min() <= new_weights.max() <= 1.0
+
     def test_hebbian_strategy_basic(self):
         """Test HebbianStrategy computes correct updates."""
         config = HebbianConfig(learning_rate=0.1, w_min=0.0, w_max=1.0)
@@ -116,6 +134,43 @@ class TestLearningStrategyBasics:
 
         # Threshold should increase with activity
         assert theta_2 > theta_1
+
+    @pytest.mark.parametrize("modulator_value", [0.0, 0.5, 1.0, -0.5])
+    def test_three_factor_strategy_with_modulators(self, modulator_value):
+        """Test ThreeFactorStrategy with various modulator values."""
+        config = ThreeFactorConfig(
+            learning_rate=0.01,
+            eligibility_tau=100.0,
+            w_min=0.0,
+            w_max=1.0,
+        )
+        strategy = ThreeFactorStrategy(config)
+
+        weights = torch.ones(3, 4) * 0.5
+        pre = torch.tensor([1.0, 0.0, 1.0, 0.0])
+        post = torch.tensor([1.0, 0.0, 1.0])
+
+        # Build eligibility first
+        new_weights, _ = strategy.compute_update(weights, pre, post, modulator=0.0)
+
+        # Apply modulator
+        new_weights, metrics = strategy.compute_update(
+            new_weights, pre, post, modulator=modulator_value
+        )
+
+        # Verify modulator effect
+        assert metrics["modulator"] == modulator_value
+        weight_change = (new_weights - weights).abs().sum().item()
+
+        if modulator_value == 0.0:
+            # No learning without modulator
+            assert weight_change < 1e-6
+        else:
+            # Learning magnitude scales with modulator
+            assert weight_change > 0
+            # Negative modulator can decrease weights (LTD)
+            if modulator_value < 0:
+                assert (new_weights < weights).any()
 
     def test_three_factor_strategy_eligibility(self):
         """Test ThreeFactorStrategy accumulates eligibility."""
@@ -228,6 +283,44 @@ class TestStrategyRegistry:
 
 class TestStrategyComposition:
     """Test CompositeStrategy functionality."""
+
+    @pytest.mark.parametrize("strategy_names,expected_metric_patterns", [
+        (["hebbian", "bcm"], ["ltp", "ltd", "theta_mean"]),
+        (["stdp"], ["ltp", "ltd"]),
+        (["three_factor"], ["eligibility_mean", "ltp", "ltd"]),
+    ])
+    def test_composite_strategy_metrics(self, strategy_names, expected_metric_patterns):
+        """Test CompositeStrategy collects metrics from all sub-strategies."""
+        strategies = []
+        if "hebbian" in strategy_names:
+            strategies.append(HebbianStrategy(HebbianConfig(learning_rate=0.1)))
+        if "bcm" in strategy_names:
+            strategies.append(BCMStrategy(BCMStrategyConfig(learning_rate=0.01, tau_theta=100.0)))
+        if "stdp" in strategy_names:
+            strategies.append(STDPStrategy(STDPConfig(learning_rate=0.02)))
+        if "three_factor" in strategy_names:
+            strategies.append(ThreeFactorStrategy(ThreeFactorConfig(learning_rate=0.01)))
+
+        composite = CompositeStrategy(strategies)
+
+        weights = torch.ones(3, 4) * 0.5
+        pre = torch.tensor([1.0, 0.0, 1.0, 0.0])
+        post = torch.tensor([0.5, 0.2, 0.8])
+
+        kwargs = {}
+        if "three_factor" in strategy_names:
+            kwargs["modulator"] = 0.5
+
+        new_weights, metrics = composite.compute_update(weights, pre, post, **kwargs)
+
+        # Verify expected metrics are present (with s{idx}_ prefix for composite)
+        for expected_pattern in expected_metric_patterns:
+            # Look for metric with any prefix (s0_, s1_, etc.)
+            found = any(expected_pattern in key for key in metrics.keys())
+            assert found, f"Missing metric pattern: {expected_pattern}, got keys: {list(metrics.keys())}"
+
+        # Verify weights were updated
+        assert not torch.allclose(new_weights, weights)
 
     def test_composite_strategy_applies_all(self):
         """Test CompositeStrategy applies all sub-strategies."""

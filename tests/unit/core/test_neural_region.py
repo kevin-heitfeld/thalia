@@ -18,51 +18,60 @@ class TestNeuralRegionBasics:
 
     def test_initialization(self):
         """Test region creation with default parameters."""
+        n_neurons = 100
+        learning_rule = "stdp"
         region = NeuralRegion(
-            n_neurons=100,
-            default_learning_rule="stdp",
+            n_neurons=n_neurons,
+            default_learning_rule=learning_rule,
             device="cpu",
         )
 
-        assert region.n_neurons == 100
-        assert region.default_learning_rule == "stdp"
+        assert region.n_neurons == n_neurons  # Matches specified value
+        assert region.n_neurons > 0  # Positive count invariant
+        assert region.default_learning_rule == learning_rule
         assert len(region.synaptic_weights) == 0  # No sources added yet
         assert len(region.plasticity_rules) == 0
         assert region.n_input == 0  # Updated when sources added
 
     def test_add_single_input_source(self):
         """Test adding one input source."""
-        region = NeuralRegion(n_neurons=100, device="cpu")
+        n_neurons = 100
+        n_input = 128
+        region = NeuralRegion(n_neurons=n_neurons, device="cpu")
 
         # Add thalamic input
-        region.add_input_source("thalamus", n_input=128)
+        region.add_input_source("thalamus", n_input=n_input)
 
         assert "thalamus" in region.synaptic_weights
-        assert region.synaptic_weights["thalamus"].shape == (100, 128)
-        assert region.n_input == 128
+        assert region.synaptic_weights["thalamus"].shape == (n_neurons, n_input)
+        assert region.n_input == n_input
         assert "thalamus" in region.input_sources
 
     def test_add_multiple_input_sources(self):
         """Test multi-source integration setup."""
+        n_neurons = 100
+        n_thalamus = 128
+        n_hippocampus = 200
+        n_pfc = 64
         region = NeuralRegion(
-            n_neurons=100,
+            n_neurons=n_neurons,
             default_learning_rule="stdp",
             device="cpu",
         )
 
         # Add three input sources
-        region.add_input_source("thalamus", n_input=128)
-        region.add_input_source("hippocampus", n_input=200)
-        region.add_input_source("pfc", n_input=64)
+        region.add_input_source("thalamus", n_input=n_thalamus)
+        region.add_input_source("hippocampus", n_input=n_hippocampus)
+        region.add_input_source("pfc", n_input=n_pfc)
 
         # Check all sources registered
         assert len(region.synaptic_weights) == 3
-        assert region.synaptic_weights["thalamus"].shape == (100, 128)
-        assert region.synaptic_weights["hippocampus"].shape == (100, 200)
-        assert region.synaptic_weights["pfc"].shape == (100, 64)
+        assert region.synaptic_weights["thalamus"].shape == (n_neurons, n_thalamus)
+        assert region.synaptic_weights["hippocampus"].shape == (n_neurons, n_hippocampus)
+        assert region.synaptic_weights["pfc"].shape == (n_neurons, n_pfc)
 
         # Check total input size
-        assert region.n_input == 128 + 200 + 64
+        assert region.n_input == n_thalamus + n_hippocampus + n_pfc
 
         # Check learning rules created (using default)
         assert len(region.plasticity_rules) == 3
@@ -221,7 +230,10 @@ class TestNeuralRegionStateManagement:
         input_spikes = torch.rand(100) > 0.5
         region.forward({"input": input_spikes})
 
+        # Output should be generated with correct shape and type
         assert region.output_spikes is not None
+        assert region.output_spikes.shape == (50,)  # n_neurons
+        assert region.output_spikes.dtype == torch.bool
 
         # Reset
         region.reset_state()
@@ -252,21 +264,24 @@ class TestNeuralRegionCompatibility:
 
     def test_has_n_input_n_output(self):
         """Test that region exposes n_input and n_output."""
-        region = NeuralRegion(n_neurons=100, device="cpu")
+        n_neurons = 100
+        n_source1 = 50
+        n_source2 = 75
+        region = NeuralRegion(n_neurons=n_neurons, device="cpu")
 
         assert hasattr(region, "n_input")
         assert hasattr(region, "n_output")
-        assert region.n_output == 100
+        assert region.n_output == n_neurons
 
         # n_input updates as sources added
         assert region.n_input == 0
-        region.add_input_source("source1", n_input=50)
-        assert region.n_input == 50
-        region.add_input_source("source2", n_input=75)
-        assert region.n_input == 125
+        region.add_input_source("source1", n_input=n_source1)
+        assert region.n_input == n_source1
+        region.add_input_source("source2", n_input=n_source2)
+        assert region.n_input == n_source1 + n_source2
 
     def test_is_nn_module(self):
-        """Test that NeuralRegion is an nn.Module (new v2.0 hierarchy)."""
+        """Test that NeuralRegion is an nn.Module."""
         region = NeuralRegion(n_neurons=100, device="cpu")
         assert isinstance(region, nn.Module)
 

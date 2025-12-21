@@ -185,14 +185,16 @@ class TestEnhancedPurkinjeCell:
 
     def test_purkinje_initialization(self, device):
         """Test Purkinje cell initializes with dendrites."""
+        n_dendrites = 100
         purkinje = EnhancedPurkinjeCell(
-            n_dendrites=100,
+            n_dendrites=n_dendrites,
             device=device,
             dt_ms=1.0,
         )
 
         # Contract: dendrites exist
-        assert purkinje.n_dendrites == 100, "Should have 100 dendritic compartments"
+        assert purkinje.n_dendrites == n_dendrites, f"Should have {n_dendrites} dendritic compartments"
+        assert purkinje.n_dendrites > 0, "Invariant: positive dendrites"
         assert hasattr(purkinje, 'dendrite_voltage'), \
             "Should have dendritic voltage state"
 
@@ -402,15 +404,15 @@ class TestDeepCerebellarNuclei:
 
     def test_dcn_output_type(self, device):
         """Test DCN output is bool spikes (ADR-004)."""
+        n_output = 64
         dcn = DeepCerebellarNuclei(
-            n_output=64,
-            n_purkinje=64,
+            n_purkinje=n_output,
             n_mossy=128,
             device=device,
             dt_ms=1.0,
         )
 
-        purkinje_spikes = torch.rand(64, device=device) > 0.9
+        purkinje_spikes = torch.rand(n_output, device=device) > 0.9
         mossy_spikes = torch.rand(128, device=device) > 0.8
 
         output = dcn(purkinje_spikes, mossy_spikes)
@@ -418,7 +420,7 @@ class TestDeepCerebellarNuclei:
         # Contract: output should be bool (ADR-004) and 1D (ADR-005)
         assert output.dtype == torch.bool, "DCN output should be bool (ADR-004)"
         assert output.dim() == 1, "DCN output should be 1D (ADR-005)"
-        assert output.shape[0] == 64, "DCN output should match n_output"
+        assert output.shape[0] == n_output, "DCN output should match n_output"
 
 
 class TestEnhancedCerebellumIntegration:
@@ -426,16 +428,21 @@ class TestEnhancedCerebellumIntegration:
 
     def test_enhanced_cerebellum_initialization(self, cerebellum_enhanced):
         """Test enhanced cerebellum initializes all components."""
+        # Extract expected values from config
+        n_input = cerebellum_enhanced.config.n_input
+        n_output = cerebellum_enhanced.config.n_output
+        expansion = cerebellum_enhanced.config.granule_expansion_factor
+
         # Contract: granule layer exists
         assert cerebellum_enhanced.granule_layer is not None, \
             "Enhanced cerebellum should have granule layer"
-        assert cerebellum_enhanced.granule_layer.n_granule == int(128 * 4.0), \
-            "Granule layer should have 4× expansion"
+        assert cerebellum_enhanced.granule_layer.n_granule == int(n_input * expansion), \
+            f"Granule layer should have {expansion}× expansion"
 
         # Contract: enhanced Purkinje cells exist
         assert cerebellum_enhanced.purkinje_cells is not None, \
             "Enhanced cerebellum should have Purkinje cell list"
-        assert len(cerebellum_enhanced.purkinje_cells) == 64, \
+        assert len(cerebellum_enhanced.purkinje_cells) == n_output, \
             "Should have one Purkinje cell per output neuron"
 
         # Contract: DCN exists

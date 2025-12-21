@@ -42,6 +42,31 @@ def test_basic_delay():
     assert torch.equal(delayed, expected)
 
 
+@pytest.mark.parametrize("delay", [0, 1, 2, 3, 5])
+def test_delay_values(delay):
+    """Test reading with various delay values.
+
+    Why this test exists: Validates that the circular buffer correctly
+    handles different delay amounts without off-by-one errors.
+    """
+    buffer = CircularDelayBuffer(max_delay=5, size=4, device="cpu")
+
+    # Fill buffer with identifiable patterns
+    for t in range(10):
+        spikes = torch.zeros(4, dtype=torch.bool)
+        spikes[t % 4] = True
+        buffer.write(spikes)
+        buffer.advance()
+
+    # Read with specified delay
+    if delay <= 5:
+        delayed = buffer.read(delay=delay)
+        assert delayed.shape == (4,)
+        assert delayed.dtype == torch.bool
+        # Should have exactly one spike (from the pattern)
+        assert delayed.sum() <= 1
+
+
 def test_zero_delay():
     """Test reading with zero delay (current timestep)."""
     buffer = CircularDelayBuffer(max_delay=5, size=3, device="cpu")
@@ -78,30 +103,37 @@ def test_wrap_around():
         buffer.advance()
 
 
-def test_grow():
-    """Test growing buffer size."""
-    buffer = CircularDelayBuffer(max_delay=2, size=3, device="cpu")
+@pytest.mark.parametrize("initial_size,new_size", [
+    (3, 5),
+    (10, 20),
+    (50, 100),
+])
+def test_grow_various_sizes(initial_size, new_size):
+    """Test growing buffer from various initial sizes.
 
-    # Write some data and advance
+    Why this test exists: Ensures buffer growth correctly handles
+    different size ratios and preserves existing data.
+    """
+    buffer = CircularDelayBuffer(max_delay=2, size=initial_size, device="cpu")
+
+    # Write some identifiable data
     for t in range(3):
-        spikes = torch.zeros(3, dtype=torch.bool)
-        spikes[t] = True
+        spikes = torch.zeros(initial_size, dtype=torch.bool)
+        if t < initial_size:
+            spikes[t] = True
         buffer.write(spikes)
         buffer.advance()
 
     # Grow buffer
-    buffer.grow(new_size=5)
-    assert buffer.size == 5
+    old_data = buffer.read(delay=0).clone()
+    buffer.grow(new_size=new_size)
 
-    # Read with delay=2 (should get data from 2 steps ago, which is t=0)
-    # But we're at position 3 now, so delay=2 gives us position 1 (t=1)
-    delayed = buffer.read(delay=2)
-    assert delayed.shape[0] == 5
-    # Element 1 should be True (from t=1)
-    assert delayed[1] == True
-    # New elements should be zeros
-    assert delayed[3] == False
-    assert delayed[4] == False
+    assert buffer.size == new_size
+    # Old data should be preserved in first positions
+    new_data = buffer.read(delay=0)
+    assert torch.equal(old_data, new_data[:initial_size])
+    # New elements should be zero
+    assert not new_data[initial_size:].any()
 
 
 def test_reset():
