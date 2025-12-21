@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any, List
 import torch
 
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.regions.base import NeuralComponentState
+from thalia.core.region_state import BaseRegionState
 from thalia.components.synapses.stp import STPType
 from thalia.regulation.learning_constants import LEARNING_RATE_ONE_SHOT
 from thalia.regulation.region_architecture_constants import (
@@ -231,13 +231,30 @@ class HippocampusConfig(NeuralComponentConfig):
 
 
 @dataclass
-class HippocampusState(NeuralComponentState):
-    """State for hippocampus (trisynaptic circuit).
+class HippocampusState(BaseRegionState):
+    """State for hippocampus (trisynaptic circuit) with RegionState protocol compliance.
+
+    Extends BaseRegionState with hippocampus-specific state:
+    - Neuromodulator levels (dopamine, acetylcholine, norepinephrine)
+    - DG/CA3/CA1 layer activities and traces
+    - CA3 persistent activity (attractor dynamics)
+    - Sample trace for memory encoding
+    - STDP traces for multiple pathways
+    - NMDA trace for temporal integration
+    - Stored DG pattern for match/mismatch detection
+    - Feedforward inhibition strength
+    - Short-term plasticity (STP) state for 4 pathways
 
     The CA1 spikes ARE the output - no interpretation needed!
     Different CA1 spike patterns naturally emerge for match vs mismatch
     through the coincidence detection between CA3 (memory) and EC (current).
     """
+
+    # Neuromodulator state (not in BaseRegionState, must be explicit)
+    dopamine: float = 0.2
+    acetylcholine: float = 0.0
+    norepinephrine: float = 0.0
+
     # Layer activities (current spikes)
     dg_spikes: Optional[torch.Tensor] = None
     ca3_spikes: Optional[torch.Tensor] = None
@@ -267,3 +284,120 @@ class HippocampusState(NeuralComponentState):
 
     # Current feedforward inhibition strength
     ffi_strength: float = 0.0
+
+    # Short-term plasticity state for 4 pathways
+    stp_mossy_state: Optional[Dict[str, torch.Tensor]] = None         # DG→CA3 facilitation
+    stp_schaffer_state: Optional[Dict[str, torch.Tensor]] = None      # CA3→CA1 depression
+    stp_ec_ca1_state: Optional[Dict[str, torch.Tensor]] = None        # EC→CA1 direct
+    stp_ca3_recurrent_state: Optional[Dict[str, torch.Tensor]] = None # CA3 recurrent
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize state to dictionary for checkpointing.
+
+        Returns:
+            Dictionary with all state fields, including nested STP states for 4 pathways.
+        """
+        return {
+            # Base region state
+            "spikes": self.spikes,
+            "membrane": self.membrane,
+            "dopamine": self.dopamine,
+            "acetylcholine": self.acetylcholine,
+            "norepinephrine": self.norepinephrine,
+            # Layer activities
+            "dg_spikes": self.dg_spikes,
+            "ca3_spikes": self.ca3_spikes,
+            "ca1_spikes": self.ca1_spikes,
+            # CA3 state
+            "ca3_membrane": self.ca3_membrane,
+            "ca3_persistent": self.ca3_persistent,
+            # Memory and traces
+            "sample_trace": self.sample_trace,
+            "dg_trace": self.dg_trace,
+            "ca3_trace": self.ca3_trace,
+            "nmda_trace": self.nmda_trace,
+            "stored_dg_pattern": self.stored_dg_pattern,
+            "ffi_strength": self.ffi_strength,
+            # STP state (nested dicts for 4 pathways)
+            "stp_mossy_state": self.stp_mossy_state,
+            "stp_schaffer_state": self.stp_schaffer_state,
+            "stp_ec_ca1_state": self.stp_ec_ca1_state,
+            "stp_ca3_recurrent_state": self.stp_ca3_recurrent_state,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+        device: str = "cpu",
+    ) -> "HippocampusState":
+        """Deserialize state from dictionary.
+
+        Args:
+            data: Dictionary with state fields
+            device: Target device string (e.g., 'cpu', 'cuda', 'cuda:0')
+
+        Returns:
+            HippocampusState instance with restored state
+        """
+        def transfer_tensor(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+            if t is None:
+                return t
+            return t.to(device)
+
+        def transfer_nested_dict(d: Optional[Dict[str, torch.Tensor]]) -> Optional[Dict[str, torch.Tensor]]:
+            """Transfer nested dict of tensors to device."""
+            if d is None:
+                return d
+            return {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in d.items()}
+
+        return cls(
+            # Base region state
+            spikes=transfer_tensor(data.get("spikes")),
+            membrane=transfer_tensor(data.get("membrane")),
+            dopamine=data.get("dopamine", 0.2),
+            acetylcholine=data.get("acetylcholine", 0.0),
+            norepinephrine=data.get("norepinephrine", 0.0),
+            # Layer activities
+            dg_spikes=transfer_tensor(data.get("dg_spikes")),
+            ca3_spikes=transfer_tensor(data.get("ca3_spikes")),
+            ca1_spikes=transfer_tensor(data.get("ca1_spikes")),
+            # CA3 state
+            ca3_membrane=transfer_tensor(data.get("ca3_membrane")),
+            ca3_persistent=transfer_tensor(data.get("ca3_persistent")),
+            # Memory and traces
+            sample_trace=transfer_tensor(data.get("sample_trace")),
+            dg_trace=transfer_tensor(data.get("dg_trace")),
+            ca3_trace=transfer_tensor(data.get("ca3_trace")),
+            nmda_trace=transfer_tensor(data.get("nmda_trace")),
+            stored_dg_pattern=transfer_tensor(data.get("stored_dg_pattern")),
+            ffi_strength=data.get("ffi_strength", 0.0),
+            # STP state (nested dicts for 4 pathways)
+            stp_mossy_state=transfer_nested_dict(data.get("stp_mossy_state")),
+            stp_schaffer_state=transfer_nested_dict(data.get("stp_schaffer_state")),
+            stp_ec_ca1_state=transfer_nested_dict(data.get("stp_ec_ca1_state")),
+            stp_ca3_recurrent_state=transfer_nested_dict(data.get("stp_ca3_recurrent_state")),
+        )
+
+    def reset(self) -> None:
+        """Reset state to default values (in-place mutation)."""
+        self.spikes = None
+        self.membrane = None
+        self.dopamine = 0.2
+        self.acetylcholine = 0.0
+        self.norepinephrine = 0.0
+        self.dg_spikes = None
+        self.ca3_spikes = None
+        self.ca1_spikes = None
+        self.ca3_membrane = None
+        self.ca3_persistent = None
+        self.sample_trace = None
+        self.dg_trace = None
+        self.ca3_trace = None
+        self.nmda_trace = None
+        self.stored_dg_pattern = None
+        self.ffi_strength = 0.0
+        self.stp_mossy_state = None
+        self.stp_schaffer_state = None
+        self.stp_ec_ca1_state = None
+        self.stp_ca3_recurrent_state = None

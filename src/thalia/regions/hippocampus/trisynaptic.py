@@ -1708,8 +1708,43 @@ class TrisynapticHippocampus(NeuralRegion):
     # region Episodic Memory
 
     def get_state(self) -> HippocampusState:
-        """Get current state."""
+        """Get current state with STP state capture.
+
+        Returns:
+            HippocampusState with all state fields including STP state from 4 pathways.
+        """
+        # Capture STP state from all 4 pathways
+        self.state.stp_mossy_state = (
+            self.stp_mossy.get_state() if self.stp_mossy is not None else None
+        )
+        self.state.stp_schaffer_state = (
+            self.stp_schaffer.get_state() if self.stp_schaffer is not None else None
+        )
+        self.state.stp_ec_ca1_state = (
+            self.stp_ec_ca1.get_state() if self.stp_ec_ca1 is not None else None
+        )
+        self.state.stp_ca3_recurrent_state = (
+            self.stp_ca3_recurrent.get_state() if self.stp_ca3_recurrent is not None else None
+        )
         return self.state
+
+    def load_state(self, state: HippocampusState) -> None:
+        """Load complete hippocampus state from checkpoint.
+
+        Args:
+            state: HippocampusState to restore (already on correct device)
+        """
+        self.state = state
+
+        # Restore STP state for all 4 pathways
+        if self.stp_mossy is not None and state.stp_mossy_state is not None:
+            self.stp_mossy.load_state(state.stp_mossy_state)
+        if self.stp_schaffer is not None and state.stp_schaffer_state is not None:
+            self.stp_schaffer.load_state(state.stp_schaffer_state)
+        if self.stp_ec_ca1 is not None and state.stp_ec_ca1_state is not None:
+            self.stp_ec_ca1.load_state(state.stp_ec_ca1_state)
+        if self.stp_ca3_recurrent is not None and state.stp_ca3_recurrent_state is not None:
+            self.stp_ca3_recurrent.load_state(state.stp_ca3_recurrent_state)
 
     def store_episode(
         self,
