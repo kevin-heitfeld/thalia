@@ -26,9 +26,6 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 
 2. **Tests Trivial Behavior**
    - Asserts things so obvious they add zero confidence
-   - Example: `expect([]).toEqual([])`
-   - Example: `expect(undefined).toBeUndefined()`
-   - **Fix**: Delete. Don't test initialization of variables to their initialized values.
 
 3. **Tests Only Happy Path (No Edge Cases)**
    - Never tests with empty inputs, null values, boundary conditions
@@ -50,8 +47,6 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 
 6. **Tests That Are Duplicates or Highly Redundant**
    - Multiple tests asserting the same contract
-   - Example: Both `should create conversation with defaults` AND `should create conversation with all custom parameters`
-   - **Fix**: Combine or remove redundant assertions
 
 7. **Mock-Heavy Tests That Don't Test Real Behavior**
    - Over-mocked to the point where test doesn't validate actual code path
@@ -65,8 +60,6 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 
 9. **Weak Assertions on Error Conditions**
    - Tests that error occurred but don't validate error message or type
-   - Example: `expect(() => fn()).toThrow()` (too vague)
-   - **Fix**: `expect(() => fn()).toThrow(ValidationError)` and check message
 
 10. **Tests Coupled to Internal Implementation Details**
     - Asserts internal state variables instead of observable behavior
@@ -79,7 +72,6 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 1. **Tests the Contract, Not Implementation**
    - What does this function promise? Does it deliver?
    - Asserts behavior that matters to users/calling code
-   - Example: `expect(result.messages).toHaveLength(0)` (not implementation)
    - Survives refactoring, class name changes, logic optimizations
 
 2. **Tests Edge Cases and Boundaries**
@@ -109,7 +101,6 @@ Analyze the test suite to identify **weak tests** (implementation detail testing
 6. **Tests Both Success and Failure Paths**
    - Happy path AND error conditions
    - Validates error messages are descriptive
-   - Example: `expect(() => service.deleteConversation('invalid-id')).toThrow('Conversation not found')`
 
 7. **Uses Real Objects When Possible**
    - Neural components are created with real implementations
@@ -162,41 +153,12 @@ For each test file:
 
 ## Search Strategy
 
-### 1. Search for Hardcoded Assertions
-```
-assert [a-zA-Z0-9_.]+ == [0-9.+-eE]+
-```
-Replace with range checks or existence checks
-
-### 2. Search for Trivial Assertions
-```
-expect\((undefined|null|true|false|\[\]|{}\))\.to(Be|Equal|DeepEqual)\(\1\)
-```
-Remove these tests entirely
-
-### 3. Search for Internal State Coupling
-```
-\._[a-z_]+|assert.*\._|region\.state\.[a-z_]+(?!spikes|dopamine)
-```
-Replace with behavioral assertions (test spikes, learning, not internals)
-
-### 4. Search for Incomplete Error Testing
-```
-toThrow\(\)(?!\(.*(Error|Exception)\))
-```
-Find error tests that don't validate error type
-
-### 5. Search for Mock Over-Use
-```
-@patch|Mock\(|MagicMock\(|mocker\.
-```
-Review if real neural components could be used instead
-
-### 6. Search for Missing Edge Case Tests
-```
-it\('should .*'?\)[\s\S]*?\}\);
-```
-Verify each positive test has corresponding edge case test
+- Search for Hardcoded Assertions: Replace with range checks or existence checks
+- Search for Trivial Assertions: Remove these tests entirely
+- Search for Internal State Coupling: Replace with behavioral assertions (test spikes, learning, not internals)
+- Search for Incomplete Error Testing: Find error tests that don't validate error type
+- Search for Mock Over-Use: Review if real neural components could be used instead
+- Search for Missing Edge Case Tests: Verify each positive test has corresponding edge case test
 
 ## Expected Output
 
@@ -208,7 +170,6 @@ Verify each positive test has corresponding edge case test
 - Priority-ordered list of files to improve
 - Specific recommendations for each test
 - Patterns to follow going forward
-- Estimated effort per file
 
 ### 2. **Updated Testing Guidelines**
 - Add to `tests/WRITING_TESTS.md`
@@ -240,7 +201,6 @@ Verify each positive test has corresponding edge case test
 5. **Prioritize**: Rank improvements by impact and effort
 
 Use semantic search across the test suite to understand:
-- What services/utils are most critical
 - Which tests lack edge case coverage
 - Which tests are tightly coupled to implementation
 - Which tests have redundant assertions

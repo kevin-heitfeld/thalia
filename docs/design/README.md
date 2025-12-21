@@ -7,8 +7,8 @@ Technical design specifications for the Thalia framework.
 ### Core Systems
 - **[Checkpoint Format](checkpoint_format.md)** 🟢 — Binary checkpoint format and state serialization
 - **[Curriculum Strategy](curriculum_strategy.md)** 🟢 — Training stages and developmental progression (expert-reviewed)
-- **[Neuron Models](neuron_models.md)** 🟢 — LIF and conductance-based neuron implementations
-- **[Parallel Execution](parallel_execution.md)** 🟢 — Event-driven parallel processing architecture
+- **[Neuron Models](neuron_models.md)** 🟢 — ConductanceLIF neuron implementation (ONLY neuron model)
+- **[Parallel Execution](parallel_execution.md)** 🔴 — SUPERSEDED (Event-driven removed, now clock-driven)
 
 ### Architecture & Planning
 - **[Architecture Reference](architecture.md)** 🟢 — Quick reference to comprehensive architecture docs
@@ -82,4 +82,4 @@ These documents describe implementations that are now complete. Kept for histori
 
 ---
 
-**Last Updated**: December 13, 2025
+**Last Updated**: December 21, 2025

@@ -1,10 +1,10 @@
 # Thalia Architecture Overview
 
-**Last Updated**: December 13, 2025
+**Last Updated**: December 21, 2025
 
 ## Introduction
 
-Thalia is a biologically-accurate spiking neural network framework implementing multiple brain regions with specialized learning rules. The architecture emphasizes biological plausibility through local learning rules, neuromodulation, and spike-based processing.
+Thalia is a biologically-accurate spiking neural network framework implementing multiple brain regions with specialized learning rules. The architecture emphasizes biological plausibility through local learning rules, neuromodulation, spike-based processing, and clock-driven execution with axonal delays.
 
 ## Core Architecture Principles
 
@@ -12,10 +12,32 @@ Thalia is a biologically-accurate spiking neural network framework implementing 
 - **Spike-based processing**: Binary spikes (0 or 1), not firing rates
 - **Local learning rules**: No backpropagation, each region has specialized rules
 - **Neuromodulation**: Dopamine, norepinephrine, acetylcholine gate learning
-- **Temporal dynamics**: LIF/Conductance-LIF neurons with membrane dynamics
+- **Temporal dynamics**: ConductanceLIF neurons (ONLY neuron model) with conductance-based dynamics
 - **Causality**: No access to future information
+- **Clock-driven execution**: Regular timesteps with axonal delays in pathways
 
-### 2. Regional Specialization
+### 2. Synapses at Target Dendrites
+**Key Innovation**: Separation of axons (transmission) from synapses (integration)
+
+- **Axons** (`AxonalProjection`): Pure spike routing with axonal delays
+  - NO synaptic weights
+  - NO learning rules
+  - ONLY conduction delays via `CircularDelayBuffer`
+  - Biologically accurate: 1-20ms delays
+
+- **Synapses** (at target `NeuralRegion`):
+  - Weights stored in `region.synaptic_weights` dict: `{source_name: weight_matrix}`
+  - Per-source learning strategies
+  - Region-specific plasticity rules
+  - Inputs arrive as `Dict[str, torch.Tensor]` (multi-source)
+
+**Benefits**:
+- ✅ Matches neuroscience: synapses at postsynaptic dendrites
+- ✅ Per-source customization: different learning rules for different inputs
+- ✅ Natural multi-source integration: no complex pathway merging
+- ✅ Clear separation of concerns: axons route, synapses learn
+
+### 3. Regional Specialization
 Each brain region has its own learning rule:
 - **Cortex**: Unsupervised Hebbian/BCM/STDP for feature extraction
 - **Hippocampus**: One-shot Hebbian for episodic memory
@@ -23,10 +45,11 @@ Each brain region has its own learning rule:
 - **Striatum**: Three-factor rule (eligibility × dopamine) for reinforcement learning
 - **Cerebellum**: Supervised error-corrective (delta rule) for motor learning
 
-### 3. Event-Driven Computation
-- Regions communicate via events with axonal delays
+### 4. Clock-Driven Computation
+- Regions updated at regular timesteps (typically 1ms)
+- Axonal projections implement delays via `CircularDelayBuffer`
 - Natural temporal dynamics from spike propagation
-- Clock-driven updates with biologically realistic timesteps
+- Biologically realistic timing (1ms timesteps, delays 1-20ms)
 
 ---
 
@@ -42,20 +65,21 @@ DynamicBrain (Component-Based Architecture)
 │   ├── GoalHierarchyManager (hierarchical planning)
 │   └── ConsolidationManager (memory replay & offline learning)
 ├── Brain Regions (brain.components["name"])
+│   ├── NeuralRegion (synaptic_weights dict at dendrites)
 │   ├── Thalamus (sensory relay, attention gating)
-│   ├── Cortex (sensory processing)
-│   ├── Hippocampus (episodic memory)
+│   ├── Cortex (sensory processing, hierarchical features)
+│   ├── Hippocampus (episodic memory, DG→CA3→CA1)
 │   ├── Prefrontal Cortex (working memory, planning)
-│   ├── Striatum (action selection, RL)
-│   └── Cerebellum (motor learning)
-├── Pathways (brain.connections[(src, tgt)])
-│   ├── Excitatory projections
-│   ├── Inhibitory projections
-│   ├── Attention pathways (PFC → Cortex)
-│   └── Axonal delays
+│   ├── Striatum (action selection, RL with D1/D2 pathways)
+│   └── Cerebellum (motor learning, error correction)
+├── Axonal Projections (brain.connections[(src, tgt)])
+│   ├── AxonalProjection (pure spike routing)
+│   ├── CircularDelayBuffer (1-20ms axonal delays)
+│   ├── Multi-source routing (Dict[str, Tensor] output)
+│   └── Port-based connections (e.g., "cortex:l5", "hipp:ca1")
 └── Coordination
     ├── TrialCoordinator (task execution)
-    └── Event system (async communication)
+    └── Event-driven execution (clock-driven simulation)
 ```
 
 ---
@@ -69,9 +93,9 @@ DynamicBrain (Component-Based Architecture)
 Central orchestrator that:
 - Manages all brain regions and their interconnections
 - Built using flexible `BrainBuilder` or from configuration
-- Component-based: access regions via `brain.components["name"]`
+- Component-based: access regions via `brain.components["name"]` (no direct attributes like `brain.cortex`)
 - Coordinates centralized systems (neuromodulators, oscillators, goals)
-- Handles event-driven communication between regions
+- Clock-driven execution with axonal delays in pathways
 - Provides high-level APIs for task execution
 
 **Key Methods**:
@@ -82,12 +106,96 @@ Central orchestrator that:
 
 **Component Access**:
 - `brain.components["cortex"]` - Get region by name
-- `brain.connections[("thalamus", "cortex")]` - Get pathway
+- `brain.connections[("thalamus", "cortex")]` - Get AxonalProjection
 - `brain.components` - Dict of all components
 
 ---
 
-### 2. Centralized Systems
+### 2. AxonalProjection
+
+**Location**: `src/thalia/pathways/axonal_projection.py`
+
+**Function**: Pure spike routing with realistic axonal delays
+
+**Architecture Philosophy**:
+- Axons transmit spikes WITHOUT synaptic weights
+- Synapses belong to target regions (at dendrites)
+- Implements biologically accurate conduction delays
+
+**Key Features**:
+- **Multi-source routing**: Accepts `Dict[str, Tensor]` from multiple regions
+- **Delay buffers**: `CircularDelayBuffer` for 1-20ms axonal delays
+- **Port-based routing**: Supports output ports (e.g., "cortex:l5", "hipp:ca1")
+- **No learning**: Pure transmission (learning at target synapses)
+
+**Usage Pattern**:
+```python
+# Create axonal projection
+projection = AxonalProjection(
+    sources=[
+        SourceSpec(region_name="cortex", port="l5", size=256, delay_ms=2.0),
+        SourceSpec(region_name="thalamus", port=None, size=128, delay_ms=5.0),
+    ],
+    config=config,
+)
+
+# Forward pass: route spikes with delays
+source_outputs = {"cortex:l5": cortex_spikes, "thalamus": thal_spikes}
+delayed_spikes = projection(source_outputs)  # Dict[str, Tensor]
+```
+
+**Biological Accuracy**:
+- Matches neuroscience: axons = transmission only
+- Realistic delays: 1-5ms local, 5-20ms long-range
+- No "pathway learning" (that's at synapses)
+
+---
+
+### 3. NeuralRegion
+
+**Location**: `src/thalia/core/neural_region.py`
+
+**Function**: Base class for brain regions with synaptic weights at dendrites
+
+**Key Features**:
+- **Multi-source synapses**: `synaptic_weights` dict stores weights per source
+- **Per-source learning**: Different learning strategies for different inputs
+- **Dict-based input**: `forward(source_spikes: Dict[str, Tensor])`
+- **Integrated neurons**: ConductanceLIF for spike generation
+
+**Forward Pass Pattern**:
+```python
+class MyRegion(NeuralRegion):
+    def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
+        # Synaptic integration (weights at dendrites)
+        total_current = torch.zeros(self.n_neurons, device=self.device)
+        for source_name, spikes in source_spikes.items():
+            weights = self.synaptic_weights[source_name]
+            total_current += weights @ spikes
+
+        # Spike generation
+        output_spikes = self.neurons(total_current)
+
+        # Per-source learning
+        for source_name, spikes in source_spikes.items():
+            new_weights, _ = self.strategies[source_name].compute_update(
+                weights=self.synaptic_weights[source_name],
+                pre_spikes=spikes,
+                post_spikes=output_spikes,
+            )
+            self.synaptic_weights[source_name].data = new_weights
+
+        return output_spikes
+```
+
+**Benefits**:
+- Natural multi-source integration
+- Region-specific plasticity control
+- Matches biological dendrite organization
+
+---
+
+### 4. Centralized Systems
 
 #### Neuromodulator Systems
 
@@ -130,7 +238,7 @@ Hierarchical planning and temporal abstraction:
 
 ---
 
-### 3. Brain Regions
+### 5. Brain Regions
 
 #### Cortex
 
@@ -191,16 +299,19 @@ Hierarchical planning and temporal abstraction:
 
 **Learning Rules**:
 - Three-factor Hebbian (eligibility × dopamine × activity)
-- Direct/indirect pathway competition
+- TD(λ) for multi-step credit assignment
+- Direct (D1) / indirect (D2) pathway competition
 
 **Key Features**:
-- Model-free RL (Q-learning)
-- Eligibility traces
+- Model-free RL with TD(λ)
+- Dyna planning (model-based lookahead)
+- Eligibility traces (500-2000ms biological range)
 - Action chunking (habits)
+- Soft winner-take-all action selection
 
 #### Cerebellum
 
-**Location**: `src/thalia/regions/cerebellum.py`
+**Location**: `src/thalia/regions/cerebellum_region.py`
 
 **Function**: Motor learning and error correction
 
@@ -267,15 +378,6 @@ Manages task execution:
 - Goal hierarchy (PFC)
 - Mental simulation (planning)
 - Intrinsic rewards (curiosity, novelty)
-
-#### Event System
-
-**Location**: `src/thalia/events/`
-
-Event-driven communication:
-- Async message passing between regions
-- Axonal delays
-- Event queuing and dispatch
 
 ---
 
@@ -407,18 +509,22 @@ docs/
 
 ## Key Achievements
 
-### Completed Systems ✅
+### Completed Systems ✅ (December 2025)
 
-1. **Neuromodulator Centralization** - All 3 systems (VTA, LC, NB) + coordination
+1. **Neuromodulator Centralization** - All 3 systems (VTA, LC, NB) + biological coordination
 2. **Oscillator Integration** - All 5 oscillators + 5 cross-frequency couplings
 3. **Goal Hierarchy** - Full hierarchical planning with options learning
-4. **Event-Driven Communication** - Async messaging with axonal delays
-5. **Multi-Modal Sensory** - Vision, audio, text processing
-6. **Memory Consolidation** - Coordinated replay and offline learning
-7. **Attention Systems** - Thalamus gating + attention pathways (bottom-up & top-down)
-8. **Language Processing** - Spiking language models with token encoding/decoding
-9. **Social Learning** - Imitation learning, pedagogy detection, joint attention
-10. **Metacognition** - Confidence calibration and uncertainty estimation
+4. **Multi-Modal Sensory** - Vision, audio, text processing with spike encoding
+5. **Memory Consolidation** - Coordinated replay and offline learning
+6. **Attention Systems** - Thalamus gating + attention pathways (bottom-up & top-down)
+7. **Language Processing** - Spiking language models with token encoding/decoding
+8. **Social Learning** - Imitation learning, pedagogy detection, joint attention
+9. **Metacognition** - Confidence calibration and uncertainty estimation
+10. **TD(λ) Learning** - Multi-step credit assignment for delayed rewards
+11. **Dyna Planning** - Model-based planning with mental simulation
+12. **Curriculum Training** - Developmental stages from sensorimotor to reading
+13. **Learning Strategies** - Unified learning rule system (Hebbian, STDP, BCM, three-factor)
+14. **Axonal Delays** - CircularDelayBuffer in pathways for biological timing
 
 ### Biological Fidelity ✅
 

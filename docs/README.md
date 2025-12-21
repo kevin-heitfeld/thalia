@@ -1,73 +1,91 @@
 # Thalia Documentation
 
 **Status**: 🚧 Active Development — Documentation evolving with the codebase
+**Last Updated**: December 21, 2025
 
 ## Overview
 
 Thalia is a biologically-accurate spiking neural network framework for building multi-modal, biologically-plausible ML models. This documentation provides guidance for understanding, using, and extending the framework.
 
+## Quick Start
+
+**New to Thalia?**
+1. Start with [Architecture Overview](architecture/ARCHITECTURE_OVERVIEW.md) to understand the system
+2. Review [Getting Started with Curriculum Training](GETTING_STARTED_CURRICULUM.md) for hands-on tutorial
+3. Check [Quick References](#quick-references) for common APIs and patterns
+
 ## Documentation Structure
 
 ### 🏗️ [Architecture](./architecture/)
 High-level system architecture and design philosophy.
-- System overview
+- **[ARCHITECTURE_OVERVIEW.md](./architecture/ARCHITECTURE_OVERVIEW.md)** — START HERE for system overview
+- **[CENTRALIZED_SYSTEMS.md](./architecture/CENTRALIZED_SYSTEMS.md)** — Neuromodulators, oscillators, goals
+- **[REFACTOR_EXPLICIT_AXONS_SYNAPSES.md](./architecture/REFACTOR_EXPLICIT_AXONS_SYNAPSES.md)** — architecture rationale
 - Complexity layers (5-level architecture)
-- Component interactions
+- Component interactions and data flow
 
 ### 📐 [Design](./design/)
 Detailed technical specifications for core systems.
 - **[Checkpoint Format](./design/checkpoint_format.md)** — Serialization and state persistence
 - **[Curriculum Strategy](./design/curriculum_strategy.md)** — Training stages and consolidation
-- **[Neuron Models](./design/neuron_models.md)** — LIF and conductance-based neurons
-- **[Robustness Config](./design/robustness_config_guide.md)** — Stability mechanisms
+- **[Neuron Models](./design/neuron_models.md)** — ConductanceLIF neurons (ONLY neuron model)
+- **[Circuit Modeling](./design/circuit_modeling.md)** — D1/D2 delays and biological timing
+- **[Delayed Gratification](./design/delayed_gratification.md)** — TD(λ) and multi-step credit assignment
 
 ### 🛡️ [Safety Systems](./CURRICULUM_SAFETY_SYSTEM.md)
 **CRITICAL**: Comprehensive safety systems for curriculum training.
 - **[Safety System Guide](./CURRICULUM_SAFETY_SYSTEM.md)** — Stage gates, monitoring, graceful degradation
-- **[Validation Summary](./CURRICULUM_VALIDATION_SUMMARY.md)** — Expert review + engineering consensus
-- **Stage 1 Survival Checklist** — Hard criteria for Stage 1→2 transition
-- **Kill-Switch Map** — Module criticality and failure handling
+- **[Safety Quick Start](./SAFETY_QUICK_START.md)** — Quick reference for safety features
+- Stage gates and transition criteria
+- Failure detection and recovery
 
 ### 🔧 [Patterns](./patterns/)
 Common implementation patterns and best practices.
-- **[Configuration](./patterns/configuration.md)** — Config hierarchy and parameters
+- **[Learning Strategies](./patterns/learning-strategies.md)** — Strategy pattern for learning rules (920 lines)
+- **[Component Parity](./patterns/component-parity.md)** — Regions vs pathways
 - **[State Management](./patterns/state-management.md)** — When to use RegionState vs attributes
 - **[Mixins](./patterns/mixins.md)** — Available mixins and their usage
+- **[Configuration](./patterns/configuration.md)** — Config hierarchy and parameters
 
 ### 🧠 [Decisions](./decisions/)
 Architecture Decision Records (ADRs) documenting key technical choices.
 - **[ADR-001: Simulation Backend](./decisions/adr-001-simulation-backend.md)** — PyTorch with GPU
-- **[ADR-002: Numeric Precision](./decisions/adr-002-numeric-precision.md)** — Mixed precision strategy
 - **[ADR-003: Clock-Driven Simulation](./decisions/adr-003-clock-driven.md)** — Fixed timestep approach
+- **[ADR-004: Bool Spikes](./decisions/adr-004-bool-spikes.md)** — Binary spike representation
+- **[ADR-005: No Batch Dimension](./decisions/adr-005-no-batch-dimension.md)** — Single-sample processing
+- **[ADR-010: Region Axonal Delays](./decisions/adr-010-region-axonal-delays.md)** — Delays in pathways
+- **[ADR-013: Explicit Pathway Projections](./decisions/adr-013-explicit-pathway-projections.md)** — v2.0 architecture
 
-### 📚 [Research](./research/)
-Research notes, paper summaries, and theoretical foundations.
+## Quick References
 
-### 📦 [Archive](./archive/)
-Historical documentation and completed planning documents.
-- Original planning documents
-- Completed refactoring summaries
-- Historical ablation results
-
-## Quick Links
+### Essential Guides
+- **[Getting Started with Curriculum](./GETTING_STARTED_CURRICULUM.md)** — Step-by-step tutorial
+- **[Curriculum Quick Reference](./CURRICULUM_QUICK_REFERENCE.md)** — API reference for training
+- **[Datasets Quick Reference](./DATASETS_QUICK_REFERENCE.md)** — Stage-specific datasets
+- **[Monitoring Guide](./MONITORING_GUIDE.md)** — Diagnostics and visualization
+- **[AI Assistant Guide](./AI_ASSISTANT_GUIDE.md)** — Navigation for AI assistants
 
 ### For New Contributors
 1. Read the [project README](../README.md) for vision and principles
-2. Review [Architecture Overview](./architecture/README.md) to understand the system
+2. Review [Architecture Overview](./architecture/ARCHITECTURE_OVERVIEW.md) to understand the system
 3. Check [Patterns](./patterns/) for implementation guidelines
 4. See [Decisions](./decisions/) for rationale behind key choices
+5. Review [CONTRIBUTING.md](../CONTRIBUTING.md) for code standards
 
 ### For Development
-- **Adding a Region**: See [patterns/configuration.md](./patterns/configuration.md) and [patterns/mixins.md](./patterns/mixins.md)
-- **Testing**: See [../tests/README.md](../tests/README.md) and [../tests/WRITING_TESTS.md](../tests/WRITING_TESTS.md)
+- **Adding a Region**: See [patterns/learning-strategies.md](./patterns/learning-strategies.md) and [AI_ASSISTANT_GUIDE.md](./AI_ASSISTANT_GUIDE.md)
+- **Learning Rules**: See [patterns/learning-strategies.md](./patterns/learning-strategies.md) for strategy pattern
+- **Testing**: See [../tests/WRITING_TESTS.md](../tests/WRITING_TESTS.md)
 - **Training**: See [design/curriculum_strategy.md](./design/curriculum_strategy.md)
-- **Safety Systems**: See [CURRICULUM_SAFETY_SYSTEM.md](./CURRICULUM_SAFETY_SYSTEM.md) (🛡️ **REQUIRED for Stage 1+**)
-- **Monitoring & Diagnostics**: See [MONITORING_GUIDE.md](./MONITORING_GUIDE.md) (⭐ start here)
+- **Safety Systems**: See [CURRICULUM_SAFETY_SYSTEM.md](./CURRICULUM_SAFETY_SYSTEM.md)
+- **Monitoring**: See [MONITORING_GUIDE.md](./MONITORING_GUIDE.md)
 
 ### For Understanding Design
-- **Why PyTorch?**: [decisions/adr-001-simulation-backend.md](./decisions/adr-001-simulation-backend.md)
+- **v2.0 Architecture**: [architecture/REFACTOR_EXPLICIT_AXONS_SYNAPSES.md](./architecture/REFACTOR_EXPLICIT_AXONS_SYNAPSES.md)
+- **Learning Strategies**: [patterns/learning-strategies.md](./patterns/learning-strategies.md)
 - **Checkpoint Design**: [design/checkpoint_format.md](./design/checkpoint_format.md)
 - **Training Stages**: [design/curriculum_strategy.md](./design/curriculum_strategy.md)
+- **Circuit Timing**: [design/circuit_modeling.md](./design/circuit_modeling.md)
 
 ## Status Legend
 

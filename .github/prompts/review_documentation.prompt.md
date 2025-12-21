@@ -36,7 +36,6 @@ For overlapping topics, apply this decision matrix:
 3. Preserve all referenced files; update paths if moved
 4. Verify links in copilot-instructions.md point to final locations
 5. Execute consolidation; move completed work to `/docs/archive/`
-6. Create `CONSOLIDATION_LOG.md` documenting all changes
 
 ## Phase 4: Validation
 Before marking complete, verify:

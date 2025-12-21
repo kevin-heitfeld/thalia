@@ -1,7 +1,7 @@
 # Thalia Documentation Index
 
 **Last Updated**: December 21, 2025
-**Total Active Files**: 38 documentation files
+**Total Active Files**: 38+ documentation files
 
 This is a comprehensive searchable index of all documentation in the Thalia project.
 
@@ -29,6 +29,7 @@ Located in: `docs/`
 | **CURRICULUM_QUICK_REFERENCE.md** | API reference for training pipeline | 🟢 Current | Root README, copilot-instructions |
 | **DATASETS_QUICK_REFERENCE.md** | Stage-specific datasets reference | 🟢 Current | Root README, copilot-instructions |
 | **MONITORING_GUIDE.md** | Health checks and diagnostics | 🟢 Current | Root README, copilot-instructions |
+| **AI_ASSISTANT_GUIDE.md** | Navigation guide for AI assistants | 🟢 Current | copilot-instructions |
 | **MULTILINGUAL_DATASETS.md** | Multilingual support documentation | 🟢 Current | Root README |
 
 ---
@@ -132,7 +133,7 @@ Architecture Decision Records (ADRs) documenting key technical choices.
 | **adr-011-large-file-justification.md** | Biological circuit integrity > file size | Accepted | Region files, review prompt |
 | **adr-012-directory-restructuring.md** | Domain-based organization | Accepted | decisions/README |
 | **adr-013-explicit-pathway-projections.md** | All dimensional transforms via pathways | Accepted | decisions/README |
-| **adr-014-distributed-computation.md** | Multi-core CPU support | Accepted | decisions/README |
+| **adr-014-distributed-computation.md** | Multi-core CPU support | Superseded | decisions/README (Event-driven removed) |
 | **README.md** | ADRs overview | 🟢 Current | Root README |
 
 ### Key Topics Covered

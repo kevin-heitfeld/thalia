@@ -1,6 +1,6 @@
 # Thalia Architecture Reference
 
-**Last Updated**: December 13, 2025
+**Last Updated**: December 21, 2025
 **Status**: 🟢 Current - Consolidated reference document
 
 ---
@@ -22,7 +22,7 @@ This document provides a quick reference to Thalia's architecture. For comprehen
 ### 🏗️ Core Concepts
 - **[Biological Plausibility](../architecture/ARCHITECTURE_OVERVIEW.md#core-architecture-principles)** - Spike-based processing, local learning, neuromodulation
 - **[Regional Specialization](../architecture/ARCHITECTURE_OVERVIEW.md#brain-regions)** - Each region has its own learning rule
-- **[Event-Driven Processing](../architecture/ARCHITECTURE_OVERVIEW.md#event-driven-computation)** - Spike propagation with axonal delays
+- **[Clock-Driven Processing](../architecture/ARCHITECTURE_OVERVIEW.md#clock-driven-computation)** - Fixed timesteps with axonal delays in pathways
 
 ---
 

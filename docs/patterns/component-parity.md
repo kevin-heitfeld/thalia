@@ -15,44 +15,113 @@ Pathways are easy to forget when implementing new features. Historically, we've 
 
 ## Core Principle
 
-**Pathways are just as important as regions.**
+**Synapses at Target Dendrites**
 
-Both are active learning components that:
+In the current architecture:
+- **Regions** are active learning components with synaptic weights
+- **AxonalProjections** are pure spike routing (NO weights, NO learning)
+- Learning happens at TARGET synapses, not in axonal pathways
+
+### Regions (NeuralRegion)
+Active components that:
 - Process and transform spike trains
 - Learn continuously during forward passes
 - Maintain temporal state
+- Store synaptic weights at dendrites (`synaptic_weights` dict)
 - Need growth for curriculum learning
 - Require diagnostics and health monitoring
 - Must support checkpointing
 
-## Solution: BrainComponent Protocol
+### AxonalProjections
+Passive routing components that:
+- Route spikes from sources to targets
+- Implement axonal conduction delays (CircularDelayBuffer)
+- Do NOT have synaptic weights
+- Do NOT learn
+- Transform spike timing (delays only)
+- Support multi-source routing
+- Are simpler than regions (no growth needed for weights)
 
-Both regions and pathways now inherit from `NeuralComponent`, a unified base class that implements the complete BrainComponent protocol (defined in `src/thalia/core/protocols/component.py`):
+## Solution: Simplified Architecture
+
+### NeuralRegion Base Class
+
+All brain regions inherit from `NeuralRegion` (defined in `src/thalia/core/neural_region.py`):
 
 ```python
-from thalia.regions.base import NeuralComponent
+from thalia.core.neural_region import NeuralRegion
 
-# Both regions and pathways inherit from NeuralComponent
-class LayeredCortex(NeuralComponent):
-    """Region implementing full BrainComponent interface."""
-    pass
+# Regions implement full learning interface
+class LayeredCortex(NeuralRegion):
+    """Region with synaptic weights at dendrites."""
 
-class SpikingPathway(NeuralComponent):
-    """Pathway implementing full BrainComponent interface."""
-    pass
+    def __init__(self, config):
+        super().__init__(config)
+        # Synaptic weights stored per source
+        self.synaptic_weights: Dict[str, torch.Tensor] = {}
+        self.strategies: Dict[str, LearningStrategy] = {}
+
+    def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Process multi-source input with per-source learning."""
+        # Synaptic integration
+        total_current = torch.zeros(self.n_neurons, device=self.device)
+        for source_name, spikes in source_spikes.items():
+            weights = self.synaptic_weights[source_name]
+            total_current += weights @ spikes
+
+        # Spike generation
+        output_spikes = self.neurons(total_current)
+
+        # Per-source learning
+        for source_name, spikes in source_spikes.items():
+            new_weights, _ = self.strategies[source_name].compute_update(
+                weights=self.synaptic_weights[source_name],
+                pre_spikes=spikes,
+                post_spikes=output_spikes,
+            )
+            self.synaptic_weights[source_name].data = new_weights
+
+        return output_spikes
+```
+
+### AxonalProjection (No Learning)
+
+Pathways are now simple routers:
+
+```python
+from thalia.pathways.axonal_projection import AxonalProjection
+
+# AxonalProjection: Pure routing, no weights
+class AxonalProjection:
+    """Pure spike routing with axonal delays."""
+
+    def forward(self, source_outputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Route spikes with delays, NO learning."""
+        delayed_spikes = {}
+        for source_name, spikes in source_outputs.items():
+            # Apply axonal delay via CircularDelayBuffer
+            delayed = self.delay_buffers[source_name](spikes)
+            delayed_spikes[source_name] = delayed
+        return delayed_spikes
 ```
 
 ### Enforced Methods
 
-All brain components MUST implement:
+All `NeuralRegion` subclasses MUST implement:
 
 #### 1. Processing (Standard PyTorch Convention)
 ```python
-def forward(self, *args, **kwargs) -> Any:
-    """Transform input to output with continuous learning.
+def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
+    """Transform multi-source input to output with continuous learning.
 
-    Standard PyTorch method - enables callable syntax: component(input)
-    All regions, pathways, and sensory encoders use this.
+    Args:
+        source_spikes: {"source_name": spike_tensor} from AxonalProjections
+
+    Returns:
+        Output spikes from neurons
+
+    Standard PyTorch method - enables callable syntax: region(input)
+    Learning happens during forward pass (per-source strategies).
     """
 ```
 
@@ -64,11 +133,17 @@ def reset_state(self) -> None:
 
 #### 3. Growth (Curriculum Learning)
 ```python
-def grow_input(self, n_new: int, initialization: str, sparsity: float) -> None:
-    """Expand input dimension when upstream regions grow."""
+def grow_output(self, n_new: int) -> None:
+    """Expand output dimension by adding neurons.
 
-def grow_output(self, n_new: int, initialization: str, sparsity: float) -> None:
-    """Expand output dimension (neuron population) during curriculum."""
+    Effects: Expands all synaptic_weights (adds rows), adds neurons, updates n_neurons
+    """
+
+def grow_input(self, n_new: int) -> None:
+    """Expand input dimension to accept more inputs.
+
+    Effects: Expands all synaptic_weights (adds columns), NO new neurons
+    """
 
 def get_capacity_metrics(self) -> CapacityMetrics:
     """Report utilization to guide growth decisions."""
@@ -86,18 +161,50 @@ def check_health(self) -> HealthReport:
 #### 5. Checkpointing
 ```python
 def get_full_state(self) -> Dict[str, Any]:
-    """Serialize weights, config, growth history."""
+    """Serialize synaptic_weights, config, growth history."""
 
 def load_full_state(self, state: Dict[str, Any]) -> None:
     """Restore from checkpoint."""
 ```
 
+**Note**: AxonalProjections are simpler - they only need routing logic and delay buffers,
+no learning or growth methods required.
+
 ## Development Workflow
 
-### When Adding New Features
+### When Adding New Features to Regions
 
-**OLD WAY** (easy to forget pathways):
-1. Implement feature in regions
+**Simplified Process** (pathways are routers only):
+1. Implement feature in region (e.g., new synaptic mechanism)
+2. Add to `NeuralRegion` base class if common
+3. Update region-specific implementations
+4. Write tests for regions
+5. Update documentation
+
+**Note**: Most new features won't apply to AxonalProjections since they don't learn.
+Only add to pathways if it's about spike routing or delay mechanics.
+
+### Example: Adding Spike-Timing Precision
+
+```python
+# Step 1: Add to regions that need it
+class LayeredCortex(NeuralRegion):
+    def __init__(self, config):
+        super().__init__(config)
+        self.spike_precision_ms = config.spike_precision_ms
+
+    def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
+        # Use precise spike timing in learning
+        ...
+
+# Step 2: AxonalProjection doesn't need it (just routing)
+# No changes to axonal_projection.py
+
+# Step 3: Tests
+def test_cortex_spike_precision():
+    # Test region feature
+    ...
+```
 2. Write tests for regions
 3. Maybe remember pathways later
 

@@ -62,9 +62,10 @@ brain = DynamicBrain.from_thalia_config(config)
 visual_input = torch.rand(784, dtype=torch.float32)
 output = brain.forward(sensory_input=visual_input, n_timesteps=15)
 
-# Access regions by name
+# Access regions by name (component-based architecture)
 cortex = brain.components["cortex"]
 hippocampus = brain.components["hippocampus"]
+axonal_projection = brain.connections[("thalamus", "cortex")]
 
 # Select action (decision-making)
 action, confidence = brain.select_action(explore=True)
@@ -96,13 +97,16 @@ graph TD
 
 **Key Features:**
 - **Flexible Architecture**: Component-based brain built with `BrainBuilder` or from configuration
-- **Spiking Pathways**: ConductanceLIF neurons with realistic axonal delays (2-8ms)
-- **Learning Rules**: STDP, BCM, Hebbian, three-factor (dopamine-modulated)
+- **Synapses at Dendrites**: Weights stored at target regions (`synaptic_weights` dict), not in pathways
+- **Axonal Projections**: Pure spike routing with realistic conduction delays via `CircularDelayBuffer`
+- **Spiking Neurons**: ConductanceLIF neurons (ONLY neuron model) with conductance-based dynamics
+- **Learning Rules**: STDP, BCM, Hebbian, three-factor (dopamine-modulated) at target synapses
 - **Neuromodulation**: Dopamine (reward), acetylcholine (encoding/retrieval), norepinephrine (arousal)
-- **Temporal Coordination**: Theta (8Hz), alpha (10Hz), gamma (40Hz) oscillations
+- **Temporal Coordination**: Theta (8Hz), alpha (10Hz), gamma (40Hz) oscillations with cross-frequency coupling
 - **Planning Systems**: TD(λ) credit assignment, Dyna-style planning, hierarchical goals
 - **Memory Systems**: One-shot episodic (hippocampus), working memory (PFC), procedural (striatum)
 - **Circuit Modeling**: Laminar cortex (L4→L2/3→L5), trisynaptic hippocampus (DG→CA3→CA1), D1/D2 striatal pathways
+- **Clock-Driven Execution**: Regular timesteps (1ms) with biologically accurate axonal delays (1-20ms)
 
 ## Documentation
 
@@ -128,15 +132,36 @@ graph TD
 **Status**: Active Development
 
 ### Implemented Features ✅
-- Core brain regions (Cortex, Hippocampus, Striatum, PFC, Cerebellum, Thalamus)
-- Flexible component-based architecture (DynamicBrain with BrainBuilder)
-- Learning strategies (STDP, BCM, Hebbian, three-factor)
-- Neuromodulator systems (dopamine, acetylcholine, norepinephrine)
-- Planning systems (TD(λ), Dyna, hierarchical goals)
-- Curriculum training pipeline (Stages -0.5 through 4)
-- Checkpoint system (PyTorch format + optional binary format)
-- Parallel execution (multi-core CPU)
-- Comprehensive diagnostics and monitoring
+- **Core Architecture**:
+  - Brain regions: Cortex (laminar L4→L2/3→L5), Hippocampus (DG→CA3→CA1), Striatum (D1/D2 pathways), PFC, Cerebellum, Thalamus
+  - AxonalProjection: Pure spike routing with CircularDelayBuffer delays
+  - NeuralRegion: Base class with synaptic_weights dict at dendrites
+- **Learning & Plasticity**:
+  - Learning strategies: STDP, BCM, Hebbian, three-factor (eligibility × dopamine)
+  - Per-source learning: Different rules for different inputs
+  - Strategy pattern: Pluggable, composable learning algorithms
+- **Neuromodulation**:
+  - Three systems: VTA (dopamine), LC (norepinephrine), NB (acetylcholine)
+  - Centralized management with biological coordination
+- **Temporal Coordination**:
+  - Five brain rhythms: Delta (2Hz), Theta (8Hz), Alpha (10Hz), Beta (20Hz), Gamma (40Hz)
+  - Cross-frequency coupling (theta-gamma, beta-gamma, etc.)
+- **Planning & Memory**:
+  - TD(λ) for multi-step credit assignment
+  - Dyna planning (model-based)
+  - Hierarchical goal management
+  - Working memory (PFC gating)
+  - Episodic memory (hippocampal one-shot learning)
+- **Training Infrastructure**:
+  - Curriculum training pipeline (Stages -0.5 through 4)
+  - Checkpoint system (PyTorch format + optional binary)
+  - Stage-specific datasets: Temporal, Phonology, CIFAR-10, Grammar, Reading
+  - Multilingual support (English, German, Spanish)
+- **Diagnostics & Monitoring**:
+  - HealthMonitor: Runtime pathology detection
+  - CriticalityMonitor: Branching ratio tracking
+  - MetacognitiveMonitor: Confidence estimation
+  - TrainingMonitor: Post-hoc analysis and visualization
 
 ### In Progress 🔄
 - Stage 0 validation (sensory foundations)

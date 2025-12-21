@@ -4,35 +4,35 @@ This guide helps AI assistants (and developers) navigate the Thalia codebase eff
 
 ## Quick Reference Card
 
-**v2.0 Architecture (Dec 2025):**
-- **LearnableComponent**: All regions + weighted pathways (includes 5 mixins)
-- **RoutingComponent**: AxonalProjection (spike routing, NO weights)
-- **NeuralComponent**: Alias for LearnableComponent (backward compatibility)
-- **Mixins**: Neuromodulator, LearningStrategy, Diagnostics, Growth, **Resettable**
-- **Helper Methods**: `_reset_subsystems()`, `_reset_scalars()` (from ResettableMixin)
+- **NeuralRegion**: Base class for brain regions with synaptic_weights dict at dendrites
+- **AxonalProjection**: Pure spike routing (NO weights, NO learning, ONLY delays)
+- **CircularDelayBuffer**: Axonal conduction delays (1-20ms)
+- **Learning**: At target synapses (region.synaptic_weights), NOT in pathways
+- **Input Pattern**: Regions receive `Dict[str, torch.Tensor]` from multiple sources
+- **Mixins**: Neuromodulator, LearningStrategy, Diagnostics, Growth, Resettable
 
-**Finding Code (use built-in tools):****
+**Finding Code (use built-in tools):**
 - Regions: `grep_search(query="@register_region", isRegexp=false)`
 - Pathways: `grep_search(query="@register_pathway", isRegexp=false)`
 - Growth methods: `grep_search(query="def grow_output", isRegexp=false)`
-- Multi-source logic: `grep_search(query="MultiSourcePathway", isRegexp=false)`
+- Axonal routing: `grep_search(query="AxonalProjection", isRegexp=false)`
+- Delay buffers: `grep_search(query="CircularDelayBuffer", isRegexp=false)`
 - Symbol usages: `list_code_usages(symbolName="grow_output")`
 - Conceptual search: `semantic_search(query="where does learning happen in striatum")`
 
 **Section Markers (use as search targets):**
 - `=== GROWTH METHODS ===` - Growth implementations
-- `=== MULTI-SOURCE PATHWAY CONSTRUCTION ===` - Multi-source pathway creation
-- `=== MULTI-SOURCE PATHWAY BUFFERING ===` - Event buffering for multi-source
+- `=== SYNAPTIC WEIGHTS ===` - Weight storage at dendrites
+- `=== AXONAL ROUTING ===` - Spike transmission logic
 
 **Key Files:**
 - `docs/architecture/ARCHITECTURE_OVERVIEW.md` - System overview (START HERE)
-- `src/thalia/core/protocols/component.py` - **LearnableComponent & RoutingComponent** (v2.0 architecture)
-- `src/thalia/regions/base.py` - **NeuralComponent alias** (77 lines, backward compatibility)
+- `src/thalia/core/neural_region.py` - **NeuralRegion base class** (synapses at dendrites)
+- `src/thalia/pathways/axonal_projection.py` - **AxonalProjection** (pure routing, NO weights)
+- `src/thalia/utils/delay_buffer.py` - **CircularDelayBuffer** (axonal delays)
 - `src/thalia/core/dynamic_brain.py` - Main brain implementation
 - `src/thalia/core/brain_builder.py` - Fluent construction API
-- `src/thalia/pathways/multi_source_pathway.py` - Multi-input pathway implementation
-- `src/thalia/pathways/axonal_projection.py` - Pure spike routing (NO weights)
-- `src/thalia/synapses/afferent.py` - Synaptic integration layer
+- `src/thalia/learning/strategies/` - Learning strategy implementations
 
 ## Quick Start
 
@@ -42,17 +42,21 @@ This guide helps AI assistants (and developers) navigate the Thalia codebase eff
 # Exact text/regex search
 grep_search(query="@register_region", isRegexp=False)
 grep_search(query="def grow_output", isRegexp=False)
+grep_search(query="AxonalProjection", isRegexp=False)
 
 # Conceptual/semantic search
 semantic_search(query="where does learning happen in striatum")
-semantic_search(query="multi-source pathway growth coordination")
+semantic_search(query="how do axonal delays work")
+semantic_search(query="synaptic weights at dendrites")
 
 # Find all usages of a symbol
-list_code_usages(symbolName="MultiSourcePathway")
+list_code_usages(symbolName="NeuralRegion")
+list_code_usages(symbolName="AxonalProjection")
 list_code_usages(symbolName="grow_output")
 
 # Find files by pattern
 file_search(query="**/*pathway*.py")
+file_search(query="**/*region*.py")
 ```
 
 **Why use built-in tools?**
@@ -73,40 +77,42 @@ Select-String -Path src\thalia\* -Pattern "def grow_output" -Recurse
 Understanding these type patterns helps navigate the codebase:
 
 ```python
-# Component Organization (v2.0 Architecture)
-LearnableComponent = Base class for learnable components  # weights + neurons + learning
-RoutingComponent = Base class for routing components      # spike routing, NO learning
-ComponentGraph = Dict[str, BrainComponentBase]           # name -> component instance
-ConnectionGraph = Dict[Tuple[str, str], BrainComponentBase]  # (src, tgt) -> pathway
-TopologyGraph = Dict[str, List[str]]                  # src -> [tgt1, tgt2, ...]
+# Component Organization
+NeuralRegion = Base class for brain regions              # synaptic_weights dict
+AxonalProjection = Spike routing with delays             # NO weights, NO learning
+ComponentGraph = Dict[str, NeuralRegion]                # name -> component instance
+ConnectionGraph = Dict[Tuple[str, str], AxonalProjection]  # (src, tgt) -> projection
+TopologyGraph = Dict[str, List[str]]                     # src -> [tgt1, tgt2, ...]
 
-# Multi-Source Pathways
-SourceSpec = Tuple[str, Optional[str]]                # (region_name, port)
-SourceOutputs = Dict[str, torch.Tensor]               # {region_name: output_spikes}
-InputSizes = Dict[str, int]                           # {region_name: size}
+# Multi-Source Routing
+SourceSpec = dataclass                                   # (region_name, port, size, delay_ms)
+SourceOutputs = Dict[str, torch.Tensor]                  # {"region:port": output_spikes}
+InputSizes = Dict[str, int]                              # {"region:port": size}
+
+# Synaptic Organization
+SynapticWeights = Dict[str, torch.Tensor]               # {"source_name": weight_matrix}
+LearningStrategies = Dict[str, LearningStrategy]        # {"source_name": strategy}
 
 # Configuration
-ComponentSpec = dataclass                              # Pre-instantiation component definition
-ConnectionSpec = dataclass                             # Pre-instantiation connection definition
+ComponentSpec = dataclass                                # Pre-instantiation component definition
+ConnectionSpec = dataclass                               # Pre-instantiation connection definition
 
 # Port-Based Routing
-SourcePort = Optional[str]                            # 'l23', 'l5', 'l4', None
-TargetPort = Optional[str]                            # 'feedforward', 'top_down', 'ec_l3', None
+SourcePort = Optional[str]                               # 'l23', 'l5', 'l4', 'ca1', None
+TargetPort = Optional[str]                               # 'feedforward', 'top_down', 'ec_l3', None
 
 # Diagnostics
-DiagnosticsDict = Dict[str, Any]                      # Component health/performance metrics
-HealthReport = dataclass                               # Structured health check results
+DiagnosticsDict = Dict[str, Any]                         # Component health/performance metrics
+HealthReport = dataclass                                  # Structured health check results
 
 # State Management
-StateDict = Dict[str, torch.Tensor]                   # Component state for checkpointing
-CheckpointMetadata = Dict[str, Any]                   # Training progress, stage info
+StateDict = Dict[str, torch.Tensor]                      # Component state for checkpointing
+CheckpointMetadata = Dict[str, Any]                      # Training progress, stage info
 ```
 
 ## Standard Growth API
 
-**All `LearnableComponent` subclasses** (regions and weighted pathways) implement these methods:
-
-**NOTE**: `NeuralComponent` is now an alias for `LearnableComponent` (backward compatibility).
+**All `NeuralRegion` subclasses** implement these standardized growth methods:
 
 ### Growth Methods
 

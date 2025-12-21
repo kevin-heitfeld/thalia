@@ -1,5 +1,7 @@
 # Architecture Documentation
 
+**Status**: 🟢 Current (December 21, 2025)
+
 High-level architectural documentation for the Thalia framework.
 
 ---

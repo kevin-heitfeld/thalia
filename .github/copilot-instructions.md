@@ -45,7 +45,13 @@ Each region has its own learning rule:
 - ConductanceLIF neurons (ONLY neuron model) with conductance-based dynamics
 - Temporal dynamics matter (spike timing, delays, traces)
 
-### 3. Neuromodulation is Key
+### 3. Synapses at Target Dendrites
+- **Axons** (AxonalProjection): Pure spike routing with CircularDelayBuffer for axonal delays
+- **Synapses**: Weights stored at target regions in `synaptic_weights` dict
+- **Learning**: Region-specific, per-source customization
+- Input to regions: `Dict[str, torch.Tensor]` (multi-source spike inputs)
+
+### 4. Neuromodulation is Key
 - **Dopamine**: Gates learning in striatum and prefrontal
 - **Acetylcholine**: Modulates encoding/retrieval in hippocampus
 - **Norepinephrine**: Arousal and gain modulation
@@ -99,6 +105,40 @@ self.weights.data = new_weights
 # Note: Method is compute_update(), not apply()
 ```
 
+### NeuralRegion Forward Pattern
+```python
+# Regions receive Dict[str, Tensor] from multiple axonal sources
+class MyRegion(NeuralRegion):
+    def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Process multi-source input.
+
+        Args:
+            source_spikes: {"thalamus": spikes, "cortex:l5": spikes}
+
+        Returns:
+            Output spikes from neurons
+        """
+        # Synaptic integration (weights stored in self.synaptic_weights)
+        total_current = torch.zeros(self.n_neurons, device=self.device)
+        for source_name, spikes in source_spikes.items():
+            weights = self.synaptic_weights[source_name]  # [n_neurons, n_input]
+            total_current += weights @ spikes
+
+        # Neuron dynamics
+        output_spikes = self.neurons(total_current)
+
+        # Learning (per source)
+        for source_name, spikes in source_spikes.items():
+            new_weights, _ = self.strategies[source_name].compute_update(
+                weights=self.synaptic_weights[source_name],
+                pre_spikes=spikes,
+                post_spikes=output_spikes,
+            )
+            self.synaptic_weights[source_name].data = new_weights
+
+        return output_spikes
+```
+
 ## Common Imports
 
 ```python
@@ -107,7 +147,7 @@ from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
 # Learning strategies
-from thalia.learning import create_strategy
+from thalia.learning import create_strategy, create_cortex_strategy, create_striatum_strategy
 
 # Curriculum training
 from thalia.config.curriculum_growth import CurriculumStage, get_curriculum_growth_config
@@ -121,6 +161,8 @@ from thalia.datasets import (
     create_stage3_reading_dataset,
     GrammarLanguage,
     ReadingLanguage,
+    PhonologicalDataset,
+    Language,  # For phonology
 )
 
 # Diagnostics
@@ -128,13 +170,28 @@ from thalia.diagnostics import HealthMonitor, CriticalityMonitor, MetacognitiveM
 from thalia.diagnostics.health_monitor import HealthReport  # Dataclass, not dict
 from thalia.training.visualization import TrainingMonitor
 
+# Neuron models
+from thalia.components.neurons import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
+    create_pyramidal_neurons,
+    create_relay_neurons,
+)
+
+# Synaptic components
+from thalia.components.synapses import WeightInitializer, ShortTermPlasticity
+
+# Axonal projections and delays
+from thalia.pathways.axonal_projection import AxonalProjection, SourceSpec
+from thalia.utils.delay_buffer import CircularDelayBuffer
+
 # Creating a brain
 brain = BrainBuilder.preset("default", global_config)  # Use presets
 brain = DynamicBrain.from_thalia_config(thalia_config)      # From config
 
 # Accessing components
 region = brain.components["cortex"]                     # Get region by name
-pathway = brain.connections[("thalamus", "cortex")]    # Get pathway
+pathway = brain.connections[("thalamus", "cortex")]    # Get pathway (AxonalProjection)
 all_regions = brain.components                          # Dict of all components
 ```
 
@@ -152,8 +209,9 @@ Select-String -Path src\* -Pattern "def grow_input" -Recurse
 # Find learning strategies
 Select-String -Path src\* -Pattern "create_strategy" -Recurse
 
-# Find multi-source pathway logic
-Select-String -Path src\* -Pattern "MultiSourcePathway" -Recurse
+# Find axonal projection and delay logic
+Select-String -Path src\* -Pattern "AxonalProjection" -Recurse
+Select-String -Path src\* -Pattern "CircularDelayBuffer" -Recurse
 ```
 
 ## Biological Accuracy Constraints
@@ -184,10 +242,10 @@ Select-String -Path src\* -Pattern "MultiSourcePathway" -Recurse
 
 ### Core Systems ✅
 - **Brain Regions**: Cortex (laminar L4→L2/3→L5), Hippocampus (DG→CA3→CA1), Striatum (D1/D2 pathways), PFC, Cerebellum, Thalamus
-- **Neurons**: ConductanceLIF (conductance-based, voltage-dependent currents)
+- **Neurons**: ConductanceLIF (conductance-based, voltage-dependent currents) - ONLY neuron model
 - **Learning Rules**: STDP, BCM, Hebbian, three-factor (dopamine-gated), error-corrective
-- **Neuromodulators**: Dopamine, acetylcholine, norepinephrine (centralized management)
-- **Oscillators**: Theta (8Hz), alpha (10Hz), gamma (40Hz) coordination
+- **Neuromodulators**: Dopamine, acetylcholine, norepinephrine (centralized management via NeuromodulatorManager)
+- **Oscillators**: Delta, theta, alpha, beta, gamma with cross-frequency coupling
 
 ### Planning & Memory ✅
 - **TD(λ)**: Multi-step credit assignment (`src/thalia/regions/striatum/td_lambda.py`)
@@ -199,9 +257,9 @@ Select-String -Path src\* -Pattern "MultiSourcePathway" -Recurse
 ### Training & Infrastructure ✅
 - **Curriculum Training**: Stage-based developmental training (`src/thalia/training/curriculum/`)
 - **Checkpoints**: PyTorch format (primary) + binary format (optional)
-- **Parallel Execution**: Multi-core CPU support (`src/thalia/events/parallel.py`)
+- **Clock-Driven Execution**: Fixed timestep simulation with axonal delays in pathways
 - **Diagnostics**: Health monitor, training monitor, criticality monitor
-- **Datasets**: Temporal sequences, CIFAR-10, Grammar (3 languages), Reading (3 languages)
+- **Datasets**: Temporal sequences, Phonology (3 languages), CIFAR-10, Grammar (3 languages), Reading (3 languages)
 
 ## Type Alias Glossary
 
