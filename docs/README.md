@@ -33,7 +33,9 @@ Always-up-to-date API documentation generated from code.
 - **[EXCEPTIONS_REFERENCE.md](./api/EXCEPTIONS_REFERENCE.md)** — Exception hierarchy
 - **[MODULE_EXPORTS.md](./api/MODULE_EXPORTS.md)** — Public API exports
 - **[MIXINS_REFERENCE.md](./api/MIXINS_REFERENCE.md)** — NeuralRegion mixin classes
-- **[CONSTANTS_REFERENCE.md](./api/CONSTANTS_REFERENCE.md)** — Biological constants
+- **[CONSTANTS_REFERENCE.md](./api/CONSTANTS_REFERENCE.md)** — All package-level constants *(auto-generated)*
+- **[PROTOCOLS_REFERENCE.md](./api/PROTOCOLS_REFERENCE.md)** — Protocol/interface definitions *(auto-generated)*
+- **[USAGE_EXAMPLES.md](./api/USAGE_EXAMPLES.md)** — Code examples from docstrings *(auto-generated)*
 - Run `python scripts/generate_api_docs.py` to regenerate
 
 ### 🏗️ [Architecture](./architecture/)

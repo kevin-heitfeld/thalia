@@ -71,6 +71,8 @@ Located in: `docs/api/`
 | **MODULE_EXPORTS.md** | Public API exports | `__all__` lists from `__init__.py` files | Auto |
 | **MIXINS_REFERENCE.md** | Mixin classes for NeuralRegion | Mixin classes and their methods | Auto |
 | **CONSTANTS_REFERENCE.md** | Biological constants and defaults | Module-level UPPERCASE constants | Auto |
+| **PROTOCOLS_REFERENCE.md** | Protocol/interface definitions | `@runtime_checkable` Protocol classes | Auto |
+| **USAGE_EXAMPLES.md** | Code examples from docstrings | Module docstrings and training scripts | Auto |
 
 **Benefits**:
 - ✅ Always synchronized with codebase

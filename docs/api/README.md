@@ -11,9 +11,13 @@
 - **[DATASETS_REFERENCE.md](DATASETS_REFERENCE.md)** — Dataset classes and factory functions
 - **[DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md)** — Diagnostic monitor classes
 - **[EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md)** — Custom exception classes
-- **[MODULE_EXPORTS.md](MODULE_EXPORTS.md)** — Public API exports from __init__.py
+- **[MODULE_EXPORTS.md](MODULE_EXPORTS.md)** — Public API exports from `__init__.py`
 - **[MIXINS_REFERENCE.md](MIXINS_REFERENCE.md)** — Mixin classes providing NeuralRegion functionality
-- **[CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md)** — Biological constants and default values
+- **[CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md)** - All package-level constants *(auto-generated)*
+- **[PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md)** - Protocol/interface definitions *(auto-generated)*
+- **[USAGE_EXAMPLES.md](USAGE_EXAMPLES.md)** - Code examples from docstrings *(auto-generated)*
+
+---
 
 ## Regenerating Documentation
 

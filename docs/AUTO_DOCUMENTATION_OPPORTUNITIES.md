@@ -4,7 +4,7 @@
 
 This document tracks opportunities for auto-generating documentation from code to reduce maintenance burden and ensure documentation stays synchronized.
 
-## ✅ Currently Auto-Generated (9 documents)
+## ✅ Currently Auto-Generated (11 documents)
 
 ### API Reference (docs/api/)
 
@@ -32,17 +32,25 @@ This document tracks opportunities for auto-generating documentation from code t
    - Source: Custom exception classes
    - Coverage: Exception hierarchy from `core/errors.py`
 
-7. **MODULE_EXPORTS.md** ✨ NEW - Public API exports
+7. **MODULE_EXPORTS.md** - Public API exports
    - Source: `__all__` lists from `__init__.py` files
    - Coverage: 46 modules, 548 exports
 
-8. **MIXINS_REFERENCE.md** ✨ NEW - Mixin classes
+8. **MIXINS_REFERENCE.md** - Mixin classes
    - Source: Mixin classes used by NeuralRegion
    - Coverage: 4 mixins (NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin)
 
-9. **CONSTANTS_REFERENCE.md** ✨ NEW - Biological constants
+9. **CONSTANTS_REFERENCE.md** - Biological constants
    - Source: Module-level UPPERCASE constants
    - Coverage: 59 constants across 3 files
+
+10. **PROTOCOLS_REFERENCE.md** ✨ NEW - Protocol/interface definitions
+    - Source: `@runtime_checkable` Protocol classes
+    - Coverage: 8 protocols with method signatures
+
+11. **USAGE_EXAMPLES.md** ✨ NEW - Code examples from docstrings
+    - Source: Module docstrings and training scripts
+    - Coverage: 13 examples across 4 categories
 
 **Generation**: Run `python scripts/generate_api_docs.py`
 
@@ -76,19 +84,27 @@ This document tracks opportunities for auto-generating documentation from code t
 - Organized by category (dopamine, acetylcholine, etc.)
 - Shows time constants, thresholds, ratios
 
-### Medium Value (Medium Effort)
+### Medium Value (Medium Effort) - ✅ COMPLETED
 
-#### 4. Protocol/Interface Reference
-**What**: Document all Protocol classes defining interfaces
-**Source**: `@runtime_checkable` protocols in `protocols/`
-**Value**:
+#### 4. Protocol/Interface Reference ✅ DONE
+**Status**: Implemented as PROTOCOLS_REFERENCE.md
+**Coverage**: 8 protocols with method signatures and runtime checkable status
+**Value Delivered**:
 - Shows required interfaces for components
 - Documents expected method signatures
 - Helps implement custom components
 
-**Output**: `docs/api/PROTOCOLS_REFERENCE.md`
+#### 5. Usage Examples Reference ✅ DONE
+**Status**: Implemented as USAGE_EXAMPLES.md
+**Coverage**: 13 examples across 4 categories (component, learning, diagnostic, training)
+**Value Delivered**:
+- Working code examples from actual docstrings
+- Organized by purpose
+- Shows real usage patterns
 
-#### 5. CLI Commands Reference
+### Low Value (Higher Effort)
+
+#### 6. CLI Commands Reference
 **What**: Document all command-line scripts and arguments
 **Source**: argparse definitions in scripts/
 **Value**:
@@ -144,23 +160,29 @@ This document tracks opportunities for auto-generating documentation from code t
 
 ## 📊 Impact Analysis
 
-### Current Coverage ✅ ACHIEVED TARGET
-- **9 docs auto-generated** (100% synchronized with code)
-- **46 docs manually maintained** (55 total - 9 auto)
-- **16% automation rate** 🎯 TARGET MET
-- **Maintenance time saved**: ~20-25 hours/year
+### Current Coverage ✅ EXCEEDED TARGET
+- **11 docs auto-generated** (up from 9) - 100% synchronized with code
+- **44 docs manually maintained** (55 total - 11 auto)
+- **20% automation rate** 🎯 EXCEEDED 16% TARGET
+- **Maintenance time saved**: ~25+ hours/year
 
 ### Before This Session
 - **6 docs auto-generated**
 - **49 docs manually maintained**
 - **11% automation rate**
 
-### After High-Value Additions (+3 docs) ✅ COMPLETE
-- **9 docs auto-generated**
-- **46 docs manually maintained**
-- **16% automation rate** 🎉
+### After Phase 3: High-Value Additions (+3 docs) → 9 docs total
+- **16% automation rate**
 - **1400+ new lines** of auto-generated documentation
-- **Maintenance time saved**: 20-25 hours/year
+- MODULE_EXPORTS.md, MIXINS_REFERENCE.md, CONSTANTS_REFERENCE.md
+
+### After Phase 4: Medium-Value Additions (+2 docs) → 11 docs total ✅ CURRENT
+- **11 docs auto-generated**
+- **44 docs manually maintained**
+- **20% automation rate** 🎉
+- **1800+ new lines** of auto-generated documentation
+- **New**: PROTOCOLS_REFERENCE.md (8 protocols), USAGE_EXAMPLES.md (13 examples)
+- **Maintenance time saved**: 25+ hours/year
 
 ### Why Not Auto-Generate Everything?
 

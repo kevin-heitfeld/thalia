@@ -11,6 +11,8 @@ This script auto-generates:
 7. MODULE_EXPORTS.md - Public exports from __init__.py files
 8. MIXINS_REFERENCE.md - Mixin classes used by NeuralRegion
 9. CONSTANTS_REFERENCE.md - Module-level constants and defaults
+10. PROTOCOLS_REFERENCE.md - Protocol/interface definitions
+11. USAGE_EXAMPLES.md - Code examples from docstrings
 
 Run this script whenever components are added/modified to keep docs synchronized.
 """
@@ -110,6 +112,26 @@ class ConstantInfo:
     category: str
 
 
+@dataclass
+class ProtocolInfo:
+    """Protocol/interface definition."""
+    name: str
+    docstring: str
+    methods: List[Tuple[str, str]]  # (method_name, signature)
+    file_path: str
+    is_runtime_checkable: bool
+
+
+@dataclass
+class UsageExample:
+    """Code usage example from docstrings or training scripts."""
+    title: str
+    code: str
+    description: str
+    source_file: str
+    category: str  # "component", "training", "diagnostic", etc.
+
+
 class APIDocGenerator:
     """Generate API documentation from codebase."""
 
@@ -127,6 +149,8 @@ class APIDocGenerator:
         self.module_exports: Dict[str, List[ModuleExport]] = {}  # module_path -> exports
         self.mixins: List[MixinInfo] = []
         self.constants: List[ConstantInfo] = []
+        self.protocols: List[ProtocolInfo] = []
+        self.usage_examples: List[UsageExample] = []
 
     def generate(self):
         """Generate all API documentation."""
@@ -145,6 +169,8 @@ class APIDocGenerator:
         self._find_module_exports()
         self._find_mixins()
         self._find_constants()
+        self._find_protocols()
+        self._find_usage_examples()
 
         # Generate documentation files
         self._generate_component_catalog()
@@ -156,6 +182,8 @@ class APIDocGenerator:
         self._generate_module_exports_reference()
         self._generate_mixins_reference()
         self._generate_constants_reference()
+        self._generate_protocols_reference()
+        self._generate_usage_examples_reference()
 
         print("\n✅ API documentation generated successfully!")
         print(f"   Location: {self.api_dir.relative_to(self.docs_dir.parent)}")
@@ -659,6 +687,134 @@ class APIDocGenerator:
             except Exception as e:
                 print(f"Warning: Could not parse {constants_file}: {e}")
 
+    def _find_protocols(self):
+        """Find all Protocol classes defining interfaces."""
+        protocol_files = [
+            self.src_dir / "core" / "protocols" / "neural.py",
+            self.src_dir / "core" / "protocols" / "component.py",
+        ]
+
+        for protocol_file in protocol_files:
+            if not protocol_file.exists():
+                continue
+
+            try:
+                content = protocol_file.read_text(encoding="utf-8")
+                tree = ast.parse(content)
+
+                # Track if next class is runtime_checkable
+                is_runtime_checkable = False
+
+                for node in tree.body:
+                    # Check for @runtime_checkable decorator
+                    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Name):
+                        if node.value.id == "runtime_checkable":
+                            is_runtime_checkable = True
+                            continue
+
+                    # Check if it's a Protocol class
+                    if isinstance(node, ast.ClassDef):
+                        # Check if it inherits from Protocol
+                        is_protocol = any(
+                            (hasattr(base, 'id') and base.id == 'Protocol') or
+                            (hasattr(base, 'attr') and base.attr == 'Protocol')
+                            for base in node.bases
+                        )
+
+                        if is_protocol:
+                            docstring = ast.get_docstring(node) or "No docstring"
+                            methods = []
+
+                            for item in node.body:
+                                if isinstance(item, ast.FunctionDef) and not item.name.startswith('_'):
+                                    # Extract method signature
+                                    params = []
+                                    for arg in item.args.args:
+                                        if arg.arg != 'self':
+                                            # Get type annotation if present
+                                            if arg.annotation:
+                                                try:
+                                                    type_str = ast.unparse(arg.annotation) if hasattr(ast, 'unparse') else "Any"
+                                                    params.append(f"{arg.arg}: {type_str}")
+                                                except:
+                                                    params.append(arg.arg)
+                                            else:
+                                                params.append(arg.arg)
+
+                                    signature = f"{item.name}({', '.join(params)})"
+                                    methods.append((item.name, signature))
+
+                            self.protocols.append(ProtocolInfo(
+                                name=node.name,
+                                docstring=docstring.split('\n')[0],
+                                methods=methods[:10],  # First 10 methods
+                                file_path=str(protocol_file.relative_to(self.src_dir.parent)),
+                                is_runtime_checkable=is_runtime_checkable
+                            ))
+                            is_runtime_checkable = False
+
+            except Exception as e:
+                print(f"Warning: Could not parse {protocol_file}: {e}")
+
+    def _find_usage_examples(self):
+        """Find usage examples from docstrings and training scripts."""
+        # Extract from module docstrings
+        example_files = [
+            (self.src_dir / "core" / "neural_region.py", "component"),
+            (self.src_dir / "learning" / "strategy_registry.py", "learning"),
+            (self.src_dir / "diagnostics" / "health_monitor.py", "diagnostic"),
+        ]
+
+        # Add training script
+        training_script = self.src_dir.parent / "training" / "thalia_birth_sensorimotor.py"
+        if training_script.exists():
+            example_files.append((training_script, "training"))
+
+        for file_path, category in example_files:
+            if not file_path.exists():
+                continue
+
+            try:
+                content = file_path.read_text(encoding="utf-8")
+
+                # Extract code blocks from docstrings
+                in_example = False
+                example_lines = []
+                example_title = ""
+
+                for line in content.split('\n'):
+                    # Look for Usage: or Example: sections
+                    if 'Usage:' in line or 'Example:' in line:
+                        example_title = line.strip().strip('"""').strip('#').strip()
+                        in_example = True
+                        continue
+
+                    # Look for code blocks
+                    if in_example and ('```python' in line or '>>>' in line):
+                        example_lines = []
+                        continue
+
+                    if in_example and ('```' in line or '"""' in line) and example_lines:
+                        # Save the example
+                        code = '\n'.join(example_lines).strip()
+                        if code and len(code) > 20:  # Non-trivial example
+                            self.usage_examples.append(UsageExample(
+                                title=example_title or f"Usage from {file_path.name}",
+                                code=code,
+                                description="",
+                                source_file=str(file_path.relative_to(self.src_dir.parent)),
+                                category=category
+                            ))
+                        in_example = False
+                        example_lines = []
+                        continue
+
+                    if in_example and line.strip() and not line.strip().startswith('#'):
+                        example_lines.append(line)
+
+            except Exception as e:
+                print(f"Warning: Could not parse {file_path}: {e}")
+
     def _find_exceptions(self):
         """Find all custom exception classes."""
         errors_file = self.src_dir / "core" / "errors.py"
@@ -912,6 +1068,89 @@ class APIDocGenerator:
                     f.write(f"**Source**: `{constants[0].file_path}`\n\n")
 
                 f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _generate_protocols_reference(self):
+        """Generate PROTOCOLS_REFERENCE.md."""
+        output_file = self.api_dir / "PROTOCOLS_REFERENCE.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Protocols Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all Protocol classes defining interfaces ")
+            f.write("for duck-typed components in Thalia.\n\n")
+
+            f.write(f"Total: {len(self.protocols)} protocols\n\n")
+
+            f.write("## Protocol Classes\n\n")
+
+            for protocol in sorted(self.protocols, key=lambda p: p.name):
+                f.write(f"### `{protocol.name}`\n\n")
+
+                if protocol.is_runtime_checkable:
+                    f.write("**Runtime Checkable**: ✅ Yes (can use `isinstance()`)\n\n")
+                else:
+                    f.write("**Runtime Checkable**: ❌ No (static type checking only)\n\n")
+
+                f.write(f"**Source**: `{protocol.file_path}`\n\n")
+                f.write(f"**Description**: {protocol.docstring}\n\n")
+
+                if protocol.methods:
+                    f.write("**Required Methods**:\n\n")
+                    f.write("```python\n")
+                    for _, signature in protocol.methods:
+                        f.write(f"def {signature}:\n")
+                        f.write(f"    ...\n\n")
+                    f.write("```\n\n")
+
+                f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _generate_usage_examples_reference(self):
+        """Generate USAGE_EXAMPLES.md."""
+        output_file = self.api_dir / "USAGE_EXAMPLES.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Usage Examples\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs usage examples extracted from docstrings ")
+            f.write("and training scripts.\n\n")
+
+            f.write(f"Total: {len(self.usage_examples)} examples\n\n")
+
+            # Group by category
+            from collections import defaultdict
+            by_category = defaultdict(list)
+            for example in self.usage_examples:
+                by_category[example.category].append(example)
+
+            f.write("## Examples by Category\n\n")
+
+            for category in sorted(by_category.keys()):
+                examples = by_category[category]
+                f.write(f"### {category.title()}\n\n")
+
+                for example in examples:
+                    f.write(f"#### {example.title}\n\n")
+                    f.write(f"**Source**: `{example.source_file}`\n\n")
+
+                    if example.description:
+                        f.write(f"{example.description}\n\n")
+
+                    f.write("```python\n")
+                    f.write(example.code)
+                    f.write("\n```\n\n")
+                    f.write("---\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
