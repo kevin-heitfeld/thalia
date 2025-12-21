@@ -1040,6 +1040,7 @@ class LayeredCortex(NeuralRegion):
 
         # L4: Input processing with conductance-based neurons
         # Compute excitatory conductance from input (using synaptic_weights)
+        # Dense matmul for all inputs
         l4_g_exc = (
             torch.matmul(self.synaptic_weights["input"], gated_input_spikes.float())
             * cfg.input_to_l4_strength
@@ -1926,12 +1927,5 @@ class LayeredCortex(NeuralRegion):
         # Restore STP state (always present)
         if "stp_l23_recurrent" in learning_state:
             self.stp_l23_recurrent.load_state(learning_state["stp_l23_recurrent"])
-
-        # Restore neuromodulators
-        neuromod = state["neuromodulator_state"]
-
-        self.state.dopamine = neuromod["dopamine"]
-        self.state.norepinephrine = neuromod["norepinephrine"]
-        self.state.acetylcholine = neuromod["acetylcholine"]
 
     # endregion

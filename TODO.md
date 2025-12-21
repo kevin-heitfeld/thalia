@@ -59,7 +59,6 @@
 ---
 
 - `docs\design\circuit_modeling_plan.md`
-- Sparse computations throughout?
 - Consciousness / Self-Awareness:
   - https://www.youtube.com/watch?v=OlnioeAtloY
   - How to: Mirror Test?

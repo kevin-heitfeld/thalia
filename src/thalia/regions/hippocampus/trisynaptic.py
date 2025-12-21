@@ -913,12 +913,11 @@ class TrisynapticHippocampus(NeuralRegion):
         dg_spikes, _ = self.dg_neurons(dg_g_exc, g_inh_input=None)
 
         # Apply extreme winner-take-all sparsity
-        # Note: cast needed because hasattr check doesn't narrow type for Pylance
-        membrane_v = getattr(self.dg_neurons, 'v', None)
+        # Membrane potentials are guaranteed to exist after forward() call
         dg_spikes = self._apply_wta_sparsity(
             dg_spikes,
             self.tri_config.dg_sparsity,
-            membrane_v if isinstance(membrane_v, torch.Tensor) else None,
+            self.dg_neurons.membrane,
         )
         self.state.dg_spikes = dg_spikes
 
@@ -1002,6 +1001,7 @@ class TrisynapticHippocampus(NeuralRegion):
             effective_w_dg_ca3 = self.w_dg_ca3 * stp_efficacy.T
             ca3_from_dg = torch.matmul(effective_w_dg_ca3, dg_spikes_delayed.float()) * dg_ca3_gate  # [ca3_size]
         else:
+            # Standard matmul without STP
             ca3_from_dg = torch.matmul(self.w_dg_ca3, dg_spikes_delayed.float()) * dg_ca3_gate  # [ca3_size]
 
         # Direct perforant path from EC (provides retrieval cues)
@@ -1176,19 +1176,20 @@ class TrisynapticHippocampus(NeuralRegion):
         # Solution: After LIF processing, restore membrane potential for neurons
         # with high persistent activity. This models how I_NaP keeps neurons
         # near threshold even after spiking.
-        if hasattr(self.ca3_neurons, 'membrane') and self.ca3_neurons.membrane is not None:
-            with torch.no_grad():
-                # Boost membrane for neurons with high persistent activity
-                # This counteracts the post-spike reset
-                persistent_boost = self.state.ca3_persistent * 1.5
-                self.ca3_neurons.membrane = self.ca3_neurons.membrane + persistent_boost
+        with torch.no_grad():
+            # Boost membrane for neurons with high persistent activity
+            # This counteracts the post-spike reset
+            # Membrane is guaranteed to exist after neurons.forward() call
+            assert self.ca3_neurons.membrane is not None, "CA3 membrane should exist after forward()"
+            persistent_boost = self.state.ca3_persistent * 1.5
+            self.ca3_neurons.membrane = self.ca3_neurons.membrane + persistent_boost
 
         # Apply sparsity - now WTA will favor neurons with high persistent activity
-        ca3_membrane_v = getattr(self.ca3_neurons, 'membrane', None)
+        # Membrane potentials are guaranteed to exist after forward() call
         ca3_spikes = self._apply_wta_sparsity(
             ca3_spikes,
             self.tri_config.ca3_sparsity,
-            ca3_membrane_v if isinstance(ca3_membrane_v, torch.Tensor) else None,
+            self.ca3_neurons.membrane,
         )
         self.state.ca3_spikes = ca3_spikes
 
@@ -1347,6 +1348,7 @@ class TrisynapticHippocampus(NeuralRegion):
             effective_w_ca3_ca1 = self.w_ca3_ca1 * stp_efficacy.T
             ca1_from_ca3 = torch.matmul(effective_w_ca3_ca1, ca3_spikes_delayed.float())  # [ca1_size]
         else:
+            # Standard matmul without STP
             ca1_from_ca3 = torch.matmul(self.w_ca3_ca1, ca3_spikes_delayed.float())  # [ca1_size]
 
         # Direct from EC (current input) - use ec_direct_input if provided
@@ -1368,6 +1370,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 effective_w = w_ec_l3_ca1 * stp_efficacy.T
                 ca1_from_ec = torch.matmul(effective_w, ec_direct_input.float())  # [ca1_size]
             else:
+                # Standard matmul without STP
                 ca1_from_ec = torch.matmul(w_ec_l3_ca1, ec_direct_input.float())  # [ca1_size]
             ec_input_for_ca1 = ec_direct_input
         elif ec_direct_input is not None:
@@ -1377,6 +1380,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 effective_w = w_ec_ca1 * stp_efficacy.T
                 ca1_from_ec = torch.matmul(effective_w, ec_direct_input.float())  # [ca1_size]
             else:
+                # Standard matmul without STP
                 ca1_from_ec = torch.matmul(w_ec_ca1, ec_direct_input.float())  # [ca1_size]
             ec_input_for_ca1 = ec_direct_input
         else:
@@ -1438,12 +1442,12 @@ class TrisynapticHippocampus(NeuralRegion):
         ca1_spikes, _ = self.ca1_neurons(ca1_g_exc, ca1_g_inh)
 
         # Apply sparsity (more lenient during retrieval to allow mismatch detection)
-        ca1_membrane_v = getattr(self.ca1_neurons, 'v', None)
+        # Membrane potentials are guaranteed to exist after forward() call
         sparsity_factor = 1.0 + 0.5 * retrieval_mod  # Higher threshold during retrieval
         ca1_spikes = self._apply_wta_sparsity(
             ca1_spikes,
             cfg.ca1_sparsity * sparsity_factor,
-            ca1_membrane_v if isinstance(ca1_membrane_v, torch.Tensor) else None,
+            self.ca1_neurons.membrane,
         )
 
         # ---------------------------------------------------------
@@ -1517,10 +1521,16 @@ class TrisynapticHippocampus(NeuralRegion):
         target_sparsity: float,
         membrane: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Apply winner-take-all sparsity to enforce sparse coding.
+        """Apply soft winner-take-all with membrane noise (biologically realistic).
 
-        Only the top-k neurons (by membrane potential) are allowed to spike.
-        Returns bool tensor for consistency with neuron models.
+        Instead of hard ranking by exact membrane potential, uses:
+        1. Membrane noise (1-2mV typical biological fluctuation)
+        2. Probabilistic selection via softmax over noisy potentials
+        3. Target sparsity as soft constraint, not hard cutoff
+
+        This makes the selection robust to tiny floating point differences
+        (<1e-7) while maintaining biological realism. Real hippocampal neurons
+        have ~2-5mV membrane fluctuations that dominate selection dynamics.
 
         Args:
             spikes: Spike tensor [n_neurons] (1D)
@@ -1543,14 +1553,27 @@ class TrisynapticHippocampus(NeuralRegion):
             # All spikes pass through
             sparse_spikes = spikes if spikes.dtype == torch.bool else spikes.bool()
         elif membrane is not None:
-            # Keep top-k by membrane potential
+            # Add biological membrane noise (1-2mV ~ 0.001-0.002 normalized units)
+            # This masks tiny numerical differences and reflects real voltage fluctuations
             active_v = membrane[active]
-            _, top_k_idx = torch.topk(active_v, k)
-            sparse_spikes[active[top_k_idx]] = True
+            noise = torch.randn_like(active_v) * 0.002  # 2mV std deviation
+            noisy_v = active_v + noise
+
+            # Soft WTA: probabilistic selection via softmax (temperature=10mV ~ 0.01)
+            # Higher membrane potential = higher selection probability, but not deterministic
+            # This prevents arbitrary ranking of near-equal neurons
+            probs = torch.softmax(noisy_v / 0.01, dim=0)
+
+            # Sample k winners without replacement (multinomial prevents duplicates)
+            selected = torch.multinomial(probs, k, replacement=False)
+            sparse_spikes[active[selected]] = True
         else:
-            # Random selection if no membrane
-            perm = torch.randperm(len(active))[:k]
-            sparse_spikes[active[perm]] = True
+            # This should never happen - all neuron models have membrane potentials
+            raise RuntimeError(
+                f"_apply_wta_sparsity called without membrane potentials. "
+                f"WTA requires membrane potentials to select winners. "
+                f"Got {len(active)} active neurons needing selection to {k}."
+            )
 
         return sparse_spikes
 

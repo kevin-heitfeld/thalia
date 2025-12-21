@@ -28,6 +28,11 @@ from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
 
 
+# Custom warning for performance issues
+class PerformanceWarning(UserWarning):
+    """Warning for performance-degrading configurations."""
+    pass
+
 # Type hint for learning strategies (duck typing)
 class LearningStrategy(Protocol):
     """Protocol for learning strategies that can update synaptic weights."""
@@ -199,7 +204,7 @@ class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin,
             n_output=self.n_neurons,
             n_input=n_input,
             sparsity=sparsity,
-            scale=weight_scale,
+            weight_scale=weight_scale,
             device=self.device,
         )
 
@@ -207,7 +212,6 @@ class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin,
         # Use ParameterDict to ensure proper device movement and state saving
         self.synaptic_weights[source_name] = nn.Parameter(weights)
 
-        # Track input size
         self.input_sources[source_name] = n_input
 
         # Update total n_input for NeuralComponent compatibility
