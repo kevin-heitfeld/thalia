@@ -23,6 +23,13 @@ Thalia is a biologically-accurate spiking neural network framework for building 
 
 ## Documentation Structure
 
+### 📚 [API Reference](./api/) (Auto-Generated)
+Always-up-to-date API documentation generated from code.
+- **[COMPONENT_CATALOG.md](./api/COMPONENT_CATALOG.md)** — All registered regions and pathways
+- **[LEARNING_STRATEGIES_API.md](./api/LEARNING_STRATEGIES_API.md)** — Learning strategy factory functions
+- **[CONFIGURATION_REFERENCE.md](./api/CONFIGURATION_REFERENCE.md)** — Configuration dataclasses
+- Run `python scripts/generate_api_docs.py` to regenerate
+
 ### 🏗️ [Architecture](./architecture/)
 High-level system architecture and design philosophy.
 - **[ARCHITECTURE_OVERVIEW.md](./architecture/ARCHITECTURE_OVERVIEW.md)** — START HERE for system overview

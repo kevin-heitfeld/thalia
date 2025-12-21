@@ -12,6 +12,7 @@ This is a comprehensive searchable index of all documentation in the Thalia proj
 ## Quick Navigation
 
 - [Root Documentation](#root-documentation) — Getting started guides and quick references
+- [API Reference](#api-reference-directory) — Auto-generated API documentation
 - [Architecture](#architecture-directory) — System design and component overview
 - [Design](#design-directory) — Technical specifications and implementation details
 - [Patterns](#patterns-directory) — Implementation patterns and best practices
@@ -49,6 +50,27 @@ Located in: `docs/`
 | File | Purpose | Status | Referenced In |
 |------|---------|--------|---------------|
 | **NOISE_SYSTEM.md** | Noise scheduling system | 🟢 Current | Training code |
+
+---
+
+## API Reference Directory
+
+Located in: `docs/api/`
+
+> **Auto-generated documentation** - Always synchronized with code
+> Run `python scripts/generate_api_docs.py` to update
+
+| File | Purpose | Generated From | Last Updated |
+|------|---------|----------------|--------------|
+| **COMPONENT_CATALOG.md** | All registered regions and pathways | `@register_region`, `@register_pathway` decorators | Auto |
+| **LEARNING_STRATEGIES_API.md** | Learning strategy factory functions | `create_*_strategy()` functions | Auto |
+| **CONFIGURATION_REFERENCE.md** | Configuration dataclasses | `*Config` dataclass definitions | Auto |
+
+**Benefits**:
+- ✅ Always synchronized with codebase
+- ✅ No manual maintenance required
+- ✅ Catches undocumented components
+- ✅ Consistent formatting
 
 ---
 
