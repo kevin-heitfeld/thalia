@@ -96,7 +96,7 @@ import torch
 import torch.nn as nn
 
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.regions.base import NeuralComponentState
+from thalia.core.region_state import BaseRegionState
 from thalia.core.neural_region import NeuralRegion
 from thalia.utils.input_routing import InputRouter
 from thalia.managers.component_registry import register_region
@@ -224,8 +224,21 @@ class ThalamicRelayConfig(NeuralComponentConfig):
 
 
 @dataclass
-class ThalamicRelayState(NeuralComponentState):
-    """State for thalamic relay nucleus."""
+class ThalamicRelayState(BaseRegionState):
+    """State for thalamic relay nucleus with RegionState protocol compliance.
+
+    Extends BaseRegionState with thalamus-specific state:
+    - Neuromodulator levels (dopamine, acetylcholine, norepinephrine)
+    - Relay and TRN neuron states (spikes, membrane potentials)
+    - Burst/tonic mode state
+    - Alpha oscillation gating state
+    - Short-term plasticity (STP) state for sensory and L6 feedback pathways
+    """
+
+    # Neuromodulator state (not in BaseRegionState, must be explicit)
+    dopamine: float = 0.2
+    acetylcholine: float = 0.0
+    norepinephrine: float = 0.0
 
     # Relay neuron state
     relay_spikes: Optional[torch.Tensor] = None
@@ -241,6 +254,105 @@ class ThalamicRelayState(NeuralComponentState):
 
     # Gating state
     alpha_gate: Optional[torch.Tensor] = None  # Current gating factor [0, 1]
+
+    # Short-term plasticity state (HIGH PRIORITY for sensory gating)
+    stp_sensory_relay_state: Optional[Dict[str, torch.Tensor]] = None  # Sensory → relay STP
+    stp_l6_feedback_state: Optional[Dict[str, torch.Tensor]] = None    # L6 → relay STP
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize state to dictionary for checkpointing.
+
+        Returns:
+            Dictionary with all state fields, including nested STP states.
+        """
+        return {
+            # Base region state
+            "spikes": self.spikes,
+            "membrane": self.membrane,
+            "dopamine": self.dopamine,
+            "acetylcholine": self.acetylcholine,
+            "norepinephrine": self.norepinephrine,
+            # Relay neuron state
+            "relay_spikes": self.relay_spikes,
+            "relay_membrane": self.relay_membrane,
+            # TRN state
+            "trn_spikes": self.trn_spikes,
+            "trn_membrane": self.trn_membrane,
+            # Mode state
+            "current_mode": self.current_mode,
+            "burst_counter": self.burst_counter,
+            # Gating state
+            "alpha_gate": self.alpha_gate,
+            # STP state (nested dicts)
+            "stp_sensory_relay_state": self.stp_sensory_relay_state,
+            "stp_l6_feedback_state": self.stp_l6_feedback_state,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Dict[str, Any],  # Changed from state_dict to data to match base class
+        device: str = "cpu",   # Changed from Optional[torch.device] to str to match base class
+    ) -> "ThalamicRelayState":
+        """Deserialize state from dictionary.
+
+        Args:
+            data: Dictionary with state fields
+            device: Target device string (e.g., 'cpu', 'cuda', 'cuda:0')
+
+        Returns:
+            ThalamicRelayState instance with restored state
+        """
+        def transfer_tensor(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+            if t is None:
+                return t
+            return t.to(device)
+
+        def transfer_nested_dict(d: Optional[Dict[str, torch.Tensor]]) -> Optional[Dict[str, torch.Tensor]]:
+            """Transfer nested dict of tensors to device."""
+            if d is None:
+                return d
+            return {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in d.items()}
+
+        return cls(
+            # Base region state
+            spikes=transfer_tensor(data.get("spikes")),
+            membrane=transfer_tensor(data.get("membrane")),
+            dopamine=data.get("dopamine", 0.2),
+            acetylcholine=data.get("acetylcholine", 0.0),
+            norepinephrine=data.get("norepinephrine", 0.0),
+            # Relay neuron state
+            relay_spikes=transfer_tensor(data.get("relay_spikes")),
+            relay_membrane=transfer_tensor(data.get("relay_membrane")),
+            # TRN state
+            trn_spikes=transfer_tensor(data.get("trn_spikes")),
+            trn_membrane=transfer_tensor(data.get("trn_membrane")),
+            # Mode state
+            current_mode=transfer_tensor(data.get("current_mode")),
+            burst_counter=transfer_tensor(data.get("burst_counter")),
+            # Gating state
+            alpha_gate=transfer_tensor(data.get("alpha_gate")),
+            # STP state (nested dicts)
+            stp_sensory_relay_state=transfer_nested_dict(data.get("stp_sensory_relay_state")),
+            stp_l6_feedback_state=transfer_nested_dict(data.get("stp_l6_feedback_state")),
+        )
+
+    def reset(self) -> None:
+        """Reset state to default values (in-place mutation)."""
+        self.spikes = None
+        self.membrane = None
+        self.dopamine = 0.2
+        self.acetylcholine = 0.0
+        self.norepinephrine = 0.0
+        self.relay_spikes = None
+        self.relay_membrane = None
+        self.trn_spikes = None
+        self.trn_membrane = None
+        self.current_mode = None
+        self.burst_counter = None
+        self.alpha_gate = None
+        self.stp_sensory_relay_state = None
+        self.stp_l6_feedback_state = None
 
 
 @register_region(
@@ -871,6 +983,92 @@ class ThalamicRelay(NeuralRegion):
 
         return relay_output  # [n_relay], bool (ADR-004/005)
 
+    def get_state(self) -> ThalamicRelayState:
+        """Capture complete thalamic relay state for checkpointing.
+
+        Returns:
+            ThalamicRelayState with all state fields including STP states
+        """
+        # Capture STP state if modules are enabled
+        stp_sensory_state = None
+        if self.stp_sensory_relay is not None:
+            stp_sensory_state = {
+                "u": self.stp_sensory_relay.u.clone() if self.stp_sensory_relay.u is not None else None,
+                "x": self.stp_sensory_relay.x.clone() if self.stp_sensory_relay.x is not None else None,
+            }
+
+        stp_l6_state = None
+        if self.stp_l6_feedback is not None:
+            stp_l6_state = {
+                "u": self.stp_l6_feedback.u.clone() if self.stp_l6_feedback.u is not None else None,
+                "x": self.stp_l6_feedback.x.clone() if self.stp_l6_feedback.x is not None else None,
+            }
+
+        # Return new state with all fields
+        return ThalamicRelayState(
+            # Base region state
+            spikes=self.state.spikes.clone() if self.state.spikes is not None else None,
+            membrane=self.state.membrane.clone() if self.state.membrane is not None else None,
+            dopamine=self.state.dopamine,
+            acetylcholine=self.state.acetylcholine,
+            norepinephrine=self.state.norepinephrine,
+            # Relay neuron state
+            relay_spikes=self.state.relay_spikes.clone() if self.state.relay_spikes is not None else None,
+            relay_membrane=self.state.relay_membrane.clone() if self.state.relay_membrane is not None else None,
+            # TRN state
+            trn_spikes=self.state.trn_spikes.clone() if self.state.trn_spikes is not None else None,
+            trn_membrane=self.state.trn_membrane.clone() if self.state.trn_membrane is not None else None,
+            # Mode state
+            current_mode=self.state.current_mode.clone() if self.state.current_mode is not None else None,
+            burst_counter=self.state.burst_counter.clone() if self.state.burst_counter is not None else None,
+            # Gating state
+            alpha_gate=self.state.alpha_gate.clone() if self.state.alpha_gate is not None else None,
+            # STP state
+            stp_sensory_relay_state=stp_sensory_state,
+            stp_l6_feedback_state=stp_l6_state,
+        )
+
+    def load_state(self, state: ThalamicRelayState) -> None:
+        """Restore thalamic relay state from checkpoint.
+
+        Args:
+            state: ThalamicRelayState to restore
+        """
+        # Restore base region state
+        self.state.spikes = state.spikes.clone() if state.spikes is not None else None
+        self.state.membrane = state.membrane.clone() if state.membrane is not None else None
+        self.state.dopamine = state.dopamine
+        self.state.acetylcholine = state.acetylcholine
+        self.state.norepinephrine = state.norepinephrine
+
+        # Restore relay neuron state
+        self.state.relay_spikes = state.relay_spikes.clone() if state.relay_spikes is not None else None
+        self.state.relay_membrane = state.relay_membrane.clone() if state.relay_membrane is not None else None
+
+        # Restore TRN state
+        self.state.trn_spikes = state.trn_spikes.clone() if state.trn_spikes is not None else None
+        self.state.trn_membrane = state.trn_membrane.clone() if state.trn_membrane is not None else None
+
+        # Restore mode state
+        self.state.current_mode = state.current_mode.clone() if state.current_mode is not None else None
+        self.state.burst_counter = state.burst_counter.clone() if state.burst_counter is not None else None
+
+        # Restore gating state
+        self.state.alpha_gate = state.alpha_gate.clone() if state.alpha_gate is not None else None
+
+        # Restore STP state if modules are enabled
+        if self.stp_sensory_relay is not None and state.stp_sensory_relay_state is not None:
+            if state.stp_sensory_relay_state.get("u") is not None:
+                self.stp_sensory_relay.u = state.stp_sensory_relay_state["u"].clone()
+            if state.stp_sensory_relay_state.get("x") is not None:
+                self.stp_sensory_relay.x = state.stp_sensory_relay_state["x"].clone()
+
+        if self.stp_l6_feedback is not None and state.stp_l6_feedback_state is not None:
+            if state.stp_l6_feedback_state.get("u") is not None:
+                self.stp_l6_feedback.u = state.stp_l6_feedback_state["u"].clone()
+            if state.stp_l6_feedback_state.get("x") is not None:
+                self.stp_l6_feedback.x = state.stp_l6_feedback_state["x"].clone()
+
     def reset_state(self) -> None:
         """Reset thalamic state."""
         super().reset_state()
@@ -891,6 +1089,8 @@ class ThalamicRelay(NeuralRegion):
         self.state.current_mode = None
         self.state.burst_counter = None
         self.state.alpha_gate = None
+        self.state.stp_sensory_relay_state = None
+        self.state.stp_l6_feedback_state = None
 
         self._alpha_phase = 0.0
         self._alpha_amplitude = 1.0
