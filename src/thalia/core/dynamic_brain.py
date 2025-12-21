@@ -257,6 +257,30 @@ class DynamicBrain(nn.Module):
         # Track total spikes per component for diagnostics
         self._spike_counts: Dict[str, int] = {name: 0 for name in components.keys()}
 
+        # GPU-friendly spike tracking: accumulate on GPU, sync only when needed
+        self._spike_tensors: Dict[str, torch.Tensor] = {
+            name: torch.tensor(0, dtype=torch.int64, device=global_config.device)
+            for name in components.keys()
+        }
+
+        # =================================================================
+        # CLOCK-DRIVEN OPTIMIZATIONS (Phase 1)
+        # =================================================================
+        # Pre-compute connection topology for fast lookup (O(1) instead of O(N))
+        self._component_connections: Dict[str, List[Tuple[str, Any]]] = {}
+        for (src, tgt), pathway in connections.items():
+            if tgt not in self._component_connections:
+                self._component_connections[tgt] = []
+            self._component_connections[tgt].append((src, pathway))
+
+        # Pre-allocate reusable dict for component inputs (avoid allocation in hot loop)
+        self._reusable_component_inputs: Dict[str, torch.Tensor] = {}
+
+        # Pre-allocate output cache (update in-place instead of creating new entries)
+        self._output_cache: Dict[str, Optional[torch.Tensor]] = {
+            name: None for name in components.keys()
+        }
+
         # =================================================================
         # GROWTH HISTORY TRACKING (Phase 1.7.7)
         # =================================================================
@@ -795,23 +819,25 @@ class DynamicBrain(nn.Module):
                 component = self.components[comp_name]
 
                 # Collect inputs from all incoming pathways using PREVIOUS timestep's cache
-                component_inputs: Dict[str, torch.Tensor] = {}
+                # OPTIMIZATION: Reuse dict instead of creating new one each iteration
+                self._reusable_component_inputs.clear()
 
-                for (src, tgt), pathway in self.connections.items():
-                    if tgt == comp_name and src in self._output_cache:
+                # OPTIMIZATION: Direct lookup instead of iterating all connections
+                for src, pathway in self._component_connections.get(comp_name, []):
+                    if src in self._output_cache and self._output_cache[src] is not None:
                         # Pathway applies axonal delay internally via CircularDelayBuffer
                         # Using previous timestep's output ensures all components see same state
                         delayed_outputs = pathway.forward({src: self._output_cache[src]})
-                        component_inputs.update(delayed_outputs)
+                        self._reusable_component_inputs.update(delayed_outputs)
 
                 # Also check if this component received direct sensory input
                 if comp_name in sensory_inputs_this_timestep:
                     # Direct sensory input (no pathway), use "input" key
-                    component_inputs["input"] = sensory_inputs_this_timestep[comp_name]
+                    self._reusable_component_inputs["input"] = sensory_inputs_this_timestep[comp_name]
 
                 # Execute component
                 # Empty dict is valid (zero-input execution for recurrent/spontaneous activity)
-                component_output = component.forward(component_inputs)
+                component_output = component.forward(self._reusable_component_inputs)
 
                 # Store output temporarily (don't update cache until all components execute)
                 outputs[comp_name] = component_output
@@ -820,19 +846,26 @@ class DynamicBrain(nn.Module):
             # 3. Update cache with this timestep's outputs (for next timestep)
             # This ensures true parallel semantics - no component sees outputs from
             # other components within the same timestep
-            self._output_cache.update(new_outputs)
+            # OPTIMIZATION: In-place update instead of dict.update()
+            for comp_name, output in new_outputs.items():
+                self._output_cache[comp_name] = output
 
             # Track spike counts
+            # OPTIMIZATION: Accumulate on GPU, avoid .item() sync in hot loop
             for comp_name, component_output in new_outputs.items():
                 if component_output is not None and isinstance(component_output, torch.Tensor):
-                    spike_count = int(component_output.sum().item())
-                    self._spike_counts[comp_name] += spike_count
+                    # Keep on GPU - no sync!
+                    self._spike_tensors[comp_name] += component_output.sum()
 
             # 4. Broadcast oscillator phases every timestep
             self._broadcast_oscillator_phases()
 
         # Update final time
         self._current_time += (n_timesteps * self.global_config.dt_ms)
+
+        # OPTIMIZATION: Sync spike counts from GPU only once at end
+        for comp_name, spike_tensor in self._spike_tensors.items():
+            self._spike_counts[comp_name] = int(spike_tensor.item())
 
         return {
             "outputs": outputs,
