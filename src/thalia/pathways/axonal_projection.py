@@ -22,6 +22,7 @@ import torch
 from thalia.core.protocols.component import RoutingComponent
 from thalia.managers.component_registry import register_pathway
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.utils.delay_buffer import CircularDelayBuffer
 
 
 @dataclass
@@ -143,7 +144,17 @@ class AxonalProjection(RoutingComponent):
         self.config.n_input = self.n_input
         self.config.n_output = self.n_output
 
-        # Note: Delays are handled by EventScheduler, not internally buffered
+        # Create delay buffers for each source
+        self._delay_buffers: Dict[str, CircularDelayBuffer] = {}
+        for spec in self.sources:
+            delay_steps = int(spec.delay_ms / self.dt_ms)
+            source_key = spec.compound_key()
+            self._delay_buffers[source_key] = CircularDelayBuffer(
+                max_delay=delay_steps,
+                size=spec.size,
+                device=device,
+                dtype=torch.bool,  # Spikes are binary
+            )
 
 
 
@@ -151,13 +162,15 @@ class AxonalProjection(RoutingComponent):
         self,
         source_outputs: Dict[str, torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
-        """Route spikes from sources preserving source identity.
+        """Route spikes from sources with axonal delays.
 
         Biologically accurate: Returns dict so target regions can route inputs
         to different neuron populations (e.g., thalamus sensory→relay, L6→TRN).
 
-        Note: Delays are handled by EventScheduler in event-driven execution,
-        not by this pathway component.
+        Delays are implemented via circular buffers internally. Each timestep:
+        1. Write current spikes to buffer
+        2. Read delayed spikes from buffer
+        3. Advance buffer pointer
 
         Args:
             source_outputs: Dict mapping source keys to spike tensors.
@@ -174,6 +187,7 @@ class AxonalProjection(RoutingComponent):
             }
             delayed = projection.forward(outputs)
             # Returns: {"cortex:l5": [128], "hippocampus": [64], "pfc": [32]}
+            # Each tensor contains spikes from delay_ms milliseconds ago
 
             # Target regions can concatenate if needed:
             concatenated = torch.cat([delayed["cortex:l5"], delayed["hippocampus"]])
@@ -183,8 +197,10 @@ class AxonalProjection(RoutingComponent):
         for source_spec in self.sources:
             # Get compound key (e.g., "cortex:l6a" or just "cortex")
             source_key = source_spec.compound_key()
+            buffer = self._delay_buffers[source_key]
+            delay_steps = int(source_spec.delay_ms / self.dt_ms)
 
-            # Get spikes from source using compound key
+            # Get current spikes from source
             if not isinstance(source_outputs, dict) or source_key not in source_outputs:
                 # Source not firing this timestep, use zeros
                 spikes = torch.zeros(source_spec.size, dtype=torch.bool, device=self.device)
@@ -198,9 +214,17 @@ class AxonalProjection(RoutingComponent):
                         f"expected {source_spec.size}, got {spikes.shape[0]}"
                     )
 
-            # Store in dict preserving source identity (using compound key)
-            # No delay buffering - EventScheduler handles delays
-            delayed_outputs[source_key] = spikes
+            # Write current spikes to buffer
+            buffer.write(spikes)
+
+            # Read delayed spikes (from delay_steps timesteps ago)
+            delayed_spikes = buffer.read(delay_steps)
+
+            # Store in dict preserving source identity
+            delayed_outputs[source_key] = delayed_spikes
+
+            # Advance buffer for next timestep
+            buffer.advance()
 
         return delayed_outputs
 
@@ -244,14 +268,15 @@ class AxonalProjection(RoutingComponent):
         self.n_output += size_delta
         self.config.n_output = self.n_output
 
-        # Note: No delay buffers to resize - delays handled by EventScheduler
+        # Grow delay buffer for this source
+        source_key = self.sources[source_idx].compound_key()
+        if source_key in self._delay_buffers:
+            self._delay_buffers[source_key].grow(new_size)
 
     def reset_state(self) -> None:
-        """Reset component state.
-
-        Note: No internal state to reset since delays handled by EventScheduler.
-        """
-        pass  # No delay buffers to reset
+        """Reset all delay buffers to zeros."""
+        for buffer in self._delay_buffers.values():
+            buffer.reset()
 
     # =================================================================
     # GROWTH API (RoutingComponent-specific)
@@ -346,10 +371,9 @@ class AxonalProjection(RoutingComponent):
         """Get state for checkpointing.
 
         Returns:
-            Dict with delay buffers and positions
+            Dict with sources and delay buffer states
         """
         return {
-            # Note: No delay buffers - delays handled by EventScheduler
             "sources": [
                 {
                     "region_name": spec.region_name,
@@ -359,6 +383,10 @@ class AxonalProjection(RoutingComponent):
                 }
                 for spec in self.sources
             ],
+            "delay_buffers": {
+                key: buffer.state_dict()
+                for key, buffer in self._delay_buffers.items()
+            },
         }
 
     def load_state(self, state: Dict[str, Any]) -> None:
@@ -367,8 +395,11 @@ class AxonalProjection(RoutingComponent):
         Args:
             state: State dict from get_state()
         """
-        # Note: No delay buffers to load - delays handled by EventScheduler
-        pass
+        # Load delay buffer states if present (backward compatibility)
+        if "delay_buffers" in state:
+            for key, buffer_state in state["delay_buffers"].items():
+                if key in self._delay_buffers:
+                    self._delay_buffers[key].load_state_dict(buffer_state)
 
     def __repr__(self) -> str:
         """Human-readable representation."""

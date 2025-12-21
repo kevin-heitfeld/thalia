@@ -1,14 +1,46 @@
 # ADR-014: Distributed Computation via Multiprocessing
 
-**Status**: Accepted
+**Status**: Superseded (December 2025)
 **Date**: 2025-12-12
+**Updated**: 2025-12-21
 **Priority**: Tier 3 - Major Restructuring
 
-## Context
+## Status Update (December 2025)
 
-Thalia's event-driven architecture enables natural parallelism - each brain region operates independently and communicates via spike events with axonal delays. However, the initial implementation processed all regions sequentially in a single process, leaving multi-core CPUs underutilized.
+**This ADR is SUPERSEDED.** The event-driven architecture and parallel execution infrastructure described here have been removed.
 
-To scale to larger brain models and improve training throughput, we need true parallel execution where each region runs in its own process, communicating via message passing.
+**Why Removed:**
+- Event-driven execution is fundamentally incompatible with biological neural dynamics
+- Real neurons are continuous analog systems requiring every-timestep execution
+- Recurrent connections, oscillators, and continuous decay prevent "sleeping" between events
+- Clock-driven execution is simpler, faster, and biologically accurate
+
+**Current Architecture:**
+- Pure clock-driven execution (ADR-003)
+- All regions execute every timestep sequentially
+- Delays handled by CircularDelayBuffer in pathways (O(1) operations)
+- No event scheduler, no parallel execution, no event adapters
+
+**Future Parallel Execution:**
+Parallel execution can be re-implemented for clock-driven architecture:
+```python
+for timestep in range(n_timesteps):
+    # Execute all regions in PARALLEL at this timestep
+    with multiprocessing.Pool(n_workers) as pool:
+        results = pool.map(execute_region, regions)
+    # Synchronization barrier (all regions complete before next timestep)
+```
+This is orthogonal to event-driven vs clock-driven. Delays remain in pathways.
+
+---
+
+## Original Context (Historical)
+
+Thalia's event-driven architecture enabled natural parallelism - each brain region operates independently and communicates via spike events with axonal delays. However, the initial implementation processed all regions sequentially in a single process, leaving multi-core CPUs underutilized.
+
+To scale to larger brain models and improve training throughput, we explored parallel execution where each region runs in its own process, communicating via message passing.
+
+**Note:** This entire approach was later abandoned when we discovered event-driven execution violates biological neural dynamics.
 
 ### Requirements
 

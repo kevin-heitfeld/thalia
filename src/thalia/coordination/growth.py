@@ -477,16 +477,10 @@ class GrowthCoordinator:
         region = self.brain.regions[region_name]
         events = []
 
-        # Get the actual implementation (brain.regions returns adapters)
-        if hasattr(region, 'impl'):
-            region_impl = region.impl
-        else:
-            region_impl = region  # Direct access case
-
         # 1. Grow the region itself
-        if hasattr(region_impl, 'grow_output'):
-            # Call grow_output() directly on region implementation
-            region_impl.grow_output(
+        if hasattr(region, 'grow_output'):
+            # Call grow_output() directly on region
+            region.grow_output(
                 n_new=n_new_neurons,
                 initialization=initialization,
                 sparsity=sparsity,

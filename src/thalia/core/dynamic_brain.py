@@ -10,14 +10,14 @@ Unlike EventDrivenBrain (hardcoded 6 regions), DynamicBrain supports:
 - User-defined custom components via ComponentRegistry
 - Dynamic component addition/removal
 - Plugin architecture for external extensions
-- Event-driven execution with axonal delays
+- Clock-driven execution with axonal delays
 - Optional parallel execution across multiple CPU cores
 
 Architecture:
     DynamicBrain = Graph of Components
     - nodes: regions (NeuralRegion), pathways (AxonalProjection), custom modules
     - edges: data flow between components
-    - execution: event-driven via EventScheduler OR parallel via ParallelExecutor
+    - execution: clock-driven sequential OR parallel via ParallelExecutor
 
 Author: Thalia Project
 Date: December 15, 2025
@@ -34,8 +34,7 @@ import torch.nn as nn
 
 from thalia.regions.base import NeuralComponent
 from thalia.regions.cortex import calculate_layer_sizes
-from thalia.events.system import EventScheduler, Event, EventType, SpikePayload
-from thalia.events.adapters.base import EventRegionConfig
+# Event system removed - delays now handled by pathways via CircularDelayBuffer
 from thalia.core.diagnostics import (
     StriatumDiagnostics,
     HippocampusDiagnostics,
@@ -46,7 +45,6 @@ from thalia.stimuli.base import StimulusPattern
 if TYPE_CHECKING:
     from thalia.config import GlobalConfig, ThaliaConfig
     from thalia.managers.component_registry import ComponentRegistry
-    from thalia.events.adapters import EventDrivenRegionBase
 
 
 @dataclass
@@ -146,8 +144,6 @@ class DynamicBrain(nn.Module):
         components: Dict[str, NeuralComponent],
         connections: Dict[Tuple[str, str], NeuralComponent],
         global_config: "GlobalConfig",
-        use_parallel: bool = False,
-        n_workers: Optional[int] = None,
         connection_specs: Optional[Dict[Tuple[str, str], Any]] = None,
     ):
         """Initialize DynamicBrain from component graph.
@@ -156,8 +152,6 @@ class DynamicBrain(nn.Module):
             components: Dict mapping component names to instances
             connections: Dict mapping (source, target) tuples to pathways
             global_config: Global configuration (device, dt_ms, etc.)
-            use_parallel: Enable parallel execution (multi-core CPU)
-            n_workers: Number of worker processes (default: number of regions)
             connection_specs: Optional dict with source_port/target_port info per connection
         """
         super().__init__()
@@ -194,32 +188,10 @@ class DynamicBrain(nn.Module):
         # Current simulation time
         self._current_time: float = 0.0
 
-        # =================================================================
-        # EVENT-DRIVEN EXECUTION
-        # =================================================================
-        # Use EventScheduler for event-driven execution with delays
-        self._scheduler = EventScheduler()
-
-        # Event adapters (lazy initialization - created when needed for event-driven execution)
-        self._event_adapters: Optional[Dict[str, "EventDrivenRegionBase"]] = None
-
-        # === MULTI-SOURCE PATHWAY BUFFERING ===
-        # Buffer for multi-source pathway inputs
-        # Maps target_name -> {source_name -> latest_output}
-        self._multi_source_buffers: Dict[str, Dict[str, torch.Tensor]] = {}
-
-        # =================================================================
-        # PARALLEL EXECUTION (Optional)
-        # =================================================================
-        # Parallel execution distributes components across worker processes
-        # for true multi-core CPU parallelism. GPU tensors are automatically
-        # serialized to CPU for inter-process communication.
-        self.use_parallel = use_parallel
-        self._parallel_executor = None
-        self.n_workers = n_workers
-
-        if use_parallel:
-            self._init_parallel_executor()
+        # === OUTPUT CACHE FOR PATHWAY ROUTING ===
+        # Cache component outputs for pathway routing during execution
+        # Maps component_name -> latest_output_tensor
+        self._output_cache: Dict[str, torch.Tensor] = {}
 
         # =================================================================
         # PATHWAY MANAGER (Phase 1.7.1)
@@ -533,16 +505,10 @@ class DynamicBrain(nn.Module):
         Note:
             This manually builds the sensorimotor topology with sizes
             from config.brain.sizes to ensure exact compatibility.
-
-            Parallel execution can be enabled via config.brain.parallel=True.
         """
         from thalia.core.brain_builder import BrainBuilder
 
         sizes = config.brain.sizes
-
-        # Check if parallel mode requested
-        use_parallel = getattr(config.brain, "parallel", False)
-        n_workers = getattr(config.brain, "n_workers", None)
 
         builder = BrainBuilder(config.global_)
 
@@ -591,7 +557,7 @@ class DynamicBrain(nn.Module):
         builder.connect("striatum", "pfc", "axonal_projection")  # Bidirectional
         builder.connect("pfc", "cerebellum", "axonal_projection")  # PFC→cerebellum (motor refinement)
 
-        return builder.build(use_parallel=use_parallel, n_workers=n_workers)
+        return builder.build()
 
     def _build_topology_graph(self) -> Dict[str, List[str]]:
         """Build adjacency list of component dependencies.
@@ -610,6 +576,35 @@ class DynamicBrain(nn.Module):
                 graph[src].append(tgt)
 
         return graph
+
+    def _get_execution_order(self) -> List[str]:
+        """Get execution order for components.
+
+        Since real brains have recurrent connectivity (circular dependencies),
+        we cannot use topological sorting. Instead, we use a fixed alphabetical
+        order for deterministic execution. Execution order doesn't affect
+        correctness in clock-driven mode - pathways handle delays internally.
+
+        The only effect is latency: if A→B and A executes before B in the same
+        timestep, B sees A's output with 0-timestep delay. If B executes first,
+        it sees A's output from the previous timestep (1-timestep delay).
+
+        Returns:
+            List of component names in alphabetical order
+
+        Note:
+            Cached for performance. Invalidated when components added/removed.
+        """
+        if self._execution_order is not None:
+            return self._execution_order
+
+        # Simple alphabetical order for determinism
+        # Could also use: insertion order, depth-first from sensory inputs, etc.
+        sorted_order = sorted(self.components.keys())
+
+        # Cache result
+        self._execution_order = sorted_order
+        return sorted_order
 
     def forward(
         self,
@@ -724,15 +719,11 @@ class DynamicBrain(nn.Module):
                     else:
                         # Single tensor (will be broadcast in broadcast mode)
                         input_sequences[key] = [value]  # Wrap for uniform handling
-
-                input_data = sensory_input  # Keep original for first timestep
             else:
                 # Convert tensor to dict with thalamus as input
-                input_data = {"thalamus": sensory_input}
                 input_sequences = {"thalamus": [sensory_input]}  # Wrap for broadcast
         else:
             # No input (maintenance mode)
-            input_data = {}
             input_sequences = {}
 
         # Validate sequence mode consistency
@@ -744,494 +735,76 @@ class DynamicBrain(nn.Module):
                     f"Got lengths: {seq_lengths}"
                 )
 
-        # Choose execution mode
-        if self.use_parallel:
-            # Parallel mode: convert sequences if needed
-            # For now, only support broadcast mode in parallel
-            if sequence_mode:
-                raise NotImplementedError(
-                    "Sequence mode not yet supported in parallel execution. "
-                    "Use use_parallel=False or provide single tensor with n_timesteps."
-                )
-            return self._forward_parallel(input_data, n_timesteps)
-        else:
-            return self._forward_event_driven(input_sequences, n_timesteps, sequence_mode)
-
-    # =================================================================
-    # EVENT ADAPTER SYSTEM
-    # =================================================================
-
-    def _wrap_components_with_adapters(self) -> Dict[str, "EventDrivenRegionBase"]:
-        """Wrap components with event adapters for event-driven execution.
-
-        This method creates EventDrivenRegionBase adapters for each component:
-        1. Check ComponentRegistry for custom adapter (e.g., EventDrivenCortex)
-        2. Fall back to GenericEventAdapter for user-defined components
-        3. Cache adapters for reuse
-
-        Returns:
-            Dict mapping component names to event adapters
-
-        Raises:
-            ValueError: If registry not set or required imports missing
-        """
-        from thalia.events.adapters import GenericEventAdapter
-        from thalia.events.adapters import EventDrivenRegionBase  # type: ignore[attr-defined]
-
-        if self._registry is None:
-            raise ValueError(
-                "ComponentRegistry not set. BrainBuilder should set brain._registry "
-                "after build()."
-            )
-
-        adapters: Dict[str, EventDrivenRegionBase] = {}
-
-        for name, component in self.components.items():
-            # Get component spec (if available)
-            spec = self._component_specs.get(name)
-
-            if spec is None:
-                # No spec available (old-style creation), use generic adapter
-                adapter_class = GenericEventAdapter
-            else:
-                # Check registry for custom adapter
-                adapter_class = self._registry.get_adapter(
-                    component_type=spec.component_type,
-                    name=spec.registry_name,
-                )
-
-                if adapter_class is None:
-                    # No custom adapter, use generic
-                    adapter_class = GenericEventAdapter
-
-            # Instantiate adapter
-            try:
-                # Check if it's the generic adapter or a specialized one
-                if adapter_class is GenericEventAdapter:
-                    # GenericEventAdapter expects (region, config, global_config)
-                    adapter = adapter_class(
-                        region=component,
-                        config=None,  # Let GenericEventAdapter create EventRegionConfig
-                        global_config=self.global_config,
-                    )
-                else:
-                    # Specialized adapters expect (config, component)
-                    # Get device from component (it might be torch.device or string)
-                    component_device = getattr(component, 'device', self.global_config.device)
-                    if isinstance(component_device, torch.device):
-                        device_str = str(component_device)
-                    else:
-                        device_str = component_device
-
-                    # Create EventRegionConfig for adapter
-                    event_config = EventRegionConfig(
-                        name=name,
-                        output_targets=[],  # Will be filled later
-                        membrane_tau_ms=20.0,  # Default
-                        device=device_str,
-                    )
-                    adapter = adapter_class(event_config, component)
-
-                adapters[name] = adapter
-            except Exception as e:
-                raise ValueError(
-                    f"Failed to create event adapter for component '{name}': {e}"
-                ) from e
-
-        return adapters
-
-    def _ensure_adapters(self) -> Dict[str, "EventDrivenRegionBase"]:
-        """Ensure event adapters are initialized (lazy initialization).
-
-        Returns:
-            Dict of event adapters
-        """
-        if self._event_adapters is None:
-            self._event_adapters = self._wrap_components_with_adapters()
-        return self._event_adapters
-
-    def _get_downstream_targets(self, source_name: str) -> List[Tuple[str, float]]:
-        """Get downstream targets for a component with axonal delays.
-
-        Args:
-            source_name: Name of source component
-
-        Returns:
-            List of (target_name, delay_ms) tuples
-
-        Example:
-            targets = self._get_downstream_targets("cortex")
-            # [("hippocampus", 5.0), ("striatum", 3.0)]
-        """
-        targets = []
-
-        for target_name in self._topology.get(source_name, []):
-            # Get pathway from connections
-            pathway_key = f"{source_name}_to_{target_name}"
-            pathway = self.connections.get(pathway_key)
-
-            if pathway is not None:
-                # Extract axonal delay from pathway config
-                delay_ms = getattr(pathway, "delay_ms", 1.0)
-                targets.append((target_name, delay_ms))
-
-        return targets
-
-    def _forward_event_driven(
-        self,
-        input_sequences: Dict[str, List[torch.Tensor]],
-        n_timesteps: int,
-        sequence_mode: bool,
-    ) -> Dict[str, Any]:
-        """Event-driven execution with realistic axonal delays.
-
-        Uses EventScheduler to process spike events with proper timing.
-        Components are wrapped with EventDrivenRegionBase adapters that:
-        - Apply membrane decay between events
-        - Translate events to component forward calls
-        - Route output spikes to downstream targets
-
-        Args:
-            input_sequences: Dict mapping component names to lists of input tensors
-                           In broadcast mode: lists have 1 element (repeated)
-                           In sequence mode: lists have n_timesteps elements
-            n_timesteps: Number of timesteps to execute
-            sequence_mode: If True, use input_sequences[t] for each timestep
-                         If False, repeat input_sequences[0] for all timesteps
-        """
-        # Ensure event adapters are initialized
-        adapters = self._ensure_adapters()
-
-        # DO NOT clear scheduler - events persist across forward() calls
-        # This is critical for clock-driven execution: delayed events from previous
-        # timesteps must be delivered in future timesteps
-
-        # Storage for component outputs
+        # === CLOCK-DRIVEN EXECUTION (ADR-003) ===
+        # All regions execute every timestep in execution order.
+        # Axonal delays are handled internally by pathway CircularDelayBuffers.
+        # This ensures continuous dynamics: membrane decay, recurrent connections,
+        # oscillators, and short-term plasticity all evolve every timestep.
         outputs = {name: None for name in self.components.keys()}
 
-        # CLOCK-DRIVEN EXECUTION (ADR-003)
-        # Execute all regions at every timestep, regardless of events
-        # This ensures: recurrent connections, membrane dynamics, spontaneous activity
-        dt_ms = self.global_config.dt_ms
-
         for timestep in range(n_timesteps):
-            current_time = self._current_time + (timestep * dt_ms)
+            # Clear output cache for this timestep
+            self._output_cache.clear()
 
-            # Schedule sensory inputs for THIS timestep
-            # In sequence mode: use input_sequences[component][timestep]
-            # In broadcast mode: use input_sequences[component][0] (repeated)
-            for component_name, sequence in input_sequences.items():
-                if component_name in self.components:
+            # 1. Route sensory inputs to entry components
+            for comp_name, sequence in input_sequences.items():
+                if comp_name in self.components:
                     # Get input for this timestep
                     if sequence_mode:
-                        sensory_spikes = sequence[timestep]
+                        input_t = sequence[timestep]
                     else:
                         # Broadcast mode: repeat first (only) element
-                        sensory_spikes = sequence[0]
+                        input_t = sequence[0]
 
-                    # Wrap tensor in dict for consistent format with pathway outputs
-                    # External input uses "input" key (semantic: primary sensory input)
-                    if isinstance(sensory_spikes, torch.Tensor):
-                        spike_payload = {"input": sensory_spikes}
+                    # Store in cache (will be routed through pathways if needed)
+                    self._output_cache[comp_name] = input_t
+
+            # 2. Execute ALL components in execution order
+            for comp_name in self._get_execution_order():
+                component = self.components[comp_name]
+
+                # Collect inputs from all incoming pathways
+                component_inputs: Dict[str, torch.Tensor] = {}
+
+                for (src, tgt), pathway in self.connections.items():
+                    if tgt == comp_name and src in self._output_cache:
+                        # Pathway applies axonal delay internally via CircularDelayBuffer
+                        delayed_outputs = pathway.forward({src: self._output_cache[src]})
+                        component_inputs.update(delayed_outputs)
+
+                # Also check if this component received direct sensory input
+                if comp_name in input_sequences and comp_name not in component_inputs:
+                    # Direct input (no pathway), use "input" key
+                    if sequence_mode:
+                        component_inputs["input"] = input_sequences[comp_name][timestep]
                     else:
-                        # Already a dict (advanced usage)
-                        spike_payload = sensory_spikes
+                        component_inputs["input"] = input_sequences[comp_name][0]
 
-                    event = Event(
-                        time=current_time,
-                        event_type=EventType.SENSORY,
-                        source="external",
-                        target=component_name,
-                        payload=SpikePayload(spikes=spike_payload),
-                    )
-                    self._scheduler.schedule(event)
+                # Execute component
+                # Empty dict is valid (zero-input execution for recurrent/spontaneous activity)
+                component_output = component.forward(component_inputs)
 
-            # Step 1: Collect all pending events for this timestep
-            events_by_target: Dict[str, List[Event]] = {}
-            while not self._scheduler.is_empty:
-                next_time = self._scheduler.peek_time()
-                if next_time is None or next_time > current_time + 0.01:  # tolerance
-                    break
-
-                events = self._scheduler.pop_simultaneous(tolerance_ms=0.01)
-                for event in events:
-                    if event.target not in events_by_target:
-                        events_by_target[event.target] = []
-                    events_by_target[event.target].append(event)
-
-            # Step 2: Execute ALL regions at this timestep (clock-driven)
-            for region_name, adapter in adapters.items():
-                # Collect inputs from events targeting this region
-                merged_spikes: Dict[str, torch.Tensor] = {}
-
-                if region_name in events_by_target:
-                    for event in events_by_target[region_name]:
-                        if event.event_type == EventType.SPIKE or event.event_type == EventType.SENSORY:
-                            if not isinstance(event.payload, SpikePayload):
-                                continue
-
-                            spike_payload = event.payload.spikes
-                            if isinstance(spike_payload, dict):
-                                merged_spikes.update(spike_payload)
-                            else:
-                                merged_spikes["input"] = spike_payload
-
-                # Apply decay for time elapsed since last update
-                dt = current_time - adapter._last_update_time
-                if dt > 0:
-                    adapter._apply_decay(dt)
-                adapter._last_update_time = current_time
-
-                # Execute region with merged inputs (or empty dict for zero-input)
-                # All regions support zero-input execution (required for clock-driven architecture)
-                if hasattr(adapter, 'impl'):
-                    output_spikes = adapter.impl.forward(merged_spikes)
-                else:
-                    output_spikes = adapter.forward(merged_spikes)
-
-                outputs[region_name] = output_spikes
+                # Store output for routing and final return
+                outputs[comp_name] = component_output
+                self._output_cache[comp_name] = component_output
 
                 # Track spike counts
-                if output_spikes is not None:
-                    spike_count = int(output_spikes.sum().item())
-                    self._spike_counts[region_name] += spike_count
+                if component_output is not None and isinstance(component_output, torch.Tensor):
+                    spike_count = int(component_output.sum().item())
+                    self._spike_counts[comp_name] += spike_count
 
-                    # Schedule downstream events for next timestep(s)
-                    if spike_count > 0:
-                        self._schedule_downstream_events(
-                            source=region_name,
-                            output_spikes=output_spikes,
-                            current_time=current_time,
-                        )
-
-            # Broadcast oscillator phases every timestep
+            # 3. Broadcast oscillator phases every timestep
             self._broadcast_oscillator_phases()
 
         # Update final time
-        self._current_time += (n_timesteps * dt_ms)
-
-        # Count total events processed for compatibility with EventDrivenBrain
-        events_processed = len([v for v in outputs.values() if v is not None])
+        self._current_time += (n_timesteps * self.global_config.dt_ms)
 
         return {
             "outputs": outputs,
             "time": self._current_time,
             "spike_counts": self._spike_counts.copy(),
-            "events_processed": events_processed,
             "final_time": self._current_time,
         }
-
-    def _init_parallel_executor(self) -> None:
-        """Initialize parallel executor with region creators.
-
-        This creates pickle-able region creators for each component and spawns
-        worker processes. Only standard brain regions are supported in parallel
-        mode (thalamus, cortex, hippocampus, pfc, striatum, cerebellum).
-
-        Note: Parallel mode requires CPU device for multiprocessing serialization.
-        GPU tensors are automatically moved to CPU for inter-process communication.
-
-        Raises:
-            ValueError: If device is not CPU or components cannot be parallelized
-        """
-        from thalia.events.parallel import create_region_creator, ParallelExecutor
-
-        # Validate device
-        device_str = str(self.device)
-        if "cuda" in device_str.lower() or "gpu" in device_str.lower():
-            raise ValueError(
-                "Parallel execution requires device='cpu' due to multiprocessing limitations. "
-                "GPU tensors cannot be serialized between processes. "
-                f"Current device: {device_str}"
-            )
-
-        # Build region creators for each component
-        region_creators = {}
-
-        for name, component in self.components.items():
-            # Infer region type from component class
-            region_type = self._infer_region_type(component)
-
-            if region_type is None:
-                raise ValueError(
-                    f"Component '{name}' of type {type(component).__name__} cannot be used in "
-                    f"parallel mode. Only standard brain regions are supported: "
-                    f"ThalamicRelay, LayeredCortex, PredictiveCortex, Hippocampus, "
-                    f"TrisynapticHippocampus, Prefrontal, Striatum, Cerebellum. "
-                    f"Set use_parallel=False to use custom components."
-                )
-
-            # Build config dict for this component
-            config_dict = self._build_config_dict_for_parallel(name, component)
-
-            # Create region creator (pickle-able function reference)
-            region_creators[name] = create_region_creator(
-                region_type=region_type,
-                config_dict=config_dict,
-                device="cpu",
-            )
-
-        # Create parallel executor
-        self._parallel_executor = ParallelExecutor(
-            region_creators=region_creators,
-            batch_tolerance_ms=0.1,
-            device="cpu",
-        )
-
-        # Start worker processes
-        self._parallel_executor.start()
-
-    def _infer_region_type(self, component: NeuralComponent) -> Optional[str]:
-        """Infer region type string from component class name.
-
-        Args:
-            component: Component instance
-
-        Returns:
-            Region type string for create_region_creator(), or None if unknown
-
-        Supported types:
-            - ThalamicRelay → "thalamus"
-            - LayeredCortex, PredictiveCortex → "cortex"
-            - Hippocampus, TrisynapticHippocampus → "hippocampus"
-            - Prefrontal → "pfc"
-            - Striatum → "striatum"
-            - Cerebellum → "cerebellum"
-        """
-        class_name = type(component).__name__
-
-        type_map = {
-            "ThalamicRelay": "thalamus",
-            "LayeredCortex": "cortex",
-            "PredictiveCortex": "cortex",
-            "Hippocampus": "hippocampus",
-            "TrisynapticHippocampus": "hippocampus",
-            "Prefrontal": "pfc",
-            "Striatum": "striatum",
-            "Cerebellum": "cerebellum",
-        }
-
-        return type_map.get(class_name)
-
-    def _build_config_dict_for_parallel(
-        self,
-        name: str,
-        component: NeuralComponent,
-    ) -> Dict[str, Any]:
-        """Build configuration dictionary for parallel region creator.
-
-        Extracts configuration from component and topology to create a
-        pickle-able dict that can be sent to worker processes.
-
-        Args:
-            name: Component name
-            component: Component instance
-
-        Returns:
-            Config dict with all parameters needed to recreate the component
-        """
-        config_dict = {
-            "name": name,
-            "output_targets": self._topology.get(name, []),
-        }
-
-        # Extract config attributes
-        if hasattr(component, "config"):
-            cfg = component.config
-
-            # Common attributes
-            if hasattr(cfg, "n_input"):
-                config_dict["n_input"] = cfg.n_input
-            if hasattr(cfg, "n_output"):
-                config_dict["n_output"] = cfg.n_output
-
-            # Region-specific attributes
-            class_name = type(component).__name__
-
-            if class_name == "Hippocampus":
-                # Hippocampus needs DG, CA3, CA1 sizes
-                if hasattr(component, "dg_size"):
-                    config_dict["dg_size"] = component.dg_size
-                if hasattr(component, "ca3_size"):
-                    config_dict["ca3_size"] = component.ca3_size
-                if hasattr(component, "ca1_size"):
-                    config_dict["ca1_size"] = component.ca1_size
-
-            elif class_name == "Striatum":
-                # Striatum needs n_actions and neurons_per_action
-                if hasattr(cfg, "n_actions"):
-                    config_dict["n_actions"] = cfg.n_actions
-                if hasattr(cfg, "neurons_per_action"):
-                    config_dict["neurons_per_action"] = cfg.neurons_per_action
-
-            elif class_name == "Prefrontal":
-                # PFC config
-                if hasattr(cfg, "n_neurons"):
-                    config_dict["n_neurons"] = cfg.n_neurons
-
-            elif class_name == "Cerebellum":
-                # Cerebellum config
-                if hasattr(cfg, "n_purkinje"):
-                    config_dict["n_purkinje"] = cfg.n_purkinje
-
-        return config_dict
-
-    def _forward_parallel(
-        self,
-        input_data: Dict[str, torch.Tensor],
-        n_timesteps: int,
-    ) -> Dict[str, Any]:
-        """Parallel execution across multiple CPU cores.
-
-        Uses ParallelExecutor to distribute components across worker processes.
-        Events are batched and processed in parallel, with outputs collected
-        and re-scheduled by the main process.
-
-        Args:
-            input_data: Dict mapping component names to input tensors
-            n_timesteps: Number of timesteps to execute
-
-        Returns:
-            Dict with spike counts and execution stats (no per-component outputs
-            in parallel mode, matching EventDrivenBrain behavior)
-        """
-        if self._parallel_executor is None:
-            raise ValueError("Parallel executor not initialized (use_parallel=False)")
-
-        # Inject sensory inputs as events
-        for target, spikes in input_data.items():
-            if target in self.components:
-                self._parallel_executor.inject_sensory_input(
-                    pattern=spikes,
-                    target=target,
-                    time=self._current_time,
-                )
-
-        # Calculate end time
-        end_time = self._current_time + (n_timesteps * self.global_config.dt_ms)
-
-        # Run parallel execution until end time
-        result = self._parallel_executor.run_until(end_time)
-
-        # Update time and spike counts
-        self._current_time = end_time
-        self._spike_counts = result["spike_counts"]
-
-        return {
-            "outputs": {},  # Parallel mode doesn't return per-component outputs
-            "time": self._current_time,
-            "spike_counts": self._spike_counts.copy(),
-            "events_processed": result.get("events_processed", 0),
-            "final_time": self._current_time,
-        }
-
-    def __del__(self):
-        """Clean up parallel executor if active."""
-        if hasattr(self, "_parallel_executor") and self._parallel_executor is not None:
-            try:
-                self._parallel_executor.stop()
-            except Exception:
-                pass  # Ignore errors during cleanup
 
     def _broadcast_oscillator_phases(self) -> None:
         """Broadcast oscillator phases to all components.
@@ -1254,13 +827,7 @@ class DynamicBrain(nn.Module):
         phases = self.oscillators.get_phases()
         signals = self.oscillators.get_signals()
 
-        # Broadcast to components via event adapters (if in event-driven mode)
-        if self._event_adapters is not None:
-            for adapter in self._event_adapters.values():
-                if hasattr(adapter, 'set_oscillator_phases'):
-                    adapter.set_oscillator_phases(phases, signals)
-
-        # Also broadcast directly to components that support it
+        # Broadcast directly to components that support it
         for component in self.components.values():
             if hasattr(component, 'set_oscillator_phases'):
                 component.set_oscillator_phases(phases, signals)
@@ -2249,142 +1816,6 @@ class DynamicBrain(nn.Module):
 
         # Invalidate cached execution order
         self._execution_order = None
-
-    def _schedule_downstream_events(
-        self,
-        source: str,
-        output_spikes: torch.Tensor,
-        current_time: float,
-    ) -> None:
-        """Schedule spike events to downstream components with axonal delays.
-
-        For multi-source pathways, buffers source outputs and forwards when ALL sources
-        have fired at least once. Missing sources are filled with zeros by AxonalProjection.
-
-        Args:
-            source: Source component name
-            output_spikes: Output spikes from source
-            current_time: Current simulation time
-        """
-        # Find all connections from this source
-        # Note: tgt may be compound (e.g., "thalamus:l6a_feedback") for port-based routing
-        for (src, tgt), pathway in self.connections.items():
-            # Extract base target name (strip port suffix if present)
-            tgt_base = tgt.split(":")[0]
-            if src == source:
-                # Extract port-specific output if specified
-                conn_spec = self._connection_specs.get((src, tgt))
-                if conn_spec and hasattr(conn_spec, 'source_port') and conn_spec.source_port:
-                    # Get source component to extract port data
-                    source_comp = self.components[src]
-                    port_output = self._extract_port_output(source_comp, output_spikes, conn_spec.source_port)
-                else:
-                    port_output = output_spikes
-
-                # Check if this is a multi-source target
-                # (multiple pathways going to same target)
-                # Compare base target names (strip ports) to count sources
-                target_sources = [s for (s, t) in self.connections.keys() if t.split(":")[0] == tgt_base]
-
-                # For port-based connections, use compound key "region:port"
-                # For non-port connections, use simple key "region"
-                # This allows AxonalProjection to distinguish L6a from L6b
-                if conn_spec and conn_spec.source_port:
-                    source_key = f"{source}:{conn_spec.source_port}"
-                else:
-                    source_key = source
-
-                source_dict = {source_key: port_output}
-
-                # Get axonal delay from AxonalProjection.sources (preferred) or config
-                delay_ms = 1.0  # Default
-
-                # Check if pathway has sources list (AxonalProjection)
-                if hasattr(pathway, 'sources') and pathway.sources:
-                    # Match source_key to compound_key from sources
-                    for src_spec in pathway.sources:
-                        src_spec_key = src_spec.compound_key()
-                        if src_spec_key == source_key:
-                            delay_ms = src_spec.delay_ms
-                            break
-                # Otherwise check config (other pathway types)
-                elif hasattr(pathway, 'config') and hasattr(pathway.config, 'axonal_delay_ms'):
-                    delay_ms = pathway.config.axonal_delay_ms
-
-                # Route spikes through pathway (AxonalProjection expects Dict)
-                # Note: Delays handled by EventScheduler, not by pathway
-                pathway_output = pathway.forward(source_dict)                # Extract payload for event:
-                # pathway_output is already a dict with all sources (zeros for missing)
-                # We need to remap keys based on target_port semantics
-                event_payload_spikes = {}
-                for src_key, spikes in pathway_output.items():
-                    # Extract region name from compound key (e.g., "cortex:l6a" → "cortex")
-                    src_region = src_key.split(":")[0]
-                    # Get target_port for this specific source→target connection
-                    # Try compound key first (for port-based connections), then simple key
-                    src_conn_spec = self._connection_specs.get((src, tgt))
-                    if not src_conn_spec:
-                        # Fallback for non-port connections
-                        src_conn_spec = self._connection_specs.get((src_region, tgt_base))
-
-                    if src_conn_spec and src_conn_spec.target_port:
-                        key = src_conn_spec.target_port
-                    else:
-                        # For multi-source pathways without target_port, use source name
-                        # For single-source without target_port, use "input"
-                        key = src_region if len(pathway_output) > 1 else "input"
-                    event_payload_spikes[key] = spikes
-
-                # Schedule event to target with delay
-                if len(target_sources) > 1:
-                    available_sources = list(pathway_output.keys())
-                    source_label = f"multi:{','.join(available_sources)}"
-                else:
-                    source_label = source
-
-                # Use base target name (strip port) for event routing
-                event = Event(
-                    time=current_time + delay_ms,
-                    event_type=EventType.SPIKE,
-                    source=source_label,
-                    target=tgt_base,  # Base name without port suffix
-                    payload=SpikePayload(spikes=event_payload_spikes),
-                )
-                self._scheduler.schedule(event)
-
-    def _extract_port_output(self, component: NeuralComponent, output: torch.Tensor, port: str) -> torch.Tensor:
-        """Extract port-specific output from component output.
-
-        Args:
-            component: Source component
-            output: Full component output
-            port: Port name ('l23', 'l5', 'l6a', 'l6b', 'l6')
-
-        Returns:
-            Sliced output for the specified port
-        """
-        # Use component's get_output() method if available (preferred for port routing)
-        if hasattr(component, 'get_output') and callable(component.get_output):
-            try:
-                return component.get_output(port=port)
-            except ValueError:
-                # get_output() raised error (invalid port), fall through to manual slicing
-                pass
-
-        # Fallback: Manual slicing for legacy components without get_output()
-        # For LayeredCortex: output is [L2/3, L5] concatenated
-        if hasattr(component, 'l23_size') and hasattr(component, 'l5_size'):
-            if port == "l23":
-                return output[:component.l23_size]
-            elif port == "l5":
-                return output[component.l23_size:]
-            elif port == "l4":
-                # L4 is internal, not in output
-                raise ValueError("L4 is not part of cortex output")
-            else:
-                raise ValueError(f"Port '{port}' not supported for manual slicing. Use get_output() method.")
-
-        raise ValueError(f"Component {type(component).__name__} does not support port '{port}'")
 
     @property
     def regions(self) -> Dict[str, Any]:

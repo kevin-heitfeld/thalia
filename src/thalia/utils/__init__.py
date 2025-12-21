@@ -11,6 +11,7 @@ from thalia.utils.core_utils import (
     ones_like_config,
     assert_single_instance,
 )
+from thalia.utils.delay_buffer import CircularDelayBuffer
 
 __all__ = [
     "clamp_weights",
@@ -19,4 +20,5 @@ __all__ = [
     "zeros_like_config",
     "ones_like_config",
     "assert_single_instance",
+    "CircularDelayBuffer",
 ]

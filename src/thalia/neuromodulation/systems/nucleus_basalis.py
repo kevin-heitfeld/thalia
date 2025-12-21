@@ -119,8 +119,8 @@ class NucleusBasalisSystem:
 
         # Broadcast to regions
         ach = self.nucleus_basalis.get_acetylcholine()
-        self.cortex.impl.set_neuromodulators(acetylcholine=ach)
-        self.hippocampus.impl.set_neuromodulators(acetylcholine=ach)
+        self.cortex.set_neuromodulators(acetylcholine=ach)
+        self.hippocampus.set_neuromodulators(acetylcholine=ach)
     """
 
     def __init__(self, config: Optional[NucleusBasalisConfig] = None):

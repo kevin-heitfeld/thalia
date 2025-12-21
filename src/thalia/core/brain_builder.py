@@ -130,19 +130,13 @@ class BrainBuilder:
     def __init__(
         self,
         global_config: "GlobalConfig",
-        use_parallel: bool = False,
-        n_workers: Optional[int] = None,
     ):
         """Initialize builder with global configuration.
 
         Args:
             global_config: Global configuration (device, dt_ms, etc.)
-            use_parallel: Enable parallel execution (default: False)
-            n_workers: Number of worker processes (default: auto)
         """
         self.global_config = global_config
-        self.use_parallel = use_parallel
-        self.n_workers = n_workers
         self._components: Dict[str, ComponentSpec] = {}
         self._connections: List[ConnectionSpec] = []
         self._registry = ComponentRegistry()
@@ -592,16 +586,8 @@ class BrainBuilder:
         # Target's internal weights handle synaptic integration
         return target_comp.n_input
 
-    def build(
-        self,
-        use_parallel: Optional[bool] = None,
-        n_workers: Optional[int] = None,
-    ) -> DynamicBrain:
+    def build(self) -> DynamicBrain:
         """Build DynamicBrain from specifications.
-
-        Args:
-            use_parallel: Override instance use_parallel setting
-            n_workers: Override instance n_workers setting
 
         Steps:
             1. Infer component input sizes from connections
@@ -616,9 +602,6 @@ class BrainBuilder:
         Raises:
             ValueError: If validation fails or size inference fails
         """
-        # Use provided values or fall back to instance values
-        final_use_parallel = use_parallel if use_parallel is not None else self.use_parallel
-        final_n_workers = n_workers if n_workers is not None else self.n_workers
 
         # Infer n_input for components based on connections
         self._infer_component_sizes()
@@ -793,8 +776,6 @@ class BrainBuilder:
             components=components,
             connections=connections,
             global_config=self.global_config,
-            use_parallel=final_use_parallel,
-            n_workers=final_n_workers,
             connection_specs=connection_specs_dict,
         )
 
@@ -923,8 +904,6 @@ class BrainBuilder:
         cls,
         name: str,
         global_config: "GlobalConfig",
-        use_parallel: bool = False,
-        n_workers: Optional[int] = None,
         **overrides: Any,
     ) -> DynamicBrain:
         """Create brain from preset architecture.
@@ -932,8 +911,6 @@ class BrainBuilder:
         Args:
             name: Preset name (e.g., "sensorimotor")
             global_config: Global configuration
-            use_parallel: Enable parallel execution (default: False)
-            n_workers: Number of worker processes (default: auto)
             **overrides: Override default preset parameters
 
         Returns:
@@ -944,14 +921,6 @@ class BrainBuilder:
 
         Example:
             brain = BrainBuilder.preset("default", global_config)
-
-            # With parallel execution
-            brain = BrainBuilder.preset(
-                "default",
-                global_config,
-                use_parallel=True,
-                n_workers=4,
-            )
 
             # With overrides
             brain = BrainBuilder.preset(
@@ -967,7 +936,7 @@ class BrainBuilder:
             )
 
         preset = cls._presets[name]
-        builder = cls(global_config, use_parallel=use_parallel, n_workers=n_workers)
+        builder = cls(global_config)
 
         # Apply preset builder function
         preset.builder_fn(builder, **overrides)
@@ -991,8 +960,6 @@ class BrainBuilder:
         cls,
         name: str,
         global_config: "GlobalConfig",
-        use_parallel: bool = False,
-        n_workers: Optional[int] = None,
     ) -> "BrainBuilder":
         """Create builder initialized with preset architecture.
 
@@ -1002,8 +969,6 @@ class BrainBuilder:
         Args:
             name: Preset name (e.g., "sensorimotor")
             global_config: Global configuration
-            use_parallel: Enable parallel execution (default: False)
-            n_workers: Number of worker processes (default: auto)
 
         Returns:
             BrainBuilder instance with preset applied
@@ -1023,7 +988,7 @@ class BrainBuilder:
             raise KeyError(f"Preset '{name}' not found. Available: {available}")
 
         preset = cls._presets[name]
-        builder = cls(global_config, use_parallel, n_workers)
+        builder = cls(global_config)
         preset.builder_fn(builder)
         return builder
 
