@@ -48,13 +48,103 @@ Reference: Amaral et al. (1990) - Hippocampal formation anatomy
 """
 
 HIPPOCAMPUS_CA3_SIZE_RATIO = 0.5
-"""CA3 size as ratio of dentate gyrus size.
+"""CA3 size as fraction of DG size.
 
-CA3 has approximately 50% of DG neuron count but with extensive
-recurrent connections for pattern completion (autoassociative memory).
+CA3 has fewer neurons than DG but with extensive recurrent connections
+for auto-associative memory formation. Ratio reflects anatomical measurements.
 
-Reference: Treves & Rolls (1994) - Computational analysis
+Reference: Amaral et al. (1990) - Hippocampal formation anatomy
 """
+
+# =============================================================================
+# CORTICAL LAYER ARCHITECTURE
+# =============================================================================
+
+# Dopamine Receptor Density Distribution (Layer-specific sensitivity)
+# These values reflect the relative distribution of DA receptors across layers.
+# Sum = 1.0 (dopamine is distributed, not multiplied across layers)
+
+CORTEX_L4_DA_FRACTION = 0.2
+"""Layer 4 dopamine sensitivity fraction.
+
+Sensory input layer has lowest DA receptor density for input stability.
+Prevents reward signals from disrupting sensory processing.
+
+Reference: Seamans & Yang (2004) - DA modulation in PFC
+Extracted from LayeredCortex implementation (Architecture Review 2025-12-21)
+"""
+
+CORTEX_L23_DA_FRACTION = 0.3
+"""Layer 2/3 dopamine sensitivity fraction.
+
+Association layer has moderate DA receptor density for flexible
+integration of information with reward context.
+
+Reference: Seamans & Yang (2004) - DA modulation in PFC
+Extracted from LayeredCortex implementation (Architecture Review 2025-12-21)
+"""
+
+CORTEX_L5_DA_FRACTION = 0.4
+"""Layer 5 dopamine sensitivity fraction.
+
+Motor output layer has highest DA receptor density (40% of total).
+Critical for reinforcement learning and action selection.
+
+Reference: Seamans & Yang (2004) - DA modulation in PFC
+Extracted from LayeredCortex implementation (Architecture Review 2025-12-21)
+"""
+
+CORTEX_L6_DA_FRACTION = 0.1
+"""Layer 6 dopamine sensitivity fraction.
+
+Feedback/attention layer has lowest DA receptor density for stability
+in top-down control signals.
+
+Reference: Seamans & Yang (2004) - DA modulation in PFC
+Extracted from LayeredCortex implementation (Architecture Review 2025-12-21)
+"""
+
+# =============================================================================
+# NEURAL GROWTH CONSTANTS
+# =============================================================================
+
+GROWTH_NEW_WEIGHT_SCALE = 0.2
+"""Scaling factor for new weights during neurogenesis.
+
+New synaptic weights are initialized at 20% of w_max to allow gradual
+integration without disrupting existing network dynamics.
+
+Biological rationale: New neurons start with weak connections that
+strengthen through activity-dependent plasticity.
+
+Reference: Common pattern across all regions (Architecture Review 2025-12-21)
+"""
+
+# =============================================================================
+# ACTIVITY TRACKING CONSTANTS
+# =============================================================================
+
+ACTIVITY_HISTORY_DECAY = 0.99
+"""Exponential decay factor for activity history tracking.
+
+Used in homeostatic mechanisms to track long-term average activity.
+Decay of 0.99 per timestep gives effective time constant of ~100 steps.
+
+Reference: Intrinsic plasticity implementations (Architecture Review 2025-12-21)
+"""
+
+ACTIVITY_HISTORY_INCREMENT = 0.01
+"""Increment weight for new activity in exponential moving average.
+
+Complement of ACTIVITY_HISTORY_DECAY (1.0 - decay).
+Used in: activity = activity * decay + new_value * increment
+
+Reference: Intrinsic plasticity implementations (Architecture Review 2025-12-21)
+"""
+
+# =============================================================================
+# HIPPOCAMPUS ARCHITECTURE (continued)
+# =============================================================================
 
 HIPPOCAMPUS_CA1_SIZE_RATIO = 0.5
 """CA1 size as ratio of CA3 size.

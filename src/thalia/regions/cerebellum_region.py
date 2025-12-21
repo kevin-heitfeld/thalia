@@ -848,17 +848,10 @@ class Cerebellum(NeuralRegion):
         old_n_input = self.config.n_input
         new_n_input = old_n_input + n_new
 
-        # Helper to create new weights
-        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
-            if initialization == 'xavier':
-                return WeightInitializer.xavier(n_out, n_in, device=self.device)
-            elif initialization == 'sparse_random':
-                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
-            else:
-                return WeightInitializer.uniform(n_out, n_in, device=self.device)
-
         # Expand self.weights [n_output, input] → [n_output, input+n_new]
-        new_input_cols = new_weights_for(self.config.n_output, n_new)
+        new_input_cols = self._create_new_weights(
+            self.config.n_output, n_new, initialization, sparsity
+        )
         self.weights.data = torch.cat([self.weights.data, new_input_cols], dim=1)
 
         # Update trace manager for new input size

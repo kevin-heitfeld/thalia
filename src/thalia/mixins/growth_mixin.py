@@ -91,9 +91,10 @@ class GrowthMixin:
         n_input = current_weights.shape[1]
         device = current_weights.device
 
-        # Default scale: 20% of w_max (common across regions)
+        # Default scale: Use constant from regulation module (Architecture Review 2025-12-21, Tier 1.3)
         if scale is None:
-            scale = self.config.w_max * 0.2
+            from thalia.regulation.region_architecture_constants import GROWTH_NEW_WEIGHT_SCALE
+            scale = self.config.w_max * GROWTH_NEW_WEIGHT_SCALE
 
         # Initialize new weights using specified strategy
         if initialization == 'xavier':
@@ -126,6 +127,48 @@ class GrowthMixin:
         # Concatenate with existing weights
         expanded = torch.cat([current_weights.data, new_weights], dim=0)
         return nn.Parameter(expanded)
+
+    def _create_new_weights(
+        self,
+        n_output: int,
+        n_input: int,
+        initialization: str = 'xavier',
+        sparsity: float = 0.1,
+    ) -> torch.Tensor:
+        """Create new weight tensor using specified initialization strategy.
+
+        Centralized weight creation for grow_input/grow_output methods.
+        Eliminates need for per-region `new_weights_for()` helper functions.
+
+        This consolidates a pattern that was duplicated across 8+ regions
+        (Architecture Review 2025-12-21, Tier 1.1).
+
+        Args:
+            n_output: Number of output neurons
+            n_input: Number of input neurons
+            initialization: 'xavier', 'sparse_random', or 'uniform'
+            sparsity: Connection sparsity for sparse_random (0.0-1.0)
+
+        Returns:
+            New weight tensor [n_output, n_input]
+
+        Example:
+            >>> # In a region's grow_input() or grow_output() method:
+            >>> new_cols = self._create_new_weights(
+            ...     n_output=self.config.n_output,
+            ...     n_input=n_new,
+            ...     initialization='xavier',
+            ... )
+            >>> self.weights.data = torch.cat([self.weights.data, new_cols], dim=1)
+        """
+        if initialization == 'xavier':
+            return WeightInitializer.xavier(n_output, n_input, device=self.device)
+        elif initialization == 'sparse_random':
+            return WeightInitializer.sparse_random(
+                n_output, n_input, sparsity, device=self.device
+            )
+        else:  # uniform
+            return WeightInitializer.uniform(n_output, n_input, device=self.device)
 
     def _expand_state_tensors(
         self,

@@ -736,72 +736,89 @@ class LayeredCortex(NeuralRegion):
         new_l6a_size = old_l6a_size + l6a_growth
         new_l6b_size = old_l6b_size + l6b_growth
 
-        # Helper to create new weights
-        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
-            if initialization == 'xavier':
-                return WeightInitializer.xavier(n_out, n_in, device=self.device)
-            elif initialization == 'sparse_random':
-                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
-            else:
-                return WeightInitializer.uniform(n_out, n_in, device=self.device)
-
         # 1. Expand input→L4 weights [l4, input]
         # Add rows for new L4 neurons
-        new_input_l4 = new_weights_for(l4_growth, self.layer_config.n_input)
+        new_input_l4 = self._create_new_weights(
+            l4_growth, self.layer_config.n_input, initialization, sparsity
+        )
         self.synaptic_weights["input"] = nn.Parameter(
             torch.cat([self.synaptic_weights["input"].data, new_input_l4], dim=0)
         )
 
         # 2. Expand L4→L2/3 weights [l23, l4]
         # Add rows for new L2/3 neurons, columns for new L4 neurons
-        new_l23_rows = new_weights_for(l23_growth, old_l4_size)
+        new_l23_rows = self._create_new_weights(
+            l23_growth, old_l4_size, initialization, sparsity
+        )
         expanded_l23_rows = torch.cat([self.synaptic_weights["l4_l23"].data, new_l23_rows], dim=0)
-        new_l4_cols = new_weights_for(new_l23_size, l4_growth)
+        new_l4_cols = self._create_new_weights(
+            new_l23_size, l4_growth, initialization, sparsity
+        )
         self.synaptic_weights["l4_l23"] = nn.Parameter(
             torch.cat([expanded_l23_rows, new_l4_cols], dim=1)
         )
 
         # 3. Expand L2/3→L2/3 recurrent weights [l23, l23]
         # Add rows and columns for new L2/3 neurons
-        new_l23_recurrent_rows = new_weights_for(l23_growth, old_l23_size)
+        new_l23_recurrent_rows = self._create_new_weights(
+            l23_growth, old_l23_size, initialization, sparsity
+        )
         expanded_recurrent_rows = torch.cat([self.synaptic_weights["l23_recurrent"].data, new_l23_recurrent_rows], dim=0)
-        new_l23_recurrent_cols = new_weights_for(new_l23_size, l23_growth)
+        new_l23_recurrent_cols = self._create_new_weights(
+            new_l23_size, l23_growth, initialization, sparsity
+        )
         self.synaptic_weights["l23_recurrent"] = nn.Parameter(
             torch.cat([expanded_recurrent_rows, new_l23_recurrent_cols], dim=1)
         )
 
         # 3b. Expand L2/3 inhibitory weights [l23, l23]
         # Same structure as recurrent, but negative weights for inhibition
-        new_l23_inhib_rows = -torch.abs(new_weights_for(l23_growth, old_l23_size))
+        new_l23_inhib_rows = -torch.abs(self._create_new_weights(
+            l23_growth, old_l23_size, initialization, sparsity
+        ))
         expanded_inhib_rows = torch.cat([self.synaptic_weights["l23_inhib"].data, new_l23_inhib_rows], dim=0)
-        new_l23_inhib_cols = -torch.abs(new_weights_for(new_l23_size, l23_growth))
+        new_l23_inhib_cols = -torch.abs(self._create_new_weights(
+            new_l23_size, l23_growth, initialization, sparsity
+        ))
         self.synaptic_weights["l23_inhib"].data = torch.cat([expanded_inhib_rows, new_l23_inhib_cols], dim=1)
         # Zero out diagonal (no self-inhibition)
         self.synaptic_weights["l23_inhib"].data.fill_diagonal_(0.0)
 
         # 4. Expand L2/3→L5 weights [l5, l23]
         # Add rows for new L5 neurons, columns for new L2/3 neurons
-        new_l5_rows = new_weights_for(l5_growth, old_l23_size)
+        new_l5_rows = self._create_new_weights(
+            l5_growth, old_l23_size, initialization, sparsity
+        )
         expanded_l5_rows = torch.cat([self.synaptic_weights["l23_l5"].data, new_l5_rows], dim=0)
-        new_l23_cols_to_l5 = new_weights_for(new_l5_size, l23_growth)
+        new_l23_cols_to_l5 = self._create_new_weights(
+            new_l5_size, l23_growth, initialization, sparsity
+        )
         self.synaptic_weights["l23_l5"] = nn.Parameter(
             torch.cat([expanded_l5_rows, new_l23_cols_to_l5], dim=1)
         )
 
         # 4b. Expand L2/3→L6a weights [l6a, l23]
         # Add rows for new L6a neurons, columns for new L2/3 neurons
-        new_l6a_rows = new_weights_for(l6a_growth, old_l23_size)
+        new_l6a_rows = self._create_new_weights(
+            l6a_growth, old_l23_size, initialization, sparsity
+        )
         expanded_l6a_rows = torch.cat([self.synaptic_weights["l23_l6a"].data, new_l6a_rows], dim=0)
-        new_l23_cols_to_l6a = new_weights_for(new_l6a_size, l23_growth)
+        new_l23_cols_to_l6a = self._create_new_weights(
+            new_l6a_size, l23_growth, initialization, sparsity
+        )
         self.synaptic_weights["l23_l6a"] = nn.Parameter(
             torch.cat([expanded_l6a_rows, new_l23_cols_to_l6a], dim=1)
         )
 
         # 4c. Expand L2/3→L6b weights [l6b, l23]
         # Add rows for new L6b neurons, columns for new L2/3 neurons
-        new_l6b_rows = new_weights_for(l6b_growth, old_l23_size)
+        new_l6b_rows = self._create_new_weights(
+            l6b_growth, old_l23_size, initialization, sparsity
+        )
         expanded_l6b_rows = torch.cat([self.synaptic_weights["l23_l6b"].data, new_l6b_rows], dim=0)
-        new_l23_cols_to_l6b = new_weights_for(new_l6b_size, l23_growth)
+        new_l23_cols_to_l6b = self._create_new_weights(
+            new_l6b_size, l23_growth, initialization, sparsity
+        )
         self.synaptic_weights["l23_l6b"] = nn.Parameter(
             torch.cat([expanded_l6b_rows, new_l23_cols_to_l6b], dim=1)
         )
@@ -886,18 +903,11 @@ class LayeredCortex(NeuralRegion):
         old_n_input = self.layer_config.n_input
         new_n_input = old_n_input + n_new
 
-        # Helper to create new weights
-        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
-            if initialization == 'xavier':
-                return WeightInitializer.xavier(n_out, n_in, device=self.device)
-            elif initialization == 'sparse_random':
-                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
-            else:
-                return WeightInitializer.uniform(n_out, n_in, device=self.device)
-
         # Expand input→L4 weights [l4, input] → [l4, input+n_new]
         # Add COLUMNS for new input neurons
-        new_input_cols = new_weights_for(self.l4_size, n_new)
+        new_input_cols = self._create_new_weights(
+            self.l4_size, n_new, initialization, sparsity
+        )
         self.synaptic_weights["input"] = nn.Parameter(
             torch.cat([self.synaptic_weights["input"].data, new_input_cols], dim=1)  # Add columns
         )
@@ -1503,17 +1513,20 @@ class LayeredCortex(NeuralRegion):
         # LAYER-SPECIFIC DOPAMINE MODULATION (Enhancement #1)
         # =====================================================================
         # Apply layer-specific dopamine scaling to learning rates.
-        # Different layers have different DA receptor densities (relative sensitivity):
-        # - L5: 40% of total (motor/decision output - highest sensitivity)
-        # - L2/3: 30% of total (association/integration - moderate)
-        # - L4: 20% of total (sensory input - lower for stability)
-        # - L6: 10% of total (feedback/attention - lowest for stability)
-        # Sum = 1.0 (dopamine is distributed, not multiplied)
+        # Different layers have different DA receptor densities (relative sensitivity).
+        # Import constants from regulation module (Architecture Review 2025-12-21, Tier 1.3)
+        from thalia.regulation.region_architecture_constants import (
+            CORTEX_L4_DA_FRACTION,
+            CORTEX_L23_DA_FRACTION,
+            CORTEX_L5_DA_FRACTION,
+            CORTEX_L6_DA_FRACTION,
+        )
+
         base_dopamine = self.state.dopamine
-        l4_dopamine = base_dopamine * 0.2
-        l23_dopamine = base_dopamine * 0.3
-        l5_dopamine = base_dopamine * 0.4
-        l6_dopamine = base_dopamine * 0.1
+        l4_dopamine = base_dopamine * CORTEX_L4_DA_FRACTION
+        l23_dopamine = base_dopamine * CORTEX_L23_DA_FRACTION
+        l5_dopamine = base_dopamine * CORTEX_L5_DA_FRACTION
+        l6_dopamine = base_dopamine * CORTEX_L6_DA_FRACTION
 
         # Store for diagnostics and testing
         self._l4_dopamine = l4_dopamine

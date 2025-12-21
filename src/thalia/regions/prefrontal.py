@@ -731,17 +731,14 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         old_n_input = self.config.n_input
         new_n_input = old_n_input + n_new
 
-        # Helper to create new weights
-        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
-            if initialization == 'xavier':
-                return WeightInitializer.xavier(n_out, n_in, device=self.device)
-            elif initialization == 'sparse_random':
-                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
-            else:
-                return WeightInitializer.uniform(n_out, n_in, device=self.device)
-
+        # Use GrowthMixin helper (Architecture Review 2025-12-21, Tier 1.1)
         # Expand synaptic_weights["default"] [n_output, input] → [n_output, input+n_new]
-        new_input_cols = new_weights_for(self.config.n_output, n_new)
+        new_input_cols = self._create_new_weights(
+            n_output=self.config.n_output,
+            n_input=n_new,
+            initialization=initialization,
+            sparsity=sparsity,
+        )
         self.synaptic_weights["default"].data = torch.cat(
             [self.synaptic_weights["default"].data, new_input_cols], dim=1
         )
@@ -768,25 +765,32 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         old_n_output = self.config.n_output
         new_n_output = old_n_output + n_new
 
-        # Helper to create new weights
-        def new_weights_for(n_out: int, n_in: int) -> torch.Tensor:
-            if initialization == 'xavier':
-                return WeightInitializer.xavier(n_out, n_in, device=self.device)
-            elif initialization == 'sparse_random':
-                return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=self.device)
-            else:
-                return WeightInitializer.uniform(n_out, n_in, device=self.device)
-
+        # Use GrowthMixin helper (Architecture Review 2025-12-21, Tier 1.1)
         # 1. Expand synaptic_weights["default"] [n_output, input] → [n_output+n_new, input]
-        new_output_rows = new_weights_for(n_new, self.config.n_input)
+        new_output_rows = self._create_new_weights(
+            n_output=n_new,
+            n_input=self.config.n_input,
+            initialization=initialization,
+            sparsity=sparsity,
+        )
         self.synaptic_weights["default"].data = torch.cat(
             [self.synaptic_weights["default"].data, new_output_rows], dim=0
         )
 
         # 2. Expand rec_weights [n_output, n_output] → [n_output+n_new, n_output+n_new]
-        new_rec_rows = new_weights_for(n_new, old_n_output)
+        new_rec_rows = self._create_new_weights(
+            n_output=n_new,
+            n_input=old_n_output,
+            initialization=initialization,
+            sparsity=sparsity,
+        )
         expanded_rec = torch.cat([self.rec_weights.data, new_rec_rows], dim=0)
-        new_rec_cols = new_weights_for(new_n_output, n_new)
+        new_rec_cols = self._create_new_weights(
+            n_output=new_n_output,
+            n_input=n_new,
+            initialization=initialization,
+            sparsity=sparsity,
+        )
         self.rec_weights.data = torch.cat([expanded_rec, new_rec_cols], dim=1)
         # Add self-excitation for new neurons
         with torch.no_grad():
