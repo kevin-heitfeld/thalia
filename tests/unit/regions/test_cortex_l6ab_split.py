@@ -75,15 +75,15 @@ class TestL6abSplit:
         cortex = LayeredCortex(cortex_config_l6ab)
 
         # L2/3 → L6a weights
-        assert cortex.w_l23_l6a.shape == (150, 192)
+        assert cortex.synaptic_weights["l23_l6a"].shape == (150, 192)
 
         # L2/3 → L6b weights
-        assert cortex.w_l23_l6b.shape == (100, 192)
+        assert cortex.synaptic_weights["l23_l6b"].shape == (100, 192)
 
         # Weights should be different (not shared)
         assert not torch.equal(
-            cortex.w_l23_l6a[:100, :],  # First 100 rows of L6a
-            cortex.w_l23_l6b  # L6b weights
+            cortex.synaptic_weights["l23_l6a"][:100, :],  # First 100 rows of L6a
+            cortex.synaptic_weights["l23_l6b"]  # L6b weights
         )
 
     def test_l6ab_forward_pass(self, cortex_config_l6ab, device):

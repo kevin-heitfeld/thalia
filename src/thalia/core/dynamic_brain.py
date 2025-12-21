@@ -25,6 +25,7 @@ Date: December 15, 2025
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union, TYPE_CHECKING
@@ -41,10 +42,12 @@ from thalia.core.diagnostics import (
     BrainSystemDiagnostics,
 )
 from thalia.stimuli.base import StimulusPattern
+from thalia.components.coding.spike_utils import compute_firing_rate
 
 if TYPE_CHECKING:
     from thalia.config import GlobalConfig, ThaliaConfig
     from thalia.managers.component_registry import ComponentRegistry
+    from thalia.diagnostics.health_monitor import HealthReport
 
 
 @dataclass
@@ -188,11 +191,6 @@ class DynamicBrain(nn.Module):
         # Current simulation time
         self._current_time: float = 0.0
 
-        # === OUTPUT CACHE FOR PATHWAY ROUTING ===
-        # Cache component outputs for pathway routing during execution
-        # Maps component_name -> latest_output_tensor
-        self._output_cache: Dict[str, torch.Tensor] = {}
-
         # =================================================================
         # PATHWAY MANAGER (Phase 1.7.1)
         # =================================================================
@@ -332,7 +330,6 @@ class DynamicBrain(nn.Module):
         # =================================================================
         # Mental simulation and Dyna planning for model-based RL
         # Only initialize if use_model_based_planning enabled in global_config
-        from typing import TYPE_CHECKING
         if TYPE_CHECKING:
             from thalia.planning import MentalSimulationCoordinator, DynaPlanner
 
@@ -483,10 +480,6 @@ class DynamicBrain(nn.Module):
         Returns:
             Phase locking value [0, 1], where higher is better coupling
         """
-        # Get current phases
-        theta_phase = self.oscillators.theta.phase
-        gamma_phase = self.oscillators.gamma.phase
-
         # Get coupling amplitude if available
         coupled_amps = self.oscillators.get_coupled_amplitudes()
         if 'gamma' in coupled_amps:
@@ -1302,10 +1295,9 @@ class DynamicBrain(nn.Module):
             elif (hasattr(cortex, 'state') and
                   hasattr(cortex.state, 'l23_spikes') and
                   cortex.state.l23_spikes is not None):
-                from thalia.components.coding.spike_utils import compute_firing_rate
                 l23_activity = compute_firing_rate(cortex.state.l23_spikes)
                 # Map [0, 1] to [-0.5, 0.5] - less weight than free energy
-                cortex_reward = (l23_activity - 0.5)
+                cortex_reward = l23_activity - 0.5
                 reward += cortex_reward
                 n_sources += 1
 
@@ -1323,7 +1315,6 @@ class DynamicBrain(nn.Module):
 
                 # CA1 firing rate as proxy for retrieval quality
                 # High rate = strong recall, low rate = weak/no recall
-                from thalia.components.coding.spike_utils import compute_firing_rate
                 ca1_activity = compute_firing_rate(hippocampus.state.ca1_spikes)
 
                 # Map CA1 activity [0, 1] to reward [-1, 1]
@@ -1404,7 +1395,6 @@ class DynamicBrain(nn.Module):
             return 0.0
 
         # Measure working memory load from sustained spike activity
-        from thalia.components.coding.spike_utils import compute_firing_rate
         wm_activity = compute_firing_rate(pfc.state.spikes)
 
         # Also consider number of active goals (if hierarchical goals enabled)
@@ -1600,8 +1590,6 @@ class DynamicBrain(nn.Module):
                 for issue in health.issues:
                     print(f"{issue.issue_type}: {issue.description}")
         """
-        from thalia.diagnostics.health_monitor import HealthReport
-
         # Get comprehensive diagnostics for health check
         diagnostics = self.get_diagnostics()
 
@@ -1724,7 +1712,6 @@ class DynamicBrain(nn.Module):
 
             # Record growth event in history
             from thalia.coordination.growth import GrowthEvent
-            from datetime import datetime, timezone
 
             # Get metrics after growth (simplified - component should re-compute)
             new_size = getattr(component.config, "n_output", None)
@@ -1844,6 +1831,12 @@ class DynamicBrain(nn.Module):
         # Initialize spike count tracking for new component
         if hasattr(self, "_spike_counts"):
             self._spike_counts[name] = 0
+
+        # Initialize GPU-friendly spike tracking tensor
+        if hasattr(self, "_spike_tensors"):
+            self._spike_tensors[name] = torch.tensor(
+                0, dtype=torch.int64, device=self.global_config.device
+            )
 
         # Invalidate cached execution order
         self._execution_order = None

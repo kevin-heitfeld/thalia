@@ -537,16 +537,16 @@ class TrisynapticHippocampus(NeuralRegion):
     def set_neuromodulators(
         self,
         dopamine: Optional[float] = None,
-        acetylcholine: Optional[float] = None,
         norepinephrine: Optional[float] = None,
+        acetylcholine: Optional[float] = None,
     ) -> None:
         """Set neuromodulator levels (Brain → Region API)."""
         if dopamine is not None:
             self.state.dopamine = dopamine
-        if acetylcholine is not None:
-            self.state.acetylcholine = acetylcholine
         if norepinephrine is not None:
             self.state.norepinephrine = norepinephrine
+        if acetylcholine is not None:
+            self.state.acetylcholine = acetylcholine
 
     def reset_state(self) -> None:
         """Reset state for new episode.
@@ -674,10 +674,10 @@ class TrisynapticHippocampus(NeuralRegion):
         # Add rows for new CA3 neurons, columns for new DG neurons
         # First expand rows (new CA3 neurons receiving from all DG)
         new_ca3_rows = new_weights_for(ca3_growth, old_dg_size)
-        expanded_rows = torch.cat([self.w_dg_ca3.data, new_ca3_rows], dim=0)
+        expanded_rows = torch.cat([self.synaptic_weights["dg_ca3"].data, new_ca3_rows], dim=0)
         # Then expand columns (all CA3 receiving from new DG)
         new_dg_cols = new_weights_for(new_ca3_size, dg_growth)
-        self.w_dg_ca3 = nn.Parameter(
+        self.synaptic_weights["dg_ca3"] = nn.Parameter(
             torch.cat([expanded_rows, new_dg_cols], dim=1)
         )
 
@@ -691,18 +691,18 @@ class TrisynapticHippocampus(NeuralRegion):
         # 4. Expand CA3→CA3 recurrent weights [ca3, ca3]
         # Add rows and columns for new CA3 neurons
         new_ca3_recurrent_rows = new_weights_for(ca3_growth, old_ca3_size)
-        expanded_recurrent_rows = torch.cat([self.w_ca3_ca3.data, new_ca3_recurrent_rows], dim=0)
+        expanded_recurrent_rows = torch.cat([self.synaptic_weights["ca3_ca3"].data, new_ca3_recurrent_rows], dim=0)
         new_ca3_recurrent_cols = new_weights_for(new_ca3_size, ca3_growth)
-        self.w_ca3_ca3 = nn.Parameter(
+        self.synaptic_weights["ca3_ca3"] = nn.Parameter(
             torch.cat([expanded_recurrent_rows, new_ca3_recurrent_cols], dim=1)
         )
 
         # 5. Expand CA3→CA1 weights [ca1, ca3]
         # Add rows for new CA1 neurons, columns for new CA3 neurons
         new_ca1_rows = new_weights_for(n_new, old_ca3_size)
-        expanded_ca1_rows = torch.cat([self.w_ca3_ca1.data, new_ca1_rows], dim=0)
+        expanded_ca1_rows = torch.cat([self.synaptic_weights["ca3_ca1"].data, new_ca1_rows], dim=0)
         new_ca3_cols_to_ca1 = new_weights_for(new_ca1_size, ca3_growth)
-        self.w_ca3_ca1 = nn.Parameter(
+        self.synaptic_weights["ca3_ca1"] = nn.Parameter(
             torch.cat([expanded_ca1_rows, new_ca3_cols_to_ca1], dim=1)
         )
 
@@ -994,11 +994,11 @@ class TrisynapticHippocampus(NeuralRegion):
             # enhance transmission to CA3
             stp_efficacy = self.stp_mossy(dg_spikes_delayed.float())
             # Apply STP to weights: (n_post, n_pre) * (n_pre, n_post).T
-            effective_w_dg_ca3 = self.w_dg_ca3 * stp_efficacy.T
+            effective_w_dg_ca3 = self.synaptic_weights["dg_ca3"] * stp_efficacy.T
             ca3_from_dg = torch.matmul(effective_w_dg_ca3, dg_spikes_delayed.float()) * dg_ca3_gate  # [ca3_size]
         else:
             # Standard matmul without STP
-            ca3_from_dg = torch.matmul(self.w_dg_ca3, dg_spikes_delayed.float()) * dg_ca3_gate  # [ca3_size]
+            ca3_from_dg = torch.matmul(self.synaptic_weights["dg_ca3"], dg_spikes_delayed.float()) * dg_ca3_gate  # [ca3_size]
 
         # Direct perforant path from EC (provides retrieval cues)
         # Strong during retrieval to seed the CA3 attractor from partial cues
@@ -1035,7 +1035,7 @@ class TrisynapticHippocampus(NeuralRegion):
             # ADR-005: STP now accepts 1D [n_pre] directly
             stp_rec_efficacy = self.stp_ca3_recurrent(self.state.ca3_spikes.float())
             # Apply STP to recurrent weights
-            effective_w_ca3_ca3 = self.w_ca3_ca3 * stp_rec_efficacy.T
+            effective_w_ca3_ca3 = self.synaptic_weights["ca3_ca3"] * stp_rec_efficacy.T
             ca3_rec = torch.matmul(
                 effective_w_ca3_ca3,
                 self.state.ca3_spikes.float()
@@ -1043,7 +1043,7 @@ class TrisynapticHippocampus(NeuralRegion):
         else:
             # Recurrent from previous CA3 activity (theta-gated + ACh-modulated)
             ca3_rec = torch.matmul(
-                self.w_ca3_ca3,
+                self.synaptic_weights["ca3_ca3"],
                 self.state.ca3_spikes.float() if self.state.ca3_spikes is not None else torch.zeros(self.ca3_size, device=input_spikes.device)
             ) * self.tri_config.ca3_recurrent_strength * rec_gate * ach_recurrent_modulation  # [ca3_size]
 
@@ -1285,9 +1285,9 @@ class TrisynapticHippocampus(NeuralRegion):
                 dW = dW + hetero_dW
 
             with torch.no_grad():
-                self.w_ca3_ca3.data += dW
-                self.w_ca3_ca3.data.fill_diagonal_(0.0)  # No self-connections
-                clamp_weights(self.w_ca3_ca3.data, self.tri_config.w_min, self.tri_config.w_max)
+                self.synaptic_weights["ca3_ca3"].data += dW
+                self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # No self-connections
+                clamp_weights(self.synaptic_weights["ca3_ca3"].data, self.tri_config.w_min, self.tri_config.w_max)
 
         # =====================================================================
         # 3. CA1: Coincidence Detection with Plastic EC→CA1 Pathway
@@ -1341,11 +1341,11 @@ class TrisynapticHippocampus(NeuralRegion):
         # NOTE: Use delayed CA3 spikes for biological accuracy
         if self.stp_schaffer is not None:
             stp_efficacy = self.stp_schaffer(ca3_spikes_delayed.float())
-            effective_w_ca3_ca1 = self.w_ca3_ca1 * stp_efficacy.T
+            effective_w_ca3_ca1 = self.synaptic_weights["ca3_ca1"] * stp_efficacy.T
             ca1_from_ca3 = torch.matmul(effective_w_ca3_ca1, ca3_spikes_delayed.float())  # [ca1_size]
         else:
             # Standard matmul without STP
-            ca1_from_ca3 = torch.matmul(self.w_ca3_ca1, ca3_spikes_delayed.float())  # [ca1_size]
+            ca1_from_ca3 = torch.matmul(self.synaptic_weights["ca3_ca1"], ca3_spikes_delayed.float())  # [ca1_size]
 
         # Direct from EC (current input) - use ec_direct_input if provided
         # ec_direct_input models EC layer III which carries raw sensory info
@@ -1431,7 +1431,7 @@ class TrisynapticHippocampus(NeuralRegion):
         if self.state.ca1_spikes is not None:
             ca1_g_inh = F.relu(torch.matmul(
                 self.state.ca1_spikes.float(),
-                self.w_ca1_inhib.t()
+                self.synaptic_weights["ca1_inhib"].t()
             ))
 
         # Run through CA1 neurons (ConductanceLIF with E/I separation)
@@ -1644,8 +1644,8 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Apply homeostatic synaptic scaling to CA3 recurrent weights
         with torch.no_grad():
-            self.w_ca3_ca3.data = self.homeostasis.normalize_weights(self.w_ca3_ca3.data, dim=1)
-            self.w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
+            self.synaptic_weights["ca3_ca3"].data = self.homeostasis.normalize_weights(self.synaptic_weights["ca3_ca3"].data, dim=1)
+            self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # Maintain no self-connections
 
         # Apply intrinsic plasticity (threshold adaptation) using homeostasis helper
         if self.state.ca3_spikes is not None:
@@ -2094,9 +2094,9 @@ class TrisynapticHippocampus(NeuralRegion):
             region_name="hippocampus",
             weight_matrices={
                 "ec_dg": self.synaptic_weights["ec_dg"].data,
-                "dg_ca3": self.w_dg_ca3.data,
-                "ca3_ca3": self.w_ca3_ca3.data,
-                "ca3_ca1": self.w_ca3_ca1.data,
+                "dg_ca3": self.synaptic_weights["dg_ca3"].data,
+                "ca3_ca3": self.synaptic_weights["ca3_ca3"].data,
+                "ca3_ca1": self.synaptic_weights["ca3_ca1"].data,
                 "ec_ca1": self.synaptic_weights["ec_ca1"].data,
             },
             custom_metrics=custom,
@@ -2118,12 +2118,12 @@ class TrisynapticHippocampus(NeuralRegion):
         w_ec_l3_ca1 = self.synaptic_weights.get("ec_l3_ca1", None)
         weights = {
             "w_ec_dg": self.synaptic_weights["ec_dg"].detach().clone(),
-            "w_dg_ca3": self.w_dg_ca3.detach().clone(),
-            "w_ca3_ca1": self.w_ca3_ca1.detach().clone(),
-            "w_ca3_ca3": self.w_ca3_ca3.detach().clone(),
+            "w_dg_ca3": self.synaptic_weights["dg_ca3"].detach().clone(),
+            "w_ca3_ca1": self.synaptic_weights["ca3_ca1"].detach().clone(),
+            "w_ca3_ca3": self.synaptic_weights["ca3_ca3"].detach().clone(),
             "w_ec_ca1": self.synaptic_weights["ec_ca1"].detach().clone(),
             "w_ec_l3_ca1": w_ec_l3_ca1.detach().clone() if w_ec_l3_ca1 is not None else None,
-            "w_ca1_inhib": self.w_ca1_inhib.detach().clone(),
+            "w_ca1_inhib": self.synaptic_weights["ca1_inhib"].detach().clone(),
         }
 
         # 2. REGION STATE (all three layers)
@@ -2237,13 +2237,13 @@ class TrisynapticHippocampus(NeuralRegion):
         # 1. RESTORE WEIGHTS
         weights = state["weights"]
         self.synaptic_weights["ec_dg"].data = weights["w_ec_dg"].to(self.device)
-        self.w_dg_ca3.data = weights["w_dg_ca3"].to(self.device)
-        self.w_ca3_ca1.data = weights["w_ca3_ca1"].to(self.device)
-        self.w_ca3_ca3.data = weights["w_ca3_ca3"].to(self.device)
+        self.synaptic_weights["dg_ca3"].data = weights["w_dg_ca3"].to(self.device)
+        self.synaptic_weights["ca3_ca1"].data = weights["w_ca3_ca1"].to(self.device)
+        self.synaptic_weights["ca3_ca3"].data = weights["w_ca3_ca3"].to(self.device)
         self.synaptic_weights["ec_ca1"].data = weights["w_ec_ca1"].to(self.device)
         if weights["w_ec_l3_ca1"] is not None and "ec_l3_ca1" in self.synaptic_weights:
             self.synaptic_weights["ec_l3_ca1"].data = weights["w_ec_l3_ca1"].to(self.device)
-        self.w_ca1_inhib.data = weights["w_ca1_inhib"].to(self.device)
+        self.synaptic_weights["ca1_inhib"].data = weights["w_ca1_inhib"].to(self.device)
 
         # 2. RESTORE REGION STATE
         region_state = state["region_state"]
@@ -2314,7 +2314,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.state.norepinephrine = neuromodulator_state["norepinephrine"]
 
         # 6. RESTORE EPISODIC MEMORY
-        from thalia.regions.hippocampus.config import Episode  # Import here to avoid circular dependency
+        from thalia.regions.hippocampus.config import Episode
         self.episode_buffer = []
         for ep_state in state["episode_buffer"]:
             episode = Episode(
