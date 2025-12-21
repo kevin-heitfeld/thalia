@@ -48,6 +48,10 @@ from typing import Dict, Any, TYPE_CHECKING
 import torch
 
 from thalia.managers.base_manager import BaseManager
+from thalia.regulation.region_architecture_constants import (
+    ACTIVITY_HISTORY_DECAY,
+    ACTIVITY_HISTORY_INCREMENT,
+)
 
 if TYPE_CHECKING:
     from thalia.core.base.component_config import NeuralComponentConfig
@@ -85,7 +89,92 @@ class LearningComponent(BaseManager["NeuralComponentConfig"]):
         Returns:
             Dict with learning metrics (weight_change, trace_magnitude, etc.)
         """
-        pass
+
+    def _update_activity_history(
+        self,
+        history: torch.Tensor,
+        new_spikes: torch.Tensor,
+        decay: float = ACTIVITY_HISTORY_DECAY,
+        increment: float = ACTIVITY_HISTORY_INCREMENT,
+    ) -> torch.Tensor:
+        """Update activity history using exponential moving average.
+
+        Implements the standard biological activity tracking pattern:
+        history = decay * history + increment * new_activity
+
+        Args:
+            history: Current activity history tensor
+            new_spikes: New spike pattern to incorporate
+            decay: Decay factor (default: 0.99 from constants)
+            increment: Increment factor (default: 0.01 from constants)
+
+        Returns:
+            Updated activity history (in-place modification)
+
+        Example:
+        --------
+        >>> self._activity_history = self._update_activity_history(
+        ...     self._activity_history, ca3_spikes
+        ... )
+        """
+        history.mul_(decay).add_(new_spikes, alpha=increment)
+        return history
+
+    def _safe_clamp(
+        self,
+        tensor: torch.Tensor,
+        min_val: float,
+        max_val: float,
+    ) -> torch.Tensor:
+        """Clamp tensor values in-place to [min_val, max_val].
+
+        Args:
+            tensor: Tensor to clamp
+            min_val: Minimum value
+            max_val: Maximum value
+
+        Returns:
+            Clamped tensor (in-place modification)
+
+        Example:
+        --------
+        >>> self._threshold_offset = self._safe_clamp(
+        ...     self._threshold_offset, -0.5, 0.5
+        ... )
+        """
+        tensor.clamp_(min_val, max_val)
+        return tensor
+
+    def _init_tensor_if_needed(
+        self,
+        attr_name: str,
+        shape: tuple[int, ...],
+        fill_value: float = 0.0,
+    ) -> torch.Tensor:
+        """Initialize a tensor attribute if it doesn't exist yet.
+
+        Args:
+            attr_name: Attribute name (e.g., "_activity_history")
+            shape: Tensor shape
+            fill_value: Initial value (default: 0.0)
+
+        Returns:
+            Existing or newly created tensor
+
+        Example:
+        --------
+        >>> self._activity_history = self._init_tensor_if_needed(
+        ...     "_activity_history", (self.ca3_size,)
+        ... )
+        """
+        existing = getattr(self, attr_name, None)
+        if existing is None:
+            new_tensor = torch.full(
+                shape, fill_value, device=self.context.device
+            )
+            setattr(self, attr_name, new_tensor)
+            return new_tensor
+        return existing
 
     def get_learning_diagnostics(self) -> Dict[str, Any]:
         """Get learning-specific diagnostics.
@@ -129,7 +218,6 @@ class HomeostasisComponent(BaseManager["NeuralComponentConfig"]):
         Returns:
             Dict with homeostasis metrics (scaling_applied, threshold_change, etc.)
         """
-        pass
 
     def get_homeostasis_diagnostics(self) -> Dict[str, Any]:
         """Get homeostasis-specific diagnostics.
@@ -170,7 +258,6 @@ class MemoryComponent(BaseManager["NeuralComponentConfig"]):
         Args:
             **kwargs: Memory data (state, action, reward, context, etc.)
         """
-        pass
 
     @abstractmethod
     def retrieve_memories(self, *args, **kwargs) -> Any:
@@ -182,7 +269,6 @@ class MemoryComponent(BaseManager["NeuralComponentConfig"]):
         Returns:
             Retrieved memories (format depends on implementation)
         """
-        pass
 
     def get_memory_diagnostics(self) -> Dict[str, Any]:
         """Get memory-specific diagnostics.
@@ -224,7 +310,6 @@ class ExplorationComponent(BaseManager["NeuralComponentConfig"]):
         Returns:
             Exploration bonus per action
         """
-        pass
 
     def get_exploration_diagnostics(self) -> Dict[str, Any]:
         """Get exploration-specific diagnostics.

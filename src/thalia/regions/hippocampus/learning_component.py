@@ -16,6 +16,10 @@ from thalia.core.region_components import LearningComponent
 from thalia.managers.base_manager import ManagerContext
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.core.diagnostics_keys import DiagnosticKeys as DK
+from thalia.regulation.region_architecture_constants import (
+    ACTIVITY_HISTORY_DECAY,
+    ACTIVITY_HISTORY_INCREMENT,
+)
 
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.config import HippocampusConfig, HippocampusState
@@ -112,27 +116,33 @@ class HippocampusLearningComponent(LearningComponent):
         Returns:
             Threshold offset tensor
         """
+        # Early return if homeostasis disabled
+        self._ca3_threshold_offset = self._init_tensor_if_needed(
+            "_ca3_threshold_offset", (self.ca3_size,)
+        )
         if not self.config.homeostasis_enabled:
-            if self._ca3_threshold_offset is None:
-                self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=self.context.device)
             return self._ca3_threshold_offset
 
         cfg = self.config
         ca3_spikes_1d = ca3_spikes.float().mean(dim=0) if ca3_spikes.dim() > 1 else ca3_spikes.float()
 
-        # Initialize if needed
-        if self._ca3_activity_history is None:
-            self._ca3_activity_history = torch.zeros(self.ca3_size, device=self.context.device)
-        if self._ca3_threshold_offset is None:
-            self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=self.context.device)
+        # Initialize activity history if needed
+        self._ca3_activity_history = self._init_tensor_if_needed(
+            "_ca3_activity_history", (self.ca3_size,)
+        )
 
         # Update activity history (exponential moving average)
-        self._ca3_activity_history.mul_(0.99).add_(ca3_spikes_1d, alpha=0.01)
+        self._update_activity_history(
+            self._ca3_activity_history,
+            ca3_spikes_1d,
+            decay=ACTIVITY_HISTORY_DECAY,
+            increment=ACTIVITY_HISTORY_INCREMENT,
+        )
 
-        # Adjust threshold
+        # Adjust threshold based on rate error
         rate_error = self._ca3_activity_history - cfg.activity_target
         self._ca3_threshold_offset.add_(rate_error, alpha=cfg.normalization_rate)
-        self._ca3_threshold_offset.clamp_(-0.5, 0.5)
+        self._safe_clamp(self._ca3_threshold_offset, -0.5, 0.5)
 
         return self._ca3_threshold_offset
 
