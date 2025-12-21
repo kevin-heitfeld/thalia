@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 19:50:31
+> Last updated: 2025-12-21 20:10:00
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all registered brain regions and pathways in the Thalia component registry.

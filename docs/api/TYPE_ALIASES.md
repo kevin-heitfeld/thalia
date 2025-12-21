@@ -1,100 +1,84 @@
 # Type Aliases Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 19:50:31
+> Last updated: 2025-12-21 20:10:00
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all type aliases used in Thalia for clearer type hints.
 
-Total: 17 type aliases
+Total: 14 type aliases
 
 ## Type Aliases by Category
 
-### Component Organization
+### 
+
+#### `BatchData`
+
+**Definition**: `Dict[str, torch.Tensor]`
+
+**Description**: Batch of training/inference data.  Example: batch: BatchData = { "input": input_spikes,    # (batch_size, timesteps, input_dim) "target": target_labels,   # (batch_size,) "mask": attention_mask,    # (batch_size, timesteps) }
+
+**Source**: `thalia/typing.py`
+
+---
+
+#### `CheckpointMetadata`
+
+**Definition**: `Dict[str, Any]`
+
+**Description**: Training progress and stage information.  Example: metadata: CheckpointMetadata = { "stage": 2, "epoch": 150, "global_step": 45000, "timestamp": "2025-12-21T08:00:00Z", }
+
+**Source**: `thalia/typing.py`
+
+---
 
 #### `ComponentGraph`
 
-**Definition**: `Dict[str, NeuralRegion]`
+**Definition**: `Dict[str, 'NeuralRegion']`
 
-**Description**: name -> component instance
+**Description**: Maps component names to component instances.  Example: components: ComponentGraph = { "cortex": cortex_region, "hippocampus": hippocampus_region, }
 
-**Source**: `.github/copilot-instructions.md`
+**Source**: `thalia/typing.py`
 
 ---
 
 #### `ConnectionGraph`
 
-**Definition**: `Dict[Tuple[str, str], NeuralRegion]`
+**Definition**: `Dict[Tuple[str, str], 'NeuralRegion']`
 
-**Description**: (src, tgt) -> pathway
+**Description**: Maps (source, target) pairs to pathway instances.  Example: connections: ConnectionGraph = { ("thalamus", "cortex"): thalamic_pathway, ("cortex", "striatum"): corticostriatal_pathway, }
 
-**Source**: `.github/copilot-instructions.md`
-
----
-
-#### `TopologyGraph`
-
-**Definition**: `Dict[str, List[str]]`
-
-**Description**: src -> [tgt1, tgt2, ...]
-
-**Source**: `.github/copilot-instructions.md`
+**Source**: `thalia/typing.py`
 
 ---
-
-### Configuration
-
-#### `ComponentSpec`
-
-**Definition**: `dataclass`
-
-**Description**: Pre-instantiation component definition
-
-**Source**: `.github/copilot-instructions.md`
-
----
-
-#### `ConnectionSpec`
-
-**Definition**: `dataclass`
-
-**Description**: Pre-instantiation connection definition
-
-**Source**: `.github/copilot-instructions.md`
-
----
-
-### Diagnostics
 
 #### `DiagnosticsDict`
 
 **Definition**: `Dict[str, Any]`
 
-**Description**: Component health/performance metrics
+**Description**: Component health and performance metrics.  Example: diagnostics: DiagnosticsDict = { "firing_rate": 5.2, "weight_mean": 0.35, "weight_std": 0.12, "sparsity": 0.15, }
 
-**Source**: `.github/copilot-instructions.md`
-
----
-
-#### `HealthReport`
-
-**Definition**: `dataclass`
-
-**Description**: Structured health check results
-
-**Source**: `.github/copilot-instructions.md`
+**Source**: `thalia/typing.py`
 
 ---
-
-### Multi-Source Pathways
 
 #### `InputSizes`
 
 **Definition**: `Dict[str, int]`
 
-**Description**: {region_name: size}
+**Description**: Maps source names to their input sizes.  Used by multi-source pathways to track input dimensions per source.  Example: input_sizes: InputSizes = { "cortex": 100, "hippocampus": 64, }
 
-**Source**: `.github/copilot-instructions.md`
+**Source**: `thalia/typing.py`
+
+---
+
+#### `NeuromodulatorLevels`
+
+**Definition**: `Dict[str, float]`
+
+**Description**: Maps neuromodulator names to their current levels (0.0-1.0).  Example: levels: NeuromodulatorLevels = { "dopamine": 0.8, "acetylcholine": 0.6, "norepinephrine": 0.5, }
+
+**Source**: `thalia/typing.py`
 
 ---
 
@@ -102,79 +86,19 @@ Total: 17 type aliases
 
 **Definition**: `Dict[str, torch.Tensor]`
 
-**Description**: {region_name: output_spikes}
+**Description**: Maps source names to their output spike tensors.  Used for multi-source pathways where multiple regions project to one target.  Example: source_outputs: SourceOutputs = { "cortex": cortex_spikes, "hippocampus": hippocampus_spikes, }
 
-**Source**: `.github/copilot-instructions.md`
-
----
-
-#### `SourceSpec`
-
-**Definition**: `Tuple[str, Optional[str]]`
-
-**Description**: (region_name, port)
-
-**Source**: `.github/copilot-instructions.md`
+**Source**: `thalia/typing.py`
 
 ---
-
-### Other
-
-#### `CompressionType`
-
-**Definition**: `Literal['zstd', 'lz4', None]`
-
-**Source**: `io\compression.py`
-
----
-
-#### `PresetBuilderFn`
-
-**Definition**: `Callable[['BrainBuilder', Any], None]`
-
-**Source**: `core\brain_builder.py`
-
----
-
-#### `SpilloverMode`
-
-**Definition**: `Literal['connectivity', 'similarity', 'lateral']`
-
-**Source**: `synapses\spillover.py`
-
----
-
-### Port-Based Routing
 
 #### `SourcePort`
 
 **Definition**: `Optional[str]`
 
-**Description**: 'l23', 'l5', 'l4', None
+**Description**: Optional source port identifier for layer-specific outputs.  Examples: 'l23', 'l5', 'l4', 'ca1', 'ca3', None
 
-**Source**: `.github/copilot-instructions.md`
-
----
-
-#### `TargetPort`
-
-**Definition**: `Optional[str]`
-
-**Description**: 'feedforward', 'top_down', None
-
-**Source**: `.github/copilot-instructions.md`
-
----
-
-### State Management
-
-#### `CheckpointMetadata`
-
-**Definition**: `Dict[str, Any]`
-
-**Description**: Training progress, stage info
-
-**Source**: `.github/copilot-instructions.md`
+**Source**: `thalia/typing.py`
 
 ---
 
@@ -182,9 +106,51 @@ Total: 17 type aliases
 
 **Definition**: `Dict[str, torch.Tensor]`
 
-**Description**: Component state for checkpointing
+**Description**: Component state for checkpointing.  Contains all tensors needed to restore component state.  Example: state: StateDict = { "membrane_voltage": v_mem, "synaptic_traces": traces, "eligibility": eligibility, }
 
-**Source**: `.github/copilot-instructions.md`
+**Source**: `thalia/typing.py`
+
+---
+
+#### `TargetPort`
+
+**Definition**: `Optional[str]`
+
+**Description**: Optional target port identifier for input types.  Examples: 'feedforward', 'top_down', 'ec_l3', 'pfc_modulation', None
+
+**Source**: `thalia/typing.py`
+
+---
+
+### Other
+
+#### `LearningStrategies`
+
+**Definition**: `Dict[str, 'LearningStrategy']`
+
+**Description**: Maps source names to their learning strategies.  Each source can have its own learning rule (STDP, BCM, Hebbian, etc.)  Example: strategies: LearningStrategies = { "cortex": stdp_strategy, "hippocampus": hebbian_strategy, }
+
+**Source**: `thalia/typing.py`
+
+---
+
+#### `SynapticWeights`
+
+**Definition**: `Dict[str, torch.Tensor]`
+
+**Description**: Maps source names to their synaptic weight matrices.  Weights are stored at target dendrites, organized by source region.  Example: synaptic_weights: SynapticWeights = { "cortex": torch.randn(n_output, 100), "hippocampus": torch.randn(n_output, 64), }
+
+**Source**: `thalia/typing.py`
+
+---
+
+#### `TopologyGraph`
+
+**Definition**: `Dict[str, List[str]]`
+
+**Description**: Maps source region names to lists of target region names.  Example: topology: TopologyGraph = { "thalamus": ["cortex", "striatum"], "cortex": ["striatum", "hippocampus"], }
+
+**Source**: `thalia/typing.py`
 
 ---
 

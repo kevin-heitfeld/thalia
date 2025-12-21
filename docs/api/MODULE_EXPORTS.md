@@ -1,7 +1,7 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 19:50:31
+> Last updated: 2025-12-21 20:10:00
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
@@ -21,21 +21,21 @@ Total: 46 modules, 548 exports
 - `GlobalConfig`
 - `BrainConfig`
 - `RegionSizes`
-- `DynamicBrain`
-- `NeuralComponentConfig`
-- `Striatum`
-- `StriatumConfig`
-- `LayeredCortex`
-- `LayeredCortexConfig`
-- `PredictiveCortex`
-- `PredictiveCortexConfig`
-- `Cerebellum`
-- `CerebellumConfig`
-- `Prefrontal`
-- `PrefrontalConfig`
-- `Hippocampus`
-- `HippocampusConfig`
-- `ConductanceLIF`
+- `ComponentGraph`
+- `ConnectionGraph`
+- `TopologyGraph`
+- `SourceSpec`
+- `SourcePort`
+- `TargetPort`
+- `SourceOutputs`
+- `InputSizes`
+- `SynapticWeights`
+- `LearningStrategies`
+- `StateDict`
+- `CheckpointMetadata`
+- `DiagnosticsDict`
+- `NeuromodulatorLevels`
+- `BatchData`
 
 **Usage**:
 

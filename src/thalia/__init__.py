@@ -39,6 +39,25 @@ __version__ = "0.2.0"
 # Configuration
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 
+# Type Aliases (for better type hints)
+from thalia.typing import (
+    ComponentGraph,
+    ConnectionGraph,
+    TopologyGraph,
+    SourceSpec,
+    SourcePort,
+    TargetPort,
+    SourceOutputs,
+    InputSizes,
+    SynapticWeights,
+    LearningStrategies,
+    StateDict,
+    CheckpointMetadata,
+    DiagnosticsDict,
+    NeuromodulatorLevels,
+    BatchData,
+)
+
 # Brain System (DynamicBrain is now the primary API)
 from thalia.core.dynamic_brain import DynamicBrain
 
@@ -129,6 +148,22 @@ __all__ = [
     "GlobalConfig",
     "BrainConfig",
     "RegionSizes",
+    # Type Aliases
+    "ComponentGraph",
+    "ConnectionGraph",
+    "TopologyGraph",
+    "SourceSpec",
+    "SourcePort",
+    "TargetPort",
+    "SourceOutputs",
+    "InputSizes",
+    "SynapticWeights",
+    "LearningStrategies",
+    "StateDict",
+    "CheckpointMetadata",
+    "DiagnosticsDict",
+    "NeuromodulatorLevels",
+    "BatchData",
     # Brain System
     "DynamicBrain",
     # Brain Regions
@@ -163,8 +198,6 @@ __all__ = [
     "STDPStrategy",
     "HebbianStrategy",
     "UnifiedHomeostasis",
-    # Pathways
-    "SpikingPathway",
     # Oscillators
     "SinusoidalOscillator",
     "OscillatorManager",

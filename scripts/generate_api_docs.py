@@ -1496,81 +1496,86 @@ class APIDocGenerator:
 
     def _find_type_aliases(self):
         """Extract type alias definitions from code."""
-        # Check key files
-        key_files = [
-            self.src_dir / "core" / "dynamic_brain.py",
-            self.src_dir / "core" / "brain_builder.py",
-            self.src_dir / "pathways" / "axonal_projection.py",
-            self.src_dir / "io" / "compression.py",
-            self.src_dir / "synapses" / "spillover.py",
-        ]
+        # Extract from thalia.typing module (canonical source)
+        typing_file = self.src_dir / "typing.py"
+        if typing_file.exists():
+            self._extract_aliases_from_typing_module(typing_file)
+        else:
+            print("Warning: thalia/typing.py not found - no type aliases extracted")
 
-        # Also scan copilot instructions for documented aliases
-        copilot_file = self.docs_dir.parent / ".github" / "copilot-instructions.md"
-        if copilot_file.exists():
-            self._extract_aliases_from_copilot(copilot_file)
+    def _extract_aliases_from_typing_module(self, typing_file: Path):
+        """Extract type aliases from thalia.typing module."""
+        try:
+            content = typing_file.read_text(encoding="utf-8")
+            tree = ast.parse(content)
+            lines = content.split("\n")
 
-        for py_file in key_files:
-            if not py_file.exists():
-                continue
+            for node in ast.walk(tree):
+                # Look for section comments like # ============ Component Organization ============
+                if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+                    if isinstance(node.value.value, str):
+                        # Check if this is a section header comment
+                        pass
 
-            try:
-                content = py_file.read_text(encoding="utf-8")
-                tree = ast.parse(content)
+                # Look for: TypeName = Type[...]
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            name = target.id
+                            # Skip private variables and non-type-aliases
+                            if name.startswith("_") or name in ("TYPE_CHECKING",):
+                                continue
 
-                for node in ast.walk(tree):
-                    # Look for: TypeName = Type[...] or TypeName = Literal[...]
-                    if isinstance(node, ast.Assign):
-                        for target in node.targets:
-                            if isinstance(target, ast.Name):
-                                name = target.id
-                                # Check if it's a type alias (uppercase first letter)
-                                if name[0].isupper() and name not in ("True", "False", "None"):
-                                    definition = self._get_source_segment(content, node.value)
-                                    if definition and any(kw in definition for kw in ["Dict", "List", "Tuple", "Literal", "Callable", "Optional", "Union"]):
-                                        self.type_aliases.append(TypeAliasInfo(
-                                            name=name,
-                                            definition=definition,
-                                            description="",
-                                            file_path=str(py_file.relative_to(self.src_dir)),
-                                            category=self._categorize_type_alias(name),
-                                        ))
-            except Exception:
-                continue
+                            # Check if it's a type alias (uppercase first letter)
+                            if name[0].isupper() and name not in ("True", "False", "None"):
+                                definition = self._get_source_segment(content, node.value)
+                                if definition:
+                                    # Extract docstring (next line after assignment)
+                                    description = self._extract_docstring_after_assignment(lines, node.lineno)
 
-    def _extract_aliases_from_copilot(self, copilot_file: Path):
-        """Extract type aliases documented in copilot instructions."""
-        content = copilot_file.read_text(encoding="utf-8")
-        lines = content.split("\n")
+                                    # Infer category from surrounding comments
+                                    category = self._infer_category_from_typing_module(lines, node.lineno)
 
-        in_glossary = False
-        for i, line in enumerate(lines):
-            if "## Type Alias Glossary" in line:
-                in_glossary = True
-                continue
+                                    self.type_aliases.append(TypeAliasInfo(
+                                        name=name,
+                                        definition=definition,
+                                        description=description,
+                                        file_path="thalia/typing.py",
+                                        category=category,
+                                    ))
+        except Exception as e:
+            print(f"Warning: Could not parse thalia.typing: {e}")
 
-            if in_glossary:
-                # Stop at next major heading
-                if line.startswith("## ") and "Type Alias" not in line:
-                    break
+    def _extract_docstring_after_assignment(self, lines: List[str], lineno: int) -> str:
+        """Extract docstring from the line(s) after an assignment."""
+        # lineno is 1-based, convert to 0-based
+        idx = lineno
+        if idx < len(lines):
+            next_line = lines[idx].strip()
+            # Check for triple-quoted docstring
+            if next_line.startswith('"""'):
+                docstring_lines = [next_line[3:]]
+                idx += 1
+                while idx < len(lines):
+                    line = lines[idx].strip()
+                    if line.endswith('"""'):
+                        docstring_lines.append(line[:-3])
+                        break
+                    docstring_lines.append(line)
+                    idx += 1
+                return " ".join(docstring_lines).strip()
+        return ""
 
-                # Look for: TypeName = TypeDefinition  # comment
-                if " = " in line and not line.strip().startswith("#"):
-                    parts = line.split("=", 1)
-                    if len(parts) == 2:
-                        name = parts[0].strip()
-                        rest = parts[1].split("#", 1)
-                        definition = rest[0].strip()
-                        description = rest[1].strip() if len(rest) > 1 else ""
-
-                        if name and definition and name[0].isupper():
-                            self.type_aliases.append(TypeAliasInfo(
-                                name=name,
-                                definition=definition,
-                                description=description,
-                                file_path=".github/copilot-instructions.md",
-                                category=self._infer_category_from_context(lines, i),
-                            ))
+    def _infer_category_from_typing_module(self, lines: List[str], lineno: int) -> str:
+        """Infer category from section comment above assignment."""
+        # Look backwards for # ==== Section Name ==== comments
+        for i in range(lineno - 2, max(0, lineno - 20), -1):
+            line = lines[i].strip()
+            if line.startswith("# ===") and "===" in line:
+                # Extract category name between the ===
+                category = line.replace("#", "").replace("=", "").strip()
+                return category
+        return "Other"
 
     def _get_source_segment(self, content: str, node: ast.AST) -> str:
         """Extract source code for an AST node."""
@@ -1579,31 +1584,6 @@ class APIDocGenerator:
         except Exception:
             # Fallback for older Python or complex nodes
             return ""
-
-    def _categorize_type_alias(self, name: str) -> str:
-        """Categorize type alias by name patterns."""
-        if "Graph" in name or "Topology" in name:
-            return "Component Organization"
-        elif "Source" in name or "Input" in name or "Output" in name or "Port" in name:
-            return "Routing"
-        elif "State" in name or "Checkpoint" in name:
-            return "State Management"
-        elif "Config" in name or "Spec" in name:
-            return "Configuration"
-        elif "Dict" in name or "Metadata" in name:
-            return "Data Structures"
-        return "Other"
-
-    def _infer_category_from_context(self, lines: List[str], current_idx: int) -> str:
-        """Infer category from surrounding comment lines."""
-        # Look backwards for comment lines
-        for i in range(current_idx - 1, max(0, current_idx - 10), -1):
-            line = lines[i].strip()
-            if line.startswith("#"):
-                comment = line.lstrip("#").strip()
-                if comment and not comment.startswith("("):
-                    return comment
-        return "Other"
 
     def _find_component_relations(self):
         """Extract component relationships from preset architectures."""
