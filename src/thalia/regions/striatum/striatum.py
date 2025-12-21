@@ -1946,6 +1946,195 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     # CHECKPOINT STATE MANAGEMENT
     # =========================================================================
 
+    def get_state(self) -> "StriatumState":
+        """Get current state as StriatumState instance (RegionState protocol).
+
+        Extracts complete striatal state including:
+        - D1/D2 pathway states
+        - Vote accumulation
+        - Action selection state
+        - Exploration state
+        - Value/RPE tracking
+        - Goal modulation weights
+        - Delay buffers
+        - Homeostatic tracking
+        - Neuromodulators
+
+        Returns:
+            StriatumState instance with all current state
+
+        Note:
+            This is the NEW state management API (Phase 3.2).
+            For legacy checkpoint format, use get_full_state().
+        """
+        from thalia.regions.striatum.config import StriatumState
+
+        # Get D1/D2 pathway states (opaque dicts)
+        d1_pathway_state = self.d1_pathway.get_state()
+        d2_pathway_state = self.d2_pathway.get_state()
+
+        # Get exploration manager state
+        exploration_manager_state = self.exploration.get_state() if hasattr(self.exploration, 'get_state') else None
+
+        # Get homeostasis manager state
+        homeostasis_manager_state = None
+        if self.homeostasis is not None and hasattr(self.homeostasis.unified_homeostasis, 'get_state'):
+            homeostasis_manager_state = self.homeostasis.unified_homeostasis.get_state()
+
+        # Get neuron membrane state (if neurons exist and have membrane)
+        membrane = None
+        if self.d1_neurons is not None and hasattr(self.d1_neurons, 'membrane'):
+            if self.d1_neurons.membrane is not None:
+                membrane = self.d1_neurons.membrane.detach().clone()
+
+        # Get neuromodulator levels from forward_coordinator
+        dopamine = self.forward_coordinator._tonic_dopamine if hasattr(self.forward_coordinator, '_tonic_dopamine') else 0.0
+        norepinephrine = self.forward_coordinator._ne_level if hasattr(self.forward_coordinator, '_ne_level') else 0.0
+        acetylcholine = 0.0  # Not used by striatum
+
+        return StriatumState(
+            # Base state
+            spikes=self.state_tracker.recent_spikes.detach().clone() if self.state_tracker.recent_spikes is not None else None,
+            membrane=membrane,
+
+            # D1/D2 pathways
+            d1_pathway_state=d1_pathway_state,
+            d2_pathway_state=d2_pathway_state,
+
+            # Vote accumulation
+            d1_votes_accumulated=self.state_tracker._d1_votes_accumulated.detach().clone(),
+            d2_votes_accumulated=self.state_tracker._d2_votes_accumulated.detach().clone(),
+
+            # Action selection
+            last_action=self.state_tracker.last_action,
+            recent_spikes=self.state_tracker.recent_spikes.detach().clone(),
+
+            # Exploration
+            exploring=self.state_tracker.exploring,
+            last_uncertainty=self.state_tracker._last_uncertainty,
+            last_exploration_prob=self.state_tracker._last_exploration_prob,
+            exploration_manager_state=exploration_manager_state,
+
+            # Value/RPE (optional)
+            value_estimates=self.value_estimates.detach().clone() if hasattr(self, 'value_estimates') and self.value_estimates is not None else None,
+            last_rpe=self.state_tracker._last_rpe if hasattr(self.state_tracker, '_last_rpe') else None,
+            last_expected=self.state_tracker._last_expected if hasattr(self.state_tracker, '_last_expected') else None,
+
+            # Goal modulation (optional)
+            pfc_modulation_d1=self.pfc_modulation_d1.detach().clone() if hasattr(self, 'pfc_modulation_d1') else None,
+            pfc_modulation_d2=self.pfc_modulation_d2.detach().clone() if hasattr(self, 'pfc_modulation_d2') else None,
+
+            # Delay buffers (optional)
+            d1_delay_buffer=self._d1_delay_buffer.detach().clone() if hasattr(self, '_d1_delay_buffer') and self._d1_delay_buffer is not None else None,
+            d2_delay_buffer=self._d2_delay_buffer.detach().clone() if hasattr(self, '_d2_delay_buffer') and self._d2_delay_buffer is not None else None,
+            d1_delay_ptr=self._d1_delay_ptr if hasattr(self, '_d1_delay_ptr') else 0,
+            d2_delay_ptr=self._d2_delay_ptr if hasattr(self, '_d2_delay_ptr') else 0,
+
+            # Homeostasis
+            activity_ema=self._activity_ema if hasattr(self, '_activity_ema') else 0.0,
+            trial_spike_count=self._trial_spike_count if hasattr(self, '_trial_spike_count') else 0,
+            trial_timesteps=self._trial_timesteps if hasattr(self, '_trial_timesteps') else 0,
+            homeostatic_scaling_applied=self._homeostatic_scaling_applied if hasattr(self, '_homeostatic_scaling_applied') else False,
+            homeostasis_manager_state=homeostasis_manager_state,
+
+            # Neuromodulators
+            dopamine=dopamine,
+            acetylcholine=acetylcholine,
+            norepinephrine=norepinephrine,
+        )
+
+    def load_state(self, state: "StriatumState") -> None:
+        """Restore state from StriatumState instance (RegionState protocol).
+
+        Restores complete striatal state including:
+        - D1/D2 pathway states
+        - Vote accumulation
+        - Action selection state
+        - Exploration state
+        - Value/RPE tracking
+        - Goal modulation weights
+        - Delay buffers
+        - Homeostatic tracking
+        - Neuromodulators
+
+        Args:
+            state: StriatumState instance to restore
+
+        Note:
+            This is the NEW state management API (Phase 3.2).
+            For legacy checkpoint format, use load_full_state().
+        """
+        # Restore D1/D2 pathway states
+        if state.d1_pathway_state is not None:
+            self.d1_pathway.load_state(state.d1_pathway_state)
+        if state.d2_pathway_state is not None:
+            self.d2_pathway.load_state(state.d2_pathway_state)
+
+        # Restore neuron membrane state
+        if state.membrane is not None and self.d1_neurons is not None:
+            if hasattr(self.d1_neurons, 'membrane'):
+                self.d1_neurons.membrane.data = state.membrane.to(self.device)
+
+        # Restore vote accumulation
+        if state.d1_votes_accumulated is not None:
+            self.state_tracker._d1_votes_accumulated.data = state.d1_votes_accumulated.to(self.device)
+        if state.d2_votes_accumulated is not None:
+            self.state_tracker._d2_votes_accumulated.data = state.d2_votes_accumulated.to(self.device)
+
+        # Restore action selection
+        self.state_tracker.last_action = state.last_action
+        if state.recent_spikes is not None:
+            self.state_tracker.recent_spikes.data = state.recent_spikes.to(self.device)
+
+        # Restore exploration
+        self.state_tracker.exploring = state.exploring
+        self.state_tracker._last_uncertainty = state.last_uncertainty
+        self.state_tracker._last_exploration_prob = state.last_exploration_prob
+        if state.exploration_manager_state is not None and hasattr(self.exploration, 'load_state'):
+            self.exploration.load_state(state.exploration_manager_state)
+
+        # Restore value/RPE (optional)
+        if state.value_estimates is not None and hasattr(self, 'value_estimates'):
+            self.value_estimates.data = state.value_estimates.to(self.device)
+        if state.last_rpe is not None:
+            self.state_tracker._last_rpe = state.last_rpe
+        if state.last_expected is not None:
+            self.state_tracker._last_expected = state.last_expected
+
+        # Restore goal modulation (optional)
+        if state.pfc_modulation_d1 is not None and hasattr(self, 'pfc_modulation_d1'):
+            self.pfc_modulation_d1.data = state.pfc_modulation_d1.to(self.device)
+        if state.pfc_modulation_d2 is not None and hasattr(self, 'pfc_modulation_d2'):
+            self.pfc_modulation_d2.data = state.pfc_modulation_d2.to(self.device)
+
+        # Restore delay buffers (optional)
+        if state.d1_delay_buffer is not None and hasattr(self, '_d1_delay_buffer'):
+            self._d1_delay_buffer = state.d1_delay_buffer.to(self.device)
+            self._d1_delay_ptr = state.d1_delay_ptr
+        if state.d2_delay_buffer is not None and hasattr(self, '_d2_delay_buffer'):
+            self._d2_delay_buffer = state.d2_delay_buffer.to(self.device)
+            self._d2_delay_ptr = state.d2_delay_ptr
+
+        # Restore homeostasis
+        if hasattr(self, '_activity_ema'):
+            self._activity_ema = state.activity_ema
+        if hasattr(self, '_trial_spike_count'):
+            self._trial_spike_count = state.trial_spike_count
+        if hasattr(self, '_trial_timesteps'):
+            self._trial_timesteps = state.trial_timesteps
+        if hasattr(self, '_homeostatic_scaling_applied'):
+            self._homeostatic_scaling_applied = state.homeostatic_scaling_applied
+        if state.homeostasis_manager_state is not None and self.homeostasis is not None:
+            if hasattr(self.homeostasis.unified_homeostasis, 'load_state'):
+                self.homeostasis.unified_homeostasis.load_state(state.homeostasis_manager_state)
+
+        # Restore neuromodulators to forward_coordinator
+        if hasattr(self.forward_coordinator, '_tonic_dopamine'):
+            self.forward_coordinator._tonic_dopamine = state.dopamine
+        if hasattr(self.forward_coordinator, '_ne_level'):
+            self.forward_coordinator._ne_level = state.norepinephrine
+        # acetylcholine not used by striatum
+
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.
 
