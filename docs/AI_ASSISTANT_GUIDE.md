@@ -4,12 +4,13 @@ This guide helps AI assistants (and developers) navigate the Thalia codebase eff
 
 ## Quick Reference Card
 
-- **NeuralRegion**: Base class for brain regions with synaptic_weights dict at dendrites
+**Architecture**:
+- **NeuralRegion**: Base class (nn.Module + 4 mixins) with synaptic_weights dict at dendrites
 - **AxonalProjection**: Pure spike routing (NO weights, NO learning, ONLY delays)
 - **CircularDelayBuffer**: Axonal conduction delays (1-20ms)
-- **Learning**: At target synapses (region.synaptic_weights), NOT in pathways
+- **Learning**: Pluggable strategies at target synapses (region.synaptic_weights), NOT in pathways
 - **Input Pattern**: Regions receive `Dict[str, torch.Tensor]` from multiple sources
-- **Mixins**: Neuromodulator, LearningStrategy, Diagnostics, Growth, Resettable
+- **Mixins**: Neuromodulator, Growth, Resettable, Diagnostics
 
 **Finding Code (use built-in tools):**
 - Regions: `grep_search(query="@register_region", isRegexp=false)`

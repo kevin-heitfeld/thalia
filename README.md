@@ -63,14 +63,14 @@ visual_input = torch.rand(784, dtype=torch.float32)
 output = brain.forward(sensory_input=visual_input, n_timesteps=15)
 
 # Access regions by name (component-based architecture)
-cortex = brain.components["cortex"]
+cortex = brain.components["cortex"]  # NeuralRegion instance
 hippocampus = brain.components["hippocampus"]
-axonal_projection = brain.connections[("thalamus", "cortex")]
+axonal_projection = brain.connections[("thalamus", "cortex")]  # AxonalProjection
 
 # Select action (decision-making)
 action, confidence = brain.select_action(explore=True)
 
-# Deliver reward (reinforcement learning)
+# Deliver reward (reinforcement learning via three-factor rule)
 brain.deliver_reward(external_reward=1.0)
 ```
 
@@ -96,8 +96,15 @@ graph TD
 ```
 
 **Key Features:**
-- **Flexible Architecture**: Component-based brain built with `BrainBuilder` or from configuration
+- **v3.0 Architecture**: NeuralRegion base class (nn.Module + mixins)
+- **Flexible Construction**: Component-based brain built with `BrainBuilder` or from configuration
 - **Synapses at Dendrites**: Weights stored at target regions (`synaptic_weights` dict), not in pathways
+- **Learning Strategies**: Pluggable learning rules (STDP, BCM, Hebbian, three-factor, error-corrective)
+- **Axonal Delays**: Realistic conduction delays (1-20ms) via `CircularDelayBuffer` in `AxonalProjection`
+- **Clock-Driven Execution**: Fixed timestep simulation with temporal dynamics
+- **Neuromodulation**: Dopamine, norepinephrine, acetylcholine gate learning
+- **Multi-Source Integration**: Regions receive `Dict[str, Tensor]` from multiple sources
+- **Component Parity**: Regions and pathways treated equally in graph architecture
 - **Axonal Projections**: Pure spike routing with realistic conduction delays via `CircularDelayBuffer`
 - **Spiking Neurons**: ConductanceLIF neurons (ONLY neuron model) with conductance-based dynamics
 - **Learning Rules**: STDP, BCM, Hebbian, three-factor (dopamine-modulated) at target synapses

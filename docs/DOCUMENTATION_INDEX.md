@@ -1,7 +1,6 @@
 # Thalia Documentation Index
 
 **Last Updated**: December 21, 2025
-**Total Active Files**: 38+ documentation files
 
 This is a comprehensive searchable index of all documentation in the Thalia project.
 
@@ -42,19 +41,21 @@ High-level system architecture and component organization.
 
 | File | Purpose | Status | Referenced In |
 |------|---------|--------|---------------|
-| **ARCHITECTURE_OVERVIEW.md** | Complete system overview (459 lines) | 🟢 Current | Root README, copilot-instructions |
+| **ARCHITECTURE_OVERVIEW.md** | Complete system overview | 🟢 Current | Root README, copilot-instructions |
 | **CENTRALIZED_SYSTEMS.md** | Neuromodulators, oscillators, goals | 🟢 Current | TODO.md, training code |
 | **SUPPORTING_COMPONENTS.md** | Infrastructure and utilities | 🟢 Current | Documentation links |
-| **HIERARCHICAL_GOALS_COMPLETE.md** | Goal hierarchy implementation | 🟢 Current | design-docs-update |
-| **GOAL_HIERARCHY_IMPLEMENTATION_SUMMARY.md** | Goal implementation summary | 🟢 Current | Internal reference |
+| **REFACTOR_EXPLICIT_AXONS_SYNAPSES.md** | Architecture design | 🟢 Current | Architecture decisions |
+| **UNIFIED_GROWTH_API.md** | Growth method standardization | 🟢 Current | Growth implementations |
 | **INDEX.md** | Searchable component reference | 🟢 Current | Navigation |
 | **README.md** | Architecture directory overview | 🟢 Current | Root README |
 
 ### Key Topics Covered
-- 5-level complexity hierarchy (Primitives → Integration)
-- Brain regions: Cortex, Hippocampus, Striatum, PFC, Cerebellum, Thalamus
-- Centralized systems: VTA, LC, NB, Oscillators
-- Pathways and data flow
+- **Architecture**: NeuralRegion base class (nn.Module + 4 mixins)
+- **Learning Strategies**: Pluggable STDP, BCM, Hebbian, Three-factor, Error-corrective
+- **Brain Regions**: Cortex, Hippocampus, Striatum, PFC, Cerebellum, Thalamus
+- **Centralized Systems**: VTA, LC, NB, Oscillators, Goal Hierarchy
+- **Pathways**: AxonalProjection (pure routing, no weights)
+- **Data Flow**: Multi-source integration via Dict[str, Tensor]
 
 ---
 
@@ -93,11 +94,22 @@ Common implementation patterns and best practices.
 
 | File | Purpose | Status | Referenced In |
 |------|---------|--------|---------------|
-| **learning-strategies.md** | Comprehensive learning strategy guide (920 lines) | 🟢 Current | copilot-instructions, code comments |
+| **learning-strategies.md** | Comprehensive learning strategy guide | 🟢 Current | copilot-instructions, code comments |
 | **component-parity.md** | Regions and pathways consistency | 🟢 Current | copilot-instructions, base.py |
 | **state-management.md** | When to use RegionState vs attributes | 🟢 Current | copilot-instructions, neuron_models.md |
 | **mixins.md** | Available mixins and usage | 🟢 Current | copilot-instructions, region files |
 | **configuration.md** | Config hierarchy and parameters | 🟢 Current | mixins.md |
+| **port-based-routing.md** | Multi-port pathway connections | 🟢 Current | Architecture docs |
+| **README.md** | Patterns directory overview | 🟢 Current | Documentation hub |
+
+### Key Topics Covered
+- **Learning Strategy Pattern**: Pluggable strategies (Hebbian, STDP, BCM, Three-factor, Error-corrective)
+- **Strategy Registry**: Dynamic discovery and creation
+- **Region-Specific Factories**: `create_cortex_strategy()`, `create_striatum_strategy()`, etc.
+- **Composite Strategies**: Combining multiple learning rules (e.g., STDP + BCM)
+- **State Management**: Dataclass pattern for neural state
+- **Mixin Composition**: 4 mixins (Neuromodulator, Growth, Resettable, Diagnostics)
+- **Component Parity**: NeuralRegion architecture
 | **component-parity.md** | Component design patterns | 🟢 Current | surgery/__init__.py |
 | **component-interface-enforcement.md** | Protocol enforcement guide | 🟢 Current | base.py, component.py |
 | **component-standardization.md** | Component standardization patterns | 🟢 Current | Pattern references |

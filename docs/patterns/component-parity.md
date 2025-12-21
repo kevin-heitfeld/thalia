@@ -50,39 +50,55 @@ All brain regions inherit from `NeuralRegion` (defined in `src/thalia/core/neura
 
 ```python
 from thalia.core.neural_region import NeuralRegion
+from thalia.learning import create_cortex_strategy
 
-# Regions implement full learning interface
+# Regions implement full learning interface via Strategy pattern
 class LayeredCortex(NeuralRegion):
     """Region with synaptic weights at dendrites."""
 
     def __init__(self, config):
-        super().__init__(config)
-        # Synaptic weights stored per source
-        self.synaptic_weights: Dict[str, torch.Tensor] = {}
-        self.strategies: Dict[str, LearningStrategy] = {}
+        super().__init__(
+            n_neurons=config.n_output,
+            neuron_config=config.neuron_config,
+            default_learning_rule="stdp",
+            device=config.device,
+        )
+
+        # Add input sources with per-source learning strategies
+        self.add_input_source(
+            "thalamus",
+            n_input=config.n_input,
+            learning_rule="stdp",  # Uses default
+        )
+        self.add_input_source(
+            "hippocampus",
+            n_input=config.hipp_input_size,
+            learning_rule="bcm",  # Different strategy
+        )
 
     def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
-        """Process multi-source input with per-source learning."""
-        # Synaptic integration
+        """Process multi-source input with automatic per-source learning."""
+        # Synaptic integration (inherited from NeuralRegion)
         total_current = torch.zeros(self.n_neurons, device=self.device)
         for source_name, spikes in source_spikes.items():
             weights = self.synaptic_weights[source_name]
             total_current += weights @ spikes
 
         # Spike generation
-        output_spikes = self.neurons(total_current)
+        output_spikes, _ = self.neurons(total_current, g_inh)
 
-        # Per-source learning
-        for source_name, spikes in source_spikes.items():
-            new_weights, _ = self.strategies[source_name].compute_update(
-                weights=self.synaptic_weights[source_name],
-                pre_spikes=spikes,
-                post_spikes=output_spikes,
-            )
-            self.synaptic_weights[source_name].data = new_weights
+        # Learning happens automatically in NeuralRegion.forward()
+        # via self.strategies[source_name].compute_update()
 
         return output_spikes
 ```
+
+**Key Features**:
+- **Inheritance**: `nn.Module + 4 mixins` (no BrainComponentBase)
+- **Synaptic Weights**: `Dict[str, Tensor]` per source at dendrites
+- **Learning Strategies**: `Dict[str, LearningStrategy]` per source
+- **Forward**: `Dict[str, Tensor] → Tensor` with automatic learning
+- **Mixins**: NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin
 
 ### AxonalProjection (No Learning)
 

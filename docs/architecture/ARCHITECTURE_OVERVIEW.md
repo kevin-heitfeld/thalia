@@ -6,11 +6,17 @@
 
 Thalia is a biologically-accurate spiking neural network framework implementing multiple brain regions with specialized learning rules. The architecture emphasizes biological plausibility through local learning rules, neuromodulation, spike-based processing, and clock-driven execution with axonal delays.
 
+**Current Architecture**:
+- **Regions**: Inherit from `NeuralRegion` (nn.Module + mixins)
+- **Pathways**: Use `AxonalProjection` for pure spike routing
+- **Learning**: Pluggable strategies via `LearningStrategy` pattern
+- **Synapses**: Stored at target dendrites, NOT in axons
+
 ## Core Architecture Principles
 
 ### 1. Biological Plausibility
 - **Spike-based processing**: Binary spikes (0 or 1), not firing rates
-- **Local learning rules**: No backpropagation, each region has specialized rules
+- **Local learning rules**: No backpropagation, pluggable strategies per region
 - **Neuromodulation**: Dopamine, norepinephrine, acetylcholine gate learning
 - **Temporal dynamics**: ConductanceLIF neurons (ONLY neuron model) with conductance-based dynamics
 - **Causality**: No access to future information
@@ -38,12 +44,15 @@ Thalia is a biologically-accurate spiking neural network framework implementing 
 - ✅ Clear separation of concerns: axons route, synapses learn
 
 ### 3. Regional Specialization
-Each brain region has its own learning rule:
-- **Cortex**: Unsupervised Hebbian/BCM/STDP for feature extraction
-- **Hippocampus**: One-shot Hebbian for episodic memory
-- **Prefrontal Cortex**: Gated Hebbian for working memory
-- **Striatum**: Three-factor rule (eligibility × dopamine) for reinforcement learning
-- **Cerebellum**: Supervised error-corrective (delta rule) for motor learning
+Each brain region uses specialized learning strategies from the pluggable LearningStrategy system:
+
+| Region | Learning Strategy | Rule Type | Parameters |
+|--------|------------------|-----------|------------|
+| **Cortex** | `create_cortex_strategy()` | STDP + BCM | Composite: spike-timing + homeostatic |
+| **Hippocampus** | `create_hippocampus_strategy()` | STDP | Asymmetric windows, one-shot capable |
+| **Prefrontal** | Gated Hebbian | Custom | Working memory maintenance |
+| **Striatum** | `create_striatum_strategy()` | Three-factor | Eligibility × dopamine |
+| **Cerebellum** | `create_cerebellum_strategy()` | Error-corrective | Supervised delta rule |
 
 ### 4. Clock-Driven Computation
 - Regions updated at regular timesteps (typically 1ms)
@@ -65,21 +74,29 @@ DynamicBrain (Component-Based Architecture)
 │   ├── GoalHierarchyManager (hierarchical planning)
 │   └── ConsolidationManager (memory replay & offline learning)
 ├── Brain Regions (brain.components["name"])
-│   ├── NeuralRegion (synaptic_weights dict at dendrites)
-│   ├── Thalamus (sensory relay, attention gating)
-│   ├── Cortex (sensory processing, hierarchical features)
-│   ├── Hippocampus (episodic memory, DG→CA3→CA1)
-│   ├── Prefrontal Cortex (working memory, planning)
-│   ├── Striatum (action selection, RL with D1/D2 pathways)
-│   └── Cerebellum (motor learning, error correction)
+│   ├── NeuralRegion
+│   │   ├── Inheritance: nn.Module + 4 mixins
+│   │   │   ├── NeuromodulatorMixin (DA/ACh/NE)
+│   │   │   ├── GrowthMixin (dynamic expansion)
+│   │   │   ├── ResettableMixin (state management)
+│   │   │   └── DiagnosticsMixin (health monitoring)
+│   │   ├── Synaptic Weights: Dict[source_name, Tensor]
+│   │   ├── Learning Strategies: Dict[source_name, Strategy]
+│   │   └── Forward: Dict[str, Tensor] → Tensor
+│   ├── LayeredCortex (L4→L2/3→L5 microcircuit)
+│   ├── TrisynapticHippocampus (DG→CA3→CA1)
+│   ├── Striatum (D1/D2 pathways, three-factor learning)
+│   ├── Prefrontal (working memory, gated Hebbian)
+│   ├── Cerebellum (error-corrective, motor learning)
+│   └── Thalamus (sensory relay, attention gating)
 ├── Axonal Projections (brain.connections[(src, tgt)])
-│   ├── AxonalProjection (pure spike routing)
+│   ├── AxonalProjection (pure spike routing, NO weights)
 │   ├── CircularDelayBuffer (1-20ms axonal delays)
-│   ├── Multi-source routing (Dict[str, Tensor] output)
-│   └── Port-based connections (e.g., "cortex:l5", "hipp:ca1")
+│   ├── Multi-source concatenation
+│   └── Port-based routing ("cortex:l5", "hipp:ca1")
 └── Coordination
     ├── TrialCoordinator (task execution)
-    └── Event-driven execution (clock-driven simulation)
+    └── Clock-driven simulation (fixed timesteps)
 ```
 
 ---
@@ -157,26 +174,39 @@ delayed_spikes = projection(source_outputs)  # Dict[str, Tensor]
 
 **Function**: Base class for brain regions with synaptic weights at dendrites
 
+**Architecture**:
+```python
+class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin,
+                   ResettableMixin, DiagnosticsMixin):
+    """Simplified hierarchy independent of legacy BrainComponent."""
+```
+
 **Key Features**:
+- **Mixin-based design**: Composed from 4 specialized mixins (no deep inheritance)
 - **Multi-source synapses**: `synaptic_weights` dict stores weights per source
-- **Per-source learning**: Different learning strategies for different inputs
-- **Dict-based input**: `forward(source_spikes: Dict[str, Tensor])`
-- **Integrated neurons**: ConductanceLIF for spike generation
+- **Per-source learning**: Different `LearningStrategy` instances for different inputs
+- **Dict-based input**: `forward(source_spikes: Dict[str, Tensor]) → Tensor`
+- **Integrated neurons**: ConductanceLIF population for spike generation
+- **Flexible initialization**: Regions add sources via `add_input_source()`
 
 **Forward Pass Pattern**:
 ```python
 class MyRegion(NeuralRegion):
+    def __init__(self, n_neurons, ...):
+        super().__init__(n_neurons=n_neurons, ...)
+        # Synaptic weights and strategies added via add_input_source()
+
     def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
-        # Synaptic integration (weights at dendrites)
+        # 1. Synaptic integration (weights at dendrites)
         total_current = torch.zeros(self.n_neurons, device=self.device)
         for source_name, spikes in source_spikes.items():
             weights = self.synaptic_weights[source_name]
             total_current += weights @ spikes
 
-        # Spike generation
-        output_spikes = self.neurons(total_current)
+        # 2. Spike generation
+        output_spikes, _ = self.neurons(total_current, g_inh)
 
-        # Per-source learning
+        # 3. Per-source learning (automatic during forward)
         for source_name, spikes in source_spikes.items():
             new_weights, _ = self.strategies[source_name].compute_update(
                 weights=self.synaptic_weights[source_name],

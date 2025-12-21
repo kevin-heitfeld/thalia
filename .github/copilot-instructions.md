@@ -30,15 +30,21 @@ This ensures the correct environment is activated with all dependencies (pytest,
 - **Is**: Neuroscience-inspired spiking networks with local learning rules and neuromodulation
 - **Goal**: Match or exceed LLM capabilities using biologically-plausible mechanisms
 
+**Key Components**:
+- **NeuralRegion**: Base class (nn.Module + 4 mixins) for brain regions
+- **Learning Strategies**: Pluggable learning rules (STDP, BCM, Hebbian, Three-factor, etc.)
+- **AxonalProjection**: Pure spike routing with delays (NO weights)
+- **Synaptic Weights**: Stored at target dendrites in `region.synaptic_weights` dict
+
 ## Architecture Principles
 
 ### 1. Brain Regions AND Pathways are Specialized
-Each region has its own learning rule:
-- **Striatum**: Three-factor rule (eligibility × dopamine) for RL
-- **Hippocampus**: One-shot Hebbian for episodic memory
-- **Cortex**: Unsupervised Hebbian/BCM/STDP for features
-- **Cerebellum**: Supervised error-corrective (delta rule)
-- **Prefrontal**: Gated Hebbian for working memory
+Each region uses pluggable learning strategies:
+- **Striatum**: `create_striatum_strategy()` → Three-factor (eligibility × dopamine)
+- **Hippocampus**: `create_hippocampus_strategy()` → STDP (one-shot capable)
+- **Cortex**: `create_cortex_strategy()` → STDP + BCM (composite)
+- **Cerebellum**: `create_cerebellum_strategy()` → Error-corrective (delta rule)
+- **Prefrontal**: Gated Hebbian (custom implementation)
 
 ### 2. All Processing is Spike-Based
 - Use binary spikes (0 or 1), not firing rates
