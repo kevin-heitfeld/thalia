@@ -699,6 +699,81 @@ class BrainComponentMixin:
         self._oscillator_theta_slot = theta_slot
         self._coupled_amplitudes = coupled_amplitudes or {}
 
+    # =========================================================================
+    # Convenience properties for accessing individual oscillator phases
+    # =========================================================================
+    # These eliminate the need for regions to repeatedly use .get() with defaults
+
+    @property
+    def _theta_phase(self) -> float:
+        """Current theta phase in radians [0, 2π)."""
+        return getattr(self, '_oscillator_phases', {}).get('theta', 0.0)
+
+    @_theta_phase.setter
+    def _theta_phase(self, value: float) -> None:
+        """Allow regions to set theta phase directly (backward compatibility)."""
+        if not hasattr(self, '_oscillator_phases'):
+            self._oscillator_phases = {}
+        self._oscillator_phases['theta'] = value
+
+    @property
+    def _gamma_phase(self) -> float:
+        """Current gamma phase in radians [0, 2π)."""
+        return getattr(self, '_oscillator_phases', {}).get('gamma', 0.0)
+
+    @_gamma_phase.setter
+    def _gamma_phase(self, value: float) -> None:
+        """Allow regions to set gamma phase directly (backward compatibility)."""
+        if not hasattr(self, '_oscillator_phases'):
+            self._oscillator_phases = {}
+        self._oscillator_phases['gamma'] = value
+
+    @property
+    def _alpha_phase(self) -> float:
+        """Current alpha phase in radians [0, 2π)."""
+        return getattr(self, '_oscillator_phases', {}).get('alpha', 0.0)
+
+    @_alpha_phase.setter
+    def _alpha_phase(self, value: float) -> None:
+        """Allow regions to set alpha phase directly (backward compatibility)."""
+        if not hasattr(self, '_oscillator_phases'):
+            self._oscillator_phases = {}
+        self._oscillator_phases['alpha'] = value
+
+    @property
+    def _beta_phase(self) -> float:
+        """Current beta phase in radians [0, 2π)."""
+        return getattr(self, '_oscillator_phases', {}).get('beta', 0.0)
+
+    @_beta_phase.setter
+    def _beta_phase(self, value: float) -> None:
+        """Allow regions to set beta phase directly (backward compatibility)."""
+        if not hasattr(self, '_oscillator_phases'):
+            self._oscillator_phases = {}
+        self._oscillator_phases['beta'] = value
+
+    @property
+    def _delta_phase(self) -> float:
+        """Current delta phase in radians [0, 2π)."""
+        return getattr(self, '_oscillator_phases', {}).get('delta', 0.0)
+
+    @_delta_phase.setter
+    def _delta_phase(self, value: float) -> None:
+        """Allow regions to set delta phase directly (backward compatibility)."""
+        if not hasattr(self, '_oscillator_phases'):
+            self._oscillator_phases = {}
+        self._oscillator_phases['delta'] = value
+
+    @property
+    def _gamma_amplitude_effective(self) -> float:
+        """Effective gamma amplitude (with cross-frequency coupling)."""
+        return getattr(self, '_coupled_amplitudes', {}).get('gamma', 1.0)
+
+    @property
+    def _beta_amplitude_effective(self) -> float:
+        """Effective beta amplitude (with cross-frequency coupling)."""
+        return getattr(self, '_coupled_amplitudes', {}).get('beta', 1.0)
+
 
 # =============================================================================
 # Component Type Hierarchy (v2.0 Architecture)
