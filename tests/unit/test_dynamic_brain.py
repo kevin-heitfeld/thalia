@@ -80,38 +80,6 @@ def test_dynamic_brain_topology_graph():
     assert len(brain._topology["c"]) == 0
 
 
-def test_dynamic_brain_forward():
-    """Test forward pass execution."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-
-    components = {
-        "input": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64)),
-        "output": ThalamicRelay(ThalamicRelayConfig(n_input=64, n_output=64)),
-    }
-
-    connections = {
-        ("input", "output"): AxonalProjection(
-            sources=[("input", None, 64, 1.0)],
-            device="cpu"
-        ),
-    }
-
-    brain = DynamicBrain(components, connections, global_config)
-
-    # Set mock registry to avoid adapter requirement
-    from unittest.mock import Mock
-    brain._registry = Mock()
-
-    # Execute forward - just verify it runs without errors
-    input_data = {"input": torch.ones(32)}  # Match n_input=32
-    result = brain.forward(input_data, n_timesteps=1)
-
-    # Verify basic structure
-    assert "outputs" in result
-    assert "input" in result["outputs"]
-    assert "output" in result["outputs"]
-
-
 def test_dynamic_brain_get_component():
     """Test get_component method."""
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)

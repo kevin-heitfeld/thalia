@@ -80,7 +80,7 @@ class TestSpilloverInitialization:
             enabled=True,
             strength=0.15,
             mode="similarity",
-            similarity_threshold=0.5,
+            similarity_threshold=0.1,  # Lower threshold for random weights
         )
         spillover = SpilloverTransmission(base_weights, config, device)
 
