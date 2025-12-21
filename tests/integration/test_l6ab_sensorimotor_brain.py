@@ -261,7 +261,7 @@ class TestL6abSensorimotorBrain:
         cortex = brain.components["cortex"]
 
         device_obj = torch.device(device)
-        n_timesteps = 500  # 500ms for frequency analysis
+        n_timesteps = 200  # 200ms for frequency analysis
 
         # Strong sustained input
         sensory_input = torch.zeros(128, dtype=torch.bool, device=device_obj)

@@ -887,6 +887,12 @@ class DynamicBrain(nn.Module):
         - Beta motor control and working memory
         - Gamma feature binding in cortex
         - Ripple sharp-wave replay
+
+        **Note on Gamma Oscillations**:
+        Explicit gamma waves are disabled because two gamma frequencies naturally
+        emerge from the L6a-TRN-relay and L6b-relay feedback loops (~40Hz and ~60Hz).
+        This emergence is biologically accurate: cortical gamma arises from
+        corticothalamic interactions, not a central oscillator.
         """
         # Advance oscillators
         self.oscillators.advance(dt_ms=self.global_config.dt_ms)

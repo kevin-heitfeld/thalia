@@ -466,16 +466,13 @@ class TrisynapticHippocampus(NeuralRegion):
             )
 
         # =====================================================================
-        # INTERNAL WEIGHTS: Keep as nn.Parameter (within-hippocampus connections)
+        # INTERNAL WEIGHTS (v2.0): Migrated to synaptic_weights dict
         # =====================================================================
+        # Enhancement #2: All weights at target dendrites for consistency
+        # Pattern: {source}_{target} naming, e.g., "dg_ca3" = DG→CA3 at CA3 dendrites
 
-        # =====================================================================
-        # INTERNAL WEIGHTS: Keep as nn.Parameter (within-hippocampus connections)
-        # =====================================================================
-
-        # DG → CA3: Random but less sparse (mossy fibers)
-        # Uses row normalization for reliable activity propagation
-        self.w_dg_ca3 = nn.Parameter(
+        # DG → CA3: Random but less sparse (mossy fibers) - AT CA3 DENDRITES
+        self.synaptic_weights["dg_ca3"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca3_size,
                 n_input=self.dg_size,
@@ -486,9 +483,8 @@ class TrisynapticHippocampus(NeuralRegion):
             )
         )
 
-        # CA3 → CA3: Recurrent connections (autoassociative memory)
-        # Initialize with small random values - these will be LEARNED via Hebbian
-        self.w_ca3_ca3 = nn.Parameter(
+        # CA3 → CA3: Recurrent connections (autoassociative memory) - AT CA3 DENDRITES
+        self.synaptic_weights["ca3_ca3"] = nn.Parameter(
             WeightInitializer.gaussian(
                 n_output=self.ca3_size,
                 n_input=self.ca3_size,
@@ -499,12 +495,12 @@ class TrisynapticHippocampus(NeuralRegion):
         )
         # No self-connections
         with torch.no_grad():
-            self.w_ca3_ca3.data.fill_diagonal_(0.0)
+            self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)
             # Clamp to positive (excitatory recurrent connections)
-            self.w_ca3_ca3.data.clamp_(min=0.0)
+            self.synaptic_weights["ca3_ca3"].data.clamp_(min=0.0)
 
-        # CA3 → CA1: Feedforward (retrieved memory) - SPARSE!
-        self.w_ca3_ca1 = nn.Parameter(
+        # CA3 → CA1: Feedforward (retrieved memory) - SPARSE! - AT CA1 DENDRITES
+        self.synaptic_weights["ca3_ca1"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca1_size,
                 n_input=self.ca3_size,
@@ -515,12 +511,12 @@ class TrisynapticHippocampus(NeuralRegion):
             )
         )
 
-        # CA1 lateral inhibition for competition
-        self.w_ca1_inhib = nn.Parameter(
+        # CA1 lateral inhibition for competition - AT CA1 DENDRITES
+        self.synaptic_weights["ca1_inhib"] = nn.Parameter(
             torch.ones(self.ca1_size, self.ca1_size, device=device) * 0.5
         )
         with torch.no_grad():
-            self.w_ca1_inhib.data.fill_diagonal_(0.0)
+            self.synaptic_weights["ca1_inhib"].data.fill_diagonal_(0.0)
 
     def _reset_subsystems(self, *names: str) -> None:
         """Reset state of named subsystems that have reset_state() method."""

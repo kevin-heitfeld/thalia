@@ -180,7 +180,7 @@ class LayeredCortex(NeuralRegion):
         - grow_output(), get_capacity_metrics() - Curriculum learning
 
     From NeuromodulatorMixin:
-        - set_dopamine(), get_effective_learning_rate() - DA modulation
+        - set_dopamine() - DA modulation
 
     **See Also**:
     - docs/patterns/mixins.md - Detailed mixin patterns
@@ -468,82 +468,77 @@ class LayeredCortex(NeuralRegion):
         self.add_input_source("input", n_input=cfg.n_input, learning_rule=None)
         self.synaptic_weights["input"] = nn.Parameter(input_weights)
 
-        # L4 → L2/3: positive excitatory weights
+        # L4 → L2/3: positive excitatory weights (AT L2/3 DENDRITES)
         w_scale_l4_l23 = 1.0 / expected_active_l4
-        self.w_l4_l23 = nn.Parameter(
-            torch.abs(
-                WeightInitializer.gaussian(
-                    n_output=self.l23_size,
-                    n_input=self.l4_size,
-                    mean=0.0,
-                    std=w_scale_l4_l23,
-                    device=device
-                )
+        l4_l23_weights = torch.abs(
+            WeightInitializer.gaussian(
+                n_output=self.l23_size,
+                n_input=self.l4_size,
+                mean=0.0,
+                std=w_scale_l4_l23,
+                device=device
             )
         )
+        self.synaptic_weights["l4_l23"] = nn.Parameter(l4_l23_weights)
 
-        # L2/3 recurrent: SIGNED weights (compact E/I approximation)
+        # L2/3 recurrent: SIGNED weights (compact E/I approximation) (AT L2/3 DENDRITES)
         # Unlike feedforward connections which are positive-only (Dale's law),
         # recurrent lateral connections use signed weights to approximate the
         # mixed excitatory/inhibitory microcircuit within a cortical layer.
         # Positive weights = local excitation, negative weights = lateral inhibition.
         # Uses dedicated bounds [l23_recurrent_w_min, l23_recurrent_w_max] during learning.
-        self.w_l23_recurrent = nn.Parameter(
+        l23_recurrent_weights = WeightInitializer.gaussian(
+            n_output=self.l23_size,
+            n_input=self.l23_size,
+            mean=0.0,
+            std=0.2,
+            device=device
+        )
+        with torch.no_grad():
+            l23_recurrent_weights.fill_diagonal_(0.0)
+        self.synaptic_weights["l23_recurrent"] = nn.Parameter(l23_recurrent_weights)
+
+        # L2/3 → L5: positive excitatory weights (AT L5 DENDRITES)
+        w_scale_l23_l5 = 1.0 / expected_active_l23
+        l23_l5_weights = torch.abs(
             WeightInitializer.gaussian(
-                n_output=self.l23_size,
+                n_output=self.l5_size,
                 n_input=self.l23_size,
                 mean=0.0,
-                std=0.2,
+                std=w_scale_l23_l5,
                 device=device
             )
         )
-        with torch.no_grad():
-            self.w_l23_recurrent.data.fill_diagonal_(0.0)
+        self.synaptic_weights["l23_l5"] = nn.Parameter(l23_l5_weights)
 
-        # L2/3 → L5: positive excitatory weights
-        w_scale_l23_l5 = 1.0 / expected_active_l23
-        self.w_l23_l5 = nn.Parameter(
-            torch.abs(
-                WeightInitializer.gaussian(
-                    n_output=self.l5_size,
-                    n_input=self.l23_size,
-                    mean=0.0,
-                    std=w_scale_l23_l5,
-                    device=device
-                )
-            )
-        )
-
-        # L2/3 → L6a: positive excitatory weights (corticothalamic type I → TRN)
+        # L2/3 → L6a: positive excitatory weights (corticothalamic type I → TRN) (AT L6a DENDRITES)
         w_scale_l23_l6a = 1.0 / expected_active_l23
-        self.w_l23_l6a = nn.Parameter(
-            torch.abs(
-                WeightInitializer.gaussian(
-                    n_output=self.l6a_size,
-                    n_input=self.l23_size,
-                    mean=0.0,
-                    std=w_scale_l23_l6a,
-                    device=device
-                )
+        l23_l6a_weights = torch.abs(
+            WeightInitializer.gaussian(
+                n_output=self.l6a_size,
+                n_input=self.l23_size,
+                mean=0.0,
+                std=w_scale_l23_l6a,
+                device=device
             )
         )
+        self.synaptic_weights["l23_l6a"] = nn.Parameter(l23_l6a_weights)
 
-        # L2/3 → L6b: positive excitatory weights (corticothalamic type II → relay)
+        # L2/3 → L6b: positive excitatory weights (corticothalamic type II → relay) (AT L6b DENDRITES)
         w_scale_l23_l6b = 1.0 / expected_active_l23
-        self.w_l23_l6b = nn.Parameter(
-            torch.abs(
-                WeightInitializer.gaussian(
-                    n_output=self.l6b_size,
-                    n_input=self.l23_size,
-                    mean=0.0,
-                    std=w_scale_l23_l6b,
-                    device=device
-                )
+        l23_l6b_weights = torch.abs(
+            WeightInitializer.gaussian(
+                n_output=self.l6b_size,
+                n_input=self.l23_size,
+                mean=0.0,
+                std=w_scale_l23_l6b,
+                device=device
             )
         )
+        self.synaptic_weights["l23_l6b"] = nn.Parameter(l23_l6b_weights)
 
-        # L2/3 inhibition: positive (inhibitory connections suppress)
-        self.w_l23_inhib = nn.Parameter(
+        # L2/3 inhibition: positive (inhibitory connections suppress) (AT L2/3 DENDRITES)
+        l23_inhib_weights = (
             WeightInitializer.ones(
                 n_output=self.l23_size,
                 n_input=self.l23_size,
@@ -551,7 +546,8 @@ class LayeredCortex(NeuralRegion):
             ) * 0.3
         )
         with torch.no_grad():
-            self.w_l23_inhib.data.fill_diagonal_(0.0)
+            l23_inhib_weights.fill_diagonal_(0.0)
+        self.synaptic_weights["l23_inhib"] = nn.Parameter(l23_inhib_weights)
 
         # Note: L6 → TRN weights are not stored in cortex.
         # They will be created and managed by the thalamus component
@@ -582,30 +578,6 @@ class LayeredCortex(NeuralRegion):
         """
         for name, value in scalar_values.items():
             setattr(self, name, value)
-
-    def get_effective_learning_rate(
-        self,
-        base_lr: Optional[float] = None,
-        dopamine_sensitivity: float = 1.0,
-    ) -> float:
-        """Compute learning rate modulated by dopamine.
-
-        Helper for backward compatibility with NeuromodulatorMixin pattern.
-
-        Args:
-            base_lr: Base learning rate (uses 0.01 if None)
-            dopamine_sensitivity: How much dopamine affects learning (0-1)
-
-        Returns:
-            Modulated learning rate
-        """
-        if base_lr is None:
-            base_lr = 0.01
-
-        modulation = 1.0 + dopamine_sensitivity * self.state.dopamine
-        modulation = max(0.0, modulation)  # Non-negative
-
-        return base_lr * modulation
 
     def reset_state(self) -> None:
         """Reset all layer states.
@@ -783,59 +755,59 @@ class LayeredCortex(NeuralRegion):
         # 2. Expand L4→L2/3 weights [l23, l4]
         # Add rows for new L2/3 neurons, columns for new L4 neurons
         new_l23_rows = new_weights_for(l23_growth, old_l4_size)
-        expanded_l23_rows = torch.cat([self.w_l4_l23.data, new_l23_rows], dim=0)
+        expanded_l23_rows = torch.cat([self.synaptic_weights["l4_l23"].data, new_l23_rows], dim=0)
         new_l4_cols = new_weights_for(new_l23_size, l4_growth)
-        self.w_l4_l23 = nn.Parameter(
+        self.synaptic_weights["l4_l23"] = nn.Parameter(
             torch.cat([expanded_l23_rows, new_l4_cols], dim=1)
         )
 
         # 3. Expand L2/3→L2/3 recurrent weights [l23, l23]
         # Add rows and columns for new L2/3 neurons
         new_l23_recurrent_rows = new_weights_for(l23_growth, old_l23_size)
-        expanded_recurrent_rows = torch.cat([self.w_l23_recurrent.data, new_l23_recurrent_rows], dim=0)
+        expanded_recurrent_rows = torch.cat([self.synaptic_weights["l23_recurrent"].data, new_l23_recurrent_rows], dim=0)
         new_l23_recurrent_cols = new_weights_for(new_l23_size, l23_growth)
-        self.w_l23_recurrent = nn.Parameter(
+        self.synaptic_weights["l23_recurrent"] = nn.Parameter(
             torch.cat([expanded_recurrent_rows, new_l23_recurrent_cols], dim=1)
         )
 
         # 3b. Expand L2/3 inhibitory weights [l23, l23]
         # Same structure as recurrent, but negative weights for inhibition
         new_l23_inhib_rows = -torch.abs(new_weights_for(l23_growth, old_l23_size))
-        expanded_inhib_rows = torch.cat([self.w_l23_inhib.data, new_l23_inhib_rows], dim=0)
+        expanded_inhib_rows = torch.cat([self.synaptic_weights["l23_inhib"].data, new_l23_inhib_rows], dim=0)
         new_l23_inhib_cols = -torch.abs(new_weights_for(new_l23_size, l23_growth))
-        self.w_l23_inhib.data = torch.cat([expanded_inhib_rows, new_l23_inhib_cols], dim=1)
+        self.synaptic_weights["l23_inhib"].data = torch.cat([expanded_inhib_rows, new_l23_inhib_cols], dim=1)
         # Zero out diagonal (no self-inhibition)
-        self.w_l23_inhib.data.fill_diagonal_(0.0)
+        self.synaptic_weights["l23_inhib"].data.fill_diagonal_(0.0)
 
         # 4. Expand L2/3→L5 weights [l5, l23]
         # Add rows for new L5 neurons, columns for new L2/3 neurons
         new_l5_rows = new_weights_for(l5_growth, old_l23_size)
-        expanded_l5_rows = torch.cat([self.w_l23_l5.data, new_l5_rows], dim=0)
+        expanded_l5_rows = torch.cat([self.synaptic_weights["l23_l5"].data, new_l5_rows], dim=0)
         new_l23_cols_to_l5 = new_weights_for(new_l5_size, l23_growth)
-        self.w_l23_l5 = nn.Parameter(
+        self.synaptic_weights["l23_l5"] = nn.Parameter(
             torch.cat([expanded_l5_rows, new_l23_cols_to_l5], dim=1)
         )
 
         # 4b. Expand L2/3→L6a weights [l6a, l23]
         # Add rows for new L6a neurons, columns for new L2/3 neurons
         new_l6a_rows = new_weights_for(l6a_growth, old_l23_size)
-        expanded_l6a_rows = torch.cat([self.w_l23_l6a.data, new_l6a_rows], dim=0)
+        expanded_l6a_rows = torch.cat([self.synaptic_weights["l23_l6a"].data, new_l6a_rows], dim=0)
         new_l23_cols_to_l6a = new_weights_for(new_l6a_size, l23_growth)
-        self.w_l23_l6a = nn.Parameter(
+        self.synaptic_weights["l23_l6a"] = nn.Parameter(
             torch.cat([expanded_l6a_rows, new_l23_cols_to_l6a], dim=1)
         )
 
         # 4c. Expand L2/3→L6b weights [l6b, l23]
         # Add rows for new L6b neurons, columns for new L2/3 neurons
         new_l6b_rows = new_weights_for(l6b_growth, old_l23_size)
-        expanded_l6b_rows = torch.cat([self.w_l23_l6b.data, new_l6b_rows], dim=0)
+        expanded_l6b_rows = torch.cat([self.synaptic_weights["l23_l6b"].data, new_l6b_rows], dim=0)
         new_l23_cols_to_l6b = new_weights_for(new_l6b_size, l23_growth)
-        self.w_l23_l6b = nn.Parameter(
+        self.synaptic_weights["l23_l6b"] = nn.Parameter(
             torch.cat([expanded_l6b_rows, new_l23_cols_to_l6b], dim=1)
         )
 
         # Update main weights reference (for base class compatibility)
-        self.weights = self.w_l23_l5
+        self.weights = self.synaptic_weights["l23_l5"]
 
         # 5. Expand neurons for all layers using factory functions
         self.l4_size = new_l4_size
@@ -1104,7 +1076,7 @@ class LayeredCortex(NeuralRegion):
         # L2/3: Processing with recurrence
         # NOTE: Use delayed L4 spikes for biological accuracy
         l23_ff = (
-            torch.matmul(l4_spikes_delayed.float(), self.w_l4_l23.t())
+            torch.matmul(l4_spikes_delayed.float(), self.synaptic_weights["l4_l23"].t())
             * cfg.l4_to_l23_strength
         )
 
@@ -1144,7 +1116,7 @@ class LayeredCortex(NeuralRegion):
             # Apply STP to recurrent connections (always enabled)
             stp_efficacy = self.stp_l23_recurrent(self.state.l23_recurrent_activity.float())  # [l23_size, l23_size]
 
-            effective_w_rec = self.w_l23_recurrent * stp_efficacy
+            effective_w_rec = self.synaptic_weights["l23_recurrent"] * stp_efficacy
             l23_rec = (
                 torch.matmul(effective_w_rec, self.state.l23_recurrent_activity.float())
                 * cfg.l23_recurrent_strength
@@ -1162,7 +1134,7 @@ class LayeredCortex(NeuralRegion):
 
         # Lateral inhibition
         if self.state.l23_spikes is not None:
-            l23_inhib = torch.matmul(self.w_l23_inhib, self.state.l23_spikes.float())
+            l23_inhib = torch.matmul(self.synaptic_weights["l23_inhib"], self.state.l23_spikes.float())
 
             # E/I Balance: Scale inhibition to maintain healthy E/I ratio
             if self.ei_balance is not None:
@@ -1252,7 +1224,7 @@ class LayeredCortex(NeuralRegion):
         # L5: Subcortical output (conductance-based)
         # NOTE: Use delayed L2/3 spikes for biological accuracy
         l5_g_exc = (
-            torch.matmul(self.w_l23_l5, l23_spikes_delayed.float())
+            torch.matmul(self.synaptic_weights["l23_l5"], l23_spikes_delayed.float())
             * cfg.l23_to_l5_strength
         )
 
@@ -1302,7 +1274,7 @@ class LayeredCortex(NeuralRegion):
 
         # L6a forward pass (corticothalamic type I → TRN)
         l6a_g_exc = (
-            torch.matmul(self.w_l23_l6a, l23_spikes_for_l6a.float())
+            torch.matmul(self.synaptic_weights["l23_l6a"], l23_spikes_for_l6a.float())
             * cfg.l23_to_l6a_strength
         )
         l6a_g_inh = l6a_g_exc * 0.8  # Strong local inhibition for sparse low-gamma firing
@@ -1335,7 +1307,7 @@ class LayeredCortex(NeuralRegion):
 
         # L6b forward pass (corticothalamic type II → relay)
         l6b_g_exc = (
-            torch.matmul(self.w_l23_l6b, l23_spikes_for_l6b.float())
+            torch.matmul(self.synaptic_weights["l23_l6b"], l23_spikes_for_l6b.float())
             * cfg.l23_to_l6b_strength
         )
         l6b_g_inh = l6b_g_exc * 0.15  # Minimal local inhibition
@@ -1527,12 +1499,32 @@ class LayeredCortex(NeuralRegion):
 
         cfg = self.layer_config
 
-        # Get dopamine-modulated learning rate
-        base_lr = cfg.stdp_lr
-        effective_lr = self.get_effective_learning_rate(base_lr)
+        # =====================================================================
+        # LAYER-SPECIFIC DOPAMINE MODULATION (Enhancement #1)
+        # =====================================================================
+        # Apply layer-specific dopamine scaling to learning rates.
+        # Different layers have different DA receptor densities:
+        # - L5: 100% modulation (motor/decision output)
+        # - L2/3: 60% modulation (association/integration)
+        # - L4: 30% modulation (sensory input - stable)
+        # - L6: 20% modulation (feedback/attention - stable)
+        base_dopamine = self.state.dopamine
+        l4_dopamine = base_dopamine * 0.3
+        l23_dopamine = base_dopamine * 0.6
+        l5_dopamine = base_dopamine * 1.0
+        l6_dopamine = base_dopamine * 0.2
 
-        # Early exit if learning rate is too small
-        if effective_lr < 1e-8:
+        # Store for diagnostics and testing
+        self._l4_dopamine = l4_dopamine
+        self._l23_dopamine = l23_dopamine
+        self._l5_dopamine = l5_dopamine
+        self._l6_dopamine = l6_dopamine
+
+        # Get base learning rate
+        base_lr = cfg.stdp_lr
+
+        # Early exit if base learning rate is too small
+        if base_lr < 1e-8:
             self.state.last_plasticity_delta = 0.0
             return
 
@@ -1550,13 +1542,15 @@ class LayeredCortex(NeuralRegion):
         total_change = 0.0
 
         # Use STDP+BCM composite strategies for proper spike-timing-dependent learning
-        # Input → L4 (using synaptic_weights)
+        # Input → L4 (using synaptic_weights) - L4-specific dopamine
         if self.bcm_l4 is not None:
+            # L4 learning rate with layer-specific dopamine
+            l4_lr = base_lr * (1.0 + l4_dopamine)
             updated_weights, _ = self.bcm_l4.compute_update(
                 weights=self.synaptic_weights["input"].data,
                 pre=input_spikes,
                 post=l4_spikes,
-                learning_rate=effective_lr,
+                learning_rate=l4_lr,
             )
             dw = updated_weights - self.synaptic_weights["input"].data
             with torch.no_grad():
@@ -1564,18 +1558,20 @@ class LayeredCortex(NeuralRegion):
                 clamp_weights(self.synaptic_weights["input"].data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
-        # L4 → L2/3
+        # L4 → L2/3 - L2/3-specific dopamine
         if l23_spikes is not None and self.bcm_l23 is not None:
+            # L2/3 learning rate with layer-specific dopamine
+            l23_lr = base_lr * (1.0 + l23_dopamine)
             updated_weights, _ = self.bcm_l23.compute_update(
-                weights=self.w_l4_l23.data,
+                weights=self.synaptic_weights["l4_l23"].data,
                 pre=l4_spikes,
                 post=l23_spikes,
-                learning_rate=effective_lr,
+                learning_rate=l23_lr,
             )
-            dw = updated_weights - self.w_l4_l23.data
+            dw = updated_weights - self.synaptic_weights["l4_l23"].data
             with torch.no_grad():
-                self.w_l4_l23.data.copy_(updated_weights)
-                clamp_weights(self.w_l4_l23.data, cfg.w_min, cfg.w_max)
+                self.synaptic_weights["l4_l23"].data.copy_(updated_weights)
+                clamp_weights(self.synaptic_weights["l4_l23"].data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
             # L2/3 recurrent (signed weights - compact E/I approximation)
@@ -1583,18 +1579,18 @@ class LayeredCortex(NeuralRegion):
             # both excitatory and inhibitory-like lateral connections.
             # This is a simplification of explicit E/I interneuron populations.
             updated_weights, _ = self.bcm_l23.compute_update(
-                weights=self.w_l23_recurrent.data,
+                weights=self.synaptic_weights["l23_recurrent"].data,
                 pre=l23_spikes,
                 post=l23_spikes,
-                learning_rate=effective_lr * 0.5,  # Reduced for recurrent stability
+                learning_rate=l23_lr * 0.5,  # Reduced for recurrent stability
             )
-            dw = updated_weights - self.w_l23_recurrent.data
+            dw = updated_weights - self.synaptic_weights["l23_recurrent"].data
 
             with torch.no_grad():
-                self.w_l23_recurrent.data.copy_(updated_weights)
-                self.w_l23_recurrent.data.fill_diagonal_(0.0)
+                self.synaptic_weights["l23_recurrent"].data.copy_(updated_weights)
+                self.synaptic_weights["l23_recurrent"].data.fill_diagonal_(0.0)
                 clamp_weights(
-                    self.w_l23_recurrent.data,
+                    self.synaptic_weights["l23_recurrent"].data,
                     cfg.l23_recurrent_w_min,
                     cfg.l23_recurrent_w_max,
                 )
@@ -1627,48 +1623,53 @@ class LayeredCortex(NeuralRegion):
                 )
                 self._l23_threshold_offset = threshold_mod.clamp(-0.5, 0.5)
 
-            # L2/3 → L5
+            # L2/3 → L5 - L5-specific dopamine (highest modulation)
             if l5_spikes is not None and self.bcm_l5 is not None:
+                # L5 learning rate with layer-specific dopamine (100% modulation)
+                l5_lr = base_lr * (1.0 + l5_dopamine)
                 updated_weights, _ = self.bcm_l5.compute_update(
-                    weights=self.w_l23_l5.data,
+                    weights=self.synaptic_weights["l23_l5"].data,
                     pre=l23_spikes,
                     post=l5_spikes,
-                    learning_rate=effective_lr,
+                    learning_rate=l5_lr,
                 )
-                dw = updated_weights - self.w_l23_l5.data
+                dw = updated_weights - self.synaptic_weights["l23_l5"].data
                 with torch.no_grad():
-                    self.w_l23_l5.data.copy_(updated_weights)
-                    clamp_weights(self.w_l23_l5.data, cfg.w_min, cfg.w_max)
+                    self.synaptic_weights["l23_l5"].data.copy_(updated_weights)
+                    clamp_weights(self.synaptic_weights["l23_l5"].data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 
-            # L2/3 → L6a (corticothalamic type I → TRN)
+            # L2/3 → L6a (corticothalamic type I → TRN) - L6-specific dopamine
             l6a_spikes = self.state.l6a_spikes
             if l6a_spikes is not None and self.bcm_l6a is not None:
+                # L6 learning rate with layer-specific dopamine (20% modulation - stable feedback)
+                l6_lr = base_lr * (1.0 + l6_dopamine)
                 updated_weights, _ = self.bcm_l6a.compute_update(
-                    weights=self.w_l23_l6a.data,
+                    weights=self.synaptic_weights["l23_l6a"].data,
                     pre=l23_spikes,
                     post=l6a_spikes,
-                    learning_rate=effective_lr,
+                    learning_rate=l6_lr,
                 )
-                dw = updated_weights - self.w_l23_l6a.data
+                dw = updated_weights - self.synaptic_weights["l23_l6a"].data
                 with torch.no_grad():
-                    self.w_l23_l6a.data.copy_(updated_weights)
-                    clamp_weights(self.w_l23_l6a.data, cfg.w_min, cfg.w_max)
+                    self.synaptic_weights["l23_l6a"].data.copy_(updated_weights)
+                    clamp_weights(self.synaptic_weights["l23_l6a"].data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 
-            # L2/3 → L6b (corticothalamic type II → relay)
+            # L2/3 → L6b (corticothalamic type II → relay) - L6-specific dopamine
             l6b_spikes = self.state.l6b_spikes
             if l6b_spikes is not None and self.bcm_l6b is not None:
+                # L6 learning rate with layer-specific dopamine (20% modulation - stable feedback)
                 updated_weights, _ = self.bcm_l6b.compute_update(
-                    weights=self.w_l23_l6b.data,
+                    weights=self.synaptic_weights["l23_l6b"].data,
                     pre=l23_spikes,
                     post=l6b_spikes,
-                    learning_rate=effective_lr,
+                    learning_rate=l6_lr,
                 )
-                dw = updated_weights - self.w_l23_l6b.data
+                dw = updated_weights - self.synaptic_weights["l23_l6b"].data
                 with torch.no_grad():
-                    self.w_l23_l6b.data.copy_(updated_weights)
-                    clamp_weights(self.w_l23_l6b.data, cfg.w_min, cfg.w_max)
+                    self.synaptic_weights["l23_l6b"].data.copy_(updated_weights)
+                    clamp_weights(self.synaptic_weights["l23_l6b"].data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 
         # Store for monitoring
@@ -1758,11 +1759,11 @@ class LayeredCortex(NeuralRegion):
             region_name="cortex",
             weight_matrices={
                 "input_l4": self.synaptic_weights["input"].data,
-                "l4_l23": self.w_l4_l23.data,
-                "l23_rec": self.w_l23_recurrent.data,
-                "l23_l5": self.w_l23_l5.data,
-                "l23_l6a": self.w_l23_l6a.data,
-                "l23_l6b": self.w_l23_l6b.data,
+                "l4_l23": self.synaptic_weights["l4_l23"].data,
+                "l23_rec": self.synaptic_weights["l23_recurrent"].data,
+                "l23_l5": self.synaptic_weights["l23_l5"].data,
+                "l23_l6a": self.synaptic_weights["l23_l6a"].data,
+                "l23_l6b": self.synaptic_weights["l23_l6b"].data,
             },
             spike_tensors={
                 "l4": self.state.l4_spikes,
@@ -1787,12 +1788,12 @@ class LayeredCortex(NeuralRegion):
         state_dict = {
             "weights": {
                 "w_input_l4": self.synaptic_weights["input"].data.clone(),
-                "w_l4_l23": self.w_l4_l23.data.clone(),
-                "w_l23_recurrent": self.w_l23_recurrent.data.clone(),
-                "w_l23_l5": self.w_l23_l5.data.clone(),
-                "w_l23_l6a": self.w_l23_l6a.data.clone(),
-                "w_l23_l6b": self.w_l23_l6b.data.clone(),
-                "w_l23_inhib": self.w_l23_inhib.data.clone(),
+                "w_l4_l23": self.synaptic_weights["l4_l23"].data.clone(),
+                "w_l23_recurrent": self.synaptic_weights["l23_recurrent"].data.clone(),
+                "w_l23_l5": self.synaptic_weights["l23_l5"].data.clone(),
+                "w_l23_l6a": self.synaptic_weights["l23_l6a"].data.clone(),
+                "w_l23_l6b": self.synaptic_weights["l23_l6b"].data.clone(),
+                "w_l23_inhib": self.synaptic_weights["l23_inhib"].data.clone(),
             },
             "region_state": {
                 "l4_neurons": self.l4_neurons.get_state(),
@@ -1880,10 +1881,10 @@ class LayeredCortex(NeuralRegion):
         # Restore weights
         weights = state["weights"]
         self.synaptic_weights["input"].data.copy_(weights["w_input_l4"].to(self.device))
-        self.w_l4_l23.data.copy_(weights["w_l4_l23"].to(self.device))
-        self.w_l23_recurrent.data.copy_(weights["w_l23_recurrent"].to(self.device))
-        self.w_l23_l5.data.copy_(weights["w_l23_l5"].to(self.device))
-        self.w_l23_inhib.data.copy_(weights["w_l23_inhib"].to(self.device))
+        self.synaptic_weights["l4_l23"].data.copy_(weights["w_l4_l23"].to(self.device))
+        self.synaptic_weights["l23_recurrent"].data.copy_(weights["w_l23_recurrent"].to(self.device))
+        self.synaptic_weights["l23_l5"].data.copy_(weights["w_l23_l5"].to(self.device))
+        self.synaptic_weights["l23_inhib"].data.copy_(weights["w_l23_inhib"].to(self.device))
 
         # Restore neuron states
         region_state = state["region_state"]

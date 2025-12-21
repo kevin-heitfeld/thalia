@@ -50,11 +50,23 @@ class NeuromodulatorManager:
         - DA-ACh: High reward without novelty suppresses encoding
         - DA-NE: High uncertainty + reward enhances both
 
+        **Dopamine Projection Specificity**:
+        Dopamine innervation varies dramatically across brain regions:
+        - **Striatum**: Dense VTA/SNc projections (100% strength)
+        - **Prefrontal Cortex**: Strong VTA projection (80% strength)
+        - **Cortex**: Sparse, layer-specific innervation (30% strength, mainly L5)
+        - **Hippocampus**: Minimal direct projection (10% strength, via septum/VTA)
+        - **Thalamus**: Moderate SNc projection (20% strength)
+        - **Cerebellum**: No dopamine (0% strength, uses climbing fiber errors)
+
+        This matches biological reality where reward learning primarily affects
+        striatum and PFC, with minimal direct effect on hippocampus and cerebellum.
+
         Args:
             regions: Dictionary of brain regions (cortex, hippocampus, pfc, striatum, cerebellum)
         """
         # Get raw neuromodulator signals
-        dopamine = self.vta.get_global_dopamine()
+        dopamine_raw = self.vta.get_global_dopamine()
         norepinephrine = self.locus_coeruleus.get_norepinephrine()
         acetylcholine = self.nucleus_basalis.get_acetylcholine()
 
@@ -66,17 +78,33 @@ class NeuromodulatorManager:
 
         # 2. DA-ACh: High reward without novelty suppresses encoding
         acetylcholine = self.coordination.coordinate_da_ach(
-            dopamine, acetylcholine
+            dopamine_raw, acetylcholine
         )
 
         # 3. DA-NE: High uncertainty + reward enhances both
         # Note: Requires prediction error, which is computed in brain.py
         # This coordination is handled in brain._update_neuromodulators()
 
-        # Broadcast coordinated signals to all regions
-        for region in regions.values():
+        # Biologically accurate dopamine projection strengths
+        # Based on anatomical innervation density from VTA/SNc
+        dopamine_projections = {
+            "striatum": 1.0,        # Dense VTA/SNc projection (direct pathway)
+            "prefrontal": 0.8,      # Strong VTA projection (mesocortical pathway)
+            "pfc": 0.8,             # Alias for prefrontal
+            "cortex": 0.3,          # Sparse, layer-specific (mainly L5)
+            "hippocampus": 0.1,     # Minimal direct (mostly via septum/VTA)
+            "thalamus": 0.2,        # Moderate SNc projection
+            "cerebellum": 0.0,      # No dopamine (uses climbing fiber errors)
+        }
+
+        # Broadcast coordinated signals to all regions with region-specific DA scaling
+        for region_name, region in regions.items():
             if hasattr(region, 'set_neuromodulators'):
-                region.set_neuromodulators(dopamine, norepinephrine, acetylcholine)
+                # Scale dopamine based on biological projection strength
+                da_scale = dopamine_projections.get(region_name, 0.5)  # Default 50% for unknown regions
+                dopamine_scaled = dopamine_raw * da_scale
+
+                region.set_neuromodulators(dopamine_scaled, norepinephrine, acetylcholine)
 
     def compute_uncertainty(
         self,
