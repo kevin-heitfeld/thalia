@@ -182,9 +182,9 @@ class TestPresetArchitectures:
         assert "process" in result["outputs"]
         assert "output" in result["outputs"]
 
-    def test_sensorimotor_preset_execution(self, device, global_config):
-        """Test sensorimotor preset builds and executes."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+    def test_default_preset_execution(self, device, global_config):
+        """Test default preset builds and executes."""
+        brain = BrainBuilder.preset("default", global_config)
 
         assert isinstance(brain, DynamicBrain)
 
@@ -210,7 +210,7 @@ class TestPresetArchitectures:
 
     def test_preset_with_modifications(self, device, global_config):
         """Test building from preset with custom modifications."""
-        builder = BrainBuilder.preset_builder("sensorimotor", global_config)
+        builder = BrainBuilder.preset_builder("default", global_config)
         builder.add_component("custom_region", "prefrontal", n_output=64)  # n_input inferred from cortex
         builder.connect("cortex", "custom_region", pathway_type="axonal_projection", axonal_delay_ms=5.0)
         brain = builder.build()
@@ -347,7 +347,7 @@ class TestRLInterface:
 
     def test_select_action_basic(self, device, global_config):
         """Test basic action selection after forward pass."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Forward pass to generate striatum activity
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -363,7 +363,7 @@ class TestRLInterface:
 
     def test_select_action_exploration(self, device, global_config):
         """Test exploration vs exploitation in action selection."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         input_data = {"thalamus": torch.randn(128, device=device)}
 
@@ -386,7 +386,7 @@ class TestRLInterface:
 
     def test_deliver_reward_basic(self, device, global_config):
         """Test reward delivery after action selection."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Complete RL cycle
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -400,7 +400,7 @@ class TestRLInterface:
 
     def test_rl_episode_loop(self, device, global_config):
         """Test complete multi-step RL episode."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         n_steps = 5
         actions = []
@@ -451,7 +451,7 @@ class TestRLInterface:
         prior select_action() for streaming/continuous learning scenarios.
         The brain simply uses None/_last_action which may be None initially.
         """
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Forward pass but no action selection
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -467,7 +467,7 @@ class TestNeuromodulationAndConsolidation:
 
     def test_neuromodulator_systems_initialized(self, device, global_config):
         """Test that neuromodulator systems are properly initialized."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Check neuromodulator manager exists
         assert hasattr(brain, "neuromodulator_manager")
@@ -485,7 +485,7 @@ class TestNeuromodulationAndConsolidation:
 
     def test_update_neuromodulators(self, device, global_config):
         """Test neuromodulator update and broadcasting."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Run a forward pass first to initialize state
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -501,7 +501,7 @@ class TestNeuromodulationAndConsolidation:
 
     def test_neuromodulator_broadcast_to_components(self, device, global_config):
         """Test that neuromodulators are broadcast to components."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Run a forward pass first to initialize state
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -531,7 +531,7 @@ class TestNeuromodulationAndConsolidation:
 
     def test_consolidate_basic(self, device, global_config):
         """Test basic consolidation functionality."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # First, add some experiences by running forward passes
         for _ in range(3):
@@ -563,7 +563,7 @@ class TestDiagnosticsAndGrowth:
 
     def test_get_diagnostics_basic(self, device, global_config):
         """Test basic diagnostics collection."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Run forward pass to generate activity
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -585,7 +585,7 @@ class TestDiagnosticsAndGrowth:
 
     def test_check_growth_needs(self, device, global_config):
         """Test growth needs detection."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Run some activity to generate metrics
         for _ in range(5):
@@ -634,7 +634,7 @@ class TestDiagnosticsAndGrowth:
 
     def test_check_growth_needs_structure(self, device, global_config):
         """Test structure of growth needs report."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         report = brain.check_growth_needs()
 

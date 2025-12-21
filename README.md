@@ -41,7 +41,7 @@ import torch
 
 # Option 1: Use preset architectures
 global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-brain = BrainBuilder.preset("sensorimotor", global_config)
+brain = BrainBuilder.preset("default", global_config)
 
 # Option 2: Build from configuration
 config = ThaliaConfig(

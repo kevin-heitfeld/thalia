@@ -56,10 +56,10 @@ def enhanced_cerebellum_brain(global_config, device):
 class TestL6TRNFeedbackIntegration:
     """Integration tests for complete L6→TRN feedback loop."""
 
-    def test_sensorimotor_brain_with_l6(self, global_config):
-        """Test sensorimotor preset includes L6→TRN pathway."""
-        # Create brain with sensorimotor preset (includes L6→TRN)
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+    def test_default_brain_with_l6(self, global_config):
+        """Test default preset includes L6→TRN pathway."""
+        # Create brain with default preset (includes L6→TRN)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Contract: brain should have necessary components
         assert "cortex" in brain.components, "Brain should have cortex"
@@ -75,7 +75,7 @@ class TestL6TRNFeedbackIntegration:
     def test_end_to_end_attention_loop(self, global_config, device):
         """Test complete attention loop: thalamus→cortex→L6→TRN→thalamus."""
         # Create brain
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Create sensory input with spatial structure
         # Channels 0-63: high activity (attended), 64-127: low activity (unattended)
@@ -104,7 +104,7 @@ class TestL6TRNFeedbackIntegration:
     def test_l6_affects_thalamic_relay(self, global_config, device):
         """Test that L6 feedback measurably affects thalamic relay."""
         # Create brain
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         sensory_input = torch.rand(128, device=device) > 0.8
 
@@ -135,7 +135,7 @@ class TestL6TRNFeedbackIntegration:
 
         from thalia.diagnostics.oscillation_detection import measure_oscillation
 
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
         cortex = brain.components["cortex"]
 
         # Note: Gamma oscillator disabled by default (should emerge from L6→TRN loop)
@@ -184,7 +184,7 @@ class TestL6TRNFeedbackIntegration:
 
     def test_spatial_attention_modulation(self, global_config, device):
         """Test that L6 enables spatial attention (channel-specific modulation)."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Create two input patterns: attended vs unattended
         attended_input = torch.zeros(128, dtype=torch.bool, device=device)
@@ -297,7 +297,7 @@ class TestMultiRegionCoordination:
     def test_full_sensorimotor_loop(self, global_config, device):
         """Test complete sensorimotor loop with L6 feedback and enhanced cerebellum."""
         # Build brain with all components
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Contract: should have key regions
         required_regions = ["thalamus", "cortex", "striatum"]
@@ -364,7 +364,7 @@ class TestSystemRobustness:
 
     def test_reset_state_with_l6(self, global_config, device):
         """Test brain reset works with L6 layer."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
 
         # Run some timesteps
         sensory_input = torch.rand(128, device=device) > 0.8

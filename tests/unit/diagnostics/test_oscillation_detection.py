@@ -131,7 +131,7 @@ class TestOscillationDetectionIntegration:
         """Test L6→TRN loop shows gamma oscillation via FFT."""
         from thalia.core.brain_builder import BrainBuilder
 
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+        brain = BrainBuilder.preset("default", global_config)
         cortex = brain.components["cortex"]
 
         # Note: Gamma oscillator disabled by default (should emerge from L6→TRN loop)

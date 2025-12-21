@@ -9,7 +9,7 @@ from thalia.config import GlobalConfig
 def measure_throughput(n_timesteps=100, n_trials=5):
     """Measure throughput over multiple trials."""
     config = GlobalConfig(device="cpu", dt_ms=1.0)
-    brain = BrainBuilder.preset("sensorimotor", config)
+    brain = BrainBuilder.preset("default", config)
 
     # Warm-up
     sensory_input = torch.rand(128, device=config.device) > 0.5

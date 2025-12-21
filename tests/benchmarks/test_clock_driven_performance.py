@@ -32,9 +32,9 @@ def global_config():
 class TestClockDrivenPerformance:
     """Benchmark clock-driven execution performance."""
 
-    def test_benchmark_sensorimotor_brain_1000_steps(self, global_config):
-        """Benchmark 1000 timesteps of sensorimotor brain execution."""
-        brain = BrainBuilder.preset("sensorimotor", global_config)
+    def test_benchmark_default_brain_1000_steps(self, global_config):
+        """Benchmark 1000 timesteps of default brain execution."""
+        brain = BrainBuilder.preset("default", global_config)
 
         # Warm-up run (JIT compilation, cache warming)
         sensory_input = torch.rand(128, device=global_config.device) > 0.5
@@ -52,7 +52,7 @@ class TestClockDrivenPerformance:
         ms_per_timestep = (elapsed / 1000) * 1000
 
         print(f"\n{'='*60}")
-        print("Sensorimotor Brain (1000 timesteps)")
+        print(f"Default Brain (1000 timesteps)")
         print(f"{'='*60}")
         print(f"Total time: {elapsed:.3f}s")
         print(f"Throughput: {timesteps_per_sec:.1f} timesteps/sec")
@@ -104,16 +104,8 @@ if __name__ == "__main__":
     print("="*60 + "\n")
 
     try:
-        suite.test_benchmark_sensorimotor_brain_1000_steps(config)
+        suite.test_benchmark_default_brain_1000_steps(config)
         suite.test_benchmark_minimal_brain_10000_steps(config)
-        suite.test_benchmark_connection_lookup_overhead(config)
-        suite.test_benchmark_dict_reuse_overhead(config)
-
-        if torch.cuda.is_available():
-            config.device = "cuda"
-            suite.test_benchmark_spike_counting_gpu_sync(config)
-        else:
-            print("\nSkipping GPU benchmark (CUDA not available)\n")
 
         print("\n" + "="*60)
         print("ALL BENCHMARKS PASSED")

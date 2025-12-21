@@ -861,7 +861,7 @@ class BrainBuilder:
         """Register a preset architecture.
 
         Args:
-            name: Preset name (e.g., "sensorimotor", "minimal")
+            name: Preset name (e.g., "default", "minimal")
             description: Human-readable description
             builder_fn: Function that configures a BrainBuilder
 
@@ -893,7 +893,7 @@ class BrainBuilder:
         """Create brain from preset architecture.
 
         Args:
-            name: Preset name (e.g., "sensorimotor")
+            name: Preset name (e.g., "default")
             global_config: Global configuration
             **overrides: Override default preset parameters
 
@@ -951,7 +951,7 @@ class BrainBuilder:
         before calling build().
 
         Args:
-            name: Preset name (e.g., "sensorimotor")
+            name: Preset name (e.g., "default")
             global_config: Global configuration
 
         Returns:
@@ -1135,13 +1135,6 @@ BrainBuilder.register_preset(
     description="Default 6-region architecture for general-purpose learning",
     builder_fn=_build_default,
 )
-
-BrainBuilder.register_preset(
-    name="sensorimotor",
-    description="Alias for 'default' (6-region architecture)",
-    builder_fn=_build_default,  # Same as default, just an alias
-)
-
 
 __all__ = [
     "BrainBuilder",

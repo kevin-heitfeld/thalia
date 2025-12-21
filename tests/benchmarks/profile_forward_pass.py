@@ -9,7 +9,7 @@ from thalia.config import GlobalConfig
 def profile_forward_pass():
     """Profile a single forward pass to find bottlenecks."""
     config = GlobalConfig(device="cpu", dt_ms=1.0)
-    brain = BrainBuilder.preset("sensorimotor", config)
+    brain = BrainBuilder.preset("default", config)
 
     # Warm-up
     sensory_input = torch.rand(128, device=config.device) > 0.5

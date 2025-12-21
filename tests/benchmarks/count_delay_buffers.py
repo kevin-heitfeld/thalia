@@ -7,7 +7,7 @@ from thalia.config import GlobalConfig
 def count_delay_buffers():
     """Count total delay buffers in the brain."""
     config = GlobalConfig(device="cpu", dt_ms=1.0)
-    brain = BrainBuilder.preset("sensorimotor", config)
+    brain = BrainBuilder.preset("default", config)
 
     total_buffers = 0
     for (src, tgt), pathway in brain.connections.items():

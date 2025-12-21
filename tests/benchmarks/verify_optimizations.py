@@ -7,7 +7,7 @@ from thalia.config import GlobalConfig
 def verify_optimizations():
     """Check that optimization attributes exist and are populated."""
     config = GlobalConfig(device="cpu", dt_ms=1.0)
-    brain = BrainBuilder.preset("sensorimotor", config)
+    brain = BrainBuilder.preset("default", config)
 
     print("\nOptimization Infrastructure Check:\n")
 
