@@ -86,6 +86,7 @@ from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPTy
 from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.regulation.learning_constants import LEARNING_RATE_ERROR_CORRECTIVE
 from thalia.regions.base import NeuralComponentState
+from thalia.core.region_state import BaseRegionState
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 from thalia.regions.cerebellum import (
     GranuleCellLayer,
@@ -170,6 +171,189 @@ class CerebellumConfig(NeuralComponentConfig):
     stp_enabled: bool = True
     stp_pf_purkinje_type: STPType = STPType.DEPRESSING  # Parallel fiber depression
     stp_mf_granule_type: STPType = STPType.FACILITATING  # Mossy fiber facilitation
+
+
+@dataclass
+class CerebellumState(BaseRegionState):
+    """Complete state for Cerebellum region.
+
+    Stores all cerebellar state including:
+    - Eligibility traces (input, output, STDP)
+    - Climbing fiber error signal
+    - Neuron state (classic mode) OR enhanced microcircuit state
+    - Short-term plasticity state
+    - Neuromodulator levels
+
+    Classic Mode Fields (use_enhanced_microcircuit=False):
+    - v_mem, g_exc, g_inh: Direct Purkinje cell neuron state
+    - stp_pf_purkinje_state: STP for parallel fiber→Purkinje synapses
+
+    Enhanced Mode Fields (use_enhanced_microcircuit=True):
+    - granule_layer_state: Granule cell layer state
+    - purkinje_cells_state: List of enhanced Purkinje cell states
+    - deep_nuclei_state: Deep cerebellar nuclei state
+    - stp_mf_granule_state: STP for mossy fiber→granule synapses
+    """
+
+    # ========================================================================
+    # TRACE MANAGER STATE (both modes)
+    # ========================================================================
+    input_trace: Optional[torch.Tensor] = None              # [n_input] or [n_granule] if enhanced
+    output_trace: Optional[torch.Tensor] = None             # [n_output]
+    stdp_eligibility: Optional[torch.Tensor] = None         # [n_output, n_input/n_granule]
+
+    # ========================================================================
+    # CLIMBING FIBER ERROR (both modes)
+    # ========================================================================
+    climbing_fiber_error: Optional[torch.Tensor] = None     # [n_output] - Error signal from IO
+
+    # ========================================================================
+    # CLASSIC MODE NEURON STATE (use_enhanced=False)
+    # ========================================================================
+    v_mem: Optional[torch.Tensor] = None           # [n_output] - Membrane voltage
+    g_exc: Optional[torch.Tensor] = None           # [n_output] - Excitatory conductance
+    g_inh: Optional[torch.Tensor] = None           # [n_output] - Inhibitory conductance
+
+    # ========================================================================
+    # SHORT-TERM PLASTICITY STATE
+    # ========================================================================
+    stp_pf_purkinje_state: Optional[Dict[str, torch.Tensor]] = None  # Classic mode STP
+    stp_mf_granule_state: Optional[Dict[str, torch.Tensor]] = None   # Enhanced mode STP
+
+    # ========================================================================
+    # NEUROMODULATORS (explicit, not from mixin)
+    # ========================================================================
+    dopamine: float = 0.0
+    acetylcholine: float = 0.0
+    norepinephrine: float = 0.0
+
+    # ========================================================================
+    # ENHANCED MICROCIRCUIT STATE (use_enhanced=True)
+    # ========================================================================
+    granule_layer_state: Optional[Dict[str, Any]] = None       # GranuleCellLayer state
+    purkinje_cells_state: Optional[list] = None                # List of EnhancedPurkinjeCell states
+    deep_nuclei_state: Optional[Dict[str, Any]] = None         # DeepCerebellarNuclei state
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize state to dictionary.
+
+        Returns:
+            Dictionary containing all state fields.
+        """
+        return {
+            # Traces
+            "input_trace": self.input_trace,
+            "output_trace": self.output_trace,
+            "stdp_eligibility": self.stdp_eligibility,
+
+            # Error signal
+            "climbing_fiber_error": self.climbing_fiber_error,
+
+            # Classic neuron state
+            "v_mem": self.v_mem,
+            "g_exc": self.g_exc,
+            "g_inh": self.g_inh,
+
+            # STP state
+            "stp_pf_purkinje_state": self.stp_pf_purkinje_state,
+            "stp_mf_granule_state": self.stp_mf_granule_state,
+
+            # Neuromodulators
+            "dopamine": self.dopamine,
+            "acetylcholine": self.acetylcholine,
+            "norepinephrine": self.norepinephrine,
+
+            # Enhanced microcircuit
+            "granule_layer_state": self.granule_layer_state,
+            "purkinje_cells_state": self.purkinje_cells_state,
+            "deep_nuclei_state": self.deep_nuclei_state,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], device: str = "cpu") -> "CerebellumState":
+        """Deserialize state from dictionary.
+
+        Args:
+            data: Dictionary from to_dict()
+            device: Target device for tensors
+
+        Returns:
+            CerebellumState instance with tensors on specified device.
+        """
+        dev = torch.device(device)
+
+        # Helper to transfer tensors to device
+        def to_device(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+            return tensor.to(dev) if tensor is not None else None
+
+        # Helper for STP state dicts
+        def stp_to_device(stp_state: Optional[Dict[str, torch.Tensor]]) -> Optional[Dict[str, torch.Tensor]]:
+            if stp_state is None:
+                return None
+            return {k: v.to(dev) for k, v in stp_state.items()}
+
+        return cls(
+            # Traces (required)
+            input_trace=data["input_trace"].to(dev),
+            output_trace=data["output_trace"].to(dev),
+            stdp_eligibility=data["stdp_eligibility"].to(dev),
+
+            # Error signal (required)
+            climbing_fiber_error=data["climbing_fiber_error"].to(dev),
+
+            # Classic neuron state (optional)
+            v_mem=to_device(data.get("v_mem")),
+            g_exc=to_device(data.get("g_exc")),
+            g_inh=to_device(data.get("g_inh")),
+
+            # STP state (optional)
+            stp_pf_purkinje_state=stp_to_device(data.get("stp_pf_purkinje_state")),
+            stp_mf_granule_state=stp_to_device(data.get("stp_mf_granule_state")),
+
+            # Neuromodulators
+            dopamine=data.get("dopamine", 0.0),
+            acetylcholine=data.get("acetylcholine", 0.0),
+            norepinephrine=data.get("norepinephrine", 0.0),
+
+            # Enhanced microcircuit (optional)
+            granule_layer_state=data.get("granule_layer_state"),
+            purkinje_cells_state=data.get("purkinje_cells_state"),
+            deep_nuclei_state=data.get("deep_nuclei_state"),
+        )
+
+    def reset(self) -> None:
+        """Reset state in-place (clears traces, resets neurons)."""
+        # Clear traces
+        self.input_trace.zero_()
+        self.output_trace.zero_()
+        self.stdp_eligibility.zero_()
+
+        # Clear error
+        self.climbing_fiber_error.zero_()
+
+        # Reset classic neuron state
+        if self.v_mem is not None:
+            self.v_mem.fill_(-70.0)  # Resting potential
+        if self.g_exc is not None:
+            self.g_exc.zero_()
+        if self.g_inh is not None:
+            self.g_inh.zero_()
+
+        # Reset STP state
+        if self.stp_pf_purkinje_state is not None:
+            if "u" in self.stp_pf_purkinje_state:
+                self.stp_pf_purkinje_state["u"].zero_()
+            if "x" in self.stp_pf_purkinje_state:
+                self.stp_pf_purkinje_state["x"].fill_(1.0)  # Resources fully available
+
+        if self.stp_mf_granule_state is not None:
+            if "u" in self.stp_mf_granule_state:
+                self.stp_mf_granule_state["u"].zero_()
+            if "x" in self.stp_mf_granule_state:
+                self.stp_mf_granule_state["x"].fill_(1.0)
+
+        # Note: Enhanced microcircuit states are complex nested structures
+        # They should be reset through their respective subsystems
 
 
 class ClimbingFiberSystem:
@@ -1081,3 +1265,129 @@ class Cerebellum(NeuralRegion):
         learning_state = state["learning_state"]
         self._trace_manager.eligibility.copy_(learning_state["stdp_eligibility"].to(self.device))
         self.climbing_fiber.load_state(learning_state["climbing_fiber"])
+
+    # ========================================================================
+    # REGIONSTATE PROTOCOL IMPLEMENTATION (Phase 3.1)
+    # ========================================================================
+
+    def get_state(self) -> CerebellumState:
+        """Get current state as CerebellumState dataclass.
+
+        Returns unified state for checkpointing following RegionState protocol.
+        This replaces the dict-based get_full_state() for standardized serialization.
+
+        Returns:
+            CerebellumState with all region state.
+        """
+        # Get STP state for parallel fiber→Purkinje (classic mode)
+        stp_pf_state = None
+        if self.stp_pf_purkinje is not None:
+            stp_pf_state = self.stp_pf_purkinje.get_state()
+
+        # Get STP state for mossy fiber→granule (enhanced mode)
+        stp_mf_state = None
+        if self.stp_mf_granule is not None:
+            stp_mf_state = self.stp_mf_granule.get_state()
+
+        # Classic mode neuron state
+        v_mem = None
+        g_exc = None
+        g_inh = None
+        if not self.use_enhanced and self.neurons is not None:
+            neuron_state = self.neurons.get_state()
+            v_mem = neuron_state["membrane"]  # ConductanceLIF uses "membrane" key
+            g_exc = neuron_state["g_E"]       # ConductanceLIF uses "g_E" key
+            g_inh = neuron_state["g_I"]       # ConductanceLIF uses "g_I" key
+
+        # Enhanced microcircuit state
+        granule_state = None
+        purkinje_state = None
+        dcn_state = None
+        if self.use_enhanced:
+            granule_state = self.granule_layer.get_full_state()
+            purkinje_state = [pc.get_state() for pc in self.purkinje_cells]
+            dcn_state = self.deep_nuclei.get_full_state()
+
+        # Get climbing fiber error
+        cf_state = self.climbing_fiber.get_state()
+        climbing_error = cf_state.get("error", torch.zeros(self.config.n_output, device=self.device))
+
+        return CerebellumState(
+            # Traces
+            input_trace=self.input_trace.clone(),
+            output_trace=self.output_trace.clone(),
+            stdp_eligibility=self.stdp_eligibility.clone(),
+
+            # Error signal
+            climbing_fiber_error=climbing_error.clone(),
+
+            # Classic neuron state
+            v_mem=v_mem.clone() if v_mem is not None else None,
+            g_exc=g_exc.clone() if g_exc is not None else None,
+            g_inh=g_inh.clone() if g_inh is not None else None,
+
+            # STP state
+            stp_pf_purkinje_state=stp_pf_state,
+            stp_mf_granule_state=stp_mf_state,
+
+            # Neuromodulators (from NeuromodulatorMixin state)
+            dopamine=self.state.dopamine,
+            acetylcholine=self.state.acetylcholine,
+            norepinephrine=self.state.norepinephrine,
+
+            # Enhanced microcircuit
+            granule_layer_state=granule_state,
+            purkinje_cells_state=purkinje_state,
+            deep_nuclei_state=dcn_state,
+        )
+
+    def load_state(self, state: CerebellumState) -> None:
+        """Load state from CerebellumState dataclass.
+
+        Restores all region state from unified dataclass following RegionState protocol.
+        This replaces dict-based load_full_state() for standardized deserialization.
+
+        Args:
+            state: CerebellumState to restore from.
+        """
+        # Restore traces
+        self._trace_manager.input_trace.copy_(state.input_trace.to(self.device))
+        self._trace_manager.output_trace.copy_(state.output_trace.to(self.device))
+        self._trace_manager.eligibility.copy_(state.stdp_eligibility.to(self.device))
+
+        # Restore climbing fiber error
+        self.climbing_fiber.error.copy_(state.climbing_fiber_error.to(self.device))
+
+        # Restore classic neuron state (if not using enhanced microcircuit)
+        if not self.use_enhanced and self.neurons is not None:
+            if state.v_mem is not None and state.g_exc is not None and state.g_inh is not None:
+                neuron_state = {
+                    "membrane": state.v_mem.to(self.device),  # Map to ConductanceLIF "membrane" key
+                    "g_E": state.g_exc.to(self.device),       # Map to ConductanceLIF "g_E" key
+                    "g_I": state.g_inh.to(self.device),       # Map to ConductanceLIF "g_I" key
+                    "g_adapt": None,                          # Not tracked in CerebellumState
+                    "refractory": None,                       # Not tracked in CerebellumState
+                }
+                self.neurons.load_state(neuron_state)
+
+        # Restore enhanced microcircuit state
+        if self.use_enhanced:
+            if state.granule_layer_state is not None:
+                self.granule_layer.load_full_state(state.granule_layer_state)
+            if state.purkinje_cells_state is not None:
+                for pc, pc_state in zip(self.purkinje_cells, state.purkinje_cells_state):
+                    pc.load_state(pc_state)
+            if state.deep_nuclei_state is not None:
+                self.deep_nuclei.load_full_state(state.deep_nuclei_state)
+
+        # Restore STP state
+        if self.stp_pf_purkinje is not None and state.stp_pf_purkinje_state is not None:
+            self.stp_pf_purkinje.load_state(state.stp_pf_purkinje_state)
+
+        if self.stp_mf_granule is not None and state.stp_mf_granule_state is not None:
+            self.stp_mf_granule.load_state(state.stp_mf_granule_state)
+
+        # Restore neuromodulators
+        self.state.dopamine = state.dopamine
+        self.state.acetylcholine = state.acetylcholine
+        self.state.norepinephrine = state.norepinephrine
