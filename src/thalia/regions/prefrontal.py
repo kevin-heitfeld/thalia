@@ -81,6 +81,13 @@ from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfi
 from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.core.neural_region import NeuralRegion
 from thalia.regions.base import NeuralComponentState
+from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval, compute_oscillator_modulated_gain
+from thalia.regulation.oscillator_constants import (
+    PFC_FEEDFORWARD_GAIN_MIN,
+    PFC_FEEDFORWARD_GAIN_RANGE,
+    PFC_RECURRENT_GAIN_MIN,
+    PFC_RECURRENT_GAIN_RANGE,
+)
 from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
 from thalia.utils.input_routing import InputRouter
 from thalia.regions.prefrontal_hierarchy import (
@@ -564,13 +571,12 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         # THETA MODULATION
         # =====================================================================
         # Compute theta modulation from current phase (set by Brain's OscillatorManager)
-        encoding_mod = (1 + torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
-        retrieval_mod = (1 - torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
+        encoding_mod, retrieval_mod = compute_theta_encoding_retrieval(self._theta_phase)
 
         # Encoding phase (theta trough): gate new info into WM
         # Retrieval phase (theta peak): maintain WM and boost recurrence
-        ff_gain = 0.5 + 0.5 * encoding_mod  # 0.5-1.0: boost input during encoding
-        rec_gain = 0.5 + 0.5 * retrieval_mod  # 0.5-1.0: boost recurrence during retrieval
+        ff_gain = compute_oscillator_modulated_gain(PFC_FEEDFORWARD_GAIN_MIN, PFC_FEEDFORWARD_GAIN_RANGE, encoding_mod)
+        rec_gain = compute_oscillator_modulated_gain(PFC_RECURRENT_GAIN_MIN, PFC_RECURRENT_GAIN_RANGE, retrieval_mod)
 
         # Feedforward input - modulated by encoding phase
         # Apply synaptic weights: weights[n_output, n_input] @ input[n_input] → [n_output]

@@ -85,6 +85,7 @@ from thalia.components.neurons.neuron_constants import (
 from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.regulation.learning_constants import LEARNING_RATE_ERROR_CORRECTIVE
 from thalia.regions.base import NeuralComponentState
+from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 from thalia.regions.cerebellum import (
     GranuleCellLayer,
     EnhancedPurkinjeCell,
@@ -580,8 +581,7 @@ class Cerebellum(NeuralRegion):
         # ======================================================================
         # COMPUTE THETA MODULATION (from oscillator phase set by Brain)
         # ======================================================================
-        encoding_mod = 0.5 * (1.0 + math.cos(self._theta_phase))
-        _ = 1.0 - encoding_mod  # retrieval_mod - reserved for future output gain modulation
+        encoding_mod, _retrieval_mod = compute_theta_encoding_retrieval(self._theta_phase)
 
         # Encoding phase: stronger input drive for error detection
         # Retrieval phase: stronger output for motor correction

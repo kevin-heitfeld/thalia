@@ -18,6 +18,7 @@ from thalia.core.region_components import LearningComponent
 from thalia.managers.base_manager import ManagerContext
 from thalia.components.neurons.neuron_constants import WEIGHT_INIT_SCALE_SMALL
 from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.regulation.oscillator_constants import STRIATUM_PFC_MODULATION_LR
 
 if TYPE_CHECKING:
     from thalia.regions.striatum.d1_pathway import D1Pathway
@@ -171,13 +172,13 @@ class StriatumLearningComponent(LearningComponent):
             # Reward (DA+) → strengthen connection if D1 neurons fired
             if dopamine > 0:
                 d1_update = torch.outer(self._last_d1_spikes.float(), goal_context)
-                self.pfc_modulation_d1.data += 0.001 * dopamine * d1_update
+                self.pfc_modulation_d1.data += STRIATUM_PFC_MODULATION_LR * dopamine * d1_update
 
             # D2 learning: PFC→D2 connection
             # Reward (DA+) → weaken connection if D2 neurons fired (less NoGo)
             if dopamine > 0:
                 d2_update = torch.outer(self._last_d2_spikes.float(), goal_context)
-                self.pfc_modulation_d2.data -= 0.001 * dopamine * d2_update
+                self.pfc_modulation_d2.data -= STRIATUM_PFC_MODULATION_LR * dopamine * d2_update
 
     def store_spikes(self, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor) -> None:
         """Store D1/D2 spikes for goal modulation learning.

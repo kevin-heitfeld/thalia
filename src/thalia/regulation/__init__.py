@@ -96,6 +96,43 @@ from thalia.regulation.normalization import (
     ContrastNormalization,
     SpatialDivisiveNorm,
 )
+from thalia.regulation.oscillator_constants import (
+    # Theta modulation
+    THETA_ENCODING_PHASE_SCALE,
+    THETA_RETRIEVAL_PHASE_SCALE,
+    # Hippocampal gating
+    DG_CA3_GATE_MIN,
+    DG_CA3_GATE_RANGE,
+    EC_CA3_GATE_MIN,
+    EC_CA3_GATE_RANGE,
+    CA3_RECURRENT_GATE_MIN,
+    CA3_RECURRENT_GATE_RANGE,
+    CA3_CA1_ENCODING_SCALE,
+    CA1_SPARSITY_RETRIEVAL_BOOST,
+    # Cortical gating
+    L4_INPUT_ENCODING_SCALE,
+    L23_RECURRENT_RETRIEVAL_SCALE,
+    # Prefrontal gating
+    PFC_FEEDFORWARD_BASE_GAIN,
+    PFC_FEEDFORWARD_MODULATION_RANGE,
+    PFC_RECURRENT_BASE_GAIN,
+    PFC_RECURRENT_MODULATION_RANGE,
+    # Cerebellum gating
+    CEREBELLUM_INPUT_BASE_GAIN,
+    CEREBELLUM_INPUT_MODULATION_RANGE,
+    # Neuromodulator interactions
+    ACH_RECURRENT_SUPPRESSION,
+    ACH_THRESHOLD_FOR_SUPPRESSION,
+    ACH_ENCODING_BOOST_BASE,
+    ACH_ENCODING_BOOST_RANGE,
+    # Gamma attention
+    GAMMA_ATTENTION_THRESHOLD,
+    GAMMA_LEARNING_MODULATION_SCALE,
+    # Theta-gamma coupling
+    THETA_GAMMA_PHASE_DIFF_SIGMA,
+    # Striatal learning
+    STRIATUM_PFC_MODULATION_LR,
+)
 
 __all__ = [
     # Homeostasis Constants - Firing Rate Targets
@@ -191,4 +228,39 @@ __all__ = [
     "DivisiveNormalization",
     "ContrastNormalization",
     "SpatialDivisiveNorm",
+    # Oscillator Constants - Theta modulation
+    "THETA_ENCODING_PHASE_SCALE",
+    "THETA_RETRIEVAL_PHASE_SCALE",
+    # Oscillator Constants - Hippocampal gating
+    "DG_CA3_GATE_MIN",
+    "DG_CA3_GATE_RANGE",
+    "EC_CA3_GATE_MIN",
+    "EC_CA3_GATE_RANGE",
+    "CA3_RECURRENT_GATE_MIN",
+    "CA3_RECURRENT_GATE_RANGE",
+    "CA3_CA1_ENCODING_SCALE",
+    "CA1_SPARSITY_RETRIEVAL_BOOST",
+    # Oscillator Constants - Cortical gating
+    "L4_INPUT_ENCODING_SCALE",
+    "L23_RECURRENT_RETRIEVAL_SCALE",
+    # Oscillator Constants - Prefrontal gating
+    "PFC_FEEDFORWARD_BASE_GAIN",
+    "PFC_FEEDFORWARD_MODULATION_RANGE",
+    "PFC_RECURRENT_BASE_GAIN",
+    "PFC_RECURRENT_MODULATION_RANGE",
+    # Oscillator Constants - Cerebellum gating
+    "CEREBELLUM_INPUT_BASE_GAIN",
+    "CEREBELLUM_INPUT_MODULATION_RANGE",
+    # Oscillator Constants - Neuromodulator interactions
+    "ACH_RECURRENT_SUPPRESSION",
+    "ACH_THRESHOLD_FOR_SUPPRESSION",
+    "ACH_ENCODING_BOOST_BASE",
+    "ACH_ENCODING_BOOST_RANGE",
+    # Oscillator Constants - Gamma attention
+    "GAMMA_ATTENTION_THRESHOLD",
+    "GAMMA_LEARNING_MODULATION_SCALE",
+    # Oscillator Constants - Theta-gamma coupling
+    "THETA_GAMMA_PHASE_DIFF_SIGMA",
+    # Oscillator Constants - Striatal learning
+    "STRIATUM_PFC_MODULATION_LR",
 ]

@@ -81,6 +81,22 @@ from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.components.synapses.stp import ShortTermPlasticity
 from thalia.components.synapses.stp_presets import get_stp_config
 from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
+from thalia.utils.oscillator_utils import (
+    compute_theta_encoding_retrieval,
+    compute_ach_recurrent_suppression,
+    compute_oscillator_modulated_gain,
+    compute_learning_rate_modulation,
+)
+from thalia.regulation.oscillator_constants import (
+    DG_CA3_GATE_MIN,
+    DG_CA3_GATE_RANGE,
+    EC_CA3_GATE_MIN,
+    EC_CA3_GATE_RANGE,
+    CA3_RECURRENT_GATE_MIN,
+    CA3_RECURRENT_GATE_RANGE,
+    CA3_CA1_ENCODING_SCALE,
+    CA1_SPARSITY_RETRIEVAL_BOOST,
+)
 from thalia.components.synapses.traces import update_trace
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
@@ -859,8 +875,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # encoding_mod: high at theta trough (0°), low at peak (180°)
         # retrieval_mod: low at theta trough, high at theta peak
-        encoding_mod = 0.5 * (1.0 + math.cos(self._theta_phase))
-        retrieval_mod = 1.0 - encoding_mod
+        encoding_mod, retrieval_mod = compute_theta_encoding_retrieval(self._theta_phase)
 
         # =====================================================================
         # THETA-PHASE RESET (prevents frozen attractors + new_trial reset)
@@ -980,14 +995,14 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Theta-modulated gating (gradual, not binary ON/OFF)
         # DG→CA3 (pattern separation path): Strong during encoding, weak during retrieval
-        dg_ca3_gate = 0.1 + 0.9 * encoding_mod  # Range: 0.1 (retrieval) to 1.0 (encoding)
+        dg_ca3_gate = compute_oscillator_modulated_gain(DG_CA3_GATE_MIN, DG_CA3_GATE_RANGE, encoding_mod)
 
         # EC→CA3 (direct perforant path): Stronger during retrieval for cue-based recall
         # This provides the "seed" for pattern completion from partial cues
-        ec_ca3_gate = 0.3 + 0.7 * retrieval_mod  # Range: 0.3 (encoding) to 1.0 (retrieval)
+        ec_ca3_gate = compute_oscillator_modulated_gain(EC_CA3_GATE_MIN, EC_CA3_GATE_RANGE, retrieval_mod)
 
         # CA3 recurrence: Weak during encoding, strong during retrieval
-        rec_gate = 0.2 + 0.8 * retrieval_mod  # Range: 0.2 (encoding) to 1.0 (retrieval)
+        rec_gate = compute_oscillator_modulated_gain(CA3_RECURRENT_GATE_MIN, CA3_RECURRENT_GATE_RANGE, retrieval_mod)
 
         # Feedforward from DG (mossy fibers, theta-gated) with optional STP
         # NOTE: Use delayed DG spikes for biological accuracy
@@ -1030,7 +1045,7 @@ class TrisynapticHippocampus(NeuralRegion):
         ach_level = self.state.acetylcholine
         # ACh > 0.5 → encoding mode → suppress recurrence (down to 0.3x)
         # ACh < 0.5 → retrieval mode → full recurrence (1.0x)
-        ach_recurrent_modulation = 1.0 - 0.7 * max(0.0, ach_level - 0.5) / 0.5
+        ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
         if self.stp_ca3_recurrent is not None and self.state.ca3_spikes is not None:
             # Get STP efficacy for CA3 recurrent synapses
@@ -1227,7 +1242,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # Continuous modulation: contribution naturally weak when encoding_mod is low
         self.state.ca3_persistent = (
             self.state.ca3_persistent * (1.0 - decay_rate * (0.5 + 0.5 * retrieval_mod)) +
-            ca3_spikes.float() * 0.5 * encoding_mod  # Contribution scaled by encoding strength
+            ca3_spikes.float() * CA3_CA1_ENCODING_SCALE * encoding_mod  # Contribution scaled by encoding strength
         )
 
         # Clamp to prevent runaway
@@ -1264,7 +1279,7 @@ class TrisynapticHippocampus(NeuralRegion):
             # Gamma is modulated by ALL slower oscillators (emergent multi-order coupling)
             if self.tri_config.theta_gamma_enabled:
                 gamma_mod = self._gamma_amplitude_effective
-                effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)  # Range: 50-100% based on gamma
+                effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
             else:
                 effective_lr = base_lr
 
@@ -1420,7 +1435,7 @@ class TrisynapticHippocampus(NeuralRegion):
         ampa_current = ca1_from_ec * cfg.ampa_ratio
 
         # CA3 contribution: stronger during encoding
-        ca3_contribution = ca1_from_ca3 * (0.5 + 0.5 * encoding_mod)
+        ca3_contribution = ca1_from_ca3 * (CA3_CA1_ENCODING_SCALE + CA3_CA1_ENCODING_SCALE * encoding_mod)
 
         # Total CA1 input
         ca1_input = ca3_contribution + ampa_current + nmda_current
@@ -1442,7 +1457,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Apply sparsity (more lenient during retrieval to allow mismatch detection)
         # Membrane potentials are guaranteed to exist after forward() call
-        sparsity_factor = 1.0 + 0.5 * retrieval_mod  # Higher threshold during retrieval
+        sparsity_factor = 1.0 + CA1_SPARSITY_RETRIEVAL_BOOST * retrieval_mod  # Higher threshold during retrieval
         ca1_spikes = self._apply_wta_sparsity(
             ca1_spikes,
             cfg.ca1_sparsity * sparsity_factor,
@@ -1466,7 +1481,7 @@ class TrisynapticHippocampus(NeuralRegion):
             # Apply automatic gamma amplitude modulation
             if self.tri_config.theta_gamma_enabled:
                 gamma_mod = self._gamma_amplitude_effective
-                effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)
+                effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
             else:
                 effective_lr = base_lr
 

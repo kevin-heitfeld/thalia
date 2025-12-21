@@ -87,6 +87,14 @@ from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.synapses.traces import update_trace
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
+from thalia.utils.oscillator_utils import (
+    compute_theta_encoding_retrieval,
+    compute_ach_recurrent_suppression,
+)
+from thalia.regulation.oscillator_constants import (
+    L4_INPUT_ENCODING_SCALE,
+    L23_RECURRENT_RETRIEVAL_SCALE,
+)
 from thalia.utils.input_routing import InputRouter
 from thalia.regions.stimulus_gating import StimulusGating
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
@@ -959,8 +967,7 @@ class LayeredCortex(NeuralRegion):
         # Compute theta modulation from oscillator phase (set by Brain)
         # encoding_mod: high at theta peak (0°), low at trough (180°)
         # retrieval_mod: low at theta peak, high at trough
-        encoding_mod = 0.5 * (1.0 + math.cos(self._theta_phase))
-        retrieval_mod = 0.5 * (1.0 - math.cos(self._theta_phase))
+        encoding_mod, retrieval_mod = compute_theta_encoding_retrieval(self._theta_phase)
 
         # ADR-005: Expect 1D tensors (no batch dimension)
         assert input_spikes.dim() == 1, (
@@ -1027,7 +1034,7 @@ class LayeredCortex(NeuralRegion):
             torch.matmul(self.synaptic_weights["input"], gated_input_spikes.float())
             * cfg.input_to_l4_strength
         )
-        l4_g_exc = l4_g_exc * (0.5 + 0.5 * encoding_mod)
+        l4_g_exc = l4_g_exc * (L4_INPUT_ENCODING_SCALE + L4_INPUT_ENCODING_SCALE * encoding_mod)
 
         # Inhibitory conductance: ~25% of excitatory (4:1 E/I ratio)
         # This provides feedback inhibition for gain control
@@ -1118,10 +1125,10 @@ class LayeredCortex(NeuralRegion):
         ach_level = self.state.acetylcholine
         # ACh > 0.5 → encoding mode → suppress recurrence (down to 0.2x)
         # ACh < 0.5 → retrieval mode → full recurrence (1.0x)
-        ach_recurrent_modulation = 1.0 - 0.8 * max(0.0, ach_level - 0.5) / 0.5
+        ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level, suppression_strength=0.8)
 
         if self.state.l23_recurrent_activity is not None:
-            recurrent_scale = 0.5 + 0.5 * retrieval_mod
+            recurrent_scale = L23_RECURRENT_RETRIEVAL_SCALE + L23_RECURRENT_RETRIEVAL_SCALE * retrieval_mod
 
             # Apply STP to recurrent connections (always enabled)
             stp_efficacy = self.stp_l23_recurrent(self.state.l23_recurrent_activity.float())  # [l23_size, l23_size]
