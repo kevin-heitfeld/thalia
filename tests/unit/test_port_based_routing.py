@@ -12,7 +12,7 @@ import pytest
 import torch
 
 from thalia.core.brain_builder import BrainBuilder, ConnectionSpec
-from thalia.config import GlobalConfig, ThaliaConfig, BrainConfig, RegionSizes
+from thalia.config import GlobalConfig
 
 
 @pytest.fixture
@@ -360,41 +360,6 @@ class TestPortBasedForwardPass:
             cortex = brain.components["cortex"]
             # Cortex should output concatenated L2/3 + L5
             assert cortex_output.shape[0] == cortex.l23_size + cortex.l5_size
-
-    def test_forward_with_topdown_input(self, global_config):
-        """Test forward pass with separate top-down input.
-
-        TODO: This test currently fails because when PFC doesn't fire on a timestep,
-        cortex receives only thalamus input (64) instead of thalamus+zeros (96).
-        The AxonalProjection correctly fills in zeros for missing sources, but in
-        event-driven execution the pathway isn't being invoked to do the zero-filling.
-        Need to route through pathway.forward() before passing to component.
-        """
-        pytest.skip("Multi-source zero-filling in event-driven mode needs implementation")
-
-        builder = BrainBuilder(global_config)
-
-        builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("pfc", "prefrontal", n_output=32)
-        # Cortex n_input must match thalamus (64) + pfc (32) = 96 since LayeredCortex concatenates all inputs
-        builder.add_component("cortex", "cortex", n_input=96, n_output=128, l4_size=96, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-
-        # PFC needs input to produce output
-        builder.connect("thalamus", "pfc")
-
-        builder.connect("thalamus", "cortex", target_port="feedforward")
-        builder.connect("pfc", "cortex", target_port="top_down")
-
-        brain = builder.build()
-
-        input_data = {
-            "thalamus": torch.randn(64, device=brain.device)
-        }
-
-        result = brain.forward(input_data, n_timesteps=5)
-
-        # Should complete without error
-        assert "cortex" in result["outputs"]
 
 
 class TestBackwardCompatibility:

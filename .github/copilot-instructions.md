@@ -131,7 +131,7 @@ from thalia.diagnostics.health_monitor import HealthReport  # Dataclass, not dic
 from thalia.training.visualization import TrainingMonitor
 
 # Creating a brain
-brain = BrainBuilder.preset("sensorimotor", global_config)  # Use presets
+brain = BrainBuilder.preset("default", global_config)  # Use presets
 brain = DynamicBrain.from_thalia_config(thalia_config)      # From config
 
 # Accessing components
@@ -181,7 +181,6 @@ Select-String -Path src\* -Pattern "MultiSourcePathway" -Recurse
 - Component-based: regions and pathways are independent components
 - Access pattern: `brain.components["region_name"]` for all regions
 - No direct attributes: `brain.cortex` is NOT supported
-- EventDrivenBrain has been removed (legacy hardcoded 6-region architecture)
 
 ## Implemented Features (December 2025)
 
@@ -210,8 +209,8 @@ Select-String -Path src\* -Pattern "MultiSourcePathway" -Recurse
 
 ```python
 # Component Organization
-ComponentGraph = Dict[str, NeuralComponent]           # name -> component instance
-ConnectionGraph = Dict[Tuple[str, str], NeuralComponent]  # (src, tgt) -> pathway
+ComponentGraph = Dict[str, NeuralRegion]           # name -> component instance
+ConnectionGraph = Dict[Tuple[str, str], NeuralRegion]  # (src, tgt) -> pathway
 TopologyGraph = Dict[str, List[str]]                  # src -> [tgt1, tgt2, ...]
 
 # Multi-Source Pathways
@@ -238,7 +237,7 @@ CheckpointMetadata = Dict[str, Any]                   # Training progress, stage
 
 ## Standard Growth API
 
-All `NeuralComponent` subclasses implement these standardized signatures:
+All `NeuralRegion` subclasses implement these standardized signatures:
 
 ```python
 def grow_output(self, n_new: int) -> None:

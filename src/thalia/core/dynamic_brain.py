@@ -578,19 +578,18 @@ class DynamicBrain(nn.Module):
         return graph
 
     def _get_execution_order(self) -> List[str]:
-        """Get execution order for components.
+        """Get execution order for components using topological sort.
 
-        Since real brains have recurrent connectivity (circular dependencies),
-        we cannot use topological sorting. Instead, we use a fixed alphabetical
-        order for deterministic execution. Execution order doesn't affect
-        correctness in clock-driven mode - pathways handle delays internally.
+        Uses modified Kahn's algorithm to order components by dependencies,
+        with alphabetical tiebreaking for determinism. This ensures that
+        components execute after their inputs are available in the cache,
+        minimizing latency through the network.
 
-        The only effect is latency: if A→B and A executes before B in the same
-        timestep, B sees A's output with 0-timestep delay. If B executes first,
-        it sees A's output from the previous timestep (1-timestep delay).
+        For circular dependencies (recurrent connections), breaks cycles by
+        choosing the alphabetically first component in the cycle.
 
         Returns:
-            List of component names in alphabetical order
+            List of component names in dependency-respecting order
 
         Note:
             Cached for performance. Invalidated when components added/removed.
@@ -598,9 +597,38 @@ class DynamicBrain(nn.Module):
         if self._execution_order is not None:
             return self._execution_order
 
-        # Simple alphabetical order for determinism
-        # Could also use: insertion order, depth-first from sensory inputs, etc.
-        sorted_order = sorted(self.components.keys())
+        # Build dependency graph: component -> list of components it depends on
+        dependencies: Dict[str, Set[str]] = {name: set() for name in self.components.keys()}
+
+        for (src, tgt) in self.connections.keys():
+            # tgt depends on src (needs src's output)
+            if tgt in dependencies:  # tgt might not exist if connection is to port
+                dependencies[tgt].add(src)
+
+        # Kahn's algorithm with alphabetical tiebreaking
+        # Start with components that have no dependencies (sensory inputs)
+        in_degree = {name: len(deps) for name, deps in dependencies.items()}
+        queue = sorted([name for name, degree in in_degree.items() if degree == 0])
+        sorted_order = []
+
+        while queue:
+            # Pop alphabetically first (deterministic tiebreaking)
+            current = queue.pop(0)
+            sorted_order.append(current)
+
+            # Reduce in-degree for dependents
+            for name, deps in dependencies.items():
+                if current in deps:
+                    in_degree[name] -= 1
+                    if in_degree[name] == 0:
+                        # All dependencies satisfied, add to queue (keep sorted)
+                        queue.append(name)
+                        queue.sort()
+
+        # Handle cycles: any remaining components have circular dependencies
+        # Add them in alphabetical order (breaks cycles arbitrarily but deterministically)
+        remaining = sorted([name for name, degree in in_degree.items() if degree > 0])
+        sorted_order.extend(remaining)
 
         # Cache result
         self._execution_order = sorted_order
@@ -743,9 +771,6 @@ class DynamicBrain(nn.Module):
         outputs = {name: None for name in self.components.keys()}
 
         for timestep in range(n_timesteps):
-            # Clear output cache for this timestep
-            self._output_cache.clear()
-
             # 1. Route sensory inputs to entry components (DO NOT store in output_cache)
             # Direct sensory inputs should NOT be treated as component outputs
             sensory_inputs_this_timestep: Dict[str, torch.Tensor] = {}
@@ -761,16 +786,21 @@ class DynamicBrain(nn.Module):
                     # Store sensory input separately (not in output_cache)
                     sensory_inputs_this_timestep[comp_name] = input_t
 
-            # 2. Execute ALL components in execution order
+            # 2. Execute ALL components in parallel using PREVIOUS timestep's outputs
+            # This ensures true parallel execution - all components see the same input state
+            # and execution order doesn't create artificial timing dependencies
+            new_outputs: Dict[str, torch.Tensor] = {}
+
             for comp_name in self._get_execution_order():
                 component = self.components[comp_name]
 
-                # Collect inputs from all incoming pathways
+                # Collect inputs from all incoming pathways using PREVIOUS timestep's cache
                 component_inputs: Dict[str, torch.Tensor] = {}
 
                 for (src, tgt), pathway in self.connections.items():
                     if tgt == comp_name and src in self._output_cache:
                         # Pathway applies axonal delay internally via CircularDelayBuffer
+                        # Using previous timestep's output ensures all components see same state
                         delayed_outputs = pathway.forward({src: self._output_cache[src]})
                         component_inputs.update(delayed_outputs)
 
@@ -783,16 +813,22 @@ class DynamicBrain(nn.Module):
                 # Empty dict is valid (zero-input execution for recurrent/spontaneous activity)
                 component_output = component.forward(component_inputs)
 
-                # Store output for routing and final return
+                # Store output temporarily (don't update cache until all components execute)
                 outputs[comp_name] = component_output
-                self._output_cache[comp_name] = component_output
+                new_outputs[comp_name] = component_output
 
-                # Track spike counts
+            # 3. Update cache with this timestep's outputs (for next timestep)
+            # This ensures true parallel semantics - no component sees outputs from
+            # other components within the same timestep
+            self._output_cache.update(new_outputs)
+
+            # Track spike counts
+            for comp_name, component_output in new_outputs.items():
                 if component_output is not None and isinstance(component_output, torch.Tensor):
                     spike_count = int(component_output.sum().item())
                     self._spike_counts[comp_name] += spike_count
 
-            # 3. Broadcast oscillator phases every timestep
+            # 4. Broadcast oscillator phases every timestep
             self._broadcast_oscillator_phases()
 
         # Update final time

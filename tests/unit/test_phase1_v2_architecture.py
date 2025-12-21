@@ -63,9 +63,21 @@ class TestAxonalProjection:
             "hippocampus": hipp_spikes,
         }
 
-        # Forward without delays for testing
+        # Forward with delays (always active in new architecture)
         # AxonalProjection now returns dict preserving source identity
-        delayed_outputs = projection.forward(source_outputs, apply_delays=False)
+        # With delay_ms=2.0 and dt_ms=1.0, need 3 forward calls to see spikes:
+        # t=0: write spikes, read t=-2 (empty)
+        # t=1: write zeros, read t=-1 (empty)
+        # t=2: write zeros, read t=0 (spikes appear!)
+        projection.forward(source_outputs)  # t=0
+        projection.forward({
+            "cortex": torch.zeros_like(cortex_spikes),
+            "hippocampus": torch.zeros_like(hipp_spikes),
+        })  # t=1
+        delayed_outputs = projection.forward({
+            "cortex": torch.zeros_like(cortex_spikes),
+            "hippocampus": torch.zeros_like(hipp_spikes),
+        })  # t=2 - now cortex spikes appear (2ms delay)
 
         # Check dict structure
         assert isinstance(delayed_outputs, dict)
@@ -75,14 +87,14 @@ class TestAxonalProjection:
         # Check individual outputs
         assert delayed_outputs["cortex"].shape == (10,)
         assert delayed_outputs["hippocampus"].shape == (5,)
-        assert delayed_outputs["cortex"].all()  # All ones
-        assert not delayed_outputs["hippocampus"].any()  # All zeros
+        assert delayed_outputs["cortex"].all()  # Cortex ones appear after 2ms delay
+        assert not delayed_outputs["hippocampus"].any()  # Hippocampus zeros (3ms delay, not reached yet)
 
         # Test concatenation (if target region needs it)
         concatenated = torch.cat([delayed_outputs["cortex"], delayed_outputs["hippocampus"]])
         assert concatenated.shape == (15,)
-        assert concatenated[:10].all()  # First 10 are ones
-        assert not concatenated[10:].any()  # Last 5 are zeros
+        assert concatenated[:10].all()  # First 10 are ones from cortex
+        assert not concatenated[10:].any()  # Last 5 are zeros from hippocampus
 
     def test_axonal_delays(self):
         """Test that axonal delays work."""
@@ -94,20 +106,20 @@ class TestAxonalProjection:
 
         # First timestep: input spikes
         spikes_t0 = torch.ones(5, dtype=torch.bool)
-        output_t0 = projection.forward({"cortex": spikes_t0}, apply_delays=True)
+        output_t0 = projection.forward({"cortex": spikes_t0})
 
         # Delays cause zeros initially (dict output)
         assert isinstance(output_t0, dict)
         assert not output_t0["cortex"].any()
 
         # Second timestep: no input
-        output_t1 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)}, apply_delays=True)
+        output_t1 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
 
         # Still zeros (delay = 2 steps)
         assert not output_t1["cortex"].any()
 
         # Third timestep: delayed spikes appear
-        output_t2 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)}, apply_delays=True)
+        output_t2 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
         assert output_t2["cortex"].all()  # Original spikes now appear
 
     def test_grow_source(self):
@@ -135,14 +147,14 @@ class TestAxonalProjection:
         )
 
         # Add some spikes
-        projection.forward({"cortex": torch.ones(5, dtype=torch.bool)}, apply_delays=True)
+        projection.forward({"cortex": torch.ones(5, dtype=torch.bool)})
 
         # Reset
         projection.reset_state()
 
         # Check buffers are zeroed
         for buffer in projection._delay_buffers.values():
-            assert not buffer.any()
+            assert not buffer.buffer.any()  # Check the internal tensor
 
 
 class TestAfferentSynapses:
@@ -314,8 +326,8 @@ class TestIntegration:
             "pfc": torch.ones(32, dtype=torch.bool),
         }
 
-        # Route spikes (now returns dict)
-        routed_spikes = projection.forward(source_outputs, apply_delays=False)
+        # Route spikes (now returns dict, delays always active)
+        routed_spikes = projection.forward(source_outputs)
         assert isinstance(routed_spikes, dict)
 
         # Concatenate for synaptic processing

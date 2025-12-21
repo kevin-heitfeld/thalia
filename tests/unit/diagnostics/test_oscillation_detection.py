@@ -136,14 +136,14 @@ class TestOscillationDetectionIntegration:
 
         # Note: Gamma oscillator disabled by default (should emerge from L6→TRN loop)
 
-        # Strong sustained input
-        sensory_input = torch.rand(128, device=device) > 0.7
-
         # Collect L6a and L6b activity separately over 200ms (multiple gamma cycles)
         l6a_spike_counts = []
         l6b_spike_counts = []
 
-        for t in range(200):
+        for _ in range(200):
+            # Generate fresh sensory input each timestep to drive continuous activity
+            # This accounts for axonal delays and refractory periods
+            sensory_input = torch.rand(128, device=device) > 0.6  # 40% sparsity
             brain(sensory_input, n_timesteps=1)
 
             # Get L6a spikes (→TRN, inhibitory pathway)

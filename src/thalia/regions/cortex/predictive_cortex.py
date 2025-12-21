@@ -436,7 +436,7 @@ class PredictiveCortex(NeuralRegion):
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
-        self.l6_size = self.cortex.l6_size
+        self.l6_size = self.cortex.l6a_size + self.cortex.l6b_size
 
         # Update output size (note: _output_size initialized in __init__)
         self._output_size = self.l23_size + self.l5_size
