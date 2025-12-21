@@ -746,7 +746,9 @@ class DynamicBrain(nn.Module):
             # Clear output cache for this timestep
             self._output_cache.clear()
 
-            # 1. Route sensory inputs to entry components
+            # 1. Route sensory inputs to entry components (DO NOT store in output_cache)
+            # Direct sensory inputs should NOT be treated as component outputs
+            sensory_inputs_this_timestep: Dict[str, torch.Tensor] = {}
             for comp_name, sequence in input_sequences.items():
                 if comp_name in self.components:
                     # Get input for this timestep
@@ -756,8 +758,8 @@ class DynamicBrain(nn.Module):
                         # Broadcast mode: repeat first (only) element
                         input_t = sequence[0]
 
-                    # Store in cache (will be routed through pathways if needed)
-                    self._output_cache[comp_name] = input_t
+                    # Store sensory input separately (not in output_cache)
+                    sensory_inputs_this_timestep[comp_name] = input_t
 
             # 2. Execute ALL components in execution order
             for comp_name in self._get_execution_order():
@@ -773,12 +775,9 @@ class DynamicBrain(nn.Module):
                         component_inputs.update(delayed_outputs)
 
                 # Also check if this component received direct sensory input
-                if comp_name in input_sequences and comp_name not in component_inputs:
-                    # Direct input (no pathway), use "input" key
-                    if sequence_mode:
-                        component_inputs["input"] = input_sequences[comp_name][timestep]
-                    else:
-                        component_inputs["input"] = input_sequences[comp_name][0]
+                if comp_name in sensory_inputs_this_timestep:
+                    # Direct sensory input (no pathway), use "input" key
+                    component_inputs["input"] = sensory_inputs_this_timestep[comp_name]
 
                 # Execute component
                 # Empty dict is valid (zero-input execution for recurrent/spontaneous activity)
