@@ -1336,27 +1336,13 @@ class ThalamicRelay(NeuralRegion):
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get full state for checkpointing."""
-        return {
-            'relay_spikes': self.state.relay_spikes,
-            'relay_membrane': self.state.relay_membrane,
-            'trn_spikes': self.state.trn_spikes,
-            'trn_membrane': self.state.trn_membrane,
-            'current_mode': self.state.current_mode,
-            'alpha_gate': self.state.alpha_gate,
-            'alpha_phase': self._alpha_phase,
-            'alpha_amplitude': self._alpha_amplitude,
-        }
+        state = self.get_state()
+        return state.to_dict()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load full state from checkpoint."""
-        self.state.relay_spikes = state.get('relay_spikes')
-        self.state.relay_membrane = state.get('relay_membrane')
-        self.state.trn_spikes = state.get('trn_spikes')
-        self.state.trn_membrane = state.get('trn_membrane')
-        self.state.current_mode = state.get('current_mode')
-        self.state.alpha_gate = state.get('alpha_gate')
-        self._alpha_phase = state.get('alpha_phase', 0.0)
-        self._alpha_amplitude = state.get('alpha_amplitude', 1.0)
+        state_obj = ThalamicRelayState.from_dict(state, device=str(self.device))
+        self.load_state(state_obj)
 
 
 __all__ = [

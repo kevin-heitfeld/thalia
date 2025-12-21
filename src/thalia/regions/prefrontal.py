@@ -72,7 +72,7 @@ from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis,
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.errors import CheckpointError, ConfigurationError
+from thalia.core.errors import ConfigurationError
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.managers.component_registry import register_region
@@ -1242,93 +1242,14 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         - neuromodulator_state: Dopamine gating state
         - config: Configuration for validation
         """
-        state_dict = {
-            "weights": {
-                "feedforward": self.synaptic_weights["default"].data.clone(),
-                "recurrent": self.rec_weights.data.clone(),
-                "inhibition": self.inhib_weights.data.clone(),
-            },
-            "region_state": {
-                "neurons": self.neurons.get_state(),
-                "working_memory": self.state.working_memory.clone() if self.state.working_memory is not None else None,
-                "update_gate": self.state.update_gate.clone() if self.state.update_gate is not None else None,
-                "spikes": self.state.spikes.clone() if self.state.spikes is not None else None,
-                "membrane": self.state.membrane.clone() if self.state.membrane is not None else None,
-                "active_rule": self.state.active_rule.clone() if self.state.active_rule is not None else None,
-            },
-            "learning_state": {},
-            "neuromodulator_state": {
-                "dopamine": self.state.dopamine,
-                "dopamine_system": self.dopamine_system.get_state(),
-            },
-            "config": {
-                "n_input": self.config.n_input,
-                "n_output": self.config.n_output,
-            },
-        }
-
-        # STDP eligibility traces (if learning strategy has state)
-        if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
-            if hasattr(self.learning_strategy, 'get_state'):
-                state_dict["learning_state"]["stdp_strategy"] = self.learning_strategy.get_state()
-
-        # STP state
-        if self.stp_recurrent is not None:
-            state_dict["learning_state"]["stp_recurrent"] = self.stp_recurrent.get_state()
-
-        # Add format identifier for hybrid checkpoints
-        state_dict["format"] = "elastic_tensor"
-
-        return state_dict
+        state = self.get_state()
+        return state.to_dict()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
 
         Args:
             state: State dictionary from get_full_state()
-
-        Raises:
-            ValueError: If config dimensions don't match
         """
-        # Validate config compatibility
-        config = state.get("config", {})
-        if config.get("n_input") != self.config.n_input:
-            raise CheckpointError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
-        if config.get("n_output") != self.config.n_output:
-            raise CheckpointError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
-
-        # Restore weights
-        weights = state["weights"]
-        self.synaptic_weights["default"].data.copy_(weights["feedforward"].to(self.device))
-        self.rec_weights.data.copy_(weights["recurrent"].to(self.device))
-        self.inhib_weights.data.copy_(weights["inhibition"].to(self.device))
-
-        # Restore neuron state
-        region_state = state["region_state"]
-        self.neurons.load_state(region_state["neurons"])
-
-        # Restore working memory and gating
-        if region_state["working_memory"] is not None:
-            self.state.working_memory = region_state["working_memory"].to(self.device)
-        if region_state["update_gate"] is not None:
-            self.state.update_gate = region_state["update_gate"].to(self.device)
-        if region_state["spikes"] is not None:
-            self.state.spikes = region_state["spikes"].to(self.device)
-        if region_state["membrane"] is not None:
-            self.state.membrane = region_state["membrane"].to(self.device)
-        if region_state["active_rule"] is not None:
-            self.state.active_rule = region_state["active_rule"].to(self.device)
-
-        # Restore learning state
-        learning_state = state["learning_state"]
-        if "stdp_strategy" in learning_state and hasattr(self, 'learning_strategy'):
-            if hasattr(self.learning_strategy, 'load_state'):
-                self.learning_strategy.load_state(learning_state["stdp_strategy"])
-
-        if "stp_recurrent" in learning_state and self.stp_recurrent is not None:
-            self.stp_recurrent.load_state(learning_state["stp_recurrent"])
-
-        # Restore dopamine gating system
-        neuromod = state["neuromodulator_state"]
-        self.state.dopamine = neuromod["dopamine"]
-        self.dopamine_system.load_state(neuromod["dopamine_system"])
+        state_obj = PrefrontalState.from_dict(state, device=str(self.device))
+        self.load_state(state_obj)

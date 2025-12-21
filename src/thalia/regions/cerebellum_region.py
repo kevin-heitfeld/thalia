@@ -66,7 +66,6 @@ from typing import Optional, Dict, Any, Union
 import torch
 
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.errors import CheckpointError
 from thalia.core.neural_region import NeuralRegion
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
@@ -1191,80 +1190,17 @@ class Cerebellum(NeuralRegion):
         - enhanced_state: Granule layer, Purkinje cells, DCN (if use_enhanced)
         - config: Configuration for validation
         """
-        state_dict = {
-            "weights": {
-                "parallel_fiber_purkinje": self.weights.data.clone() if not self.use_enhanced else None,
-            },
-            "region_state": {
-                "neurons": self.neurons.get_state() if self.neurons is not None and not self.use_enhanced else None,
-                "trace_manager": self._trace_manager.get_state(),
-            },
-            "learning_state": {
-                "stdp_eligibility": self.stdp_eligibility.clone(),
-                "climbing_fiber": self.climbing_fiber.get_state(),
-            },
-            "config": {
-                "n_input": self.config.n_input,
-                "n_output": self.config.n_output,
-                "use_enhanced": self.use_enhanced,
-            },
-        }
-
-        # Add enhanced microcircuit state if enabled
-        if self.use_enhanced:
-            state_dict["enhanced_state"] = {
-                "granule_layer": self.granule_layer.get_full_state(),
-                "purkinje_cells": [pc.get_state() for pc in self.purkinje_cells],
-                "deep_nuclei": self.deep_nuclei.get_full_state(),
-            }
-
-        return state_dict
+        state = self.get_state()
+        return state.to_dict()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
 
         Args:
             state: State dictionary from get_full_state()
-
-        Raises:
-            ValueError: If config dimensions don't match
         """
-        # Validate config compatibility
-        config = state.get("config", {})
-        if config.get("n_input") != self.config.n_input:
-            raise CheckpointError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
-        if config.get("n_output") != self.config.n_output:
-            raise CheckpointError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
-        if config.get("use_enhanced", False) != self.use_enhanced:
-            raise CheckpointError(f"Config mismatch: use_enhanced {config.get('use_enhanced')} != {self.use_enhanced}")
-
-        # Restore weights (classic pathway only)
-        if not self.use_enhanced:
-            weights = state["weights"]
-            if weights["parallel_fiber_purkinje"] is not None:
-                self.weights.data.copy_(weights["parallel_fiber_purkinje"].to(self.device))
-
-            # Restore neuron state
-            region_state = state["region_state"]
-            if self.neurons is not None and region_state["neurons"] is not None:
-                self.neurons.load_state(region_state["neurons"])
-        else:
-            # Restore enhanced microcircuit state
-            enhanced_state = state.get("enhanced_state", {})
-            if enhanced_state:
-                self.granule_layer.load_full_state(enhanced_state["granule_layer"])
-                for pc, pc_state in zip(self.purkinje_cells, enhanced_state["purkinje_cells"]):
-                    pc.load_state(pc_state)
-                self.deep_nuclei.load_full_state(enhanced_state["deep_nuclei"])
-
-        # Restore trace manager state (both pathways)
-        region_state = state["region_state"]
-        self._trace_manager.load_state(region_state["trace_manager"])
-
-        # Restore learning state (both pathways)
-        learning_state = state["learning_state"]
-        self._trace_manager.eligibility.copy_(learning_state["stdp_eligibility"].to(self.device))
-        self.climbing_fiber.load_state(learning_state["climbing_fiber"])
+        state_obj = CerebellumState.from_dict(state, device=str(self.device))
+        self.load_state(state_obj)
 
     # ========================================================================
     # REGIONSTATE PROTOCOL IMPLEMENTATION (Phase 3.1)

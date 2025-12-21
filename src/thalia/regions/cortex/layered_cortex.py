@@ -96,7 +96,6 @@ import torch.nn.functional as F
 
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
-from thalia.core.errors import CheckpointError
 from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.components.neurons import create_cortical_layer_neurons
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
@@ -1806,149 +1805,18 @@ class LayeredCortex(NeuralRegion):
         - neuromodulator_state: Current dopamine, norepinephrine, etc.
         - config: Configuration for validation
         """
-        state_dict = {
-            "weights": {
-                "w_input_l4": self.synaptic_weights["input"].data.clone(),
-                "w_l4_l23": self.synaptic_weights["l4_l23"].data.clone(),
-                "w_l23_recurrent": self.synaptic_weights["l23_recurrent"].data.clone(),
-                "w_l23_l5": self.synaptic_weights["l23_l5"].data.clone(),
-                "w_l23_l6a": self.synaptic_weights["l23_l6a"].data.clone(),
-                "w_l23_l6b": self.synaptic_weights["l23_l6b"].data.clone(),
-                "w_l23_inhib": self.synaptic_weights["l23_inhib"].data.clone(),
-            },
-            "region_state": {
-                "l4_neurons": self.l4_neurons.get_state(),
-                "l23_neurons": self.l23_neurons.get_state(),
-                "l5_neurons": self.l5_neurons.get_state(),
-                "l6a_neurons": self.l6a_neurons.get_state(),
-                "l6b_neurons": self.l6b_neurons.get_state(),
-                "l4_spikes": self.state.l4_spikes.clone() if self.state.l4_spikes is not None else None,
-                "l23_spikes": self.state.l23_spikes.clone() if self.state.l23_spikes is not None else None,
-                "l5_spikes": self.state.l5_spikes.clone() if self.state.l5_spikes is not None else None,
-                "l6a_spikes": self.state.l6a_spikes.clone() if self.state.l6a_spikes is not None else None,
-                "l6b_spikes": self.state.l6b_spikes.clone() if self.state.l6b_spikes is not None else None,
-                "l4_trace": self.state.l4_trace.clone() if self.state.l4_trace is not None else None,
-                "l23_trace": self.state.l23_trace.clone() if self.state.l23_trace is not None else None,
-                "l5_trace": self.state.l5_trace.clone() if self.state.l5_trace is not None else None,
-                "l6a_trace": self.state.l6a_trace.clone() if self.state.l6a_trace is not None else None,
-                "l6b_trace": self.state.l6b_trace.clone() if self.state.l6b_trace is not None else None,
-                "l23_recurrent_activity": self.state.l23_recurrent_activity.clone() if self.state.l23_recurrent_activity is not None else None,
-                # Inter-layer axonal delay buffers
-                "l4_l23_delay_buffer": self._l4_l23_delay_buffer.clone() if self._l4_l23_delay_buffer is not None else None,
-                "l4_l23_delay_ptr": self._l4_l23_delay_ptr,
-                "l23_l5_delay_buffer": self._l23_l5_delay_buffer.clone() if self._l23_l5_delay_buffer is not None else None,
-                "l23_l5_delay_ptr": self._l23_l5_delay_ptr,
-                "l23_l6a_delay_buffer": self._l23_l6a_delay_buffer.clone() if self._l23_l6a_delay_buffer is not None else None,
-                "l23_l6a_delay_ptr": self._l23_l6a_delay_ptr,
-                "l23_l6b_delay_buffer": self._l23_l6b_delay_buffer.clone() if self._l23_l6b_delay_buffer is not None else None,
-                "l23_l6b_delay_ptr": self._l23_l6b_delay_ptr,
-            },
-            "learning_state": {},
-            "neuromodulator_state": {
-                "dopamine": self.state.dopamine,
-                "norepinephrine": self.state.norepinephrine,
-                "acetylcholine": self.state.acetylcholine,
-            },
-            "config": {
-                "n_input": self.config.n_input,
-                "n_output": self.config.n_output,
-                "l4_size": self.l4_size,
-                "l23_size": self.l23_size,
-                "l5_size": self.l5_size,
-                "l6a_size": self.l6a_size,
-                "l6b_size": self.l6b_size,
-            },
-        }
-
-        # BCM state (thresholds)
-        if self.bcm_l4 is not None and hasattr(self.bcm_l4, 'theta') and self.bcm_l4.theta is not None:
-            state_dict["learning_state"]["bcm_l4_theta"] = self.bcm_l4.theta.clone()
-        if self.bcm_l23 is not None and hasattr(self.bcm_l23, 'theta') and self.bcm_l23.theta is not None:
-            state_dict["learning_state"]["bcm_l23_theta"] = self.bcm_l23.theta.clone()
-        if self.bcm_l5 is not None and hasattr(self.bcm_l5, 'theta') and self.bcm_l5.theta is not None:
-            state_dict["learning_state"]["bcm_l5_theta"] = self.bcm_l5.theta.clone()
-        if self.bcm_l6a is not None and hasattr(self.bcm_l6a, 'theta') and self.bcm_l6a.theta is not None:
-            state_dict["learning_state"]["bcm_l6a_theta"] = self.bcm_l6a.theta.clone()
-        if self.bcm_l6b is not None and hasattr(self.bcm_l6b, 'theta') and self.bcm_l6b.theta is not None:
-            state_dict["learning_state"]["bcm_l6b_theta"] = self.bcm_l6b.theta.clone()
-
-        # STP state (always present)
-        state_dict["learning_state"]["stp_l23_recurrent"] = self.stp_l23_recurrent.get_state()
-
-        return state_dict
+        state = self.get_state()
+        return state.to_dict()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
 
         Args:
             state: State dictionary from get_full_state()
-
-        Raises:
-            ValueError: If config dimensions don't match
         """
-        # Validate config compatibility
-        config = state.get("config", {})
-        if config.get("n_input") != self.config.n_input:
-            raise CheckpointError(f"Config mismatch: n_input {config.get('n_input')} != {self.config.n_input}")
-        if config.get("n_output") != self.config.n_output:
-            raise CheckpointError(f"Config mismatch: n_output {config.get('n_output')} != {self.config.n_output}")
-        if config.get("l4_size") != self.l4_size:
-            raise CheckpointError(f"Config mismatch: l4_size {config.get('l4_size')} != {self.l4_size}")
-        if config.get("l23_size") != self.l23_size:
-            raise CheckpointError(f"Config mismatch: l23_size {config.get('l23_size')} != {self.l23_size}")
-        if config.get("l5_size") != self.l5_size:
-            raise CheckpointError(f"Config mismatch: l5_size {config.get('l5_size')} != {self.l5_size}")
-
-        # Restore weights
-        weights = state["weights"]
-        self.synaptic_weights["input"].data.copy_(weights["w_input_l4"].to(self.device))
-        self.synaptic_weights["l4_l23"].data.copy_(weights["w_l4_l23"].to(self.device))
-        self.synaptic_weights["l23_recurrent"].data.copy_(weights["w_l23_recurrent"].to(self.device))
-        self.synaptic_weights["l23_l5"].data.copy_(weights["w_l23_l5"].to(self.device))
-        self.synaptic_weights["l23_inhib"].data.copy_(weights["w_l23_inhib"].to(self.device))
-
-        # Restore neuron states
-        region_state = state["region_state"]
-        self.l4_neurons.load_state(region_state["l4_neurons"])
-        self.l23_neurons.load_state(region_state["l23_neurons"])
-        self.l5_neurons.load_state(region_state["l5_neurons"])
-
-        # Restore region state
-        if region_state["l4_spikes"] is not None:
-            self.state.l4_spikes = region_state["l4_spikes"].to(self.device)
-        if region_state["l23_spikes"] is not None:
-            self.state.l23_spikes = region_state["l23_spikes"].to(self.device)
-        if region_state["l5_spikes"] is not None:
-            self.state.l5_spikes = region_state["l5_spikes"].to(self.device)
-        if region_state["l4_trace"] is not None:
-            self.state.l4_trace = region_state["l4_trace"].to(self.device)
-        if region_state["l23_trace"] is not None:
-            self.state.l23_trace = region_state["l23_trace"].to(self.device)
-        if region_state["l5_trace"] is not None:
-            self.state.l5_trace = region_state["l5_trace"].to(self.device)
-        if region_state["l23_recurrent_activity"] is not None:
-            self.state.l23_recurrent_activity = region_state["l23_recurrent_activity"].to(self.device)
-
-        # Restore inter-layer delay buffers (if present in checkpoint)
-        if "l4_l23_delay_buffer" in region_state and region_state["l4_l23_delay_buffer"] is not None:
-            self._l4_l23_delay_buffer = region_state["l4_l23_delay_buffer"].to(self.device)
-            self._l4_l23_delay_ptr = region_state["l4_l23_delay_ptr"]
-        if "l23_l5_delay_buffer" in region_state and region_state["l23_l5_delay_buffer"] is not None:
-            self._l23_l5_delay_buffer = region_state["l23_l5_delay_buffer"].to(self.device)
-            self._l23_l5_delay_ptr = region_state["l23_l5_delay_ptr"]
-
-        # Restore BCM thresholds
-        learning_state = state["learning_state"]
-        if "bcm_l4_theta" in learning_state and self.bcm_l4 is not None:
-            self.bcm_l4.theta.copy_(learning_state["bcm_l4_theta"].to(self.device))
-        if "bcm_l23_theta" in learning_state and self.bcm_l23 is not None:
-            self.bcm_l23.theta.copy_(learning_state["bcm_l23_theta"].to(self.device))
-        if "bcm_l5_theta" in learning_state and self.bcm_l5 is not None:
-            self.bcm_l5.theta.copy_(learning_state["bcm_l5_theta"].to(self.device))
-
-        # Restore STP state (always present)
-        if "stp_l23_recurrent" in learning_state:
-            self.stp_l23_recurrent.load_state(learning_state["stp_l23_recurrent"])
+        from .config import LayeredCortexState
+        state_obj = LayeredCortexState.from_dict(state, device=str(self.device))
+        self.load_state(state_obj)
 
     def get_state(self) -> LayeredCortexState:
         """Get current state as LayeredCortexState (RegionState protocol).

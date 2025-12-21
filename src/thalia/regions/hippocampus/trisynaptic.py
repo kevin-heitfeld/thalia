@@ -95,7 +95,7 @@ import torch.nn.functional as F
 from thalia.components.neurons import create_pyramidal_neurons
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
-from thalia.core.errors import CheckpointError, ComponentError
+from thalia.core.errors import ComponentError
 from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.components.synapses.stp import ShortTermPlasticity
 from thalia.components.synapses.stp_presets import get_stp_config
@@ -2181,220 +2181,17 @@ class TrisynapticHippocampus(NeuralRegion):
         Returns:
             Dictionary with complete region state
         """
-        # 1. LEARNABLE PARAMETERS (weights for all pathways)
-        w_ec_l3_ca1 = self.synaptic_weights.get("ec_l3_ca1", None)
-        weights = {
-            "w_ec_dg": self.synaptic_weights["ec_dg"].detach().clone(),
-            "w_dg_ca3": self.synaptic_weights["dg_ca3"].detach().clone(),
-            "w_ca3_ca1": self.synaptic_weights["ca3_ca1"].detach().clone(),
-            "w_ca3_ca3": self.synaptic_weights["ca3_ca3"].detach().clone(),
-            "w_ec_ca1": self.synaptic_weights["ec_ca1"].detach().clone(),
-            "w_ec_l3_ca1": w_ec_l3_ca1.detach().clone() if w_ec_l3_ca1 is not None else None,
-            "w_ca1_inhib": self.synaptic_weights["ca1_inhib"].detach().clone(),
-        }
-
-        # 2. REGION STATE (all three layers)
-        neuron_state = {
-            "dg": self.dg_neurons.get_state(),
-            "ca3": self.ca3_neurons.get_state(),
-            "ca1": self.ca1_neurons.get_state(),
-        }
-
-        region_state = {
-            "neuron_state": neuron_state,
-            "ca3_activity_trace": self._ca3_activity_trace.detach().clone() if self._ca3_activity_trace is not None else None,
-            "pending_theta_reset": self._pending_theta_reset,
-            "sequence_position": self._sequence_position,
-            # Intrinsic plasticity state
-            "ca3_threshold_offset": self._ca3_threshold_offset.detach().clone() if self._ca3_threshold_offset is not None else None,
-            "ca3_activity_history": self._ca3_activity_history.detach().clone() if self._ca3_activity_history is not None else None,
-            # Gamma slot assignment
-            "ca3_slot_assignment": self._ca3_slot_assignment.detach().clone() if self._ca3_slot_assignment is not None else None,
-            # Inter-layer axonal delay buffers
-            "dg_ca3_delay_buffer": self._dg_ca3_delay_buffer.detach().clone() if self._dg_ca3_delay_buffer is not None else None,
-            "dg_ca3_delay_pointer": self._dg_ca3_delay_ptr,
-            "ca3_ca1_delay_buffer": self._ca3_ca1_delay_buffer.detach().clone() if self._ca3_ca1_delay_buffer is not None else None,
-            "ca3_ca1_delay_pointer": self._ca3_ca1_delay_ptr,
-            "trisynaptic_state": {
-                "dg_spikes": self.state.dg_spikes.detach().clone() if self.state.dg_spikes is not None else None,
-                "ca3_spikes": self.state.ca3_spikes.detach().clone() if self.state.ca3_spikes is not None else None,
-                "ca1_spikes": self.state.ca1_spikes.detach().clone() if self.state.ca1_spikes is not None else None,
-                "ca3_membrane": self.state.ca3_membrane.detach().clone() if self.state.ca3_membrane is not None else None,
-                "ca3_persistent": self.state.ca3_persistent.detach().clone() if self.state.ca3_persistent is not None else None,
-                "sample_trace": self.state.sample_trace.detach().clone() if self.state.sample_trace is not None else None,
-                "dg_trace": self.state.dg_trace.detach().clone() if self.state.dg_trace is not None else None,
-                "ca3_trace": self.state.ca3_trace.detach().clone() if self.state.ca3_trace is not None else None,
-                "nmda_trace": self.state.nmda_trace.detach().clone() if self.state.nmda_trace is not None else None,
-                "stored_dg_pattern": self.state.stored_dg_pattern.detach().clone() if self.state.stored_dg_pattern is not None else None,
-                "ffi_strength": self.state.ffi_strength,
-            }
-        }
-
-        # 3. LEARNING STATE (STP for all pathways)
-        learning_state = {}
-        if self.stp_mossy is not None:
-            learning_state["stp_mossy"] = self.stp_mossy.get_state()
-        if self.stp_schaffer is not None:
-            learning_state["stp_schaffer"] = self.stp_schaffer.get_state()
-        if self.stp_ec_ca1 is not None:
-            learning_state["stp_ec_ca1"] = self.stp_ec_ca1.get_state()
-        if self.stp_ca3_recurrent is not None:
-            learning_state["stp_ca3_recurrent"] = self.stp_ca3_recurrent.get_state()
-
-        # 4. OSCILLATOR STATE
-        # Note: Oscillator phases now come from brain broadcast, not stored locally.
-        # We only save replay_engine state (which still needs migration separately).
-        oscillator_state = {}
-        if self.replay_engine is not None:
-            oscillator_state["replay_engine"] = self.replay_engine.get_state()
-
-        # 5. NEUROMODULATOR STATE
-        neuromodulator_state = self.get_neuromodulator_state()
-
-        # 6. EPISODIC MEMORY (episode buffer)
-        # Note: Episodes contain tensors, so we need to serialize carefully
-        episode_buffer_state = []
-        for ep in self.episode_buffer:
-            ep_state = {
-                "state": ep.state.detach().clone(),
-                "context": ep.context.detach().clone() if ep.context is not None else None,
-                "action": ep.action,
-                "reward": ep.reward,
-                "correct": ep.correct,
-                "metadata": ep.metadata,
-                "priority": ep.priority,
-                "timestamp": ep.timestamp,
-                "sequence": [s.detach().clone() for s in ep.sequence] if ep.sequence is not None else None,
-            }
-            episode_buffer_state.append(ep_state)
-
-        return {
-            "format": "elastic_tensor",  # Format identifier for hybrid checkpoints
-            "weights": weights,
-            "region_state": region_state,
-            "learning_state": learning_state,
-            "oscillator_state": oscillator_state,
-            "neuromodulator_state": neuromodulator_state,
-            "episode_buffer": episode_buffer_state,
-            "config": self.tri_config,
-        }
+        state = self.get_state()
+        return state.to_dict()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Restore complete state from checkpoint.
 
         Args:
             state: Dictionary returned by get_full_state()
-
-        Raises:
-            ValueError: If state is incompatible with current configuration
         """
-        # Validate configuration compatibility
-        saved_config = state["config"]
-        if saved_config.n_input != self.tri_config.n_input:
-            raise CheckpointError(
-                f"Input dimension mismatch: saved={saved_config.n_input}, "
-                f"current={self.tri_config.n_input}"
-            )
-        if saved_config.n_output != self.tri_config.n_output:
-            raise CheckpointError(
-                f"Output dimension mismatch: saved={saved_config.n_output}, "
-                f"current={self.tri_config.n_output}"
-            )
-
-        # 1. RESTORE WEIGHTS
-        weights = state["weights"]
-        self.synaptic_weights["ec_dg"].data = weights["w_ec_dg"].to(self.device)
-        self.synaptic_weights["dg_ca3"].data = weights["w_dg_ca3"].to(self.device)
-        self.synaptic_weights["ca3_ca1"].data = weights["w_ca3_ca1"].to(self.device)
-        self.synaptic_weights["ca3_ca3"].data = weights["w_ca3_ca3"].to(self.device)
-        self.synaptic_weights["ec_ca1"].data = weights["w_ec_ca1"].to(self.device)
-        if weights["w_ec_l3_ca1"] is not None and "ec_l3_ca1" in self.synaptic_weights:
-            self.synaptic_weights["ec_l3_ca1"].data = weights["w_ec_l3_ca1"].to(self.device)
-        self.synaptic_weights["ca1_inhib"].data = weights["w_ca1_inhib"].to(self.device)
-
-        # 2. RESTORE REGION STATE
-        region_state = state["region_state"]
-
-        # Restore neuron state for all layers
-        neuron_state = region_state["neuron_state"]
-        self.dg_neurons.load_state(neuron_state["dg"])
-        self.ca3_neurons.load_state(neuron_state["ca3"])
-        self.ca1_neurons.load_state(neuron_state["ca1"])
-
-        # Restore other region state
-        if region_state["ca3_activity_trace"] is not None:
-            self._ca3_activity_trace = region_state["ca3_activity_trace"].to(self.device)
-        self._pending_theta_reset = region_state["pending_theta_reset"]
-        self._sequence_position = region_state["sequence_position"]
-        # Restore intrinsic plasticity state
-        if region_state["ca3_threshold_offset"] is not None:
-            self._ca3_threshold_offset = region_state["ca3_threshold_offset"].to(self.device)
-        if region_state["ca3_activity_history"] is not None:
-            self._ca3_activity_history = region_state["ca3_activity_history"].to(self.device)
-        if region_state["ca3_slot_assignment"] is not None:
-            self._ca3_slot_assignment = region_state["ca3_slot_assignment"].to(self.device)
-
-        # Restore inter-layer delay buffers (if present in checkpoint)
-        if "dg_ca3_delay_buffer" in region_state and region_state["dg_ca3_delay_buffer"] is not None:
-            self._dg_ca3_delay_buffer = region_state["dg_ca3_delay_buffer"].to(self.device)
-            self._dg_ca3_delay_ptr = region_state["dg_ca3_delay_pointer"]
-        if "ca3_ca1_delay_buffer" in region_state and region_state["ca3_ca1_delay_buffer"] is not None:
-            self._ca3_ca1_delay_buffer = region_state["ca3_ca1_delay_buffer"].to(self.device)
-            self._ca3_ca1_delay_ptr = region_state["ca3_ca1_delay_pointer"]
-
-        # Restore HippocampusState
-        tri_state = region_state["trisynaptic_state"]
-        self.state.dg_spikes = tri_state["dg_spikes"].to(self.device) if tri_state["dg_spikes"] is not None else None
-        self.state.ca3_spikes = tri_state["ca3_spikes"].to(self.device) if tri_state["ca3_spikes"] is not None else None
-        self.state.ca1_spikes = tri_state["ca1_spikes"].to(self.device) if tri_state["ca1_spikes"] is not None else None
-        self.state.ca3_membrane = tri_state["ca3_membrane"].to(self.device) if tri_state["ca3_membrane"] is not None else None
-        self.state.ca3_persistent = tri_state["ca3_persistent"].to(self.device) if tri_state["ca3_persistent"] is not None else None
-        self.state.sample_trace = tri_state["sample_trace"].to(self.device) if tri_state["sample_trace"] is not None else None
-        self.state.dg_trace = tri_state["dg_trace"].to(self.device) if tri_state["dg_trace"] is not None else None
-        self.state.ca3_trace = tri_state["ca3_trace"].to(self.device) if tri_state["ca3_trace"] is not None else None
-        self.state.nmda_trace = tri_state["nmda_trace"].to(self.device) if tri_state["nmda_trace"] is not None else None
-        self.state.stored_dg_pattern = tri_state["stored_dg_pattern"].to(self.device) if tri_state["stored_dg_pattern"] is not None else None
-        self.state.ffi_strength = tri_state["ffi_strength"]
-
-        # 3. RESTORE LEARNING STATE (STP)
-        learning_state = state["learning_state"]
-        if "stp_mossy" in learning_state and self.stp_mossy is not None:
-            self.stp_mossy.load_state(learning_state["stp_mossy"])
-        if "stp_schaffer" in learning_state and self.stp_schaffer is not None:
-            self.stp_schaffer.load_state(learning_state["stp_schaffer"])
-        if "stp_ec_ca1" in learning_state and self.stp_ec_ca1 is not None:
-            self.stp_ec_ca1.load_state(learning_state["stp_ec_ca1"])
-        if "stp_ca3_recurrent" in learning_state and self.stp_ca3_recurrent is not None:
-            self.stp_ca3_recurrent.load_state(learning_state["stp_ca3_recurrent"])
-
-        # 4. RESTORE OSCILLATOR STATE
-        # Note: Oscillator phases now come from brain broadcast via set_oscillator_phases().
-        # We only restore replay_engine state (which still needs migration separately).
-        oscillator_state = state["oscillator_state"]
-        if "replay_engine" in oscillator_state and self.replay_engine is not None:
-            self.replay_engine.load_state(oscillator_state["replay_engine"])
-
-        # 5. RESTORE NEUROMODULATOR STATE
-        neuromodulator_state = state["neuromodulator_state"]
-        self.state.dopamine = neuromodulator_state["dopamine"]
-        self.state.acetylcholine = neuromodulator_state["acetylcholine"]
-        self.state.norepinephrine = neuromodulator_state["norepinephrine"]
-
-        # 6. RESTORE EPISODIC MEMORY
-        from thalia.regions.hippocampus.config import Episode
-        self.episode_buffer = []
-        for ep_state in state["episode_buffer"]:
-            episode = Episode(
-                state=ep_state["state"].to(self.device),
-                context=ep_state["context"].to(self.device) if ep_state["context"] is not None else None,
-                action=ep_state["action"],
-                reward=ep_state["reward"],
-                correct=ep_state["correct"],
-                metadata=ep_state["metadata"],
-                priority=ep_state["priority"],
-                timestamp=ep_state["timestamp"],
-                sequence=[s.to(self.device) for s in ep_state["sequence"]] if ep_state["sequence"] is not None else None,
-            )
-            self.episode_buffer.append(episode)
+        from .config import HippocampusState
+        state_obj = HippocampusState.from_dict(state, device=str(self.device))
+        self.load_state(state_obj)
 
     # endregion
