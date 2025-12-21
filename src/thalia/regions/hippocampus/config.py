@@ -157,7 +157,7 @@ class HippocampusConfig(NeuralComponentConfig):
     # References:
     # - Salin et al. (1996): Mossy fiber facilitation (U=0.03!)
     # - Dobrunz & Stevens (1997): Schaffer collateral STP
-    stp_enabled: bool = False
+    stp_enabled: bool = True
     stp_mossy_type: STPType = STPType.FACILITATING_STRONG  # DG→CA3 (MF)
     stp_schaffer_type: STPType = STPType.DEPRESSING        # CA3→CA1 (SC)
     stp_ec_ca1_type: STPType = STPType.DEPRESSING          # EC→CA1 direct

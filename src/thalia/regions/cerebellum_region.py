@@ -82,6 +82,7 @@ from thalia.components.neurons.neuron_constants import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
+from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.regulation.learning_constants import LEARNING_RATE_ERROR_CORRECTIVE
 from thalia.regions.base import NeuralComponentState
@@ -135,6 +136,40 @@ class CerebellumConfig(NeuralComponentConfig):
     granule_expansion_factor: float = 4.0  # Granule cells per mossy fiber
     granule_sparsity: float = 0.03  # Fraction of granule cells active (3%)
     purkinje_n_dendrites: int = 100  # Simplified dendritic compartments
+
+    # =========================================================================
+    # SHORT-TERM PLASTICITY (STP) - CRITICAL FOR CEREBELLAR TIMING
+    # =========================================================================
+    # Biologically, cerebellar synapses show distinct STP properties that are
+    # CRITICAL for temporal processing and motor timing:
+    #
+    # 1. PARALLEL FIBERS→PURKINJE: DEPRESSING (U=0.5-0.7)
+    #    - Implements temporal high-pass filter
+    #    - Fresh inputs signal new patterns
+    #    - Sustained inputs fade → cerebellum detects CHANGES, not steady-state
+    #    - Enables sub-millisecond timing discrimination
+    #    - WITHOUT THIS: Cerebellar timing precision COLLAPSES
+    #
+    # 2. MOSSY FIBERS→GRANULE CELLS: FACILITATING (U=0.15-0.25)
+    #    - Burst detection for sparse coding
+    #    - Amplifies repeated mossy fiber activity
+    #    - Enhances pattern separation in granule layer
+    #
+    # 3. CLIMBING FIBERS→PURKINJE: RELIABLE (U≈0.9, minimal STP)
+    #    - Error signal must be unambiguous
+    #    - No adaptation - every climbing fiber spike matters
+    #
+    # References:
+    # - Dittman et al. (2000): Nature 403:530-534 - Classic PF→Purkinje STP paper
+    # - Atluri & Regehr (1996): Delayed release at granule cell synapses
+    # - Isope & Barbour (2002): Facilitation at mossy fiber synapses
+    #
+    # BIOLOGICAL IMPORTANCE: This is perhaps the MOST important STP in the brain
+    # for motor learning and timing. The cerebellar cortex is the brain's master
+    # clock, and STP is essential for its temporal precision.
+    stp_enabled: bool = True
+    stp_pf_purkinje_type: STPType = STPType.DEPRESSING  # Parallel fiber depression
+    stp_mf_granule_type: STPType = STPType.FACILITATING  # Mossy fiber facilitation
 
 
 class ClimbingFiberSystem:
@@ -348,6 +383,50 @@ class Cerebellum(NeuralRegion):
             n_output=config.n_output,
             n_input=expanded_input,
         )
+
+        # =====================================================================
+        # SHORT-TERM PLASTICITY (STP)
+        # =====================================================================
+        # Initialize STP modules for cerebellar pathways if enabled
+        if self.cerebellum_config.stp_enabled:
+            device = torch.device(config.device)
+
+            # Parallel Fibers→Purkinje: DEPRESSING (CRITICAL for timing)
+            # This implements the temporal high-pass filter that makes the
+            # cerebellum respond to CHANGES rather than sustained input.
+            # Without this, cerebellar timing precision is severely impaired.
+            self.stp_pf_purkinje = ShortTermPlasticity(
+                n_pre=expanded_input,
+                n_post=config.n_output,
+                config=STPConfig.from_type(
+                    self.cerebellum_config.stp_pf_purkinje_type,
+                    dt=config.dt_ms
+                ),
+                per_synapse=True,  # Per-synapse dynamics for maximum precision
+            )
+            self.stp_pf_purkinje.to(device)
+
+            # Mossy Fibers→Granule Cells: FACILITATING (if enhanced circuit enabled)
+            # Amplifies repeated mossy fiber activity for sparse coding
+            if self.use_enhanced:
+                self.stp_mf_granule = ShortTermPlasticity(
+                    n_pre=config.n_input,
+                    n_post=self.granule_layer.n_granule,
+                    config=STPConfig.from_type(
+                        self.cerebellum_config.stp_mf_granule_type,
+                        dt=config.dt_ms
+                    ),
+                    per_synapse=True,
+                )
+                self.stp_mf_granule.to(device)
+            else:
+                self.stp_mf_granule = None
+
+            # Climbing Fibers→Purkinje: NO STP (reliable error signal)
+            # Every climbing fiber spike is critical - no adaptation
+        else:
+            self.stp_pf_purkinje = None
+            self.stp_mf_granule = None
 
     def _initialize_weights_tensor(self, n_output: int, n_input: int) -> torch.nn.Parameter:
         """Initialize weights tensor (no longer part of NeuralComponent pattern)."""
@@ -579,7 +658,14 @@ class Cerebellum(NeuralRegion):
         # =====================================================================
         if self.use_enhanced:
             # 1. Granule layer: sparse expansion (4× expansion, 3% active)
-            granule_spikes = self.granule_layer(input_spikes)  # [n_granule]
+            # Apply STP to mossy fiber→granule synapses if enabled
+            if self.stp_mf_granule is not None:
+                # Mossy fiber facilitation amplifies repeated activity
+                mf_efficacy = self.stp_mf_granule(input_spikes.float())
+                # Apply efficacy to granule layer input
+                granule_spikes = self.granule_layer(input_spikes, mf_efficacy=mf_efficacy)
+            else:
+                granule_spikes = self.granule_layer(input_spikes)  # [n_granule]
 
             # 2. Purkinje cells: dendritic computation
             # Each Purkinje cell receives sparse parallel fibers
@@ -607,8 +693,21 @@ class Cerebellum(NeuralRegion):
         else:
             # CLASSIC PATHWAY: parallel fiber → Purkinje directly
             # Compute synaptic input - modulated by encoding phase
+
+            # Apply STP to parallel fiber→Purkinje if enabled
+            # This is CRITICAL for cerebellar timing precision
+            if self.stp_pf_purkinje is not None:
+                # Parallel fiber DEPRESSION: Fresh inputs strong, sustained fade
+                # This implements temporal high-pass filter for change detection
+                pf_efficacy = self.stp_pf_purkinje(input_spikes.float())  # [n_input, n_output]
+                # Transpose to match weight shape [n_output, n_input]
+                # Modulate synaptic weights by STP efficacy
+                effective_weights = self.weights * pf_efficacy.T
+            else:
+                effective_weights = self.weights
+
             # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
-            g_exc = (self.weights @ input_spikes.float()) * input_gain
+            g_exc = (effective_weights @ input_spikes.float()) * input_gain
 
             # =====================================================================
             # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -812,7 +911,7 @@ class Cerebellum(NeuralRegion):
         super().reset_state()
 
         # Reset subsystems (trace manager handles its own traces)
-        self._reset_subsystems('_trace_manager', 'climbing_fiber')
+        self._reset_subsystems('_trace_manager', 'climbing_fiber', 'stp_pf_purkinje', 'stp_mf_granule')
 
     def grow_input(
         self,
