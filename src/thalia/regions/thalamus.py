@@ -102,6 +102,7 @@ from thalia.utils.input_routing import InputRouter
 from thalia.managers.component_registry import register_region
 from thalia.components.neurons.neuron_factory import create_relay_neurons, create_trn_neurons
 from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.regulation.region_constants import (
     THALAMUS_BURST_THRESHOLD,
     THALAMUS_TONIC_THRESHOLD,
@@ -195,6 +196,31 @@ class ThalamicRelayConfig(NeuralComponentConfig):
 
     relay_to_cortex_delay_ms: float = 2.0
     """Relay → cortex thalamocortical delay (~2ms, handled by AxonalProjection)."""
+
+    # Short-Term Plasticity (STP) - HIGH PRIORITY for sensory gating
+    stp_enabled: bool = True
+    """Enable STP for sensory relay and L6 feedback pathways.
+
+    Biological justification (HIGH PRIORITY):
+    - Sensory relay depression: Filters repetitive stimuli, responds to novelty
+    - L6 feedback depression: Modulates gain control dynamically
+    - CRITICAL for realistic sensory gating and attention
+    - References: Castro-Alamancos (2002), Swadlow & Gusev (2001)
+    """
+
+    stp_sensory_relay_type: STPType = STPType.DEPRESSING
+    """Sensory input → relay depression (U=0.4, moderate).
+
+    Implements novelty detection: Sustained inputs depress, novel stimuli get
+    through. Critical for attention capture and change detection.
+    """
+
+    stp_l6_feedback_type: STPType = STPType.DEPRESSING
+    """L6 cortical feedback → relay depression (U=0.7, strong).
+
+    Implements dynamic gain control: Sustained cortical feedback reduces
+    thalamic transmission, enabling efficient filtering.
+    """
 
 
 @dataclass
@@ -353,6 +379,36 @@ class ThalamicRelay(NeuralRegion):
         self._trn_relay_delay_steps = int(config.trn_to_relay_delay_ms / config.dt_ms)
         self._trn_relay_delay_buffer: Optional[torch.Tensor] = None
         self._trn_relay_delay_ptr: int = 0
+
+        # =====================================================================
+        # SHORT-TERM PLASTICITY (STP) - HIGH PRIORITY for sensory gating
+        # =====================================================================
+        self.stp_sensory_relay: Optional[ShortTermPlasticity] = None
+        self.stp_l6_feedback: Optional[ShortTermPlasticity] = None
+
+        if config.stp_enabled:
+            # Sensory input → relay depression (U=0.4, moderate depression)
+            # Filters repetitive stimuli, responds to novelty
+            # CRITICAL for attention capture and change detection
+            self.stp_sensory_relay = ShortTermPlasticity(
+                n_pre=config.n_input,
+                n_post=self.n_relay,
+                config=STPConfig.from_type(config.stp_sensory_relay_type, dt=config.dt_ms),
+                per_synapse=True,  # Per-synapse dynamics for maximum precision
+            )
+            self.stp_sensory_relay.to(self.device)
+
+            # L6 cortical feedback → relay depression (U=0.7, strong depression)
+            # Dynamic gain control: Sustained cortical feedback reduces thalamic transmission
+            # Enables efficient filtering and sensory gating
+            # NOTE: L6 size must match n_relay (validated at build time)
+            self.stp_l6_feedback = ShortTermPlasticity(
+                n_pre=self.n_relay,  # L6b must match relay size
+                n_post=self.n_relay,
+                config=STPConfig.from_type(config.stp_l6_feedback_type, dt=config.dt_ms),
+                per_synapse=True,
+            )
+            self.stp_l6_feedback.to(self.device)
 
         # =====================================================================
         # STATE
@@ -635,6 +691,15 @@ class ThalamicRelay(NeuralRegion):
             input_float
         ).clamp(min=0)  # [n_relay]
 
+        # Apply STP to sensory input → relay if enabled
+        # CRITICAL for novelty detection and attention capture
+        if self.stp_sensory_relay is not None:
+            # Sensory depression: Sustained inputs fade, novel stimuli strong
+            sensory_efficacy = self.stp_sensory_relay(input_spikes.float())  # [n_input, n_relay]
+            # Transpose to match filter output shape [n_relay]
+            # Apply efficacy as multiplicative modulation of filtered input
+            filtered_input = filtered_input * sensory_efficacy.mean(dim=0)  # Average over input neurons
+
         # =====================================================================
         # 2. COMPUTE ALPHA ATTENTIONAL GATE
         # =====================================================================
@@ -667,6 +732,15 @@ class ThalamicRelay(NeuralRegion):
                     f"L6b feedback size mismatch: expected {self.n_relay}, got {l6b_excitation.shape[0]}. "
                     f"This indicates a brain building error - L6b must equal thalamus relay size."
                 )
+
+            # Apply STP to L6 feedback → relay if enabled
+            # CRITICAL for dynamic gain control and sensory gating
+            if self.stp_l6_feedback is not None:
+                # L6 feedback depression: Sustained cortical feedback reduces thalamic transmission
+                # Implements efficient filtering: Cortex can suppress irrelevant thalamic activity
+                l6_efficacy = self.stp_l6_feedback(cortical_l6b_feedback.float())  # [n_relay, n_relay]
+                # Apply per-postsynaptic efficacy (diagonal since L6b size == relay size)
+                l6b_excitation = l6b_excitation * l6_efficacy.diag()
 
             # Add L6b excitation to relay (applied BEFORE TRN inhibition)
             relay_excitation = relay_excitation + l6b_excitation
@@ -803,6 +877,12 @@ class ThalamicRelay(NeuralRegion):
 
         self.relay_neurons.reset_state()
         self.trn_neurons.reset_state()
+
+        # Reset STP modules if enabled
+        if self.stp_sensory_relay is not None:
+            self.stp_sensory_relay.reset_state()
+        if self.stp_l6_feedback is not None:
+            self.stp_l6_feedback.reset_state()
 
         self.state.relay_spikes = None
         self.state.relay_membrane = None
