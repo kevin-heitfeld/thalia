@@ -13,9 +13,10 @@
 - **[EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md)** — Custom exception classes
 - **[MODULE_EXPORTS.md](MODULE_EXPORTS.md)** — Public API exports from `__init__.py`
 - **[MIXINS_REFERENCE.md](MIXINS_REFERENCE.md)** — Mixin classes providing NeuralRegion functionality
-- **[CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md)** - All package-level constants *(auto-generated)*
-- **[PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md)** - Protocol/interface definitions *(auto-generated)*
-- **[USAGE_EXAMPLES.md](USAGE_EXAMPLES.md)** - Code examples from docstrings *(auto-generated)*
+- **[CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md)** — All package-level constants *(auto-generated)*
+- **[PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md)** — Protocol/interface definitions *(auto-generated)*
+- **[USAGE_EXAMPLES.md](USAGE_EXAMPLES.md)** — Code examples from docstrings *(auto-generated)*
+- **[CHECKPOINT_FORMAT.md](CHECKPOINT_FORMAT.md)** — Checkpoint file structure and format *(auto-generated)*
 
 ---
 

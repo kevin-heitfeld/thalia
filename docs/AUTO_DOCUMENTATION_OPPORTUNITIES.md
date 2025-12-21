@@ -4,7 +4,7 @@
 
 This document tracks opportunities for auto-generating documentation from code to reduce maintenance burden and ensure documentation stays synchronized.
 
-## ✅ Currently Auto-Generated (11 documents)
+## ✅ Currently Auto-Generated (12 documents)
 
 ### API Reference (docs/api/)
 
@@ -48,9 +48,13 @@ This document tracks opportunities for auto-generating documentation from code t
     - Source: `@runtime_checkable` Protocol classes
     - Coverage: 8 protocols with method signatures
 
-11. **USAGE_EXAMPLES.md** ✨ NEW - Code examples from docstrings
+11. **USAGE_EXAMPLES.md** - Code examples from docstrings
     - Source: Module docstrings and training scripts
     - Coverage: 13 examples across 4 categories
+
+12. **CHECKPOINT_FORMAT.md** ✨ NEW - Checkpoint file structure and format
+    - Source: `get_full_state()` methods, checkpoint save/load code
+    - Coverage: Top-level structure, component states, file formats
 
 **Generation**: Run `python scripts/generate_api_docs.py`
 
@@ -102,9 +106,17 @@ This document tracks opportunities for auto-generating documentation from code t
 - Organized by purpose
 - Shows real usage patterns
 
-### Low Value (Higher Effort)
+### Low Value (Higher Effort) - ✅ PARTIALLY COMPLETE
 
-#### 6. CLI Commands Reference
+#### 6. Checkpoint Format Documentation ✅ DONE
+**Status**: Implemented as CHECKPOINT_FORMAT.md
+**Coverage**: Top-level keys, component states, file formats, compression, validation
+**Value Delivered**:
+- Documents actual checkpoint structure from code
+- Shows all state dict keys and types
+- Explains compression and precision options
+
+#### 7. CLI Commands Reference
 **What**: Document all command-line scripts and arguments
 **Source**: argparse definitions in scripts/
 **Value**:
@@ -161,10 +173,10 @@ This document tracks opportunities for auto-generating documentation from code t
 ## 📊 Impact Analysis
 
 ### Current Coverage ✅ EXCEEDED TARGET
-- **11 docs auto-generated** (up from 9) - 100% synchronized with code
-- **44 docs manually maintained** (55 total - 11 auto)
-- **20% automation rate** 🎯 EXCEEDED 16% TARGET
-- **Maintenance time saved**: ~25+ hours/year
+- **12 docs auto-generated** (up from 11) - 100% synchronized with code
+- **43 docs manually maintained** (55 total - 12 auto)
+- **22% automation rate** 🎯 EXCEEDED 20% TARGET
+- **Maintenance time saved**: ~30 hours/year
 
 ### Before This Session
 - **6 docs auto-generated**
@@ -176,13 +188,17 @@ This document tracks opportunities for auto-generating documentation from code t
 - **1400+ new lines** of auto-generated documentation
 - MODULE_EXPORTS.md, MIXINS_REFERENCE.md, CONSTANTS_REFERENCE.md
 
-### After Phase 4: Medium-Value Additions (+2 docs) → 11 docs total ✅ CURRENT
-- **11 docs auto-generated**
-- **44 docs manually maintained**
-- **20% automation rate** 🎉
-- **1800+ new lines** of auto-generated documentation
+### After Phase 4: Medium-Value Additions (+2 docs) → 11 docs total
+- **20% automation rate**
 - **New**: PROTOCOLS_REFERENCE.md (8 protocols), USAGE_EXAMPLES.md (13 examples)
-- **Maintenance time saved**: 25+ hours/year
+
+### After Phase 5: Checkpoint Format (+1 doc) → 12 docs total ✅ CURRENT
+- **12 docs auto-generated**
+- **43 docs manually maintained**
+- **22% automation rate** 🎉
+- **2000+ lines** of auto-generated documentation
+- **New**: CHECKPOINT_FORMAT.md (state structure, file formats, compression)
+- **Maintenance time saved**: 30+ hours/year
 
 ### Why Not Auto-Generate Everything?
 

@@ -73,6 +73,7 @@ Located in: `docs/api/`
 | **CONSTANTS_REFERENCE.md** | Biological constants and defaults | Module-level UPPERCASE constants | Auto |
 | **PROTOCOLS_REFERENCE.md** | Protocol/interface definitions | `@runtime_checkable` Protocol classes | Auto |
 | **USAGE_EXAMPLES.md** | Code examples from docstrings | Module docstrings and training scripts | Auto |
+| **CHECKPOINT_FORMAT.md** | Checkpoint file structure and format | `get_full_state()` methods, checkpoint save/load code | Auto |
 
 **Benefits**:
 - ✅ Always synchronized with codebase

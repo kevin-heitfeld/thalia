@@ -1,7 +1,7 @@
 # Constants Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 19:26:47
+> Last updated: 2025-12-21 19:35:38
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all module-level constants in Thalia. These include biological time constants, default values, and thresholds.

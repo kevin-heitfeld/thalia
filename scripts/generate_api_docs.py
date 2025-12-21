@@ -13,6 +13,7 @@ This script auto-generates:
 9. CONSTANTS_REFERENCE.md - Module-level constants and defaults
 10. PROTOCOLS_REFERENCE.md - Protocol/interface definitions
 11. USAGE_EXAMPLES.md - Code examples from docstrings
+12. CHECKPOINT_FORMAT.md - Checkpoint file structure and format
 
 Run this script whenever components are added/modified to keep docs synchronized.
 """
@@ -132,6 +133,26 @@ class UsageExample:
     category: str  # "component", "training", "diagnostic", etc.
 
 
+@dataclass
+class StateField:
+    """Field in a state dictionary."""
+    key: str
+    type_hint: str
+    description: str
+    required: bool
+    example: str
+
+
+@dataclass
+class CheckpointStructure:
+    """Checkpoint state structure for a component."""
+    component_type: str
+    file_path: str
+    top_level_keys: List[StateField]
+    nested_structures: Dict[str, List[StateField]]  # key -> fields
+    docstring: str
+
+
 class APIDocGenerator:
     """Generate API documentation from codebase."""
 
@@ -151,6 +172,7 @@ class APIDocGenerator:
         self.constants: List[ConstantInfo] = []
         self.protocols: List[ProtocolInfo] = []
         self.usage_examples: List[UsageExample] = []
+        self.checkpoint_structures: List[CheckpointStructure] = []
 
     def generate(self):
         """Generate all API documentation."""
@@ -171,6 +193,7 @@ class APIDocGenerator:
         self._find_constants()
         self._find_protocols()
         self._find_usage_examples()
+        self._find_checkpoint_structures()
 
         # Generate documentation files
         self._generate_component_catalog()
@@ -184,6 +207,7 @@ class APIDocGenerator:
         self._generate_constants_reference()
         self._generate_protocols_reference()
         self._generate_usage_examples_reference()
+        self._generate_checkpoint_format_reference()
 
         print("\n✅ API documentation generated successfully!")
         print(f"   Location: {self.api_dir.relative_to(self.docs_dir.parent)}")
@@ -1151,6 +1175,279 @@ class APIDocGenerator:
                     f.write(example.code)
                     f.write("\n```\n\n")
                     f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _find_checkpoint_structures(self):
+        """Extract checkpoint state structures from get_full_state() methods."""
+        # Check key files that define checkpoint structure
+        key_files = [
+            self.src_dir / "core" / "dynamic_brain.py",
+            self.src_dir / "core" / "neural_region.py",
+            self.src_dir / "pathways" / "axonal_projection.py",
+            self.src_dir / "io" / "checkpoint.py",
+        ]
+
+        for py_file in key_files:
+            if not py_file.exists():
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+                tree = ast.parse(content)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.FunctionDef) and node.name == "get_full_state":
+                        # Extract state dict structure
+                        state_fields = self._extract_state_dict_structure(node, content)
+                        if state_fields:
+                            component_type = self._get_containing_class(node, tree) or "TopLevel"
+                            docstring = ast.get_docstring(node) or ""
+
+                            self.checkpoint_structures.append(CheckpointStructure(
+                                component_type=component_type,
+                                file_path=str(py_file.relative_to(self.src_dir)),
+                                top_level_keys=state_fields,
+                                nested_structures={},
+                                docstring=docstring,
+                            ))
+            except Exception:
+                continue  # Skip files with parse errors
+
+    def _extract_state_dict_structure(self, func_node: ast.FunctionDef, content: str) -> List[StateField]:
+        """Extract state dict keys from get_full_state() method."""
+        fields = []
+        seen_keys = set()
+
+        # Look for state = {...} initialization
+        for node in ast.walk(func_node):
+            if isinstance(node, ast.Assign):
+                # Check for state = {...}
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "state":
+                        if isinstance(node.value, ast.Dict):
+                            # Extract keys from dict literal
+                            for key_node, value_node in zip(node.value.keys, node.value.values):
+                                if isinstance(key_node, ast.Constant):
+                                    key = key_node.value
+                                elif isinstance(key_node, ast.Str):
+                                    key = key_node.s
+                                else:
+                                    continue
+
+                                if key not in seen_keys:
+                                    seen_keys.add(key)
+                                    type_hint = self._infer_type_from_value(value_node)
+                                    fields.append(StateField(
+                                        key=key,
+                                        type_hint=type_hint,
+                                        description="",
+                                        required=True,
+                                        example="",
+                                    ))
+
+                # Also check for state["key"] = value patterns
+                for target in node.targets:
+                    if isinstance(target, ast.Subscript):
+                        if isinstance(target.value, ast.Name) and target.value.id == "state":
+                            # Get the key
+                            if isinstance(target.slice, ast.Constant):
+                                key = target.slice.value
+                            elif isinstance(target.slice, ast.Str):
+                                key = target.slice.s
+                            else:
+                                continue
+
+                            if key not in seen_keys:
+                                seen_keys.add(key)
+                                value_node = node.value
+                                type_hint = self._infer_type_from_value(value_node)
+                                fields.append(StateField(
+                                    key=key,
+                                    type_hint=type_hint,
+                                    description="",
+                                    required=True,
+                                    example="",
+                                ))
+
+        return fields
+
+    def _infer_type_from_value(self, node: ast.AST) -> str:
+        """Infer type from AST value node."""
+        if isinstance(node, ast.Dict):
+            return "Dict[str, Any]"
+        elif isinstance(node, ast.List):
+            return "List[Any]"
+        elif isinstance(node, ast.Constant):
+            value = node.value
+            if isinstance(value, int):
+                return "int"
+            elif isinstance(value, float):
+                return "float"
+            elif isinstance(value, str):
+                return "str"
+            elif isinstance(value, bool):
+                return "bool"
+            return "Any"
+        elif isinstance(node, ast.Num):  # Python 3.7 compat
+            return "int" if isinstance(node.n, int) else "float"
+        elif isinstance(node, ast.Str):
+            return "str"
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                method_name = node.func.attr
+                if method_name in ("get_full_state", "get_state"):
+                    return "Dict[str, Any]"
+                elif method_name == "to_dict":
+                    return "Dict[str, Any]"
+                return "Any"
+            elif isinstance(node.func, ast.Name):
+                func_name = node.func.id
+                if func_name in ("dict", "Dict"):
+                    return "Dict[str, Any]"
+                elif func_name in ("list", "List"):
+                    return "List[Any]"
+        elif isinstance(node, ast.ListComp):
+            return "List[Any]"
+        elif isinstance(node, ast.DictComp):
+            return "Dict[str, Any]"
+        return "Any"
+
+    def _get_containing_class(self, func_node: ast.FunctionDef, tree: ast.AST) -> str:
+        """Get the class containing this function."""
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if item == func_node:
+                        return node.name
+        return ""
+
+    def _generate_checkpoint_format_reference(self):
+        """Generate CHECKPOINT_FORMAT.md."""
+        output_file = self.api_dir / "CHECKPOINT_FORMAT.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Checkpoint Format Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document describes the checkpoint file format used by Thalia. ")
+            f.write("Checkpoints are created using `brain.save_checkpoint()` and restored with `brain.load_checkpoint()`.\n\n")
+
+            f.write("## Overview\n\n")
+            f.write("Thalia checkpoints use a hierarchical structure:\n\n")
+            f.write("```\n")
+            f.write("checkpoint.thalia\n")
+            f.write("├── metadata (timestamp, versions, sizes)\n")
+            f.write("├── regions (component states)\n")
+            f.write("├── pathways (connection states)\n")
+            f.write("├── oscillators (rhythm generator states)\n")
+            f.write("├── neuromodulators (dopamine, acetylcholine, etc.)\n")
+            f.write("└── config (brain configuration)\n")
+            f.write("```\n\n")
+
+            f.write("## Top-Level Structure\n\n")
+            f.write("The checkpoint is a dictionary with these top-level keys:\n\n")
+
+            # Find DynamicBrain structure
+            brain_struct = next((s for s in self.checkpoint_structures if s.component_type == "DynamicBrain"), None)
+
+            if brain_struct:
+                f.write("### Keys from `DynamicBrain.get_full_state()`\n\n")
+                f.write("| Key | Type | Description |\n")
+                f.write("|-----|------|-------------|\n")
+
+                for field in brain_struct.top_level_keys:
+                    f.write(f"| `{field.key}` | `{field.type_hint}` | {field.description or 'Component state'} |\n")
+
+                f.write("\n")
+                f.write(f"**Source**: `{brain_struct.file_path}`\n\n")
+
+            f.write("## Component State Structure\n\n")
+            f.write("Each component (region or pathway) stores its state in the checkpoint.\n\n")
+
+            # Find NeuralRegion structure
+            region_struct = next((s for s in self.checkpoint_structures if s.component_type == "NeuralRegion"), None)
+
+            if region_struct:
+                f.write("### NeuralRegion State (Base Class)\n\n")
+                f.write("All regions include these fields:\n\n")
+
+                f.write("| Key | Type | Description |\n")
+                f.write("|-----|------|-------------|\n")
+
+                for field in region_struct.top_level_keys:
+                    f.write(f"| `{field.key}` | `{field.type_hint}` | {field.description or 'Base region data'} |\n")
+
+                f.write("\n")
+                f.write(f"**Source**: `{region_struct.file_path}`\n\n")
+
+            # Find AxonalProjection structure
+            pathway_struct = next((s for s in self.checkpoint_structures if s.component_type == "AxonalProjection"), None)
+
+            if pathway_struct:
+                f.write("### AxonalProjection State (Pathways)\n\n")
+                f.write("All pathways include these fields:\n\n")
+
+                f.write("| Key | Type | Description |\n")
+                f.write("|-----|------|-------------|\n")
+
+                for field in pathway_struct.top_level_keys:
+                    f.write(f"| `{field.key}` | `{field.type_hint}` | {field.description or 'Pathway data'} |\n")
+
+                f.write("\n")
+                f.write(f"**Source**: `{pathway_struct.file_path}`\n\n")
+
+            f.write("## File Format Details\n\n")
+            f.write("Checkpoints can be saved in multiple formats:\n\n")
+            f.write("1. **PyTorch Format** (`.pt`, `.pth`, `.ckpt`) - Standard PyTorch `torch.save()` format\n")
+            f.write("2. **Binary Format** (`.thalia`, `.thalia.zst`) - Custom binary format with compression\n\n")
+
+            f.write("### Compression Support\n\n")
+            f.write("- `.zst` extension → Zstandard compression\n")
+            f.write("- `.lz4` extension → LZ4 compression\n")
+            f.write("- No extension → Uncompressed\n\n")
+
+            f.write("### Precision Policies\n\n")
+            f.write("Checkpoints support mixed precision:\n\n")
+            f.write("- `fp32` - Full precision (default)\n")
+            f.write("- `fp16` - Half precision (smaller files, some accuracy loss)\n")
+            f.write("- `mixed` - fp16 for weights, fp32 for critical state\n\n")
+
+            f.write("## Usage Examples\n\n")
+            f.write("```python\n")
+            f.write("# Save checkpoint\n")
+            f.write("brain.save_checkpoint(\n")
+            f.write('    "checkpoints/epoch_100.ckpt",\n')
+            f.write('    metadata={"epoch": 100, "loss": 0.42}\n')
+            f.write(")\n\n")
+            f.write("# Load checkpoint\n")
+            f.write('brain.load_checkpoint("checkpoints/epoch_100.ckpt")\n\n')
+            f.write("# Save with compression\n")
+            f.write('brain.save_checkpoint("checkpoints/epoch_100.thalia.zst", compression="zstd")\n\n')
+            f.write("# Save with mixed precision\n")
+            f.write('brain.save_checkpoint("checkpoints/epoch_100.ckpt", precision_policy="fp16")\n')
+            f.write("```\n\n")
+
+            f.write("## Validation\n\n")
+            f.write("Use `CheckpointManager.validate()` to check checkpoint integrity:\n\n")
+            f.write("```python\n")
+            f.write("from thalia.io import CheckpointManager\n\n")
+            f.write("manager = CheckpointManager(brain)\n")
+            f.write('is_valid, error = manager.validate("checkpoints/epoch_100.ckpt")\n')
+            f.write("if not is_valid:\n")
+            f.write('    print(f"Checkpoint invalid: {error}")\n')
+            f.write("```\n\n")
+
+            f.write("## Version Compatibility\n\n")
+            f.write("Checkpoints include version metadata for compatibility checking:\n\n")
+            f.write("- `checkpoint_format_version` - Format version (2.0+)\n")
+            f.write("- `thalia_version` - Thalia library version\n")
+            f.write("- `pytorch_version` - PyTorch version used\n\n")
+
+            f.write("The checkpoint manager can migrate old formats when loading.\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
