@@ -16,6 +16,7 @@ This script auto-generates:
 12. CHECKPOINT_FORMAT.md - Checkpoint file structure and format
 13. TYPE_ALIASES.md - Type alias definitions
 14. COMPONENT_RELATIONSHIPS.md - Component connections in preset architectures
+15. ENUMERATIONS_REFERENCE.md - All enumeration types
 
 Run this script whenever components are added/modified to keep docs synchronized.
 """
@@ -176,6 +177,16 @@ class ComponentRelation:
     target_port: Optional[str]
 
 
+@dataclass
+class EnumInfo:
+    """Enumeration type definition."""
+    name: str
+    docstring: str
+    values: List[Tuple[str, str]]  # (member_name, member_value_or_comment)
+    file_path: str
+    enum_type: str  # "Enum", "IntEnum", "StrEnum"
+
+
 class APIDocGenerator:
     """Generate API documentation from codebase."""
 
@@ -198,6 +209,7 @@ class APIDocGenerator:
         self.checkpoint_structures: List[CheckpointStructure] = []
         self.type_aliases: List[TypeAliasInfo] = []
         self.component_relations: List[ComponentRelation] = []
+        self.enumerations: List[EnumInfo] = []
 
     def generate(self):
         """Generate all API documentation."""
@@ -221,6 +233,7 @@ class APIDocGenerator:
         self._find_checkpoint_structures()
         self._find_type_aliases()
         self._find_component_relations()
+        self._find_enumerations()
 
         # Generate documentation files
         self._generate_component_catalog()
@@ -237,6 +250,7 @@ class APIDocGenerator:
         self._generate_checkpoint_format_reference()
         self._generate_type_aliases_reference()
         self._generate_component_relationships()
+        self._generate_enumerations_reference()
 
         print("\n✅ API documentation generated successfully!")
         print(f"   Location: {self.api_dir.relative_to(self.docs_dir.parent)}")
@@ -1764,6 +1778,130 @@ class APIDocGenerator:
 
                 f.write("```\n\n")
                 f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _find_enumerations(self):
+        """Extract all Enum class definitions."""
+        for py_file in self.src_dir.rglob("*.py"):
+            if "test" in str(py_file) or "__pycache__" in str(py_file):
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+
+                # Quick check before parsing
+                if "Enum)" not in content:
+                    continue
+
+                tree = ast.parse(content)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ClassDef):
+                        # Check if it inherits from Enum, IntEnum, or StrEnum
+                        enum_type = None
+                        for base in node.bases:
+                            if isinstance(base, ast.Name):
+                                if base.id in ("Enum", "IntEnum", "StrEnum"):
+                                    enum_type = base.id
+                                    break
+
+                        if enum_type:
+                            # Extract enum members
+                            values = []
+                            for item in node.body:
+                                if isinstance(item, ast.Assign):
+                                    # Get member name
+                                    for target in item.targets:
+                                        if isinstance(target, ast.Name):
+                                            member_name = target.id
+
+                                            # Try to get comment or value
+                                            comment = ""
+                                            if isinstance(item.value, ast.Call):
+                                                # auto() or similar
+                                                comment = "auto()"
+                                            elif isinstance(item.value, ast.Constant):
+                                                comment = repr(item.value.value)
+                                            elif isinstance(item.value, ast.Str):
+                                                comment = repr(item.value.s)
+
+                                            # Look for inline comments in source
+                                            try:
+                                                lines = content.split('\n')
+                                                for line in lines:
+                                                    if member_name in line and '=' in line and '#' in line:
+                                                        comment_part = line.split('#', 1)[1].strip()
+                                                        if comment_part:
+                                                            comment = comment_part
+                                                        break
+                                            except Exception:
+                                                pass
+
+                                            values.append((member_name, comment))
+
+                            if values:  # Only add if we found members
+                                docstring = ast.get_docstring(node) or ""
+                                self.enumerations.append(EnumInfo(
+                                    name=node.name,
+                                    docstring=docstring,
+                                    values=values,
+                                    file_path=str(py_file.relative_to(self.src_dir)),
+                                    enum_type=enum_type,
+                                ))
+            except Exception:
+                continue
+
+    def _generate_enumerations_reference(self):
+        """Generate ENUMERATIONS_REFERENCE.md."""
+        output_file = self.api_dir / "ENUMERATIONS_REFERENCE.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Enumerations Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all enumeration types used in Thalia.\n\n")
+
+            f.write(f"Total: {len(self.enumerations)} enumerations\n\n")
+
+            # Group by category (infer from file path)
+            from collections import defaultdict
+            by_category = defaultdict(list)
+
+            for enum in self.enumerations:
+                # Infer category from path
+                parts = enum.file_path.split('\\')
+                if len(parts) > 1:
+                    category = parts[0].replace('_', ' ').title()
+                else:
+                    category = "Core"
+                by_category[category].append(enum)
+
+            f.write("## Enumerations by Category\n\n")
+
+            for category in sorted(by_category.keys()):
+                enums = by_category[category]
+                f.write(f"### {category}\n\n")
+
+                for enum in sorted(enums, key=lambda e: e.name):
+                    f.write(f"#### `{enum.name}` ({enum.enum_type})\n\n")
+
+                    if enum.docstring:
+                        f.write(f"{enum.docstring}\n\n")
+
+                    f.write(f"**Source**: `{enum.file_path}`\n\n")
+
+                    f.write("**Members**:\n\n")
+                    for member_name, comment in enum.values:
+                        if comment:
+                            f.write(f"- `{member_name}` — {comment}\n")
+                        else:
+                            f.write(f"- `{member_name}`\n")
+
+                    f.write("\n---\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 

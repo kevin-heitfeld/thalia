@@ -19,6 +19,7 @@
 - **[CHECKPOINT_FORMAT.md](CHECKPOINT_FORMAT.md)** — Checkpoint file structure and format *(auto-generated)*
 - **[TYPE_ALIASES.md](TYPE_ALIASES.md)** — Type alias definitions *(auto-generated)*
 - **[COMPONENT_RELATIONSHIPS.md](COMPONENT_RELATIONSHIPS.md)** — Component connections in preset architectures *(auto-generated)*
+- **[ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md)** — All enumeration types *(auto-generated)*
 
 ---
 

@@ -76,6 +76,7 @@ Located in: `docs/api/`
 | **CHECKPOINT_FORMAT.md** | Checkpoint file structure and format | `get_full_state()` methods, checkpoint save/load code | Auto |
 | **TYPE_ALIASES.md** | Type alias definitions | Type assignments, copilot instructions | Auto |
 | **COMPONENT_RELATIONSHIPS.md** | Component connections in preset architectures | Preset builder functions | Auto |
+| **ENUMERATIONS_REFERENCE.md** | All enumeration types | Enum class definitions | Auto |
 
 **Benefits**:
 - ✅ Always synchronized with codebase

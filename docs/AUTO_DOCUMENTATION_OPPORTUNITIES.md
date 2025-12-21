@@ -4,7 +4,7 @@
 
 This document tracks opportunities for auto-generating documentation from code to reduce maintenance burden and ensure documentation stays synchronized.
 
-## ✅ Currently Auto-Generated (14 documents)
+## ✅ Currently Auto-Generated (15 documents)
 
 ### API Reference (docs/api/)
 
@@ -60,9 +60,13 @@ This document tracks opportunities for auto-generating documentation from code t
     - Source: Type assignments in code, copilot instructions
     - Coverage: 17 type aliases across 6 categories
 
-14. **COMPONENT_RELATIONSHIPS.md** ✨ NEW - Component connections in preset architectures
+14. **COMPONENT_RELATIONSHIPS.md** - Component connections in preset architectures
     - Source: Preset builder functions
     - Coverage: 2 preset architectures (default, minimal) with mermaid diagrams
+
+15. **ENUMERATIONS_REFERENCE.md** ✨ NEW - All enumeration types
+    - Source: Enum class definitions
+    - Coverage: 47 enumerations across 8 categories
 
 **Generation**: Run `python scripts/generate_api_docs.py`
 
@@ -181,10 +185,10 @@ This document tracks opportunities for auto-generating documentation from code t
 ## 📊 Impact Analysis
 
 ### Current Coverage ✅ EXCEEDED TARGET
-- **14 docs auto-generated** (up from 12) - 100% synchronized with code
-- **41 docs manually maintained** (55 total - 14 auto)
-- **25% automation rate** 🎯 EXCEEDED 22% TARGET
-- **Maintenance time saved**: ~35 hours/year
+- **15 docs auto-generated** (up from 14) - 100% synchronized with code
+- **40 docs manually maintained** (55 total - 15 auto)
+- **27% automation rate** 🎯 EXCEEDED 25% TARGET
+- **Maintenance time saved**: ~40 hours/year
 
 ### Before This Session
 - **6 docs auto-generated**
@@ -204,13 +208,17 @@ This document tracks opportunities for auto-generating documentation from code t
 - **22% automation rate**
 - **New**: CHECKPOINT_FORMAT.md (state structure, file formats, compression)
 
-### After Phase 6: Type Aliases & Relationships (+2 docs) → 14 docs total ✅ CURRENT
-- **14 docs auto-generated**
-- **41 docs manually maintained**
-- **25% automation rate** 🎉
-- **2200+ lines** of auto-generated documentation
+### After Phase 6: Type Aliases & Relationships (+2 docs) → 14 docs total
+- **25% automation rate**
 - **New**: TYPE_ALIASES.md (17 aliases), COMPONENT_RELATIONSHIPS.md (2 presets with mermaid diagrams)
-- **Maintenance time saved**: 35+ hours/year
+
+### After Phase 7: Enumerations (+1 doc) → 15 docs total ✅ CURRENT
+- **15 docs auto-generated**
+- **40 docs manually maintained**
+- **27% automation rate** 🎉
+- **2400+ lines** of auto-generated documentation
+- **New**: ENUMERATIONS_REFERENCE.md (47 enums across 8 categories)
+- **Maintenance time saved**: 40+ hours/year
 
 ### Why Not Auto-Generate Everything?
 
