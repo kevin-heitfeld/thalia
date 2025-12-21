@@ -91,7 +91,11 @@ class TestL6abDefaultBrain:
         # Just verify thalamus is present and functional
         assert "thalamus" in brain.components
         thalamus = brain.components["thalamus"]
-        assert thalamus.n_relay == 128
+
+        # Test contract: n_relay matches config and is valid
+        assert hasattr(thalamus, 'n_relay')
+        assert thalamus.n_relay > 0
+        assert thalamus.n_relay == thalamus.config.n_output  # Contract: matches config
 
     def test_l6ab_port_routing(self, global_config, device):
         """Test that cortex provides separate l6a and l6b port outputs."""

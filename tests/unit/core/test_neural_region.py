@@ -43,7 +43,12 @@ class TestNeuralRegionBasics:
         region.add_input_source("thalamus", n_input=n_input)
 
         assert "thalamus" in region.synaptic_weights
-        assert region.synaptic_weights["thalamus"].shape == (n_neurons, n_input)
+        assert region.synaptic_weights["thalamus"].shape == (n_neurons, n_input), \
+            f"Weight shape should be ({n_neurons}, {n_input}), got {region.synaptic_weights['thalamus'].shape}"
+        assert not torch.isnan(region.synaptic_weights["thalamus"]).any(), \
+            "Weights contain NaN values"
+        assert not torch.isinf(region.synaptic_weights["thalamus"]).any(), \
+            "Weights contain Inf values"
         assert region.n_input == n_input
         assert "thalamus" in region.input_sources
 
@@ -66,9 +71,19 @@ class TestNeuralRegionBasics:
 
         # Check all sources registered
         assert len(region.synaptic_weights) == 3
-        assert region.synaptic_weights["thalamus"].shape == (n_neurons, n_thalamus)
-        assert region.synaptic_weights["hippocampus"].shape == (n_neurons, n_hippocampus)
-        assert region.synaptic_weights["pfc"].shape == (n_neurons, n_pfc)
+        assert region.synaptic_weights["thalamus"].shape == (n_neurons, n_thalamus), \
+            f"Thalamus weight shape should be ({n_neurons}, {n_thalamus}), got {region.synaptic_weights['thalamus'].shape}"
+        assert region.synaptic_weights["hippocampus"].shape == (n_neurons, n_hippocampus), \
+            f"Hippocampus weight shape should be ({n_neurons}, {n_hippocampus}), got {region.synaptic_weights['hippocampus'].shape}"
+        assert region.synaptic_weights["pfc"].shape == (n_neurons, n_pfc), \
+            f"PFC weight shape should be ({n_neurons}, {n_pfc}), got {region.synaptic_weights['pfc'].shape}"
+
+        # Validate all weights
+        for source in ["thalamus", "hippocampus", "pfc"]:
+            assert not torch.isnan(region.synaptic_weights[source]).any(), \
+                f"{source} weights contain NaN values"
+            assert not torch.isinf(region.synaptic_weights[source]).any(), \
+                f"{source} weights contain Inf values"
 
         # Check total input size
         assert region.n_input == n_thalamus + n_hippocampus + n_pfc
@@ -123,8 +138,12 @@ class TestNeuralRegionForward:
         output = region.forward({"thalamus": input_spikes})
 
         # Check output
-        assert output.shape == (50,)
-        assert output.dtype == torch.bool or output.dtype == torch.uint8
+        assert output.shape == (50,), \
+            f"Output shape should be (50,), got {output.shape}"
+        assert output.dtype == torch.bool or output.dtype == torch.uint8, \
+            f"Output should be bool or uint8, got {output.dtype}"
+        assert not torch.isnan(output.float()).any(), \
+            "Output contains NaN values"
         assert 0 <= output.sum() <= 50  # Some neurons spike
 
     def test_multi_source_forward(self):
@@ -145,8 +164,12 @@ class TestNeuralRegionForward:
         output = region.forward(inputs)
 
         # Check output
-        assert output.shape == (100,)
-        assert output.dtype in [torch.bool, torch.uint8]
+        assert output.shape == (100,), \
+            f"Output shape should be (100,), got {output.shape}"
+        assert output.dtype in [torch.bool, torch.uint8], \
+            f"Output should be bool or uint8, got {output.dtype}"
+        assert not torch.isnan(output.float()).any(), \
+            "Output contains NaN values"
 
     def test_missing_source_raises_error(self):
         """Test that providing unregistered source raises error."""
@@ -167,7 +190,12 @@ class TestNeuralRegionForward:
         output = region.forward({"thalamus": torch.rand(128) > 0.9})
 
         # Should work (hippocampus not in dict means no input from it)
-        assert output.shape == (100,)
+        assert output.shape == (100,), \
+            f"Output shape should be (100,), got {output.shape}"
+        assert output.dtype in [torch.bool, torch.uint8], \
+            f"Output should be bool or uint8, got {output.dtype}"
+        assert not torch.isnan(output.float()).any(), \
+            "Output contains NaN values"
 
 
 class TestNeuralRegionLearning:
@@ -232,8 +260,12 @@ class TestNeuralRegionStateManagement:
 
         # Output should be generated with correct shape and type
         assert region.output_spikes is not None
-        assert region.output_spikes.shape == (50,)  # n_neurons
-        assert region.output_spikes.dtype == torch.bool
+        assert region.output_spikes.shape == (50,), \
+            f"Output spikes shape should be (50,), got {region.output_spikes.shape}"
+        assert region.output_spikes.dtype == torch.bool, \
+            f"Output spikes should be bool, got {region.output_spikes.dtype}"
+        assert not torch.isnan(region.output_spikes.float()).any(), \
+            "Output spikes contain NaN values"
 
         # Reset
         region.reset_state()

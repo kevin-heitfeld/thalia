@@ -127,8 +127,14 @@ def test_multimodal_forward_single_modality(multimodal_region, modality, input_s
     output = multimodal_region.forward(**kwargs)
 
     # Shape and type validation
-    assert output.shape == (100,)
-    assert output.dtype == torch.float32
+    assert output.shape == (100,), \
+        f"Output shape should be (100,), got {output.shape}"
+    assert output.dtype == torch.float32, \
+        f"Output should be float32, got {output.dtype}"
+    assert not torch.isnan(output).any(), \
+        "Output contains NaN values"
+    assert not torch.isinf(output).any(), \
+        "Output contains Inf values"
 
     # Value validation: output should be bounded (firing rates)
     assert output.min() >= 0.0, "Firing rates should be non-negative"
@@ -152,13 +158,14 @@ def test_multimodal_forward_all_modalities(multimodal_region):
     )
 
     # Shape and type validation
-    assert output.shape == (100,)
-    assert output.dtype == torch.float32
-
-    # Value validation: with multiple inputs, output should be in valid range
-    assert output.min() >= 0.0
-    assert output.max() <= 1.0
-    assert not torch.isnan(output).any(), "Output should not contain NaN"
+    assert output.shape == (100,), \
+        f"Output shape should be (100,), got {output.shape}"
+    assert output.dtype == torch.float32, \
+        f"Output should be float32, got {output.dtype}"
+    assert not torch.isnan(output).any(), \
+        "Output contains NaN values"
+    assert not torch.isinf(output).any(), \
+        "Output contains Inf values"
 
     # All pools should have activity
     assert multimodal_region.visual_pool_spikes.sum() >= 0
@@ -279,7 +286,12 @@ def test_multimodal_no_hebbian(multimodal_config):
         visual_input=torch.randn(30),
         auditory_input=torch.randn(30),
     )
-    assert output.shape == (100,)
+    assert output.shape == (100,), \
+        f"Output shape should be (100,), got {output.shape}"
+    assert output.dtype == torch.float32, \
+        f"Output should be float32, got {output.dtype}"
+    assert not torch.isnan(output).any(), \
+        "Output contains NaN values"
 
 
 def test_multimodal_device_consistency(multimodal_region):

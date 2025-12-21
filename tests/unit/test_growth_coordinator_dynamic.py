@@ -31,27 +31,46 @@ def test_coordinate_growth_missing_region():
 
 
 def test_state_persistence():
-    """Growth coordinator should support checkpointing."""
-    brain = Mock()
-    brain.regions = {}
-    brain.pathway_manager = Mock()
+    """Growth coordinator should support checkpointing with real brain components."""
+    import torch
+    from thalia.core.dynamic_brain import DynamicBrain
+    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+
+    # Create small real brain
+    device = torch.device("cpu")
+    config = ThaliaConfig(
+        global_=GlobalConfig(device=str(device)),
+        brain=BrainConfig(
+            device=str(device),
+            sizes=RegionSizes(
+                input_size=10,
+                thalamus_size=20,
+                cortex_size=30,
+                hippocampus_size=40,
+                pfc_size=20,
+                n_actions=5,
+            ),
+        ),
+    )
+    brain = DynamicBrain.from_thalia_config(config)
 
     coordinator = GrowthCoordinator(brain)
 
-    # Add mock history
-    coordinator.history = [
-        {'region': 'cortex', 'n_neurons_added': 100},
-        {'region': 'hippocampus', 'n_neurons_added': 50},
-    ]
+    # Perform actual growth operations to create history
+    coordinator.coordinate_growth('cortex', n_new_neurons=10, reason='test growth 1')
+    coordinator.coordinate_growth('hippocampus', n_new_neurons=5, reason='test growth 2')
+
+    n_history_entries = len(coordinator.history)
+    assert n_history_entries >= 2, \
+        f"Should have at least 2 history entries after growth operations, got {n_history_entries}"
 
     # Save state
-    n_history_entries = 2
     state = coordinator.get_state()
     assert 'history' in state, "State should contain history"
     assert len(state['history']) == n_history_entries, \
         f"State should preserve {n_history_entries} history entries"
 
-    # Load state into new coordinator
+    # Load state into new coordinator (with same brain)
     new_coordinator = GrowthCoordinator(brain)
     new_coordinator.load_state(state)
 
@@ -60,6 +79,12 @@ def test_state_persistence():
         "Loaded coordinator should have same history length"
     assert new_coordinator.history[0]['region'] == 'cortex', "First entry should be cortex"
     assert new_coordinator.history[1]['region'] == 'hippocampus', "Second entry should be hippocampus"
+
+    # Verify actual growth amounts were recorded
+    assert new_coordinator.history[0]['n_neurons_added'] == 10, \
+        "First entry should record 10 neurons added"
+    assert new_coordinator.history[1]['n_neurons_added'] == 5, \
+        "Second entry should record 5 neurons added"
 
 
 def test_growth_history_retrieval():

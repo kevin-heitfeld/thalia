@@ -45,6 +45,7 @@ def test_dynamic_brain_creation():
 
     brain = DynamicBrain(components, connections, global_config)
 
+    # Test explicit setup (2 components explicitly created above)
     assert len(brain.components) == 2
     assert len(brain.connections) == 1
     assert "region1" in brain.components
@@ -74,10 +75,15 @@ def test_dynamic_brain_topology_graph():
 
     brain = DynamicBrain(components, connections, global_config)
 
-    # Check topology
-    assert "b" in brain._topology["a"]
-    assert "c" in brain._topology["b"]
-    assert len(brain._topology["c"]) == 0
+    # Test topology via public API behavior
+    # Verify components exist and are connected correctly
+    assert "a" in brain.components
+    assert "b" in brain.components
+    assert "c" in brain.components
+
+    # Verify connections exist
+    assert ("a", "b") in brain.connections
+    assert ("b", "c") in brain.connections
 
 
 def test_dynamic_brain_get_component():
@@ -173,8 +179,11 @@ def test_brain_builder_creation():
     builder = BrainBuilder(global_config)
 
     assert builder.global_config is global_config
-    assert len(builder._components) == 0
-    assert len(builder._connections) == 0
+
+    # Test via public API - build empty brain
+    brain = builder.build()
+    assert len(brain.components) == 0
+    assert len(brain.connections) == 0
 
 
 def test_brain_builder_add_component():

@@ -86,10 +86,20 @@ class TestL6abSplit:
         l23_size = cortex_config_l6ab.l23_size
 
         # L2/3 → L6a weights
-        assert cortex.synaptic_weights["l23_l6a"].shape == (l6a_size, l23_size)
+        assert cortex.synaptic_weights["l23_l6a"].shape == (l6a_size, l23_size), \
+            f"L6a weight shape should be ({l6a_size}, {l23_size}), got {cortex.synaptic_weights['l23_l6a'].shape}"
+        assert not torch.isnan(cortex.synaptic_weights["l23_l6a"]).any(), \
+            "L6a weights contain NaN values"
+        assert not torch.isinf(cortex.synaptic_weights["l23_l6a"]).any(), \
+            "L6a weights contain Inf values"
 
         # L2/3 → L6b weights
-        assert cortex.synaptic_weights["l23_l6b"].shape == (l6b_size, l23_size)
+        assert cortex.synaptic_weights["l23_l6b"].shape == (l6b_size, l23_size), \
+            f"L6b weight shape should be ({l6b_size}, {l23_size}), got {cortex.synaptic_weights['l23_l6b'].shape}"
+        assert not torch.isnan(cortex.synaptic_weights["l23_l6b"]).any(), \
+            "L6b weights contain NaN values"
+        assert not torch.isinf(cortex.synaptic_weights["l23_l6b"]).any(), \
+            "L6b weights contain Inf values"
 
         # Weights should be different (not shared)
         min_size = min(l6a_size, l6b_size)
@@ -118,13 +128,21 @@ class TestL6abSplit:
 
         # Check that L6a spikes are generated
         assert cortex.state.l6a_spikes is not None
-        assert cortex.state.l6a_spikes.shape == (l6a_size,)
-        assert cortex.state.l6a_spikes.dtype == torch.bool
+        assert cortex.state.l6a_spikes.shape == (l6a_size,), \
+            f"L6a spikes shape should be ({l6a_size},), got {cortex.state.l6a_spikes.shape}"
+        assert cortex.state.l6a_spikes.dtype == torch.bool, \
+            f"L6a spikes should be bool, got {cortex.state.l6a_spikes.dtype}"
+        assert not torch.isnan(cortex.state.l6a_spikes.float()).any(), \
+            "L6a spikes contain NaN values"
 
         # Check that L6b spikes are generated
         assert cortex.state.l6b_spikes is not None
-        assert cortex.state.l6b_spikes.shape == (l6b_size,)
-        assert cortex.state.l6b_spikes.dtype == torch.bool
+        assert cortex.state.l6b_spikes.shape == (l6b_size,), \
+            f"L6b spikes shape should be ({l6b_size},), got {cortex.state.l6b_spikes.shape}"
+        assert cortex.state.l6b_spikes.dtype == torch.bool, \
+            f"L6b spikes should be bool, got {cortex.state.l6b_spikes.dtype}"
+        assert not torch.isnan(cortex.state.l6b_spikes.float()).any(), \
+            "L6b spikes contain NaN values"
 
         # Spikes should be independent (different population sizes)
         assert l6a_size != l6b_size
@@ -148,13 +166,23 @@ class TestL6abSplit:
         # Get L6a output via port
         l6a_output = cortex.get_output("l6a")
         assert l6a_output is not None
-        assert l6a_output.shape == (l6a_size,)
+        assert l6a_output.shape == (l6a_size,), \
+            f"L6a output shape should be ({l6a_size},), got {l6a_output.shape}"
+        assert l6a_output.dtype == torch.bool, \
+            f"L6a output should be bool spikes, got {l6a_output.dtype}"
+        assert not torch.isnan(l6a_output.float()).any(), \
+            "L6a output contains NaN values"
         assert torch.equal(l6a_output, cortex.state.l6a_spikes)
 
         # Get L6b output via port
         l6b_output = cortex.get_output("l6b")
         assert l6b_output is not None
-        assert l6b_output.shape == (l6b_size,)
+        assert l6b_output.shape == (l6b_size,), \
+            f"L6b output shape should be ({l6b_size},), got {l6b_output.shape}"
+        assert l6b_output.dtype == torch.bool, \
+            f"L6b output should be bool spikes, got {l6b_output.dtype}"
+        assert not torch.isnan(l6b_output.float()).any(), \
+            "L6b output contains NaN values"
         assert torch.equal(l6b_output, cortex.state.l6b_spikes)
 
         # Verify outputs are different tensors
