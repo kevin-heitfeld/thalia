@@ -889,7 +889,7 @@ Test Coverage:
   * File I/O: 2 tests (save/load utilities, CPU↔CUDA)
   * Edge cases: 4 tests (optional fields, enhanced mode, empty traces)
 
-#### 3.2 Striatum (8 hours) - **INVESTIGATED** ✅ → **PLANNING** 📋
+#### 3.2 Striatum (8 hours) - **COMPLETED** ✅ (Commit 708639a)
 - **Current**: NO state dataclass, has StriatumStateTracker + CheckpointManager
 - **Files**: `regions/striatum/striatum.py` (1979 lines), `checkpoint_manager.py` (651 lines), `state_tracker.py` (297 lines)
 - **Investigation results**:
@@ -906,6 +906,24 @@ Test Coverage:
   - Goal modulation weights (PFC→Striatum)
   - D1/D2 delay buffers (CircularDelayBuffer state)
 - **Complexity**: High due to D1/D2 separation and multiple component states
+- **Status**: Implemented with 18 comprehensive tests (all passing)
+- **Implementation Details**:
+  * 25 state fields covering all striatal state
+  * D1/D2 opponent pathway states (opaque dicts)
+  * Vote accumulation for action selection
+  * Action selection state and history
+  * Exploration state with UCB manager
+  * Value estimates and RPE tracking
+  * Goal modulation weights (PFC→Striatum)
+  * Delay buffers with circular pointers (15ms D1, 25ms D2)
+  * Homeostatic tracking (activity EMA, trial stats)
+  * Neuromodulator levels (DA, ACh, NE) from forward_coordinator
+  * Proper handling of optional features (RPE, goal conditioning, delays)
+- **Test Coverage**: 18/18 tests passing
+  * Protocol compliance: 8 tests (serialization, device transfer, roundtrip, optional fields, delay buffers)
+  * Region integration: 4 tests (get_state, load_state, roundtrip, reset)
+  * File I/O: 2 tests (save/load utilities, real region checkpoint)
+  * Edge cases: 4 tests (empty state, large buffers, partial features, mismatched sizes)
 
 ##### 3.2 Implementation Plan (Detailed)
 
