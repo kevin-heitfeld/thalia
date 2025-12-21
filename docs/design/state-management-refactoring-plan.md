@@ -1,11 +1,11 @@
 # State Management Refactoring - Implementation Plan
 
 **Date**: December 21, 2025
-**Status**: ⏳ IN PROGRESS (Phase 2.3 COMPLETED → Phase 2.4 NEXT)
+**Status**: ⏳ IN PROGRESS (Phase 2.4 COMPLETED → Phase 3.1 NEXT)
 **Estimated Effort**: 59-73 hours
 **Breaking Changes**: Very High
 **Risk Level**: High
-**Completed**: 126/126 tests passing (Phase 0, 1, 2.1, 2.2, 2.3)
+**Completed**: 143/143 tests passing (Phase 0, 1, 2.1, 2.2, 2.3, 2.4)
 
 ---
 
@@ -31,8 +31,8 @@ This document outlines a comprehensive refactoring of state management to create
 - ✅ Phase 2.1: PrefrontalState (22/22 tests) - Commit 917f7ba
 - ✅ Phase 2.2: ThalamicRelayState (22/22 tests) - Commit 815b9e4
 - ✅ Phase 2.3: HippocampusState (16/16 tests) - Commit 8a68154
-- 🚧 Phase 2.4: LayeredCortexState (NEXT)
-- **Total Tests Passing**: 126/126 (100%)
+- ✅ Phase 2.4: LayeredCortexState (17/17 tests) - Commit [PENDING]
+- **Total Tests Passing**: 143/143 (100%)
 
 ---
 
@@ -805,14 +805,55 @@ Test Coverage:
 - Memory encoding traces (sample, DG, CA3, NMDA)
 - Feedforward inhibition strength preservation
 
-#### 2.4 LayeredCortexState (5 hours) 🚧 **NEXT**
+#### 2.4 LayeredCortexState (5 hours) ✅ **COMPLETED**
+
+**Status**: ✅ COMPLETED (December 21, 2025)
+**Duration**: ~5 hours
+**Commit**: [PENDING]
+
 - **Why last**: Most complex (15+ fields, multi-layer)
-- **Files**: `regions/cortex/config.py`
-- **Special considerations**:
-  - 6 layer spike states (L4, L2/3, L5, L6a, L6b)
-  - 5 STDP trace fields
-  - Top-down modulation
-  - FFI strength and alpha suppression
+- **Files**: `regions/cortex/config.py`, `regions/cortex/layered_cortex.py`
+- **Completed Changes**:
+  - ✅ LayeredCortexState inherits from BaseRegionState
+  - ✅ Added explicit neuromodulator fields (dopamine=0.0, acetylcholine=0.0, norepinephrine=0.0)
+  - ✅ Implemented to_dict() serializing all 23 state fields (19 base + 1 STP + 3 scalars)
+  - ✅ Implemented from_dict() with device transfer (device as str parameter)
+  - ✅ Implemented reset() as in-place mutation (returns None)
+  - ✅ Created get_state() to capture complete cortex state
+  - ✅ Created load_state() to restore complete cortex state
+  - ✅ Added STP state field for L2/3 recurrent pathway
+
+**Special Considerations**:
+- **Complex State**: 23 total fields across 6 layers (L4, L2/3, L5, L6a, L6b)
+- **6 Layer Spike States**: Each with independent spike patterns
+- **5 STDP Trace Fields**: One per layer for spike-timing dependent plasticity
+- **L2/3 Recurrent Activity**: Accumulator for lateral connections
+- **Top-Down Modulation**: From higher cortical areas
+- **Feedforward Inhibition (FFI) Strength**: Dynamic inhibition control
+- **Alpha Suppression**: Oscillatory attention modulation (1.0 = no suppression)
+- **Gamma Attention**: Phase and per-neuron gating
+- **1 STP Pathway**: L2/3 recurrent (depression, U=0.5) - CRITICAL for WM flexibility
+- **Plasticity Monitoring**: last_plasticity_delta tracks continuous learning
+
+**Test Results**:
+```
+17/17 tests passing (100%)
+143/143 total state management tests passing (100%)
+
+Test Coverage:
+- Protocol compliance (7 tests): to_dict, from_dict, reset, device transfer with STP dict
+- Integration (4 tests): get_state captures STP, load_state restores all, round-trip consistency
+- File I/O (2 tests): save/load with utility functions, CUDA→CPU transfer
+- Edge cases (4 tests): None tensors, missing STP, all 6 layers populated, 2D STP tensors
+```
+
+**Complexity Notes**:
+- Most fields of any state so far: 23 total (vs 19 for hippocampus, 14 for thalamus)
+- 6-layer architecture requires careful spike routing
+- Gamma attention adds phase-based gating dynamics
+- Alpha suppression modulates layer responsiveness
+- STP on L2/3 recurrent enables flexible working memory
+- Top-down modulation enables hierarchical predictive coding
 
 **Validation for each**:
 - [ ] State roundtrip: `s2 = StateClass.from_dict(s1.to_dict(), device)` → `s1 == s2`

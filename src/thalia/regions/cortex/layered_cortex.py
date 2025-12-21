@@ -1950,4 +1950,142 @@ class LayeredCortex(NeuralRegion):
         if "stp_l23_recurrent" in learning_state:
             self.stp_l23_recurrent.load_state(learning_state["stp_l23_recurrent"])
 
+    def get_state(self) -> LayeredCortexState:
+        """Get current state as LayeredCortexState (RegionState protocol).
+
+        Returns LayeredCortexState with:
+        - All layer spike states (L4, L2/3, L5, L6a, L6b)
+        - All STDP traces per layer
+        - L2/3 recurrent activity accumulation
+        - Top-down modulation and attention gating
+        - Feedforward inhibition and alpha suppression
+        - STP state for L2/3 recurrent pathway
+        - Neuromodulator levels
+
+        This is the NEW API for RegionState protocol compliance.
+        For backward compatibility, use get_full_state().
+
+        Returns:
+            LayeredCortexState with complete cortex state
+        """
+        # Get STP state
+        stp_state = self.stp_l23_recurrent.get_state()
+
+        return LayeredCortexState(
+            # Base region state
+            spikes=self.state.spikes.clone() if self.state.spikes is not None else None,
+            membrane=self.state.membrane.clone() if self.state.membrane is not None else None,
+            dopamine=self.state.dopamine,
+            acetylcholine=self.state.acetylcholine,
+            norepinephrine=self.state.norepinephrine,
+            # Input
+            input_spikes=self.state.input_spikes.clone() if self.state.input_spikes is not None else None,
+            # Layer spike states
+            l4_spikes=self.state.l4_spikes.clone() if self.state.l4_spikes is not None else None,
+            l23_spikes=self.state.l23_spikes.clone() if self.state.l23_spikes is not None else None,
+            l5_spikes=self.state.l5_spikes.clone() if self.state.l5_spikes is not None else None,
+            l6a_spikes=self.state.l6a_spikes.clone() if self.state.l6a_spikes is not None else None,
+            l6b_spikes=self.state.l6b_spikes.clone() if self.state.l6b_spikes is not None else None,
+            # L2/3 recurrent activity
+            l23_recurrent_activity=self.state.l23_recurrent_activity.clone() if self.state.l23_recurrent_activity is not None else None,
+            # STDP traces
+            l4_trace=self.state.l4_trace.clone() if self.state.l4_trace is not None else None,
+            l23_trace=self.state.l23_trace.clone() if self.state.l23_trace is not None else None,
+            l5_trace=self.state.l5_trace.clone() if self.state.l5_trace is not None else None,
+            l6a_trace=self.state.l6a_trace.clone() if self.state.l6a_trace is not None else None,
+            l6b_trace=self.state.l6b_trace.clone() if self.state.l6b_trace is not None else None,
+            # Modulation state
+            top_down_modulation=self.state.top_down_modulation.clone() if self.state.top_down_modulation is not None else None,
+            ffi_strength=self.state.ffi_strength,
+            alpha_suppression=self.state.alpha_suppression,
+            # Gamma attention
+            gamma_attention_phase=self.state.gamma_attention_phase,
+            gamma_attention_gate=self.state.gamma_attention_gate.clone() if self.state.gamma_attention_gate is not None else None,
+            # Plasticity monitoring
+            last_plasticity_delta=self.state.last_plasticity_delta,
+            # STP state
+            stp_l23_recurrent_state=stp_state,
+        )
+
+    def load_state(self, state: LayeredCortexState) -> None:
+        """Load state from LayeredCortexState (RegionState protocol).
+
+        Restores:
+        - All layer spike states (L4, L2/3, L5, L6a, L6b)
+        - All STDP traces per layer
+        - L2/3 recurrent activity accumulation
+        - Top-down modulation and attention gating
+        - Feedforward inhibition and alpha suppression
+        - STP state for L2/3 recurrent pathway
+        - Neuromodulator levels
+
+        This is the NEW API for RegionState protocol compliance.
+        For backward compatibility, use load_full_state().
+
+        Args:
+            state: LayeredCortexState to restore
+
+        Note:
+            Does NOT restore weights or BCM thresholds - those are learning state,
+            not runtime state. Use load_full_state() for complete checkpoint loading.
+        """
+        # Restore base region state
+        if state.spikes is not None:
+            self.state.spikes = state.spikes.to(self.device)
+        if state.membrane is not None:
+            self.state.membrane = state.membrane.to(self.device)
+        self.state.dopamine = state.dopamine
+        self.state.acetylcholine = state.acetylcholine
+        self.state.norepinephrine = state.norepinephrine
+
+        # Restore input
+        if state.input_spikes is not None:
+            self.state.input_spikes = state.input_spikes.to(self.device)
+
+        # Restore layer spike states
+        if state.l4_spikes is not None:
+            self.state.l4_spikes = state.l4_spikes.to(self.device)
+        if state.l23_spikes is not None:
+            self.state.l23_spikes = state.l23_spikes.to(self.device)
+        if state.l5_spikes is not None:
+            self.state.l5_spikes = state.l5_spikes.to(self.device)
+        if state.l6a_spikes is not None:
+            self.state.l6a_spikes = state.l6a_spikes.to(self.device)
+        if state.l6b_spikes is not None:
+            self.state.l6b_spikes = state.l6b_spikes.to(self.device)
+
+        # Restore L2/3 recurrent activity
+        if state.l23_recurrent_activity is not None:
+            self.state.l23_recurrent_activity = state.l23_recurrent_activity.to(self.device)
+
+        # Restore STDP traces
+        if state.l4_trace is not None:
+            self.state.l4_trace = state.l4_trace.to(self.device)
+        if state.l23_trace is not None:
+            self.state.l23_trace = state.l23_trace.to(self.device)
+        if state.l5_trace is not None:
+            self.state.l5_trace = state.l5_trace.to(self.device)
+        if state.l6a_trace is not None:
+            self.state.l6a_trace = state.l6a_trace.to(self.device)
+        if state.l6b_trace is not None:
+            self.state.l6b_trace = state.l6b_trace.to(self.device)
+
+        # Restore modulation state
+        if state.top_down_modulation is not None:
+            self.state.top_down_modulation = state.top_down_modulation.to(self.device)
+        self.state.ffi_strength = state.ffi_strength
+        self.state.alpha_suppression = state.alpha_suppression
+
+        # Restore gamma attention
+        self.state.gamma_attention_phase = state.gamma_attention_phase
+        if state.gamma_attention_gate is not None:
+            self.state.gamma_attention_gate = state.gamma_attention_gate.to(self.device)
+
+        # Restore plasticity monitoring
+        self.state.last_plasticity_delta = state.last_plasticity_delta
+
+        # Restore STP state
+        if state.stp_l23_recurrent_state is not None:
+            self.stp_l23_recurrent.load_state(state.stp_l23_recurrent_state)
+
     # endregion
