@@ -994,13 +994,16 @@ class ThalamicRelay(NeuralRegion):
             new_trn_recurrent_cols = new_weights_for(new_n_trn, n_trn_growth)
             self.trn_recurrent.data = torch.cat([expanded_trn_recurrent, new_trn_recurrent_cols], dim=1)
 
-        # 6. Expand neuron populations
+        # 6. Expand neuron populations using efficient in-place growth (ConductanceLIF)
         self.n_relay = new_n_relay
         self.n_trn = new_n_trn
-        self.relay_neurons = create_relay_neurons(self.n_relay, self.device)
-        self.relay_neurons.to(self.device)
-        self.trn_neurons = create_trn_neurons(self.n_trn, self.device)
-        self.trn_neurons.to(self.device)
+
+        # Grow relay neurons
+        self.relay_neurons.grow_neurons(n_new)
+
+        # Grow TRN neurons
+        if n_trn_growth > 0:
+            self.trn_neurons.grow_neurons(n_trn_growth)
 
         # 7. Rebuild center-surround filter with new output size
         self._build_center_surround_filter()

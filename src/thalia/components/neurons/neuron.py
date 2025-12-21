@@ -424,6 +424,63 @@ class ConductanceLIF(nn.Module):
         if state["refractory"] is not None:
             self.refractory = state["refractory"].to(device)
 
+    def grow_neurons(self, n_new: int) -> None:
+        """Grow neuron population by adding new neurons.
+
+        Preserves existing neuron state and expands all state tensors.
+        New neurons start at resting potential with zero conductances.
+        This is more efficient than recreating the entire neuron module.
+
+        Args:
+            n_new: Number of neurons to add
+
+        Example:
+            >>> neurons = ConductanceLIF(n_neurons=100, config=config)
+            >>> neurons.reset_state()
+            >>> # ... training ...
+            >>> neurons.grow_neurons(20)  # Now 120 neurons, old state preserved
+            >>> assert neurons.n_neurons == 120
+        """
+        if n_new <= 0:
+            return
+
+        old_n = self.n_neurons
+        new_n = old_n + n_new
+        device = self.C_m.device
+
+        # Update neuron count
+        self.n_neurons = new_n
+
+        # Expand per-neuron threshold buffer (registered buffer)
+        new_thresholds = torch.full(
+            (n_new,),
+            self.config.v_threshold,
+            dtype=torch.float32,
+            device=device
+        )
+        self.v_threshold = torch.cat([self.v_threshold, new_thresholds])
+
+        # Expand state tensors (only if already initialized)
+        if self.membrane is not None:
+            # Preserve old state, initialize new neurons at resting potential
+            new_membrane = torch.full(
+                (n_new,),
+                self.config.E_L,
+                device=device,
+                dtype=torch.float32
+            )
+            self.membrane = torch.cat([self.membrane, new_membrane])
+
+            # Zero conductances for new neurons
+            new_zeros = torch.zeros(n_new, device=device, dtype=torch.float32)
+            self.g_E = torch.cat([self.g_E, new_zeros])
+            self.g_I = torch.cat([self.g_I, new_zeros])
+            self.g_adapt = torch.cat([self.g_adapt, new_zeros])
+
+            # Zero refractory for new neurons
+            new_ref = torch.zeros(n_new, device=device, dtype=torch.int32)
+            self.refractory = torch.cat([self.refractory, new_ref])
+
     def _apply(self, fn, recurse: bool = True):
         """Apply a function to all tensors, including state variables.
 

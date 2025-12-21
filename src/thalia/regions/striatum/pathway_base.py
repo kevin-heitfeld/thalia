@@ -305,28 +305,9 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         # 2. Reset eligibility traces (strategy will reinitialize on next update)
         self.learning_strategy.reset_state()
 
-        # 3. Recreate neurons with new size (preserving old state)
-        old_membrane = self.neurons.membrane.clone() if self.neurons.membrane is not None else None
-        old_g_E = self.neurons.g_E.clone() if self.neurons.g_E is not None else None
-        old_g_I = self.neurons.g_I.clone() if self.neurons.g_I is not None else None
-        old_refractory = self.neurons.refractory.clone() if self.neurons.refractory is not None else None
-
-        # Update config
+        # 3. Update config and grow neurons using efficient in-place growth (ConductanceLIF)
         self.config.n_output = new_n_output
-
-        # Create new neurons
-        self.neurons = self._create_neurons()
-        self.neurons.reset_state()
-
-        # Restore old state for existing neurons
-        if old_membrane is not None:
-            self.neurons.membrane[:old_n_output] = old_membrane
-        if old_g_E is not None:
-            self.neurons.g_E[:old_n_output] = old_g_E
-        if old_g_I is not None:
-            self.neurons.g_I[:old_n_output] = old_g_I
-        if old_refractory is not None:
-            self.neurons.refractory[:old_n_output] = old_refractory
+        self.neurons.grow_neurons(n_new_neurons)
 
     def grow_input(self, n_new_inputs: int, initialization: str = 'xavier') -> None:
         """

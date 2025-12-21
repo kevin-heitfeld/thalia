@@ -510,13 +510,11 @@ class Cerebellum(NeuralRegion):
         self.config = replace(self.config, n_output=new_n_output)
 
         # =====================================================================
-        # 3. EXPAND NEURON POPULATION using base helper (classic pathway only)
+        # 3. EXPAND NEURON POPULATION (classic pathway only)
         # =====================================================================
         if not self.use_enhanced:
-            self.neurons = self._recreate_neurons_with_state(
-                neuron_factory=self._create_neurons,
-                old_n_output=old_n_output,
-            )
+            # Use efficient in-place neuron growth (ConductanceLIF)
+            self.neurons.grow_neurons(n_new)
         else:
             # Enhanced pathway: add new Purkinje cells
             for _ in range(n_new):

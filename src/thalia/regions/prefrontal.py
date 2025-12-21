@@ -501,54 +501,6 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         # Reset subsystems using helper
         self._reset_subsystems('neurons', 'dopamine_system', 'stp_recurrent')
 
-    # =========================================================================
-    # GROWTH IMPLEMENTATION - Uses GrowthMixin template method
-    # =========================================================================
-
-    def _expand_layer_weights(
-        self,
-        n_new: int,
-        initialization: str,
-        sparsity: float,
-    ) -> None:
-        """Expand prefrontal cortex weights.
-
-        PFC has a single weight matrix for input→neurons connections.
-        """
-        # Update synaptic weights in dict (not self.weights)
-        self.synaptic_weights["default"] = self._expand_weights(
-            current_weights=self.synaptic_weights["default"],
-            n_new=n_new,
-            initialization=initialization,
-            sparsity=sparsity,
-            scale=1.0,  # Default scale for PFC
-        )
-
-    def _update_config_after_growth(self, new_n_output: int) -> None:
-        """Update PFC configuration after neuron growth."""
-        self.config = replace(self.config, n_output=new_n_output)
-        if hasattr(self, 'pfc_config'):
-            self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
-
-    def _expand_state_tensors_after_growth(self, n_new: int) -> None:
-        """Reset PFC state after growth.
-
-        Note: We reset state rather than expand because PFC working memory
-        should start fresh after growth (no partial state preservation).
-        """
-        # Reset learning strategy state (traces, eligibility)
-        if hasattr(self, 'learning_strategy') and self.learning_strategy is not None:
-            self.learning_strategy.reset_state()
-
-        # Reset all state tensors to new size
-        self.state = PrefrontalState(
-            membrane=torch.zeros(self.config.n_output, device=self.device),
-            spikes=torch.zeros(self.config.n_output, dtype=torch.bool, device=self.device),
-            working_memory=torch.zeros(self.config.n_output, device=self.device),
-            update_gate=torch.ones(self.config.n_output, device=self.device),
-            dopamine=self.pfc_config.dopamine_baseline,
-        )
-
     def forward(
         self,
         inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
@@ -849,9 +801,8 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         # Zero diagonal (no self-inhibition)
         self.inhib_weights.data.fill_diagonal_(0.0)
 
-        # 4. Expand neurons
-        self.neurons = self._create_neurons()
-        self.neurons.to(self.device)
+        # 4. Expand neurons using efficient in-place growth
+        self.neurons.grow_neurons(n_new)
 
         # 5. Update dopamine gating system
         self.dopamine_system = DopamineGatingSystem(

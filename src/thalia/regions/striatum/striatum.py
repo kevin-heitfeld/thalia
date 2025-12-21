@@ -1077,19 +1077,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.recent_spikes = expanded_1d['recent_spikes']
 
         # =====================================================================
-        # 4. EXPAND NEURON POPULATIONS using base helper
+        # 4. EXPAND NEURON POPULATIONS using efficient in-place growth (ConductanceLIF)
         # =====================================================================
         # Expand D1-MSN and D2-MSN neuron populations
         if hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
-            self.d1_neurons = self._recreate_neurons_with_state(
-                neuron_factory=self._create_d1_neurons,
-                old_n_output=old_n_output,
-            )
+            self.d1_neurons.grow_neurons(n_new_neurons)
         if hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
-            self.d2_neurons = self._recreate_neurons_with_state(
-                neuron_factory=self._create_d2_neurons,
-                old_n_output=old_n_output,
-            )
+            self.d2_neurons.grow_neurons(n_new_neurons)
 
         # =====================================================================
         # 5. UPDATE ACTION-RELATED TRACKING (1D per action, not per neuron)

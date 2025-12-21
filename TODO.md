@@ -58,7 +58,6 @@
 
 ---
 
-- Add growth() support to ConductanceLIF
 - `docs\design\circuit_modeling_plan.md`
 - Sparse computations throughout?
 - Consciousness / Self-Awareness:
