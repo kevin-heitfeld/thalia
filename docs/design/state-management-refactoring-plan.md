@@ -1,10 +1,11 @@
 # State Management Refactoring - Implementation Plan
 
 **Date**: December 21, 2025
-**Status**: Planning
-**Estimated Effort**: 40+ hours
+**Status**: ⏳ IN PROGRESS (Phase 2.3)
+**Estimated Effort**: 59-73 hours
 **Breaking Changes**: Very High
 **Risk Level**: High
+**Completed**: 110/110 tests passing (Phase 0, 1, 2.1, 2.2)
 
 ---
 
@@ -621,21 +622,37 @@ Key test coverage:
 
 ---
 
-### Phase 1: Foundation (4-6 hours)
+### Phase 1: Foundation (4-6 hours) ✅ **COMPLETED**
+
+**Status**: ✅ COMPLETED (December 21, 2025)
 
 **Tasks**:
-1. Create `src/thalia/core/region_state.py` with RegionState ABC
-2. Add comprehensive docstrings and type hints
-3. Write unit tests for base class (diff, _values_equal, _apply_migrations)
+1. ✅ Create `src/thalia/core/region_state.py` with RegionState ABC
+2. ✅ Add comprehensive docstrings and type hints
+3. ✅ Write unit tests for base class (validate_state_protocol, utility functions)
 
 **Deliverables**:
-- `src/thalia/core/region_state.py` (~200 lines)
-- `tests/unit/core/test_region_state.py` (~150 lines)
+- ✅ `src/thalia/core/region_state.py` (~329 lines)
+- ✅ `tests/unit/core/test_region_state.py` (~475 lines, 24 tests)
+
+**Test Results**:
+```
+24 passed in 1.2s
+
+Key test coverage:
+- BaseRegionState initialization and protocol methods
+- to_dict/from_dict serialization roundtrip
+- Device transfer (CPU ↔ CUDA)
+- State reset functionality
+- File I/O with utility functions
+- Protocol validation
+- Edge cases (None fields, nested dicts, partial fields)
+```
 
 **Validation**:
-- [ ] Base class tests pass
-- [ ] Type hints validate with pyright
-- [ ] Docstrings follow project conventions
+- [x] Base class tests pass
+- [x] Type hints validate with pyright
+- [x] Docstrings follow project conventions
 
 ---
 
@@ -643,34 +660,106 @@ Key test coverage:
 
 **Order of Implementation** (easiest to hardest):
 
-#### 2.1 PrefrontalState (2 hours)
-- **Why first**: Simplest state (4 fields)
+#### 2.1 PrefrontalState (2 hours) ✅ **COMPLETED**
+
+**Status**: ✅ COMPLETED (December 21, 2025)
+
+- **Why first**: Simplest state (4 fields + neuromodulators)
 - **Files**: `regions/prefrontal.py`
-- **Changes**:
-  ```python
-  @dataclass
-  class PrefrontalState(NeuralComponentState, RegionState):
-      STATE_VERSION: ClassVar[int] = 1
-      # ... existing fields ...
+- **Completed Changes**:
+  - ✅ PrefrontalState inherits from BaseRegionState
+  - ✅ Added missing neuromodulator fields (acetylcholine, norepinephrine)
+  - ✅ Implemented to_dict() serializing all 9 state fields
+  - ✅ Implemented from_dict() with device transfer
+  - ✅ Implemented reset() resetting all fields
+  - ✅ Updated get_state() and load_state() in Prefrontal region
+  - ✅ Added STP state field for recurrent connections
 
-      def to_dict(self) -> Dict[str, Any]: ...
-      @classmethod
-      def from_dict(cls, data, device): ...
-      def reset(self) -> None: ...
-  ```
+**Test Results**:
+```
+22/22 tests passing (100%)
 
-#### 2.2 ThalamicRelayState (3 hours)
-- **Why second**: Moderate complexity (8 fields)
+Key test coverage:
+- Protocol compliance validation
+- Integration with Prefrontal region
+- Device transfer (CPU/CUDA)
+- File I/O with utility functions
+- STP state persistence
+- Working memory state preservation
+- Dopamine gating state (handles DA dynamics)
+- Edge cases (None fields, nested STP dicts)
+```
+
+**Commit**: 917f7ba
+
+#### 2.2 ThalamicRelayState (3 hours) ✅ **COMPLETED**
+
+**Status**: ✅ COMPLETED (December 21, 2025)
+
+- **Why second**: Moderate complexity (14 fields, dual STP pathways)
 - **Files**: `regions/thalamus.py`
-- **Special considerations**: Burst/tonic mode serialization
+- **Completed Changes**:
+  - ✅ ThalamicRelayState inherits from BaseRegionState
+  - ✅ Added explicit neuromodulator fields (dopamine, acetylcholine, norepinephrine)
+  - ✅ Implemented to_dict() serializing all 14 state fields
+  - ✅ Implemented from_dict() with device transfer (signature fixed to match base)
+  - ✅ Implemented reset() as in-place mutation (returns None)
+  - ✅ Updated get_state() and load_state() in ThalamicRelay region
+  - ✅ Added dual STP state fields (sensory→relay and L6→relay pathways)
 
-#### 2.3 HippocampusState (4 hours)
-- **Why third**: Complex (10+ fields, persistent activity)
-- **Files**: `regions/hippocampus/config.py`
-- **Special considerations**:
-  - CA3 persistent activity state
-  - STDP traces for multiple pathways
+**Special Considerations**:
+- Dual STP modules: sensory→relay (U=0.4, moderate depression) and L6→relay (U=0.7, strong depression)
+- L6 STP state may have None tensors if no L6 input provided (expected behavior)
+- Burst/tonic mode state preserved across checkpoints
+- Alpha oscillation gating state captured for attention modulation
+- Method signatures must match BaseRegionState (from_dict device as str, reset() returns None)
+
+**Test Results**:
+```
+22/22 tests passing (100%)
+110/110 total state management tests passing (100%)
+
+Key test coverage:
+- Protocol compliance validation
+- Integration with ThalamicRelay region
+- Device transfer (CPU/CUDA)
+- File I/O with utility functions
+- Dual STP state persistence (sensory and L6 feedback)
+- Relay and TRN neuron state preservation
+- Burst/tonic mode state preservation
+- Alpha gating state preservation
+- Edge cases (None fields, nested STP dicts, partial fields)
+```
+
+**Commit**: 815b9e4
+
+#### 2.3 HippocampusState (4 hours) ⏳ **IN PROGRESS**
+
+**Status**: ⏳ IN PROGRESS (December 21, 2025)
+
+- **Why third**: Complex (10+ fields, persistent activity, multiple STP pathways)
+- **Files**: `regions/hippocampus/config.py`, `regions/hippocampus/hippocampus.py`
+- **Planned Changes**:
+  - [ ] HippocampusState inherits from BaseRegionState
+  - [ ] Add explicit neuromodulator fields
+  - [ ] Implement to_dict() serializing all state fields
+  - [ ] Implement from_dict() with device transfer
+  - [ ] Implement reset() as in-place mutation
+  - [ ] Update get_state() and load_state() in Hippocampus region
+  - [ ] Add STP state fields for 4 pathways (mossy fiber, schaffer, EC→CA1, CA3 recurrent)
+
+**Special considerations**:
+  - CA3 persistent activity state (attractor dynamics)
+  - STDP traces for multiple pathways (DG→CA3, CA3→CA1, EC→CA1)
   - Sample trace for memory encoding
+  - Acetylcholine modulation of encoding vs retrieval
+  - STP state for 4 pathways:
+    * DG→CA3 (mossy fiber facilitation, U=0.1→0.9)
+    * CA3→CA1 (schaffer collateral depression, U=0.5)
+    * EC→CA1 (direct path depression, U=0.4)
+    * CA3 recurrent (depression, U=0.3, prevents frozen attractors)
+
+**Expected Test Count**: 18-20 tests
 
 #### 2.4 LayeredCortexState (5 hours)
 - **Why last**: Most complex (15+ fields, multi-layer)
