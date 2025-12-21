@@ -23,6 +23,7 @@ from thalia.core.protocols.component import RoutingComponent
 from thalia.managers.component_registry import register_pathway
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.utils.delay_buffer import CircularDelayBuffer
+from thalia.core.pathway_state import AxonalProjectionState
 
 
 @dataclass
@@ -356,50 +357,54 @@ class AxonalProjection(RoutingComponent):
         pass
 
     # =================================================================
-    # CHECKPOINTING
+    # CHECKPOINTING (PathwayState Protocol)
     # =================================================================
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get full state (alias for get_state for compatibility)."""
-        return self.get_state()
+        state = self.get_state()
+        return state.to_dict()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load full state (alias for load_state for compatibility)."""
-        self.load_state(state)
+        state_obj = AxonalProjectionState.from_dict(state, device=self.device)
+        self.load_state(state_obj)
 
-    def get_state(self) -> Dict[str, Any]:
-        """Get state for checkpointing.
+    def get_state(self) -> AxonalProjectionState:
+        """Get state for checkpointing using PathwayState protocol.
 
         Returns:
-            Dict with sources and delay buffer states
+            AxonalProjectionState with delay buffer data
         """
-        return {
-            "sources": [
-                {
-                    "region_name": spec.region_name,
-                    "port": spec.port,
-                    "size": spec.size,
-                    "delay_ms": spec.delay_ms,
-                }
-                for spec in self.sources
-            ],
-            "delay_buffers": {
-                key: buffer.state_dict()
-                for key, buffer in self._delay_buffers.items()
-            },
-        }
+        # Extract delay buffer state
+        delay_buffers = {}
+        for key, buffer in self._delay_buffers.items():
+            delay_buffers[key] = (
+                buffer.buffer.clone(),  # [max_delay+1, size]
+                buffer.ptr,
+                buffer.max_delay,
+                buffer.size,
+            )
 
-    def load_state(self, state: Dict[str, Any]) -> None:
-        """Load state from checkpoint.
+        return AxonalProjectionState(delay_buffers=delay_buffers)
+
+    def load_state(self, state: AxonalProjectionState) -> None:
+        """Load state from checkpoint using PathwayState protocol.
 
         Args:
-            state: State dict from get_state()
+            state: AxonalProjectionState object
         """
-        # Load delay buffer states if present (backward compatibility)
-        if "delay_buffers" in state:
-            for key, buffer_state in state["delay_buffers"].items():
-                if key in self._delay_buffers:
-                    self._delay_buffers[key].load_state_dict(buffer_state)
+        # Load delay buffer states
+        for key, (buf, ptr, max_delay, size) in state.delay_buffers.items():
+            if key in self._delay_buffers:
+                # Update existing buffer
+                self._delay_buffers[key].buffer = buf.to(self.device)
+                self._delay_buffers[key].ptr = ptr
+                # Verify consistency
+                assert self._delay_buffers[key].max_delay == max_delay, \
+                    f"Delay mismatch for {key}: {self._delay_buffers[key].max_delay} != {max_delay}"
+                assert self._delay_buffers[key].size == size, \
+                    f"Size mismatch for {key}: {self._delay_buffers[key].size} != {size}"
 
     def __repr__(self) -> str:
         """Human-readable representation."""
