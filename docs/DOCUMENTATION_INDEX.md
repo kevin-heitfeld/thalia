@@ -65,6 +65,9 @@ Located in: `docs/api/`
 | **COMPONENT_CATALOG.md** | All registered regions and pathways | `@register_region`, `@register_pathway` decorators | Auto |
 | **LEARNING_STRATEGIES_API.md** | Learning strategy factory functions | `create_*_strategy()` functions | Auto |
 | **CONFIGURATION_REFERENCE.md** | Configuration dataclasses | `*Config` dataclass definitions | Auto |
+| **DATASETS_REFERENCE.md** | Dataset classes and factory functions | `*Dataset` classes, `create_stage*()` functions | Auto |
+| **DIAGNOSTICS_REFERENCE.md** | Diagnostic monitor classes | `*Monitor` classes in `diagnostics/` | Auto |
+| **EXCEPTIONS_REFERENCE.md** | Custom exception hierarchy | Exception classes in `core/errors.py` | Auto |
 
 **Benefits**:
 - ✅ Always synchronized with codebase

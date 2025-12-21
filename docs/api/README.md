@@ -8,6 +8,9 @@
 - **[COMPONENT_CATALOG.md](COMPONENT_CATALOG.md)** — All registered brain regions and pathways
 - **[LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md)** — Learning strategy factory functions
 - **[CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)** — Configuration dataclasses
+- **[DATASETS_REFERENCE.md](DATASETS_REFERENCE.md)** — Dataset classes and factory functions
+- **[DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md)** — Diagnostic monitor classes
+- **[EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md)** — Custom exception classes
 
 ## Regenerating Documentation
 
@@ -39,6 +42,21 @@ This will:
 - Extracts from dataclasses ending in `Config`
 - Includes: all fields with types and defaults
 - Always matches actual config definitions
+
+### Datasets Reference
+- Extracts from `*Dataset` classes and `create_stage*` functions
+- Includes: parameters, docstrings, source files
+- Always matches available datasets for curriculum training
+
+### Diagnostics Reference
+- Extracts from `*Monitor` classes in `diagnostics/`
+- Includes: key methods, docstrings, source files
+- Always matches available monitoring tools
+
+### Exceptions Reference
+- Extracts from custom exception classes
+- Includes: inheritance hierarchy, docstrings
+- Always matches error handling API
 
 ## Benefits
 

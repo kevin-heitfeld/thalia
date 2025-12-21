@@ -5,6 +5,9 @@ This script auto-generates:
 1. COMPONENT_CATALOG.md - All registered regions and pathways
 2. LEARNING_STRATEGIES_API.md - All learning strategy factory functions
 3. CONFIGURATION_REFERENCE.md - All configuration dataclasses
+4. DATASETS_REFERENCE.md - Dataset classes and factory functions
+5. DIAGNOSTICS_REFERENCE.md - Diagnostic monitor classes
+6. EXCEPTIONS_REFERENCE.md - Custom exception hierarchy
 
 Run this script whenever components are added/modified to keep docs synchronized.
 """
@@ -46,6 +49,36 @@ class ConfigClass:
     file_path: str
 
 
+@dataclass
+class DatasetInfo:
+    """Dataset class or factory function."""
+    name: str
+    class_or_function: str
+    parameters: List[str]
+    docstring: str
+    file_path: str
+    is_factory: bool
+
+
+@dataclass
+class MonitorInfo:
+    """Diagnostic monitor class."""
+    name: str
+    class_name: str
+    docstring: str
+    file_path: str
+    methods: List[str]
+
+
+@dataclass
+class ExceptionInfo:
+    """Custom exception class."""
+    name: str
+    base_class: str
+    docstring: str
+    file_path: str
+
+
 class APIDocGenerator:
     """Generate API documentation from codebase."""
 
@@ -57,6 +90,9 @@ class APIDocGenerator:
         self.pathways: List[RegistryItem] = []
         self.strategies: List[StrategyFactory] = []
         self.configs: List[ConfigClass] = []
+        self.datasets: List[DatasetInfo] = []
+        self.monitors: List[MonitorInfo] = []
+        self.exceptions: List[ExceptionInfo] = []
 
     def generate(self):
         """Generate all API documentation."""
@@ -69,11 +105,17 @@ class APIDocGenerator:
         self._find_registered_components()
         self._find_strategy_factories()
         self._find_config_classes()
+        self._find_datasets()
+        self._find_monitors()
+        self._find_exceptions()
 
         # Generate documentation files
         self._generate_component_catalog()
         self._generate_learning_strategies_api()
         self._generate_configuration_reference()
+        self._generate_datasets_reference()
+        self._generate_diagnostics_reference()
+        self._generate_exceptions_reference()
 
         print("\n✅ API documentation generated successfully!")
         print(f"   Location: {self.api_dir.relative_to(self.docs_dir.parent)}")
@@ -352,6 +394,210 @@ class APIDocGenerator:
                         f.write(f"| `{name}` | `{type_}` | `{default_escaped}` |\n")
                     f.write("\n")
 
+                f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _find_datasets(self):
+        """Find all dataset classes and factory functions."""
+        dataset_dir = self.src_dir / "datasets"
+        if not dataset_dir.exists():
+            return
+
+        for py_file in dataset_dir.rglob("*.py"):
+            if "test" in str(py_file) or "__pycache__" in str(py_file):
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+                tree = ast.parse(content)
+
+                for node in ast.walk(tree):
+                    # Find Dataset classes
+                    if isinstance(node, ast.ClassDef) and node.name.endswith("Dataset"):
+                        docstring = ast.get_docstring(node) or "No docstring"
+                        self.datasets.append(DatasetInfo(
+                            name=node.name,
+                            class_or_function="class",
+                            parameters=[],
+                            docstring=docstring.split('\n')[0],
+                            file_path=str(py_file.relative_to(self.src_dir.parent)),
+                            is_factory=False
+                        ))
+
+                    # Find create_* factory functions
+                    if isinstance(node, ast.FunctionDef) and node.name.startswith("create_stage"):
+                        params = [arg.arg for arg in node.args.args]
+                        docstring = ast.get_docstring(node) or "No docstring"
+                        self.datasets.append(DatasetInfo(
+                            name=node.name,
+                            class_or_function="function",
+                            parameters=params,
+                            docstring=docstring.split('\n')[0],
+                            file_path=str(py_file.relative_to(self.src_dir.parent)),
+                            is_factory=True
+                        ))
+            except Exception as e:
+                print(f"Warning: Could not parse {py_file}: {e}")
+
+    def _find_monitors(self):
+        """Find all diagnostic monitor classes."""
+        diagnostics_dir = self.src_dir / "diagnostics"
+        if not diagnostics_dir.exists():
+            return
+
+        for py_file in diagnostics_dir.rglob("*.py"):
+            if "test" in str(py_file) or "__pycache__" in str(py_file):
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+                tree = ast.parse(content)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ClassDef) and node.name.endswith("Monitor"):
+                        docstring = ast.get_docstring(node) or "No docstring"
+                        methods = [
+                            item.name for item in node.body
+                            if isinstance(item, ast.FunctionDef) and not item.name.startswith('_')
+                        ]
+                        self.monitors.append(MonitorInfo(
+                            name=node.name,
+                            class_name=node.name,
+                            docstring=docstring.split('\n')[0],
+                            file_path=str(py_file.relative_to(self.src_dir.parent)),
+                            methods=methods[:5]  # First 5 public methods
+                        ))
+            except Exception as e:
+                print(f"Warning: Could not parse {py_file}: {e}")
+
+    def _find_exceptions(self):
+        """Find all custom exception classes."""
+        errors_file = self.src_dir / "core" / "errors.py"
+        if not errors_file.exists():
+            return
+
+        try:
+            content = errors_file.read_text(encoding="utf-8")
+            tree = ast.parse(content)
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    # Check if it inherits from Exception or ThaliaError
+                    for base in node.bases:
+                        base_name = base.id if hasattr(base, 'id') else str(base)
+                        if 'Error' in node.name or 'Exception' in node.name:
+                            docstring = ast.get_docstring(node) or "No docstring"
+                            self.exceptions.append(ExceptionInfo(
+                                name=node.name,
+                                base_class=base_name,
+                                docstring=docstring.split('\n')[0],
+                                file_path=str(errors_file.relative_to(self.src_dir.parent))
+                            ))
+                            break
+        except Exception as e:
+            print(f"Warning: Could not parse {errors_file}: {e}")
+
+    def _generate_datasets_reference(self):
+        """Generate DATASETS_REFERENCE.md."""
+        output_file = self.api_dir / "DATASETS_REFERENCE.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Datasets Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all dataset classes and factory functions ")
+            f.write("for curriculum training stages.\n\n")
+
+            # Separate classes and factories
+            classes = [d for d in self.datasets if not d.is_factory]
+            factories = [d for d in self.datasets if d.is_factory]
+
+            f.write(f"Total: {len(classes)} dataset classes, {len(factories)} factory functions\n\n")
+
+            # Dataset Classes
+            if classes:
+                f.write("## Dataset Classes\n\n")
+                for dataset in sorted(classes, key=lambda d: d.name):
+                    f.write(f"### `{dataset.name}`\n\n")
+                    f.write(f"**Source**: `{dataset.file_path}`\n\n")
+                    f.write(f"**Description**: {dataset.docstring}\n\n")
+                    f.write("---\n\n")
+
+            # Factory Functions
+            if factories:
+                f.write("## Factory Functions\n\n")
+                for factory in sorted(factories, key=lambda d: d.name):
+                    f.write(f"### `{factory.name}()`\n\n")
+                    f.write(f"**Source**: `{factory.file_path}`\n\n")
+                    if factory.parameters:
+                        f.write("**Parameters**:\n\n")
+                        for param in factory.parameters:
+                            f.write(f"- `{param}`\n")
+                        f.write("\n")
+                    f.write(f"**Description**: {factory.docstring}\n\n")
+                    f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _generate_diagnostics_reference(self):
+        """Generate DIAGNOSTICS_REFERENCE.md."""
+        output_file = self.api_dir / "DIAGNOSTICS_REFERENCE.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Diagnostics Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all diagnostic monitor classes ")
+            f.write("for system health and performance monitoring.\n\n")
+
+            f.write(f"Total: {len(self.monitors)} monitors\n\n")
+
+            f.write("## Monitor Classes\n\n")
+
+            for monitor in sorted(self.monitors, key=lambda m: m.name):
+                f.write(f"### `{monitor.name}`\n\n")
+                f.write(f"**Source**: `{monitor.file_path}`\n\n")
+                f.write(f"**Description**: {monitor.docstring}\n\n")
+
+                if monitor.methods:
+                    f.write("**Key Methods**:\n\n")
+                    for method in monitor.methods:
+                        f.write(f"- `{method}()`\n")
+                    f.write("\n")
+
+                f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _generate_exceptions_reference(self):
+        """Generate EXCEPTIONS_REFERENCE.md."""
+        output_file = self.api_dir / "EXCEPTIONS_REFERENCE.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Exceptions Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all custom exception classes in Thalia.\n\n")
+
+            f.write(f"Total: {len(self.exceptions)} exception classes\n\n")
+
+            f.write("## Exception Hierarchy\n\n")
+
+            for exception in sorted(self.exceptions, key=lambda e: e.name):
+                f.write(f"### `{exception.name}`\n\n")
+                f.write(f"**Inherits from**: `{exception.base_class}`\n\n")
+                f.write(f"**Source**: `{exception.file_path}`\n\n")
+                f.write(f"**Description**: {exception.docstring}\n\n")
                 f.write("---\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")

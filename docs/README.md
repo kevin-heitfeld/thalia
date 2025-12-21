@@ -28,6 +28,9 @@ Always-up-to-date API documentation generated from code.
 - **[COMPONENT_CATALOG.md](./api/COMPONENT_CATALOG.md)** — All registered regions and pathways
 - **[LEARNING_STRATEGIES_API.md](./api/LEARNING_STRATEGIES_API.md)** — Learning strategy factory functions
 - **[CONFIGURATION_REFERENCE.md](./api/CONFIGURATION_REFERENCE.md)** — Configuration dataclasses
+- **[DATASETS_REFERENCE.md](./api/DATASETS_REFERENCE.md)** — Dataset classes and factory functions
+- **[DIAGNOSTICS_REFERENCE.md](./api/DIAGNOSTICS_REFERENCE.md)** — Diagnostic monitors
+- **[EXCEPTIONS_REFERENCE.md](./api/EXCEPTIONS_REFERENCE.md)** — Exception hierarchy
 - Run `python scripts/generate_api_docs.py` to regenerate
 
 ### 🏗️ [Architecture](./architecture/)
