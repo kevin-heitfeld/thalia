@@ -49,6 +49,19 @@ from thalia.core.protocols.component import (
     BrainComponentBase,
     BrainComponentMixin,
 )
+from thalia.core.pathway_state import (
+    PathwayState,
+    AxonalProjectionState,
+)
+from thalia.core.region_state import (
+    RegionState,
+    BaseRegionState,
+    save_region_state,
+    load_region_state,
+    transfer_state,
+    get_state_version,
+    validate_state_protocol,
+)
 
 __all__ = [
     # Error handling
@@ -83,4 +96,15 @@ __all__ = [
     "BrainComponent",
     "BrainComponentBase",
     "BrainComponentMixin",
+    # State Management (Pathways)
+    "PathwayState",
+    "AxonalProjectionState",
+    # State Management (Regions)
+    "RegionState",
+    "BaseRegionState",
+    "save_region_state",
+    "load_region_state",
+    "transfer_state",
+    "get_state_version",
+    "validate_state_protocol",
 ]
