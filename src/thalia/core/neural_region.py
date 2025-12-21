@@ -27,6 +27,7 @@ from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
+from thalia.core.protocols.component import BrainComponentMixin
 
 
 # Custom warning for performance issues
@@ -47,7 +48,7 @@ class LearningStrategy(Protocol):
         ...
 
 
-class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin):
+class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin):
     """Base class for brain regions with biologically accurate synaptic inputs.
 
     This is a NEW hierarchy for v3.0 architecture, independent of the legacy
@@ -59,6 +60,7 @@ class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin,
 
     Mixins provide (MRO order):
     - nn.Module: PyTorch module functionality (FIRST for proper __init__)
+    - BrainComponentMixin: Oscillator phase properties and defaults
     - NeuromodulatorMixin: Dopamine, acetylcholine, norepinephrine control
     - GrowthMixin: Dynamic expansion (grow_input/grow_output)
     - ResettableMixin: State reset helpers

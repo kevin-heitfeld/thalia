@@ -372,11 +372,13 @@ class PredictiveCortex(NeuralRegion):
             theta_slot: Current theta slot [0, n_slots-1] for sequence encoding
             coupled_amplitudes: Dict of cross-frequency coupled amplitudes
         """
+        # Use base mixin implementation to store all oscillator data
+        super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
+        
         # Pass through to inner cortex (where alpha gating is implemented)
         self.cortex.set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
 
-        # Also store in our own state for potential use
-        # (though we delegate processing to inner cortex)
+        # Also store in our own state for backward compatibility
         if not hasattr(self.state, '_oscillator_phases'):
             self.state._oscillator_phases = {}
             self.state._oscillator_signals = {}

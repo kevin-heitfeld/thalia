@@ -1330,18 +1330,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             Called automatically by Brain before each forward() call.
             Do not call this manually.
         """
-        # Store oscillator phases for action selection
-        self._beta_phase = phases.get('beta', 0.0)
-        self._theta_phase = phases.get('theta', 0.0)
-
-        # Store effective amplitude (pre-computed by OscillatorManager)
-        # Automatic multiplicative coupling:
-        # - Beta modulated by ALL slower oscillators (delta, theta, alpha)
-        # OscillatorManager handles the multiplication, we just store the result.
-        if coupled_amplitudes is not None:
-            self._beta_amplitude = coupled_amplitudes.get('beta', 1.0)
-        else:
-            self._beta_amplitude = 1.0
+        # Use base mixin implementation to store all oscillator data
+        super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
+        
+        # Store beta amplitude in old attribute name for backward compatibility
+        self._beta_amplitude = self._beta_amplitude_effective
 
         # Update forward coordinator with oscillator state
         self.forward_coordinator.set_oscillator_phases(

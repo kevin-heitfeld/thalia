@@ -684,24 +684,16 @@ class LayeredCortex(NeuralRegion):
             theta_slot: Current theta slot [0, n_slots-1] for sequence encoding
             coupled_amplitudes: Effective amplitudes per oscillator (pre-computed)
         """
-        # Store in state for forward() to access
+        # Use base mixin implementation to store all oscillator data
+        super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
+
+        # Also store in state for backward compatibility with forward()
         if not hasattr(self.state, '_oscillator_phases'):
             self.state._oscillator_phases = {}
             self.state._oscillator_signals = {}
         self.state._oscillator_phases = phases
         self.state._oscillator_signals = signals
-
-        # Update theta phase for encoding/retrieval modulation
-        self._theta_phase = phases.get('theta', 0.0)
-
-        # Store effective gamma amplitude (pre-computed by OscillatorManager)
-        # Automatic multiplicative coupling:
-        # - Gamma modulated by ALL slower oscillators (delta, theta, alpha, beta)
-        # OscillatorManager handles the multiplication, we just store the result.
-        if coupled_amplitudes is not None:
-            self.state._gamma_amplitude = coupled_amplitudes.get('gamma', 1.0)
-        else:
-            self.state._gamma_amplitude = 1.0
+        self.state._gamma_amplitude = self._gamma_amplitude_effective
 
     # region Growth and Neurogenesis
 
@@ -1125,7 +1117,7 @@ class LayeredCortex(NeuralRegion):
         ach_level = self.state.acetylcholine
         # ACh > 0.5 → encoding mode → suppress recurrence (down to 0.2x)
         # ACh < 0.5 → retrieval mode → full recurrence (1.0x)
-        ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level, suppression_strength=0.8)
+        ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
         if self.state.l23_recurrent_activity is not None:
             recurrent_scale = L23_RECURRENT_RETRIEVAL_SCALE + L23_RECURRENT_RETRIEVAL_SCALE * retrieval_mod

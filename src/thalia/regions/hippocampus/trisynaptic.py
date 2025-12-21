@@ -1613,20 +1613,9 @@ class TrisynapticHippocampus(NeuralRegion):
             Called automatically by Brain before each forward() call.
             Do not call this manually.
         """
-        # Store oscillator values for use in forward()
-        self._theta_phase = phases.get('theta', 0.0)
-        self._gamma_phase = phases.get('gamma', 0.0)
-        self._theta_slot = theta_slot
-
-        # Store effective gamma amplitude (pre-computed by OscillatorManager)
-        # Automatic multiplicative coupling:
-        # - Gamma modulated by ALL slower oscillators (delta, theta, alpha, beta)
-        # OscillatorManager handles the multiplication, we just store the result.
-        # This gives emergent delta-theta-alpha-beta-gamma multi-order coupling.
-        if coupled_amplitudes is not None:
-            self._gamma_amplitude_effective = coupled_amplitudes.get('gamma', 1.0)
-        else:
-            self._gamma_amplitude_effective = 1.0
+        # Use base mixin implementation to store all oscillator data
+        # This populates self._theta_phase, self._gamma_phase, self._gamma_amplitude_effective, etc.
+        super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
 
     def _apply_plasticity(
         self,

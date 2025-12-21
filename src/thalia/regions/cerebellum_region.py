@@ -420,22 +420,14 @@ class Cerebellum(NeuralRegion):
             Called automatically by Brain before each forward() call.
             Do not call this manually.
         """
-        # Store oscillator phases for motor timing
-        self._theta_phase = phases.get('theta', 0.0)
-        self._beta_phase = phases.get('beta', 0.0)
-        self._gamma_phase = phases.get('gamma', 0.0)
-
-        # Store effective amplitudes (pre-computed by OscillatorManager)
-        # Automatic multiplicative coupling:
-        # - Beta modulated by ALL slower oscillators (delta, theta, alpha)
-        # - Gamma modulated by ALL slower oscillators (delta, theta, alpha, beta)
-        # OscillatorManager handles the multiplication, we just store the result.
-        if coupled_amplitudes is not None:
-            self._beta_amplitude = coupled_amplitudes.get('beta', 1.0)
-            self._gamma_amplitude = coupled_amplitudes.get('gamma', 1.0)
-        else:
-            self._beta_amplitude = 1.0
-            self._gamma_amplitude = 1.0
+        # Use base mixin implementation to store all oscillator data
+        # This populates self._theta_phase, self._beta_phase, self._gamma_phase,
+        # self._beta_amplitude_effective, self._gamma_amplitude_effective, etc.
+        super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
+        
+        # Store beta/gamma amplitudes in old attribute names for backward compatibility
+        self._beta_amplitude = self._beta_amplitude_effective
+        self._gamma_amplitude = self._gamma_amplitude_effective
 
     def _compute_beta_gate(self) -> float:
         """Compute beta-gated learning modulation.
