@@ -277,10 +277,11 @@ class TestMultipleInputPorts:
         brain = builder.build()
 
         cortex = brain.components["cortex"]
+        thalamus = brain.components["thalamus"]
 
         # Cortex n_input should only count feedforward, not top_down
         # (top_down is separate parameter in forward())
-        assert cortex.config.n_input == 64  # Only thalamus size
+        assert cortex.config.n_input == thalamus.n_output  # Dimension compatibility
 
     def test_hippocampus_cortical_and_entorhinal_inputs(self, global_config):
         """Test hippocampus receiving both cortical and direct entorhinal inputs."""
@@ -400,9 +401,10 @@ class TestBackwardCompatibility:
         assert "thalamus" in brain.components
         assert "cortex" in brain.components
 
-        # Should infer sizes correctly
+        # Should infer sizes correctly (dimension compatibility)
         cortex = brain.components["cortex"]
-        assert cortex.config.n_input == 64
+        thalamus = brain.components["thalamus"]
+        assert cortex.config.n_input == thalamus.n_output
 
     def test_mixed_ports_and_no_ports_connections(self, global_config):
         """Test mixing port-based and traditional connections."""

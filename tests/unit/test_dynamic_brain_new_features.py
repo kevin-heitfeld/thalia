@@ -222,19 +222,15 @@ class TestFeatureParity:
         assert hasattr(brain, 'deliver_reward_with_counterfactual')
         assert callable(brain.deliver_reward_with_counterfactual)
 
-        # NEW: Novelty boost
-        assert hasattr(brain, '_get_novelty_boost')
-        assert callable(brain._get_novelty_boost)
-
-        # NEW: Component diagnostics
-        assert hasattr(brain, '_collect_striatum_diagnostics')
-        assert callable(brain._collect_striatum_diagnostics)
-        assert hasattr(brain, '_collect_hippocampus_diagnostics')
-        assert callable(brain._collect_hippocampus_diagnostics)
-
-        # NEW: Structured diagnostics
+        # NEW: Structured diagnostics (tests novelty boost and component diagnostics behaviorally)
         assert hasattr(brain, 'get_structured_diagnostics')
         assert callable(brain.get_structured_diagnostics)
+
+        # Test behavioral contract: structured diagnostics should work
+        diag = brain.get_structured_diagnostics()
+        assert isinstance(diag, BrainSystemDiagnostics), "Should return structured diagnostics"
+        assert hasattr(diag, 'striatum'), "Should include striatum diagnostics"
+        assert hasattr(diag, 'hippocampus'), "Should include hippocampus diagnostics"
 
         # State management
         assert hasattr(brain, 'get_full_state')

@@ -150,3 +150,42 @@ class TestHippocampusHybrid:
         # Should raise error
         with pytest.raises(ValueError, match="hybrid_metadata"):
             small_hippocampus.checkpoint_manager.load(checkpoint_path)
+
+
+@pytest.mark.parametrize("acetylcholine", [-0.5, 0.0, 1.0, 1.5, 2.0])
+def test_hippocampus_extreme_acetylcholine(small_hippocampus, acetylcholine):
+    """Test hippocampus stability with extreme acetylcholine values.
+
+    Phase 2 improvement: Tests edge cases beyond normal [0, 1] range.
+    ACh modulates encoding (high) vs retrieval (low) modes.
+    """
+    input_spikes = torch.rand(4) > 0.5
+
+    # Set extreme ACh value
+    small_hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
+
+    # Forward pass should not crash
+    output = small_hippocampus(input_spikes)
+
+    # Contract: valid output regardless of ACh value
+    assert output.dtype == torch.bool
+    assert output.shape == (8,)  # n_output = 8
+
+    # Contract: no numerical instability in any layer
+    for layer_name, neurons in [
+        ('dg', small_hippocampus.dg_neurons),
+        ('ca3', small_hippocampus.ca3_neurons),
+        ('ca1', small_hippocampus.ca1_neurons),
+    ]:
+        membrane = neurons.membrane
+
+        assert not torch.isnan(membrane).any(), \
+            f"NaN in {layer_name} membrane with ACh={acetylcholine}"
+        assert not torch.isinf(membrane).any(), \
+            f"Inf in {layer_name} membrane with ACh={acetylcholine}"
+
+        # Contract: membrane stays in reasonable range
+        assert (membrane >= -20.0).all(), \
+            f"{layer_name} membrane too low with ACh={acetylcholine}"
+        assert (membrane <= 10.0).all(), \
+            f"{layer_name} membrane too high with ACh={acetylcholine}"

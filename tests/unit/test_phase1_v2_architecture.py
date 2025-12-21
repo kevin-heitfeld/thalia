@@ -150,32 +150,6 @@ class TestAxonalProjection:
         final_output = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
         assert final_output["cortex"].all(), f"Spikes didn't appear at expected step {expected_steps}"
 
-    def test_axonal_delays(self):
-        """Test that axonal delays work."""
-        projection = AxonalProjection(
-            sources=[("cortex", None, 5, 2.0)],
-            device="cpu",
-            dt_ms=1.0,
-        )
-
-        # First timestep: input spikes
-        spikes_t0 = torch.ones(5, dtype=torch.bool)
-        output_t0 = projection.forward({"cortex": spikes_t0})
-
-        # Delays cause zeros initially (dict output)
-        assert isinstance(output_t0, dict)
-        assert not output_t0["cortex"].any()
-
-        # Second timestep: no input
-        output_t1 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
-
-        # Still zeros (delay = 2 steps)
-        assert not output_t1["cortex"].any()
-
-        # Third timestep: delayed spikes appear
-        output_t2 = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
-        assert output_t2["cortex"].all()  # Original spikes now appear
-
     @pytest.mark.parametrize("initial_size,growth_amount", [
         (64, 16),
         (128, 20),
@@ -357,13 +331,15 @@ class TestAfferentSynapses:
         # Grow by 20 neurons
         synapses.grow_output(20)
 
-        assert synapses.weights.shape == (90, 224), \
-            f"Weight shape after growth should be (90, 224), got {synapses.weights.shape}"
+        expected_n_neurons = 90
+        expected_n_inputs = 224
+        assert synapses.weights.shape == (expected_n_neurons, expected_n_inputs), \
+            f"Weight shape after growth should be ({expected_n_neurons}, {expected_n_inputs}), got {synapses.weights.shape}"
         assert not torch.isnan(synapses.weights).any(), \
             "Weights contain NaN after output growth"
         assert not torch.isinf(synapses.weights).any(), \
             "Weights contain Inf after output growth"
-        assert synapses.config.n_neurons == 90
+        assert synapses.config.n_neurons == expected_n_neurons
 
     def test_checkpoint_state(self):
         """Test state save/load."""

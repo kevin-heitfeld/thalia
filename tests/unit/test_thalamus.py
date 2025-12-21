@@ -273,5 +273,36 @@ def test_thalamus_center_surround_filter(thalamus):
     assert has_positive or has_negative  # At least one should exist
 
 
+@pytest.mark.parametrize("norepinephrine", [-0.5, 0.0, 1.0, 1.5, 2.0])
+def test_thalamus_extreme_norepinephrine(thalamus, norepinephrine):
+    """Test thalamus stability with extreme norepinephrine values.
+
+    Phase 2 improvement: Tests edge cases beyond normal [0, 1] range.
+    """
+    input_spikes = torch.rand(100) > 0.7
+
+    # Set extreme NE value
+    thalamus.set_neuromodulators(norepinephrine=norepinephrine)
+
+    # Forward pass should not crash
+    output = thalamus(input_spikes)
+
+    # Contract: valid output regardless of NE value
+    assert output.dtype == torch.bool
+    assert output.shape == (thalamus.n_relay,)
+
+    # Contract: no numerical instability
+    assert not torch.isnan(thalamus.state.relay_membrane).any(), \
+        f"NaN in membrane with NE={norepinephrine}"
+    assert not torch.isinf(thalamus.state.relay_membrane).any(), \
+        f"Inf in membrane with NE={norepinephrine}"
+
+    # Contract: membrane stays in reasonable range
+    assert (thalamus.state.relay_membrane >= -20.0).all(), \
+        f"Membrane too low with NE={norepinephrine}"
+    assert (thalamus.state.relay_membrane <= 10.0).all(), \
+        f"Membrane too high with NE={norepinephrine}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

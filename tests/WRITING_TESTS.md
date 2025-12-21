@@ -1,17 +1,25 @@
 # Writing Tests for Thalia
 
-**Date:** December 13, 2025
-**Version:** 1.0
+**Date:** December 21, 2025
+**Version:** 1.1 (Updated after Test Quality Audit)
 
 This guide documents test quality patterns for the Thalia spiking neural network framework. Tests should validate biological plausibility and learning correctness, not implementation details.
+
+**Recent Updates:**
+- Added parameterization best practices (December 21, 2025)
+- Added test consolidation guidelines (December 21, 2025)
+- Clarified hardcoded assertion anti-patterns (December 21, 2025)
+- Added examples of good parameterization from codebase (December 21, 2025)
 
 ## Table of Contents
 1. [Core Principles](#core-principles)
 2. [Good vs Bad Test Patterns](#good-vs-bad-test-patterns)
-3. [Edge Case Testing](#edge-case-testing)
-4. [Network Integrity Validation](#network-integrity-validation)
-5. [Test Organization](#test-organization)
-6. [Common Pitfalls](#common-pitfalls)
+3. [Parameterization Best Practices](#parameterization-best-practices) ⭐ NEW
+4. [Test Consolidation Guidelines](#test-consolidation-guidelines) ⭐ NEW
+5. [Edge Case Testing](#edge-case-testing)
+6. [Network Integrity Validation](#network-integrity-validation)
+7. [Test Organization](#test-organization)
+8. [Common Pitfalls](#common-pitfalls)
 
 ---
 
@@ -166,23 +174,439 @@ def test_learning_updates_weights():
 
 ---
 
+### 5. Test Dimension Compatibility, Not Exact Values
+
+Validate that components are compatible, not that they match hardcoded expectations.
+
+❌ **DON'T:** Test hardcoded dimensions
+```python
+def test_cortex_receives_thalamus_input():
+    brain = create_test_brain()
+    cortex = brain.components["cortex"]
+
+    # ❌ Hardcoded value - breaks when thalamus size changes
+    assert cortex.config.n_input == 64
+```
+
+✅ **DO:** Test dimensional compatibility
+```python
+def test_cortex_receives_thalamus_input():
+    """Test cortex input size matches thalamus output size."""
+    brain = create_test_brain()
+    cortex = brain.components["cortex"]
+    thalamus = brain.components["thalamus"]
+
+    # ✅ Tests the CONTRACT: dimensions are compatible
+    assert cortex.config.n_input == thalamus.n_output
+
+    # ✅ Tests INVARIANT: positive dimension
+    assert cortex.config.n_input > 0
+```
+
+**Why this matters:** Configuration defaults will change during tuning, growth experiments, and optimization. Tests should survive these changes as long as dimensional compatibility is maintained.
+
+---
+
+## Parameterization Best Practices
+
+### When to Use `@pytest.mark.parametrize`
+
+Parameterize tests when:
+1. **Same validation logic, different input values**
+2. **Testing across ranges** (sizes, rates, delays)
+3. **Boundary value testing** (0, min, max, beyond max)
+4. **Multiple valid configurations** (different modes, strategies)
+
+**DO NOT parameterize when:**
+- Validation logic differs significantly
+- Each case tests a different contract
+- Readability suffers from over-parameterization
+
+### Example 1: Size Variations (GOOD ✅)
+
+From `tests/unit/components/neurons/test_neuron_growth.py`:
+
+```python
+@pytest.mark.parametrize("initial_n,growth_amount", [
+    (50, 10),
+    (100, 20),
+    (200, 50),
+    (500, 100),
+])
+def test_grow_neurons_various_sizes(self, initial_n, growth_amount):
+    """Test growth works with various population sizes."""
+    config = ConductanceLIFConfig()
+    neurons = ConductanceLIF(n_neurons=initial_n, config=config)
+    neurons.reset_state()
+
+    neurons.grow_neurons(growth_amount)
+
+    expected_n = initial_n + growth_amount
+    assert neurons.n_neurons == expected_n
+    assert neurons.v_threshold.shape[0] == expected_n
+    assert neurons.membrane.shape[0] == expected_n
+```
+
+**Why this is good:**
+- Same contract tested across multiple scales
+- Validates growth works for small and large populations
+- Clear test ID for each case
+- Single test function is maintainable
+
+### Example 2: Delay Durations (GOOD ✅)
+
+From `tests/unit/test_phase1_v2_architecture.py`:
+
+```python
+@pytest.mark.parametrize("delay_ms,expected_steps", [
+    (1.0, 2),  # 1ms delay = 2 steps to see spikes
+    (2.0, 3),  # 2ms delay = 3 steps
+    (5.0, 6),  # 5ms delay = 6 steps
+])
+def test_axonal_delays_various_durations(self, delay_ms, expected_steps):
+    """Test axonal delays with various durations."""
+    projection = AxonalProjection(
+        sources=[("cortex", None, 5, delay_ms)],
+        device="cpu",
+        dt_ms=1.0,
+    )
+
+    # First timestep: input spikes
+    spikes_t0 = torch.ones(5, dtype=torch.bool)
+    output_t0 = projection.forward({"cortex": spikes_t0})
+    assert not output_t0["cortex"].any()
+
+    # Advance until expected_steps - 1
+    for step in range(1, expected_steps - 1):
+        output = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
+        assert not output["cortex"].any(), f"Spikes appeared too early at step {step}"
+
+    # At expected_steps, delayed spikes should appear
+    final_output = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
+    assert final_output["cortex"].all()
+```
+
+**Why this is good:**
+- Tests biological property (axonal delay) across timescales
+- Clear expected behavior for each delay
+- Comments explain the biological/temporal logic
+
+### Example 3: Learning Rates (GOOD ✅)
+
+From `tests/integration/test_learning_strategy_pattern.py`:
+
+```python
+@pytest.mark.parametrize("learning_rate", [0.001, 0.01, 0.1])
+def test_learning_rate_affects_weight_change(learning_rate):
+    """Test that learning rate scales weight changes."""
+    strategy = HebbianStrategy(HebbianConfig(learning_rate=learning_rate))
+
+    weights = torch.ones(10, 20) * 0.5
+    pre = torch.ones(20)
+    post = torch.ones(10)
+
+    new_weights, metrics = strategy.compute_update(weights.clone(), pre, post)
+
+    # Higher learning rate → larger changes
+    change_magnitude = (new_weights - weights).abs().mean()
+    assert change_magnitude > 0
+    # ... additional validation
+```
+
+### Example 4: Extreme Values (GOOD ✅)
+
+From `tests/unit/learning/test_learning_strategy_stress.py`:
+
+```python
+@pytest.mark.parametrize("acetylcholine,description", [
+    (-0.5, "negative_ach"),
+    (0.0, "no_ach"),
+    (1.0, "max_ach"),
+    (2.0, "excessive_ach"),
+])
+def test_hippocampus_extreme_acetylcholine(hippocampus, acetylcholine, description):
+    """Test hippocampus stability with extreme acetylcholine values."""
+    hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
+
+    for _ in range(100):
+        input_spikes = torch.rand(hippocampus.config.n_input) > 0.8
+        output = hippocampus(input_spikes)
+
+        assert not torch.isnan(output.float()).any(), \
+            f"NaN with ACh={acetylcholine} ({description})"
+        assert not torch.isinf(output.float()).any(), \
+            f"Inf with ACh={acetylcholine} ({description})"
+```
+
+**Why this is good:**
+- Tests edge cases (negative, zero, normal, excessive)
+- Descriptive parameter names
+- Clear error messages with parameter values
+
+### Anti-Pattern: Over-Parameterization (AVOID ❌)
+
+```python
+# ❌ BAD: Different validation logic for each mode
+@pytest.mark.parametrize("mode,config,validation_func", [
+    (SelectionMode.GREEDY, {...}, validate_greedy),
+    (SelectionMode.SOFTMAX, {...}, validate_softmax),
+    (SelectionMode.EPSILON_GREEDY, {...}, validate_epsilon),
+])
+def test_action_selection_modes(mode, config, validation_func):
+    """Test different selection modes."""
+    selector = ActionSelector(n_actions=4, config=config)
+    # ...
+    validation_func(selector, action, info)
+```
+
+**Why this is bad:**
+- Each mode has completely different validation logic
+- Hard to understand what each test case does
+- Harder to debug failures (which validation_func failed?)
+
+**Better approach:** Separate tests for each mode
+```python
+# ✅ GOOD: Clear, separate tests
+def test_greedy_selection_deterministic():
+    """Test greedy always selects max votes."""
+    # ... specific greedy validation
+
+def test_softmax_selection_probabilistic():
+    """Test softmax uses probability distribution."""
+    # ... specific softmax validation
+
+def test_epsilon_greedy_explores():
+    """Test epsilon-greedy balances exploit/explore."""
+    # ... specific epsilon-greedy validation
+```
+
+---
+
+## Test Consolidation Guidelines
+
+### When to Consolidate Tests
+
+Consolidate when tests have:
+1. **Identical structure** (same setup, action, assertions)
+2. **Only parameter values differ** (sizes, rates, counts)
+3. **Same behavioral contract** being validated
+
+### When to Keep Tests Separate
+
+Keep separate when:
+1. **Different validation logic** (checking different properties)
+2. **Different biological contracts** (different neural behaviors)
+3. **Component-specific behavior** (striatum dopamine vs hippocampus ACh)
+4. **Readability suffers** from combining
+
+### Example: Component-Specific Edge Cases (KEEP SEPARATE ✅)
+
+These tests all check "silent input" but validate different component behaviors:
+
+```python
+# tests/unit/test_thalamus.py
+def test_thalamus_silent_input(thalamus, device):
+    """Test thalamus handles zero input with TRN interactions."""
+    silent = torch.zeros(thalamus.config.n_input, dtype=torch.bool, device=device)
+
+    for _ in range(10):
+        output = thalamus(silent)
+
+        # Thalamus-specific: TRN should remain inactive
+        assert thalamus.state.trn_spikes.sum() == 0
+        # ... TRN-specific validation
+
+# tests/unit/test_striatum_d1d2_delays.py
+def test_striatum_silent_input():
+    """Test striatum handles zero input with D1/D2 pathways."""
+    silent = torch.zeros(striatum.config.n_input, dtype=torch.bool)
+
+    for _ in range(20):
+        _ = striatum(silent)
+        d1_votes, d2_votes = striatum.get_accumulated_votes()
+
+        # Striatum-specific: No votes accumulate with no input
+        assert d1_votes.sum() == 0
+        assert d2_votes.sum() == 0
+        # ... delay buffer validation
+```
+
+**Why keep separate:**
+- Each component has unique behavior with silent input
+- Thalamus tests TRN inhibition
+- Striatum tests D1/D2 delay buffers
+- Cannot be parameterized without losing component-specific validation
+
+### Example: Universal Contracts (CONSOLIDATE ✅)
+
+From `tests/unit/test_component_contracts.py`:
+
+```python
+@pytest.mark.parametrize(
+    "component_factory,input_size",
+    [
+        (create_thalamus, 100),
+        # Could add more components here
+    ],
+    ids=["thalamus"],
+)
+def test_component_reset_contract(component_factory, input_size):
+    """Test that components properly reset state (universal contract)."""
+    component = component_factory()
+
+    # Run forward to dirty state
+    test_input = create_spike_input(input_size)
+    _ = component(test_input)
+
+    # Reset
+    component.reset_state()
+
+    # Validate clean state
+    if hasattr(component, "neurons") and component.neurons is not None:
+        if hasattr(component.neurons, "membrane"):
+            membrane = component.neurons.membrane
+            assert not torch.isnan(membrane).any()
+            assert torch.abs(membrane).max() < 0.5
+
+    # Can run forward again
+    output = component(test_input)
+    assert output is not None
+```
+
+**Why consolidate:**
+- Tests universal contract (all components should reset properly)
+- Same validation logic for all components
+- Easy to add new components to parameterization
+- Reduces redundant test code
+
+### Checklist: Should I Consolidate?
+
+Ask these questions:
+
+1. ☑️ **Is the setup code identical?**
+2. ☑️ **Are the assertions checking the same property?**
+3. ☑️ **Is only the input parameter different?**
+4. ☐ **Does each test validate component-specific behavior?**
+5. ☐ **Would combining tests make failures harder to debug?**
+
+**If 1-3 are YES and 4-5 are NO → Consolidate with parameterization**
+**If 4 or 5 is YES → Keep separate tests**
+
+---
+
 ## Good vs Bad Test Patterns
 
-### Pattern 1: Hardcoded Values
+### Pattern 1: Hardcoded Dimension Values
+
+The most common brittleness issue in the test suite.
+
+❌ **BAD:**
+```python
+def test_cortex_input_size():
+    """Test cortex receives input from thalamus."""
+    brain = create_default_brain()
+    cortex = brain.components["cortex"]
+
+    # ❌ Hardcoded value - breaks when config changes
+    assert cortex.config.n_input == 64
+```
+
+**Problems:**
+- Breaks when thalamus size changes
+- Breaks when input routing changes
+- Tests implementation detail (specific config value), not contract
+
+✅ **GOOD:**
+```python
+def test_cortex_input_matches_thalamus_output():
+    """Test cortex input size matches thalamus output (dimension compatibility)."""
+    brain = create_default_brain()
+    cortex = brain.components["cortex"]
+    thalamus = brain.components["thalamus"]
+
+    # ✅ Tests dimensional compatibility contract
+    assert cortex.config.n_input == thalamus.n_output
+
+    # ✅ Tests invariant (positive dimension)
+    assert cortex.config.n_input > 0
+```
+
+**More examples of dimension compatibility tests:**
+
+```python
+# ✅ Test target input matches source output
+def test_pathway_dimensions_compatible():
+    pathway = brain.connections[("thalamus", "cortex")]
+    thalamus = brain.components["thalamus"]
+    cortex = brain.components["cortex"]
+
+    # For AxonalProjection (routing only)
+    assert pathway.n_output == sum(src.size for src in pathway.sources)
+
+    # Target receives correct input size
+    assert cortex.n_input == thalamus.n_output
+
+# ✅ Test weight matrix dimensions
+def test_synaptic_weights_match_connectivity():
+    region = brain.components["cortex"]
+
+    for source_name, weights in region.synaptic_weights.items():
+        source_region = brain.components[source_name]
+
+        # Weights should be [n_neurons, n_input_from_source]
+        assert weights.shape[0] == region.n_neurons
+        assert weights.shape[1] == source_region.n_output
+```
+
+**Common Refactoring Pattern:**
+
+```python
+# BEFORE (brittle)
+assert brain.components["thalamus"].n_input == 128
+assert brain.components["thalamus"].n_output == 128
+assert brain.components["striatum"].n_output == 50  # 5 actions * 10 neurons
+
+# AFTER (robust)
+config = brain.config
+assert brain.components["thalamus"].n_input == config.brain.sizes.input_size
+assert brain.components["thalamus"].n_output == config.brain.sizes.thalamus_size
+assert brain.components["striatum"].n_output == config.brain.sizes.n_actions * striatum.neurons_per_action
+```
+
+---
+
+### Pattern 1a: Hardcoded Config Defaults
+
+Testing that default config values match hardcoded expectations.
 
 ❌ **BAD:**
 ```python
 def test_neuron_count():
     region = Cortex(config)
-    assert region.n_neurons == 1000  # ❌ Hardcoded
+    assert region.n_neurons == 1000  # ❌ Hardcoded default
 ```
 
 ✅ **GOOD:**
 ```python
 def test_neuron_count_matches_config():
-    config = CortexConfig(n_neurons=1000)  # Explicit
+    """Test region neuron count matches provided config."""
+    config = CortexConfig(n_neurons=1000)  # Explicit value
     region = Cortex(config)
-    assert region.n_neurons == config.n_neurons  # ✅ Contract
+
+    # ✅ Tests the contract: region uses config value
+    assert region.n_neurons == config.n_neurons
+```
+
+**Alternative: Test config contract directly**
+```python
+def test_config_has_valid_neuron_count():
+    """Test config provides valid neuron count."""
+    config = CortexConfig()  # Use defaults
+
+    # ✅ Test invariants, not exact values
+    assert hasattr(config, 'n_neurons')
+    assert config.n_neurons > 0
+    assert config.n_neurons == int(config.n_neurons)  # Integer
 ```
 
 ---
@@ -302,6 +726,58 @@ def test_visualize_real_brain(tmp_path):
     assert '"thalamus"' in content
     assert '"cortex"' in content
     assert '->' in content  # Has pathways
+```
+
+---
+
+### Pattern 5: Non-Pythonic Boolean Assertions
+
+Using `== True` or `== False` instead of direct boolean assertions.
+
+❌ **BAD:**
+```python
+def test_cerebellum_mode():
+    state = cerebellum.state_dict()
+    assert state["config"]["use_enhanced"] == True  # ❌ Explicit == True
+    assert state["config"]["use_classic"] == False  # ❌ Explicit == False
+```
+
+✅ **GOOD:**
+```python
+def test_cerebellum_mode():
+    """Test cerebellum configuration mode."""
+    state = cerebellum.state_dict()
+
+    # ✅ Direct boolean assertions (Pythonic)
+    assert state["config"]["use_enhanced"]
+    assert not state["config"]["use_classic"]
+```
+
+**Why this matters:**
+- More Pythonic and idiomatic
+- Clearer intent ("assert it is true" vs "assert it equals the value True")
+- Avoids confusion with truthy/falsy values
+- `== True` can fail for truthy non-boolean values (1, non-empty strings)
+
+**Additional examples:**
+
+```python
+# ❌ Avoid
+assert region.is_active == True
+assert pathway.has_delays == False
+assert config.enable_learning == True
+
+# ✅ Prefer
+assert region.is_active
+assert not pathway.has_delays
+assert config.enable_learning
+```
+
+**Exception:** When testing actual boolean type
+```python
+# ✅ This is OK when you need to validate the type
+assert isinstance(config.enable_learning, bool)
+assert type(output) is bool  # Validate dtype
 ```
 
 ---

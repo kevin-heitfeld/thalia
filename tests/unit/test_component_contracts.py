@@ -148,6 +148,36 @@ def test_component_state_dict_contract(component_factory):
             )
 
 
+@pytest.mark.parametrize(
+    "component_factory,input_size",
+    [
+        (create_thalamus, 100),
+    ],
+    ids=["thalamus"],
+)
+def test_component_handles_empty_dict_input(component_factory, input_size):
+    """Test components handle empty dict gracefully (Phase 2 improvement).
+
+    Some components accept Dict[str, Tensor] for multi-source inputs.
+    They should handle empty dict without crashing.
+
+    Note: Thalamus uses single tensor input, so this test validates
+    that components maintain stability even with edge case inputs.
+    """
+    component = component_factory()
+
+    # For single-input components, test with zero input instead
+    zero_input = torch.zeros(input_size, dtype=torch.bool)
+
+    # Should not crash with minimal input
+    output = component(zero_input)
+
+    # Contract: valid output
+    assert output is not None, "Component should handle zero input"
+    assert not torch.isnan(output.float()).any(), "Output contains NaN"
+    assert not torch.isinf(output.float()).any(), "Output contains Inf"
+
+
 # NOTE: Growth tests are component-specific and remain in individual test files
 # because:
 # 1. Growth APIs differ significantly (grow_output vs grow_layer vs grow_source)

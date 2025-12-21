@@ -406,6 +406,7 @@ class TestDeepCerebellarNuclei:
         """Test DCN output is bool spikes (ADR-004)."""
         n_output = 64
         dcn = DeepCerebellarNuclei(
+            n_output=n_output,
             n_purkinje=n_output,
             n_mossy=128,
             device=device,
@@ -510,7 +511,7 @@ class TestEnhancedCerebellumIntegration:
 
         # Contract: checkpoint should include enhanced components
         assert "config" in state, "Checkpoint should include config"
-        assert state["config"]["use_enhanced"] == True, \
+        assert state["config"]["use_enhanced"], \
             "Config should indicate enhanced mode"
 
         if "enhanced_state" in state:
@@ -672,8 +673,8 @@ class TestBackwardCompatibility:
         enhanced_state = cerebellum_enhanced.get_full_state()
 
         # Contract: checkpoints should indicate their mode
-        assert classic_state["config"]["use_enhanced"] == False
-        assert enhanced_state["config"]["use_enhanced"] == True
+        assert not classic_state["config"]["use_enhanced"]
+        assert enhanced_state["config"]["use_enhanced"]
 
         # Contract: loading wrong checkpoint should fail
         with pytest.raises(Exception):  # CheckpointError
