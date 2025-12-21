@@ -1503,16 +1503,17 @@ class LayeredCortex(NeuralRegion):
         # LAYER-SPECIFIC DOPAMINE MODULATION (Enhancement #1)
         # =====================================================================
         # Apply layer-specific dopamine scaling to learning rates.
-        # Different layers have different DA receptor densities:
-        # - L5: 100% modulation (motor/decision output)
-        # - L2/3: 60% modulation (association/integration)
-        # - L4: 30% modulation (sensory input - stable)
-        # - L6: 20% modulation (feedback/attention - stable)
+        # Different layers have different DA receptor densities (relative sensitivity):
+        # - L5: 40% of total (motor/decision output - highest sensitivity)
+        # - L2/3: 30% of total (association/integration - moderate)
+        # - L4: 20% of total (sensory input - lower for stability)
+        # - L6: 10% of total (feedback/attention - lowest for stability)
+        # Sum = 1.0 (dopamine is distributed, not multiplied)
         base_dopamine = self.state.dopamine
-        l4_dopamine = base_dopamine * 0.3
-        l23_dopamine = base_dopamine * 0.6
-        l5_dopamine = base_dopamine * 1.0
-        l6_dopamine = base_dopamine * 0.2
+        l4_dopamine = base_dopamine * 0.2
+        l23_dopamine = base_dopamine * 0.3
+        l5_dopamine = base_dopamine * 0.4
+        l6_dopamine = base_dopamine * 0.1
 
         # Store for diagnostics and testing
         self._l4_dopamine = l4_dopamine
