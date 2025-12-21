@@ -29,8 +29,8 @@ Key Features:
    - Dopamine retroactively credits (burst) or blames (dip) the winner
    - Losers' eligibility decays without reinforcement
 
-FILE ORGANIZATION (1761 lines)
-===============================
+FILE ORGANIZATION (~1950 lines)
+================================
 Lines 1-150:     Module docstring, imports, class registration
 Lines 151-400:   __init__() and pathway initialization (D1/D2)
 Lines 401-650:   Forward pass coordination (D1/D2 integration)
@@ -39,10 +39,25 @@ Lines 851-1050:  Three-factor learning (eligibility × dopamine)
 Lines 1051-1250: Exploration (UCB-based) and homeostasis
 Lines 1251-1450: Growth and neurogenesis
 Lines 1451-1650: Diagnostics and health monitoring
-Lines 1651-1761: Utility methods and state management
+Lines 1651-1950: Utility methods and state management
 
-NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) or collapse
-regions (Ctrl+K Ctrl+0) to navigate efficiently.
+QUICK NAVIGATION
+================
+VSCode shortcuts:
+  • Ctrl+Shift+O (Cmd+Shift+O on Mac) - "Go to Symbol" for method jumping
+  • Ctrl+K Ctrl+0 - Collapse all regions to see file outline
+  • Ctrl+K Ctrl+J - Expand all regions
+  • Ctrl+G - Go to specific line number
+  • Ctrl+F - Search within file
+
+Key methods to jump to:
+  • __init__() - Initialization and D1/D2 pathway setup
+  • forward() - Main forward pass coordination
+  • select_action() - Action selection logic
+  • update_eligibility() - Eligibility trace management
+  • apply_three_factor_learning() - Dopamine-gated plasticity
+  • grow_output() / grow_input() - Neurogenesis
+  • get_diagnostics() - Health monitoring
 
 WHY THIS FILE IS LARGE
 ======================

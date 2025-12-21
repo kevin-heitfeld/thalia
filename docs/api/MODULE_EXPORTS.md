@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 20:10:00
+> Last updated: 2025-12-21 21:45:51
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 46 modules, 548 exports
+Total: 46 modules, 556 exports
 
 ## Module Exports
 
@@ -290,7 +290,7 @@ from thalia.core.base import NeuralComponentConfig
 
 **Source**: `thalia\core\protocols\__init__.py`
 
-**Exports** (12):
+**Exports** (14):
 
 - `BrainComponent`
 - `BrainComponentBase`
@@ -304,6 +304,8 @@ from thalia.core.base import NeuralComponentConfig
 - `WeightContainer`
 - `Configurable`
 - `NeuralComponentProtocol`
+- `Checkpointable`
+- `CheckpointableWithNeuromorphic`
 
 **Usage**:
 
@@ -1212,7 +1214,7 @@ from thalia.training.visualization import TrainingMonitor
 
 **Source**: `thalia\utils\__init__.py`
 
-**Exports** (7):
+**Exports** (13):
 
 - `clamp_weights`
 - `cosine_similarity_safe`
@@ -1221,6 +1223,12 @@ from thalia.training.visualization import TrainingMonitor
 - `ones_like_config`
 - `assert_single_instance`
 - `CircularDelayBuffer`
+- `compute_theta_encoding_retrieval`
+- `compute_ach_recurrent_suppression`
+- `compute_gamma_phase_gate`
+- `compute_theta_gamma_coupling_gate`
+- `compute_oscillator_modulated_gain`
+- `compute_learning_rate_modulation`
 
 **Usage**:
 

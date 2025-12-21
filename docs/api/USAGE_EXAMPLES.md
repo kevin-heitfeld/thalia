@@ -1,7 +1,7 @@
 # Usage Examples
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 20:10:00
+> Last updated: 2025-12-21 21:45:51
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs usage examples extracted from docstrings and training scripts.
@@ -65,7 +65,7 @@ Sources not in dict are treated as silent (no spikes)
                 subsystem = getattr(self, name)
                 if subsystem is not None and hasattr(subsystem, 'reset_state'):
                     subsystem.reset_state()
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
 ```
 
 ---

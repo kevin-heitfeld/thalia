@@ -1,12 +1,12 @@
 # Type Aliases Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 20:10:00
+> Last updated: 2025-12-21 21:45:51
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all type aliases used in Thalia for clearer type hints.
 
-Total: 14 type aliases
+Total: 15 type aliases
 
 ## Type Aliases by Category
 
@@ -97,6 +97,16 @@ Total: 14 type aliases
 **Definition**: `Optional[str]`
 
 **Description**: Optional source port identifier for layer-specific outputs.  Examples: 'l23', 'l5', 'l4', 'ca1', 'ca3', None
+
+**Source**: `thalia/typing.py`
+
+---
+
+#### `SourceSpec`
+
+**Definition**: `Tuple[str, Optional[str]]`
+
+**Description**: Specification for a source component with optional port.  Tuple of (region_name, port) where port identifies layer-specific outputs.  Example: source_spec: SourceSpec = ("cortex", "l23")  # Layer 2/3 output source_spec: SourceSpec = ("hippocampus", None)  # Default output
 
 **Source**: `thalia/typing.py`
 

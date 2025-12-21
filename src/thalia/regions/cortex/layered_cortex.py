@@ -33,8 +33,8 @@ Architecture (based on canonical cortical microcircuit):
     │   - Burst-capable neurons         │
     └───────────────────────────────────┘
 
-FILE ORGANIZATION (1295 lines)
-===============================
+FILE ORGANIZATION (~1940 lines)
+================================
 Lines 1-150:     Module docstring, imports, class registration
 Lines 151-350:   __init__() and layer initialization
 Lines 351-500:   L4 forward pass (input processing)
@@ -42,10 +42,27 @@ Lines 501-700:   L2/3 forward pass (recurrent processing)
 Lines 701-850:   L5 forward pass (output generation)
 Lines 851-1000:  Learning (BCM + STDP for inter-layer connections)
 Lines 1001-1150: Growth and homeostasis
-Lines 1151-1295: Diagnostics and utility methods
+Lines 1151-1940: Diagnostics and utility methods
 
-NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) or collapse
-regions (Ctrl+K Ctrl+0) to navigate between layers.
+QUICK NAVIGATION
+================
+VSCode shortcuts:
+  • Ctrl+Shift+O (Cmd+Shift+O on Mac) - "Go to Symbol" for method jumping
+  • Ctrl+K Ctrl+0 - Collapse all regions to see file outline
+  • Ctrl+K Ctrl+J - Expand all regions
+  • Ctrl+G - Go to specific line number
+  • Ctrl+F - Search within file
+
+Key methods to jump to:
+  • __init__() - Layer initialization and weight setup
+  • forward() - Main forward pass (L4→L2/3→L5 cascade)
+  • _process_l4() - Layer 4 feedforward processing
+  • _process_l23() - Layer 2/3 recurrent processing
+  • _process_l5() - Layer 5 output generation
+  • _apply_learning() - BCM + STDP learning
+  • grow_output() / grow_input() - Layer growth
+  • set_oscillator_phases() - Theta/gamma modulation
+  • get_diagnostics() - Layer-wise health metrics
 
 WHY THIS FILE IS LARGE
 ======================
