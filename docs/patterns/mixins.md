@@ -164,87 +164,64 @@ class L5Pyramidal(NeuralComponent, DendriticComputationMixin):
 
 ## Mixin Method Reference
 
-### DiagnosticsMixin Methods
+> **📚 For complete mixin API documentation with all method signatures, see [MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md)**
 
+This section focuses on **usage patterns** and **best practices** for working with mixins.
+
+### Common Diagnostic Patterns
+
+**Health Monitoring Pattern**:
 ```python
-def check_health(self) -> HealthMetrics:
-    """Check overall region health.
+class MyRegion(NeuralRegion):
+    def forward(self, x):
+        output = self._compute(x)
 
-    Returns:
-        HealthMetrics with is_healthy, firing_rate, weight_stats, issues
-    """
+        # Use DiagnosticsMixin to check health
+        health = self.check_health()
+        if not health.is_healthy:
+            logger.warning(f"Health issue: {health.issues}")
 
-def get_firing_rate(self, spikes: torch.Tensor) -> float:
-    """Compute firing rate from spikes.
+        return output
+```
 
-    Args:
-        spikes: Binary spike tensor [batch, neurons] or [batch, neurons, time]
+**Weight Health Pattern**:
+```python
+# Check weights for common issues
+weight_health = self.check_weight_health(self.weights, name="feedforward")
+if weight_health.has_dead_neurons:
+    logger.warning(f"Dead neurons detected in {name}")
+```
 
-    Returns:
-        Firing rate in Hz
-    """
+**Spike Monitoring Pattern**:
+```python
+# Detect pathological activity
+if self.detect_runaway_excitation(spikes):
+    logger.error("Runaway excitation - reducing learning rate")
+    self.learning_rate *= 0.5
 
-def check_weight_health(
-    self,
-    weights: torch.Tensor,
-    name: str = "weights"
-) -> WeightHealth:
-    """Check weight matrix for issues.
+if self.detect_silence(spikes):
+    logger.warning("Network silence - check inputs")
+```
 
-    Checks:
-        - NaN/Inf values
-        - Dead neurons (all weights zero)
-        - Extreme values (>5 std from mean)
+### Neuromodulator Usage Patterns
 
-    Returns:
-        WeightHealth with has_nan, has_inf, has_dead_neurons, extreme_count
-    """
+**Setting Neuromodulators**:
+```python
+# Set specific neuromodulators (NeuromodulatorMixin)
+region.set_neuromodulator("dopamine", 0.8)  # Reward signal
+region.set_neuromodulator("acetylcholine", 1.0)  # Attention
 
-def detect_runaway_excitation(
-    self,
-    spikes: torch.Tensor,
-    threshold: float = 0.9
-) -> bool:
-    """Detect if >90% of neurons are firing.
+# Or set multiple at once
+region.set_neuromodulators(dopamine=0.8, acetylcholine=1.0)
+```
 
-    Args:
-        spikes: Binary spike tensor
-        threshold: Fraction of neurons firing to trigger alert
-
-    Returns:
-        True if runaway excitation detected
-    """
-
-def detect_silence(
-    self,
-    spikes: torch.Tensor,
-    threshold: float = 0.01
-) -> bool:
-    """Detect if <1% of neurons are firing.
-
-    Args:
-        spikes: Binary spike tensor
-        threshold: Minimum fraction of neurons that should fire
-
-    Returns:
-        True if silence detected
-    """
-
-def check_gradient_health(
-    self,
-    param: torch.nn.Parameter
-) -> GradientHealth:
-    """Check parameter gradients for issues.
-
-    Checks:
-        - Gradient norm
-        - NaN/Inf in gradients
-        - Vanishing gradients (norm < 1e-7)
-        - Exploding gradients (norm > 10)
-
-    Returns:
-        GradientHealth with gradient_norm, has_nan, is_vanishing, is_exploding
-    """
+**Modulating Learning Rates**:
+```python
+# Get dopamine-modulated learning rate
+effective_lr = self.get_effective_learning_rate(
+    base_lr=self.config.learning_rate,
+    dopamine_sensitivity=2.0
+)
 ```
 
 ---

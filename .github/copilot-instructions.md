@@ -269,6 +269,10 @@ Select-String -Path src\* -Pattern "CircularDelayBuffer" -Recurse
 
 ## Type Alias Glossary
 
+> **For complete type alias documentation, see `docs/api/TYPE_ALIASES.md`**
+
+**Quick reference** (most commonly used types):
+
 ```python
 # Component Organization
 ComponentGraph = Dict[str, NeuralRegion]           # name -> component instance
@@ -278,19 +282,12 @@ TopologyGraph = Dict[str, List[str]]                  # src -> [tgt1, tgt2, ...]
 # Multi-Source Pathways
 SourceSpec = Tuple[str, Optional[str]]                # (region_name, port)
 SourceOutputs = Dict[str, torch.Tensor]               # {region_name: output_spikes}
-InputSizes = Dict[str, int]                           # {region_name: size}
-
-# Configuration
-ComponentSpec = dataclass                              # Pre-instantiation component definition
-ConnectionSpec = dataclass                             # Pre-instantiation connection definition
+SynapticWeights = Dict[str, torch.Tensor]             # {"source_name": weight_matrix}
+LearningStrategies = Dict[str, LearningStrategy]      # {"source_name": strategy}
 
 # Port-Based Routing
 SourcePort = Optional[str]                            # 'l23', 'l5', 'l4', None
 TargetPort = Optional[str]                            # 'feedforward', 'top_down', None
-
-# Diagnostics
-DiagnosticsDict = Dict[str, Any]                      # Component health/performance metrics
-HealthReport = dataclass                               # Structured health check results
 
 # State Management
 StateDict = Dict[str, torch.Tensor]                   # Component state for checkpointing

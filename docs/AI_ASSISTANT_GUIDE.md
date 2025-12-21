@@ -75,41 +75,28 @@ Select-String -Path src\thalia\* -Pattern "def grow_output" -Recurse
 
 ## Type Alias Glossary
 
-Understanding these type patterns helps navigate the codebase:
+> **📚 For complete type alias documentation, see [TYPE_ALIASES.md](../api/TYPE_ALIASES.md)**
 
-```python
-# Component Organization
-NeuralRegion = Base class for brain regions              # synaptic_weights dict
-AxonalProjection = Spike routing with delays             # NO weights, NO learning
-ComponentGraph = Dict[str, NeuralRegion]                # name -> component instance
-ConnectionGraph = Dict[Tuple[str, str], AxonalProjection]  # (src, tgt) -> projection
-TopologyGraph = Dict[str, List[str]]                     # src -> [tgt1, tgt2, ...]
+Key type patterns for understanding the codebase:
 
-# Multi-Source Routing
-SourceSpec = dataclass                                   # (region_name, port, size, delay_ms)
-SourceOutputs = Dict[str, torch.Tensor]                  # {"region:port": output_spikes}
-InputSizes = Dict[str, int]                              # {"region:port": size}
+**Component Organization**:
+- `ComponentGraph` - Maps region names to component instances
+- `ConnectionGraph` - Maps (source, target) pairs to pathways
+- `TopologyGraph` - Maps source regions to lists of target regions
 
-# Synaptic Organization
-SynapticWeights = Dict[str, torch.Tensor]               # {"source_name": weight_matrix}
-LearningStrategies = Dict[str, LearningStrategy]        # {"source_name": strategy}
+**Multi-Source Routing**:
+- `SourceSpec` - Defines a source with region name, optional port, size, and delay
+- `SourceOutputs` - Maps source names to their spike outputs
+- `SynapticWeights` / `LearningStrategies` - Per-source organization at dendrites
 
-# Configuration
-ComponentSpec = dataclass                                # Pre-instantiation component definition
-ConnectionSpec = dataclass                               # Pre-instantiation connection definition
+**State & Checkpointing**:
+- `StateDict` - Component state tensors for checkpointing
+- `CheckpointMetadata` - Training progress and stage information
 
-# Port-Based Routing
-SourcePort = Optional[str]                               # 'l23', 'l5', 'l4', 'ca1', None
-TargetPort = Optional[str]                               # 'feedforward', 'top_down', 'ec_l3', None
+**Port-Based Routing**:
+- `SourcePort` / `TargetPort` - Optional layer/pathway identifiers (e.g., 'l23', 'feedforward')
 
-# Diagnostics
-DiagnosticsDict = Dict[str, Any]                         # Component health/performance metrics
-HealthReport = dataclass                                  # Structured health check results
-
-# State Management
-StateDict = Dict[str, torch.Tensor]                      # Component state for checkpointing
-CheckpointMetadata = Dict[str, Any]                      # Training progress, stage info
-```
+See [TYPE_ALIASES.md](../api/TYPE_ALIASES.md) for complete definitions with usage contexts.
 
 ## Standard Growth API
 

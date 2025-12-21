@@ -108,86 +108,83 @@ new_weights, metrics = self.strategy.compute_update(
 
 ## Available Strategies
 
-### 1. Hebbian Strategy
+> **📚 For complete API documentation of all strategy factories and parameters, see [LEARNING_STRATEGIES_API.md](../api/LEARNING_STRATEGIES_API.md)**
+
+### Strategy Selection Guide
+
+Choose your learning strategy based on biological context and learning requirements:
+
+#### 1. Hebbian Strategy
 **Rule**: Δw ∝ pre × post (basic correlation)
 
 **Use case**: Simple unsupervised learning, feedforward pathways
 
+**When to use**:
+- Fast, unsupervised feature learning
+- Initial sensory processing
+- Feedforward pathways without temporal requirements
+
 ```python
-hebbian = create_strategy(
-    "hebbian",
-    learning_rate=0.01,
-    normalize=True,
-    decay_rate=0.0001,
-)
+hebbian = create_strategy("hebbian", learning_rate=0.01)
 ```
 
-**Parameters**:
-- `learning_rate`: Step size for weight updates
-- `normalize`: L2 normalize weight updates
-- `decay_rate`: Weight decay (prevents unlimited growth)
+**Biological basis**: Basic Hebbian principle - "neurons that fire together, wire together"
 
 ---
 
-### 2. STDP Strategy
+#### 2. STDP Strategy
 **Rule**: Spike-timing dependent plasticity with temporal window
 
 **Use case**: Hippocampus, cortex, temporal sequence learning
 
+**When to use**:
+- Temporal sequence learning
+- One-shot learning (hippocampus)
+- Causal relationship learning
+- Precise spike timing matters
+
 ```python
-stdp = create_hippocampus_strategy(  # Preconfigured
-    learning_rate=0.01,
-    a_plus=0.01,       # LTP amplitude
-    a_minus=0.005,     # LTD amplitude (asymmetric)
-    tau_plus=20.0,     # LTP time constant (ms)
-    tau_minus=20.0,    # LTD time constant (ms)
-)
+stdp = create_hippocampus_strategy(learning_rate=0.01)  # Preconfigured for hippocampus
 ```
 
-**Parameters**:
-- `a_plus / a_minus`: LTP/LTD amplitudes (a_plus > a_minus for asymmetric STDP)
-- `tau_plus / tau_minus`: Time constants for pre/post traces
-- `all_to_all`: True = all spike pairs interact, False = nearest-neighbor only
-
-**Biological basis**: Hebbian "fire together, wire together" with temporal precision
+**Biological basis**: Pre-before-post strengthens (LTP), post-before-pre weakens (LTD)
 
 ---
 
-### 3. BCM Strategy
+#### 3. BCM Strategy
 **Rule**: Bienenstock-Cooper-Munro with sliding threshold
 
-**Use case**: Cortex, selectivity development, unsupervised learning
+**Use case**: Cortex, selectivity development, homeostatic plasticity
+
+**When to use**:
+- Developing feature selectivity (e.g., orientation tuning)
+- Preventing runaway excitation
+- Maintaining stable firing rates
+- Unsupervised cortical learning
 
 ```python
-bcm = create_cortex_strategy(  # Preconfigured
-    learning_rate=0.01,
-    bcm_tau_ms=10000.0,  # Threshold adaptation timescale
-    target_rate_hz=5.0,   # Target firing rate
-)
+bcm = create_cortex_strategy(learning_rate=0.01)  # Preconfigured for cortex
 ```
 
-**Parameters**:
-- `bcm_tau_ms`: Sliding threshold time constant
-- `target_rate_hz`: Desired average firing rate
-- Automatically maintains selectivity while preventing runaway activity
-
-**Biological basis**: Explains development of orientation selectivity in V1
+**Biological basis**: Explains development of orientation selectivity in V1, self-stabilizing
 
 ---
 
-### 4. Three-Factor Strategy
+#### 4. Three-Factor Strategy
 **Rule**: Δw = eligibility × modulator (dopamine-gated learning)
 
 **Use case**: Striatum, reinforcement learning, reward-based learning
 
-```python
-three_factor = create_striatum_strategy(  # Preconfigured
-    learning_rate=0.001,
-    eligibility_tau_ms=100.0,   # Trace persistence
-    eligibility_decay=0.95,      # Per-step decay
-)
+**When to use**:
+- Reward-based learning
+- Credit assignment over time
+- Dopamine-modulated plasticity
+- Reinforcement learning
 
-# During learning
+```python
+three_factor = create_striatum_strategy(learning_rate=0.001)  # Preconfigured for striatum
+
+# During learning - modulator (dopamine) gates weight updates
 new_weights, metrics = three_factor.compute_update(
     weights=self.weights,
     pre_spikes=pre,
@@ -196,8 +193,7 @@ new_weights, metrics = three_factor.compute_update(
 )
 ```
 
-**Parameters**:
-- `eligibility_tau_ms`: How long synaptic tags persist
+**Biological basis**: Dopamine reward prediction error (Schultz et al., 1997), eligibility traces
 - `eligibility_decay`: Per-timestep decay factor
 - `modulator`: Dopamine level (passed during compute_update)
 
