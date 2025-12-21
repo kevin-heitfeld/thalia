@@ -74,6 +74,8 @@ Located in: `docs/api/`
 | **PROTOCOLS_REFERENCE.md** | Protocol/interface definitions | `@runtime_checkable` Protocol classes | Auto |
 | **USAGE_EXAMPLES.md** | Code examples from docstrings | Module docstrings and training scripts | Auto |
 | **CHECKPOINT_FORMAT.md** | Checkpoint file structure and format | `get_full_state()` methods, checkpoint save/load code | Auto |
+| **TYPE_ALIASES.md** | Type alias definitions | Type assignments, copilot instructions | Auto |
+| **COMPONENT_RELATIONSHIPS.md** | Component connections in preset architectures | Preset builder functions | Auto |
 
 **Benefits**:
 - ✅ Always synchronized with codebase

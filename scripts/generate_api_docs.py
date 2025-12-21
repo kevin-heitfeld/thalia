@@ -14,13 +14,15 @@ This script auto-generates:
 10. PROTOCOLS_REFERENCE.md - Protocol/interface definitions
 11. USAGE_EXAMPLES.md - Code examples from docstrings
 12. CHECKPOINT_FORMAT.md - Checkpoint file structure and format
+13. TYPE_ALIASES.md - Type alias definitions
+14. COMPONENT_RELATIONSHIPS.md - Component connections in preset architectures
 
 Run this script whenever components are added/modified to keep docs synchronized.
 """
 
 import ast
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -153,6 +155,27 @@ class CheckpointStructure:
     docstring: str
 
 
+@dataclass
+class TypeAliasInfo:
+    """Type alias definition."""
+    name: str
+    definition: str
+    description: str
+    file_path: str
+    category: str  # "Component", "Routing", "State", etc.
+
+
+@dataclass
+class ComponentRelation:
+    """Relationship between components in preset architectures."""
+    source: str
+    target: str
+    pathway_type: str
+    preset_name: str
+    source_port: Optional[str]
+    target_port: Optional[str]
+
+
 class APIDocGenerator:
     """Generate API documentation from codebase."""
 
@@ -173,6 +196,8 @@ class APIDocGenerator:
         self.protocols: List[ProtocolInfo] = []
         self.usage_examples: List[UsageExample] = []
         self.checkpoint_structures: List[CheckpointStructure] = []
+        self.type_aliases: List[TypeAliasInfo] = []
+        self.component_relations: List[ComponentRelation] = []
 
     def generate(self):
         """Generate all API documentation."""
@@ -194,6 +219,8 @@ class APIDocGenerator:
         self._find_protocols()
         self._find_usage_examples()
         self._find_checkpoint_structures()
+        self._find_type_aliases()
+        self._find_component_relations()
 
         # Generate documentation files
         self._generate_component_catalog()
@@ -208,6 +235,8 @@ class APIDocGenerator:
         self._generate_protocols_reference()
         self._generate_usage_examples_reference()
         self._generate_checkpoint_format_reference()
+        self._generate_type_aliases_reference()
+        self._generate_component_relationships()
 
         print("\n✅ API documentation generated successfully!")
         print(f"   Location: {self.api_dir.relative_to(self.docs_dir.parent)}")
@@ -1448,6 +1477,293 @@ class APIDocGenerator:
             f.write("- `pytorch_version` - PyTorch version used\n\n")
 
             f.write("The checkpoint manager can migrate old formats when loading.\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _find_type_aliases(self):
+        """Extract type alias definitions from code."""
+        # Check key files
+        key_files = [
+            self.src_dir / "core" / "dynamic_brain.py",
+            self.src_dir / "core" / "brain_builder.py",
+            self.src_dir / "pathways" / "axonal_projection.py",
+            self.src_dir / "io" / "compression.py",
+            self.src_dir / "synapses" / "spillover.py",
+        ]
+
+        # Also scan copilot instructions for documented aliases
+        copilot_file = self.docs_dir.parent / ".github" / "copilot-instructions.md"
+        if copilot_file.exists():
+            self._extract_aliases_from_copilot(copilot_file)
+
+        for py_file in key_files:
+            if not py_file.exists():
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+                tree = ast.parse(content)
+
+                for node in ast.walk(tree):
+                    # Look for: TypeName = Type[...] or TypeName = Literal[...]
+                    if isinstance(node, ast.Assign):
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                name = target.id
+                                # Check if it's a type alias (uppercase first letter)
+                                if name[0].isupper() and name not in ("True", "False", "None"):
+                                    definition = self._get_source_segment(content, node.value)
+                                    if definition and any(kw in definition for kw in ["Dict", "List", "Tuple", "Literal", "Callable", "Optional", "Union"]):
+                                        self.type_aliases.append(TypeAliasInfo(
+                                            name=name,
+                                            definition=definition,
+                                            description="",
+                                            file_path=str(py_file.relative_to(self.src_dir)),
+                                            category=self._categorize_type_alias(name),
+                                        ))
+            except Exception:
+                continue
+
+    def _extract_aliases_from_copilot(self, copilot_file: Path):
+        """Extract type aliases documented in copilot instructions."""
+        content = copilot_file.read_text(encoding="utf-8")
+        lines = content.split("\n")
+
+        in_glossary = False
+        for i, line in enumerate(lines):
+            if "## Type Alias Glossary" in line:
+                in_glossary = True
+                continue
+
+            if in_glossary:
+                # Stop at next major heading
+                if line.startswith("## ") and "Type Alias" not in line:
+                    break
+
+                # Look for: TypeName = TypeDefinition  # comment
+                if " = " in line and not line.strip().startswith("#"):
+                    parts = line.split("=", 1)
+                    if len(parts) == 2:
+                        name = parts[0].strip()
+                        rest = parts[1].split("#", 1)
+                        definition = rest[0].strip()
+                        description = rest[1].strip() if len(rest) > 1 else ""
+
+                        if name and definition and name[0].isupper():
+                            self.type_aliases.append(TypeAliasInfo(
+                                name=name,
+                                definition=definition,
+                                description=description,
+                                file_path=".github/copilot-instructions.md",
+                                category=self._infer_category_from_context(lines, i),
+                            ))
+
+    def _get_source_segment(self, content: str, node: ast.AST) -> str:
+        """Extract source code for an AST node."""
+        try:
+            return ast.unparse(node)
+        except Exception:
+            # Fallback for older Python or complex nodes
+            return ""
+
+    def _categorize_type_alias(self, name: str) -> str:
+        """Categorize type alias by name patterns."""
+        if "Graph" in name or "Topology" in name:
+            return "Component Organization"
+        elif "Source" in name or "Input" in name or "Output" in name or "Port" in name:
+            return "Routing"
+        elif "State" in name or "Checkpoint" in name:
+            return "State Management"
+        elif "Config" in name or "Spec" in name:
+            return "Configuration"
+        elif "Dict" in name or "Metadata" in name:
+            return "Data Structures"
+        return "Other"
+
+    def _infer_category_from_context(self, lines: List[str], current_idx: int) -> str:
+        """Infer category from surrounding comment lines."""
+        # Look backwards for comment lines
+        for i in range(current_idx - 1, max(0, current_idx - 10), -1):
+            line = lines[i].strip()
+            if line.startswith("#"):
+                comment = line.lstrip("#").strip()
+                if comment and not comment.startswith("("):
+                    return comment
+        return "Other"
+
+    def _find_component_relations(self):
+        """Extract component relationships from preset architectures."""
+        brain_builder_file = self.src_dir / "core" / "brain_builder.py"
+
+        if not brain_builder_file.exists():
+            return
+
+        try:
+            content = brain_builder_file.read_text(encoding="utf-8")
+            tree = ast.parse(content)
+
+            # Look for preset builder functions
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    if node.name.startswith("_build_"):
+                        preset_name = node.name.replace("_build_", "")
+                        self._extract_connections_from_preset(node, preset_name)
+        except Exception:
+            pass
+
+    def _extract_connections_from_preset(self, func_node: ast.FunctionDef, preset_name: str):
+        """Extract connection calls from preset builder function."""
+        for node in ast.walk(func_node):
+            if isinstance(node, ast.Call):
+                # Look for builder.connect() calls
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "connect":
+                    # Extract source and target (always first 2 positional args)
+                    if len(node.args) >= 2:
+                        source = self._get_string_value(node.args[0])
+                        target = self._get_string_value(node.args[1])
+
+                        # pathway_type can be positional (3rd arg) or keyword
+                        pathway_type = None
+                        if len(node.args) >= 3:
+                            pathway_type = self._get_string_value(node.args[2])
+
+                        source_port = None
+                        target_port = None
+
+                        # Check for keyword arguments
+                        for keyword in node.keywords:
+                            if keyword.arg == "pathway_type" and not pathway_type:
+                                pathway_type = self._get_string_value(keyword.value)
+                            elif keyword.arg == "source_port":
+                                source_port = self._get_string_value(keyword.value)
+                            elif keyword.arg == "target_port":
+                                target_port = self._get_string_value(keyword.value)
+
+                        if source and target and pathway_type:
+                            self.component_relations.append(ComponentRelation(
+                                source=source,
+                                target=target,
+                                pathway_type=pathway_type,
+                                preset_name=preset_name,
+                                source_port=source_port,
+                                target_port=target_port,
+                            ))
+
+    def _get_string_value(self, node: ast.AST) -> Optional[str]:
+        """Extract string value from AST node."""
+        if isinstance(node, ast.Constant):
+            return str(node.value) if isinstance(node.value, str) else None
+        elif isinstance(node, ast.Str):
+            return str(node.s) if isinstance(node.s, str) else None
+        return None
+
+    def _generate_type_aliases_reference(self):
+        """Generate TYPE_ALIASES.md."""
+        output_file = self.api_dir / "TYPE_ALIASES.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Type Aliases Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all type aliases used in Thalia for clearer type hints.\n\n")
+
+            f.write(f"Total: {len(self.type_aliases)} type aliases\n\n")
+
+            # Group by category
+            from collections import defaultdict
+            by_category = defaultdict(list)
+            for alias in self.type_aliases:
+                by_category[alias.category].append(alias)
+
+            f.write("## Type Aliases by Category\n\n")
+
+            for category in sorted(by_category.keys()):
+                aliases = by_category[category]
+                f.write(f"### {category}\n\n")
+
+                for alias in sorted(aliases, key=lambda a: a.name):
+                    f.write(f"#### `{alias.name}`\n\n")
+                    f.write(f"**Definition**: `{alias.definition}`\n\n")
+
+                    if alias.description:
+                        f.write(f"**Description**: {alias.description}\n\n")
+
+                    f.write(f"**Source**: `{alias.file_path}`\n\n")
+                    f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _generate_component_relationships(self):
+        """Generate COMPONENT_RELATIONSHIPS.md."""
+        output_file = self.api_dir / "COMPONENT_RELATIONSHIPS.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Component Relationships\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document shows how components connect in preset brain architectures.\n\n")
+
+            if not self.component_relations:
+                f.write("No preset architectures found.\n\n")
+                print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+                return
+
+            # Group by preset
+            from collections import defaultdict
+            by_preset = defaultdict(list)
+            for relation in self.component_relations:
+                by_preset[relation.preset_name].append(relation)
+
+            f.write(f"Total: {len(by_preset)} preset architectures\n\n")
+
+            for preset_name in sorted(by_preset.keys()):
+                relations = by_preset[preset_name]
+                f.write(f"## Preset: `{preset_name}`\n\n")
+
+                # Build component list
+                components = set()
+                for rel in relations:
+                    components.add(rel.source)
+                    components.add(rel.target)
+
+                f.write(f"**Components**: {len(components)}\n\n")
+                f.write(f"**Connections**: {len(relations)}\n\n")
+
+                # Show connections table
+                f.write("### Connections\n\n")
+                f.write("| Source | Source Port | → | Target | Target Port | Pathway Type |\n")
+                f.write("|--------|-------------|---|--------|-------------|-------------|\n")
+
+                for rel in relations:
+                    src_port = rel.source_port or "default"
+                    tgt_port = rel.target_port or "default"
+                    f.write(f"| `{rel.source}` | `{src_port}` | → | `{rel.target}` | `{tgt_port}` | `{rel.pathway_type}` |\n")
+
+                f.write("\n")
+
+                # Generate mermaid diagram
+                f.write("### Architecture Diagram\n\n")
+                f.write("```mermaid\n")
+                f.write("graph TB\n")
+
+                for rel in relations:
+                    # Create edge label - use simple text without special characters for mermaid
+                    label = rel.pathway_type
+                    if rel.source_port and rel.source_port != "default":
+                        label = f"{rel.source_port} {label}"
+                    if rel.target_port and rel.target_port != "default":
+                        label = f"{label} to {rel.target_port}"
+
+                    f.write(f"    {rel.source} -->|{label}| {rel.target}\n")
+
+                f.write("```\n\n")
+                f.write("---\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 

@@ -1,7 +1,7 @@
 # Checkpoint Format Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 19:35:38
+> Last updated: 2025-12-21 19:47:07
 > Generated from: `scripts/generate_api_docs.py`
 
 This document describes the checkpoint file format used by Thalia. Checkpoints are created using `brain.save_checkpoint()` and restored with `brain.load_checkpoint()`.

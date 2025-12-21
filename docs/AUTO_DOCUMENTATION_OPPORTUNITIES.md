@@ -4,7 +4,7 @@
 
 This document tracks opportunities for auto-generating documentation from code to reduce maintenance burden and ensure documentation stays synchronized.
 
-## ✅ Currently Auto-Generated (12 documents)
+## ✅ Currently Auto-Generated (14 documents)
 
 ### API Reference (docs/api/)
 
@@ -52,9 +52,17 @@ This document tracks opportunities for auto-generating documentation from code t
     - Source: Module docstrings and training scripts
     - Coverage: 13 examples across 4 categories
 
-12. **CHECKPOINT_FORMAT.md** ✨ NEW - Checkpoint file structure and format
+12. **CHECKPOINT_FORMAT.md** - Checkpoint file structure and format
     - Source: `get_full_state()` methods, checkpoint save/load code
     - Coverage: Top-level structure, component states, file formats
+
+13. **TYPE_ALIASES.md** ✨ NEW - Type alias definitions
+    - Source: Type assignments in code, copilot instructions
+    - Coverage: 17 type aliases across 6 categories
+
+14. **COMPONENT_RELATIONSHIPS.md** ✨ NEW - Component connections in preset architectures
+    - Source: Preset builder functions
+    - Coverage: 2 preset architectures (default, minimal) with mermaid diagrams
 
 **Generation**: Run `python scripts/generate_api_docs.py`
 
@@ -173,10 +181,10 @@ This document tracks opportunities for auto-generating documentation from code t
 ## 📊 Impact Analysis
 
 ### Current Coverage ✅ EXCEEDED TARGET
-- **12 docs auto-generated** (up from 11) - 100% synchronized with code
-- **43 docs manually maintained** (55 total - 12 auto)
-- **22% automation rate** 🎯 EXCEEDED 20% TARGET
-- **Maintenance time saved**: ~30 hours/year
+- **14 docs auto-generated** (up from 12) - 100% synchronized with code
+- **41 docs manually maintained** (55 total - 14 auto)
+- **25% automation rate** 🎯 EXCEEDED 22% TARGET
+- **Maintenance time saved**: ~35 hours/year
 
 ### Before This Session
 - **6 docs auto-generated**
@@ -192,13 +200,17 @@ This document tracks opportunities for auto-generating documentation from code t
 - **20% automation rate**
 - **New**: PROTOCOLS_REFERENCE.md (8 protocols), USAGE_EXAMPLES.md (13 examples)
 
-### After Phase 5: Checkpoint Format (+1 doc) → 12 docs total ✅ CURRENT
-- **12 docs auto-generated**
-- **43 docs manually maintained**
-- **22% automation rate** 🎉
-- **2000+ lines** of auto-generated documentation
+### After Phase 5: Checkpoint Format (+1 doc) → 12 docs total
+- **22% automation rate**
 - **New**: CHECKPOINT_FORMAT.md (state structure, file formats, compression)
-- **Maintenance time saved**: 30+ hours/year
+
+### After Phase 6: Type Aliases & Relationships (+2 docs) → 14 docs total ✅ CURRENT
+- **14 docs auto-generated**
+- **41 docs manually maintained**
+- **25% automation rate** 🎉
+- **2200+ lines** of auto-generated documentation
+- **New**: TYPE_ALIASES.md (17 aliases), COMPONENT_RELATIONSHIPS.md (2 presets with mermaid diagrams)
+- **Maintenance time saved**: 35+ hours/year
 
 ### Why Not Auto-Generate Everything?
 

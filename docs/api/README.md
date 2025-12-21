@@ -17,6 +17,8 @@
 - **[PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md)** — Protocol/interface definitions *(auto-generated)*
 - **[USAGE_EXAMPLES.md](USAGE_EXAMPLES.md)** — Code examples from docstrings *(auto-generated)*
 - **[CHECKPOINT_FORMAT.md](CHECKPOINT_FORMAT.md)** — Checkpoint file structure and format *(auto-generated)*
+- **[TYPE_ALIASES.md](TYPE_ALIASES.md)** — Type alias definitions *(auto-generated)*
+- **[COMPONENT_RELATIONSHIPS.md](COMPONENT_RELATIONSHIPS.md)** — Component connections in preset architectures *(auto-generated)*
 
 ---
 
