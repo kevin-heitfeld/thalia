@@ -1,0 +1,34 @@
+# Pre-commit hooks for Thalia
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Documentation validation
+  - repo: local
+    hooks:
+      - id: validate-docs
+        name: Validate Documentation
+        entry: python scripts/validate_docs.py
+        language: system
+        pass_filenames: false
+        files: \.(md|py)$
+        stages: [commit]
+
+  # Trailing whitespace
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^docs/archive/
+      - id: end-of-file-fixer
+        exclude: ^docs/archive/
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+
+  # Python formatting (if desired)
+  # - repo: https://github.com/psf/black
+  #   rev: 23.12.1
+  #   hooks:
+  #     - id: black
+  #       args: [--line-length=100]

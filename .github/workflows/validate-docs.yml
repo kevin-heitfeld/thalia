@@ -1,0 +1,44 @@
+name: Validate Documentation
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - '.github/copilot-instructions.md'
+      - 'scripts/validate_docs.py'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - '.github/copilot-instructions.md'
+      - 'scripts/validate_docs.py'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Run documentation validation
+      run: |
+        python scripts/validate_docs.py
+
+    - name: Comment on PR (if validation fails)
+      if: failure() && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '❌ Documentation validation failed. Please run `python scripts/validate_docs.py` locally to see errors.'
+          })

@@ -150,7 +150,7 @@ To verify noise is working:
 
 ```python
 # Check membrane noise
-assert brain.cortex.impl.neurons.config.noise_std > 0
+assert brain.components["cortex"].neurons.config.noise_std > 0
 
 # Check scheduler
 trainer = CurriculumTrainer(brain, ...)

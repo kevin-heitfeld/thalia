@@ -42,14 +42,10 @@ self.neuromodulator_manager.update(
     prediction_error=prediction_error
 )
 
-# Broadcast to all regions
-self.neuromodulator_manager.broadcast_to_regions({
-    'cortex': self.cortex,
-    'hippocampus': self.hippocampus,
-    'pfc': self.pfc,
-    'striatum': self.striatum,
-    'cerebellum': self.cerebellum,
-})
+# Broadcast to all regions (using brain.components dict)
+regions = {name: comp for name, comp in self.components.items()}
+self.neuromodulator_manager.broadcast_to_regions(regions)
+```
 ```
 
 **Coordination**:
@@ -87,7 +83,7 @@ self.neuromodulator_manager.broadcast_to_regions({
 
 **Integration**:
 ```python
-# In EventDrivenBrain.__init__()
+# In DynamicBrain.__init__()
 self.oscillator_manager = OscillatorManager()
 
 # In timestep updates
@@ -165,14 +161,14 @@ if success_rate > threshold:
 
 **Integration**:
 ```python
-# In EventDrivenBrain.__init__()
+# In DynamicBrain.__init__()
 from thalia.memory.consolidation.manager import ConsolidationManager
 
 self.consolidation_manager = ConsolidationManager(
-    hippocampus=self.hippocampus,
-    striatum=self.striatum,
-    cortex=self.cortex,
-    pfc=self.pfc,
+    hippocampus=self.components["hippocampus"],
+    striatum=self.components["striatum"],
+    cortex=self.components["cortex"],
+    pfc=self.components["pfc"],
     config=self.config,
     deliver_reward_fn=self.deliver_reward
 )

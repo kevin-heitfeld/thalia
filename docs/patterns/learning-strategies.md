@@ -91,7 +91,7 @@ class LayeredCortex:
 
 ```python
 # All regions use the same interface
-self.strategy = create_learning_strategy(
+self.strategy = create_strategy(
     "hebbian",  # or "stdp", "bcm", "three_factor"
     learning_rate=0.01,
 )
@@ -387,7 +387,7 @@ class SpikingPathway(NeuralComponent):
         super().__init__(config)
 
         # Add learning strategy
-        self.learning_strategy = create_learning_strategy(
+        self.learning_strategy = create_strategy(
             "stdp",
             learning_rate=config.learning_rate,
             a_plus=0.01,
@@ -427,8 +427,8 @@ Some regions use multiple learning rules:
 class HybridRegion(NeuralComponent):
     def __init__(self, config):
         # Fast unsupervised + slow reward-based
-        self.fast_strategy = create_learning_strategy("hebbian", lr=0.01)
-        self.slow_strategy = create_learning_strategy("three_factor", lr=0.001)
+        self.fast_strategy = create_strategy("hebbian", lr=0.01)
+        self.slow_strategy = create_strategy("three_factor", lr=0.001)
 
     def _apply_learning(self, pre, post, dopamine):
         # Fast Hebbian for feature learning

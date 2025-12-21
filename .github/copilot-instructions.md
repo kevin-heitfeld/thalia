@@ -42,9 +42,8 @@ Each region has its own learning rule:
 
 ### 2. All Processing is Spike-Based
 - Use binary spikes (0 or 1), not firing rates
-- ConductanceLIF neurons (primary neuron model) with membrane dynamics
+- ConductanceLIF neurons (ONLY neuron model) with conductance-based dynamics
 - Temporal dynamics matter (spike timing, delays, traces)
-- Note: Simple LIF is not implemented - use ConductanceLIF for all regions
 
 ### 3. Neuromodulation is Key
 - **Dopamine**: Gates learning in striatum and prefrontal
@@ -98,7 +97,6 @@ new_weights, metrics = strategy.compute_update(
 self.weights.data = new_weights
 
 # Note: Method is compute_update(), not apply()
-# Note: Factory is create_strategy(), not create_learning_strategy()
 ```
 
 ## Common Imports

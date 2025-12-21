@@ -21,7 +21,7 @@ Regions and pathways are equals - both implement the BrainComponent protocol.
 
 Pluggable learning rules (Hebbian, STDP, BCM, three-factor) via unified interface.
 - **Why it matters**: Eliminates code duplication, enables easy experimentation
-- **Migration**: Regions use `create_learning_strategy()` instead of custom learning code
+- **Migration**: Regions use `create_strategy()` instead of custom learning code
 - **Replaces**: learning-strategy-pattern.md + learning-strategy-standardization.md (archived)
 
 ### ⭐ [State Management](./state-management.md)

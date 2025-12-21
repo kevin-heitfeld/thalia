@@ -140,7 +140,6 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
         global_=GlobalConfig(
             device=device,
             dt_ms=1.0,
-            theta_frequency_hz=8.0,
         ),
         brain=BrainConfig(
             sizes=RegionSizes(

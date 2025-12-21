@@ -459,9 +459,8 @@ checkpoint/
 
 ### For Existing Code
 
-1. **EventDrivenBrain removal**: Already decided, delete it
-2. **Old checkpoints**: Add migration script to convert pathway weights → region afferent weights
-3. **Tests**: Update all tests to use new API
+1. **Old checkpoints**: Add migration script to convert pathway weights → region afferent weights (if needed)
+2. **Tests**: Update all tests to use new API (ongoing)
 
 ### API Changes
 
@@ -688,17 +687,17 @@ SpikingPathway(
 
 ```python
 # Cortex L5 → Hippocampus
-builder.connect("cortex", "hippocampus", 
-                pathway_type="axonal", 
+builder.connect("cortex", "hippocampus",
+                pathway_type="axonal",
                 source_port="l5")
 
 # Hippocampus CA1 → PFC
-builder.connect("hippocampus", "pfc", 
-                pathway_type="axonal", 
+builder.connect("hippocampus", "pfc",
+                pathway_type="axonal",
                 source_port="ca1")
 
 # PFC → Striatum (cognitive control)
-builder.connect("pfc", "striatum", 
+builder.connect("pfc", "striatum",
                 pathway_type="axonal")
 ```
 
@@ -708,12 +707,12 @@ builder.connect("pfc", "striatum",
 
 ```python
 # Sensory input → Thalamus
-builder.add_component("thalamus", "thalamus", 
+builder.add_component("thalamus", "thalamus",
                       n_input=784, n_output=256)
 # Thalamus is a region with relay neurons
 
 # Thalamus → Cortex
-builder.connect("thalamus", "cortex", 
+builder.connect("thalamus", "cortex",
                 pathway_type="axonal")  # Now it's just axons
 ```
 

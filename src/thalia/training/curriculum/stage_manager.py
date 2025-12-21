@@ -75,7 +75,7 @@ Usage:
     from thalia.config.curriculum_growth import get_curriculum_growth_config
 
     # Initialize brain
-    brain = DynamicBrain.from_thalia_config(config)_config(config)
+    brain = DynamicBrain.from_thalia_config(config)
 
     # Initialize trainer
     trainer = CurriculumTrainer(

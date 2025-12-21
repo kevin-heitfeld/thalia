@@ -9,12 +9,12 @@ This document describes the neuron models implemented in Thalia and planned futu
 
 ### Leaky Integrate-and-Fire (LIF)
 
-**Status**: 🚧 Planned but not currently implemented
+**Status**: ❌ Not Implemented
 
-A simplified current-based model planned for comparison and educational purposes.
-Currently, all regions use **ConductanceLIF** for biological realism. If you need
-simpler dynamics, ConductanceLIF can be configured with simplified parameters
-(single time constant, no adaptation).
+A simplified current-based model was considered but not implemented.
+All components use **ConductanceLIF** exclusively for biological realism.
+If you need simpler dynamics, configure ConductanceLIF with simplified parameters
+(single time constant, no adaptation). There are no plans to add SimpleLIF.
 
 #### Mathematical Description (Reference)
 
