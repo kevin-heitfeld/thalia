@@ -57,8 +57,18 @@ Located in: `docs/`
 
 Located in: `docs/api/`
 
-> **Auto-generated documentation** - Always synchronized with code
-> Run `python scripts/generate_api_docs.py` to update
+> **📚 Auto-generated documentation** - Always synchronized with code
+> **Quick Access**: See [docs/api/README.md](./api/README.md) for the complete catalog
+>
+> **Key Catalogs**:
+> - **[COMPONENT_CATALOG.md](./api/COMPONENT_CATALOG.md)** — All registered regions and pathways
+> - **[LEARNING_STRATEGIES_API.md](./api/LEARNING_STRATEGIES_API.md)** — All strategy factory functions
+> - **[DATASETS_REFERENCE.md](./api/DATASETS_REFERENCE.md)** — All dataset classes and factories
+> - **[ENUMERATIONS_REFERENCE.md](./api/ENUMERATIONS_REFERENCE.md)** — All enum types with values
+> - **[TYPE_ALIASES.md](./api/TYPE_ALIASES.md)** — All type alias definitions
+> - **[MIXINS_REFERENCE.md](./api/MIXINS_REFERENCE.md)** — All mixin classes with methods
+>
+> Run `python scripts/generate_api_docs.py` to update all auto-generated docs.
 
 | File | Purpose | Generated From | Last Updated |
 |------|---------|----------------|--------------|

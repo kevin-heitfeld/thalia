@@ -1,7 +1,11 @@
-# Task-Specific Datasets Quick Reference
+# Task-Specific Datasets Quick Start Guide
 
 **Created**: December 8, 2025
 **Status**: All Stage 0-3 datasets complete ✅
+
+> **📚 For complete API documentation of all dataset classes and factories, see [DATASETS_REFERENCE.md](./api/DATASETS_REFERENCE.md)**
+
+This guide focuses on **usage patterns** and **getting started quickly** with each dataset.
 
 ---
 
@@ -42,6 +46,11 @@ sequence, targets, pattern_type = dataset.generate_sequence()
 - **RANDOM**: No structure (control)
 
 ### Configuration
+
+> For complete field listings and default values, see [DATASETS_REFERENCE.md](./api/DATASETS_REFERENCE.md#temporalsequencedataset).
+
+**Common configuration patterns**:
+
 ```python
 from thalia.datasets import SequenceConfig, PatternType
 

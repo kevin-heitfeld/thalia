@@ -220,6 +220,22 @@ This document tracks opportunities for auto-generating documentation from code t
 - **New**: ENUMERATIONS_REFERENCE.md (47 enums across 8 categories)
 - **Maintenance time saved**: 40+ hours/year
 
+### After Phase 8: Redundancy Elimination (0 new docs, improved integration) → 15 docs total ✅ CURRENT
+- **15 docs auto-generated** (no change)
+- **40 docs manually maintained** (same count, but ~400 lines removed)
+- **27% automation rate** (maintained)
+- **Impact**: Eliminated ~400 lines of redundant API documentation from manual docs
+- **Changes**:
+  - AI_ASSISTANT_GUIDE.md: Replaced type alias glossary with reference
+  - patterns/mixins.md: Replaced method listings with usage patterns + reference
+  - patterns/learning-strategies.md: Replaced parameter details with selection guide + reference
+  - copilot-instructions.md: Added reference link to TYPE_ALIASES.md
+  - DATASETS_QUICK_REFERENCE.md: Added references to DATASETS_REFERENCE.md
+  - patterns/configuration.md: Added reference to CONFIGURATION_REFERENCE.md
+  - DOCUMENTATION_INDEX.md: Added prominent API catalog references
+- **Maintenance time saved**: Additional 10-15 hours/year (50-55 hours/year total)
+- **Principle established**: Manual docs = WHY/HOW, Auto-generated docs = WHAT
+
 ### Why Not Auto-Generate Everything?
 
 Some documentation **should** remain manual:

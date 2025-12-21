@@ -4,6 +4,10 @@
 
 This document defines patterns for organizing and validating configuration classes in Thalia.
 
+> **📚 For complete configuration class documentation with all fields and defaults, see [CONFIGURATION_REFERENCE.md](../api/CONFIGURATION_REFERENCE.md)**
+
+This guide focuses on **patterns** for organizing and validating configuration.
+
 **Last Updated**: December 12, 2025
 
 ---
