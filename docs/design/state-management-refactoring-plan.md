@@ -889,7 +889,7 @@ Test Coverage:
   * File I/O: 2 tests (save/load utilities, CPU↔CUDA)
   * Edge cases: 4 tests (optional fields, enhanced mode, empty traces)
 
-#### 3.2 Striatum (8 hours) - **INVESTIGATED** ✅
+#### 3.2 Striatum (8 hours) - **INVESTIGATED** ✅ → **PLANNING** 📋
 - **Current**: NO state dataclass, has StriatumStateTracker + CheckpointManager
 - **Files**: `regions/striatum/striatum.py` (1979 lines), `checkpoint_manager.py` (651 lines), `state_tracker.py` (297 lines)
 - **Investigation results**:
@@ -906,6 +906,225 @@ Test Coverage:
   - Goal modulation weights (PFC→Striatum)
   - D1/D2 delay buffers (CircularDelayBuffer state)
 - **Complexity**: High due to D1/D2 separation and multiple component states
+
+##### 3.2 Implementation Plan (Detailed)
+
+**Step 1: Create StriatumState Dataclass** (1.5 hours)
+- Location: `src/thalia/regions/striatum/config.py` (after StriatumConfig)
+- Inherits from: `BaseRegionState`
+- 25 state fields organized in 8 categories:
+
+```python
+@dataclass
+class StriatumState(BaseRegionState):
+    """Complete state for Striatum region with D1/D2 opponent pathways."""
+
+    # 1. D1/D2 PATHWAY STATES (nested dicts from pathway.get_state())
+    d1_pathway_state: Optional[Dict[str, Any]] = None
+    d2_pathway_state: Optional[Dict[str, Any]] = None
+
+    # 2. VOTE ACCUMULATION (trial-level decision tracking)
+    d1_votes_accumulated: Optional[torch.Tensor] = None  # [n_actions]
+    d2_votes_accumulated: Optional[torch.Tensor] = None  # [n_actions]
+
+    # 3. ACTION SELECTION STATE
+    last_action: Optional[int] = None                    # Most recent action
+    recent_spikes: Optional[torch.Tensor] = None         # [n_output] for lateral inhibition
+
+    # 4. EXPLORATION STATE
+    exploring: bool = False                              # Was last action exploratory?
+    last_uncertainty: float = 0.0                        # Uncertainty estimate
+    last_exploration_prob: float = 0.0                   # Exploration probability used
+    exploration_manager_state: Optional[Dict[str, Any]] = None  # UCB state
+
+    # 5. VALUE ESTIMATION / RPE STATE
+    value_estimates: Optional[torch.Tensor] = None       # [n_actions] value per action
+    last_rpe: float = 0.0                                # Last reward prediction error
+    last_expected: float = 0.0                           # Last expected reward
+
+    # 6. GOAL MODULATION STATE (PFC→Striatum)
+    pfc_modulation_d1: Optional[torch.Tensor] = None     # [n_output, n_pfc]
+    pfc_modulation_d2: Optional[torch.Tensor] = None     # [n_output, n_pfc]
+
+    # 7. DELAY BUFFERS (Temporal Competition: D1=15ms, D2=25ms)
+    d1_delay_buffer: Optional[torch.Tensor] = None       # [delay_steps, n_d1_neurons]
+    d2_delay_buffer: Optional[torch.Tensor] = None       # [delay_steps, n_d2_neurons]
+    d1_delay_ptr: int = 0                                # Circular buffer pointer
+    d2_delay_ptr: int = 0                                # Circular buffer pointer
+
+    # 8. HOMEOSTASIS STATE
+    activity_ema: float = 0.0                            # Exponential moving average
+    trial_spike_count: float = 0.0                       # Spikes in current trial
+    trial_timesteps: int = 0                             # Timesteps in current trial
+    homeostatic_scaling_applied: bool = False            # Scaling flag
+    homeostasis_manager_state: Optional[Dict[str, Any]] = None  # UnifiedHomeostasis state
+
+    # 9. NEUROMODULATORS (explicit)
+    dopamine: float = 0.0
+    acetylcholine: float = 0.0
+    norepinephrine: float = 0.0
+```
+
+**Implementation notes**:
+- Pathway states are nested dicts (D1Pathway/D2Pathway have their own get_state())
+- Delay buffers store in-flight spikes for temporal competition
+- Exploration manager state includes UCB counts, recent rewards
+- All Optional fields default to None (BaseRegionState pattern)
+
+**Step 2: Implement Protocol Methods** (2 hours)
+- `to_dict()`: Serialize all 25 fields (straightforward, similar to Cerebellum)
+- `from_dict()`: Deserialize with device transfer
+  * Handle nested dict deserialization for pathway states
+  * Transfer delay buffer tensors to target device
+  * Reconstruct exploration manager state
+- `reset()`: Clear all state in-place
+  * Zero vote accumulators, recent spikes
+  * Reset delay buffer pointers
+  * Clear trial statistics
+  * Reset exploration state
+
+**Key challenges**:
+- Nested state dicts (pathway_state, exploration_manager_state, homeostasis_manager_state)
+- Device transfer for all tensor fields
+- Delay buffer pointer state (circular buffer management)
+
+**Step 3: Add get_state() to Striatum Class** (1.5 hours)
+- Location: `src/thalia/regions/striatum/striatum.py` (end of class, after existing methods)
+- Extract state from:
+  * `self.d1_pathway.get_state()` → d1_pathway_state
+  * `self.d2_pathway.get_state()` → d2_pathway_state
+  * `self.state_tracker.*` → vote accumulators, last_action, recent_spikes, exploration flags
+  * `self.exploration.get_state()` → exploration_manager_state
+  * `self.value_estimates` → value tensor
+  * `self.pfc_modulation_d1/d2` → goal modulation (if enabled)
+  * `self._d1_delay_buffer/ptr`, `self._d2_delay_buffer/ptr` → delay state
+  * `self._activity_ema`, `self._trial_spike_count`, etc. → homeostasis
+  * `self.homeostasis.unified_homeostasis.get_state()` → homeostasis_manager_state
+  * `self.state.dopamine/acetylcholine/norepinephrine` → neuromodulators
+
+**Step 4: Add load_state() to Striatum Class** (1.5 hours)
+- Location: `src/thalia/regions/striatum/striatum.py` (after get_state())
+- Restore state to:
+  * `self.d1_pathway.load_state(state.d1_pathway_state)`
+  * `self.d2_pathway.load_state(state.d2_pathway_state)`
+  * `self.state_tracker.*` ← vote accumulators, action, spikes, exploration
+  * `self.exploration.load_state(state.exploration_manager_state)`
+  * `self.value_estimates.copy_(state.value_estimates)` (if present)
+  * `self.pfc_modulation_d1/d2.copy_()` (if present)
+  * Delay buffers and pointers
+  * Homeostasis variables
+  * `self.homeostasis.unified_homeostasis.load_state()`
+  * Neuromodulators
+
+**Validation points**:
+- Check that all fields in StriatumStateTracker are captured
+- Verify D1/D2 pathway states include weights + eligibility
+- Confirm delay buffer state preserves in-flight spikes
+- Ensure exploration manager state includes UCB parameters
+
+**Step 5: Create Comprehensive Test Suite** (3 hours)
+- File: `tests/unit/regions/test_striatum_state.py`
+- ~600 lines, 20 tests organized in 4 test classes:
+
+**TestStriatumStateProtocol** (7 tests):
+1. `test_to_dict_basic`: All 25 fields serialized
+2. `test_to_dict_with_nested_states`: Pathway/exploration/homeostasis dicts
+3. `test_from_dict_basic`: Deserialize core fields
+4. `test_from_dict_with_device_transfer`: CPU→CUDA transfer
+5. `test_from_dict_with_nested_states`: Reconstruct nested dicts
+6. `test_reset`: Clear all state in-place
+7. `test_roundtrip_serialization`: Identical after serialize→deserialize→serialize
+
+**TestStriatumStateIntegration** (6 tests):
+1. `test_get_state_captures_d1_d2_pathways`: Pathway states present
+2. `test_get_state_captures_exploration`: UCB state, uncertainty
+3. `test_get_state_captures_delay_buffers`: Both D1/D2 buffers + pointers
+4. `test_load_state_restores_vote_accumulators`: Trial state preserved
+5. `test_load_state_restores_delay_buffers`: In-flight spikes preserved
+6. `test_state_roundtrip_through_region`: get→reset→load consistency
+
+**TestStriatumStateFileIO** (3 tests):
+1. `test_save_and_load_with_utilities`: save_region_state/load_region_state
+2. `test_save_cpu_load_cuda`: Device transfer via utilities
+3. `test_backward_compatibility`: Old checkpoint format (if needed)
+
+**TestStriatumStateEdgeCases** (4 tests):
+1. `test_optional_fields_none`: RPE disabled, goal modulation off
+2. `test_delay_buffers_at_capacity`: Full circular buffers
+3. `test_exploration_disabled`: No exploration manager state
+4. `test_asymmetric_d1_d2_sizes`: Different pathway neuron counts
+
+**Test fixtures**:
+```python
+@pytest.fixture
+def striatum_config() -> StriatumConfig:
+    return StriatumConfig(
+        n_input=20,
+        n_output=10,  # 5 actions × 2 neurons/action
+        n_actions=5,
+        population_coding=True,
+        neurons_per_action=2,
+        device="cpu",
+    )
+
+@pytest.fixture
+def striatum_region(striatum_config) -> Striatum:
+    return Striatum(striatum_config)
+
+@pytest.fixture
+def sample_state() -> StriatumState:
+    # Create state with non-zero values for all fields
+    ...
+```
+
+**Step 6: Update CheckpointManager (Optional - can defer to Phase 4)** (0.5 hours)
+- Simplify `get_full_state()` to delegate to `region.get_state().to_dict()`
+- Simplify `load_full_state()` to use `region.load_state(StriatumState.from_dict(...))`
+- **Note**: This can be deferred to Phase 4 when all checkpoint managers are updated together
+- Backward compatibility: Keep old format loading for migration
+
+**Estimated Breakdown**:
+- Step 1 (Dataclass): 1.5 hours
+- Step 2 (Protocol methods): 2 hours
+- Step 3 (get_state): 1.5 hours
+- Step 4 (load_state): 1.5 hours
+- Step 5 (Tests): 3 hours
+- Step 6 (CheckpointManager): 0.5 hours (optional, can defer)
+- **Total**: 8-10 hours
+
+**Success Criteria**:
+- [ ] StriatumState dataclass created with 25 fields
+- [ ] Protocol methods (to_dict, from_dict, reset) implemented
+- [ ] get_state() extracts all state from Striatum components
+- [ ] load_state() restores complete state
+- [ ] 20 comprehensive tests passing (100% coverage)
+- [ ] All existing Striatum functionality preserved
+- [ ] Backward compatibility with old checkpoints maintained
+- [ ] Total test count: 150/150 passing (130 current + 20 new)
+
+**Risks & Mitigations**:
+1. **Risk**: D1/D2 pathway state format mismatch
+   - **Mitigation**: Use existing `pathway.get_state()` format (already tested)
+2. **Risk**: Delay buffer state corruption
+   - **Mitigation**: Add specific tests for buffer wraparound
+3. **Risk**: Breaking existing checkpoint loading
+   - **Mitigation**: Keep CheckpointManager backward compatibility until Phase 4
+4. **Risk**: Exploration manager state complexity
+   - **Mitigation**: Treat as opaque dict (like STP state in other regions)
+
+**Dependencies**:
+- Requires: Phase 0, 1, 2.x completed (✓ all done)
+- Blocks: Phase 4 (checkpoint manager updates)
+- Parallel with: None (Striatum is last complex region)
+
+**Testing Strategy**:
+1. Unit test StriatumState serialization in isolation
+2. Integration test with Striatum region (get/load state)
+3. Roundtrip test through file I/O
+4. Edge case testing for optional features
+5. Validate with existing Striatum integration tests (no regressions)
+
+---
 
 **Validation**:
 - [ ] Regions initialize without errors
