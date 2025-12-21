@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from thalia.regions.base import NeuralRegion
-    from thalia.learning.strategies.base import LearningStrategy
+    from thalia.learning.rules.strategies import LearningStrategy
 
 # ============================================================================
 # Component Organization
@@ -113,6 +113,16 @@ Example:
 # ============================================================================
 # Port-Based Routing
 # ============================================================================
+
+SourceSpec = Tuple[str, Optional[str]]
+"""Specification for a source component with optional port.
+
+Tuple of (region_name, port) where port identifies layer-specific outputs.
+
+Example:
+    source_spec: SourceSpec = ("cortex", "l23")  # Layer 2/3 output
+    source_spec: SourceSpec = ("hippocampus", None)  # Default output
+"""
 
 SourcePort = Optional[str]
 """Optional source port identifier for layer-specific outputs.
@@ -224,6 +234,7 @@ __all__ = [
     "SynapticWeights",
     "LearningStrategies",
     # Port-Based Routing
+    "SourceSpec",
     "SourcePort",
     "TargetPort",
     # State Management

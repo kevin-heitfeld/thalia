@@ -19,6 +19,7 @@ from typing import Dict, Optional, Any, Protocol
 import torch
 import torch.nn as nn
 
+from thalia.typing import SourceOutputs, DiagnosticsDict, StateDict
 from thalia.learning import create_strategy
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.weight_init import WeightInitializer
@@ -237,11 +238,7 @@ class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin,
                 learning_rate=0.001,  # Conservative default
             )
 
-    def forward(
-        self,
-        inputs: Dict[str, torch.Tensor],
-        **kwargs
-    ) -> torch.Tensor:
+    def forward(self, inputs: SourceOutputs, **kwargs) -> torch.Tensor:
         """Process inputs through synapses and neurons.
 
         This is the core of biological integration:
@@ -336,7 +333,7 @@ class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin,
     # BrainComponent Protocol Implementation (Required Methods)
     # =========================================================================
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
         """Get current activity and health metrics.
 
         Returns basic diagnostics. Subclasses should override to add region-specific metrics.
@@ -405,7 +402,7 @@ class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin,
             growth_reason="",
         )
 
-    def get_full_state(self) -> Dict[str, Any]:
+    def get_full_state(self) -> StateDict:
         """Serialize complete component state for checkpointing.
 
         Returns:
@@ -428,7 +425,7 @@ class NeuralRegion(nn.Module, NeuromodulatorMixin, GrowthMixin, ResettableMixin,
         }
         return state
 
-    def load_full_state(self, state: Dict[str, Any]) -> None:
+    def load_full_state(self, state: StateDict) -> None:
         """Restore component from checkpoint.
 
         Args:

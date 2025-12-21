@@ -28,10 +28,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Any, Tuple, Union, Set, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
+
+from thalia.typing import (
+    ComponentGraph,
+    TopologyGraph,
+    SourceOutputs,
+    StateDict,
+    CheckpointMetadata,
+    DiagnosticsDict,
+)
 
 from thalia.regions.base import NeuralComponent
 from thalia.regions.cortex import calculate_layer_sizes
@@ -65,7 +74,7 @@ class ComponentSpec:
     registry_name: str
     """Registry key (e.g., 'layered_cortex', 'spiking_stdp')"""
 
-    config_params: Dict[str, Any] = field(default_factory=dict)
+    config_params: CheckpointMetadata = field(default_factory=dict)
     """Configuration parameters for the component"""
 
     instance: Optional[NeuralComponent] = None
@@ -96,7 +105,7 @@ class ConnectionSpec:
     target_port: Optional[str] = None
     """Target input port (e.g., 'feedforward', 'top_down', 'ec_l3')"""
 
-    config_params: Dict[str, Any] = field(default_factory=dict)
+    config_params: CheckpointMetadata = field(default_factory=dict)
     """Pathway configuration parameters"""
 
     instance: Optional[NeuralComponent] = None
@@ -256,7 +265,7 @@ class DynamicBrain(nn.Module):
         self._spike_counts: Dict[str, int] = {name: 0 for name in components.keys()}
 
         # GPU-friendly spike tracking: accumulate on GPU, sync only when needed
-        self._spike_tensors: Dict[str, torch.Tensor] = {
+        self._spike_tensors: SourceOutputs = {
             name: torch.tensor(0, dtype=torch.int64, device=global_config.device)
             for name in components.keys()
         }
@@ -272,7 +281,7 @@ class DynamicBrain(nn.Module):
             self._component_connections[tgt].append((src, pathway))
 
         # Pre-allocate reusable dict for component inputs (avoid allocation in hot loop)
-        self._reusable_component_inputs: Dict[str, torch.Tensor] = {}
+        self._reusable_component_inputs: SourceOutputs = {}
 
         # Pre-allocate output cache (update in-place instead of creating new entries)
         self._output_cache: Dict[str, Optional[torch.Tensor]] = {
@@ -576,7 +585,7 @@ class DynamicBrain(nn.Module):
 
         return builder.build()
 
-    def _build_topology_graph(self) -> Dict[str, List[str]]:
+    def _build_topology_graph(self) -> TopologyGraph:
         """Build adjacency list of component dependencies.
 
         Returns:
@@ -655,7 +664,7 @@ class DynamicBrain(nn.Module):
         self,
         sensory_input: Optional[Union[torch.Tensor, Dict[str, Union[torch.Tensor, List[torch.Tensor], "StimulusPattern"]]]] = None,
         n_timesteps: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> DiagnosticsDict:
         """Execute brain for n_timesteps.
 
         Supports multiple input modes:
@@ -790,7 +799,7 @@ class DynamicBrain(nn.Module):
         for timestep in range(n_timesteps):
             # 1. Route sensory inputs to entry components (DO NOT store in output_cache)
             # Direct sensory inputs should NOT be treated as component outputs
-            sensory_inputs_this_timestep: Dict[str, torch.Tensor] = {}
+            sensory_inputs_this_timestep: SourceOutputs = {}
             for comp_name, sequence in input_sequences.items():
                 if comp_name in self.components:
                     # Get input for this timestep
@@ -806,7 +815,7 @@ class DynamicBrain(nn.Module):
             # 2. Execute ALL components in parallel using PREVIOUS timestep's outputs
             # This ensures true parallel execution - all components see the same input state
             # and execution order doesn't create artificial timing dependencies
-            new_outputs: Dict[str, torch.Tensor] = {}
+            new_outputs: SourceOutputs = {}
 
             for comp_name in self._get_execution_order():
                 component = self.components[comp_name]
@@ -1105,7 +1114,7 @@ class DynamicBrain(nn.Module):
         is_match: bool,
         selected_action: int,
         counterfactual_scale: float = 0.5,
-    ) -> Dict[str, Any]:
+    ) -> DiagnosticsDict:
         """Deliver reward with counterfactual learning for non-selected action.
 
         Implements model-based RL: after experiencing a real outcome, we also
@@ -1450,7 +1459,7 @@ class DynamicBrain(nn.Module):
         n_cycles: int = 5,
         batch_size: int = 32,
         verbose: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> DiagnosticsDict:
         """Perform memory consolidation (replay) automatically.
 
         This simulates sleep/offline replay where hippocampus replays stored
@@ -1600,7 +1609,7 @@ class DynamicBrain(nn.Module):
     # DIAGNOSTICS & GROWTH (Phase 1.6.4)
     # =========================================================================
 
-    def check_growth_needs(self) -> Dict[str, Any]:
+    def check_growth_needs(self) -> DiagnosticsDict:
         """Check if any components need growth based on capacity metrics.
 
         Analyzes utilization, saturation, and activity patterns to determine
@@ -1885,7 +1894,7 @@ class DynamicBrain(nn.Module):
         self._execution_order = None
 
     @property
-    def regions(self) -> Dict[str, Any]:
+    def regions(self) -> ComponentGraph:
         """Get all brain regions (EventDrivenBrain compatibility).
 
         Returns:
@@ -2053,7 +2062,7 @@ class DynamicBrain(nn.Module):
             n_stored_episodes=n_stored,
         )
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
         """Get comprehensive diagnostic information from all subsystems.
 
         Returns diagnostic metrics from:
@@ -2169,7 +2178,7 @@ class DynamicBrain(nn.Module):
             hippocampus=self._collect_hippocampus_diagnostics(),
         )
 
-    def get_full_state(self) -> Dict[str, Any]:
+    def get_full_state(self) -> StateDict:
         """Get complete state for checkpointing.
 
         Returns:
@@ -2246,9 +2255,9 @@ class DynamicBrain(nn.Module):
     def save_checkpoint(
         self,
         path: Union[str, Path],
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[CheckpointMetadata] = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> CheckpointMetadata:
         """Save checkpoint (wrapper for CheckpointManager.save).
 
         This is a convenience wrapper that provides EventDrivenBrain-compatible
@@ -2276,7 +2285,7 @@ class DynamicBrain(nn.Module):
         path: Union[str, Path],
         device: Optional[Union[str, torch.device]] = None,
         strict: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> CheckpointMetadata:
         """Load checkpoint (wrapper for CheckpointManager.load).
 
         This is a convenience wrapper that provides EventDrivenBrain-compatible
@@ -2295,7 +2304,7 @@ class DynamicBrain(nn.Module):
         """
         return self.checkpoint_manager.load(path, device, strict)
 
-    def get_growth_history(self) -> List[Dict[str, Any]]:
+    def get_growth_history(self) -> List[DiagnosticsDict]:
         """Get complete growth history.
 
         Returns:
@@ -2309,7 +2318,7 @@ class DynamicBrain(nn.Module):
         """
         return [event.to_dict() for event in self._growth_history]
 
-    def load_full_state(self, state: Dict[str, Any]) -> None:
+    def load_full_state(self, state: StateDict) -> None:
         """Load complete state from checkpoint.
 
         Args:
