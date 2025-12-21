@@ -563,19 +563,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
 
         # =====================================================================
-        # BETA OSCILLATOR TRACKING (Motor Control Modulation)
-        # =====================================================================
-        # Beta oscillations (13-30 Hz, typically 20 Hz) modulate action selection:
-        # - High beta: Maintain current action (D1 dominant, suppress switching)
-        # - Low beta: Allow action switching (D2 can suppress, facilitate change)
-        # - Beta desynchronization (ERD): Action change window
-        # - Beta rebound (ERS): Action stabilization
-        self._beta_phase: float = 0.0
-        self._theta_phase: float = 0.0
-        self._beta_amplitude: float = 1.0
-        self._coupled_amplitudes: Dict[str, float] = {}
-
-        # =====================================================================
         # D1/D2 PATHWAY DELAY BUFFERS (Temporal Competition)
         # =====================================================================
         # Implement biologically-accurate transmission delays for opponent pathways:
@@ -1332,15 +1319,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         """
         # Use base mixin implementation to store all oscillator data
         super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
-        
-        # Store beta amplitude in old attribute name for backward compatibility
-        self._beta_amplitude = self._beta_amplitude_effective
 
         # Update forward coordinator with oscillator state
         self.forward_coordinator.set_oscillator_phases(
             theta_phase=self._theta_phase,
             beta_phase=self._beta_phase,
-            beta_amplitude=self._beta_amplitude,
+            beta_amplitude=self._beta_amplitude_effective,
         )
 
         # Update forward coordinator with neuromodulator state

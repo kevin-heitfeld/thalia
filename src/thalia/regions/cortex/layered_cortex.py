@@ -687,14 +687,6 @@ class LayeredCortex(NeuralRegion):
         # Use base mixin implementation to store all oscillator data
         super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
 
-        # Also store in state for backward compatibility with forward()
-        if not hasattr(self.state, '_oscillator_phases'):
-            self.state._oscillator_phases = {}
-            self.state._oscillator_signals = {}
-        self.state._oscillator_phases = phases
-        self.state._oscillator_signals = signals
-        self.state._gamma_amplitude = self._gamma_amplitude_effective
-
     # region Growth and Neurogenesis
 
     def grow_output(
@@ -1009,8 +1001,7 @@ class LayeredCortex(NeuralRegion):
 
             # Automatic gamma modulation: ALL slower oscillators affect gamma
             # This gives emergent multi-oscillator coupling (e.g., theta-alpha-beta-gamma)
-            if hasattr(self.state, '_gamma_amplitude'):
-                gamma_modulation = self.state._gamma_amplitude
+            gamma_modulation = self._gamma_amplitude_effective
 
             # Store for diagnostics
             self.state.alpha_suppression = alpha_suppression

@@ -506,7 +506,7 @@ class ThalamicRelay(NeuralRegion):
         """
         # Use base mixin implementation to store all oscillator data
         super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
-        
+
         # Store alpha amplitude from signals for gating
         if signals and 'alpha' in signals:
             self._alpha_amplitude = signals['alpha']

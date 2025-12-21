@@ -374,16 +374,9 @@ class PredictiveCortex(NeuralRegion):
         """
         # Use base mixin implementation to store all oscillator data
         super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
-        
+
         # Pass through to inner cortex (where alpha gating is implemented)
         self.cortex.set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
-
-        # Also store in our own state for backward compatibility
-        if not hasattr(self.state, '_oscillator_phases'):
-            self.state._oscillator_phases = {}
-            self.state._oscillator_signals = {}
-        self.state._oscillator_phases = phases
-        self.state._oscillator_signals = signals
 
     def grow_input(
         self,

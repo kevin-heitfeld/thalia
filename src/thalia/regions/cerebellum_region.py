@@ -338,10 +338,6 @@ class Cerebellum(NeuralRegion):
             device=config.device,
         )
         self.homeostasis = UnifiedHomeostasis(homeostasis_config)
-        self._theta_phase: float = 0.0
-        self._beta_amplitude: float = 1.0
-        self._gamma_amplitude: float = 1.0
-        self._coupled_amplitudes: Dict[str, float] = {}
 
         # =====================================================================
         # INITIALIZE SYNAPTIC WEIGHTS (Phase 2 pattern)
@@ -424,10 +420,6 @@ class Cerebellum(NeuralRegion):
         # This populates self._theta_phase, self._beta_phase, self._gamma_phase,
         # self._beta_amplitude_effective, self._gamma_amplitude_effective, etc.
         super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
-        
-        # Store beta/gamma amplitudes in old attribute names for backward compatibility
-        self._beta_amplitude = self._beta_amplitude_effective
-        self._gamma_amplitude = self._gamma_amplitude_effective
 
     def _compute_beta_gate(self) -> float:
         """Compute beta-gated learning modulation.
@@ -448,7 +440,7 @@ class Cerebellum(NeuralRegion):
 
         # Modulate by ALL coupling effects (theta, beta modulation)
         # This gives emergent theta-beta-gamma triple coupling automatically
-        gate = gate * self._gamma_amplitude
+        gate = gate * self._gamma_amplitude_effective
 
         return gate
 
@@ -885,8 +877,8 @@ class Cerebellum(NeuralRegion):
             "beta_phase": self._beta_phase,
             "gamma_phase": self._gamma_phase,
             "theta_phase": self._theta_phase,
-            "beta_amplitude": self._beta_amplitude,
-            "gamma_amplitude": self._gamma_amplitude,
+            "beta_amplitude": self._beta_amplitude_effective,
+            "gamma_amplitude": self._gamma_amplitude_effective,
         }
 
         # Use collect_standard_diagnostics for weight, spike, and trace statistics
