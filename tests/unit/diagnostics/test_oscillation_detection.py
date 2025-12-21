@@ -136,6 +136,9 @@ class TestOscillationDetectionIntegration:
 
         # Note: Gamma oscillator disabled by default (should emerge from L6→TRN loop)
 
+        # Use fixed seed for reproducibility
+        torch.manual_seed(42)
+
         # Collect L6a and L6b activity separately over 200ms (multiple gamma cycles)
         l6a_spike_counts = []
         l6b_spike_counts = []
