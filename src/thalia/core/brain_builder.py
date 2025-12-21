@@ -141,22 +141,6 @@ class BrainBuilder:
         self._connections: List[ConnectionSpec] = []
         self._registry = ComponentRegistry()
 
-        # Register built-in event adapters (lazy registration)
-        self._ensure_adapters_registered()
-
-    @staticmethod
-    def _ensure_adapters_registered() -> None:
-        """Ensure built-in event adapters are registered (one-time).
-
-        This registers EventDrivenRegionBase adapters for all built-in regions.
-        Called once on first BrainBuilder instantiation.
-        """
-        # Check if already registered (avoid redundant registration)
-        if not hasattr(BrainBuilder, "_adapters_registered"):
-            from thalia.managers.component_registry import register_builtin_event_adapters
-            register_builtin_event_adapters()
-            BrainBuilder._adapters_registered = True
-
     def add_component(
         self,
         name: str,
