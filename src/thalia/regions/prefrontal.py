@@ -80,7 +80,7 @@ from thalia.regulation.learning_constants import LEARNING_RATE_STDP
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.core.neural_region import NeuralRegion
-from thalia.regions.base import NeuralComponentState
+from thalia.core.region_state import BaseRegionState
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval, compute_oscillator_modulated_gain
 from thalia.regulation.oscillator_constants import (
     PFC_FEEDFORWARD_GAIN_MIN,
@@ -182,19 +182,113 @@ class PrefrontalConfig(NeuralComponentConfig):
 
 
 @dataclass
-class PrefrontalState(NeuralComponentState):
-    """State for prefrontal cortex region."""
-    # Working memory contents
+class PrefrontalState(BaseRegionState):
+    """State for prefrontal cortex region.
+
+    Implements RegionState protocol for checkpoint compatibility.
+    Inherits from BaseRegionState for common fields (spikes, membrane).
+
+    PFC-specific state:
+    - working_memory: Active maintenance of task-relevant information
+    - update_gate: Dopamine-gated update signals
+    - active_rule: Current task rule representation
+    - dopamine: Current dopamine level (modulates gating)
+    """
+
+    STATE_VERSION: int = 1
+
+    # Inherited from BaseRegionState:
+    # - spikes: Optional[torch.Tensor] = None
+    # - membrane: Optional[torch.Tensor] = None
+
+    # PFC-specific state fields
     working_memory: Optional[torch.Tensor] = None
+    """Working memory contents [n_neurons]."""
 
-    # Gate state
     update_gate: Optional[torch.Tensor] = None
+    """Gate state for WM updates [n_neurons]."""
 
-    # Rule representation
     active_rule: Optional[torch.Tensor] = None
+    """Rule representation [n_neurons]."""
 
-    # Dopamine level (override base)
-    dopamine: float = 0.2  # Start at baseline
+    dopamine: float = 0.2
+    """Current dopamine level (baseline=0.2)."""
+
+    acetylcholine: float = 0.0
+    """Current acetylcholine level."""
+
+    norepinephrine: float = 0.0
+    """Current norepinephrine level."""
+
+    # STP state (recurrent connections)
+    stp_recurrent_state: Optional[Dict[str, Any]] = None
+    """Short-term plasticity state for recurrent connections."""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize state to dictionary for checkpointing."""
+        base_dict = super().to_dict()
+        base_dict.update({
+            'working_memory': self.working_memory,
+            'update_gate': self.update_gate,
+            'active_rule': self.active_rule,
+            'dopamine': self.dopamine,
+            'acetylcholine': self.acetylcholine,
+            'norepinephrine': self.norepinephrine,
+            'stp_recurrent_state': self.stp_recurrent_state,
+        })
+        return base_dict
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], device: str) -> "PrefrontalState":
+        """Deserialize state from dictionary."""
+        # Future: Handle version migration if needed
+
+        # Get base state
+        base_state = BaseRegionState.from_dict(data, device)
+
+        # Transfer PFC-specific tensors
+        wm = data.get('working_memory')
+        if wm is not None and isinstance(wm, torch.Tensor):
+            wm = wm.to(device)
+
+        gate = data.get('update_gate')
+        if gate is not None and isinstance(gate, torch.Tensor):
+            gate = gate.to(device)
+
+        rule = data.get('active_rule')
+        if rule is not None and isinstance(rule, torch.Tensor):
+            rule = rule.to(device)
+
+        # Transfer nested STP state tensors
+        stp_state = data.get('stp_recurrent_state')
+        if stp_state is not None:
+            stp_state = {
+                k: v.to(device) if isinstance(v, torch.Tensor) else v
+                for k, v in stp_state.items()
+            }
+
+        return cls(
+            spikes=base_state.spikes,
+            membrane=base_state.membrane,
+            working_memory=wm,
+            update_gate=gate,
+            active_rule=rule,
+            dopamine=data.get('dopamine', 0.2),
+            acetylcholine=data.get('acetylcholine', 0.0),
+            norepinephrine=data.get('norepinephrine', 0.0),
+            stp_recurrent_state=stp_state,
+        )
+
+    def reset(self) -> None:
+        """Reset state to initial conditions."""
+        super().reset()  # Reset base fields
+        self.working_memory = None
+        self.update_gate = None
+        self.active_rule = None
+        self.dopamine = 0.2  # Reset to baseline
+        self.acetylcholine = 0.0
+        self.norepinephrine = 0.0
+        self.stp_recurrent_state = None
 
 
 class DopamineGatingSystem:
@@ -1081,35 +1175,62 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
             gamma = 0.99
             return reward * (gamma ** delay)
 
-    def debug_get_goal_manager(self) -> Optional["GoalHierarchyManager"]:
-        """
-        Get goal hierarchy manager for debugging/inspection.
-
-        ⚠️ DEBUG/TEST ONLY: For inspection and diagnostics.
-
-        Phase 3 functionality: Provides access to goal manager internals.
-
-        Returns:
-            GoalHierarchyManager or None if not enabled
-        """
-        return self.goal_manager
-
-    def debug_get_discounter(self) -> Optional["HyperbolicDiscounter"]:
-        """
-        Get hyperbolic discounter for debugging/inspection.
-
-        ⚠️ DEBUG/TEST ONLY: For inspection and diagnostics.
-
-        Phase 3 functionality: Provides access to discounter internals.
-
-        Returns:
-            HyperbolicDiscounter or None if not enabled
-        """
-        return self.discounter
-
     def get_state(self) -> PrefrontalState:
-        """Get current state."""
-        return self.state
+        """Get current state for checkpointing.
+
+        Returns PrefrontalState compatible with RegionState protocol.
+        Includes all dynamic state for checkpoint save/load.
+
+        Returns:
+            PrefrontalState with current region state
+        """
+        # Capture STP state if enabled
+        stp_state = None
+        if self.stp_recurrent is not None:
+            stp_state = self.stp_recurrent.get_state()
+
+        return PrefrontalState(
+            spikes=self.state.spikes.clone() if self.state.spikes is not None else None,
+            membrane=self.neurons.v.clone() if hasattr(self.neurons, 'v') else None,
+            working_memory=self.state.working_memory.clone() if self.state.working_memory is not None else None,
+            update_gate=self.state.update_gate.clone() if self.state.update_gate is not None else None,
+            active_rule=self.state.active_rule.clone() if self.state.active_rule is not None else None,
+            dopamine=self.state.dopamine,
+            acetylcholine=self.state.acetylcholine,
+            norepinephrine=self.state.norepinephrine,
+            stp_recurrent_state=stp_state,
+        )
+
+    def load_state(self, state: PrefrontalState) -> None:
+        """Load state from checkpoint.
+
+        Restores region state from PrefrontalState instance.
+        Compatible with RegionState protocol.
+
+        Args:
+            state: PrefrontalState to restore
+        """
+        # Restore basic state
+        if state.spikes is not None:
+            self.state.spikes = state.spikes.to(self.device).clone()
+        if state.membrane is not None and hasattr(self.neurons, 'v'):
+            self.neurons.v = state.membrane.to(self.device).clone()
+
+        # Restore PFC-specific state
+        if state.working_memory is not None:
+            self.state.working_memory = state.working_memory.to(self.device).clone()
+        if state.update_gate is not None:
+            self.state.update_gate = state.update_gate.to(self.device).clone()
+        if state.active_rule is not None:
+            self.state.active_rule = state.active_rule.to(self.device).clone()
+
+        self.state.dopamine = state.dopamine
+        self.state.acetylcholine = state.acetylcholine
+        self.state.norepinephrine = state.norepinephrine
+
+        # Restore STP state
+        if state.stp_recurrent_state is not None and self.stp_recurrent is not None:
+            self.stp_recurrent.load_state(state.stp_recurrent_state)
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.
