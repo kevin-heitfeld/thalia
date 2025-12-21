@@ -8,13 +8,16 @@ This script auto-generates:
 4. DATASETS_REFERENCE.md - Dataset classes and factory functions
 5. DIAGNOSTICS_REFERENCE.md - Diagnostic monitor classes
 6. EXCEPTIONS_REFERENCE.md - Custom exception hierarchy
+7. MODULE_EXPORTS.md - Public exports from __init__.py files
+8. MIXINS_REFERENCE.md - Mixin classes used by NeuralRegion
+9. CONSTANTS_REFERENCE.md - Module-level constants and defaults
 
 Run this script whenever components are added/modified to keep docs synchronized.
 """
 
 import ast
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -79,6 +82,34 @@ class ExceptionInfo:
     file_path: str
 
 
+@dataclass
+class ModuleExport:
+    """Public export from a module."""
+    module_name: str
+    export_name: str
+    export_type: str  # "class", "function", "constant"
+    file_path: str
+
+
+@dataclass
+class MixinInfo:
+    """Mixin class providing functionality."""
+    name: str
+    docstring: str
+    methods: List[Tuple[str, str]]  # (method_name, signature)
+    file_path: str
+
+
+@dataclass
+class ConstantInfo:
+    """Module-level constant."""
+    name: str
+    value: str
+    docstring: str
+    file_path: str
+    category: str
+
+
 class APIDocGenerator:
     """Generate API documentation from codebase."""
 
@@ -93,6 +124,9 @@ class APIDocGenerator:
         self.datasets: List[DatasetInfo] = []
         self.monitors: List[MonitorInfo] = []
         self.exceptions: List[ExceptionInfo] = []
+        self.module_exports: Dict[str, List[ModuleExport]] = {}  # module_path -> exports
+        self.mixins: List[MixinInfo] = []
+        self.constants: List[ConstantInfo] = []
 
     def generate(self):
         """Generate all API documentation."""
@@ -108,6 +142,9 @@ class APIDocGenerator:
         self._find_datasets()
         self._find_monitors()
         self._find_exceptions()
+        self._find_module_exports()
+        self._find_mixins()
+        self._find_constants()
 
         # Generate documentation files
         self._generate_component_catalog()
@@ -116,6 +153,9 @@ class APIDocGenerator:
         self._generate_datasets_reference()
         self._generate_diagnostics_reference()
         self._generate_exceptions_reference()
+        self._generate_module_exports_reference()
+        self._generate_mixins_reference()
+        self._generate_constants_reference()
 
         print("\n✅ API documentation generated successfully!")
         print(f"   Location: {self.api_dir.relative_to(self.docs_dir.parent)}")
@@ -471,6 +511,154 @@ class APIDocGenerator:
             except Exception as e:
                 print(f"Warning: Could not parse {py_file}: {e}")
 
+    def _find_module_exports(self):
+        """Find all public exports from __init__.py files."""
+        for init_file in self.src_dir.rglob("__init__.py"):
+            if "__pycache__" in str(init_file):
+                continue
+
+            try:
+                content = init_file.read_text(encoding="utf-8")
+                tree = ast.parse(content)
+
+                exports = []
+                all_list = []
+
+                # Find __all__ definition
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Assign):
+                        for target in node.targets:
+                            if isinstance(target, ast.Name) and target.id == "__all__":
+                                if isinstance(node.value, ast.List):
+                                    all_list = [
+                                        elt.s if isinstance(elt, ast.Str)
+                                        else elt.value if isinstance(elt, ast.Constant)
+                                        else None
+                                        for elt in node.value.elts
+                                    ]
+                                    all_list = [x for x in all_list if x is not None]
+
+                if all_list:
+                    # Determine module path relative to thalia
+                    module_path = str(init_file.parent.relative_to(self.src_dir.parent))
+                    module_name = module_path.replace("\\", ".").replace("/", ".")
+
+                    for export in all_list[:20]:  # Limit to first 20 to avoid huge lists
+                        exports.append(ModuleExport(
+                            module_name=module_name,
+                            export_name=export,
+                            export_type="unknown",  # Would need import resolution
+                            file_path=str(init_file.relative_to(self.src_dir.parent))
+                        ))
+
+                    if exports:
+                        self.module_exports[module_name] = exports
+
+            except Exception as e:
+                print(f"Warning: Could not parse {init_file}: {e}")
+
+    def _find_mixins(self):
+        """Find all mixin classes used by NeuralRegion."""
+        # NeuralRegion uses 4 mixins
+        mixin_files = [
+            ("NeuromodulatorMixin", self.src_dir / "neuromodulation" / "mixin.py"),
+            ("GrowthMixin", self.src_dir / "mixins" / "growth_mixin.py"),
+            ("ResettableMixin", self.src_dir / "mixins" / "resettable_mixin.py"),
+            ("DiagnosticsMixin", self.src_dir / "mixins" / "diagnostics_mixin.py"),
+        ]
+
+        for mixin_name, mixin_file in mixin_files:
+            if not mixin_file.exists():
+                continue
+
+            try:
+                content = mixin_file.read_text(encoding="utf-8")
+                tree = ast.parse(content)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ClassDef) and node.name == mixin_name:
+                        docstring = ast.get_docstring(node) or "No docstring"
+                        methods = []
+
+                        for item in node.body:
+                            if isinstance(item, ast.FunctionDef) and not item.name.startswith('_'):
+                                # Extract method signature
+                                params = [arg.arg for arg in item.args.args if arg.arg != 'self']
+                                signature = f"{item.name}({', '.join(params)})"
+                                methods.append((item.name, signature))
+
+                        self.mixins.append(MixinInfo(
+                            name=mixin_name,
+                            docstring=docstring.split('\n')[0],
+                            methods=methods[:10],  # First 10 methods
+                            file_path=str(mixin_file.relative_to(self.src_dir.parent))
+                        ))
+                        break
+
+            except Exception as e:
+                print(f"Warning: Could not parse {mixin_file}: {e}")
+
+    def _find_constants(self):
+        """Find all module-level constants."""
+        constant_files = [
+            self.src_dir / "neuromodulation" / "constants.py",
+            self.src_dir / "training" / "datasets" / "constants.py",
+            self.src_dir / "training" / "visualization" / "constants.py",
+        ]
+
+        for constants_file in constant_files:
+            if not constants_file.exists():
+                continue
+
+            try:
+                content = constants_file.read_text(encoding="utf-8")
+                tree = ast.parse(content)
+                lines = content.split('\n')
+
+                current_category = "General"
+
+                for i, node in enumerate(tree.body):
+                    # Track category from comments
+                    if i < len(lines):
+                        line = lines[i] if i < len(lines) else ""
+                        if "==============" in line or "----------" in line:
+                            # Look for category in nearby lines
+                            for j in range(max(0, i-2), min(len(lines), i+3)):
+                                if "#" in lines[j] and not lines[j].strip().startswith("# ="):
+                                    current_category = lines[j].strip("# ").strip()
+                                    break
+
+                    # Extract constant assignments
+                    if isinstance(node, ast.Assign):
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                const_name = target.id
+                                # Only uppercase constants
+                                if const_name.isupper() and len(const_name) > 2:
+                                    try:
+                                        value = ast.literal_eval(node.value)
+                                        value_str = str(value)
+
+                                        # Get inline comment as docstring
+                                        doc = ""
+                                        if i < len(lines):
+                                            line = lines[i]
+                                            if "#" in line:
+                                                doc = line.split("#", 1)[1].strip()
+
+                                        self.constants.append(ConstantInfo(
+                                            name=const_name,
+                                            value=value_str,
+                                            docstring=doc or "No description",
+                                            file_path=str(constants_file.relative_to(self.src_dir.parent)),
+                                            category=current_category
+                                        ))
+                                    except:
+                                        pass  # Skip complex expressions
+
+            except Exception as e:
+                print(f"Warning: Could not parse {constants_file}: {e}")
+
     def _find_exceptions(self):
         """Find all custom exception classes."""
         errors_file = self.src_dir / "core" / "errors.py"
@@ -598,6 +786,131 @@ class APIDocGenerator:
                 f.write(f"**Inherits from**: `{exception.base_class}`\n\n")
                 f.write(f"**Source**: `{exception.file_path}`\n\n")
                 f.write(f"**Description**: {exception.docstring}\n\n")
+                f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _generate_module_exports_reference(self):
+        """Generate MODULE_EXPORTS.md."""
+        output_file = self.api_dir / "MODULE_EXPORTS.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Module Exports Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all public exports (`__all__`) from Thalia modules. ")
+            f.write("These are the recommended imports for external code.\n\n")
+
+            total_exports = sum(len(exports) for exports in self.module_exports.values())
+            f.write(f"Total: {len(self.module_exports)} modules, {total_exports} exports\n\n")
+
+            f.write("## Module Exports\n\n")
+
+            for module_name in sorted(self.module_exports.keys()):
+                exports = self.module_exports[module_name]
+                f.write(f"### `{module_name}`\n\n")
+                f.write(f"**Source**: `{exports[0].file_path}`\n\n")
+                f.write(f"**Exports** ({len(exports)}):\n\n")
+
+                for export in exports:
+                    f.write(f"- `{export.export_name}`\n")
+
+                f.write("\n**Usage**:\n\n")
+                f.write(f"```python\nfrom {module_name} import {exports[0].export_name}\n```\n\n")
+                f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _generate_mixins_reference(self):
+        """Generate MIXINS_REFERENCE.md."""
+        output_file = self.api_dir / "MIXINS_REFERENCE.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Mixins Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all mixin classes used by `NeuralRegion`. ")
+            f.write("These mixins provide standard functionality to all brain regions.\n\n")
+
+            f.write(f"Total: {len(self.mixins)} mixins\n\n")
+
+            f.write("## NeuralRegion Composition\n\n")
+            f.write("```python\n")
+            f.write("class NeuralRegion(nn.Module,\n")
+            for i, mixin in enumerate(self.mixins):
+                comma = "," if i < len(self.mixins) - 1 else ""
+                f.write(f"                   {mixin.name}{comma}\n")
+            f.write("    ):\n")
+            f.write("    # ...\n")
+            f.write("```\n\n")
+
+            f.write("## Mixin Classes\n\n")
+
+            for mixin in sorted(self.mixins, key=lambda m: m.name):
+                f.write(f"### `{mixin.name}`\n\n")
+                f.write(f"**Source**: `{mixin.file_path}`\n\n")
+                f.write(f"**Description**: {mixin.docstring}\n\n")
+
+                if mixin.methods:
+                    f.write("**Public Methods**:\n\n")
+                    for _, signature in mixin.methods:
+                        f.write(f"- `{signature}`\n")
+                    f.write("\n")
+
+                f.write("---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _generate_constants_reference(self):
+        """Generate CONSTANTS_REFERENCE.md."""
+        output_file = self.api_dir / "CONSTANTS_REFERENCE.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# Constants Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all module-level constants in Thalia. ")
+            f.write("These include biological time constants, default values, and thresholds.\n\n")
+
+            f.write(f"Total: {len(self.constants)} constants\n\n")
+
+            # Group by category
+            from collections import defaultdict
+            by_category = defaultdict(list)
+            for const in self.constants:
+                by_category[const.category].append(const)
+
+            f.write("## Constants by Category\n\n")
+
+            for category in sorted(by_category.keys()):
+                constants = by_category[category]
+                f.write(f"### {category}\n\n")
+
+                # Create table
+                f.write("| Constant | Value | Description |\n")
+                f.write("|----------|-------|-------------|\n")
+
+                for const in sorted(constants, key=lambda c: c.name):
+                    # Escape pipe characters
+                    value_escaped = const.value.replace("|", "\\|")
+                    doc_escaped = const.docstring.replace("|", "\\|")
+                    f.write(f"| `{const.name}` | `{value_escaped}` | {doc_escaped} |\n")
+
+                f.write("\n")
+
+                # Show source file
+                if constants:
+                    f.write(f"**Source**: `{constants[0].file_path}`\n\n")
+
                 f.write("---\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")

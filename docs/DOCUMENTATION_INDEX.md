@@ -68,6 +68,9 @@ Located in: `docs/api/`
 | **DATASETS_REFERENCE.md** | Dataset classes and factory functions | `*Dataset` classes, `create_stage*()` functions | Auto |
 | **DIAGNOSTICS_REFERENCE.md** | Diagnostic monitor classes | `*Monitor` classes in `diagnostics/` | Auto |
 | **EXCEPTIONS_REFERENCE.md** | Custom exception hierarchy | Exception classes in `core/errors.py` | Auto |
+| **MODULE_EXPORTS.md** | Public API exports | `__all__` lists from `__init__.py` files | Auto |
+| **MIXINS_REFERENCE.md** | Mixin classes for NeuralRegion | Mixin classes and their methods | Auto |
+| **CONSTANTS_REFERENCE.md** | Biological constants and defaults | Module-level UPPERCASE constants | Auto |
 
 **Benefits**:
 - ✅ Always synchronized with codebase

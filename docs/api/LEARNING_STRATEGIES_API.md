@@ -1,7 +1,7 @@
 # Learning Strategies API
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 19:12:33
+> Last updated: 2025-12-21 19:20:26
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all learning strategy factory functions available in Thalia.

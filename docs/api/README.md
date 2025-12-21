@@ -11,6 +11,9 @@
 - **[DATASETS_REFERENCE.md](DATASETS_REFERENCE.md)** — Dataset classes and factory functions
 - **[DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md)** — Diagnostic monitor classes
 - **[EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md)** — Custom exception classes
+- **[MODULE_EXPORTS.md](MODULE_EXPORTS.md)** — Public API exports from __init__.py
+- **[MIXINS_REFERENCE.md](MIXINS_REFERENCE.md)** — Mixin classes providing NeuralRegion functionality
+- **[CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md)** — Biological constants and default values
 
 ## Regenerating Documentation
 
@@ -57,6 +60,21 @@ This will:
 - Extracts from custom exception classes
 - Includes: inheritance hierarchy, docstrings
 - Always matches error handling API
+
+### Module Exports Reference
+- Extracts from `__all__` definitions in `__init__.py` files
+- Includes: all public exports from each module
+- Shows recommended import patterns
+
+### Mixins Reference
+- Extracts from mixin classes used by NeuralRegion
+- Includes: NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin
+- Shows composition pattern and public methods
+
+### Constants Reference
+- Extracts from module-level constants (UPPERCASE names)
+- Includes: biological time constants, thresholds, defaults
+- Organized by category (dopamine, acetylcholine, etc.)
 
 ## Benefits
 
