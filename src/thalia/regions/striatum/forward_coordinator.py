@@ -55,6 +55,7 @@ from typing import Optional, TYPE_CHECKING
 import torch
 import torch.nn as nn
 
+from thalia.components.synapses import ShortTermPlasticity
 from thalia.components.neurons.neuron_constants import (
     THETA_BASELINE_MIN,
     THETA_BASELINE_RANGE,
@@ -95,6 +96,7 @@ class ForwardPassCoordinator:
         homeostasis_manager: Optional[StriatumHomeostasisComponent],
         pfc_modulation_d1: Optional[nn.Parameter],
         pfc_modulation_d2: Optional[nn.Parameter],
+        stp_module: Optional[ShortTermPlasticity],
         device: torch.device,
     ):
         """Initialize forward pass coordinator.
@@ -108,6 +110,7 @@ class ForwardPassCoordinator:
             homeostasis_manager: Optional homeostasis component
             pfc_modulation_d1: Optional PFC→D1 modulation weights
             pfc_modulation_d2: Optional PFC→D2 modulation weights
+            stp_module: Optional STP module for corticostriatal depression
             device: Torch device
         """
         self.config = config
@@ -118,6 +121,7 @@ class ForwardPassCoordinator:
         self.homeostasis_manager = homeostasis_manager
         self.pfc_modulation_d1 = pfc_modulation_d1
         self.pfc_modulation_d2 = pfc_modulation_d2
+        self.stp_module = stp_module
         self.device = device
 
         # Oscillator state (set by set_oscillator_phases)
@@ -317,9 +321,26 @@ class ForwardPassCoordinator:
         # Convert bool spikes to float for matmul
         input_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
 
-        # Compute base activations from weights
-        d1_activation = torch.matmul(self.d1_pathway.weights, input_float)
-        d2_activation = torch.matmul(self.d2_pathway.weights, input_float)
+        # Apply Short-Term Plasticity if enabled
+        # STP modulates synaptic efficacy based on recent presynaptic activity
+        # Biology: Corticostriatal synapses show depression (U=0.4)
+        # - Prevents saturation from sustained cortical input
+        # - Enables novelty detection (fresh inputs get stronger transmission)
+        if self.stp_module is not None:
+            # Get STP efficacy [n_pre, n_post]
+            stp_efficacy = self.stp_module(input_float)
+            # Apply STP to weights: (n_post, n_pre) * (n_pre, n_post).T
+            # This modulates the effective weight matrix per-synapse
+            d1_weights_effective = self.d1_pathway.weights * stp_efficacy.T
+            d2_weights_effective = self.d2_pathway.weights * stp_efficacy.T
+        else:
+            # No STP - use raw weights
+            d1_weights_effective = self.d1_pathway.weights
+            d2_weights_effective = self.d2_pathway.weights
+
+        # Compute base activations from (STP-modulated) weights
+        d1_activation = torch.matmul(d1_weights_effective, input_float)
+        d2_activation = torch.matmul(d2_weights_effective, input_float)
 
         # Extract PFC goal context if enabled
         pfc_goal_context = self.extract_pfc_context(input_spikes)

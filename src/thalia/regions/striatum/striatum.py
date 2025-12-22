@@ -110,6 +110,7 @@ import torch.nn as nn
 
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import ShortTermPlasticity, get_stp_config
 from thalia.managers.base_manager import ManagerContext
 from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
@@ -493,6 +494,51 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.td_lambda_d2 = None
 
         # =====================================================================
+        # SHORT-TERM PLASTICITY (STP)
+        # =====================================================================
+        # Initialize STP modules for cortical and thalamic input pathways.
+        # Biology: Different striatal inputs have distinct STP dynamics:
+        # - Cortex→MSNs: DEPRESSING (U=0.4) - prevents saturation, novelty detection
+        # - Thalamus→MSNs: WEAK FACILITATION (U=0.25) - phasic amplification
+        #
+        # NOTE: Striatum doesn't have explicit "cortex" and "thalamus" source names.
+        # Instead, it receives concatenated multi-source input. For STP implementation,
+        # we assume:
+        # - Primary input source uses corticostriatal STP (depressing)
+        # - Could be extended to separate cortical/thalamic sources in future
+        #
+        # For now, apply corticostriatal STP to ALL inputs (biologically reasonable
+        # as cortex provides ~95% of striatal input volume).
+        if self.striatum_config.stp_enabled:
+            device = torch.device(config.device)
+
+            # Corticostriatal STP: DEPRESSING (U=0.4)
+            # Applied to D1 and D2 MSN populations
+            # Context-dependent filtering prevents saturation from sustained cortical input
+            self.stp_corticostriatal = ShortTermPlasticity(
+                n_pre=config.n_input,
+                n_post=config.n_output,  # Total MSNs (D1 + D2 populations)
+                config=get_stp_config("corticostriatal", dt=config.dt_ms),
+                per_synapse=True,
+            )
+            self.stp_corticostriatal.to(device)
+
+            # Thalamostriatal STP: WEAK FACILITATION (U=0.25)
+            # Reserved for future use when thalamic inputs are explicitly separated
+            # For now, we initialize but don't use it in forward pass
+            # (keeping for future multi-source routing enhancement)
+            self.stp_thalamostriatal = ShortTermPlasticity(
+                n_pre=config.n_input,
+                n_post=config.n_output,
+                config=get_stp_config("thalamostriatal", dt=config.dt_ms),
+                per_synapse=True,
+            )
+            self.stp_thalamostriatal.to(device)
+        else:
+            self.stp_corticostriatal = None
+            self.stp_thalamostriatal = None
+
+        # =====================================================================
         # GOAL-CONDITIONED VALUES (Phase 1 Week 2-3 Enhancement)
         # =====================================================================
         # Enable PFC goal context to modulate striatal action values via gating.
@@ -575,6 +621,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             homeostasis_manager=self.homeostasis,
             pfc_modulation_d1=self.pfc_modulation_d1,
             pfc_modulation_d2=self.pfc_modulation_d2,
+            stp_module=self.stp_corticostriatal,  # Apply corticostriatal STP
             device=self.device,
         )
 
@@ -2039,6 +2086,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             homeostatic_scaling_applied=self._homeostatic_scaling_applied if hasattr(self, '_homeostatic_scaling_applied') else False,
             homeostasis_manager_state=homeostasis_manager_state,
 
+            # STP state (optional)
+            stp_corticostriatal_u=self.stp_corticostriatal.u.detach().clone() if (self.stp_corticostriatal is not None and self.stp_corticostriatal.u is not None) else None,
+            stp_corticostriatal_x=self.stp_corticostriatal.x.detach().clone() if (self.stp_corticostriatal is not None and self.stp_corticostriatal.x is not None) else None,
+            stp_thalamostriatal_u=self.stp_thalamostriatal.u.detach().clone() if (self.stp_thalamostriatal is not None and self.stp_thalamostriatal.u is not None) else None,
+            stp_thalamostriatal_x=self.stp_thalamostriatal.x.detach().clone() if (self.stp_thalamostriatal is not None and self.stp_thalamostriatal.x is not None) else None,
+
             # Neuromodulators
             dopamine=dopamine,
             acetylcholine=acetylcholine,
@@ -2102,6 +2155,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.state_tracker._last_rpe = state.last_rpe
         if state.last_expected is not None:
             self.state_tracker._last_expected = state.last_expected
+
+        # Restore STP state (optional)
+        if state.stp_corticostriatal_u is not None and self.stp_corticostriatal is not None:
+            self.stp_corticostriatal.u.data = state.stp_corticostriatal_u.to(self.device)
+        if state.stp_corticostriatal_x is not None and self.stp_corticostriatal is not None:
+            self.stp_corticostriatal.x.data = state.stp_corticostriatal_x.to(self.device)
+        if state.stp_thalamostriatal_u is not None and self.stp_thalamostriatal is not None:
+            self.stp_thalamostriatal.u.data = state.stp_thalamostriatal_u.to(self.device)
+        if state.stp_thalamostriatal_x is not None and self.stp_thalamostriatal is not None:
+            self.stp_thalamostriatal.x.data = state.stp_thalamostriatal_x.to(self.device)
 
         # Restore goal modulation (optional)
         if state.pfc_modulation_d1 is not None and hasattr(self, 'pfc_modulation_d1'):

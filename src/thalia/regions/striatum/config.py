@@ -160,6 +160,22 @@ class StriatumConfig(NeuralComponentConfig):
     d2_to_output_delay_ms: float = 25.0  # D2 indirect pathway delay (slower!)
 
     # =========================================================================
+    # SHORT-TERM PLASTICITY (STP)
+    # =========================================================================
+    # Biologically, different striatal input pathways have distinct STP properties:
+    # - Cortex→MSNs: DEPRESSING (U=0.4) - prevents sustained cortical input from
+    #   saturating striatum, enables novelty detection (fresh inputs get stronger)
+    # - Thalamus→MSNs: WEAK FACILITATION (U=0.25) - phasic input amplification,
+    #   balances phasic (thalamus) and tonic (cortex) command signals
+    #
+    # References:
+    # - Charpier et al. (1999): Corticostriatal EPSPs
+    # - Partridge et al. (2000): Synaptic plasticity in striatum
+    # - Ding et al. (2008): Thalamostriatal facilitation
+    stp_enabled: bool = True  # Enable STP by default
+    # Note: STP types use presets from stp_presets.py ("corticostriatal", "thalamostriatal")
+
+    # =========================================================================
     # ELASTIC TENSOR CHECKPOINT FORMAT (Phase 1 - Growth Support)
     # =========================================================================
     # Enable elastic tensor format for checkpoint-growth compatibility.
@@ -298,6 +314,21 @@ class StriatumState(BaseRegionState):
     """Unified homeostasis manager state."""
 
     # ========================================================================
+    # SHORT-TERM PLASTICITY (STP)
+    # ========================================================================
+    stp_corticostriatal_u: Optional[torch.Tensor] = None
+    """STP release probability for corticostriatal pathway [n_pre, n_post]."""
+
+    stp_corticostriatal_x: Optional[torch.Tensor] = None
+    """STP available resources for corticostriatal pathway [n_pre, n_post]."""
+
+    stp_thalamostriatal_u: Optional[torch.Tensor] = None
+    """STP release probability for thalamostriatal pathway [n_pre, n_post]."""
+
+    stp_thalamostriatal_x: Optional[torch.Tensor] = None
+    """STP available resources for thalamostriatal pathway [n_pre, n_post]."""
+
+    # ========================================================================
     # NEUROMODULATORS (explicit, not from mixin)
     # ========================================================================
     dopamine: float = 0.0
@@ -356,6 +387,12 @@ class StriatumState(BaseRegionState):
             "trial_timesteps": self.trial_timesteps,
             "homeostatic_scaling_applied": self.homeostatic_scaling_applied,
             "homeostasis_manager_state": self.homeostasis_manager_state,
+
+            # STP
+            "stp_corticostriatal_u": self.stp_corticostriatal_u,
+            "stp_corticostriatal_x": self.stp_corticostriatal_x,
+            "stp_thalamostriatal_u": self.stp_thalamostriatal_u,
+            "stp_thalamostriatal_x": self.stp_thalamostriatal_x,
 
             # Neuromodulators
             "dopamine": self.dopamine,
@@ -424,6 +461,12 @@ class StriatumState(BaseRegionState):
             trial_timesteps=data.get("trial_timesteps", 0),
             homeostatic_scaling_applied=data.get("homeostatic_scaling_applied", False),
             homeostasis_manager_state=data.get("homeostasis_manager_state"),
+
+            # STP
+            stp_corticostriatal_u=to_device(data.get("stp_corticostriatal_u")),
+            stp_corticostriatal_x=to_device(data.get("stp_corticostriatal_x")),
+            stp_thalamostriatal_u=to_device(data.get("stp_thalamostriatal_u")),
+            stp_thalamostriatal_x=to_device(data.get("stp_thalamostriatal_x")),
 
             # Neuromodulators
             dopamine=data.get("dopamine", 0.0),
