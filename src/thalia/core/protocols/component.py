@@ -32,7 +32,6 @@ from typing import Any, Dict, Protocol, runtime_checkable, Optional
 import torch
 import torch.nn as nn
 
-# Import mixins for LearnableComponent
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
@@ -50,8 +49,8 @@ class BrainComponent(Protocol):
     Both regions and pathways implement this interface to ensure feature parity.
     When adding new functionality:
     1. Add it to this protocol first
-    2. Implement for NeuralComponent
-    3. Implement for BaseNeuralPathway
+    2. Implement for NeuralRegion (regions)
+    3. Implement for BaseNeuralPathway (pathways)
     4. Update tests for both
 
     This prevents accidentally forgetting pathways when adding features.
@@ -977,7 +976,7 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
             raise AttributeError(f"{self.__class__.__name__} config has no n_output or n_neurons attribute")
 
     # =========================================================================
-    # CONCRETE IMPLEMENTATIONS (from old NeuralComponent)
+    # CONCRETE IMPLEMENTATIONS (shared by all components)
     # =========================================================================
 
     def check_health(self) -> Any:  # Returns HealthReport

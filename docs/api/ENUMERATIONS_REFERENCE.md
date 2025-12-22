@@ -1,7 +1,7 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 13:58:06
+> Last updated: 2025-12-22 20:11:04
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
@@ -521,21 +521,6 @@ Sleep stages during consolidation.
 
 ### Pathways
 
-#### `AttentionStage` (Enum)
-
-Developmental stages of attention.
-
-**Source**: `pathways\attention\attention.py`
-
-**Members**:
-
-- `INFANT` — Stage 0: Pure bottom-up
-- `TODDLER` — Stage 1: Mostly bottom-up (70%)
-- `PRESCHOOL` — Stage 2: Balanced (50/50)
-- `SCHOOL_AGE` — Stage 3+: Mostly top-down (70%)
-
----
-
 #### `Modality` (Enum)
 
 Sensory modalities.
@@ -703,6 +688,40 @@ Types of executive function tasks.
 ---
 
 ### Training
+
+#### `AttentionStage` (Enum)
+
+Developmental stages of attention control.
+
+Represents the shift from reactive (bottom-up) to proactive (top-down)
+attention control across development, matching curriculum stages.
+
+Biological basis:
+- Infant: Pure bottom-up (novelty, salience, motion)
+- Toddler: Mostly bottom-up with emerging goal-directed control
+- Preschool: Balanced control (conflict monitoring emerges)
+- School-age: Top-down dominant (strategic attention allocation)
+
+Implementation:
+- Controls thalamic gating strength (alpha suppression)
+- Modulates PFC→thalamus feedback gain
+- Adjusts NE gain modulation sensitivity
+
+References:
+- Posner & Petersen (1990): Attention networks
+- Colombo (2001): Infant attention development
+- Diamond (2013): Executive function emergence
+
+**Source**: `training\curriculum\constants.py`
+
+**Members**:
+
+- `INFANT` — Stage 0: Pure bottom-up (100% reactive)
+- `TODDLER` — Stage 1: Mostly bottom-up (70% reactive, 30% goal-directed)
+- `PRESCHOOL` — Stage 2: Balanced (50% reactive, 50% goal-directed)
+- `SCHOOL_AGE` — Stage 3+: Top-down dominant (30% reactive, 70% goal-directed)
+
+---
 
 #### `GateDecision` (Enum)
 

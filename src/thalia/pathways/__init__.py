@@ -24,17 +24,6 @@ from thalia.pathways.sensory_pathways import (
     LanguagePathway,
 )
 
-# Attention pathways (from attention submodule)
-from thalia.pathways.attention.attention import (
-    AttentionMechanisms,
-    AttentionMechanismsConfig,
-    AttentionStage,
-)
-from thalia.pathways.attention.crossmodal_binding import (
-    CrossModalGammaBinding,
-    CrossModalBindingConfig,
-)
-
 __all__ = [
     # Protocol
     "NeuralPathway",
@@ -45,10 +34,4 @@ __all__ = [
     "VisualPathway",
     "AuditoryPathway",
     "LanguagePathway",
-    # Attention pathways
-    "AttentionMechanisms",
-    "AttentionMechanismsConfig",
-    "AttentionStage",
-    "CrossModalGammaBinding",
-    "CrossModalBindingConfig",
 ]

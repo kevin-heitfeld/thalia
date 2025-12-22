@@ -3,14 +3,13 @@ Base classes for brain region modules.
 
 This module defines state and utility classes for neural components.
 
-Architecture (v3.0):
+Architecture (v3.0+):
 - Brain regions inherit from NeuralRegion (thalia.core.neural_region)
-- LearnableComponent is for custom pathways only (not for regions)
-- NeuralComponent is an alias to LearnableComponent for backward compatibility
+- Custom pathways inherit from LearnableComponent (thalia.core.protocols.component)
 
 Usage:
-- Regions: `class MyRegion(NeuralRegion)`  [PREFERRED]
-- Custom pathways: `class MyPathway(LearnableComponent)`  [ALLOWED]
+- Regions: `class MyRegion(NeuralRegion)`
+- Custom pathways: `class MyPathway(LearnableComponent)`
 """
 
 from __future__ import annotations
@@ -20,8 +19,6 @@ from enum import Enum, auto
 from typing import Optional, List
 
 import torch
-
-from thalia.core.protocols.component import LearnableComponent
 
 
 class LearningRule(Enum):
@@ -77,18 +74,3 @@ class NeuralComponentState:
 
     # Timestep counter
     t: int = 0
-
-
-# =============================================================================
-# NeuralComponent: Alias to LearnableComponent (Backward Compatibility)
-# =============================================================================
-# NeuralComponent is an alias to LearnableComponent for backward compatibility.
-# Note: Brain regions now inherit from NeuralRegion (v3.0 architecture).
-# LearnableComponent/NeuralComponent are primarily used for custom pathways.
-#
-# Architecture evolution:
-# - v1.x: Regions inherited from NeuralComponent
-# - v2.x: NeuralComponent became alias to LearnableComponent
-# - v3.0: Regions inherit from NeuralRegion (synaptic weights at dendrites)
-
-NeuralComponent = LearnableComponent

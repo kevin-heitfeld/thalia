@@ -99,7 +99,7 @@ Neuromodulators gate synaptic plasticity and influence neural dynamics:
 
 Usage Example:
 ==============
-    class MyRegion(NeuromodulatorMixin, NeuralComponent):
+    class MyRegion(NeuromodulatorMixin, LearnableComponent):
         def forward(self, input, dt=1.0):
             output = self._compute_output(input)
 

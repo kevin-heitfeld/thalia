@@ -433,7 +433,7 @@ class Cerebellum(NeuralRegion):
         - detect_runaway_excitation(spikes) → bool
         - detect_silence(spikes) → bool
 
-    From NeuralComponent (abstract base):
+    From LearnableComponent (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
@@ -613,7 +613,7 @@ class Cerebellum(NeuralRegion):
             self.stp_mf_granule = None
 
     def _initialize_weights_tensor(self, n_output: int, n_input: int) -> torch.nn.Parameter:
-        """Initialize weights tensor (no longer part of NeuralComponent pattern)."""
+        """Initialize weights tensor (no longer part of LearnableComponent pattern)."""
         weights = WeightInitializer.gaussian(
             n_output=n_output,
             n_input=n_input,

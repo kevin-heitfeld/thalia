@@ -112,7 +112,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.components.coding.spike_utils import compute_firing_rate
-from thalia.regions.base import NeuralComponent
+from thalia.core.protocols.component import LearnableComponent
 from thalia.managers.component_registry import register_pathway
 
 
@@ -145,11 +145,11 @@ class SensoryPathwayConfig:
     device: str = "cpu"
 
 
-class SensoryPathway(NeuralComponent):
+class SensoryPathway(LearnableComponent):
     """
     Abstract base class for sensory pathways.
 
-    Inherits from NeuralComponent, implementing the NeuralPathway protocol
+    Inherits from LearnableComponent, implementing the NeuralPathway protocol
     to provide a standardized way to encode raw sensory input into spike patterns.
 
     All modalities must implement:

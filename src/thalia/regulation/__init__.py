@@ -1,9 +1,30 @@
 """
 Regulation Constants.
 
-Constants and utilities for homeostasis, learning, and normalization.
+Constants and utilities for homeostasis, learning, exploration, and normalization.
 """
 
+from thalia.regulation.exploration_constants import (
+    # Exploration strategies
+    DEFAULT_EPSILON_EXPLORATION,
+    EPSILON_MIN,
+    EPSILON_DECAY,
+    UCB_CONFIDENCE_MULTIPLIER,
+    UCB_MIN_VISITS,
+    SOFTMAX_TEMPERATURE_DEFAULT,
+    SOFTMAX_TEMPERATURE_MIN,
+    SOFTMAX_TEMPERATURE_MAX,
+    # Learning rates
+    LR_VERY_SLOW,
+    LR_SLOW,
+    LR_MODERATE,
+    LR_FAST,
+    LR_CORTEX_DEFAULT,
+    LR_HIPPOCAMPUS_DEFAULT,
+    LR_STRIATUM_DEFAULT,
+    LR_CEREBELLUM_DEFAULT,
+    LR_PFC_DEFAULT,
+)
 from thalia.regulation.homeostasis_constants import (
     TARGET_FIRING_RATE_STANDARD,
     TARGET_FIRING_RATE_LOW,
@@ -135,6 +156,25 @@ from thalia.regulation.oscillator_constants import (
 )
 
 __all__ = [
+    # Exploration Constants - Strategies
+    "DEFAULT_EPSILON_EXPLORATION",
+    "EPSILON_MIN",
+    "EPSILON_DECAY",
+    "UCB_CONFIDENCE_MULTIPLIER",
+    "UCB_MIN_VISITS",
+    "SOFTMAX_TEMPERATURE_DEFAULT",
+    "SOFTMAX_TEMPERATURE_MIN",
+    "SOFTMAX_TEMPERATURE_MAX",
+    # Exploration Constants - Learning Rates
+    "LR_VERY_SLOW",
+    "LR_SLOW",
+    "LR_MODERATE",
+    "LR_FAST",
+    "LR_CORTEX_DEFAULT",
+    "LR_HIPPOCAMPUS_DEFAULT",
+    "LR_STRIATUM_DEFAULT",
+    "LR_CEREBELLUM_DEFAULT",
+    "LR_PFC_DEFAULT",
     # Homeostasis Constants - Firing Rate Targets
     "TARGET_FIRING_RATE_STANDARD",
     "TARGET_FIRING_RATE_LOW",

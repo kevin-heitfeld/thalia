@@ -53,6 +53,8 @@ from typing import TYPE_CHECKING, Optional, Dict, Any, List
 
 import torch
 
+from thalia.regulation.exploration_constants import SOFTMAX_TEMPERATURE_DEFAULT
+
 if TYPE_CHECKING:
     from thalia.regions.striatum.config import StriatumConfig
 
@@ -78,7 +80,7 @@ class ActionSelectionMixin:
     striatum_config: "StriatumConfig"
     n_actions: int
     neurons_per_action: int
-    # device: provided by NeuralComponent base class as @property
+    # device: provided by LearnableComponent base class as @property
     state_tracker: Any  # StriatumStateTracker
     exploration_manager: Any  # ExplorationManager
     state: Any
@@ -260,7 +262,12 @@ class ActionSelectionMixin:
             selected_action = int(torch.randint(0, self.n_actions, (1,)).item())
         else:
             if self.striatum_config.softmax_action_selection:
-                temperature = self.striatum_config.softmax_temperature
+                # Use configured temperature, or fall back to default constant
+                temperature = getattr(
+                    self.striatum_config,
+                    'softmax_temperature',
+                    SOFTMAX_TEMPERATURE_DEFAULT
+                )
                 selection_values_norm = selection_values - selection_values.max()
                 probs = torch.softmax(selection_values_norm / temperature, dim=0)
                 selected_action = int(torch.multinomial(probs, 1).item())

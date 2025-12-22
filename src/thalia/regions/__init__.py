@@ -73,11 +73,11 @@ Biological References:
 """
 
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.regions.base import NeuralComponent, LearningRule, NeuralComponentState
+from thalia.regions.base import LearningRule, NeuralComponentState
 from thalia.regions.factory import RegionFactory, RegionRegistry, register_region
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig  # Now from cerebellum/__init__.py
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 from thalia.regions.hippocampus import (
@@ -90,7 +90,7 @@ from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig, Thalamic
 
 __all__ = [
     # Base classes
-    "NeuralComponent",  # Unified base for ALL neural populations (regions, pathways, etc.)
+    # Note: Use NeuralRegion for regions, LearnableComponent for pathways (v3.0+)
     "LearningRule",
     "NeuralComponentConfig",
     "NeuralComponentState",

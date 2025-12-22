@@ -711,6 +711,7 @@ class CurriculumTrainer:
 
         # State tracking
         self.current_stage: Optional[CurriculumStage] = None
+        self.current_attention_stage: Optional[Any] = None  # AttentionStage
         self.global_step = 0
         self.stage_start_step = 0
 
@@ -788,6 +789,9 @@ class CurriculumTrainer:
         self.current_stage = stage
         self.stage_start_step = self.global_step
         start_time = time.time()
+
+        # Update attention control for new stage
+        self._update_attention_stage(stage)
 
         # Update noise scheduler for new stage
         self.noise_scheduler.set_stage(stage)
@@ -1744,6 +1748,69 @@ class CurriculumTrainer:
             milestone_metadata['checkpoint_reason'] = reason
 
         return self.save_checkpoint(name=name, metadata=milestone_metadata)
+
+    def _update_attention_stage(self, curriculum_stage: CurriculumStage) -> None:
+        """Update attention control parameters based on curriculum stage.
+
+        Adjusts thalamic gating and PFC feedback to shift attention from
+        reactive (bottom-up) to proactive (top-down) across development.
+
+        Args:
+            curriculum_stage: Current curriculum training stage
+        """
+        from thalia.config.curriculum_growth import get_attention_stage_for_curriculum
+        from thalia.training.curriculum.constants import get_attention_weights
+
+        # Get attention stage and weights for this curriculum stage
+        attention_stage = get_attention_stage_for_curriculum(curriculum_stage)
+        bottom_up_weight, top_down_weight = get_attention_weights(attention_stage)
+
+        # Store current attention stage
+        self.current_attention_stage = attention_stage
+
+        if self.verbose:
+            print(f"🎯 Attention control: {attention_stage.name} "
+                  f"(bottom-up: {bottom_up_weight:.0%}, top-down: {top_down_weight:.0%})")
+
+        # Get thalamus region
+        regions = self._get_brain_regions()
+        thalamus = regions.get('thalamus')
+
+        if thalamus is None:
+            if self.verbose:
+                print("  ⚠️  Warning: No thalamus found, skipping attention control update")
+            return
+
+        # Adjust thalamic alpha suppression (bottom-up gating)
+        # Higher bottom-up weight → lower suppression (more reactive to salience)
+        # Lower bottom-up weight → higher suppression (ignore distractors)
+        if hasattr(thalamus, 'thalamus_config'):
+            # Base suppression from constants
+            from thalia.regulation.region_constants import THALAMUS_ALPHA_SUPPRESSION
+
+            # Scale suppression inversely with bottom-up weight
+            # Infant (100% bottom-up): 0.5x suppression (very reactive)
+            # School-age (30% bottom-up): 1.5x suppression (ignore distractors)
+            suppression_scale = 0.5 + (1.0 - bottom_up_weight)
+            thalamus.thalamus_config.alpha_suppression_strength = (
+                THALAMUS_ALPHA_SUPPRESSION * suppression_scale
+            )
+
+            # Adjust L6 feedback strength (top-down modulation)
+            # Higher top-down weight → stronger PFC→thalamus feedback
+            # L6a (type I): Inhibitory modulation via TRN
+            # L6b (type II): Excitatory modulation of relay neurons
+            base_l6a = 0.8  # From ThalamicRelayConfig defaults
+            base_l6b = 0.6
+
+            thalamus.thalamus_config.l6a_to_trn_strength = base_l6a * (0.5 + top_down_weight)
+            thalamus.thalamus_config.l6b_to_relay_strength = base_l6b * (0.5 + top_down_weight)
+
+            if self.verbose:
+                print(f"  • Alpha suppression: {thalamus.thalamus_config.alpha_suppression_strength:.3f} "
+                      f"(scale: {suppression_scale:.2f}x)")
+                print(f"  • L6a→TRN feedback: {thalamus.thalamus_config.l6a_to_trn_strength:.3f}")
+                print(f"  • L6b→relay feedback: {thalamus.thalamus_config.l6b_to_relay_strength:.3f}")
 
     def _apply_noise_profile_to_brain(self) -> None:
         """Apply current noise profile to all brain regions and oscillators.

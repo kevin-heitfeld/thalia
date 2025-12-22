@@ -138,7 +138,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
                                    Options: "stdp", "bcm", "hebbian", "three_factor"
             device: Device for computation ("cpu" or "cuda")
             dt_ms: Simulation timestep in milliseconds
-            **kwargs: Additional arguments for NeuralComponent compatibility
+            **kwargs: Additional arguments for base class compatibility
         """
         # Initialize as nn.Module (new v3.0 hierarchy)
         super().__init__()
@@ -217,7 +217,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
 
         self.input_sources[source_name] = n_input
 
-        # Update total n_input for NeuralComponent compatibility
+        # Update total n_input for tracking
         self.n_input = sum(self.input_sources.values())
 
         # Create plasticity rule based on learning_rule parameter

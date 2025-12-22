@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 13:58:06
+> Last updated: 2025-12-22 20:11:04
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -20,6 +20,7 @@ Total: 3 configuration classes
 
 | Field | Type | Default |
 |-------|------|-------|
+| `learning_rate` | `float` | `LEARNING_RATE_ONE_SHOT` |
 | `dg_expansion` | `float` | `HIPPOCAMPUS_DG_EXPANSION_FACTOR` |
 | `ca3_size_ratio` | `float` | `HIPPOCAMPUS_CA3_SIZE_RATIO` |
 | `ca1_size_ratio` | `float` | `HIPPOCAMPUS_CA1_SIZE_RATIO` |
@@ -37,7 +38,6 @@ Total: 3 configuration classes
 | `nmda_threshold` | `float` | `0.4` |
 | `nmda_steepness` | `float` | `12.0` |
 | `ampa_ratio` | `float` | `0.05` |
-| `ca3_recurrent_learning_rate` | `float` | `LEARNING_RATE_ONE_SHOT` |
 | `ec_ca1_learning_rate` | `float` | `0.5` |
 | `ffi_threshold` | `float` | `0.3` |
 | `ffi_strength` | `float` | `0.8` |
@@ -177,9 +177,10 @@ Total: 3 configuration classes
 | `use_goal_conditioning` | `bool` | `True` |
 | `pfc_size` | `int` | `128` |
 | `goal_modulation_strength` | `float` | `0.5` |
-| `goal_modulation_lr` | `float` | `0.001` |
+| `goal_modulation_lr` | `float` | `LEARNING_RATE_HEBBIAN_SLOW` |
 | `d1_to_output_delay_ms` | `float` | `15.0` |
 | `d2_to_output_delay_ms` | `float` | `25.0` |
+| `stp_enabled` | `bool` | `True` |
 | `growth_enabled` | `bool` | `True` |
 | `reserve_capacity` | `float` | `0.5` |
 

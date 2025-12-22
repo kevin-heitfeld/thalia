@@ -68,15 +68,17 @@
 ### Attention Systems
 → See [`ARCHITECTURE_OVERVIEW.md`](ARCHITECTURE_OVERVIEW.md) § "Thalamus"
 - Thalamus: Sensory relay and gating
-- Bottom-up attention (stimulus-driven salience)
-- Top-down attention (PFC → Cortex pathways)
-- Developmental progression (reactive → proactive)
+- Bottom-up attention (stimulus-driven salience via burst mode)
+- Top-down attention (PFC → Thalamus L6 feedback)
+- Developmental progression (AttentionStage in curriculum system)
 - Alpha-band gating and TRN inhibition
 
-**Pathways**: `src/thalia/pathways/attention/`
-- `attention.py` - AttentionMechanisms (bottom-up + top-down)
-- `spiking_attention.py` - SpikingAttentionPathway (PFC → Cortex)
-- `crossmodal_binding.py` - Cross-modal integration
+**Implementation**:
+- Bottom-up: Thalamic burst mode (novelty detection), alpha gating (salience)
+- Top-down: PFC→Thalamus L6 feedback, NE gain modulation
+- Developmental: `AttentionStage` enum controls bottom-up/top-down balance
+
+**Cross-Modal Integration**: See `MultimodalIntegration` region (gamma binding at dendrites)
 
 ### Language Processing
 → See `src/thalia/language/`

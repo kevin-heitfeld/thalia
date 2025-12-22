@@ -22,7 +22,7 @@ Usage Example:
     # Register a region (done once in region module)
     @register_region("cortex")
     @register_region("layered_cortex")  # Alias
-    class LayeredCortex(NeuralComponent):
+    class LayeredCortex(NeuralRegion):
         ...
 
     # Create region by name
@@ -48,7 +48,7 @@ import inspect
 
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.errors import ConfigurationError, ComponentError
-from thalia.regions.base import NeuralComponent
+from thalia.core.protocols.component import LearnableComponent
 
 
 class RegionRegistry:
@@ -58,14 +58,14 @@ class RegionRegistry:
     supporting multiple names per region (aliases).
     """
 
-    _registry: Dict[str, Type[NeuralComponent]] = {}
+    _registry: Dict[str, Type[LearnableComponent]] = {}
     _aliases: Dict[str, str] = {}  # alias -> canonical_name
 
     @classmethod
     def register(
         cls,
         name: str,
-        region_class: Type[NeuralComponent],
+        region_class: Type[LearnableComponent],
         *,
         aliases: Optional[List[str]] = None,
     ) -> None:
@@ -73,7 +73,7 @@ class RegionRegistry:
 
         Args:
             name: Primary name for the region
-            region_class: Region class to register (NeuralRegion or NeuralComponent subclass)
+            region_class: Region class to register (NeuralRegion or LearnableComponent subclass)
             aliases: Optional list of alternative names
 
         Raises:
@@ -96,11 +96,11 @@ class RegionRegistry:
                 f"Did you pass an instance instead of a class?"
             )
 
-        if not issubclass(region_class, NeuralComponent):
+        if not issubclass(region_class, LearnableComponent):
             raise ConfigurationError(
-                f"Region class must be a NeuralRegion or NeuralComponent subclass, "
+                f"Region class must be a NeuralRegion or LearnableComponent subclass, "
                 f"got {region_class.__name__}. "
-                f"Ensure your region class inherits from NeuralRegion or NeuralComponent."
+                f"Ensure your region class inherits from NeuralRegion or LearnableComponent."
             )
 
         # Register primary name
@@ -118,7 +118,7 @@ class RegionRegistry:
                 cls._aliases[alias] = name
 
     @classmethod
-    def get(cls, name: str) -> Optional[Type[NeuralComponent]]:
+    def get(cls, name: str) -> Optional[Type[LearnableComponent]]:
         """Get region class by name.
 
         Args:
@@ -159,7 +159,7 @@ def register_region(
     name: str,
     *,
     aliases: Optional[List[str]] = None,
-) -> Callable[[Type[NeuralComponent]], Type[NeuralComponent]]:
+) -> Callable[[Type[LearnableComponent]], Type[LearnableComponent]]:
     """Decorator to register a brain region class.
 
     Args:
@@ -171,10 +171,10 @@ def register_region(
 
     Example:
         @register_region("cortex", aliases=["layered_cortex"])
-        class LayeredCortex(NeuralComponent):
+        class LayeredCortex(NeuralRegion):
             ...
     """
-    def decorator(region_class: Type[NeuralComponent]) -> Type[NeuralComponent]:
+    def decorator(region_class: Type[LearnableComponent]) -> Type[LearnableComponent]:
         RegionRegistry.register(name, region_class, aliases=aliases)
         return region_class
 
@@ -193,7 +193,7 @@ class RegionFactory:
         name: str,
         config: NeuralComponentConfig,
         **kwargs: Any,
-    ) -> NeuralComponent:
+    ) -> LearnableComponent:
         """Create a brain region instance.
 
         Args:
@@ -232,7 +232,7 @@ class RegionFactory:
             ) from e
 
     @staticmethod
-    def create_batch(region_specs: Dict[str, NeuralComponentConfig]) -> Dict[str, NeuralComponent]:
+    def create_batch(region_specs: Dict[str, NeuralComponentConfig]) -> Dict[str, LearnableComponent]:
         """Create multiple regions from a specification dict.
 
         Args:

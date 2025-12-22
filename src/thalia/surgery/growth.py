@@ -12,13 +12,13 @@ from thalia.pathways.axonal_projection import AxonalProjection, SourceSpec
 
 if TYPE_CHECKING:
     from thalia.core.dynamic_brain import DynamicBrain
-    from thalia.core.base import NeuralComponent
+    from thalia.core.protocols.component import LearnableComponent
 
 
 def add_region_to_trained_brain(
     brain: "DynamicBrain",
     region_name: str,
-    region: "NeuralComponent",
+    region: "LearnableComponent",
     input_pathway_from: Optional[str] = None,
     output_pathway_to: Optional[str] = None,
 ) -> None:
@@ -93,7 +93,7 @@ def add_region_to_trained_brain(
 def _create_input_pathway(
     brain: "DynamicBrain",
     source_region_name: str,
-    target_region: "NeuralComponent",
+    target_region: "LearnableComponent",
     target_region_name: str,
 ) -> None:
     """Create pathway from existing region to new region."""
@@ -122,7 +122,7 @@ def _create_input_pathway(
 
 def _create_output_pathway(
     brain: "DynamicBrain",
-    source_region: "NeuralComponent",
+    source_region: "LearnableComponent",
     source_region_name: str,
     target_region_name: str,
 ) -> None:

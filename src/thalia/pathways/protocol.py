@@ -3,10 +3,10 @@
 This module defines the NeuralPathway protocol that standardizes the interface
 across sensory pathways, inter-region pathways, and specialized pathways.
 
-IMPORTANT: Architecture Evolution (v3.0)
-=========================================
+IMPORTANT: Architecture Evolution
+==================================
 - Brain regions now inherit from NeuralRegion (synaptic weights at dendrites)
-- Pathways can use NeuralComponent/LearnableComponent for custom implementations
+- Pathways can use LearnableComponent for custom implementations
 - AxonalProjection is the standard inter-region pathway (pure routing, no weights)
 
 This unified architecture ensures component parity:
@@ -50,7 +50,7 @@ Types of Pathways
 3. **Specialized Pathways**:
    - Sensory pathways transform raw input → spikes
    - Custom routing logic for complex architectures
-   - Can inherit from NeuralComponent for custom implementations
+   - Can inherit from LearnableComponent for custom implementations
 
 Protocol Design:
 ================
@@ -63,14 +63,14 @@ The protocol allows for flexibility while ensuring consistency:
 
 Usage Example
 ==============
-Custom pathways can inherit from NeuralComponent:
+Custom pathways can inherit from LearnableComponent:
 
 .. code-block:: python
 
-    from thalia.regions.base import NeuralComponent
+    from thalia.core.protocols.component import LearnableComponent
 
-    # Define a custom pathway (NeuralComponent for custom implementations)
-    class MyPathway(NeuralComponent):
+    # Define a custom pathway (LearnableComponent for custom implementations)
+    class MyPathway(LearnableComponent):
         def forward(self, spikes):
             # Transform spikes with custom logic
             return self.transform(spikes)
@@ -179,27 +179,6 @@ class NeuralPathway(Protocol):
             - Pathway-specific metrics
         """
         ...
-
-
-# Note: SensoryPathwayProtocol removed (ADR-007)
-# All pathways (sensory and inter-region) use forward() for consistency.
-# Sensory pathways return (spikes, metadata) tuple from forward().
-# Inter-region pathways return spikes tensor from forward().
-
-# Note: LearnablePathway protocol removed - pathways ALWAYS learn during forward passes.
-# Learning happens automatically via STDP, BCM, or other plasticity rules,
-# just like regions (Prefrontal, Hippocampus, etc.) always learn.
-# No separate learn() method needed.
-
-
-# =============================================================================
-# Unified Base: NeuralComponent is imported via TYPE_CHECKING
-# =============================================================================
-
-# All neural populations inherit from NeuralComponent (defined in thalia.regions.base)
-# This reflects the biological reality that regions and pathways are both
-# just populations of neurons with weights, dynamics, and learning rules.
-# To avoid circular import, we use TYPE_CHECKING above.
 
 
 # Type alias for convenience (ADR-007: all pathways use NeuralPathway protocol)

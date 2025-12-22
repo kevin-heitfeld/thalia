@@ -29,6 +29,7 @@ from typing import Optional, List, Dict, Callable, Any
 from enum import Enum
 import torch
 
+from thalia.regulation.exploration_constants import DEFAULT_EPSILON_EXPLORATION
 from thalia.regulation.region_constants import PREFRONTAL_PATIENCE_MIN
 
 
@@ -137,7 +138,7 @@ class GoalHierarchyConfig:
 
     # Goal selection
     use_value_based_selection: bool = True  # Select high-value goals
-    epsilon_exploration: float = 0.1  # Explore low-value goals sometimes
+    epsilon_exploration: float = DEFAULT_EPSILON_EXPLORATION  # Explore low-value goals sometimes
 
     # Goal dynamics
     goal_persistence: float = 0.9  # Resist goal switching (stability)

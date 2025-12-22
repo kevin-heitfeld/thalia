@@ -13,6 +13,10 @@ Author: Thalia Project
 Date: December 12, 2025
 """
 
+from thalia.training.curriculum.constants import (
+    AttentionStage,
+    get_attention_weights,
+)
 from thalia.training.curriculum.curriculum import (
     InterleavedCurriculumSampler,
     InterleavedCurriculumSamplerConfig,
@@ -73,6 +77,9 @@ from thalia.training.curriculum.noise_scheduler import (
 )
 
 __all__ = [
+    # Constants (NEW)
+    "AttentionStage",
+    "get_attention_weights",
     # Curriculum mechanics
     "InterleavedCurriculumSampler",
     "InterleavedCurriculumSamplerConfig",

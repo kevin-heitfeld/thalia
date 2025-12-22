@@ -13,7 +13,7 @@ of brain region components. Using protocols instead of inheritance allows:
 Design Philosophy:
 ==================
 The THALIA codebase has two parallel hierarchies:
-- `NeuralComponent` (regions/base.py) - Domain model for neural components
+- `LearnableComponent` (core/protocols/component.py) - Domain model for neural components
 - `EventDrivenRegionBase` (event_regions/base.py) - Event system adapter
 
 Rather than force these into a single hierarchy, we define protocols

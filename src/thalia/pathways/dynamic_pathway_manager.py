@@ -17,7 +17,7 @@ from typing import Dict, List, Tuple, Any
 
 import torch
 
-from thalia.regions.base import NeuralComponent
+from thalia.core.protocols.component import LearnableComponent
 
 
 class DynamicPathwayManager:
@@ -33,7 +33,7 @@ class DynamicPathwayManager:
 
     def __init__(
         self,
-        connections: Dict[Tuple[str, str], NeuralComponent],
+        connections: Dict[Tuple[str, str], LearnableComponent],
         topology: Dict[str, List[str]],
         device: torch.device,
         dt_ms: float,
@@ -62,7 +62,7 @@ class DynamicPathwayManager:
                     self._component_pathways[target] = []
                 self._component_pathways[target].append((source, target))
 
-    def get_all_pathways(self) -> Dict[str, NeuralComponent]:
+    def get_all_pathways(self) -> Dict[str, LearnableComponent]:
         """Get all pathways as dict for compatibility.
 
         Returns:

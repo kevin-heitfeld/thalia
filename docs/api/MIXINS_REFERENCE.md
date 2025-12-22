@@ -1,7 +1,7 @@
 # Mixins Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 13:58:06
+> Last updated: 2025-12-22 20:11:04
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all mixin classes used by `NeuralRegion`. These mixins provide standard functionality to all brain regions.
@@ -74,6 +74,7 @@ class NeuralRegion(nn.Module,
 **Public Methods**:
 
 - `reset_state()`
+- `reset_standard_state(state_attrs)`
 
 ---
 

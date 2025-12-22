@@ -57,10 +57,35 @@ class CurriculumStage(IntEnum):
     ABSTRACT = 4       # Stage 4 (abstract reasoning)
 
 
+def get_attention_stage_for_curriculum(curriculum_stage: CurriculumStage) -> "AttentionStage":
+    """Map curriculum stage to attention developmental stage.
+
+    Controls the balance between bottom-up (reactive) and top-down (goal-directed)
+    attention across development.
+
+    Args:
+        curriculum_stage: Current curriculum training stage
+
+    Returns:
+        Corresponding AttentionStage enum
+    """
+    from thalia.training.curriculum.constants import AttentionStage
+
+    mapping = {
+        CurriculumStage.SENSORIMOTOR: AttentionStage.INFANT,    # Pure bottom-up
+        CurriculumStage.PHONOLOGY: AttentionStage.INFANT,       # Pure bottom-up
+        CurriculumStage.TODDLER: AttentionStage.TODDLER,        # 70% bottom-up
+        CurriculumStage.GRAMMAR: AttentionStage.PRESCHOOL,      # 50/50 balanced
+        CurriculumStage.READING: AttentionStage.SCHOOL_AGE,     # 70% top-down
+        CurriculumStage.ABSTRACT: AttentionStage.SCHOOL_AGE,    # 70% top-down
+    }
+    return mapping[curriculum_stage]
+
+
 @dataclass
 class GrowthTriggerConfig:
     """Configuration for a single growth trigger.
-    
+
     Attributes:
         capacity_threshold: Trigger when capacity exceeds this (0-1)
         expansion_rate: How much to grow (0-1, fraction of current size)
@@ -80,22 +105,22 @@ class GrowthTriggerConfig:
 @dataclass
 class ComponentGrowthConfig:
     """Growth configuration for a specific component type.
-    
+
     Different brain regions have different growth needs:
     - Sensory regions: Conservative (recognize more features)
     - PFC: Aggressive (complex rules, large WM)
     - Hippocampus: Moderate (episodic capacity)
     - Striatum: Conservative (action repertoire expansion)
     """
-    
+
     # Per-stage growth triggers
     stage_triggers: Dict[int, GrowthTriggerConfig] = field(default_factory=dict)
-    
+
     # Component-specific overrides
     max_total_growth: float = 3.0  # Max 3x original size
     min_neurons_per_growth: int = 10
     max_neurons_per_growth: int = 500
-    
+
     def get_trigger_for_stage(self, stage: int) -> Optional[GrowthTriggerConfig]:
         """Get growth trigger config for current stage."""
         return self.stage_triggers.get(stage)
@@ -104,9 +129,9 @@ class ComponentGrowthConfig:
 @dataclass
 class CurriculumGrowthConfig:
     """Complete growth configuration for curriculum training.
-    
+
     Provides stage-specific and component-specific growth parameters.
-    
+
     Default Strategy:
     - Stage -1 (Sensorimotor): Moderate growth (35%) at 80% capacity
     - Stage 0 (Phonology): Small growth (15%) - conservative, specialized
@@ -115,25 +140,25 @@ class CurriculumGrowthConfig:
     - Stage 3 (Reading): Small growth (20%) - refinement
     - Stage 4 (Abstract): Minimal growth (10%) - mature optimization
     """
-    
+
     # Global growth settings
     enable_growth: bool = True
     performance_plateau_threshold: float = 0.02  # <2% improvement = plateau
     performance_window_steps: int = 5000  # Window for plateau detection
-    
+
     # Component-specific configurations
     component_configs: Dict[str, ComponentGrowthConfig] = field(default_factory=dict)
-    
+
     def __post_init__(self):
         """Initialize default configurations for standard components."""
         if not self.component_configs:
             self.component_configs = self._create_default_configs()
-    
+
     def _create_default_configs(self) -> Dict[str, ComponentGrowthConfig]:
         """Create default growth configurations for brain components."""
-        
+
         configs = {}
-        
+
         # =====================================================================
         # PREFRONTAL CORTEX: Aggressive growth (complex rules, large WM)
         # =====================================================================
@@ -173,7 +198,7 @@ class CurriculumGrowthConfig:
             max_total_growth=4.0,  # PFC can grow 4x
             max_neurons_per_growth=500,
         )
-        
+
         # =====================================================================
         # HIPPOCAMPUS: Moderate growth (episodic memory capacity)
         # =====================================================================
@@ -213,7 +238,7 @@ class CurriculumGrowthConfig:
             max_total_growth=3.5,
             max_neurons_per_growth=400,
         )
-        
+
         # =====================================================================
         # CORTEX: Conservative growth (feature detectors)
         # =====================================================================
@@ -253,7 +278,7 @@ class CurriculumGrowthConfig:
             max_total_growth=2.5,
             max_neurons_per_growth=300,
         )
-        
+
         # =====================================================================
         # STRIATUM: Conservative growth (action repertoire)
         # =====================================================================
@@ -293,7 +318,7 @@ class CurriculumGrowthConfig:
             max_total_growth=2.5,
             max_neurons_per_growth=250,
         )
-        
+
         # =====================================================================
         # DEFAULT: For any unspecified component
         # =====================================================================
@@ -308,33 +333,33 @@ class CurriculumGrowthConfig:
             },
             max_total_growth=3.0,
         )
-        
+
         return configs
-    
+
     def get_config_for_component(
         self,
         component_name: str
     ) -> ComponentGrowthConfig:
         """Get growth configuration for a specific component.
-        
+
         Args:
             component_name: Name of region or pathway
-        
+
         Returns:
             ComponentGrowthConfig (uses default if not found)
         """
         # Try exact match
         if component_name in self.component_configs:
             return self.component_configs[component_name]
-        
+
         # Try partial match (e.g., "cortex_l4" → "cortex")
         for config_name, config in self.component_configs.items():
             if config_name in component_name.lower():
                 return config
-        
+
         # Fall back to default
         return self.component_configs['default']
-    
+
     def should_trigger_growth(
         self,
         component_name: str,
@@ -344,49 +369,49 @@ class CurriculumGrowthConfig:
         current_size_ratio: float = 1.0,
     ) -> tuple[bool, str]:
         """Determine if growth should be triggered.
-        
+
         Args:
             component_name: Name of component to check
             stage: Current curriculum stage
             capacity_metrics: Metrics from GrowthManager
             steps_since_last_growth: Training steps since last growth
             current_size_ratio: Current size / original size
-        
+
         Returns:
             (should_grow, reason): Boolean decision and explanation
         """
         if not self.enable_growth:
             return False, "Growth globally disabled"
-        
+
         config = self.get_config_for_component(component_name)
         trigger = config.get_trigger_for_stage(stage)
-        
+
         if trigger is None:
             return False, f"No trigger defined for stage {stage}"
-        
+
         if not trigger.enabled:
             return False, f"Growth disabled for stage {stage}"
-        
+
         # Check if already grown too much
         if current_size_ratio >= config.max_total_growth:
             return False, f"Max growth reached ({config.max_total_growth}x)"
-        
+
         # Check minimum steps between growth
         if steps_since_last_growth < trigger.min_steps_between:
             return False, f"Too soon (need {trigger.min_steps_between} steps)"
-        
+
         # Check capacity threshold
         capacity = max(
             capacity_metrics.get('weight_saturation', 0.0),
             capacity_metrics.get('firing_rate', 0.0)
         )
-        
+
         if capacity < trigger.capacity_threshold:
             return False, f"Capacity ({capacity:.2f}) below threshold ({trigger.capacity_threshold})"
-        
+
         # All checks passed - grow!
         return True, f"Capacity {capacity:.2f} > threshold {trigger.capacity_threshold}"
-    
+
     def get_expansion_params(
         self,
         component_name: str,
@@ -394,34 +419,34 @@ class CurriculumGrowthConfig:
         current_n_neurons: int,
     ) -> Dict[str, Any]:
         """Get expansion parameters for growth operation.
-        
+
         Args:
             component_name: Name of component
             stage: Current curriculum stage
             current_n_neurons: Current neuron count
-        
+
         Returns:
             Dict with expansion parameters
         """
         config = self.get_config_for_component(component_name)
         trigger = config.get_trigger_for_stage(stage)
-        
+
         if trigger is None:
             # Default conservative
             trigger = GrowthTriggerConfig()
-        
+
         # Calculate number of neurons to add
         n_new = int(current_n_neurons * trigger.expansion_rate)
         n_new = max(n_new, config.min_neurons_per_growth)
         n_new = min(n_new, config.max_neurons_per_growth)
-        
+
         return {
             'n_neurons': n_new,
             'expansion_rate': trigger.expansion_rate,
             'consolidate_before': trigger.consolidate_before,
             'consolidate_after': trigger.consolidate_after,
         }
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize configuration to dictionary."""
         return {
@@ -456,21 +481,21 @@ def get_curriculum_growth_config(
     conservative: bool = False
 ) -> CurriculumGrowthConfig:
     """Get standard curriculum growth configuration.
-    
+
     Args:
         enable_growth: Whether to enable growth
         conservative: If True, use more conservative thresholds
-    
+
     Returns:
         CurriculumGrowthConfig with standard settings
     """
     config = CurriculumGrowthConfig(enable_growth=enable_growth)
-    
+
     if conservative:
         # Increase all thresholds by 0.05, decrease all rates by 0.1
         for comp_config in config.component_configs.values():
             for trigger in comp_config.stage_triggers.values():
                 trigger.capacity_threshold = min(0.95, trigger.capacity_threshold + 0.05)
                 trigger.expansion_rate = max(0.05, trigger.expansion_rate - 0.1)
-    
+
     return config

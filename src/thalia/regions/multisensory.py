@@ -93,6 +93,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from typing import Optional, Dict, Any
+import math
 
 import torch
 
@@ -104,6 +105,7 @@ from thalia.managers.component_registry import register_region
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.rules.strategies import HebbianStrategy, HebbianConfig
 from thalia.regulation.learning_constants import LEARNING_RATE_HEBBIAN_SLOW, SILENCE_DETECTION_THRESHOLD
+from thalia.coordination.oscillator import SinusoidalOscillator
 
 
 @dataclass
@@ -148,6 +150,13 @@ class MultimodalIntegrationConfig(NeuralComponentConfig, HebbianLearningConfig):
 
     # Override default learning rate with region-specific value
     learning_rate: float = LEARNING_RATE_HEBBIAN_SLOW
+
+    # Gamma synchronization parameters (for cross-modal binding)
+    gamma_freq_hz: float = 40.0  # Gamma frequency for binding (typically 40 Hz)
+    coherence_window: float = 0.785  # ~π/4 radians phase tolerance
+    phase_coupling_strength: float = 0.1  # Mutual phase nudging strength
+    gate_threshold: float = 0.3  # Minimum coherence for binding
+    use_gamma_binding: bool = True  # Enable gamma synchronization
 
 
 @register_region("multimodal_integration")
@@ -300,6 +309,27 @@ class MultimodalIntegration(NeuralRegion):
         ) * config.integration_strength
 
         # =====================================================================
+        # GAMMA SYNCHRONIZATION (for cross-modal binding)
+        # =====================================================================
+        # Gamma oscillations emerge from local circuit interactions in the
+        # integration region (biologically accurate - not in pathways!)
+
+        if config.use_gamma_binding:
+            self.visual_gamma = SinusoidalOscillator(
+                frequency_hz=config.gamma_freq_hz,
+                dt_ms=config.dt_ms,
+            )
+            self.auditory_gamma = SinusoidalOscillator(
+                frequency_hz=config.gamma_freq_hz,
+                dt_ms=config.dt_ms,
+            )
+            self._last_coherence = 0.0
+        else:
+            self.visual_gamma = None
+            self.auditory_gamma = None
+            self._last_coherence = None
+
+        # =====================================================================
         # LEARNING
         # =====================================================================
 
@@ -357,6 +387,36 @@ class MultimodalIntegration(NeuralRegion):
         Returns:
             Output spikes (n_output,) combining all modalities
         """
+        # =====================================================================
+        # STEP 0: Gamma synchronization (if enabled)
+        # =====================================================================
+        coherence_gate = 1.0  # Default: no gating
+
+        if self.config.use_gamma_binding and visual_input is not None and auditory_input is not None:
+            # Advance oscillators
+            self.visual_gamma.advance(self.config.dt_ms)
+            self.auditory_gamma.advance(self.config.dt_ms)
+
+            # Apply gamma-phase gating to inputs
+            visual_gate = self._compute_gamma_gate(self.visual_gamma.phase)
+            auditory_gate = self._compute_gamma_gate(self.auditory_gamma.phase)
+
+            visual_input = visual_input * visual_gate
+            auditory_input = auditory_input * auditory_gate
+
+            # Measure phase coherence
+            coherence = self._compute_phase_coherence(
+                self.visual_gamma.phase,
+                self.auditory_gamma.phase,
+            )
+
+            # Apply mutual phase coupling
+            self._apply_phase_coupling(visual_input, auditory_input)
+
+            # Compute coherence gate for output
+            coherence_gate = self._coherence_to_gate(coherence)
+            self._last_coherence = coherence
+
         # =====================================================================
         # STEP 1: Process inputs through modality pools
         # =====================================================================
@@ -457,6 +517,10 @@ class MultimodalIntegration(NeuralRegion):
         # =====================================================================
 
         output_spikes = pool_spikes  # Already includes all pools
+
+        # Apply gamma coherence gating (if enabled)
+        if self.config.use_gamma_binding and coherence_gate < 1.0:
+            output_spikes = output_spikes * coherence_gate
 
         # =====================================================================
         # STEP 6: Learning (if enabled)
@@ -907,3 +971,118 @@ class MultimodalIntegration(NeuralRegion):
             summary=summary,
             metrics=self.get_diagnostics(),
         )
+
+    # =========================================================================
+    # GAMMA SYNCHRONIZATION METHODS (Cross-Modal Binding)
+    # =========================================================================
+    # These methods implement gamma-band synchronization for binding
+    # visual and auditory modalities. Gamma emerges from local circuit
+    # interactions in this integration region (biologically accurate).
+
+    def _compute_gamma_gate(self, gamma_phase: float, width: float = 0.3) -> float:
+        """Compute gamma-phase-dependent gating.
+
+        Creates temporal window: inputs are only strongly processed
+        during certain phases of gamma (peak excitability).
+
+        Args:
+            gamma_phase: Current gamma phase [0, 2π)
+            width: Width of the Gaussian gate
+
+        Returns:
+            gate: Gating strength [0, 1]
+        """
+        # Gaussian centered at phase = π/2 (peak of sine wave)
+        optimal_phase = math.pi / 2
+        phase_diff = abs(gamma_phase - optimal_phase)
+
+        # Wrap around for circular distance
+        phase_diff = min(phase_diff, 2 * math.pi - phase_diff)
+
+        # Gaussian gate
+        gate = math.exp(-(phase_diff**2) / (2 * width**2))
+        return gate
+
+    def _compute_phase_coherence(
+        self,
+        visual_phase: float,
+        auditory_phase: float,
+    ) -> float:
+        """Measure phase coherence between two oscillators.
+
+        High coherence (near 1.0) = phases aligned = bound together
+        Low coherence (near 0.0) = phases misaligned = separate objects
+
+        Args:
+            visual_phase: Visual gamma phase [0, 2π)
+            auditory_phase: Auditory gamma phase [0, 2π)
+
+        Returns:
+            coherence: Coherence score [0, 1]
+        """
+        # Circular distance between phases
+        phase_diff = abs(visual_phase - auditory_phase)
+        phase_diff = min(phase_diff, 2 * math.pi - phase_diff)
+
+        # Convert to coherence: 0 diff = 1.0, π diff = 0.0
+        coherence = math.cos(phase_diff / 2.0) ** 2  # Squared cosine for sharper tuning
+        return coherence
+
+    def _apply_phase_coupling(
+        self,
+        visual_spikes: torch.Tensor,
+        auditory_spikes: torch.Tensor,
+    ) -> None:
+        """Apply mutual phase coupling between modalities.
+
+        When one modality has strong input, it nudges the other's phase
+        toward synchrony. This is how the brain achieves binding.
+
+        Args:
+            visual_spikes: Visual activity (used to weight coupling)
+            auditory_spikes: Auditory activity (used to weight coupling)
+        """
+        # Measure activity strength
+        visual_activity = float(visual_spikes.mean())
+        auditory_activity = float(auditory_spikes.mean())
+
+        # Only couple if both modalities are active
+        if visual_activity > 0.01 and auditory_activity > 0.01:
+            # Compute phase difference
+            phase_diff = self.auditory_gamma.phase - self.visual_gamma.phase
+
+            # Normalize to [-π, π]
+            if phase_diff > math.pi:
+                phase_diff -= 2 * math.pi
+            elif phase_diff < -math.pi:
+                phase_diff += 2 * math.pi
+
+            # Nudge each phase toward the other
+            coupling_amount = self.config.phase_coupling_strength * phase_diff
+
+            # Visual nudged by auditory
+            visual_nudge = coupling_amount * auditory_activity
+            new_visual_phase = self.visual_gamma.phase + visual_nudge
+            self.visual_gamma.sync_to_phase(new_visual_phase)
+
+            # Auditory nudged by visual (opposite direction)
+            auditory_nudge = -coupling_amount * visual_activity
+            new_auditory_phase = self.auditory_gamma.phase + auditory_nudge
+            self.auditory_gamma.sync_to_phase(new_auditory_phase)
+
+    def _coherence_to_gate(self, coherence: float) -> float:
+        """Convert phase coherence to output gate.
+
+        Args:
+            coherence: Phase coherence [0, 1]
+
+        Returns:
+            gate: Output gating strength [0, 1]
+        """
+        # Soft threshold: gradually increase above threshold
+        if coherence < self.config.gate_threshold:
+            return 0.0
+        else:
+            # Sigmoid above threshold for smooth gating
+            x = (coherence - self.config.gate_threshold) / (1.0 - self.config.gate_threshold)
+            return 1.0 / (1.0 + math.exp(-10.0 * (x - 0.5)))

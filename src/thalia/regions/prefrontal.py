@@ -380,9 +380,9 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
     - Rule learning and context-dependent behavior
     - Slow integration for temporal abstraction
 
-    Inherited from NeuralComponent:
-    -------------------------------
-    From LearningStrategyMixin (via NeuralComponent):
+    Inherited from LearnableComponent:
+    ----------------------------------
+    From LearningStrategyMixin (via LearnableComponent):
         - add_strategy(strategy) → None
         - apply_strategy_learning(pre, post, **kwargs) → Dict
         - Pluggable learning rules (STDP with dopamine modulation)

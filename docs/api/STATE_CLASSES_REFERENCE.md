@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 13:58:06
+> Last updated: 2025-12-22 20:11:04
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -208,6 +208,10 @@ Total region states: 7
 | `trial_timesteps` | `int` | `0` |
 | `homeostatic_scaling_applied` | `bool` | `False` |
 | `homeostasis_manager_state` | `Optional[Dict[str, Any]]` | `None` |
+| `stp_corticostriatal_u` | `Optional[torch.Tensor]` | `None` |
+| `stp_corticostriatal_x` | `Optional[torch.Tensor]` | `None` |
+| `stp_thalamostriatal_u` | `Optional[torch.Tensor]` | `None` |
+| `stp_thalamostriatal_x` | `Optional[torch.Tensor]` | `None` |
 | `dopamine` | `float` | `0.0` |
 | `acetylcholine` | `float` | `0.0` |
 | `norepinephrine` | `float` | `0.0` |

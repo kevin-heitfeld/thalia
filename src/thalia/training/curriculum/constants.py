@@ -13,15 +13,69 @@ Rationale:
 
 Organization:
 =============
-1. Performance Monitoring Thresholds
-2. Safety System Thresholds (Graceful Degradation)
-3. Stage Evaluation Thresholds
-4. Noise Adaptation Thresholds
-5. Cognitive Load Thresholds
+1. Developmental Stage Enums
+2. Performance Monitoring Thresholds
+3. Safety System Thresholds (Graceful Degradation)
+4. Stage Evaluation Thresholds
+5. Noise Adaptation Thresholds
+6. Cognitive Load Thresholds
 
 Author: Thalia Project
 Date: December 22, 2025
 """
+
+from enum import Enum
+from typing import Tuple
+
+
+# =============================================================================
+# DEVELOPMENTAL STAGE ENUMS
+# =============================================================================
+
+class AttentionStage(Enum):
+    """Developmental stages of attention control.
+
+    Represents the shift from reactive (bottom-up) to proactive (top-down)
+    attention control across development, matching curriculum stages.
+
+    Biological basis:
+    - Infant: Pure bottom-up (novelty, salience, motion)
+    - Toddler: Mostly bottom-up with emerging goal-directed control
+    - Preschool: Balanced control (conflict monitoring emerges)
+    - School-age: Top-down dominant (strategic attention allocation)
+
+    Implementation:
+    - Controls thalamic gating strength (alpha suppression)
+    - Modulates PFC→thalamus feedback gain
+    - Adjusts NE gain modulation sensitivity
+
+    References:
+    - Posner & Petersen (1990): Attention networks
+    - Colombo (2001): Infant attention development
+    - Diamond (2013): Executive function emergence
+    """
+    INFANT = 0      # Stage 0: Pure bottom-up (100% reactive)
+    TODDLER = 1     # Stage 1: Mostly bottom-up (70% reactive, 30% goal-directed)
+    PRESCHOOL = 2   # Stage 2: Balanced (50% reactive, 50% goal-directed)
+    SCHOOL_AGE = 3  # Stage 3+: Top-down dominant (30% reactive, 70% goal-directed)
+
+
+def get_attention_weights(stage: AttentionStage) -> Tuple[float, float]:
+    """Get bottom-up and top-down attention weights for a curriculum stage.
+
+    Args:
+        stage: Current attention developmental stage
+
+    Returns:
+        Tuple of (bottom_up_weight, top_down_weight) normalized to sum to 1.0
+    """
+    weights = {
+        AttentionStage.INFANT: (1.0, 0.0),
+        AttentionStage.TODDLER: (0.7, 0.3),
+        AttentionStage.PRESCHOOL: (0.5, 0.5),
+        AttentionStage.SCHOOL_AGE: (0.3, 0.7),
+    }
+    return weights[stage]
 
 # =============================================================================
 # PERFORMANCE MONITORING THRESHOLDS

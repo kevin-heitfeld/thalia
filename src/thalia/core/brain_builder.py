@@ -85,11 +85,12 @@ import json
 
 from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
 from thalia.managers.component_registry import ComponentRegistry
-from thalia.regions.base import NeuralComponent
+from thalia.core.protocols.component import LearnableComponent
 from thalia.regions.cortex import calculate_layer_sizes
 
 if TYPE_CHECKING:
     from thalia.config import GlobalConfig
+    from thalia.pathways.axonal_projection import AxonalProjection
 
 
 class BrainBuilder:
@@ -458,7 +459,7 @@ class BrainBuilder:
 
         return source_spec.config_params["n_output"]
 
-    def _get_pathway_source_size(self, source_comp: NeuralComponent, source_port: Optional[str]) -> int:
+    def _get_pathway_source_size(self, source_comp: LearnableComponent, source_port: Optional[str]) -> int:
         """Get output size for pathway from source component and port.
 
         Args:
@@ -495,7 +496,7 @@ class BrainBuilder:
     def _create_axonal_projection(
         self,
         target_specs: List[ConnectionSpec],
-        components: Dict[str, NeuralComponent],
+        components: Dict[str, LearnableComponent],
         target_name: str,
     ) -> "AxonalProjection":
         """Create AxonalProjection from connection specs.
@@ -540,7 +541,7 @@ class BrainBuilder:
 
         return projection
 
-    def _get_pathway_target_size(self, target_comp: NeuralComponent, target_port: Optional[str]) -> int:
+    def _get_pathway_target_size(self, target_comp: LearnableComponent, target_port: Optional[str]) -> int:
         """Get output size for pathway to target component.
 
         External pathways (between regions) act as axonal projections that
@@ -594,10 +595,10 @@ class BrainBuilder:
         issues = self.validate()
         errors = [msg for msg in issues if msg.startswith("Error:")]
         if errors:
-            raise ValueError(f"Validation failed:\n" + "\n".join(errors))
+            raise ValueError("Validation failed:\n" + "\n".join(errors))
 
         # Instantiate components
-        components: Dict[str, NeuralComponent] = {}
+        components: Dict[str, LearnableComponent] = {}
         for name, spec in self._components.items():
             # Get config class from registry
             config_class = self._registry.get_config_class(
@@ -641,7 +642,7 @@ class BrainBuilder:
         # === MULTI-SOURCE PATHWAY CONSTRUCTION ===
         # Instantiate pathways - GROUP BY (TARGET, TARGET_PORT) for multi-source pathways
         # This allows multiple independent pathways to the same target (e.g., L6a and L6b to thalamus)
-        connections: Dict[Tuple[str, str], NeuralComponent] = {}
+        connections: Dict[Tuple[str, str], LearnableComponent] = {}
 
         # Group connections by (target, target_port) to create multi-source pathways
         # Key is (target_name, target_port) so L6a and L6b are separate groups

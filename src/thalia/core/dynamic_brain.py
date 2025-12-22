@@ -42,9 +42,8 @@ from thalia.typing import (
     DiagnosticsDict,
 )
 
-from thalia.regions.base import NeuralComponent
+from thalia.core.protocols.component import LearnableComponent
 from thalia.regions.cortex import calculate_layer_sizes
-# Event system removed - delays now handled by pathways via CircularDelayBuffer
 from thalia.core.diagnostics import (
     StriatumDiagnostics,
     HippocampusDiagnostics,
@@ -77,7 +76,7 @@ class ComponentSpec:
     config_params: CheckpointMetadata = field(default_factory=dict)
     """Configuration parameters for the component"""
 
-    instance: Optional[NeuralComponent] = None
+    instance: Optional[LearnableComponent] = None
     """Instantiated component (set during build)"""
 
 
@@ -108,7 +107,7 @@ class ConnectionSpec:
     config_params: CheckpointMetadata = field(default_factory=dict)
     """Pathway configuration parameters"""
 
-    instance: Optional[NeuralComponent] = None
+    instance: Optional[LearnableComponent] = None
     """Instantiated pathway (set during build)"""
 
 
@@ -125,7 +124,7 @@ class DynamicBrain(nn.Module):
     - Plugin support for external components
 
     Architecture:
-        - components: Dict[name -> NeuralComponent] (nodes)
+        - components: Dict[name -> LearnableComponent] (nodes)
         - connections: Dict[(source, target) -> Pathway] (edges)
         - topology: Directed graph adjacency list
         - execution: Topological ordering or parallel
@@ -153,8 +152,8 @@ class DynamicBrain(nn.Module):
 
     def __init__(
         self,
-        components: Dict[str, NeuralComponent],
-        connections: Dict[Tuple[str, str], NeuralComponent],
+        components: Dict[str, LearnableComponent],
+        connections: Dict[Tuple[str, str], LearnableComponent],
         global_config: "GlobalConfig",
         connection_specs: Optional[Dict[Tuple[str, str], Any]] = None,
     ):
@@ -197,7 +196,7 @@ class DynamicBrain(nn.Module):
 
         # Store connections with tuple keys for easy lookup
         # Also register in ModuleDict for parameter tracking
-        self.connections: Dict[Tuple[str, str], NeuralComponent] = connections
+        self.connections: Dict[Tuple[str, str], LearnableComponent] = connections
         self._connection_modules = nn.ModuleDict({
             f"{src}_to_{tgt}": pathway
             for (src, tgt), pathway in connections.items()
@@ -1810,7 +1809,7 @@ class DynamicBrain(nn.Module):
             # when components don't override with their own forward() logic.
             return torch.cat(inputs, dim=-1)
 
-    def get_component(self, name: str) -> NeuralComponent:
+    def get_component(self, name: str) -> LearnableComponent:
         """Get component by name.
 
         Args:
@@ -1827,13 +1826,13 @@ class DynamicBrain(nn.Module):
             raise KeyError(
                 f"Component '{name}' not found. Available: {available}"
             )
-        # Cast from Module to NeuralComponent (all our components are NeuralComponent)
+        # Cast from Module to LearnableComponent (all our components are LearnableComponent)
         return self.components[name]  # type: ignore[return-value]
 
     def add_component(
         self,
         name: str,
-        component: NeuralComponent,
+        component: LearnableComponent,
     ) -> None:
         """Dynamically add a component (e.g., during growth).
 
@@ -1867,7 +1866,7 @@ class DynamicBrain(nn.Module):
         self,
         source: str,
         target: str,
-        pathway: NeuralComponent,
+        pathway: LearnableComponent,
     ) -> None:
         """Dynamically add a connection.
 

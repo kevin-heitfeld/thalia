@@ -181,7 +181,7 @@ class TrisynapticHippocampus(NeuralRegion):
         - detect_runaway_excitation(spikes) → bool
         - detect_silence(spikes) → bool
 
-    From NeuralComponent (abstract base):
+    From LearnableComponent (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict

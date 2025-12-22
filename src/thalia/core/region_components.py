@@ -22,13 +22,13 @@ Example Usage:
 =============
 ```python
 # Before: region with embedded logic
-class Striatum(NeuralComponent):
+class Striatum(NeuralRegion):
     def __init__(self, config):
         # 1000+ lines of learning, homeostasis, etc.
         pass
 
 # After: region with extracted components
-class Striatum(NeuralComponent):
+class Striatum(NeuralRegion):
     def __init__(self, config):
         self.learning = StriatumLearningComponent(config, context)
         self.homeostasis = StriatumHomeostasisComponent(config, context)

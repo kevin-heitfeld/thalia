@@ -177,7 +177,7 @@ class GrowthManager:
 
     def get_capacity_metrics(
         self,
-        component: Any,  # NeuralComponent (region or pathway)
+        component: Any,  # Region or pathway (any component with weights)
         saturation_threshold: float = 0.9,
         usage_threshold: float = 0.1,
     ) -> CapacityMetrics:
@@ -284,7 +284,7 @@ class GrowthManager:
 
     def grow_component(
         self,
-        component: Any,  # NeuralComponent (region or pathway)
+        component: Any,  # Region or pathway (any component with grow_output method)
         n_new: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1,

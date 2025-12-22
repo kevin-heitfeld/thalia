@@ -26,11 +26,11 @@ Usage Example:
 ==============
     # Register components
     @ComponentRegistry.register("cortex", "region")
-    class LayeredCortex(NeuralComponent):
+    class LayeredCortex(NeuralRegion):
         ...
 
     @ComponentRegistry.register("spiking_stdp", "pathway")
-    class SpikingPathway(NeuralComponent):
+    class SpikingPathway(LearnableComponent):
         ...
 
     # Create components dynamically
@@ -149,7 +149,7 @@ class ComponentRegistry:
                 aliases=["layered_cortex"],
                 config_class=LayeredCortexConfig
             )
-            class LayeredCortex(NeuralComponent):
+            class LayeredCortex(NeuralRegion):
                 '''Multi-layer cortical microcircuit.'''
                 ...
 
@@ -157,7 +157,7 @@ class ComponentRegistry:
                 "spiking_stdp", "pathway",
                 config_class=SpikingPathwayConfig
             )
-            class SpikingPathway(NeuralComponent):
+            class SpikingPathway(LearnableComponent):
                 '''STDP-learning spiking pathway.'''
                 ...
         """
@@ -646,7 +646,7 @@ def register_region(
 
     Example:
         @register_region("cortex", aliases=["layered_cortex"], config_class=LayeredCortexConfig)
-        class LayeredCortex(NeuralComponent):
+        class LayeredCortex(NeuralRegion):
             ...
     """
     return ComponentRegistry.register(
@@ -683,7 +683,7 @@ def register_pathway(
 
     Example:
         @register_pathway("spiking_stdp", aliases=["stdp_pathway"], config_class=SpikingPathwayConfig)
-        class SpikingPathway(NeuralComponent):
+        class SpikingPathway(LearnableComponent):
             ...
     """
     return ComponentRegistry.register(

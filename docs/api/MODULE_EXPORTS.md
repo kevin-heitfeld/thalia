@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 13:58:06
+> Last updated: 2025-12-22 20:11:04
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 46 modules, 556 exports
+Total: 45 modules, 546 exports
 
 ## Module Exports
 
@@ -191,15 +191,15 @@ from thalia.components.synapses import InitStrategy
 - `ValidatedConfig`
 - `ValidatorRegistry`
 - `BaseConfig`
+- `BaseLearningConfig`
+- `ModulatedLearningConfig`
+- `STDPLearningConfig`
+- `HebbianLearningConfig`
 - `NeuralComponentConfig`
 - `LearningComponentConfig`
 - `PathwayConfig`
 - `GlobalConfig`
 - `BrainConfig`
-- `RegionSizes`
-- `CortexType`
-- `NeuromodulationConfig`
-- `TrainingConfig`
 
 **Usage**:
 
@@ -749,7 +749,7 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 
 **Source**: `thalia\pathways\__init__.py`
 
-**Exports** (11):
+**Exports** (6):
 
 - `NeuralPathway`
 - `AxonalProjection`
@@ -757,36 +757,11 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 - `VisualPathway`
 - `AuditoryPathway`
 - `LanguagePathway`
-- `AttentionMechanisms`
-- `AttentionMechanismsConfig`
-- `AttentionStage`
-- `CrossModalGammaBinding`
-- `CrossModalBindingConfig`
 
 **Usage**:
 
 ```python
 from thalia.pathways import NeuralPathway
-```
-
----
-
-### `thalia.pathways.attention`
-
-**Source**: `thalia\pathways\attention\__init__.py`
-
-**Exports** (5):
-
-- `AttentionMechanisms`
-- `AttentionMechanismsConfig`
-- `AttentionStage`
-- `CrossModalGammaBinding`
-- `CrossModalBindingConfig`
-
-**Usage**:
-
-```python
-from thalia.pathways.attention import AttentionMechanisms
 ```
 
 ---
@@ -817,7 +792,6 @@ from thalia.planning import MentalSimulationCoordinator
 
 **Exports** (20):
 
-- `NeuralComponent`
 - `LearningRule`
 - `NeuralComponentConfig`
 - `NeuralComponentState`
@@ -837,11 +811,12 @@ from thalia.planning import MentalSimulationCoordinator
 - `Hippocampus`
 - `HippocampusConfig`
 - `HippocampusState`
+- `ThalamicRelay`
 
 **Usage**:
 
 ```python
-from thalia.regions import NeuralComponent
+from thalia.regions import LearningRule
 ```
 
 ---
@@ -939,31 +914,31 @@ from thalia.regions.striatum import Striatum
 
 **Exports** (20):
 
+- `DEFAULT_EPSILON_EXPLORATION`
+- `EPSILON_MIN`
+- `EPSILON_DECAY`
+- `UCB_CONFIDENCE_MULTIPLIER`
+- `UCB_MIN_VISITS`
+- `SOFTMAX_TEMPERATURE_DEFAULT`
+- `SOFTMAX_TEMPERATURE_MIN`
+- `SOFTMAX_TEMPERATURE_MAX`
+- `LR_VERY_SLOW`
+- `LR_SLOW`
+- `LR_MODERATE`
+- `LR_FAST`
+- `LR_CORTEX_DEFAULT`
+- `LR_HIPPOCAMPUS_DEFAULT`
+- `LR_STRIATUM_DEFAULT`
+- `LR_CEREBELLUM_DEFAULT`
+- `LR_PFC_DEFAULT`
 - `TARGET_FIRING_RATE_STANDARD`
 - `TARGET_FIRING_RATE_LOW`
 - `TARGET_FIRING_RATE_MEDIUM`
-- `TARGET_FIRING_RATE_HIGH`
-- `HOMEOSTATIC_TAU_STANDARD`
-- `HOMEOSTATIC_TAU_FAST`
-- `HOMEOSTATIC_TAU_SLOW`
-- `SYNAPTIC_SCALING_RATE`
-- `SYNAPTIC_SCALING_MIN`
-- `SYNAPTIC_SCALING_MAX`
-- `INTRINSIC_PLASTICITY_RATE`
-- `FIRING_RATE_WINDOW_MS`
-- `MIN_FIRING_RATE_HZ`
-- `MAX_FIRING_RATE_HZ`
-- `LEARNING_RATE_DEFAULT`
-- `LEARNING_RATE_STDP`
-- `LEARNING_RATE_BCM`
-- `LEARNING_RATE_HEBBIAN`
-- `TAU_ELIGIBILITY_STANDARD`
-- `TAU_BCM_THRESHOLD`
 
 **Usage**:
 
 ```python
-from thalia.regulation import TARGET_FIRING_RATE_STANDARD
+from thalia.regulation import DEFAULT_EPSILON_EXPLORATION
 ```
 
 ---
@@ -1107,6 +1082,8 @@ from thalia.training import TextDataPipeline
 
 **Exports** (20):
 
+- `AttentionStage`
+- `get_attention_weights`
 - `InterleavedCurriculumSampler`
 - `InterleavedCurriculumSamplerConfig`
 - `SpacedRepetitionScheduler`
@@ -1125,13 +1102,11 @@ from thalia.training import TextDataPipeline
 - `TaskConfig`
 - `TrainingResult`
 - `MechanismPriority`
-- `ActiveMechanism`
-- `CognitiveLoadMonitor`
 
 **Usage**:
 
 ```python
-from thalia.training.curriculum import InterleavedCurriculumSampler
+from thalia.training.curriculum import AttentionStage
 ```
 
 ---

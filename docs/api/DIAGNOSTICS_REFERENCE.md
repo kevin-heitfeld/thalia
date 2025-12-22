@@ -1,7 +1,7 @@
 # Diagnostics Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 13:58:06
+> Last updated: 2025-12-22 20:11:04
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all diagnostic monitor classes for system health and performance monitoring.

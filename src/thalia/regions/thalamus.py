@@ -379,8 +379,8 @@ class ThalamicRelay(NeuralRegion):
                      ↑              (inhibitory)
                      └── Recurrent inhibition
 
-    From NeuralComponent (abstract base):
-    ------------------------------------
+    From LearnableComponent (abstract base):
+    ----------------------------------------
     - forward(input, **kwargs) → Tensor
     - reset_state() → None
     - get_diagnostics() → Dict
@@ -551,7 +551,7 @@ class ThalamicRelay(NeuralRegion):
     ) -> None:
         """Set neuromodulator levels (Brain → Region API).
 
-        Helper for backward compatibility with NeuralComponent pattern.
+        Helper for backward compatibility with LearnableComponent pattern.
         """
         if dopamine is not None:
             self.state.dopamine = dopamine
@@ -981,7 +981,7 @@ class ThalamicRelay(NeuralRegion):
         self.state.trn_membrane = trn_membrane  # [n_trn]
         self.state.current_mode = current_mode  # [n_relay]
 
-        # Store for component state (NeuralComponent protocol)
+        # Store for component state (LearnableComponent protocol)
         self.state.membrane = self.state.relay_membrane
         self.state.spikes = self.state.relay_spikes
 

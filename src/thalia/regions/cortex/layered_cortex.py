@@ -585,7 +585,7 @@ class LayeredCortex(NeuralRegion):
     def _reset_subsystems(self, *names: str) -> None:
         """Reset state of named subsystems that have reset_state() method.
 
-        Helper for backward compatibility with NeuralComponent pattern.
+        Helper for backward compatibility with LearnableComponent pattern.
         """
         for name in names:
             if hasattr(self, name):
@@ -596,7 +596,7 @@ class LayeredCortex(NeuralRegion):
     def _reset_scalars(self, **scalar_values: Any) -> None:
         """Reset scalar attributes to specified values.
 
-        Helper for backward compatibility with NeuralComponent pattern.
+        Helper for backward compatibility with LearnableComponent pattern.
         """
         for name, value in scalar_values.items():
             setattr(self, name, value)
@@ -1459,7 +1459,7 @@ class LayeredCortex(NeuralRegion):
 
     @property
     def config(self) -> LayeredCortexConfig:
-        """Get full LayeredCortexConfig (overrides base NeuralComponent.config)."""
+        """Get full LayeredCortexConfig (overrides base LearnableComponent.config)."""
         return self.layer_config
 
     @config.setter
