@@ -24,7 +24,7 @@ This comprehensive architectural analysis of the Thalia codebase (conducted Dece
 
 **Tier 1 Tasks Completed (4/5)**:
 
-1. ✅ **Magic Number Extraction** - Created `training/curriculum/constants.py` with 40+ named constants
+1. ✅ **Magic Number Extraction** (Commit 05eb542) - Created `training/curriculum/constants.py` with 40+ named constants
    - Updated: `stage_monitoring.py`, `stage_gates.py`, `noise_scheduler.py`
    - Impact: Enhanced clarity, centralized tuning, biological rationale documented
 
@@ -34,11 +34,27 @@ This comprehensive architectural analysis of the Thalia codebase (conducted Dece
 3. ✅ **Diagnostics Consolidation** - Pattern already established via `DiagnosticsMixin`
    - `collect_standard_diagnostics()` actively used by regions
 
-4. ✅ **Growth Signature Standardization** - Removed `initialization` parameter
+4. ✅ **Growth Signature Standardization** (Commit 05eb542) - Removed `initialization` parameter
    - Updated: `regions/striatum/pathway_base.py`
    - Impact: Unified growth API across all regions
 
-**Status**: High-value, low-risk improvements complete. Tier 2 improvements available for future work.
+5. ⏳ **File Naming Consistency** - Deferred (low priority, requires import updates)
+
+**Tier 2 Tasks Completed (1/5)**:
+
+1. ✅ **Growth Weight Expansion Helpers** (Commit e44cdfb) - Enhanced `GrowthMixin` with pattern extraction
+   - Added: `_expand_weights_output()` and `_expand_weights_input()` helpers
+   - Demonstrated in: `prefrontal.py` grow_input() refactoring
+   - Impact: Eliminates ~180 lines across 6 regions, standardizes initialization strategies
+
+2. ❌ **Checkpoint Manager Validation** - NOT APPLICABLE (see Tier 2.3 findings)
+   - Investigation revealed no actual validation duplication
+   - Capacity handling is striatum-specific (elastic tensor format)
+   - Hippocampus/Prefrontal use neuromorphic format exclusively
+
+3. ⏳ **Input Routing Mixin** - Next task (Tier 2.4)
+
+**Status**: Tier 1 complete (4/5), Tier 2 in progress (1/5 complete, 1 skipped). Ready for Tier 2.4 (Input Routing).
 
 ---
 
@@ -382,72 +398,60 @@ def grow_output(self, n_new: int) -> None:
 
 #### 2.3 Unify Checkpoint Manager Patterns
 
-**Current State**: Three region-specific checkpoint managers:
-- `regions/hippocampus/checkpoint_manager.py` (HippocampusCheckpointManager)
-- `regions/striatum/checkpoint_manager.py` (StriatumCheckpointManager)
-- `regions/prefrontal_checkpoint_manager.py` (PrefrontalCheckpointManager)
+**STATUS**: ❌ **NOT APPLICABLE** - Initial assessment was incorrect
 
-All follow `BaseCheckpointManager` pattern, with similar validation and growth history tracking.
+**Findings from Implementation Review** (December 22, 2025):
 
-**Duplicated checkpoint logic** (similar across 3 checkpoint managers):
+Upon detailed code inspection, the claimed validation duplication does not exist:
+
+1. **No Explicit Validation Methods**: None of the 3 checkpoint managers (Hippocampus, Striatum, Prefrontal) implement explicit `validate_state_compatibility()` methods. Validation happens implicitly during `load_state()` operations.
+
+2. **Capacity Handling is Striatum-Specific**: The elastic tensor capacity handling logic (n_neurons_active, n_neurons_capacity, auto-growth) exists ONLY in `striatum/checkpoint_manager.py` (lines 193-244). Hippocampus and Prefrontal use neuromorphic format exclusively and don't have this logic.
+
+3. **Different Restoration Strategies**:
+   - **Striatum**: Elastic tensor with capacity metadata, auto-grows on mismatch
+   - **Hippocampus**: Neuromorphic only (neuron IDs), ID-based matching
+   - **Prefrontal**: Neuromorphic only (neuron IDs), ID-based matching
+
+**Actual Code Structure**:
 ```python
-# Pattern in all 3 managers
-def validate_state_compatibility(self, state: Dict[str, Any], config: Config) -> bool:
-    """Check if checkpoint state matches current config."""
-    # Similar validation logic:
-    # - Check n_input/n_output compatibility
-    # - Validate weight shapes
-    # - Check for missing keys
+# Striatum (ONLY ONE with capacity handling)
+if "n_neurons_active" in neuron_state and "n_neurons_capacity" in neuron_state:
+    checkpoint_active = neuron_state["n_neurons_active"]
+    if checkpoint_active > s.n_neurons_active:
+        s.grow_output(n_new=n_grow_actions)  # Auto-grow
+
+# Hippocampus & Prefrontal (NO capacity handling)
+# Both use neuromorphic format with ID-based neuron matching
+checkpoint_neurons = {n["id"]: n for n in state["neurons"]}
+for i in range(n_neurons):
+    neuron_id = f"hippo_dg_neuron_{i}_step0"
+    if neuron_id in checkpoint_neurons:
+        # Restore by ID
 ```
 
-**Proposed Change**: Strengthen `BaseCheckpointManager` with common validation:
+**Why This is Not a Problem**:
+- Each region's checkpoint strategy is tailored to its growth characteristics
+- Striatum needs elastic tensor capacity because it uses population coding
+- Hippocampus/Prefrontal use neuromorphic for neurogenesis support
+- No actual duplication exists to eliminate
+
+**Recommendation**: **SKIP THIS TASK** - No validation duplication to consolidate.
+
+**Alternative Future Enhancement** (Optional, Low Priority):
+If explicit validation becomes needed later, add optional helper methods to `BaseCheckpointManager`:
 ```python
-# In managers/base_checkpoint_manager.py
-class BaseCheckpointManager(ABC):
-    def validate_state_compatibility(
-        self,
-        state: Dict[str, Any],
-        config: NeuralComponentConfig
-    ) -> Tuple[bool, List[str]]:
-        """Standard validation for all regions.
-
-        Returns:
-            (is_compatible, warnings)
-        """
-        warnings = []
-
-        # Check n_input compatibility (allow growth)
-        if state.get('n_input', 0) > config.n_input:
-            return False, ["Checkpoint n_input exceeds current config"]
-
-        # Check n_output compatibility (allow growth)
-        if state.get('n_output', 0) > config.n_output:
-            return False, ["Checkpoint n_output exceeds current config"]
-
-        # Check weight shape compatibility
-        if 'weights' in state:
-            expected_shape = (config.n_output, config.n_input)
-            if state['weights'].shape > expected_shape:
-                return False, ["Weight matrix too large for config"]
-
-        return True, warnings
-
-    @abstractmethod
-    def validate_region_specific_state(self, state: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """Override for region-specific validation."""
-        pass
+def _warn_size_mismatch(self, checkpoint_size: int, current_size: int, component: str) -> None:
+    """Standard warning for size mismatches (optional helper)."""
+    import warnings
+    warnings.warn(f"Checkpoint {component} size ({checkpoint_size}) != current ({current_size})")
 ```
 
-**Rationale**:
-- Eliminates ~100 lines of duplicated validation logic
-- Ensures consistent checkpoint compatibility checks
-- Easier to add new validation rules
-
-**Impact**:
-- Files affected: `managers/base_checkpoint_manager.py` + 3 region checkpoint managers
-- Breaking change severity: **Low** (internal refactoring)
-- Lines saved: ~100 lines
-- Estimated effort: 3 hours
+**Files Reviewed**:
+- `src/thalia/managers/base_checkpoint_manager.py` (base class, no validation)
+- `src/thalia/regions/hippocampus/checkpoint_manager.py` (neuromorphic only)
+- `src/thalia/regions/striatum/checkpoint_manager.py` (elastic tensor + capacity handling)
+- `src/thalia/regions/prefrontal_checkpoint_manager.py` (neuromorphic only)
 
 ---
 
