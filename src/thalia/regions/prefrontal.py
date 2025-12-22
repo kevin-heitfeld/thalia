@@ -825,24 +825,35 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
             initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
             sparsity: Connection sparsity for new input neurons (if sparse_random)
         """
-        old_n_input = self.config.n_input
-        new_n_input = old_n_input + n_new
+        # Use GrowthMixin helper to expand input weights
+        # (Architecture Review 2025-12-22, Tier 2.2)
+        current_weights = self.synaptic_weights["default"]
+        n_output = current_weights.shape[0]
+        device = current_weights.device
 
-        # Use GrowthMixin helper (Architecture Review 2025-12-21, Tier 1.1)
-        # Expand synaptic_weights["default"] [n_output, input] → [n_output, input+n_new]
-        new_input_cols = self._create_new_weights(
-            n_output=self.config.n_output,
-            n_input=n_new,
-            initialization=initialization,
-            sparsity=sparsity,
-        )
+        # Create new columns
+        if initialization == 'xavier':
+            new_cols = WeightInitializer.xavier(
+                n_output=n_output, n_input=n_new, gain=0.2, device=device
+            ) * self.config.w_max
+        elif initialization == 'sparse_random':
+            new_cols = WeightInitializer.sparse_random(
+                n_output=n_output, n_input=n_new, sparsity=sparsity,
+                scale=self.config.w_max * 0.2, device=device
+            )
+        else:  # uniform
+            new_cols = WeightInitializer.uniform(
+                n_output=n_output, n_input=n_new,
+                low=0.0, high=self.config.w_max * 0.2, device=device
+            )
+
         self.synaptic_weights["default"].data = torch.cat(
-            [self.synaptic_weights["default"].data, new_input_cols], dim=1
+            [current_weights.data, new_cols], dim=1
         )
 
         # Update config
-        self.config = replace(self.config, n_input=new_n_input)
-        self.pfc_config = replace(self.pfc_config, n_input=new_n_input)
+        self.config = replace(self.config, n_input=self.config.n_input + n_new)
+        self.pfc_config = replace(self.pfc_config, n_input=self.pfc_config.n_input + n_new)
 
     def grow_output(
         self,

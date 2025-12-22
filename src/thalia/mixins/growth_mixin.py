@@ -217,3 +217,134 @@ class GrowthMixin:
                 raise ValueError(f"Cannot expand tensor '{name}' with {tensor.dim()} dimensions")
 
         return expanded
+
+    def _expand_weights_output(
+        self,
+        n_new: int,
+        weight_param_name: str = 'weights',
+        init_method: str = 'xavier',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Expand weight matrix with new output rows (add neurons).
+
+        Helper method that encapsulates the common pattern:
+        1. Get current weights
+        2. Create new rows with specified initialization
+        3. Concatenate and update parameter
+        4. Clamp to bounds
+
+        This consolidates ~30 lines per region × 6 regions = 180 lines
+        (Architecture Review 2025-12-22, Tier 2.2).
+
+        Args:
+            n_new: Number of output neurons to add
+            weight_param_name: Name of weight parameter attribute (default: 'weights')
+            init_method: Initialization method ('xavier', 'sparse_random', 'uniform')
+            sparsity: Sparsity for sparse_random initialization
+
+        Example:
+            >>> def grow_output(self, n_new: int) -> None:
+            ...     self._expand_weights_output(n_new, init_method='xavier')
+            ...     self.config = replace(self.config, n_output=self.config.n_output + n_new)
+            ...     self.neurons.grow_neurons(n_new)
+        """
+        current_weights = getattr(self, weight_param_name)
+        n_input = current_weights.shape[1]
+        device = current_weights.device
+
+        # Create new rows
+        if init_method == 'xavier':
+            new_rows = WeightInitializer.xavier(
+                n_output=n_new,
+                n_input=n_input,
+                gain=0.2,
+                device=device,
+            ) * self.config.w_max
+        elif init_method == 'sparse_random':
+            new_rows = WeightInitializer.sparse_random(
+                n_output=n_new,
+                n_input=n_input,
+                sparsity=sparsity,
+                scale=self.config.w_max * 0.2,
+                device=device,
+            )
+        else:  # uniform
+            new_rows = WeightInitializer.uniform(
+                n_output=n_new,
+                n_input=n_input,
+                low=0.0,
+                high=self.config.w_max * 0.2,
+                device=device,
+            )
+
+        # Clamp to config bounds
+        new_rows = clamp_weights(new_rows, self.config.w_min, self.config.w_max, inplace=False)
+
+        # Concatenate and update parameter
+        expanded = torch.cat([current_weights.data, new_rows], dim=0)
+        setattr(self, weight_param_name, nn.Parameter(expanded))
+
+    def _expand_weights_input(
+        self,
+        n_new: int,
+        weight_param_name: str = 'weights',
+        init_method: str = 'xavier',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Expand weight matrix with new input columns (accept more inputs).
+
+        Helper method that encapsulates the common pattern:
+        1. Get current weights
+        2. Create new columns with specified initialization
+        3. Concatenate and update parameter
+        4. Clamp to bounds
+
+        This consolidates ~30 lines per region × 6 regions = 180 lines
+        (Architecture Review 2025-12-22, Tier 2.2).
+
+        Args:
+            n_new: Number of input dimensions to add
+            weight_param_name: Name of weight parameter attribute (default: 'weights')
+            init_method: Initialization method ('xavier', 'sparse_random', 'uniform')
+            sparsity: Sparsity for sparse_random initialization
+
+        Example:
+            >>> def grow_input(self, n_new: int) -> None:
+            ...     self._expand_weights_input(n_new, init_method='xavier')
+            ...     self.config = replace(self.config, n_input=self.config.n_input + n_new)
+        """
+        current_weights = getattr(self, weight_param_name)
+        n_output = current_weights.shape[0]
+        device = current_weights.device
+
+        # Create new columns
+        if init_method == 'xavier':
+            new_cols = WeightInitializer.xavier(
+                n_output=n_output,
+                n_input=n_new,
+                gain=0.2,
+                device=device,
+            ) * self.config.w_max
+        elif init_method == 'sparse_random':
+            new_cols = WeightInitializer.sparse_random(
+                n_output=n_output,
+                n_input=n_new,
+                sparsity=sparsity,
+                scale=self.config.w_max * 0.2,
+                device=device,
+            )
+        else:  # uniform
+            new_cols = WeightInitializer.uniform(
+                n_output=n_output,
+                n_input=n_new,
+                low=0.0,
+                high=self.config.w_max * 0.2,
+                device=device,
+            )
+
+        # Clamp to config bounds
+        new_cols = clamp_weights(new_cols, self.config.w_min, self.config.w_max, inplace=False)
+
+        # Concatenate and update parameter
+        expanded = torch.cat([current_weights.data, new_cols], dim=1)
+        setattr(self, weight_param_name, nn.Parameter(expanded))
