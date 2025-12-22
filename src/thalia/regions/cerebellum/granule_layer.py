@@ -19,6 +19,8 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
@@ -102,17 +104,30 @@ class GranuleCellLayer(nn.Module):
         """Alias for granule_neurons (test compatibility)."""
         return self.granule_neurons
 
-    def forward(self, mossy_fiber_spikes: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        mossy_fiber_spikes: torch.Tensor,
+        mf_efficacy: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """Process mossy fiber input through granule cells.
 
         Args:
             mossy_fiber_spikes: Mossy fiber activity [n_mossy]
+            mf_efficacy: Optional STP efficacy modulation [n_mossy, n_granule]
+                        Applied to mossy_to_granule weights (per-synapse modulation)
 
         Returns:
             Parallel fiber spikes [n_granule] (sparse, ~3% active)
         """
         # Mossy fiber → Granule cell
-        g_exc = torch.mv(self.mossy_to_granule, mossy_fiber_spikes.float())
+        # Apply STP efficacy to weights if provided (per-synapse modulation)
+        if mf_efficacy is not None:
+            # mf_efficacy is [n_mossy, n_granule], weights are [n_granule, n_mossy]
+            # Modulate: W_eff = W * efficacy.T
+            effective_weights = self.mossy_to_granule * mf_efficacy.T
+            g_exc = torch.mv(effective_weights, mossy_fiber_spikes.float())
+        else:
+            g_exc = torch.mv(self.mossy_to_granule, mossy_fiber_spikes.float())
 
         # Granule cell spiking (minimal inhibition - granule layer is excitatory)
         parallel_fiber_spikes, _ = self.granule_neurons(g_exc, None)
@@ -149,7 +164,22 @@ class GranuleCellLayer(nn.Module):
 
     def load_state(self, state: dict) -> None:
         """Load granule layer state from checkpoint."""
-        self.mossy_to_granule.data.copy_(state["mossy_to_granule"])
+        # Detect target device - prefer self.device if it's set, else infer from state
+        if hasattr(self, 'mossy_to_granule') and self.mossy_to_granule is not None:
+            # Module already exists, use its current device
+            target_device = self.mossy_to_granule.device
+        else:
+            # Module doesn't exist yet, use state's device
+            target_device = state["mossy_to_granule"].device
+
+        # Update device attribute
+        self.device = str(target_device)
+
+        # Move module to target device (this moves parameters and buffers)
+        self.to(target_device)
+
+        # Now copy state (ensure source is moved to target device)
+        self.mossy_to_granule.data.copy_(state["mossy_to_granule"].to(target_device))
         self.granule_neurons.load_state(state["granule_neurons"])
 
     def get_full_state(self) -> dict:

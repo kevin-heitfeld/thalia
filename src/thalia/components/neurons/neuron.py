@@ -316,8 +316,12 @@ class ConductanceLIF(nn.Module):
         else:
             self.g_I.mul_(self.g_I_decay)
 
-        # Decay adaptation conductance (in-place)
-        self.g_adapt.mul_(self.adapt_decay)
+        # Decay adaptation conductance (in-place) - handle None case
+        if self.g_adapt is not None:
+            self.g_adapt.mul_(self.adapt_decay)
+        else:
+            # Initialize if missing (can happen after loading old checkpoints)
+            self.g_adapt = torch.zeros(self.n_neurons, device=self.membrane.device)
 
         # Compute total conductance (for effective time constant)
         # Pre-add g_L to avoid extra addition
@@ -408,10 +412,16 @@ class ConductanceLIF(nn.Module):
         Args:
             state: Dictionary from get_state()
         """
-        # Infer device from existing tensors or incoming state
-        device = (self.membrane.device if self.membrane is not None
-                 else state["membrane"].device if state["membrane"] is not None
-                 else torch.device("cpu"))
+        # Infer device from module's parameters/buffers (most reliable for device transfer)
+        # Use C_m buffer which is always present and on the correct device after .to()
+        if hasattr(self, 'C_m') and self.C_m is not None:
+            device = self.C_m.device
+        elif self.membrane is not None:
+            device = self.membrane.device
+        elif state["membrane"] is not None:
+            device = state["membrane"].device
+        else:
+            device = torch.device("cpu")
 
         if state["membrane"] is not None:
             self.membrane = state["membrane"].to(device)

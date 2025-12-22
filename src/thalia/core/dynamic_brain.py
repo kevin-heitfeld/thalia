@@ -2340,6 +2340,11 @@ class DynamicBrain(nn.Module):
         if "pathways" in state:
             self.pathway_manager.load_state(state["pathways"])
 
+        # **CRITICAL**: Move entire brain to correct device after loading state
+        # This handles CPU→CUDA transfer by moving all parameters, buffers,
+        # and registered submodules to the target device
+        self.to(self.device)
+
         # Load oscillator states
         if "oscillators" in state:
             osc_state = state["oscillators"]

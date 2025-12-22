@@ -569,8 +569,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             config=self.striatum_config,
             d1_pathway=self.d1_pathway,
             d2_pathway=self.d2_pathway,
-            d1_neurons=self.d1_neurons,
-            d2_neurons=self.d2_neurons,
+            d1_neurons=self.d1_pathway.neurons,
+            d2_neurons=self.d2_pathway.neurons,
             homeostasis_manager=self.homeostasis,
             pfc_modulation_d1=self.pfc_modulation_d1,
             pfc_modulation_d2=self.pfc_modulation_d2,
@@ -1082,10 +1082,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # 4. EXPAND NEURON POPULATIONS using efficient in-place growth (ConductanceLIF)
         # =====================================================================
         # Expand D1-MSN and D2-MSN neuron populations
-        if hasattr(self, 'd1_neurons') and self.d1_neurons is not None:
-            self.d1_neurons.grow_neurons(n_new_neurons)
-        if hasattr(self, 'd2_neurons') and self.d2_neurons is not None:
-            self.d2_neurons.grow_neurons(n_new_neurons)
+        if hasattr(self, 'd1_pathway') and self.d1_pathway.neurons is not None:
+            self.d1_pathway.neurons.grow_neurons(n_new_neurons)
+        if hasattr(self, 'd2_pathway') and self.d2_pathway.neurons is not None:
+            self.d2_pathway.neurons.grow_neurons(n_new_neurons)
 
         # =====================================================================
         # 5. UPDATE ACTION-RELATED TRACKING (1D per action, not per neuron)
@@ -1771,8 +1771,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Reset state tracker (votes, recent spikes, trial stats, last action)
         self.state_tracker.reset_state()
 
-        # Reset managers and subsystems
-        self._reset_subsystems('eligibility', 'd1_neurons', 'd2_neurons')
+        # Reset D1/D2 pathways (eligibility and neurons)
+        self.d1_pathway.reset_state()
+        self.d2_pathway.reset_state()
 
         # Reset TD(λ) traces if enabled
         if self.td_lambda_d1 is not None:
@@ -1983,9 +1984,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Get neuron membrane state (if neurons exist and have membrane)
         membrane = None
-        if self.d1_neurons is not None and hasattr(self.d1_neurons, 'membrane'):
-            if self.d1_neurons.membrane is not None:
-                membrane = self.d1_neurons.membrane.detach().clone()
+        if self.d1_pathway.neurons is not None and hasattr(self.d1_pathway.neurons, 'membrane'):
+            if self.d1_pathway.neurons.membrane is not None:
+                membrane = self.d1_pathway.neurons.membrane.detach().clone()
 
         # Get neuromodulator levels from forward_coordinator
         dopamine = self.forward_coordinator._tonic_dopamine if hasattr(self.forward_coordinator, '_tonic_dopamine') else 0.0
@@ -2071,9 +2072,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.d2_pathway.load_state(state.d2_pathway_state)
 
         # Restore neuron membrane state
-        if state.membrane is not None and self.d1_neurons is not None:
-            if hasattr(self.d1_neurons, 'membrane'):
-                self.d1_neurons.membrane.data = state.membrane.to(self.device)
+        if state.membrane is not None and self.d1_pathway.neurons is not None:
+            if hasattr(self.d1_pathway.neurons, 'membrane'):
+                self.d1_pathway.neurons.membrane.data = state.membrane.to(self.device)
 
         # Restore vote accumulation
         if state.d1_votes_accumulated is not None:

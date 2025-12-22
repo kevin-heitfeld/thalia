@@ -87,8 +87,8 @@ class CheckpointManager(BaseCheckpointManager):
         # 1. NEURON STATE
         neuron_state = {
             "membrane_potential": (
-                s.d1_neurons.membrane.detach().clone()
-                if s.d1_neurons is not None and s.d1_neurons.membrane is not None
+                s.d1_pathway.neurons.membrane.detach().clone()
+                if s.d1_pathway.neurons is not None and s.d1_pathway.neurons.membrane is not None
                 else None
             ),
             "n_output": s.config.n_output,
@@ -243,11 +243,15 @@ class CheckpointManager(BaseCheckpointManager):
             )
 
         # 1. RESTORE NEURON STATE
-        if s.d1_neurons is not None and neuron_state.get("membrane_potential") is not None:
+        if s.d1_pathway.neurons is not None and neuron_state.get("membrane_potential") is not None:
+            # Ensure neurons are initialized
+            if s.d1_pathway.neurons.membrane is None:
+                s.d1_pathway.neurons.reset_state()
+
             membrane = neuron_state["membrane_potential"].to(s.device)
             # Partial restore: only copy up to checkpoint size
-            n_restore = min(membrane.shape[0], s.d1_neurons.membrane.shape[0])
-            s.d1_neurons.membrane[:n_restore] = membrane[:n_restore]
+            n_restore = min(membrane.shape[0], s.d1_pathway.neurons.membrane.shape[0])
+            s.d1_pathway.neurons.membrane[:n_restore] = membrane[:n_restore]
 
         # 2. RESTORE PATHWAY STATE
         pathway_state = state["pathway_state"]

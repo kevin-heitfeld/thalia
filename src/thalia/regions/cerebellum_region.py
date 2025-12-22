@@ -289,7 +289,7 @@ class CerebellumState(BaseRegionState):
         def stp_to_device(stp_state: Optional[Dict[str, torch.Tensor]]) -> Optional[Dict[str, torch.Tensor]]:
             if stp_state is None:
                 return None
-            return {k: v.to(dev) for k, v in stp_state.items()}
+            return {k: v.to(dev) if v is not None else None for k, v in stp_state.items()}
 
         return cls(
             # Traces (required)
@@ -1318,9 +1318,17 @@ class Cerebellum(NeuralRegion):
 
         # Restore STP state
         if self.stp_pf_purkinje is not None and state.stp_pf_purkinje_state is not None:
+            self.stp_pf_purkinje.to(self.device)  # Move module to target device first
+            # Reset state to ensure u/x are on correct device (they're not nn.Parameters)
+            self.stp_pf_purkinje.reset_state()
+            # Then load the actual state values
             self.stp_pf_purkinje.load_state(state.stp_pf_purkinje_state)
 
         if self.stp_mf_granule is not None and state.stp_mf_granule_state is not None:
+            self.stp_mf_granule.to(self.device)  # Move module to target device first
+            # Reset state to ensure u/x are on correct device (they're not nn.Parameters)
+            self.stp_mf_granule.reset_state()
+            # Then load the actual state values
             self.stp_mf_granule.load_state(state.stp_mf_granule_state)
 
         # Restore neuromodulators

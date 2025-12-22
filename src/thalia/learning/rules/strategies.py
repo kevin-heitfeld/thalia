@@ -645,13 +645,39 @@ class BCMStrategy(BaseStrategy):
         self.theta = None
 
     def _init_theta(self, n_post: int, device: torch.device) -> None:
-        """Initialize threshold if needed."""
-        if self.theta is None or self.theta.shape[0] != n_post:
-            self.theta = torch.full(
+        """Initialize threshold if needed.
+
+        Args:
+            n_post: Number of postsynaptic neurons
+            device: Ignored - uses module's device for reliability
+        """
+        # Use module's device from existing buffer (reliable source of truth)
+        # decay_theta is always present and moves with .to(device)
+        module_device = self.decay_theta.device
+
+        needs_init = (
+            self.theta is None
+            or self.theta.shape[0] != n_post
+            or self.theta.device != module_device  # Device changed!
+        )
+
+        if needs_init:
+            # Create new tensor on module's device
+            new_theta = torch.full(
                 (n_post,),
                 self.bcm_config.theta_init,
-                device=device,
+                device=module_device,
             )
+            # Check if already registered as buffer
+            if "theta" not in self._buffers:
+                # First time: delete attribute and register as buffer so it moves with .to(device)
+                if hasattr(self, "theta"):
+                    delattr(self, "theta")
+                self.register_buffer("theta", new_theta, persistent=False)
+            else:
+                # Already registered - replace by re-registering (handles both device and shape change)
+                del self._buffers["theta"]
+                self.register_buffer("theta", new_theta, persistent=False)
 
     def compute_phi(self, post: torch.Tensor) -> torch.Tensor:
         """Compute BCM modulation function.
@@ -801,11 +827,32 @@ class ThreeFactorStrategy(BaseStrategy):
 
         n_post = post.shape[0]
         n_pre = pre.shape[0]
-        device = pre.device
 
-        # Initialize if needed
-        if self.eligibility is None or self.eligibility.shape != (n_post, n_pre):
-            self.eligibility = torch.zeros(n_post, n_pre, device=device)
+        # Use module's device from existing buffer (reliable source of truth)
+        # decay_elig is always present and moves with .to(device)
+        module_device = self.decay_elig.device
+
+        # Initialize or update eligibility buffer
+        needs_init = (
+            self.eligibility is None
+            or self.eligibility.shape != (n_post, n_pre)
+            or self.eligibility.device != module_device  # Device changed!
+        )
+
+        if needs_init:
+            # Create new tensor on module's device
+            new_elig = torch.zeros(n_post, n_pre, device=module_device)
+
+            # Check if already registered as buffer
+            if "eligibility" not in self._buffers:
+                # First time: delete attribute and register as buffer so it moves with .to(device)
+                if hasattr(self, "eligibility"):
+                    delattr(self, "eligibility")
+                self.register_buffer("eligibility", new_elig, persistent=False)
+            else:
+                # Already registered - replace by re-registering (handles both device and shape change)
+                del self._buffers["eligibility"]
+                self.register_buffer("eligibility", new_elig, persistent=False)
 
         # Decay existing eligibility
         self.eligibility = self.decay_elig * self.eligibility
