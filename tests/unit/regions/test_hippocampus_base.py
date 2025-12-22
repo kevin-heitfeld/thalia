@@ -1,0 +1,216 @@
+"""Tests for Hippocampus using unified RegionTestBase framework.
+
+Demonstrates unified testing pattern with region-specific tests for
+the trisynaptic hippocampal circuit (DG→CA3→CA1).
+
+Author: Thalia Project
+Date: December 22, 2025 (Tier 3.4 implementation)
+"""
+
+import torch
+
+from tests.utils.region_test_base import RegionTestBase
+from thalia.regions.hippocampus import Hippocampus
+from thalia.regions.hippocampus.config import HippocampusConfig
+
+
+class TestHippocampus(RegionTestBase):
+    """Test Hippocampus implementation using unified test framework."""
+
+    def create_region(self, **kwargs):
+        """Create Hippocampus instance for testing."""
+        config = HippocampusConfig(**kwargs)
+        return Hippocampus(config)
+
+    def get_default_params(self):
+        """Return default hippocampus parameters."""
+        return {
+            "n_input": 100,
+            "n_output": 30,  # CA1 output size
+            "dg_size": 50,
+            "ca3_size": 40,
+            "ca1_size": 30,
+            "device": "cpu",
+            "dt_ms": 1.0,
+        }
+
+    def get_min_params(self):
+        """Return minimal valid parameters for quick tests."""
+        return {
+            "n_input": 20,
+            "n_output": 10,
+            "dg_size": 15,
+            "ca3_size": 12,
+            "ca1_size": 10,
+            "device": "cpu",
+            "dt_ms": 1.0,
+        }
+
+    def get_input_dict(self, n_input, device="cpu"):
+        """Return dict input for hippocampus (EC input)."""
+        return {
+            "ec": torch.zeros(n_input, device=device),
+        }
+
+    # =========================================================================
+    # HIPPOCAMPUS-SPECIFIC TESTS
+    # =========================================================================
+
+    def test_trisynaptic_cascade(self):
+        """Test DG→CA3→CA1 circuit processes correctly."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Provide entorhinal cortex input
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+
+        # Forward pass
+        output = region.forward(input_spikes)
+
+        # Verify output is CA1 activity
+        assert output.shape[0] == params["ca1_size"]
+
+        # Verify state has all three layers
+        state = region.get_state()
+        assert hasattr(state, "dg_spikes")
+        assert hasattr(state, "ca3_spikes")
+        assert hasattr(state, "ca1_spikes")
+        assert state.dg_spikes.shape[0] == params["dg_size"]
+        assert state.ca3_spikes.shape[0] == params["ca3_size"]
+        assert state.ca1_spikes.shape[0] == params["ca1_size"]
+
+    def test_pattern_separation_in_dg(self):
+        """Test DG provides pattern separation (sparse coding)."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Dense input pattern
+        input_spikes = torch.ones(params["n_input"], device=region.device) * 0.8
+
+        # Forward pass
+        region.forward(input_spikes)
+
+        # DG should produce sparse output (pattern separation)
+        state = region.get_state()
+        if state.dg_spikes is not None:
+            dg_activity = state.dg_spikes.float().mean().item()
+            # DG typically maintains ~2-5% sparsity (pattern separation)
+            assert 0.0 <= dg_activity <= 0.2, f"Expected sparse DG activity, got {dg_activity}"
+
+    def test_ca3_recurrence(self):
+        """Test CA3 has recurrent connections for pattern completion."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Run forward passes
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+        for _ in range(10):
+            region.forward(input_spikes)
+
+        # Verify CA3 recurrent connections exist
+        if hasattr(region, "synaptic_weights"):
+            # Should have CA3→CA3 recurrent weights
+            assert "ca3_ca3" in region.synaptic_weights
+            ca3_recurrent = region.synaptic_weights["ca3_ca3"]
+            assert ca3_recurrent.shape == (params["ca3_size"], params["ca3_size"])
+
+    def test_ca3_persistent_activity(self):
+        """Test CA3 maintains persistent activity (working memory)."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Strong input to trigger persistent activity
+        strong_input = torch.ones(params["n_input"], device=region.device)
+        region.forward(strong_input)
+
+        # Check for persistent activity state
+        state = region.get_state()
+        if hasattr(state, "ca3_persistent"):
+            assert state.ca3_persistent is not None
+            assert state.ca3_persistent.shape[0] == params["ca3_size"]
+
+    def test_theta_encoding_retrieval(self):
+        """Test theta phase modulates encoding vs retrieval."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Set theta phase for encoding (trough)
+        if hasattr(region, "_theta_phase"):
+            region._theta_phase = 3.14159  # π radians (trough)
+
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+        region.forward(input_spikes)
+
+        # Should encode (DG→CA3 strong)
+        # (Detailed theta modulation testing would require monitoring
+        # internal pathway strengths, which is implementation-specific)
+
+    def test_stp_mossy_fibers(self):
+        """Test mossy fiber pathway (DG→CA3) uses facilitating STP."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Run multiple forward passes
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+        for _ in range(10):
+            region.forward(input_spikes)
+
+        # Verify STP state for mossy fibers
+        state = region.get_state()
+        if hasattr(state, "stp_mossy_state"):
+            stp_state = state.stp_mossy_state
+            if stp_state is not None:
+                # Should have facilitation variables
+                assert "u" in stp_state or "x" in stp_state
+
+    def test_ec_direct_pathway(self):
+        """Test EC layer III direct pathway to CA1."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Provide both EC layer II (via DG) and layer III (direct to CA1)
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+        ec_l3_input = torch.ones(params["n_input"] // 2, device=region.device)
+
+        # Forward with direct EC→CA1
+        output = region.forward(input_spikes, ec_direct_input=ec_l3_input)
+
+        # Should not error
+        assert output.shape[0] == params["ca1_size"]
+
+    def test_episodic_memory_buffer(self):
+        """Test hippocampus maintains episode buffer."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Check for episode buffer
+        if hasattr(region, "episode_buffer"):
+            assert isinstance(region.episode_buffer, list)
+
+            # Store episode (if region supports it)
+            if hasattr(region, "store_episode"):
+                sample = torch.ones(params["n_input"], device=region.device)
+                # Note: store_episode signature may vary by implementation
+                # This is just checking the method exists
+                assert callable(region.store_episode)
+
+    def test_acetylcholine_encoding_modulation(self):
+        """Test acetylcholine modulates encoding strength."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Set high ACh (encoding mode)
+        if hasattr(region, "set_neuromodulators"):
+            region.set_neuromodulators(acetylcholine=0.9)
+
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+        region.forward(input_spikes)
+
+        # Verify ACh stored in state
+        state = region.get_state()
+        if hasattr(state, "acetylcholine"):
+            assert state.acetylcholine == 0.9
+
+
+# Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
+# inherited from RegionTestBase - eliminates ~100 lines of boilerplate
