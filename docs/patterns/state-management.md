@@ -1,6 +1,6 @@
 # State Management Pattern Guide
 
-**Date**: December 7, 2025
+**Date**: December 22, 2025 (Updated for Phase 6 State Refactoring)
 **Purpose**: Clarify when and how to use state management in Thalia brain regions
 
 ---
@@ -14,6 +14,13 @@ Brain regions in Thalia need to manage different types of data:
 - **Objects** that have their own state (neurons, STP modules)
 
 This guide explains the **state management pattern** used consistently across all regions.
+
+**Key Updates (December 2025)**:
+- All state classes now inherit from `RegionState` or `BaseRegionState`
+- Unified serialization via `to_dict()` and `from_dict()`
+- Version migration support via `STATE_VERSION`
+- Pathway state support via `PathwayState` protocol
+- Checkpoint preservation of synaptic weights and delay buffers
 
 ---
 
@@ -458,8 +465,371 @@ A: Currently Thalia enforces single-instance (no batching). State tensors are 1D
 
 ---
 
-**Last Updated**: December 7, 2025
+**Last Updated**: December 22, 2025
 **See Also**:
 - `docs/patterns/configuration.md` - Configuration patterns
 - `docs/design/architecture.md` - Overall architecture
 - `thalia/regions/base.py` - NeuralComponent base class
+- `docs/api/STATE_CLASSES_REFERENCE.md` - All state classes
+- `docs/design/state-management-refactoring-plan.md` - State refactoring details
+
+---
+
+## Advanced Topics
+
+### State Serialization and Checkpointing
+
+**Two Levels of State APIs**:
+
+1. **`get_state()` / `load_state()`** - State dataclass (clean API)
+   ```python
+   state = region.get_state()  # Returns RegionState dataclass
+   region.load_state(state)     # Accepts RegionState dataclass
+   ```
+
+2. **`get_full_state()` / `load_full_state()`** - Dict with weights (checkpoints)
+   ```python
+   full_state = region.get_full_state()  # Returns Dict[str, Any]
+   region.load_full_state(full_state)    # Accepts Dict[str, Any]
+   ```
+
+**Key Difference**: `get_full_state()` includes **synaptic weights** which are `nn.Parameter` objects and live outside the state dataclass:
+
+```python
+def get_full_state(self) -> Dict[str, Any]:
+    """Get complete state for checkpointing."""
+    state_obj = self.get_state()
+    state = state_obj.to_dict()
+
+    # Add synaptic weights (required for checkpointing)
+    state['synaptic_weights'] = {
+        name: weights.detach().clone()
+        for name, weights in self.synaptic_weights.items()
+    }
+
+    return state
+
+def load_full_state(self, state: Dict[str, Any]) -> None:
+    """Load complete state from checkpoint."""
+    # Restore state dataclass
+    state_obj = MyRegionState.from_dict(state, device=str(self.device))
+    self.load_state(state_obj)
+
+    # Restore synaptic weights
+    if 'synaptic_weights' in state:
+        for name, weights in state['synaptic_weights'].items():
+            if name in self.synaptic_weights:
+                self.synaptic_weights[name].data = weights.to(self.device)
+```
+
+**Why Two APIs?**
+- **`get_state()`**: Clean dataclass for accessing current state, testing, diagnostics
+- **`get_full_state()`**: Complete checkpoint including learned parameters for saving/loading
+
+---
+
+### Version Migration with STATE_VERSION
+
+All state classes include a `STATE_VERSION` field for handling schema changes:
+
+```python
+from dataclasses import dataclass
+from typing import Optional, Dict, Any, ClassVar
+import torch
+from thalia.core.region_state import BaseRegionState
+
+@dataclass
+class MyRegionState(BaseRegionState):
+    """State for MyRegion."""
+    STATE_VERSION: ClassVar[int] = 2  # Incremented when schema changes
+
+    # Original fields (v1)
+    spikes: Optional[torch.Tensor] = None
+    membrane: Optional[torch.Tensor] = None
+
+    # Added in v2
+    eligibility: Optional[torch.Tensor] = None
+
+    @classmethod
+    def _migrate_from_v1(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Migrate v1 checkpoint to v2 schema.
+
+        Called automatically when loading old checkpoints.
+        """
+        # Add new field with default value
+        data['eligibility'] = None
+        return data
+```
+
+**When to Bump Version**:
+1. Adding new fields → Bump version, add migration method
+2. Removing fields → Bump version, migration removes old keys
+3. Renaming fields → Bump version, migration maps old → new names
+4. Changing field types → Bump version, migration converts types
+
+**Migration Flow**:
+```python
+# Loading old checkpoint
+state_dict = torch.load("checkpoint_v1.ckpt")
+region_data = state_dict['regions']['cortex']
+
+# BaseRegionState.from_dict() automatically detects version mismatch
+loaded_state = MyRegionState.from_dict(region_data, device='cpu')
+# Internally calls _migrate_from_v1() if needed
+```
+
+---
+
+### Device Management
+
+State serialization must handle device transfer correctly:
+
+```python
+@dataclass
+class MyRegionState(BaseRegionState):
+    """State with proper device handling."""
+
+    spikes: Optional[torch.Tensor] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize state to dict (always CPU for portability)."""
+        return {
+            'STATE_VERSION': self.STATE_VERSION,
+            'spikes': self.spikes.cpu() if self.spikes is not None else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], device: str) -> "MyRegionState":
+        """Deserialize from dict, placing tensors on target device."""
+        device_obj = torch.device(device)
+
+        # Handle version migration
+        version = data.get('STATE_VERSION', 1)
+        if version < cls.STATE_VERSION:
+            data = cls._migrate_from_v1(data)
+
+        return cls(
+            spikes=data['spikes'].to(device_obj) if data.get('spikes') is not None else None,
+        )
+```
+
+**Best Practices**:
+- Always serialize to CPU (`.cpu()`) for portability
+- Accept `device` parameter in `from_dict()`
+- Use `torch.device()` to handle both string and device objects
+- Check `is not None` before calling `.to(device)`
+
+---
+
+### Pathway State Pattern
+
+Pathways (like `AxonalProjection`) also need state management for delay buffers:
+
+```python
+from dataclasses import dataclass
+from typing import Optional, Dict, Any, Tuple
+import torch
+
+@dataclass
+class AxonalProjectionState:
+    """State for AxonalProjection with delay buffers.
+
+    Delay buffers store in-flight spikes that haven't reached the target yet.
+    This is critical for biological accuracy (axonal delays: 2-25ms).
+    """
+    STATE_VERSION: int = 1
+
+    # Delay buffer per source: {source_name: (buffer, pointer, max_delay, size)}
+    delay_buffers: Optional[Dict[str, Tuple[torch.Tensor, int, int, int]]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize delay buffers to dict."""
+        if self.delay_buffers is None:
+            return {'STATE_VERSION': self.STATE_VERSION, 'delay_buffers': None}
+
+        serialized_buffers = {}
+        for source_name, (buffer, ptr, max_delay, size) in self.delay_buffers.items():
+            serialized_buffers[source_name] = {
+                'buffer': buffer.cpu(),
+                'pointer': ptr,
+                'max_delay': max_delay,
+                'size': size,
+            }
+
+        return {
+            'STATE_VERSION': self.STATE_VERSION,
+            'delay_buffers': serialized_buffers,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], device: str) -> "AxonalProjectionState":
+        """Deserialize delay buffers from dict."""
+        device_obj = torch.device(device)
+
+        if data.get('delay_buffers') is None:
+            return cls(delay_buffers=None)
+
+        reconstructed_buffers = {}
+        for source_name, buffer_data in data['delay_buffers'].items():
+            reconstructed_buffers[source_name] = (
+                buffer_data['buffer'].to(device_obj),
+                buffer_data['pointer'],
+                buffer_data['max_delay'],
+                buffer_data['size'],
+            )
+
+        return cls(delay_buffers=reconstructed_buffers)
+```
+
+**Why Pathway State Matters**:
+- Preserves **in-flight spikes** during checkpoints
+- Maintains **temporal dynamics** (D1 vs D2 delays in striatum)
+- Ensures **biological accuracy** (no artificial spike loss)
+
+---
+
+### State Best Practices Summary
+
+#### ✅ DO:
+1. **Use `BaseRegionState` as base class** for all region states
+2. **Include `STATE_VERSION`** as `ClassVar[int]`
+3. **Implement `to_dict()` and `from_dict()`** for serialization
+4. **Add migration methods** when bumping version
+5. **Handle device properly** (serialize to CPU, load to target device)
+6. **Document state fields** in docstring
+7. **Keep state dataclass pure data** (no methods except serialization)
+8. **Add synaptic weights in `get_full_state()`**, not in state dataclass
+
+#### ❌ DON'T:
+1. **Don't put configuration in state** (it's immutable)
+2. **Don't put nn.Parameter in state** (weights go in get_full_state())
+3. **Don't put objects in state** (neurons, STP modules manage their own state)
+4. **Don't forget device transfer** in from_dict()
+5. **Don't skip version when changing schema**
+6. **Don't serialize to CUDA** (always use .cpu() for portability)
+7. **Don't hardcode device strings** (use device parameter)
+
+---
+
+### State Testing Checklist
+
+When adding or modifying state classes:
+
+```python
+def test_state_roundtrip():
+    """Test state serialization preserves data."""
+    region = MyRegion(config)
+
+    # Run some timesteps
+    for _ in range(10):
+        region.forward(input_spikes)
+
+    # Save and load state
+    state = region.get_state()
+    state_dict = state.to_dict()
+    loaded_state = MyRegionState.from_dict(state_dict, device='cpu')
+
+    # Verify preservation
+    assert torch.allclose(state.spikes, loaded_state.spikes)
+    assert torch.allclose(state.membrane, loaded_state.membrane)
+
+def test_checkpoint_with_weights():
+    """Test full checkpoint includes weights."""
+    region = MyRegion(config)
+
+    # Run learning
+    for _ in range(10):
+        region.forward(input_spikes)
+        region.apply_learning()
+
+    # Save full state
+    full_state = region.get_full_state()
+
+    # Verify weights included
+    assert 'synaptic_weights' in full_state
+    assert 'default' in full_state['synaptic_weights']
+
+    # Load into new region
+    region2 = MyRegion(config)
+    region2.load_full_state(full_state)
+
+    # Verify weights match
+    assert torch.allclose(
+        region.synaptic_weights['default'],
+        region2.synaptic_weights['default']
+    )
+
+def test_device_transfer():
+    """Test state transfers between devices."""
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+
+    region_cpu = MyRegion(config.replace(device='cpu'))
+    region_cpu.forward(input_spikes)
+
+    # Save from CPU
+    state_dict = region_cpu.get_full_state()
+
+    # Load to CUDA
+    region_cuda = MyRegion(config.replace(device='cuda'))
+    region_cuda.load_full_state(state_dict)
+
+    # Verify device
+    assert region_cuda.state.spikes.device.type == 'cuda'
+    assert region_cuda.synaptic_weights['default'].device.type == 'cuda'
+
+def test_version_migration():
+    """Test v1 checkpoint loads into v2 state."""
+    # Create v1-style data
+    old_data = {
+        'STATE_VERSION': 1,
+        'spikes': torch.rand(100),
+        'membrane': torch.rand(100),
+        # 'eligibility' missing (added in v2)
+    }
+
+    # Load with v2 state class (triggers migration)
+    state_v2 = MyRegionState.from_dict(old_data, device='cpu')
+
+    # Verify migration
+    assert state_v2.STATE_VERSION == 2
+    assert state_v2.eligibility is None  # Default from migration
+    assert state_v2.spikes is not None  # Original data preserved
+```
+
+---
+
+## Implementation Checklist
+
+When creating a new region with state:
+
+- [ ] Create `MyRegionState` dataclass inheriting from `BaseRegionState`
+- [ ] Add `STATE_VERSION = 1` as `ClassVar[int]`
+- [ ] Define all mutable state fields with type hints and `= None` defaults
+- [ ] Document state class in docstring
+- [ ] Implement `to_dict()` with device handling (`.cpu()`)
+- [ ] Implement `from_dict()` accepting device parameter
+- [ ] Implement `get_state()` returning state dataclass
+- [ ] Implement `load_state()` accepting state dataclass
+- [ ] Implement `get_full_state()` including synaptic weights
+- [ ] Implement `load_full_state()` restoring weights
+- [ ] Call `self.state = MyRegionState()` in `__init__`
+- [ ] Initialize state tensors in `reset_state()`
+- [ ] Update state fields in `forward()`
+- [ ] Write roundtrip test
+- [ ] Write checkpoint test with weights
+- [ ] Write device transfer test (if CUDA available)
+- [ ] Add state class to `docs/api/STATE_CLASSES_REFERENCE.md` (auto-generated)
+
+---
+
+**Last Updated**: December 22, 2025
+**See Also**:
+- `docs/patterns/configuration.md` - Configuration patterns
+- `docs/design/architecture.md` - Overall architecture
+- `thalia/regions/base.py` - NeuralComponent base class
+- `docs/api/STATE_CLASSES_REFERENCE.md` - All state classes (auto-generated)
+- `docs/api/CHECKPOINT_FORMAT.md` - Checkpoint structure
+- `docs/design/state-management-refactoring-plan.md` - State refactoring details
+- `tests/integration/test_biological_validity.py` - State validation tests
+- `tests/unit/core/test_state_properties.py` - Property-based state tests

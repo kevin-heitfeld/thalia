@@ -187,6 +187,18 @@ class EnumInfo:
     enum_type: str  # "Enum", "IntEnum", "StrEnum"
 
 
+@dataclass
+class StateClassInfo:
+    """State class for regions/pathways."""
+    name: str
+    base_class: str  # "RegionState", "BaseRegionState", "PathwayState"
+    docstring: str
+    fields: List[Tuple[str, str, str]]  # (name, type, default)
+    state_version: int
+    file_path: str
+    component_type: str  # "region" or "pathway"
+
+
 class APIDocGenerator:
     """Generate API documentation from codebase."""
 
@@ -210,6 +222,7 @@ class APIDocGenerator:
         self.type_aliases: List[TypeAliasInfo] = []
         self.component_relations: List[ComponentRelation] = []
         self.enumerations: List[EnumInfo] = []
+        self.state_classes: List[StateClassInfo] = []
 
     def generate(self):
         """Generate all API documentation."""
@@ -234,6 +247,7 @@ class APIDocGenerator:
         self._find_type_aliases()
         self._find_component_relations()
         self._find_enumerations()
+        self._find_state_classes()
 
         # Generate documentation files
         self._generate_component_catalog()
@@ -251,6 +265,7 @@ class APIDocGenerator:
         self._generate_type_aliases_reference()
         self._generate_component_relationships()
         self._generate_enumerations_reference()
+        self._generate_state_classes_reference()
 
         print("\n✅ API documentation generated successfully!")
         print(f"   Location: {self.api_dir.relative_to(self.docs_dir.parent)}")
@@ -1882,6 +1897,218 @@ class APIDocGenerator:
                             f.write(f"- `{member_name}`\n")
 
                     f.write("\n---\n\n")
+
+        print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
+
+    def _find_state_classes(self):
+        """Find all state classes (RegionState, PathwayState subclasses)."""
+        for py_file in self.src_dir.rglob("*.py"):
+            if "test" in str(py_file) or "__pycache__" in str(py_file):
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+                # Quick check for state-related classes
+                if "RegionState" not in content and "PathwayState" not in content and "BaseRegionState" not in content:
+                    continue
+
+                tree = ast.parse(content)
+
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ClassDef):
+                        # Check if inherits from state base classes
+                        base_class = None
+                        for base in node.bases:
+                            base_name = base.id if hasattr(base, 'id') else ""
+                            if base_name in ["RegionState", "BaseRegionState", "PathwayState", "NeuralComponentState"]:
+                                base_class = base_name
+                                break
+
+                        if not base_class:
+                            continue
+
+                        # Extract fields
+                        fields = []
+                        state_version = 1
+                        for item in node.body:
+                            # Look for STATE_VERSION
+                            if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                                if item.target.id == "STATE_VERSION":
+                                    if item.value:
+                                        try:
+                                            state_version = ast.literal_eval(item.value)
+                                        except:
+                                            pass
+                                else:
+                                    # Regular field
+                                    field_name = item.target.id
+                                    field_type = ast.unparse(item.annotation) if hasattr(ast, 'unparse') else "Any"
+                                    default = ast.unparse(item.value) if item.value else "None"
+                                    fields.append((field_name, field_type, default))
+                            elif isinstance(item, ast.Assign):
+                                # Handle ClassVar[int] = 1 style
+                                for target in item.targets:
+                                    if isinstance(target, ast.Name) and target.id == "STATE_VERSION":
+                                        try:
+                                            state_version = ast.literal_eval(item.value)
+                                        except:
+                                            pass
+
+                        docstring = ast.get_docstring(node) or "No docstring"
+
+                        # Determine component type
+                        component_type = "pathway" if "Pathway" in node.name else "region"
+
+                        self.state_classes.append(StateClassInfo(
+                            name=node.name,
+                            base_class=base_class,
+                            docstring=docstring.split('\n')[0],
+                            fields=fields,
+                            state_version=state_version,
+                            file_path=str(py_file.relative_to(self.src_dir.parent)),
+                            component_type=component_type
+                        ))
+
+            except Exception as e:
+                print(f"Warning: Could not parse {py_file} for state classes: {e}")
+
+    def _generate_state_classes_reference(self):
+        """Generate STATE_CLASSES_REFERENCE.md."""
+        output_file = self.api_dir / "STATE_CLASSES_REFERENCE.md"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write("# State Classes Reference\n\n")
+            f.write("> **Auto-generated documentation** - Do not edit manually!\n")
+            f.write(f"> Last updated: {timestamp}\n")
+            f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
+
+            f.write("This document catalogs all state classes used for serialization ")
+            f.write("in Thalia's checkpoint system. State classes inherit from `RegionState`, ")
+            f.write("`BaseRegionState`, or `PathwayState`.\n\n")
+
+            f.write(f"Total: {len(self.state_classes)} state classes\n\n")
+
+            # Group by component type
+            region_states = [s for s in self.state_classes if s.component_type == "region"]
+            pathway_states = [s for s in self.state_classes if s.component_type == "pathway"]
+
+            f.write("## Overview\n\n")
+            f.write("State classes provide serialization support for checkpoints. Each state class:\n\n")
+            f.write("- Inherits from a base state class (`RegionState`, `BaseRegionState`, or `PathwayState`)\n")
+            f.write("- Implements `to_dict()` and `from_dict()` for serialization\n")
+            f.write("- Includes `STATE_VERSION` for migration support\n")
+            f.write("- Contains only mutable state (not configuration or learned parameters)\n\n")
+
+            f.write("## State Class Hierarchy\n\n")
+            f.write("```\n")
+            f.write("RegionState (Protocol)\n")
+            f.write("├── BaseRegionState (dataclass)\n")
+            f.write("│   ├── PrefrontalState\n")
+            f.write("│   ├── ThalamicRelayState\n")
+            f.write("│   └── ... (other region states)\n")
+            f.write("│\n")
+            f.write("└── PathwayState (Protocol)\n")
+            f.write("    └── AxonalProjectionState\n")
+            f.write("```\n\n")
+
+            # Region States
+            f.write("## Region State Classes\n\n")
+            f.write(f"Total region states: {len(region_states)}\n\n")
+
+            for state in sorted(region_states, key=lambda s: s.name):
+                f.write(f"### `{state.name}`\n\n")
+                f.write(f"**Base Class**: `{state.base_class}`  \n")
+                f.write(f"**Version**: {state.state_version}  \n")
+                f.write(f"**Source**: `{state.file_path}`\n\n")
+
+                if state.docstring != "No docstring":
+                    f.write(f"**Description**: {state.docstring}\n\n")
+
+                if state.fields:
+                    f.write("**Fields**:\n\n")
+                    f.write("| Field | Type | Default |\n")
+                    f.write("|-------|------|----------|\n")
+                    for field_name, field_type, default in state.fields:
+                        # Truncate long types/defaults
+                        field_type_display = field_type if len(field_type) < 50 else field_type[:47] + "..."
+                        default_display = default if len(default) < 30 else default[:27] + "..."
+                        f.write(f"| `{field_name}` | `{field_type_display}` | `{default_display}` |\n")
+                    f.write("\n")
+
+                f.write("---\n\n")
+
+            # Pathway States
+            if pathway_states:
+                f.write("## Pathway State Classes\n\n")
+                f.write(f"Total pathway states: {len(pathway_states)}\n\n")
+
+                for state in sorted(pathway_states, key=lambda s: s.name):
+                    f.write(f"### `{state.name}`\n\n")
+                    f.write(f"**Base Class**: `{state.base_class}`  \n")
+                    f.write(f"**Version**: {state.state_version}  \n")
+                    f.write(f"**Source**: `{state.file_path}`\n\n")
+
+                    if state.docstring != "No docstring":
+                        f.write(f"**Description**: {state.docstring}\n\n")
+
+                    if state.fields:
+                        f.write("**Fields**:\n\n")
+                        f.write("| Field | Type | Default |\n")
+                        f.write("|-------|------|----------|\n")
+                        for field_name, field_type, default in state.fields:
+                            field_type_display = field_type if len(field_type) < 50 else field_type[:47] + "..."
+                            default_display = default if len(default) < 30 else default[:27] + "..."
+                            f.write(f"| `{field_name}` | `{field_type_display}` | `{default_display}` |\n")
+                        f.write("\n")
+
+                    f.write("---\n\n")
+
+            # Usage guide
+            f.write("## Usage Guide\n\n")
+            f.write("### Creating a New State Class\n\n")
+            f.write("```python\n")
+            f.write("from dataclasses import dataclass\n")
+            f.write("from typing import Optional\n")
+            f.write("import torch\n")
+            f.write("from thalia.core.region_state import BaseRegionState\n\n")
+            f.write("@dataclass\n")
+            f.write("class MyRegionState(BaseRegionState):\n")
+            f.write('    """State for MyRegion."""\n')
+            f.write("    STATE_VERSION: int = 1\n\n")
+            f.write("    # Add your state fields\n")
+            f.write("    custom_spikes: Optional[torch.Tensor] = None\n")
+            f.write("    custom_membrane: Optional[torch.Tensor] = None\n")
+            f.write("```\n\n")
+
+            f.write("### Serialization\n\n")
+            f.write("State classes automatically inherit `to_dict()` and `from_dict()` methods:\n\n")
+            f.write("```python\n")
+            f.write("# Save state\n")
+            f.write("state_dict = region.get_state().to_dict()\n\n")
+            f.write("# Load state\n")
+            f.write("loaded_state = MyRegionState.from_dict(state_dict, device='cpu')\n")
+            f.write("region.load_state(loaded_state)\n")
+            f.write("```\n\n")
+
+            f.write("### Version Migration\n\n")
+            f.write("When adding new fields, increment `STATE_VERSION` and add migration logic:\n\n")
+            f.write("```python\n")
+            f.write("@dataclass\n")
+            f.write("class MyRegionState(BaseRegionState):\n")
+            f.write("    STATE_VERSION: int = 2  # Incremented from 1\n\n")
+            f.write("    # New field in v2\n")
+            f.write("    new_field: Optional[torch.Tensor] = None\n\n")
+            f.write("    @classmethod\n")
+            f.write("    def _migrate_from_v1(cls, data: Dict[str, Any]) -> Dict[str, Any]:\n")
+            f.write('        """Migrate v1 state to v2."""\n')
+            f.write("        data['new_field'] = None  # Initialize with default\n")
+            f.write("        return data\n")
+            f.write("```\n\n")
+
+            f.write("**See Also**:\n")
+            f.write("- `docs/patterns/state-management.md` - State management patterns\n")
+            f.write("- `docs/api/CHECKPOINT_FORMAT.md` - Checkpoint file format\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 

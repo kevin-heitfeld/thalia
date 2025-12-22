@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-21 21:45:51
+> Last updated: 2025-12-22 13:58:06
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -49,7 +49,7 @@ Total: 3 configuration classes
 | `ec_l3_input_size` | `int` | `0` |
 | `theta_gamma_enabled` | `bool` | `True` |
 | `gamma_n_slots` | `int` | `7` |
-| `stp_enabled` | `bool` | `False` |
+| `stp_enabled` | `bool` | `True` |
 | `stp_mossy_type` | `STPType` | `STPType.FACILITATING_STRONG` |
 | `stp_schaffer_type` | `STPType` | `STPType.DEPRESSING` |
 | `stp_ec_ca1_type` | `STPType` | `STPType.DEPRESSING` |
