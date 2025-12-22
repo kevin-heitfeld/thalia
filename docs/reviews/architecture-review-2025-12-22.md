@@ -495,14 +495,14 @@ The architecture review proposed creating an input routing mixin to eliminate du
        port_mapping={"default": ["default", "input"]},
        defaults={"default": torch.zeros(n_input, device=device)},
    )
-   
+
    # Hippocampus - aliased port routing
    routed = InputRouter.route(
        inputs,
        port_mapping={"ec": ["ec", "cortex", "input", "default"]},
        defaults={"ec": torch.zeros(n_input, device=device)},
    )
-   
+
    # Cortex - multi-source concatenation
    input_spikes = InputRouter.concatenate_sources(
        inputs,
@@ -790,10 +790,10 @@ class TestMyRegion(RegionTestBase):
     def create_region(self, **kwargs):
         config = MyRegionConfig(**kwargs)
         return MyRegion(config)
-    
+
     def get_default_params(self):
         return {"n_input": 100, "n_output": 50, "device": "cpu"}
-    
+
     def test_region_specific_feature(self):
         # Only region-specific tests here
         pass
@@ -857,7 +857,12 @@ Base class can easily be extended with new standard tests:
 - ✅ Base class implemented with 14 standard tests
 - ✅ Cortex example (10 region-specific tests)
 - ✅ Hippocampus example (11 region-specific tests)
-- ⏳ Remaining regions: Striatum, Prefrontal, Cerebellum, Thalamus (can migrate incrementally)
+- ✅ Striatum (10 region-specific tests: D1/D2 pathways, population coding, dopamine, RPE, eligibility traces, pathway delays, homeostasis, goal conditioning)
+- ✅ Prefrontal (10 region-specific tests: working memory maintenance, gating, rule representation, recurrence, inhibition, dopamine, active rule tracking, STDP, STP, context sensitivity)
+- ✅ Cerebellum (10 region-specific tests: granule expansion, Purkinje output, climbing fiber error, parallel fiber plasticity, basket/Golgi inhibition, timing prediction, motor error correction, sparse coding, complex spikes)
+- ✅ Thalamus (10 region-specific tests: sensory relay, TRN inhibition, L6 feedback, burst firing, alpha oscillation, sensory gating, TRN lateral inhibition, corticothalamic plasticity, sleep spindles, multimodal integration)
+
+**All 6 regions migrated** - Total savings: ~600 lines of test boilerplate eliminated
 
 ---
 
