@@ -4,12 +4,14 @@ This module provides RegionTestBase, an abstract base class that standardizes
 testing patterns across all brain regions. It eliminates test boilerplate by
 providing common test methods for:
 
-- Initialization verification
-- Forward pass shape checking
-- Growth functionality (input/output expansion)
-- State management (get_state, load_state, reset)
-- Device transfer
-- Neuromodulator integration
+- Initialization verification (2 tests)
+- Forward pass shape checking (4 tests)
+- Growth functionality (3 tests: input/output expansion, state preservation)
+- State management (5 tests: get/load, reset, file I/O, STP persistence, device transfer)
+- Device transfer (2 tests: CPU and CUDA)
+- Integration (2 tests: neuromodulators, diagnostics)
+
+Total: **17 standard tests** inherited by all region test classes.
 
 **Usage Pattern**:
 
@@ -423,3 +425,117 @@ class RegionTestBase(ABC):
             # Should have at least some standard metrics
             # (exact metrics depend on region, so we just check non-empty)
             assert len(diagnostics) > 0
+
+    def test_state_file_io(self, tmp_path):
+        """Test state can be saved to and loaded from file.
+
+        Uses save_region_state() and load_region_state() utilities.
+        """
+        from thalia.core.region_state import save_region_state, load_region_state
+
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Run forward to generate non-trivial state
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+        for _ in range(3):
+            region.forward(input_spikes)
+
+        # Get state
+        state1 = region.get_state()
+
+        # Save to file
+        filepath = tmp_path / "region_state.pt"
+        save_region_state(state1, str(filepath))
+
+        # Load from file
+        state_class = type(state1)
+        state2 = load_region_state(state_class, str(filepath), device=params["device"])
+
+        # Verify states match
+        dict1 = state1.to_dict()
+        dict2 = state2.to_dict()
+
+        for key in dict1:
+            if isinstance(dict1[key], torch.Tensor) and dict1[key] is not None:
+                assert torch.allclose(dict1[key], dict2[key], atol=1e-6), \
+                    f"Mismatch in tensor field: {key}"
+            elif isinstance(dict1[key], (int, float)) and dict1[key] is not None:
+                assert dict1[key] == dict2[key], f"Mismatch in scalar field: {key}"
+
+    def test_stp_state_persistence(self):
+        """Test STP state is captured in get_state() if region uses STP.
+
+        Verifies that STP components (if present) have their state preserved
+        in the region's state object.
+        """
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Run forward to activate STP
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+        for _ in range(5):
+            region.forward(input_spikes)
+
+        # Get state
+        state = region.get_state()
+        state_dict = state.to_dict()
+
+        # Check if region has STP components
+        has_stp = False
+        for attr_name in dir(region):
+            if "stp_" in attr_name.lower() and not attr_name.startswith("_"):
+                attr = getattr(region, attr_name)
+                if attr is not None and hasattr(attr, "get_state"):
+                    has_stp = True
+                    # Verify corresponding state field exists
+                    state_field_name = f"{attr_name}_state"
+                    assert state_field_name in state_dict, \
+                        f"STP component {attr_name} should have state field {state_field_name}"
+
+                    # If STP was active, state should contain u and x
+                    stp_state = state_dict[state_field_name]
+                    if stp_state is not None:
+                        assert "u" in stp_state or "x" in stp_state, \
+                            f"STP state should contain u/x fields"
+
+        # If no STP found, test passes (not all regions use STP)
+        if not has_stp:
+            pytest.skip("Region does not use STP")
+
+
+# =============================================================================
+# STANDARD TEST SUMMARY
+# =============================================================================
+# Total: 17 standard tests inherited by all region test classes
+#
+# Initialization (2 tests):
+#   - test_initialization: Verify with default params
+#   - test_initialization_minimal: Verify with minimal params
+#
+# Forward pass (4 tests):
+#   - test_forward_pass_tensor_input: Single tensor input
+#   - test_forward_pass_dict_input: Multi-source dict input
+#   - test_forward_pass_zero_input: Zero/empty input handling
+#   - test_forward_pass_multiple_calls: Temporal consistency
+#
+# Growth (3 tests):
+#   - test_grow_output: Add output neurons
+#   - test_grow_input: Expand input dimension
+#   - test_growth_preserves_state: State preservation during growth
+#
+# State management (5 tests):
+#   - test_state_get_and_load: Round-trip serialization
+#   - test_reset_state: State reinitialization
+#   - test_state_file_io: Save/load from disk
+#   - test_stp_state_persistence: STP state capture
+#   - test_device_cuda: CUDA device transfer (within device tests)
+#
+# Device support (2 tests):
+#   - test_device_cpu: CPU execution
+#   - test_device_cuda: CUDA execution and state transfer
+#
+# Integration (2 tests):
+#   - test_neuromodulator_update: Neuromodulator application
+#   - test_diagnostics_collection: Diagnostic metrics
+# =============================================================================
