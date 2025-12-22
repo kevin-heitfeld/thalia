@@ -1238,8 +1238,19 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         - neuromodulator_state: Dopamine gating state
         - config: Configuration for validation
         """
-        state = self.get_state()
-        return state.to_dict()
+        state_obj = self.get_state()
+        state = state_obj.to_dict()
+
+        # Add all weights (required for checkpointing)
+        # PFC has both synaptic_weights dict (feedforward) and rec_weights (recurrent)
+        state['synaptic_weights'] = {
+            name: weights.detach().clone()
+            for name, weights in self.synaptic_weights.items()
+        }
+        if hasattr(self, 'rec_weights'):
+            state['rec_weights'] = self.rec_weights.detach().clone()
+
+        return state
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
@@ -1249,3 +1260,13 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         """
         state_obj = PrefrontalState.from_dict(state, device=str(self.device))
         self.load_state(state_obj)
+
+        # Restore synaptic weights
+        if 'synaptic_weights' in state:
+            for name, weights in state['synaptic_weights'].items():
+                if name in self.synaptic_weights:
+                    self.synaptic_weights[name].data = weights.to(self.device)
+
+        # Restore recurrent weights
+        if 'rec_weights' in state and hasattr(self, 'rec_weights'):
+            self.rec_weights.data = state['rec_weights'].to(self.device)

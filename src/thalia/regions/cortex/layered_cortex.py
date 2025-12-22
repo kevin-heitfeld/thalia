@@ -1797,8 +1797,16 @@ class LayeredCortex(NeuralRegion):
         - neuromodulator_state: Current dopamine, norepinephrine, etc.
         - config: Configuration for validation
         """
-        state = self.get_state()
-        return state.to_dict()
+        state_obj = self.get_state()
+        state = state_obj.to_dict()
+
+        # Add synaptic weights (required for checkpointing)
+        state['synaptic_weights'] = {
+            name: weights.detach().clone()
+            for name, weights in self.synaptic_weights.items()
+        }
+
+        return state
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
@@ -1809,6 +1817,12 @@ class LayeredCortex(NeuralRegion):
         from .config import LayeredCortexState
         state_obj = LayeredCortexState.from_dict(state, device=str(self.device))
         self.load_state(state_obj)
+
+        # Restore synaptic weights
+        if 'synaptic_weights' in state:
+            for name, weights in state['synaptic_weights'].items():
+                if name in self.synaptic_weights:
+                    self.synaptic_weights[name].data = weights.to(self.device)
 
     def get_state(self) -> LayeredCortexState:
         """Get current state as LayeredCortexState (RegionState protocol).

@@ -714,7 +714,9 @@ class PredictiveCortex(NeuralRegion):
 
         # Note: Gamma attention state saved by base LayeredCortex
 
-        # Update config with PredictiveCortex-specific parameters
+        # Add config dict with PredictiveCortex-specific parameters
+        if "config" not in state_dict:
+            state_dict["config"] = {}
         state_dict["config"]["prediction_enabled"] = self.predictive_config.prediction_enabled
 
         # Add format identifier for hybrid checkpoints
