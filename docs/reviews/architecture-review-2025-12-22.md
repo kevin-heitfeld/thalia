@@ -849,20 +849,32 @@ Base class can easily be extended with new standard tests:
 - Priority: **Medium** (improves test coverage consistency)
 
 **Files Created**:
-- `tests/utils/region_test_base.py` (530 lines, abstract base class)
-- `tests/unit/regions/test_cortex_base.py` (195 lines, example implementation)
-- `tests/unit/regions/test_hippocampus_base.py` (210 lines, example implementation)
+- `tests/utils/region_test_base.py` (540 lines, abstract base class with **17 standard tests**)
+- `tests/unit/regions/test_cortex_base.py` (195 lines, 10 cortex-specific tests)
+- `tests/unit/regions/test_hippocampus_base.py` (210 lines, 11 hippocampus-specific tests)
+- `tests/unit/regions/test_striatum_base.py` (235 lines, 10 striatum-specific tests)
+- `tests/unit/regions/test_prefrontal_base.py` (200 lines, 10 prefrontal-specific tests)
+- `tests/unit/regions/test_cerebellum_base.py` (220 lines, 10 cerebellum-specific tests)
+- `tests/unit/regions/test_thalamus_base.py` (230 lines, 10 thalamus-specific tests)
 
 **Migration Status**:
-- ✅ Base class implemented with 14 standard tests
-- ✅ Cortex example (10 region-specific tests)
-- ✅ Hippocampus example (11 region-specific tests)
-- ✅ Striatum (10 region-specific tests: D1/D2 pathways, population coding, dopamine, RPE, eligibility traces, pathway delays, homeostasis, goal conditioning)
-- ✅ Prefrontal (10 region-specific tests: working memory maintenance, gating, rule representation, recurrence, inhibition, dopamine, active rule tracking, STDP, STP, context sensitivity)
-- ✅ Cerebellum (10 region-specific tests: granule expansion, Purkinje output, climbing fiber error, parallel fiber plasticity, basket/Golgi inhibition, timing prediction, motor error correction, sparse coding, complex spikes)
-- ✅ Thalamus (10 region-specific tests: sensory relay, TRN inhibition, L6 feedback, burst firing, alpha oscillation, sensory gating, TRN lateral inhibition, corticothalamic plasticity, sleep spindles, multimodal integration)
+- ✅ Base class implemented with **17 standard tests** (enhanced from 14)
+- ✅ All 6 regions migrated with region-specific tests:
+  * Cortex: Layered cascade, top-down modulation, L6 feedback, STDP, STP, gamma, plasticity
+  * Hippocampus: Trisynaptic cascade, pattern separation, CA3 recurrence, theta, STP, EC pathways, episodic memory, ACh
+  * Striatum: D1/D2 pathways, population coding, action selection, dopamine, RPE, eligibility traces, pathway delays, homeostasis, goal conditioning
+  * Prefrontal: Working memory, gating, rule representation, recurrence, inhibition, dopamine, active rule tracking, STDP, STP, context sensitivity
+  * Cerebellum: Granule expansion, Purkinje output, climbing fiber error, parallel fiber plasticity, basket/Golgi inhibition, timing, motor error, sparse coding, complex spikes
+  * Thalamus: Sensory relay, TRN inhibition, L6 feedback, burst firing, alpha oscillation, sensory gating, TRN lateral inhibition, corticothalamic plasticity, sleep spindles, multimodal integration
 
-**All 6 regions migrated** - Total savings: ~600 lines of test boilerplate eliminated
+**Test Migrations from Old Files** (Commit 45763f7):
+- Migrated state file I/O tests from `test_*_state.py` files
+- Migrated STP persistence verification tests
+- Enhanced device transfer to include state operations
+- Result: 17 standard tests (up from 14), 102 inherited tests total (17 × 6)
+- Old `*_state.py` files retained for detailed edge case testing
+
+**Complete**: All regions now use unified testing framework with enhanced state coverage
 
 ---
 
