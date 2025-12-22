@@ -7,11 +7,11 @@ providing common test methods for:
 - Initialization verification (2 tests)
 - Forward pass shape checking (4 tests)
 - Growth functionality (3 tests: input/output expansion, state preservation)
-- State management (5 tests: get/load, reset, file I/O, STP persistence, device transfer)
-- Device transfer (2 tests: CPU and CUDA)
+- State management (7 tests: get/load, reset, file I/O, STP persistence, device transfer, roundtrip serialization, None handling)
+- Device support (2 tests: CPU and CUDA)
 - Integration (2 tests: neuromodulators, diagnostics)
 
-Total: **17 standard tests** inherited by all region test classes.
+Total: **19 standard tests** inherited by all region test classes.
 
 **Usage Pattern**:
 
@@ -503,11 +503,73 @@ class RegionTestBase(ABC):
         if not has_stp:
             pytest.skip("Region does not use STP")
 
+    def test_state_to_dict_from_dict_roundtrip(self):
+        """Test to_dict() and from_dict() preserve all state fields.
+
+        Verifies complete serialization roundtrip without loss.
+        """
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Run forward to generate non-trivial state
+        input_spikes = torch.ones(params["n_input"], device=region.device)
+        for _ in range(5):
+            region.forward(input_spikes)
+
+        # Get state and serialize
+        state1 = region.get_state()
+        data = state1.to_dict()
+
+        # Deserialize
+        state_class = type(state1)
+        state2 = state_class.from_dict(data, device=params["device"])
+
+        # Verify roundtrip preserves all tensor fields
+        dict1 = state1.to_dict()
+        dict2 = state2.to_dict()
+
+        for key in dict1:
+            val1 = dict1[key]
+            val2 = dict2[key]
+
+            if isinstance(val1, torch.Tensor) and val1 is not None:
+                assert torch.allclose(val1, val2, atol=1e-6), \
+                    f"Roundtrip mismatch in tensor field: {key}"
+            elif isinstance(val1, (int, float)) and val1 is not None:
+                assert val1 == val2, f"Roundtrip mismatch in scalar field: {key}"
+            elif isinstance(val1, dict) and val1 is not None:
+                # Handle nested dicts (e.g., STP state)
+                for subkey in val1:
+                    if isinstance(val1[subkey], torch.Tensor):
+                        assert torch.allclose(val1[subkey], val2[subkey], atol=1e-6), \
+                            f"Roundtrip mismatch in nested field: {key}.{subkey}"
+
+    def test_state_handles_none_fields(self):
+        """Test state serialization handles None/missing fields gracefully.
+
+        Verifies edge case where some optional state fields are None.
+        """
+        params = self.get_min_params() if hasattr(self, 'get_min_params') else self.get_default_params()
+        region = self.create_region(**params)
+
+        # Get state immediately (minimal initialization)
+        state1 = region.get_state()
+
+        # Serialize and deserialize
+        data = state1.to_dict()
+        state_class = type(state1)
+        state2 = state_class.from_dict(data, device=params["device"])
+
+        # Should not raise errors
+        # Verify at least some fields are present
+        assert data is not None
+        assert len(data) > 0
+
 
 # =============================================================================
 # STANDARD TEST SUMMARY
 # =============================================================================
-# Total: 17 standard tests inherited by all region test classes
+# Total: 19 standard tests inherited by all region test classes
 #
 # Initialization (2 tests):
 #   - test_initialization: Verify with default params
@@ -524,12 +586,14 @@ class RegionTestBase(ABC):
 #   - test_grow_input: Expand input dimension
 #   - test_growth_preserves_state: State preservation during growth
 #
-# State management (5 tests):
-#   - test_state_get_and_load: Round-trip serialization
+# State management (7 tests):
+#   - test_state_get_and_load: Round-trip serialization via region methods
 #   - test_reset_state: State reinitialization
 #   - test_state_file_io: Save/load from disk
 #   - test_stp_state_persistence: STP state capture
 #   - test_device_cuda: CUDA device transfer (within device tests)
+#   - test_state_to_dict_from_dict_roundtrip: Direct serialization roundtrip
+#   - test_state_handles_none_fields: None/missing field handling
 #
 # Device support (2 tests):
 #   - test_device_cpu: CPU execution
