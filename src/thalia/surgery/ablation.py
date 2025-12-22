@@ -33,16 +33,16 @@ def ablate_pathway(
 ) -> None:
     """Remove a pathway connection between regions.
 
-    **DEPRECATED**: This function was designed for weighted pathways, but the current
-    v3.0 architecture uses axonal routing pathways with no learnable parameters.
+    **v3.0 Architecture Note**: The v3.0 architecture uses AxonalProjection
+    (spike routing without learnable parameters). To ablate connections:
 
-    To remove connections in v3.0:
-    - Use lesion_region() to silence the source region
-    - Manually remove from brain.connections dict
-    - Use BrainBuilder to construct networks without unwanted connections
+    **Recommended approaches**:
+    1. Lesion the source region: `lesion_region(brain, "source_name")`
+    2. Zero synaptic weights at target: `brain.components["target"].synaptic_weights["source"].zero_()`
+    3. Remove from connections dict: `del brain.connections[("source", "target")]`
 
-    This function is kept for backward compatibility but will raise an error
-    for routing-only pathways (AxonalProjection).
+    This function remains for backward compatibility with weighted pathways but
+    will raise NotImplementedError for AxonalProjection pathways.
 
     Args:
         brain: The brain to modify
@@ -53,12 +53,12 @@ def ablate_pathway(
         NotImplementedError: For routing pathways (AxonalProjection)
 
     Example:
-        >>> # Old weighted pathways (deprecated architecture)
-        >>> ablate_pathway(brain, "cortex_to_pfc")
-        >>>
-        >>> # New v3.0 approach: lesion the source region instead
+        >>> # For v3.0 architecture (AxonalProjection): lesion the source region
         >>> from thalia.surgery import lesion_region
-        >>> lesion_region(brain, "cortex")
+        >>> lesion_region(brain, "cortex")  # Silence cortex → all its outputs stop
+        >>>
+        >>> # Or zero specific synaptic weights at target:
+        >>> brain.components["prefrontal"].synaptic_weights["cortex:l5"].zero_()
     """
     # Get pathway
     pathway = _get_pathway(brain, pathway_name)

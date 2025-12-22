@@ -80,8 +80,20 @@ LEARNING_RATE_THREE_FACTOR = 0.001
 LEARNING_RATE_HEBBIAN = 0.01
 """Basic Hebbian learning rate (pre × post)."""
 
+LEARNING_RATE_HEBBIAN_SLOW = 0.001
+"""Slow Hebbian learning for stable multimodal integration."""
+
 LEARNING_RATE_ONE_SHOT = 0.1
 """One-shot learning rate for hippocampal episodic memory."""
+
+# Precision Learning (Predictive Coding)
+LEARNING_RATE_PRECISION = 0.001
+"""Precision weight learning rate for predictive coding networks.
+
+Controls adaptation of precision (inverse variance) estimates in
+hierarchical predictive coding models. Slower than prediction weights
+to maintain stability of uncertainty estimates.
+"""
 
 # Error-Corrective Learning (Cerebellum)
 LEARNING_RATE_ERROR_CORRECTIVE = 0.005
@@ -255,6 +267,25 @@ Note: Changed from 0.02 to 0.01 to match inline usage in prefrontal.py (line 692
 """
 
 # =============================================================================
+# ACTIVITY DETECTION THRESHOLDS
+# =============================================================================
+
+SILENCE_DETECTION_THRESHOLD = 0.001
+"""Firing rate threshold below which a region is considered silent.
+
+Used in health monitoring to detect pathological silence states.
+A region with mean firing rate < 0.001 (0.1%) indicates:
+- No effective computation occurring
+- Potential dead neurons or vanished gradients
+- Insufficient input drive or excessive inhibition
+
+Biological context:
+- Cortical firing rates: 1-10 Hz in active states
+- In 1ms timesteps: 0.001-0.01 spike probability per neuron
+- Threshold of 0.001 allows detection of near-zero activity
+"""
+
+# =============================================================================
 # PHASE INITIALIZATION
 # =============================================================================
 
@@ -275,6 +306,8 @@ __all__ = [
     "LEARNING_RATE_BCM",
     "LEARNING_RATE_THREE_FACTOR",
     "LEARNING_RATE_HEBBIAN",
+    "LEARNING_RATE_HEBBIAN_SLOW",
+    "LEARNING_RATE_PRECISION",
     "LEARNING_RATE_ERROR_CORRECTIVE",
     "LEARNING_RATE_ONE_SHOT",
     "LEARNING_RATE_DEFAULT",
@@ -297,6 +330,8 @@ __all__ = [
     "EMA_DECAY_SLOW",
     # Noise parameters
     "WM_NOISE_STD_DEFAULT",
+    # Activity detection
+    "SILENCE_DETECTION_THRESHOLD",
     # Phase initialization
     "PHASE_RANGE_2PI",
 ]

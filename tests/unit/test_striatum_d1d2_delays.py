@@ -15,10 +15,19 @@ Biological Rationale:
 - Explains impulsivity, action timing, and reaction time variability
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path for test imports
+project_root = Path(__file__).parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import pytest
 import torch
 
 from thalia.regions.striatum import Striatum, StriatumConfig
+from tests.utils.test_helpers import generate_sparse_spikes
 
 
 @pytest.fixture
@@ -130,7 +139,7 @@ def test_delay_configuration_affects_temporal_competition(striatum_config_with_d
 def test_delays_work_from_first_forward(striatum_with_delays):
     """Test that delays take effect immediately from first forward pass."""
     # First forward pass with input
-    input_spikes = torch.rand(50) > 0.8
+    input_spikes = generate_sparse_spikes(50, firing_rate=0.2)
     output = striatum_with_delays(input_spikes)
 
     # Behavioral contract: output should be valid even on first pass
@@ -225,7 +234,7 @@ def test_circular_buffer_wrapping(striatum_with_delays):
     the striatum should still produce valid outputs with no crashes or NaN values.
     This validates buffer wrapping without accessing internal buffer state.
     """
-    input_spikes = torch.rand(50) > 0.8
+    input_spikes = generate_sparse_spikes(50, firing_rate=0.2)
 
     # Calculate buffer size from PUBLIC config
     config = striatum_with_delays.striatum_config
@@ -377,7 +386,7 @@ def test_population_coding_with_delays(striatum_config_with_delays):
     striatum_pop.reset_state()
 
     # Run forward pass
-    input_spikes = torch.rand(50) > 0.8
+    input_spikes = generate_sparse_spikes(50, firing_rate=0.2)
     _ = striatum_pop(input_spikes)
 
     # Behavioral contract: population coding aggregates to action-level votes
@@ -495,7 +504,7 @@ def test_striatum_extreme_dopamine():
     )
     striatum = Striatum(config)
 
-    input_spikes = torch.rand(50) > 0.5
+    input_spikes = generate_sparse_spikes(50, firing_rate=0.5)
 
     # Set extreme dopamine
     striatum.set_neuromodulators(dopamine=10.0)
@@ -523,7 +532,7 @@ def test_striatum_repeated_forward_numerical_stability():
     )
     striatum = Striatum(config)
 
-    input_spikes = torch.rand(50) > 0.5
+    input_spikes = generate_sparse_spikes(50, firing_rate=0.5)
 
     # Run many forward passes
     for _ in range(200):

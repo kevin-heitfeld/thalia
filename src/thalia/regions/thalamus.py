@@ -1099,64 +1099,111 @@ class ThalamicRelay(NeuralRegion):
         self._alpha_phase = 0.0
         self._alpha_amplitude = 1.0
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get thalamic diagnostic information using DiagnosticsMixin helpers."""
-        # Custom metrics specific to thalamus
-        custom = {
-            "n_relay": self.n_relay,
-            "n_trn": self.n_trn,
-            "alpha_phase": self._alpha_phase,
-            "alpha_amplitude": self._alpha_amplitude,
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Get comprehensive diagnostics in standardized DiagnosticsDict format.
+
+        Returns consolidated diagnostic information about:
+        - Activity: Relay neuron spike statistics (primary output)
+        - Plasticity: Weight statistics for all thalamic connections
+        - Health: Membrane potentials, alpha gating, burst/tonic balance
+        - Neuromodulators: Dopamine, norepinephrine, acetylcholine
+        - Region-specific: TRN activity, mode distribution, oscillations
+
+        This is the primary diagnostic interface for the Thalamus.
+        """
+        from thalia.core.diagnostics_schema import (
+            compute_activity_metrics,
+            compute_plasticity_metrics,
+            compute_health_metrics,
+        )
+
+        # Compute activity metrics from relay neurons (primary output)
+        activity = compute_activity_metrics(
+            output_spikes=self.state.relay_spikes if self.state.relay_spikes is not None else torch.zeros(self.n_relay, device=self.device),
+            total_neurons=self.n_relay,
+        )
+
+        # Compute plasticity metrics from relay gain (primary modifiable weights)
+        plasticity = None
+        if self.config.learning_enabled:
+            plasticity = compute_plasticity_metrics(
+                weights=self.relay_gain.data,
+                learning_rate=self.config.learning_rate,
+            )
+            # Add other connection statistics
+            plasticity["input_to_trn_mean"] = float(self.input_to_trn.data.mean().item())
+            plasticity["relay_to_trn_mean"] = float(self.relay_to_trn.data.mean().item())
+            plasticity["trn_to_relay_mean"] = float(self.trn_to_relay.data.mean().item())
+            plasticity["trn_recurrent_mean"] = float(self.trn_recurrent.data.mean().item())
+
+        # Compute health metrics
+        health_tensors = {
+            "relay_spikes": self.state.relay_spikes if self.state.relay_spikes is not None else torch.zeros(self.n_relay, device=self.device),
+            "trn_spikes": self.state.trn_spikes if self.state.trn_spikes is not None else torch.zeros(self.n_trn, device=self.device),
         }
-
-        # Relay neuron stats using spike_diagnostics helper
-        if self.state.relay_spikes is not None:
-            custom.update(self.spike_diagnostics(self.state.relay_spikes, "relay"))
-
-        # TRN stats using spike_diagnostics helper
-        if self.state.trn_spikes is not None:
-            custom.update(self.spike_diagnostics(self.state.trn_spikes, "trn"))
-
-        # Relay membrane using membrane_diagnostics helper
         if self.state.relay_membrane is not None:
-            custom.update(self.membrane_diagnostics(
-                self.state.relay_membrane, threshold=1.0, prefix="relay"
-            ))
-
-        # TRN membrane using membrane_diagnostics helper
+            health_tensors["relay_membrane"] = self.state.relay_membrane
         if self.state.trn_membrane is not None:
-            custom.update(self.membrane_diagnostics(
-                self.state.trn_membrane, threshold=1.0, prefix="trn"
-            ))
+            health_tensors["trn_membrane"] = self.state.trn_membrane
 
-        # Mode distribution (thalamus-specific)
+        health = compute_health_metrics(
+            state_tensors=health_tensors,
+            firing_rate=activity.get("firing_rate", 0.0),
+        )
+
+        # Add thalamus-specific health metrics
         if self.state.current_mode is not None:
             burst_fraction = (self.state.current_mode < THALAMUS_MODE_THRESHOLD).float().mean().item()
-            custom["burst_mode_fraction"] = burst_fraction
-            custom["tonic_mode_fraction"] = 1.0 - burst_fraction
+            health["burst_mode_fraction"] = burst_fraction
+            health["tonic_mode_fraction"] = 1.0 - burst_fraction
 
-        # Alpha gating (thalamus-specific)
         if self.state.alpha_gate is not None:
-            custom["alpha_gate_mean"] = self.state.alpha_gate.mean().item()
-            custom["alpha_gate_std"] = self.state.alpha_gate.std().item()
+            health["alpha_gate_mean"] = self.state.alpha_gate.mean().item()
+            health["alpha_gate_std"] = self.state.alpha_gate.std().item()
 
-        # Neuromodulator levels
-        custom["dopamine"] = self.state.dopamine
-        custom["norepinephrine"] = self.state.norepinephrine
-        custom["acetylcholine"] = self.state.acetylcholine
+        # Neuromodulator metrics
+        neuromodulators = {
+            "dopamine": self.state.dopamine,
+            "norepinephrine": self.state.norepinephrine,
+            "acetylcholine": self.state.acetylcholine,
+        }
 
-        # Use collect_standard_diagnostics for weights
-        return self.collect_standard_diagnostics(
-            region_name="thalamus",
-            weight_matrices={
-                "relay_gain": self.relay_gain.data,
-                "input_to_trn": self.input_to_trn.data,
-                "relay_to_trn": self.relay_to_trn.data,
-                "trn_to_relay": self.trn_to_relay.data,
-                "trn_recurrent": self.trn_recurrent.data,
+        # Region-specific custom metrics
+        region_specific = {
+            "architecture": {
+                "n_relay": self.n_relay,
+                "n_trn": self.n_trn,
             },
-            custom_metrics=custom,
-        )
+            "relay_activity": {},
+            "trn_activity": {},
+            "oscillations": {
+                "alpha_phase": self._alpha_phase,
+                "alpha_amplitude": self._alpha_amplitude,
+            },
+        }
+
+        # Relay neuron details
+        if self.state.relay_spikes is not None:
+            region_specific["relay_activity"] = {
+                "active_count": int(self.state.relay_spikes.sum().item()),
+                "firing_rate": float(self.state.relay_spikes.mean().item()),
+            }
+
+        # TRN details
+        if self.state.trn_spikes is not None:
+            region_specific["trn_activity"] = {
+                "active_count": int(self.state.trn_spikes.sum().item()),
+                "firing_rate": float(self.state.trn_spikes.mean().item()),
+            }
+
+        # Return in standardized format
+        return {
+            "activity": activity,
+            "plasticity": plasticity,
+            "health": health,
+            "neuromodulators": neuromodulators,
+            "region_specific": region_specific,
+        }
 
     def grow_input(
         self,

@@ -70,6 +70,12 @@ from .base import BaseConfig
 
 # Note: BaseNeuronConfig not exported here to avoid circular import
 # Import directly: from thalia.config.neuron_config import BaseNeuronConfig
+from .learning_config import (
+    BaseLearningConfig,
+    ModulatedLearningConfig,
+    STDPLearningConfig,
+    HebbianLearningConfig,
+)
 from .global_config import GlobalConfig
 from .brain_config import (
     BrainConfig,
@@ -131,6 +137,10 @@ __all__ = [
     "ValidatorRegistry",
     # Base configs
     "BaseConfig",
+    "BaseLearningConfig",
+    "ModulatedLearningConfig",
+    "STDPLearningConfig",
+    "HebbianLearningConfig",
     "NeuralComponentConfig",
     "LearningComponentConfig",
     "PathwayConfig",

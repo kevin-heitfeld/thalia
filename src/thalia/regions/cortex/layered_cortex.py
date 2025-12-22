@@ -1725,67 +1725,139 @@ class LayeredCortex(NeuralRegion):
 
     # region Diagnostics and Health Monitoring
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get layer-specific diagnostics using DiagnosticsMixin helpers.
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Get comprehensive diagnostics in standardized DiagnosticsDict format.
+
+        Returns consolidated diagnostic information about:
+        - Activity: L2/3 output spike statistics (primary cortical output)
+        - Plasticity: Weight statistics for all inter-layer connections
+        - Health: Layer sparsity, BCM thresholds, E/I balance, cumulative activity
+        - Neuromodulators: Dopamine, norepinephrine, acetylcholine (if applicable)
+        - Region-specific: Layer-specific activity (L4/L2/3/L5/L6), recurrent dynamics
 
         Note: Reports both instantaneous (l4_active_count) and cumulative
         (l4_cumulative_spikes) counts. During consolidation phases with
         zero input, instantaneous L4 will be 0 but cumulative shows
         total activity since last reset.
+
+        This is the primary diagnostic interface for the Cortex.
         """
+        from thalia.core.diagnostics_schema import (
+            compute_activity_metrics,
+            compute_plasticity_metrics,
+            compute_health_metrics,
+        )
+
         cfg = self.layer_config
 
-        # Custom metrics specific to cortex
-        custom = {
-            "l4_size": self.l4_size,
-            "l23_size": self.l23_size,
-            "l5_size": self.l5_size,
-            "l6a_size": self.l6a_size,
-            "l6b_size": self.l6b_size,
-            # Config weight bounds for reference
-            "config_w_min": cfg.w_min,
-            "config_w_max": cfg.w_max,
-            "config_l23_rec_w_min": cfg.l23_recurrent_w_min,
-            "config_l23_rec_w_max": cfg.l23_recurrent_w_max,
-            # Cumulative spike counts (since last reset_state)
-            "l4_cumulative_spikes": getattr(self, "_cumulative_l4_spikes", 0),
-            "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
-            "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
-            "l6a_cumulative_spikes": getattr(self, "_cumulative_l6a_spikes", 0),
-            "l6b_cumulative_spikes": getattr(self, "_cumulative_l6b_spikes", 0),
+        # Compute activity metrics from L2/3 (primary cortical output)
+        activity = compute_activity_metrics(
+            output_spikes=self.state.l23_spikes if self.state.l23_spikes is not None else torch.zeros(self.l23_size, device=self.device),
+            total_neurons=self.l23_size,
+        )
+
+        # Compute plasticity metrics from L2/3 recurrent (most dynamic)
+        plasticity = None
+        if cfg.learning_enabled:
+            plasticity = compute_plasticity_metrics(
+                weights=self.synaptic_weights["l23_recurrent"].data,
+                learning_rate=cfg.learning_rate,
+            )
+            # Add other pathway statistics
+            plasticity["input_l4_mean"] = float(self.synaptic_weights["input"].data.mean().item())
+            plasticity["l4_l23_mean"] = float(self.synaptic_weights["l4_l23"].data.mean().item())
+            plasticity["l23_l5_mean"] = float(self.synaptic_weights["l23_l5"].data.mean().item())
+            plasticity["l23_l6a_mean"] = float(self.synaptic_weights["l23_l6a"].data.mean().item())
+            plasticity["l23_l6b_mean"] = float(self.synaptic_weights["l23_l6b"].data.mean().item())
+
+        # Compute health metrics
+        health_tensors = {
+            "l4_spikes": self.state.l4_spikes if self.state.l4_spikes is not None else torch.zeros(self.l4_size, device=self.device),
+            "l23_spikes": self.state.l23_spikes if self.state.l23_spikes is not None else torch.zeros(self.l23_size, device=self.device),
+            "l5_spikes": self.state.l5_spikes if self.state.l5_spikes is not None else torch.zeros(self.l5_size, device=self.device),
+            "l6a_spikes": self.state.l6a_spikes if self.state.l6a_spikes is not None else torch.zeros(self.l6a_size, device=self.device),
+            "l6b_spikes": self.state.l6b_spikes if self.state.l6b_spikes is not None else torch.zeros(self.l6b_size, device=self.device),
         }
+
+        health = compute_health_metrics(
+            state_tensors=health_tensors,
+            firing_rate=activity.get("firing_rate", 0.0),
+        )
+
+        # Add cumulative activity tracking
+        health["l4_cumulative_spikes"] = getattr(self, "_cumulative_l4_spikes", 0)
+        health["l23_cumulative_spikes"] = getattr(self, "_cumulative_l23_spikes", 0)
+        health["l5_cumulative_spikes"] = getattr(self, "_cumulative_l5_spikes", 0)
+        health["l6a_cumulative_spikes"] = getattr(self, "_cumulative_l6a_spikes", 0)
+        health["l6b_cumulative_spikes"] = getattr(self, "_cumulative_l6b_spikes", 0)
+
+        # Neuromodulator metrics
+        neuromodulators = {}
+        if hasattr(self, 'neuromodulators'):
+            neuromodulators = self.neuromodulators.copy()
+
+        # Region-specific custom metrics
+        region_specific = {
+            "architecture": {
+                "l4_size": self.l4_size,
+                "l23_size": self.l23_size,
+                "l5_size": self.l5_size,
+                "l6a_size": self.l6a_size,
+                "l6b_size": self.l6b_size,
+            },
+            "layer_activity": {},
+            "recurrent_dynamics": {},
+            "robustness": {},
+        }
+
+        # Layer-specific activity
+        if self.state.l4_spikes is not None:
+            region_specific["layer_activity"]["l4"] = {
+                "active_count": int(self.state.l4_spikes.sum().item()),
+                "firing_rate": float(self.state.l4_spikes.mean().item()),
+            }
+        if self.state.l23_spikes is not None:
+            region_specific["layer_activity"]["l23"] = {
+                "active_count": int(self.state.l23_spikes.sum().item()),
+                "firing_rate": float(self.state.l23_spikes.mean().item()),
+            }
+        if self.state.l5_spikes is not None:
+            region_specific["layer_activity"]["l5"] = {
+                "active_count": int(self.state.l5_spikes.sum().item()),
+                "firing_rate": float(self.state.l5_spikes.mean().item()),
+            }
+        if self.state.l6a_spikes is not None:
+            region_specific["layer_activity"]["l6a"] = {
+                "active_count": int(self.state.l6a_spikes.sum().item()),
+                "firing_rate": float(self.state.l6a_spikes.mean().item()),
+            }
+        if self.state.l6b_spikes is not None:
+            region_specific["layer_activity"]["l6b"] = {
+                "active_count": int(self.state.l6b_spikes.sum().item()),
+                "firing_rate": float(self.state.l6b_spikes.mean().item()),
+            }
 
         # Recurrent activity
         if self.state.l23_recurrent_activity is not None:
-            custom["l23_recurrent_mean"] = self.state.l23_recurrent_activity.mean().item()
+            region_specific["recurrent_dynamics"]["l23_recurrent_mean"] = self.state.l23_recurrent_activity.mean().item()
 
-        # Robustness mechanisms (E/I balance only)
+        # Robustness mechanisms (E/I balance)
         if self.ei_balance is not None:
             ei_diag = self.ei_balance.get_diagnostics()
-            custom["robustness_ei_ratio"] = ei_diag.get("current_ratio", 0.0)
-            custom["robustness_ei_scale"] = ei_diag.get("inh_scale", 1.0)
-            custom["robustness_ei_status"] = ei_diag.get("status", "unknown")
+            region_specific["robustness"] = {
+                "ei_ratio": ei_diag.get("current_ratio", 0.0),
+                "ei_inh_scale": ei_diag.get("inh_scale", 1.0),
+                "ei_status": ei_diag.get("status", "unknown"),
+            }
 
-        # Use collect_standard_diagnostics for weight and spike statistics
-        return self.collect_standard_diagnostics(
-            region_name="cortex",
-            weight_matrices={
-                "input_l4": self.synaptic_weights["input"].data,
-                "l4_l23": self.synaptic_weights["l4_l23"].data,
-                "l23_rec": self.synaptic_weights["l23_recurrent"].data,
-                "l23_l5": self.synaptic_weights["l23_l5"].data,
-                "l23_l6a": self.synaptic_weights["l23_l6a"].data,
-                "l23_l6b": self.synaptic_weights["l23_l6b"].data,
-            },
-            spike_tensors={
-                "l4": self.state.l4_spikes,
-                "l23": self.state.l23_spikes,
-                "l5": self.state.l5_spikes,
-                "l6a": self.state.l6a_spikes,
-                "l6b": self.state.l6b_spikes,
-            },
-            custom_metrics=custom,
-        )
+        # Return in standardized format
+        return {
+            "activity": activity,
+            "plasticity": plasticity,
+            "health": health,
+            "neuromodulators": neuromodulators,
+            "region_specific": region_specific,
+        }
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.

@@ -10,6 +10,14 @@ Tests:
 - Biological constraints (weaker than direct, normalized)
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path for test imports
+project_root = Path(__file__).parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import pytest
 import torch
 
@@ -18,6 +26,7 @@ from thalia.synapses.spillover import (
     SpilloverConfig,
     apply_spillover_to_weights,
 )
+from tests.utils.test_helpers import generate_sparse_spikes, generate_random_weights
 
 
 @pytest.fixture
@@ -30,10 +39,7 @@ def device():
 def base_weights(device):
     """Create basic weight matrix for testing."""
     # Small weight matrix [10 post, 20 pre]
-    weights = torch.randn(10, 20, device=device) * 0.5
-    # Make some weights zero (sparse connectivity)
-    mask = torch.rand(10, 20, device=device) > 0.3  # 70% connected
-    weights = weights * mask.float()
+    weights = generate_random_weights(10, 20, scale=0.5, sparsity=0.3, device=str(device))
     return weights
 
 
@@ -173,7 +179,7 @@ class TestSpilloverForwardPass:
 
         # Binary input spikes
         n_pre = base_weights.shape[1]
-        input_spikes = torch.rand(n_pre, device=device) > 0.8  # 20% firing rate
+        input_spikes = generate_sparse_spikes(n_pre, firing_rate=0.2, device=str(device))
 
         # Forward pass using effective weights
         effective_weights = spillover.get_effective_weights()
@@ -190,7 +196,7 @@ class TestSpilloverForwardPass:
         spillover = SpilloverTransmission(base_weights, config, device)
 
         n_pre = base_weights.shape[1]
-        input_spikes = torch.rand(n_pre, device=device) > 0.8
+        input_spikes = generate_sparse_spikes(n_pre, firing_rate=0.2, device=str(device))
 
         # Output without spillover
         output_direct = input_spikes.float() @ base_weights.T
@@ -246,9 +252,11 @@ class TestSpilloverModes:
         """Test similarity mode identifies neurons with similar weight patterns."""
         # Create neurons with similar weight patterns
         weights = torch.zeros(10, 20, device=device)
-        weights[0, :] = torch.randn(20, device=device)
-        weights[1, :] = weights[0, :] + torch.randn(20, device=device) * 0.1  # Similar
-        weights[2, :] = torch.randn(20, device=device)  # Different
+        base_pattern = generate_random_weights(1, 20, scale=1.0, device=str(device))
+        weights[0, :] = base_pattern
+        noise = generate_random_weights(1, 20, scale=0.1, device=str(device))
+        weights[1, :] = base_pattern + noise  # Similar
+        weights[2, :] = generate_random_weights(1, 20, scale=1.0, device=str(device))  # Different
 
         config = SpilloverConfig(
             enabled=True,

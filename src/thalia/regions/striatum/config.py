@@ -13,16 +13,25 @@ from typing import Optional, Dict, Any
 import torch
 
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.config.learning_config import ModulatedLearningConfig
 from thalia.core.region_state import BaseRegionState
-from thalia.regulation.learning_constants import EMA_DECAY_FAST
+from thalia.regulation.learning_constants import EMA_DECAY_FAST, LEARNING_RATE_HEBBIAN_SLOW
 from thalia.regulation.region_architecture_constants import (
     STRIATUM_NEURONS_PER_ACTION,
 )
 
 
 @dataclass
-class StriatumConfig(NeuralComponentConfig):
+class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     """Configuration specific to striatal regions.
+
+    Inherits dopamine-gated learning parameters from ModulatedLearningConfig:
+    - learning_rate: Base learning rate for synaptic updates
+    - learning_enabled: Global learning enable/disable
+    - weight_min, weight_max: Weight bounds
+    - modulator_threshold: Minimum dopamine level to enable learning
+    - modulator_sensitivity: Scaling factor for dopamine influence
+    - use_dopamine_gating: Whether to gate learning by dopamine levels
 
     Key Features:
     =============
@@ -35,8 +44,8 @@ class StriatumConfig(NeuralComponentConfig):
     (Brain acts as VTA). Striatum receives dopamine via set_dopamine().
     """
 
-    # Learning rate for homeostatic normalization
-    learning_rate: float = 0.005  # Region-specific override (5x base for faster RL updates)
+    # Override default learning rate (5x base for faster RL updates)
+    learning_rate: float = 0.005
     # Note: stdp_lr and tau_plus_ms/tau_minus_ms inherited from NeuralComponentConfig
 
     # Action selection
@@ -143,7 +152,7 @@ class StriatumConfig(NeuralComponentConfig):
     use_goal_conditioning: bool = True  # Enable goal-conditioned value learning
     pfc_size: int = 128  # Size of PFC goal context input (must match PFC n_output)
     goal_modulation_strength: float = 0.5  # How strongly goals modulate values
-    goal_modulation_lr: float = 0.001  # Learning rate for PFC → striatum weights
+    goal_modulation_lr: float = LEARNING_RATE_HEBBIAN_SLOW  # Learning rate for PFC → striatum weights
 
     # =========================================================================
     # D1/D2 PATHWAY DELAYS (Temporal Competition)

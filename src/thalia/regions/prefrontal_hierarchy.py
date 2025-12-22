@@ -29,6 +29,8 @@ from typing import Optional, List, Dict, Callable, Any
 from enum import Enum
 import torch
 
+from thalia.regulation.region_constants import PREFRONTAL_PATIENCE_MIN
+
 
 class GoalStatus(Enum):
     """Status of a goal in the hierarchy."""
@@ -410,7 +412,7 @@ class HyperbolicDiscountingConfig:
 
     # Base discounting
     base_k: float = 0.01  # Base hyperbolic discount rate
-    k_min: float = 0.001  # Minimum k (most patient)
+    k_min: float = PREFRONTAL_PATIENCE_MIN  # Minimum k (most patient)
     k_max: float = 0.20  # Maximum k (most impulsive)
 
     # Context modulation

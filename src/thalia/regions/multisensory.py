@@ -99,14 +99,22 @@ import torch
 from thalia.components.neurons.neuron_factory import create_pyramidal_neurons
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.config.learning_config import HebbianLearningConfig
 from thalia.managers.component_registry import register_region
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.learning.rules.strategies import HebbianStrategy, HebbianConfig
+from thalia.regulation.learning_constants import LEARNING_RATE_HEBBIAN_SLOW, SILENCE_DETECTION_THRESHOLD
 
 
 @dataclass
-class MultimodalIntegrationConfig(NeuralComponentConfig):
+class MultimodalIntegrationConfig(NeuralComponentConfig, HebbianLearningConfig):
     """Configuration for multimodal integration region.
+
+    Inherits Hebbian learning parameters from HebbianLearningConfig:
+    - learning_rate: Base learning rate for cross-modal plasticity
+    - learning_enabled: Global learning enable/disable
+    - weight_min, weight_max: Weight bounds
+    - decay_rate, sparsity_penalty, use_oja_rule: Hebbian variants
 
     Args:
         visual_input_size: Size of visual input
@@ -120,8 +128,6 @@ class MultimodalIntegrationConfig(NeuralComponentConfig):
         within_modal_strength: Strength of within-modal connections (0-1)
         integration_strength: Strength from pools → integration neurons
         salience_competition_strength: Winner-take-all competition strength
-        enable_hebbian: Enable Hebbian cross-modal plasticity
-        hebbian_lr: Learning rate for Hebbian plasticity
     """
     # Input sizes
     visual_input_size: int = 0
@@ -140,9 +146,8 @@ class MultimodalIntegrationConfig(NeuralComponentConfig):
     integration_strength: float = 0.8
     salience_competition_strength: float = 0.5
 
-    # Plasticity
-    enable_hebbian: bool = True
-    hebbian_lr: float = 0.001
+    # Override default learning rate with region-specific value
+    learning_rate: float = LEARNING_RATE_HEBBIAN_SLOW
 
 
 @register_region("multimodal_integration")
@@ -298,10 +303,10 @@ class MultimodalIntegration(NeuralRegion):
         # LEARNING
         # =====================================================================
 
-        if config.enable_hebbian:
+        if config.learning_enabled:
             hebbian_config = HebbianConfig(
-                learning_rate=config.hebbian_lr,
-                decay_rate=0.0001,
+                learning_rate=config.learning_rate,
+                decay_rate=config.decay_rate,
             )
             self.hebbian_strategy = HebbianStrategy(hebbian_config)
         else:
@@ -724,32 +729,100 @@ class MultimodalIntegration(NeuralRegion):
         self.config = replace(self.config, n_output=new_n_output)
         self.multisensory_config = replace(self.multisensory_config, n_output=new_n_output)
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information using DiagnosticsMixin helpers.
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Get diagnostic information in standardized DiagnosticsDict format.
 
         Returns:
-            Dict with visual/auditory/language firing rates, integration activity
+            Standardized diagnostics with activity, plasticity, health, and custom metrics
         """
-        # Custom metrics specific to multisensory region
-        custom = {
-            "cross_modal_weight_mean": float(
-                (self.visual_to_auditory.mean() +
-                 self.visual_to_language.mean() +
-                 self.auditory_to_language.mean()) / 3.0
-            ),
-        }
+        from thalia.core.diagnostics_schema import (
+            compute_activity_metrics,
+            compute_plasticity_metrics,
+            compute_health_metrics,
+        )
 
-        # Use collect_standard_diagnostics for spike statistics
-        return self.collect_standard_diagnostics(
-            region_name="multisensory",
-            spike_tensors={
+        # Compute activity for each pool
+        visual_activity = compute_activity_metrics(
+            self.visual_pool_spikes,
+            total_neurons=self.visual_pool_size,
+        )
+        auditory_activity = compute_activity_metrics(
+            self.auditory_pool_spikes,
+            total_neurons=self.auditory_pool_size,
+        )
+        language_activity = compute_activity_metrics(
+            self.language_pool_spikes,
+            total_neurons=self.language_pool_size,
+        )
+        integration_activity = compute_activity_metrics(
+            self.integration_spikes,
+            total_neurons=self.integration_pool_size,
+        )
+
+        # Overall activity (weighted average across pools)
+        total_firing_rate = (
+            visual_activity.get("firing_rate", 0.0) * self.visual_pool_size +
+            auditory_activity.get("firing_rate", 0.0) * self.auditory_pool_size +
+            language_activity.get("firing_rate", 0.0) * self.language_pool_size +
+            integration_activity.get("firing_rate", 0.0) * self.integration_pool_size
+        ) / self.config.n_output
+
+        # Compute plasticity metrics for cross-modal weights
+        plasticity = None
+        if self.config.learning_enabled and self.hebbian_strategy is not None:
+            plasticity = compute_plasticity_metrics(
+                weights=self.visual_to_auditory,  # Use one weight matrix as representative
+                learning_rate=self.config.learning_rate,
+            )
+            # Add average cross-modal strength
+            cross_modal_mean = (
+                self.visual_to_auditory.mean().item() +
+                self.visual_to_language.mean().item() +
+                self.auditory_to_language.mean().item()
+            ) / 3.0
+            plasticity["weight_mean"] = float(cross_modal_mean)
+
+        # Compute health metrics
+        health = compute_health_metrics(
+            state_tensors={
                 "visual_pool": self.visual_pool_spikes,
                 "auditory_pool": self.auditory_pool_spikes,
                 "language_pool": self.language_pool_spikes,
                 "integration": self.integration_spikes,
             },
-            custom_metrics=custom,
+            firing_rate=total_firing_rate,
+            silence_threshold=SILENCE_DETECTION_THRESHOLD,
         )
+
+        # Region-specific metrics
+        region_specific = {
+            "pool_firing_rates": {
+                "visual": visual_activity.get("firing_rate", 0.0),
+                "auditory": auditory_activity.get("firing_rate", 0.0),
+                "language": language_activity.get("firing_rate", 0.0),
+                "integration": integration_activity.get("firing_rate", 0.0),
+            },
+            "cross_modal_weights": {
+                "visual_to_auditory": float(self.visual_to_auditory.mean().item()),
+                "visual_to_language": float(self.visual_to_language.mean().item()),
+                "auditory_to_language": float(self.auditory_to_language.mean().item()),
+            },
+            "pool_sizes": {
+                "visual": self.visual_pool_size,
+                "auditory": self.auditory_pool_size,
+                "language": self.language_pool_size,
+                "integration": self.integration_pool_size,
+            },
+        }
+
+        # Return as dict (DiagnosticsDict is a TypedDict, not a class)
+        return {
+            "activity": integration_activity,
+            "plasticity": plasticity,
+            "health": health,
+            "neuromodulators": None,
+            "region_specific": region_specific,
+        }
 
     def check_health(self):
         """Check region health.
@@ -763,7 +836,7 @@ class MultimodalIntegration(NeuralRegion):
         max_severity = 0.0
 
         # Check for silence
-        if self.visual_pool_spikes.mean() < 0.001:
+        if self.visual_pool_spikes.mean() < SILENCE_DETECTION_THRESHOLD:
             issues.append(IssueReport(
                 issue_type=HealthIssue.ACTIVITY_COLLAPSE,
                 severity=50.0,
@@ -773,7 +846,7 @@ class MultimodalIntegration(NeuralRegion):
             ))
             max_severity = max(max_severity, 50.0)
 
-        if self.auditory_pool_spikes.mean() < 0.001:
+        if self.auditory_pool_spikes.mean() < SILENCE_DETECTION_THRESHOLD:
             issues.append(IssueReport(
                 issue_type=HealthIssue.ACTIVITY_COLLAPSE,
                 severity=50.0,
@@ -783,7 +856,7 @@ class MultimodalIntegration(NeuralRegion):
             ))
             max_severity = max(max_severity, 50.0)
 
-        if self.language_pool_spikes.mean() < 0.001:
+        if self.language_pool_spikes.mean() < SILENCE_DETECTION_THRESHOLD:
             issues.append(IssueReport(
                 issue_type=HealthIssue.ACTIVITY_COLLAPSE,
                 severity=50.0,
@@ -793,7 +866,7 @@ class MultimodalIntegration(NeuralRegion):
             ))
             max_severity = max(max_severity, 50.0)
 
-        if self.integration_spikes.mean() < 0.001:
+        if self.integration_spikes.mean() < SILENCE_DETECTION_THRESHOLD:
             issues.append(IssueReport(
                 issue_type=HealthIssue.ACTIVITY_COLLAPSE,
                 severity=80.0,

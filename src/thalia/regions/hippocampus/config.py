@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any, List
 import torch
 
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.config.learning_config import STDPLearningConfig
 from thalia.core.region_state import BaseRegionState
 from thalia.components.synapses.stp import STPType
 from thalia.regulation.learning_constants import LEARNING_RATE_ONE_SHOT
@@ -51,11 +52,22 @@ class Episode:
 
 
 @dataclass
-class HippocampusConfig(NeuralComponentConfig):
+class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     """Configuration for hippocampus (trisynaptic circuit).
+
+    Inherits STDP learning parameters from STDPLearningConfig:
+    - learning_rate: Base learning rate (overridden with pathway-specific rates below)
+    - learning_enabled: Global learning enable/disable
+    - weight_min, weight_max: Weight bounds
+    - tau_plus_ms, tau_minus_ms: STDP timing window parameters
+    - a_plus, a_minus: LTP/LTD amplitudes
+    - use_symmetric: Whether to use symmetric STDP
 
     The hippocampus has ~5x expansion from EC to DG, then compression back.
     """
+    # Override default learning rate with CA3-specific fast learning
+    learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
+
     # Layer sizes (relative to input)
     dg_expansion: float = HIPPOCAMPUS_DG_EXPANSION_FACTOR  # DG has 5x more neurons than input
     ca3_size_ratio: float = HIPPOCAMPUS_CA3_SIZE_RATIO    # CA3 is half of DG
@@ -95,8 +107,8 @@ class HippocampusConfig(NeuralComponentConfig):
     nmda_steepness: float = 12.0     # Sharp discrimination above threshold
     ampa_ratio: float = 0.05         # Minimal ungated response (discrimination comes from NMDA)
 
-    # Learning rates
-    ca3_recurrent_learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
+    # Pathway-specific learning rates
+    # Note: learning_rate (inherited from STDPLearningConfig) is used for CA3 recurrent
     ec_ca1_learning_rate: float = 0.5  # Strong learning for EC→CA1 alignment
 
     # Feedforward inhibition parameters

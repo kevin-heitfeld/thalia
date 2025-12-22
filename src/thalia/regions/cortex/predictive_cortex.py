@@ -87,6 +87,7 @@ from thalia.regions.cortex.predictive_coding import (
     PredictiveCodingLayer,
     PredictiveCodingConfig,
 )
+from thalia.regulation.learning_constants import LEARNING_RATE_PRECISION
 
 
 @dataclass
@@ -104,7 +105,7 @@ class PredictiveCortexConfig(LayeredCortexConfig):
     # Precision (attention) parameters
     use_precision_weighting: bool = True
     initial_precision: float = 1.0
-    precision_learning_rate: float = 0.001
+    precision_learning_rate: float = LEARNING_RATE_PRECISION
 
     # Note: Gamma attention inherited from LayeredCortex base class (always enabled)
     # Configure width via gamma_attention_width

@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from thalia.regions.striatum.striatum import Striatum
 
 
-class CheckpointManager(BaseCheckpointManager):
+class StriatumCheckpointManager(BaseCheckpointManager):
     """Manages state checkpointing for Striatum.
 
     Handles:

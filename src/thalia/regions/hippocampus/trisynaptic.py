@@ -1288,7 +1288,7 @@ class TrisynapticHippocampus(NeuralRegion):
             # is strong (theta trough, encoding phase). This implements
             # the biological finding that synaptic plasticity is enhanced
             # during periods of strong gamma oscillations.
-            base_lr = self.tri_config.ca3_recurrent_learning_rate * encoding_mod
+            base_lr = self.tri_config.learning_rate * encoding_mod
 
             # Apply automatic gamma amplitude modulation
             # Gamma is modulated by ALL slower oscillators (emergent multi-order coupling)
@@ -2057,49 +2057,88 @@ class TrisynapticHippocampus(NeuralRegion):
 
     # region Diagnostics and Health Monitoring
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get comprehensive diagnostics using DiagnosticsMixin helpers.
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:
-        - Layer activity (spikes and rates)
-        - CA3 recurrent state and bistable dynamics
-        - CA1 comparison mechanism (NMDA trace, Mg block removal)
-        - Stored patterns and similarity
-        - Weight statistics
-        - Theta phase (if applicable)
+        - Activity: Layer-specific spike rates (DG, CA3, CA1)
+        - Plasticity: Weight statistics for all pathways
+        - Health: Layer sparsity, NMDA gating, pattern comparison
+        - Neuromodulators: Acetylcholine (encoding/retrieval mode)
+        - Region-specific: CA3 bistability, match/mismatch detection, episodic buffer
 
         This is the primary diagnostic interface for the Hippocampus.
         """
+        from thalia.core.diagnostics_schema import (
+            compute_activity_metrics,
+            compute_plasticity_metrics,
+            compute_health_metrics,
+        )
+
         cfg = self.tri_config
         state = self.state
 
-        # Layer activity using spike_diagnostics helper
-        dg_activity: Dict[str, Any] = {"target_sparsity": cfg.dg_sparsity}
+        # Compute activity for each layer
+        ca1_activity = compute_activity_metrics(
+            output_spikes=state.ca1_spikes if state.ca1_spikes is not None else torch.zeros(self.ca1_size, device=self.device),
+            total_neurons=self.ca1_size,
+        )
+
+        # Compute plasticity metrics for CA3 recurrent (most important for episodic memory)
+        plasticity = None
+        if self.tri_config.learning_enabled:
+            plasticity = compute_plasticity_metrics(
+                weights=self.synaptic_weights["ca3_ca3"].data,
+                learning_rate=self.tri_config.learning_rate,
+            )
+            # Add pathway-specific weight statistics
+            plasticity["ec_dg_mean"] = float(self.synaptic_weights["ec_dg"].data.mean().item())
+            plasticity["dg_ca3_mean"] = float(self.synaptic_weights["dg_ca3"].data.mean().item())
+            plasticity["ca3_ca1_mean"] = float(self.synaptic_weights["ca3_ca1"].data.mean().item())
+            plasticity["ec_ca1_mean"] = float(self.synaptic_weights["ec_ca1"].data.mean().item())
+
+        # Compute health metrics
+        health = compute_health_metrics(
+            state_tensors={
+                "dg_spikes": state.dg_spikes if state.dg_spikes is not None else torch.zeros(self.dg_size, device=self.device),
+                "ca3_spikes": state.ca3_spikes if state.ca3_spikes is not None else torch.zeros(self.ca3_size, device=self.device),
+                "ca1_spikes": state.ca1_spikes if state.ca1_spikes is not None else torch.zeros(self.ca1_size, device=self.device),
+            },
+            firing_rate=ca1_activity.get("firing_rate", 0.0),
+        )
+
+        # Neuromodulator metrics (acetylcholine for encoding/retrieval)
+        neuromodulators = {
+            "acetylcholine": self._ach_level if hasattr(self, '_ach_level') else 0.5,
+        }
+
+        # Layer-specific activity details
+        dg_activity_dict = {"target_sparsity": cfg.dg_sparsity}
         if state.dg_spikes is not None:
-            dg_activity.update(self.spike_diagnostics(state.dg_spikes, ""))
+            dg_activity_dict.update(self.spike_diagnostics(state.dg_spikes, ""))
 
-        ca3_activity: Dict[str, Any] = {"target_sparsity": cfg.ca3_sparsity}
+        ca3_activity_dict = {"target_sparsity": cfg.ca3_sparsity}
         if state.ca3_spikes is not None:
-            ca3_activity.update(self.spike_diagnostics(state.ca3_spikes, ""))
+            ca3_activity_dict.update(self.spike_diagnostics(state.ca3_spikes, ""))
 
-        ca1_activity: Dict[str, Any] = {"target_sparsity": cfg.ca1_sparsity}
+        ca1_activity_dict = {"target_sparsity": cfg.ca1_sparsity}
         if state.ca1_spikes is not None:
-            ca1_activity.update(self.spike_diagnostics(state.ca1_spikes, ""))
+            ca1_activity_dict.update(self.spike_diagnostics(state.ca1_spikes, ""))
 
-        # CA3 bistable dynamics using trace_diagnostics
-        ca3_persistent: Dict[str, Any] = {}
+        # CA3 bistable dynamics
+        ca3_persistent = {}
         if state.ca3_persistent is not None:
             ca3_persistent.update(self.trace_diagnostics(state.ca3_persistent, ""))
             ca3_persistent["nonzero_count"] = (state.ca3_persistent > 0.1).sum().item()
 
-        # CA1 NMDA comparison mechanism using trace_diagnostics
-        nmda_diagnostics: Dict[str, Any] = {"threshold": cfg.nmda_threshold}
+        # CA1 NMDA comparison mechanism
+        nmda_diagnostics = {"threshold": cfg.nmda_threshold}
         if state.nmda_trace is not None:
             nmda_diagnostics.update(self.trace_diagnostics(state.nmda_trace, ""))
             nmda_diagnostics["trace_std"] = state.nmda_trace.std().item()
             nmda_diagnostics["above_threshold_count"] = (state.nmda_trace > cfg.nmda_threshold).sum().item()
 
-            # Compute Mg block removal (sigmoid of (trace - threshold) * steepness)
+            # Compute Mg block removal
             mg_removal = torch.sigmoid(
                 (state.nmda_trace - cfg.nmda_threshold) * cfg.nmda_steepness
             )
@@ -2107,61 +2146,49 @@ class TrisynapticHippocampus(NeuralRegion):
             nmda_diagnostics["mg_block_removal_max"] = mg_removal.max().item()
             nmda_diagnostics["gated_neurons"] = (mg_removal > 0.5).sum().item()
 
-        # Stored pattern comparison (for match/mismatch)
-        pattern_comparison: Dict[str, Any] = {
+        # Pattern comparison
+        pattern_comparison = {
             "has_stored_pattern": state.stored_dg_pattern is not None,
         }
         if state.stored_dg_pattern is not None and state.dg_spikes is not None:
             stored = state.stored_dg_pattern.float().squeeze()
             current = state.dg_spikes.float().squeeze()
-            # Cosine similarity between stored and current DG patterns
             similarity = cosine_similarity_safe(stored, current)
             pattern_comparison["dg_similarity"] = similarity.item()
             pattern_comparison["stored_active"] = (stored > 0).sum().item()
             pattern_comparison["current_active"] = (current > 0).sum().item()
             pattern_comparison["overlap"] = ((stored > 0) & (current > 0)).sum().item()
 
-        # Feedforward inhibition state
-        ffi_state = {
-            "current_strength": state.ffi_strength,
-        }
-
-        # Custom metrics for hippocampus
-        custom = {
+        # Region-specific custom metrics
+        region_specific = {
             "layer_sizes": {
                 "dg": self.dg_size,
                 "ca3": self.ca3_size,
                 "ca1": self.ca1_size,
             },
-            # Layer activity
-            "dg": dg_activity,
-            "ca3": ca3_activity,
-            "ca1": ca1_activity,
-            # Dynamics
+            "layer_activity": {
+                "dg": dg_activity_dict,
+                "ca3": ca3_activity_dict,
+                "ca1": ca1_activity_dict,
+            },
             "ca3_persistent": ca3_persistent,
-            # Comparison mechanism (critical for match/mismatch)
             "nmda": nmda_diagnostics,
             "pattern_comparison": pattern_comparison,
-            # Inhibition
-            "ffi": ffi_state,
-            # Episode buffer
+            "ffi": {
+                "current_strength": state.ffi_strength,
+            },
             "episode_buffer_size": len(self.episode_buffer),
-            # HER diagnostics
             "her": self.get_her_diagnostics(),
         }
 
-        # Use collect_standard_diagnostics for weight statistics
-        return self.collect_standard_diagnostics(
-            region_name="hippocampus",
-            weight_matrices={
-                "ec_dg": self.synaptic_weights["ec_dg"].data,
-                "dg_ca3": self.synaptic_weights["dg_ca3"].data,
-                "ca3_ca3": self.synaptic_weights["ca3_ca3"].data,
-                "ca3_ca1": self.synaptic_weights["ca3_ca1"].data,
-                "ec_ca1": self.synaptic_weights["ec_ca1"].data,
-            },
-            custom_metrics=custom,
-        )
+        # Return in standardized format
+        return {
+            "activity": ca1_activity,
+            "plasticity": plasticity,
+            "health": health,
+            "neuromodulators": neuromodulators,
+            "region_specific": region_specific,
+        }
 
     # =========================================================================
     # CHECKPOINT STATE MANAGEMENT

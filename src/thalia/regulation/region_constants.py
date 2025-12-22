@@ -343,3 +343,21 @@ STRIATUM_RELAY_THRESHOLD = 0.5
 Used in relay pathways when thalamus outputs need to be
 converted to binary spike trains. Values > 0.5 become spikes.
 """
+
+# =============================================================================
+# PREFRONTAL CORTEX - GOAL HIERARCHY PARAMETERS
+# =============================================================================
+
+PREFRONTAL_PATIENCE_MIN = 0.001
+"""Minimum patience parameter (k_min) for goal hierarchy.
+
+Controls the most patient (least impulsive) temporal discounting:
+- k_min = 0.001: Very patient, values future rewards highly
+- Lower k means steeper discounting (present bias)
+- Higher k means flatter discounting (future bias)
+
+Used in hyperbolic discounting: V(t) = V₀ / (1 + kt)
+where k varies across goal hierarchy levels.
+
+Biological basis: Prefrontal cortex lesions increase k (more impulsive).
+"""

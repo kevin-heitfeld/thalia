@@ -792,15 +792,19 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
     - **Growth**: Dynamic expansion during curriculum learning
     - **Diagnostics**: Health monitoring and activity metrics
 
-    This is the base class for weighted pathways and legacy components.
+    This is the base class for custom pathways and legacy components.
     Brain regions now use NeuralRegion (v3.0 architecture).
 
     Examples:
     - Brain regions (v3.0): `class Striatum(NeuralRegion)`  [PREFERRED]
-    - Weighted pathways: `class SpikingPathway(LearnableComponent)` [DEPRECATED]
-    - Custom pathways: `class MyPathway(LearnableComponent)`
+    - Standard pathways: AxonalProjection (no learnable params)  [V3.0 DEFAULT]
+    - Custom weighted pathways: `class MyPathway(LearnableComponent)`  [ADVANCED USE]
 
-    Key Principle: Regions use NeuralRegion, pathways can use LearnableComponent.
+    **Note**: Weighted pathways are no longer the default. V3.0 uses AxonalProjection
+    (spike routing) with synaptic weights stored at target regions. LearnableComponent
+    remains available for custom pathway implementations with learned routing.
+
+    Key Principle: Regions use NeuralRegion, custom pathways can use LearnableComponent.
 
     Usage (for custom pathways only):
         class MyPathway(LearnableComponent):

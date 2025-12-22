@@ -5,8 +5,12 @@ This module defines state and utility classes for neural components.
 
 Architecture (v3.0):
 - Brain regions inherit from NeuralRegion (thalia.core.neural_region)
-- LearnableComponent is deprecated for regions (used only for custom pathways)
+- LearnableComponent is for custom pathways only (not for regions)
 - NeuralComponent is an alias to LearnableComponent for backward compatibility
+
+Usage:
+- Regions: `class MyRegion(NeuralRegion)`  [PREFERRED]
+- Custom pathways: `class MyPathway(LearnableComponent)`  [ALLOWED]
 """
 
 from __future__ import annotations

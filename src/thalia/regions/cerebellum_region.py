@@ -95,7 +95,7 @@ from thalia.regions.cerebellum import (
 
 
 @dataclass
-class CerebellumConfig(NeuralComponentConfig):
+class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
     """Configuration specific to cerebellar regions.
 
     The cerebellum implements ERROR-CORRECTIVE learning through:
@@ -107,15 +107,16 @@ class CerebellumConfig(NeuralComponentConfig):
     - Error signal triggers immediate learning (not delayed like RL)
     - Can learn arbitrary input-output mappings quickly
     - Uses eligibility traces for temporal credit assignment
+
+    Inherits from ErrorCorrectiveLearningConfig:
+    - learning_rate_ltp: LTP rate (default 0.01)
+    - learning_rate_ltd: LTD rate (default 0.01)
+    - error_threshold: Minimum error (default 0.01)
+    - use_eligibility_traces: Enable traces (default True)
+    - eligibility_tau_ms: Trace decay (default 20.0)
     """
 
-    # Learning rates
-    learning_rate_ltp: float = LEARNING_RATE_ERROR_CORRECTIVE   # Rate for strengthening correct
-    learning_rate_ltd: float = LEARNING_RATE_ERROR_CORRECTIVE   # Rate for weakening incorrect
-    # Note: stdp_lr and tau_plus_ms/tau_minus_ms inherited from NeuralComponentConfig
-
-    # Error signaling
-    error_threshold: float = 0.01     # Minimum error to trigger learning
+    # Temporal processing
     temporal_window_ms: float = 10.0  # Window for coincidence detection
 
     # Cerebellum uses weaker heterosynaptic competition for faster convergence:
@@ -1141,43 +1142,94 @@ class Cerebellum(NeuralRegion):
         self.config = replace(self.config, n_input=new_n_input)
         self.cerebellum_config = replace(self.cerebellum_config, n_input=new_n_input)
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostics using DiagnosticsMixin helpers.
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
-        Reports weight statistics, traces, and error signals.
+        Returns consolidated diagnostic information about:
+        - Activity: Output spike statistics (Purkinje cells or DCN)
+        - Plasticity: Weight statistics for parallel fiber connections
+        - Health: Trace magnitudes, weight bounds, error signals
+        - Neuromodulators: Not applicable (cerebellum uses error signals)
+        - Region-specific: Granule/Purkinje/climbing fiber details, oscillations
+
+        This is the primary diagnostic interface for the Cerebellum.
         """
+        from thalia.core.diagnostics_schema import (
+            compute_activity_metrics,
+            compute_plasticity_metrics,
+            compute_health_metrics,
+        )
+
         cfg = self.cerebellum_config
 
-        # Custom metrics specific to cerebellum
-        custom = {
-            "n_input": cfg.n_input,
-            "n_output": cfg.n_output,
-            "config_w_min": cfg.w_min,
-            "config_w_max": cfg.w_max,
-            "error_mean": self.climbing_fiber.get_state().get("last_error_mean", 0.0),
-            "beta_phase": self._beta_phase,
-            "gamma_phase": self._gamma_phase,
-            "theta_phase": self._theta_phase,
-            "beta_amplitude": self._beta_amplitude_effective,
-            "gamma_amplitude": self._gamma_amplitude_effective,
+        # Compute activity metrics from output spikes
+        activity = compute_activity_metrics(
+            output_spikes=self.output_spikes if self.output_spikes is not None else torch.zeros(cfg.n_output, device=self.device),
+            total_neurons=cfg.n_output,
+        )
+
+        # Compute plasticity metrics from parallel fiber weights
+        plasticity = None
+        if cfg.learning_enabled:
+            plasticity = compute_plasticity_metrics(
+                weights=self.weights.data,
+                learning_rate=cfg.learning_rate_ltp,  # Use LTP rate (primary)
+            )
+            # Add LTD rate as well
+            plasticity["learning_rate_ltd"] = cfg.learning_rate_ltd
+
+        # Compute health metrics
+        health_tensors = {
+            "weights": self.weights.data,
+        }
+        if self.input_trace is not None:
+            health_tensors["input_trace"] = self.input_trace
+        if self.output_trace is not None:
+            health_tensors["output_trace"] = self.output_trace
+        if self.stdp_eligibility is not None:
+            health_tensors["eligibility"] = self.stdp_eligibility
+
+        health = compute_health_metrics(
+            state_tensors=health_tensors,
+            firing_rate=activity.get("firing_rate", 0.0),
+        )
+
+        # Cerebellum doesn't use neuromodulators (uses error signals)
+        neuromodulators = {}
+
+        # Region-specific custom metrics
+        region_specific = {
+            "architecture": {
+                "n_input": cfg.n_input,
+                "n_output": cfg.n_output,
+                "use_enhanced_microcircuit": cfg.use_enhanced_microcircuit,
+            },
+            "error_signaling": {
+                "error_mean": self.climbing_fiber.get_state().get("last_error_mean", 0.0),
+                "error_threshold": cfg.error_threshold,
+            },
+            "traces": {
+                "input_mean": self.input_trace.mean().item() if self.input_trace is not None else 0.0,
+                "output_mean": self.output_trace.mean().item() if self.output_trace is not None else 0.0,
+                "eligibility_mean": self.stdp_eligibility.mean().item() if self.stdp_eligibility is not None else 0.0,
+            },
+            "oscillations": {
+                "beta_phase": self._beta_phase,
+                "gamma_phase": self._gamma_phase,
+                "theta_phase": self._theta_phase,
+                "beta_amplitude": self._beta_amplitude_effective,
+                "gamma_amplitude": self._gamma_amplitude_effective,
+            },
         }
 
-        # Use collect_standard_diagnostics for weight, spike, and trace statistics
-        return self.collect_standard_diagnostics(
-            region_name="cerebellum",
-            weight_matrices={
-                "parallel_fiber": self.weights.data,
-            },
-            spike_tensors={
-                "output": self.output_spikes,
-            },
-            trace_tensors={
-                "input": self.input_trace,
-                "output": self.output_trace,
-                "eligibility": self.stdp_eligibility,
-            },
-            custom_metrics=custom,
-        )
+        # Return in standardized format
+        return {
+            "activity": activity,
+            "plasticity": plasticity,
+            "health": health,
+            "neuromodulators": neuromodulators,
+            "region_specific": region_specific,
+        }
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.

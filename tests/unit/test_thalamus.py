@@ -9,10 +9,19 @@ Tests:
 - Center-surround spatial filtering
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path for test imports
+project_root = Path(__file__).parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import pytest
 import torch
 
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from tests.utils.test_helpers import generate_sparse_spikes
 
 
 @pytest.fixture
@@ -69,7 +78,7 @@ def test_thalamus_initialization(thalamus_config):
 def test_thalamus_forward(thalamus, device):
     """Test forward pass produces biologically plausible output."""
     # Create input spikes (ADR-004: bool, ADR-005: 1D)
-    input_spikes = torch.rand(100, device=device) > 0.8  # 20% firing rate, [100], bool
+    input_spikes = generate_sparse_spikes(100, firing_rate=0.2, device=str(device))  # 20% firing rate, [100], bool
 
     # Forward pass
     output = thalamus(input_spikes)
@@ -95,7 +104,7 @@ def test_thalamus_forward(thalamus, device):
 def test_thalamus_alpha_gating(thalamus, device):
     """Test alpha oscillation attentional gating."""
     # ADR-004/005: 1D bool input
-    input_spikes = torch.rand(100, device=device) > 0.5  # 50% firing rate
+    input_spikes = generate_sparse_spikes(100, firing_rate=0.5, device=str(device))  # 50% firing rate
 
     # Test at alpha trough (phase=0) - weak suppression
     thalamus.set_oscillator_phases(
@@ -124,14 +133,15 @@ def test_thalamus_alpha_gating(thalamus, device):
 def test_thalamus_burst_vs_tonic(thalamus):
     """Test burst vs tonic mode switching."""
     # Weak input should lead to hyperpolarization → burst mode (ADR-004/005)
-    weak_input = torch.rand(100) > 0.95  # Very sparse, [100], bool
+    weak_input = generate_sparse_spikes(100, firing_rate=0.05)  # Very sparse, [100], bool
 
     # Run for several timesteps to build up mode state
     for _ in range(10):
         output = thalamus(weak_input)
 
     # Strong input should lead to depolarization → tonic mode (ADR-004/005)
-    strong_input = torch.rand(100) > 0.5  # Dense, [100], bool
+    # Create dense input
+    strong_input = generate_sparse_spikes(100, firing_rate=0.5)  # Dense, [100], bool
 
     thalamus.reset_state()
     for _ in range(10):
@@ -141,7 +151,7 @@ def test_thalamus_burst_vs_tonic(thalamus):
 def test_thalamus_trn_inhibition(thalamus):
     """Test TRN provides inhibitory feedback."""
     # Strong input (ADR-004/005: 1D bool)
-    input_spikes = torch.rand(100) > 0.5  # [100], bool
+    input_spikes = generate_sparse_spikes(100, firing_rate=0.5)  # [100], bool
 
     # First pass - no TRN activity yet
     output1 = thalamus(input_spikes)
@@ -159,7 +169,8 @@ def test_thalamus_trn_inhibition(thalamus):
 
 def test_thalamus_norepinephrine_modulation(thalamus):
     """Test norepinephrine gain modulation."""
-    input_spikes = torch.rand(100) > 0.7  # [100], bool (ADR-004/005)
+    # Create input
+    input_spikes = generate_sparse_spikes(100, firing_rate=0.3)  # [100], bool (ADR-004/005)
 
     # Low arousal (low NE)
     thalamus.set_neuromodulators(norepinephrine=0.0)
@@ -176,7 +187,7 @@ def test_thalamus_norepinephrine_modulation(thalamus):
 
 def test_thalamus_reset(thalamus):
     """Test reset clears state properly."""
-    input_spikes = torch.rand(100) > 0.8  # [100], bool (ADR-004/005)
+    input_spikes = generate_sparse_spikes(100, firing_rate=0.2)  # [100], bool (ADR-004/005)
 
     # Run forward
     thalamus(input_spikes)
@@ -193,7 +204,7 @@ def test_thalamus_reset(thalamus):
 
 def test_thalamus_diagnostics(thalamus):
     """Test diagnostics report correct information."""
-    input_spikes = torch.rand(100) > 0.8  # [100], bool (ADR-004/005)
+    input_spikes = generate_sparse_spikes(100, firing_rate=0.2)  # [100], bool (ADR-004/005)
 
     thalamus(input_spikes)
 
@@ -245,7 +256,7 @@ def test_thalamus_saturated_input(thalamus, device):
 
 def test_thalamus_repeated_forward_maintains_valid_state(thalamus, device):
     """Test that repeated forward passes don't corrupt state."""
-    input_spikes = torch.rand(100, device=device) > 0.5
+    input_spikes = generate_sparse_spikes(100, firing_rate=0.5, device=str(device))
 
     for _ in range(100):
         output = thalamus(input_spikes)
@@ -279,7 +290,7 @@ def test_thalamus_extreme_norepinephrine(thalamus, norepinephrine):
 
     Phase 2 improvement: Tests edge cases beyond normal [0, 1] range.
     """
-    input_spikes = torch.rand(100) > 0.7
+    input_spikes = generate_sparse_spikes(100, firing_rate=0.3)
 
     # Set extreme NE value
     thalamus.set_neuromodulators(norepinephrine=norepinephrine)

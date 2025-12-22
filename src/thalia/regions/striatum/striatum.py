@@ -134,7 +134,7 @@ from .d2_pathway import D2Pathway
 from .homeostasis_component import StriatumHomeostasisComponent, HomeostasisManagerConfig
 from .learning_component import StriatumLearningComponent
 from .exploration_component import StriatumExplorationComponent
-from .checkpoint_manager import CheckpointManager
+from .checkpoint_manager import StriatumCheckpointManager
 from .state_tracker import StriatumStateTracker
 from .forward_coordinator import ForwardPassCoordinator
 from .td_lambda import TDLambdaLearner, TDLambdaConfig
@@ -606,7 +606,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # CHECKPOINT MANAGER
         # =====================================================================
         # Handles state serialization/deserialization
-        self.checkpoint_manager = CheckpointManager(self)
+        self.checkpoint_manager = StriatumCheckpointManager(self)
 
         # =====================================================================
         # FORWARD PASS COORDINATOR
@@ -1868,20 +1868,24 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     # DIAGNOSTIC METHODS
     # =========================================================================
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get comprehensive diagnostics using DiagnosticsMixin helpers.
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:
-        - D1/D2 pathway weights and balance
-        - Accumulated votes and NET values
-        - Dopamine/RPE state
-        - Exploration state
-        - Value estimates (if RPE enabled)
-        - Action selection history
-        - Homeostatic state
+        - Activity: Spike rates and population activity
+        - Plasticity: D1/D2 pathway weights and eligibility traces
+        - Health: Pathway balance and weight statistics
+        - Neuromodulators: Dopamine levels
+        - Region-specific: D1/D2 votes, value estimates, exploration state, etc.
 
         This is the primary diagnostic interface for the Striatum.
         """
+        from thalia.core.diagnostics_schema import (
+            compute_activity_metrics,
+            compute_plasticity_metrics,
+            compute_health_metrics,
+        )
+
         # D1/D2 per-action means and NET
         d1_per_action: list[float] = []
         d2_per_action: list[float] = []
@@ -1903,36 +1907,40 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         d2_votes_list = d2_votes.tolist()
         net_votes_list = net_votes.tolist()
 
-        # Use mixin helpers for weight statistics
-        d1_weight_stats = self.weight_diagnostics(self.d1_pathway.weights, "d1")
-        d2_weight_stats = self.weight_diagnostics(self.d2_pathway.weights, "d2")
+        # Compute activity metrics
+        recent_spikes = self.state_tracker.recent_spikes if self.state_tracker.recent_spikes is not None else torch.zeros(self.n_neurons, device=self.device)
+        activity = compute_activity_metrics(
+            output_spikes=recent_spikes,
+            total_neurons=self.n_neurons,
+        )
 
-        # Additional NET statistics
+        # Compute plasticity metrics for D1 pathway (representative)
+        plasticity = compute_plasticity_metrics(
+            weights=self.d1_pathway.weights,
+            learning_rate=self.striatum_config.learning_rate,
+        )
+        # Add D2 and NET statistics
+        plasticity["d2_weight_mean"] = float(self.d2_pathway.weights.mean().item())
+        plasticity["d2_weight_std"] = float(self.d2_pathway.weights.std().item())
         net_weights = self.d1_pathway.weights - self.d2_pathway.weights
-        net_stats = {
-            "net_weight_mean": net_weights.mean().item(),
-            "net_weight_std": net_weights.std().item(),
-        }
+        plasticity["net_weight_mean"] = float(net_weights.mean().item())
+        plasticity["net_weight_std"] = float(net_weights.std().item())
 
-        # Dopamine state (now managed by Brain via forward_coordinator)
-        dopamine_state = {
-            "current_level": self.forward_coordinator._tonic_dopamine,
-            "tonic_dopamine": self.tonic_dopamine,
-        }
+        # Compute health metrics
+        health = compute_health_metrics(
+            state_tensors={
+                "d1_weights": self.d1_pathway.weights,
+                "d2_weights": self.d2_pathway.weights,
+                "d1_eligibility": self.d1_pathway.eligibility,
+                "d2_eligibility": self.d2_pathway.eligibility,
+            },
+            firing_rate=activity.get("firing_rate", 0.0),
+        )
 
-        # Exploration state - from state_tracker
-        exploration_state = {
-            "exploring": self.state_tracker.exploring,
-            "last_uncertainty": self.state_tracker._last_uncertainty,
-            "last_exploration_prob": self.state_tracker._last_exploration_prob,
-            "recent_accuracy": self._recent_accuracy,
-        }
-
-        # UCB state
-        ucb_state = {
-            "enabled": self.striatum_config.ucb_exploration,
-            "total_trials": self._total_trials,
-            "action_counts": self._action_counts.tolist(),
+        # Neuromodulator metrics
+        neuromodulators = {
+            "dopamine": self.forward_coordinator._tonic_dopamine,
+            "norepinephrine": self.forward_coordinator._ne_level if hasattr(self.forward_coordinator, '_ne_level') else 0.0,
         }
 
         # Value estimates (if RPE enabled)
@@ -1953,8 +1961,23 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         else:
             td_lambda_state = {"td_lambda_enabled": False}
 
-        # Custom metrics for striatum (per-action analysis, votes, etc.)
-        custom = {
+        # Exploration state - from state_tracker
+        exploration_state = {
+            "exploring": self.state_tracker.exploring,
+            "last_uncertainty": self.state_tracker._last_uncertainty,
+            "last_exploration_prob": self.state_tracker._last_exploration_prob,
+            "recent_accuracy": self._recent_accuracy,
+        }
+
+        # UCB state
+        ucb_state = {
+            "enabled": self.striatum_config.ucb_exploration,
+            "total_trials": self._total_trials,
+            "action_counts": self._action_counts.tolist(),
+        }
+
+        # Region-specific custom metrics
+        region_specific = {
             "n_actions": self.n_actions,
             "neurons_per_action": self.neurons_per_action,
             "last_action": self.state_tracker.last_action,
@@ -1966,12 +1989,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             "d1_votes": d1_votes_list,
             "d2_votes": d2_votes_list,
             "net_votes": net_votes_list,
-            # Weight statistics (manual due to NET computation)
-            **d1_weight_stats,
-            **d2_weight_stats,
-            **net_stats,
-            # Dopamine
-            "dopamine": dopamine_state,
             # Exploration
             "exploration": exploration_state,
             "ucb": ucb_state,
@@ -1981,15 +1998,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             "td_lambda": td_lambda_state,
         }
 
-        # Use collect_standard_diagnostics for trace statistics
-        return self.collect_standard_diagnostics(
-            region_name="striatum",
-            trace_tensors={
-                "d1_elig": self.d1_pathway.eligibility,
-                "d2_elig": self.d2_pathway.eligibility,
-            },
-            custom_metrics=custom,
-        )
+        # Return as dict (DiagnosticsDict is a TypedDict, not a class)
+        return {
+            "activity": activity,
+            "plasticity": plasticity,
+            "health": health,
+            "neuromodulators": neuromodulators,
+            "region_specific": region_specific,
+        }
 
     # =========================================================================
     # CHECKPOINT STATE MANAGEMENT
