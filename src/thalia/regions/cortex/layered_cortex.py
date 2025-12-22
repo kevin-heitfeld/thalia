@@ -94,6 +94,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from thalia.typing import LayeredCortexDiagnostics
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.neuromodulation.constants import compute_ne_gain
@@ -103,6 +104,7 @@ from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.synapses.traces import update_trace
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
+from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
     compute_theta_encoding_retrieval,
     compute_ach_recurrent_suppression,
@@ -111,7 +113,6 @@ from thalia.regulation.oscillator_constants import (
     L4_INPUT_ENCODING_SCALE,
     L23_RECURRENT_RETRIEVAL_SCALE,
 )
-from thalia.utils.input_routing import InputRouter
 from thalia.regions.stimulus_gating import StimulusGating
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
@@ -743,13 +744,14 @@ class LayeredCortex(NeuralRegion):
         new_l6b_size = old_l6b_size + l6b_growth
 
         # 1. Expand input→L4 weights [l4, input]
-        # Add rows for new L4 neurons
-        new_input_l4 = self._create_new_weights(
-            l4_growth, self.layer_config.n_input, initialization, sparsity
+        # Add rows for new L4 neurons using helper
+        expanded_input = self._grow_weight_matrix_rows(
+            self.synaptic_weights["input"].data,
+            l4_growth,
+            initializer=initialization,
+            sparsity=sparsity
         )
-        self.synaptic_weights["input"] = nn.Parameter(
-            torch.cat([self.synaptic_weights["input"].data, new_input_l4], dim=0)
-        )
+        self.synaptic_weights["input"] = nn.Parameter(expanded_input)
 
         # 2. Expand L4→L2/3 weights [l23, l4]
         # Add rows for new L2/3 neurons, columns for new L4 neurons
@@ -1725,8 +1727,8 @@ class LayeredCortex(NeuralRegion):
 
     # region Diagnostics and Health Monitoring
 
-    def get_diagnostics(self) -> dict[str, Any]:
-        """Get comprehensive diagnostics in standardized DiagnosticsDict format.
+    def get_diagnostics(self) -> LayeredCortexDiagnostics:
+        """Get comprehensive diagnostics in standardized LayeredCortexDiagnostics format.
 
         Returns consolidated diagnostic information about:
         - Activity: L2/3 output spike statistics (primary cortical output)

@@ -92,14 +92,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.components.neurons import create_pyramidal_neurons
-from thalia.managers.base_manager import ManagerContext
-from thalia.managers.component_registry import register_region
+from thalia.typing import HippocampusDiagnostics
 from thalia.core.errors import ComponentError
+from thalia.core.neural_region import NeuralRegion
 from thalia.neuromodulation.constants import compute_ne_gain
+from thalia.components.neurons import create_pyramidal_neurons
 from thalia.components.synapses.stp import ShortTermPlasticity
 from thalia.components.synapses.stp_presets import get_stp_config
+from thalia.components.synapses.traces import update_trace
+from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
+from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
     compute_theta_encoding_retrieval,
     compute_ach_recurrent_suppression,
@@ -116,11 +119,9 @@ from thalia.regulation.oscillator_constants import (
     CA3_CA1_ENCODING_SCALE,
     CA1_SPARSITY_RETRIEVAL_BOOST,
 )
-from thalia.components.synapses.traces import update_trace
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.managers.base_manager import ManagerContext
+from thalia.managers.component_registry import register_region
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.utils.input_routing import InputRouter
-from thalia.core.neural_region import NeuralRegion
 from thalia.regions.stimulus_gating import StimulusGating
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
@@ -2057,7 +2058,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
     # region Diagnostics and Health Monitoring
 
-    def get_diagnostics(self) -> dict[str, Any]:
+    def get_diagnostics(self) -> HippocampusDiagnostics:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

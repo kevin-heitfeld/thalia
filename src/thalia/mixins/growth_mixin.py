@@ -348,3 +348,113 @@ class GrowthMixin:
         # Concatenate and update parameter
         expanded = torch.cat([current_weights.data, new_cols], dim=1)
         setattr(self, weight_param_name, nn.Parameter(expanded))
+
+    def _grow_weight_matrix_rows(
+        self,
+        old_weights: torch.Tensor,
+        n_new_rows: int,
+        initializer: str = "xavier",
+        sparsity: float = 0.1,
+    ) -> torch.Tensor:
+        """Add new rows to weight matrix (grow output dimension).
+
+        This is a functional version that returns a new tensor without
+        mutating self. Useful for NeuralRegion's synaptic_weights dict pattern.
+
+        Args:
+            old_weights: Existing weight matrix [n_old, n_input]
+            n_new_rows: Number of rows to add
+            initializer: 'xavier', 'gaussian', or 'sparse_random'
+            sparsity: Connection sparsity for sparse_random (0.0-1.0)
+
+        Returns:
+            New weight matrix [n_old + n_new_rows, n_input]
+
+        Example:
+            >>> # In NeuralRegion.grow_output()
+            >>> for source_name, old_weights in self.synaptic_weights.items():
+            ...     new_weights = self._grow_weight_matrix_rows(
+            ...         old_weights, n_new, initializer="xavier"
+            ...     )
+            ...     self.synaptic_weights[source_name] = nn.Parameter(new_weights)
+        """
+        n_old, n_input = old_weights.shape
+        n_new_total = n_old + n_new_rows
+        device = old_weights.device
+
+        # Create new matrix with appropriate initializer
+        if initializer == "xavier":
+            new_weights = WeightInitializer.xavier(
+                n_new_total, n_input, gain=0.2, device=device
+            ) * self.config.w_max
+        elif initializer == "gaussian":
+            new_weights = WeightInitializer.gaussian(
+                n_new_total, n_input, mean=0.3, std=0.1, device=device
+            )
+        elif initializer == "sparse_random":
+            new_weights = WeightInitializer.sparse_random(
+                n_new_total, n_input, sparsity=sparsity, device=device
+            )
+        else:
+            raise ValueError(f"Unknown initializer: {initializer}")
+
+        # Preserve old weights in first n_old rows
+        new_weights[:n_old, :] = old_weights
+
+        # Clamp to config bounds
+        return clamp_weights(new_weights, self.config.w_min, self.config.w_max, inplace=False)
+
+    def _grow_weight_matrix_cols(
+        self,
+        old_weights: torch.Tensor,
+        n_new_cols: int,
+        initializer: str = "xavier",
+        sparsity: float = 0.1,
+    ) -> torch.Tensor:
+        """Add new columns to weight matrix (grow input dimension).
+
+        This is a functional version that returns a new tensor without
+        mutating self. Useful for NeuralRegion's synaptic_weights dict pattern.
+
+        Args:
+            old_weights: Existing weight matrix [n_output, n_old]
+            n_new_cols: Number of columns to add
+            initializer: 'xavier', 'gaussian', or 'sparse_random'
+            sparsity: Connection sparsity for sparse_random (0.0-1.0)
+
+        Returns:
+            New weight matrix [n_output, n_old + n_new_cols]
+
+        Example:
+            >>> # In NeuralRegion.grow_input()
+            >>> for source_name, old_weights in self.synaptic_weights.items():
+            ...     new_weights = self._grow_weight_matrix_cols(
+            ...         old_weights, n_new, initializer="xavier"
+            ...     )
+            ...     self.synaptic_weights[source_name] = nn.Parameter(new_weights)
+        """
+        n_output, n_old = old_weights.shape
+        n_new_total = n_old + n_new_cols
+        device = old_weights.device
+
+        # Create new matrix with appropriate initializer
+        if initializer == "xavier":
+            new_weights = WeightInitializer.xavier(
+                n_output, n_new_total, gain=0.2, device=device
+            ) * self.config.w_max
+        elif initializer == "gaussian":
+            new_weights = WeightInitializer.gaussian(
+                n_output, n_new_total, mean=0.3, std=0.1, device=device
+            )
+        elif initializer == "sparse_random":
+            new_weights = WeightInitializer.sparse_random(
+                n_output, n_new_total, sparsity=sparsity, device=device
+            )
+        else:
+            raise ValueError(f"Unknown initializer: {initializer}")
+
+        # Preserve old weights in first n_old columns
+        new_weights[:, :n_old] = old_weights
+
+        # Clamp to config bounds
+        return clamp_weights(new_weights, self.config.w_min, self.config.w_max, inplace=False)

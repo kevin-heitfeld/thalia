@@ -95,6 +95,7 @@ import math
 import torch
 import torch.nn as nn
 
+from thalia.typing import ThalamicRelayDiagnostics
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.region_state import BaseRegionState
 from thalia.core.neural_region import NeuralRegion
@@ -1099,7 +1100,7 @@ class ThalamicRelay(NeuralRegion):
         self._alpha_phase = 0.0
         self._alpha_amplitude = 1.0
 
-    def get_diagnostics(self) -> dict[str, Any]:
+    def get_diagnostics(self) -> ThalamicRelayDiagnostics:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

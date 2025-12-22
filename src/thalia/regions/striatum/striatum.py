@@ -108,10 +108,14 @@ import weakref
 import torch
 import torch.nn as nn
 
+from thalia.typing import StriatumDiagnostics
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.neural_region import NeuralRegion
+from thalia.managers.base_manager import ManagerContext
+from thalia.managers.component_registry import register_region
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.synapses import ShortTermPlasticity, get_stp_config
-from thalia.managers.base_manager import ManagerContext
 from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
@@ -119,11 +123,8 @@ from thalia.components.neurons.neuron_constants import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
-from thalia.core.neural_region import NeuralRegion
 from thalia.regions.striatum.exploration import ExplorationConfig
 
 from .config import StriatumConfig
@@ -1868,7 +1869,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     # DIAGNOSTIC METHODS
     # =========================================================================
 
-    def get_diagnostics(self) -> dict[str, Any]:
+    def get_diagnostics(self) -> StriatumDiagnostics:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

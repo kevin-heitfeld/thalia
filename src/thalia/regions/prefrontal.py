@@ -68,19 +68,22 @@ from typing import Optional, Dict, Any, List, Union
 import torch
 import torch.nn as nn
 
+from thalia.typing import PrefrontalDiagnostics
+from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.errors import ConfigurationError
+from thalia.core.neural_region import NeuralRegion
+from thalia.core.region_state import BaseRegionState
+from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
+from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
+from thalia.managers.component_registry import register_region
+from thalia.regulation.learning_constants import LEARNING_RATE_STDP
+from thalia.neuromodulation.constants import compute_ne_gain
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 from thalia.learning.strategy_mixin import LearningStrategyMixin
-from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.errors import ConfigurationError
-from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
-from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.managers.component_registry import register_region
-from thalia.regulation.learning_constants import LEARNING_RATE_STDP
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.neuromodulation.constants import compute_ne_gain
-from thalia.core.neural_region import NeuralRegion
-from thalia.core.region_state import BaseRegionState
+from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval, compute_oscillator_modulated_gain
 from thalia.regulation.oscillator_constants import (
     PFC_FEEDFORWARD_GAIN_MIN,
@@ -88,8 +91,6 @@ from thalia.regulation.oscillator_constants import (
     PFC_RECURRENT_GAIN_MIN,
     PFC_RECURRENT_GAIN_RANGE,
 )
-from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
-from thalia.utils.input_routing import InputRouter
 from thalia.regions.prefrontal_hierarchy import (
     Goal,
     GoalHierarchyManager,
@@ -928,7 +929,7 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         self.config = replace(self.config, n_output=new_n_output)
         self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> PrefrontalDiagnostics:
         """Get diagnostics using DiagnosticsMixin helpers.
 
         Reports working memory state, gating, and weight statistics.

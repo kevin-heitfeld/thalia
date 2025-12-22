@@ -65,15 +65,16 @@ from typing import Optional, Dict, Any, Union
 
 import torch
 
+from thalia.typing import CerebellumDiagnostics
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
-from thalia.utils.core_utils import clamp_weights
-from thalia.utils.input_routing import InputRouter
+from thalia.core.region_state import BaseRegionState
+from thalia.config.learning_config import ErrorCorrectiveLearningConfig
 from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.config.learning_config import ErrorCorrectiveLearningConfig
 from thalia.managers.component_registry import register_region
 from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
@@ -82,11 +83,11 @@ from thalia.components.neurons.neuron_constants import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
-from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.neuromodulation.constants import compute_ne_gain
-from thalia.regions.base import NeuralComponentState
-from thalia.core.region_state import BaseRegionState
+from thalia.utils.core_utils import clamp_weights
+from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
+from thalia.regions.base import NeuralComponentState
 from thalia.regions.cerebellum import (
     GranuleCellLayer,
     EnhancedPurkinjeCell,
@@ -1142,7 +1143,7 @@ class Cerebellum(NeuralRegion):
         self.config = replace(self.config, n_input=new_n_input)
         self.cerebellum_config = replace(self.cerebellum_config, n_input=new_n_input)
 
-    def get_diagnostics(self) -> dict[str, Any]:
+    def get_diagnostics(self) -> CerebellumDiagnostics:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:
