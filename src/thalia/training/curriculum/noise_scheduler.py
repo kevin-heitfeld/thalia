@@ -41,6 +41,12 @@ from typing import Dict, Optional, Any
 from enum import Enum
 
 from thalia.config.curriculum_growth import CurriculumStage
+from thalia.training.curriculum.constants import (
+    NOISE_PERFORMANCE_LOW,
+    NOISE_PERFORMANCE_HIGH,
+    NOISE_CRITICALITY_BOOST,
+    NOISE_CRITICALITY_REDUCTION,
+)
 from thalia.components.neurons.neuron_constants import (
     NOISE_STD_NONE,
     NOISE_STD_LOW,
@@ -108,13 +114,13 @@ class NoiseSchedulerConfig:
 
     # Adaptive noise based on criticality
     enable_criticality_adaptation: bool = True
-    criticality_noise_boost: float = 1.5  # Multiply noise when subcritical
-    criticality_noise_reduction: float = 0.5  # Multiply noise when supercritical
+    criticality_noise_boost: float = NOISE_CRITICALITY_BOOST  # Multiply noise when subcritical
+    criticality_noise_reduction: float = NOISE_CRITICALITY_REDUCTION  # Multiply noise when supercritical
 
     # Adaptive noise based on performance
     enable_performance_adaptation: bool = True
-    performance_threshold_low: float = 0.6  # Below this, reduce noise
-    performance_threshold_high: float = 0.85  # Above this, increase noise
+    performance_threshold_low: float = NOISE_PERFORMANCE_LOW  # Below this, reduce noise
+    performance_threshold_high: float = NOISE_PERFORMANCE_HIGH  # Above this, increase noise
 
     # Verbosity
     verbose: bool = True

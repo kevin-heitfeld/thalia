@@ -309,16 +309,17 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         self.config.n_output = new_n_output
         self.neurons.grow_neurons(n_new_neurons)
 
-    def grow_input(self, n_new_inputs: int, initialization: str = 'xavier') -> None:
+    def grow_input(self, n_new_inputs: int) -> None:
         """
         Expand input dimension when upstream regions grow.
 
         NOTE: Does NOT update self.config.n_input - that's handled by the parent
         region (Striatum). Internal pathways just expand their weight matrices.
 
+        Weight initialization uses Xavier uniform (region default for striatum pathways).
+
         Args:
             n_new_inputs: Number of input neurons to add
-            initialization: Weight initialization strategy
 
         Example:
             >>> # When cortex grows from 128→148 neurons:
@@ -327,29 +328,13 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             >>> striatum.grow_input(20)  # Calls d1/d2.grow_input(20)
         """
         # Strategy: Create new columns by initializing new [n_output, n_new_inputs] block
-        if initialization == 'xavier':
-            new_cols = WeightInitializer.xavier(
-                n_output=self.config.n_output,
-                n_input=n_new_inputs,
-                gain=0.2,
-                device=self.device,
-            ) * self.config.w_max
-        elif initialization == 'sparse_random':
-            new_cols = WeightInitializer.sparse_random(
-                n_output=self.config.n_output,
-                n_input=n_new_inputs,
-                sparsity=0.1,
-                scale=self.config.w_max * 0.2,
-                device=self.device,
-            )
-        else:  # uniform
-            new_cols = WeightInitializer.uniform(
-                n_output=self.config.n_output,
-                n_input=n_new_inputs,
-                low=0.0,
-                high=self.config.w_max * 0.2,
-                device=self.device,
-            )
+        # Always use Xavier initialization (striatum pathway default)
+        new_cols = WeightInitializer.xavier(
+            n_output=self.config.n_output,
+            n_input=n_new_inputs,
+            gain=0.2,
+            device=self.device,
+        ) * self.config.w_max
 
         # Concatenate along input dimension (columns)
         expanded = torch.cat([self.weights.data, new_cols], dim=1)

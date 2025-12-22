@@ -15,6 +15,13 @@ from collections import deque
 from enum import Enum
 import logging
 
+from thalia.training.curriculum.constants import (
+    WM_CRITICAL_FIRING_THRESHOLD,
+    THETA_VARIANCE_MAX_STRICT,
+    PERFORMANCE_DROP_WARNING_STRICT,
+    COGNITIVE_LOAD_CHECK_INTERVAL,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -408,9 +415,9 @@ class Stage1Monitor(ContinuousMonitor):
         super().__init__(**kwargs)
 
         # Stage 1 specific thresholds (more conservative)
-        self.wm_critical_threshold = 0.65  # Higher than general 0.60
-        self.theta_variance_threshold = 0.18  # Stricter than general 0.20
-        self.performance_drop_threshold = 0.08  # Stricter than general 0.10
+        self.wm_critical_threshold = WM_CRITICAL_FIRING_THRESHOLD
+        self.theta_variance_threshold = THETA_VARIANCE_MAX_STRICT
+        self.performance_drop_threshold = PERFORMANCE_DROP_WARNING_STRICT
 
     def _check_wm_collapse(self, metrics: MonitoringMetrics) -> bool:
         """Stage 1 version with stricter threshold."""
