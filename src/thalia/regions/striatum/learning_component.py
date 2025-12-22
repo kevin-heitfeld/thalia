@@ -69,7 +69,8 @@ class StriatumLearningComponent(LearningComponent):
                     mean=0.0,
                     std=WEIGHT_INIT_SCALE_SMALL,
                     device=self.context.device,
-                )
+                ),
+                requires_grad=False
             )
             self.pfc_modulation_d2 = nn.Parameter(
                 WeightInitializer.gaussian(
@@ -78,7 +79,8 @@ class StriatumLearningComponent(LearningComponent):
                     mean=0.0,
                     std=WEIGHT_INIT_SCALE_SMALL,
                     device=self.context.device,
-                )
+                ),
+                requires_grad=False
             )
         else:
             self.pfc_modulation_d1 = None

@@ -426,15 +426,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if self.striatum_config.homeostasis_enabled:
             # Compute budget from initialized weights (per-action sum of D1+D2)
             # This ensures the budget matches the actual weight scale
-            with torch.no_grad():
-                # Access D1 and D2 weights separately (Phase 2)
-                if "default_d1" in self.synaptic_weights and "default_d2" in self.synaptic_weights:
-                    d1_sum = self.synaptic_weights["default_d1"].sum()
-                    d2_sum = self.synaptic_weights["default_d2"].sum()
-                    dynamic_budget = ((d1_sum + d2_sum) / self.n_actions).item()
-                else:
-                    # Fallback to default budget if no weights initialized yet
-                    dynamic_budget = 0.5  # Conservative default
+            # Access D1 and D2 weights separately (Phase 2)
+            if "default_d1" in self.synaptic_weights and "default_d2" in self.synaptic_weights:
+                d1_sum = self.synaptic_weights["default_d1"].sum()
+                d2_sum = self.synaptic_weights["default_d2"].sum()
+                dynamic_budget = ((d1_sum + d2_sum) / self.n_actions).item()
+            else:
+                # Fallback to default budget if no weights initialized yet
+                dynamic_budget = 0.5  # Conservative default
 
             homeostasis_config = HomeostasisManagerConfig(
                 weight_budget=dynamic_budget,
@@ -508,7 +507,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     n_input=self.striatum_config.pfc_size,
                     sparsity=0.3,
                     device=torch.device(self.config.device),
-                )
+                ),
+                requires_grad=False
             )
             # Initialize PFC → D2 modulation weights
             self.pfc_modulation_d2 = nn.Parameter(
@@ -517,7 +517,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     n_input=self.striatum_config.pfc_size,
                     sparsity=0.3,
                     device=torch.device(self.config.device),
-                )
+                ),
+                requires_grad=False
             )
         else:
             self.pfc_modulation_d1 = None

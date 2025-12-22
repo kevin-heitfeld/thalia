@@ -309,12 +309,11 @@ class BCMRule(nn.Module):
         """
         dw = self(pre_activity, post_activity)
 
-        with torch.no_grad():
-            synapse.weight.data = torch.clamp(
-                synapse.weight.data + dw,
-                w_min,
-                w_max
-            )
+        synapse.weight.data = torch.clamp(
+            synapse.weight.data + dw,
+            w_min,
+            w_max
+        )
 
         return dw
 

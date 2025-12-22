@@ -173,30 +173,33 @@ class CalibrationNetwork(nn.Module):
         else:
             learning_gate = 1.0
 
-        # Forward pass
-        raw_conf_tensor = torch.tensor(
-            [[raw_confidence]],
-            device=self.network[0].weight.device,
-            requires_grad=True
-        )
-        calibrated = self.forward(raw_conf_tensor)
+        # EXCEPTION: Temporarily enable gradients for metacognitive calibration
+        # This is the ONLY module that uses backpropagation (at a different timescale)
+        with torch.enable_grad():
+            # Forward pass
+            raw_conf_tensor = torch.tensor(
+                [[raw_confidence]],
+                device=self.network[0].weight.device,
+                requires_grad=True
+            )
+            calibrated = self.forward(raw_conf_tensor)
 
-        # Compute loss (mean squared error)
-        target = torch.tensor(
-            [[actual_correct]],
-            device=calibrated.device
-        )
-        loss = ((calibrated - target) ** 2).mean()
+            # Compute loss (mean squared error)
+            target = torch.tensor(
+                [[actual_correct]],
+                device=calibrated.device
+            )
+            loss = ((calibrated - target) ** 2).mean()
 
-        # Backward pass with dopamine gating
-        self.optimizer.zero_grad()
-        loss.backward()
+            # Backward pass with dopamine gating
+            self.optimizer.zero_grad()
+            loss.backward()
 
-        # Scale gradients by dopamine
-        if learning_gate < 1.0:
-            for param in self.network.parameters():
-                if param.grad is not None:
-                    param.grad.mul_(learning_gate)
+            # Scale gradients by dopamine
+            if learning_gate < 1.0:
+                for param in self.network.parameters():
+                    if param.grad is not None:
+                        param.grad.mul_(learning_gate)
 
         self.optimizer.step()
 

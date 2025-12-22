@@ -1024,8 +1024,7 @@ class Cerebellum(NeuralRegion):
 
             # Synaptic scaling for homeostasis using UnifiedHomeostasis
             if cfg.homeostasis_enabled:
-                with torch.no_grad():
-                    self.weights.data = self.homeostasis.normalize_weights(self.weights, dim=1)
+                self.weights.data = self.homeostasis.normalize_weights(self.weights, dim=1)
 
             actual_dw = self.weights - old_weights
         else:

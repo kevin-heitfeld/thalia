@@ -349,7 +349,6 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
 
         return logits
 
-    @torch.no_grad()
     def generate(
         self,
         prompt_ids: torch.Tensor,

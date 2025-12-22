@@ -160,7 +160,8 @@ class DendriticBranch(nn.Module):
         # Synaptic weights for this branch
         # Initialize with small positive values (excitatory)
         self.weights = nn.Parameter(
-            torch.rand(n_inputs) * 0.1 + 0.05
+            torch.rand(n_inputs, requires_grad=False) * 0.1 + 0.05,
+            requires_grad=False
         )
 
         # Register constants

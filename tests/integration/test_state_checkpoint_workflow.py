@@ -83,10 +83,9 @@ def test_full_brain_checkpoint_save_load(simple_brain, sample_input, temp_checkp
     # Run simulation for N timesteps
     n_warmup = 10
     outputs_before = []
-    with torch.no_grad():
-        for t in range(n_warmup):
-            output = brain.forward(sample_input)
-            outputs_before.append(output)
+    for t in range(n_warmup):
+        output = brain.forward(sample_input)
+        outputs_before.append(output)
 
     # Save checkpoint
     checkpoint_path = temp_checkpoint_dir / "brain_checkpoint.pt"
@@ -104,12 +103,11 @@ def test_full_brain_checkpoint_save_load(simple_brain, sample_input, temp_checkp
     outputs_after_original = []
     outputs_after_loaded = []
 
-    with torch.no_grad():
-        for t in range(n_continue):
-            out_orig = brain.forward(sample_input)
-            out_loaded = brain2.forward(sample_input)
-            outputs_after_original.append(out_orig)
-            outputs_after_loaded.append(out_loaded)
+    for t in range(n_continue):
+        out_orig = brain.forward(sample_input)
+        out_loaded = brain2.forward(sample_input)
+        outputs_after_original.append(out_orig)
+        outputs_after_loaded.append(out_loaded)
 
     # Assert: Both brains produce valid outputs (not necessarily identical due to stochastic elements)
     # We verify structure matches and outputs are reasonable, not exact spike-for-spike match
@@ -309,8 +307,7 @@ def test_device_transfer_cpu_to_cuda(global_config, sample_input, temp_checkpoin
 
     # Run forward pass on CUDA (should not error)
     cuda_input = sample_input.to("cuda")
-    with torch.no_grad():
-        output = cuda_brain.forward(cuda_input)
+    output = cuda_brain.forward(cuda_input)
 
     # Verify output is on CUDA
     for region_name, region_output in output.items():
@@ -397,10 +394,9 @@ def test_multiple_checkpoint_cycles(simple_brain, sample_input, temp_checkpoint_
 
     n_cycles = 3
     for cycle in range(n_cycles):
-        # Run simulation (use no_grad to avoid gradient tracking issues)
-        with torch.no_grad():
-            for _ in range(5):
-                brain.forward(sample_input)
+        # Run simulation
+        for _ in range(5):
+            brain.forward(sample_input)
 
         # Save checkpoint
         checkpoint_path = temp_checkpoint_dir / f"cycle_{cycle}.pt"
@@ -412,8 +408,7 @@ def test_multiple_checkpoint_cycles(simple_brain, sample_input, temp_checkpoint_
         brain.load_full_state(loaded)
 
     # Final run should work
-    with torch.no_grad():
-        output = brain.forward(sample_input)
+    output = brain.forward(sample_input)
     assert output is not None
 
 

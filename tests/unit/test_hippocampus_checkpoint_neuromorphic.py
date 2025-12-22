@@ -83,9 +83,8 @@ class TestHippocampusNeuromorphic:
     def test_synapses_stored_sparsely(self, small_hippocampus):
         """Only non-zero synapses should be stored."""
         # Set some weights to non-zero (use valid indices for n_input=4)
-        with torch.no_grad():
-            small_hippocampus.synaptic_weights["ec_dg"][0, 2] = 0.7
-            small_hippocampus.synaptic_weights["ec_dg"][0, 3] = 0.0  # Explicitly zero
+        small_hippocampus.synaptic_weights["ec_dg"][0, 2] = 0.7
+        small_hippocampus.synaptic_weights["ec_dg"][0, 3] = 0.0  # Explicitly zero
 
         state = small_hippocampus.checkpoint_manager.get_neuromorphic_state()
         dg_neuron_0 = [n for n in state["neurons"] if n["id"] == "hippo_dg_neuron_0_step0"][0]
@@ -104,10 +103,9 @@ class TestHippocampusNeuromorphic:
         checkpoint_path = tmp_path / "hippo.ckpt"
 
         # Set distinctive weights (use valid indices for n_input=4)
-        with torch.no_grad():
-            small_hippocampus.synaptic_weights["ec_dg"][0, 2] = 0.777  # DG neuron 0, EC input 2
-            small_hippocampus.synaptic_weights["dg_ca3"][2, 1] = 0.888  # CA3 neuron 2, DG input 1
-            small_hippocampus.synaptic_weights["ca3_ca1"][3, 2] = 0.999  # CA1 neuron 3, CA3 input 2
+        small_hippocampus.synaptic_weights["ec_dg"][0, 2] = 0.777  # DG neuron 0, EC input 2
+        small_hippocampus.synaptic_weights["dg_ca3"][2, 1] = 0.888  # CA3 neuron 2, DG input 1
+        small_hippocampus.synaptic_weights["ca3_ca1"][3, 2] = 0.999  # CA1 neuron 3, CA3 input 2
 
         # Save
         small_hippocampus.checkpoint_manager.save(checkpoint_path)

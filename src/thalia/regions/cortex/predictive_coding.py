@@ -624,15 +624,14 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         weighted_eligibility = eligibility * precision_weights
 
         # Update prediction weights
-        with torch.no_grad():
-            weight_update = self.config.learning_rate * weighted_eligibility
-            self.W_pred.data += weight_update
+        weight_update = self.config.learning_rate * weighted_eligibility
+        self.W_pred.data += weight_update
 
-            # Weight normalization (homeostatic)
-            w_norm = torch.norm(self.W_pred, dim=1, keepdim=True)
-            self.W_pred.data = self.W_pred.data / (w_norm + 1e-8) * torch.sqrt(
-                torch.tensor(self.config.n_representation, dtype=torch.float)
-            )
+        # Weight normalization (homeostatic)
+        w_norm = torch.norm(self.W_pred, dim=1, keepdim=True)
+        self.W_pred.data = self.W_pred.data / (w_norm + 1e-8) * torch.sqrt(
+            torch.tensor(self.config.n_representation, dtype=torch.float)
+        )
 
         # Update precision based on error statistics
         self._update_precision()
@@ -691,16 +690,15 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # precision = 1 / variance, so log_precision = -log(variance)
         target_log_precision = -torch.log(error_var + 1e-6)
 
-        with torch.no_grad():
-            self.log_precision.data = (
-                (1 - self.config.precision_learning_rate) * self.log_precision.data +
-                self.config.precision_learning_rate * target_log_precision
-            )
+        self.log_precision.data = (
+            (1 - self.config.precision_learning_rate) * self.log_precision.data +
+            self.config.precision_learning_rate * target_log_precision
+        )
 
-            # Clamp to valid range
-            min_log = torch.log(torch.tensor(self.config.precision_min, device=self.device))
-            max_log = torch.log(torch.tensor(self.config.precision_max, device=self.device))
-            self.log_precision.data = torch.clamp(self.log_precision.data, min_log, max_log)
+        # Clamp to valid range
+        min_log = torch.log(torch.tensor(self.config.precision_min, device=self.device))
+        max_log = torch.log(torch.tensor(self.config.precision_max, device=self.device))
+        self.log_precision.data = torch.clamp(self.log_precision.data, min_log, max_log)
 
     def get_free_energy(self) -> torch.Tensor:
         """

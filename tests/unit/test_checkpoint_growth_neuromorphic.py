@@ -396,9 +396,8 @@ class TestSynapseRestoration:
         checkpoint_path = tmp_path / "synapses.ckpt"
 
         # Set some weights using .data to avoid gradient issues
-        with torch.no_grad():
-            striatum_neuromorphic.d1_pathway.weights.data[0, 10] = 0.8
-            striatum_neuromorphic.d1_pathway.weights.data[0, 11] = 0.9
+        striatum_neuromorphic.d1_pathway.weights.data[0, 10] = 0.8
+        striatum_neuromorphic.d1_pathway.weights.data[0, 11] = 0.9
 
         state = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
         torch.save(state, checkpoint_path)
@@ -600,12 +599,11 @@ class TestNeuromorphicPerformance:
         region2.reset_state()
 
         # Make region2 more sparse by zeroing out most weights
-        with torch.no_grad():
-            mask = torch.rand_like(region2.d1_pathway.weights) > 0.9  # Keep only 10%
-            region2.d1_pathway.weights.data *= mask.float()
+        mask = torch.rand_like(region2.d1_pathway.weights) > 0.9  # Keep only 10%
+        region2.d1_pathway.weights.data *= mask.float()
 
-            mask = torch.rand_like(region2.d2_pathway.weights) > 0.9
-            region2.d2_pathway.weights.data *= mask.float()
+        mask = torch.rand_like(region2.d2_pathway.weights) > 0.9
+        region2.d2_pathway.weights.data *= mask.float()
 
         state1 = region1.checkpoint_manager.get_neuromorphic_state()
         state2 = region2.checkpoint_manager.get_neuromorphic_state()

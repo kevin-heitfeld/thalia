@@ -432,7 +432,7 @@ class ThalamicRelay(NeuralRegion):
 
         # Relay gain per neuron (learned modulation of filtered input)
         self.relay_gain = nn.Parameter(
-            torch.ones(self.n_relay, device=self.device) * config.relay_strength
+            torch.ones(self.n_relay, device=self.device, requires_grad=False) * config.relay_strength
         )
 
         # Input → TRN (collateral activation)
@@ -443,7 +443,8 @@ class ThalamicRelay(NeuralRegion):
                 sparsity=THALAMUS_RELAY_SPARSITY,
                 scale=THALAMUS_RELAY_SCALE,
                 device=self.device,
-            )
+            ),
+            requires_grad=False
         )
 
         # Relay → TRN (collateral activation)
@@ -454,7 +455,8 @@ class ThalamicRelay(NeuralRegion):
                 sparsity=THALAMUS_TRN_FEEDBACK_SPARSITY,
                 scale=THALAMUS_TRN_FEEDBACK_SCALE,
                 device=self.device,
-            )
+            ),
+            requires_grad=False
         )
 
         # TRN → Relay (inhibitory feedback)
@@ -465,7 +467,8 @@ class ThalamicRelay(NeuralRegion):
                 sparsity=THALAMUS_TRN_FEEDFORWARD_SPARSITY,
                 scale=config.trn_inhibition_strength,
                 device=self.device,
-            )
+            ),
+            requires_grad=False
         )
 
         # TRN → TRN (recurrent inhibition for oscillations)
@@ -476,7 +479,8 @@ class ThalamicRelay(NeuralRegion):
                 sparsity=THALAMUS_SPATIAL_CENTER_SPARSITY,
                 scale=config.trn_recurrent_strength,
                 device=self.device,
-            )
+            ),
+            requires_grad=False
         )
 
         # =====================================================================

@@ -288,15 +288,14 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
         pre = pre_pattern.float().squeeze()
         post = post_pattern.float().squeeze()
 
-        with torch.no_grad():
-            # Hebbian update
-            dw = lr * torch.outer(post, pre)
-            self.association_weights.data += dw
+        # Hebbian update
+        dw = lr * torch.outer(post, pre)
+        self.association_weights.data += dw
 
-            # Weight normalization to prevent runaway
-            norm = self.association_weights.data.norm(dim=1, keepdim=True)
-            norm = torch.clamp(norm, min=1.0)
-            self.association_weights.data /= norm
+        # Weight normalization to prevent runaway
+        norm = self.association_weights.data.norm(dim=1, keepdim=True)
+        norm = torch.clamp(norm, min=1.0)
+        self.association_weights.data /= norm
 
     def predict_next(
         self,

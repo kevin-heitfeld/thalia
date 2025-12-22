@@ -308,9 +308,8 @@ class TestHybridSaveLoad:
         small.reset_state()
 
         # Set distinctive weights
-        with torch.no_grad():
-            small.d1_pathway.weights.data[0, 10] = 0.777
-            small.d1_pathway.weights.data[1, 20] = 0.888
+        small.d1_pathway.weights.data[0, 10] = 0.777
+        small.d1_pathway.weights.data[1, 20] = 0.888
 
         # Save
         small.checkpoint_manager.save(checkpoint_path)
@@ -340,9 +339,8 @@ class TestHybridSaveLoad:
         striatum.reset_state()
 
         # Set distinctive weights in first few neurons
-        with torch.no_grad():
-            striatum.d1_pathway.weights.data[0, 10] = 0.333
-            striatum.d1_pathway.weights.data[5, 20] = 0.444  # Different action's neurons
+        striatum.d1_pathway.weights.data[0, 10] = 0.333
+        striatum.d1_pathway.weights.data[5, 20] = 0.444  # Different action's neurons
 
         # Save
         striatum.checkpoint_manager.save(checkpoint_path)

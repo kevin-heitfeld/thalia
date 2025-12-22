@@ -588,11 +588,10 @@ class PredictiveCortex(NeuralRegion):
             # Modulate precision based on average gating strength
             if self.prediction_layer is not None:
                 precision_scale = avg_gate
-                with torch.no_grad():
-                    self.prediction_layer.log_precision.data = (
-                        self.prediction_layer.log_precision.data +
-                        0.01 * torch.log(torch.tensor(precision_scale + 1e-6, device=self.prediction_layer.log_precision.device))
-                    )
+                self.prediction_layer.log_precision.data = (
+                    self.prediction_layer.log_precision.data +
+                    0.01 * torch.log(torch.tensor(precision_scale + 1e-6, device=self.prediction_layer.log_precision.device))
+                )
 
         # =====================================================================
         # COMBINE OUTPUT

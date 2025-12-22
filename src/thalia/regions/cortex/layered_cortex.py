@@ -518,8 +518,7 @@ class LayeredCortex(NeuralRegion):
             std=0.2,
             device=device
         )
-        with torch.no_grad():
-            l23_recurrent_weights.fill_diagonal_(0.0)
+        l23_recurrent_weights.fill_diagonal_(0.0)
         self.synaptic_weights["l23_recurrent"] = nn.Parameter(l23_recurrent_weights)
 
         # L2/3 → L5: positive excitatory weights (AT L5 DENDRITES)
@@ -569,8 +568,7 @@ class LayeredCortex(NeuralRegion):
                 device=device
             ) * 0.3
         )
-        with torch.no_grad():
-            l23_inhib_weights.fill_diagonal_(0.0)
+        l23_inhib_weights.fill_diagonal_(0.0)
         self.synaptic_weights["l23_inhib"] = nn.Parameter(l23_inhib_weights)
 
         # Note: L6 → TRN weights are not stored in cortex.
@@ -1573,9 +1571,8 @@ class LayeredCortex(NeuralRegion):
                 learning_rate=l4_lr,
             )
             dw = updated_weights - self.synaptic_weights["input"].data
-            with torch.no_grad():
-                self.synaptic_weights["input"].data.copy_(updated_weights)
-                clamp_weights(self.synaptic_weights["input"].data, cfg.w_min, cfg.w_max)
+            self.synaptic_weights["input"].data.copy_(updated_weights)
+            clamp_weights(self.synaptic_weights["input"].data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
         # L4 → L2/3 - L2/3-specific dopamine
@@ -1589,9 +1586,8 @@ class LayeredCortex(NeuralRegion):
                 learning_rate=l23_lr,
             )
             dw = updated_weights - self.synaptic_weights["l4_l23"].data
-            with torch.no_grad():
-                self.synaptic_weights["l4_l23"].data.copy_(updated_weights)
-                clamp_weights(self.synaptic_weights["l4_l23"].data, cfg.w_min, cfg.w_max)
+            self.synaptic_weights["l4_l23"].data.copy_(updated_weights)
+            clamp_weights(self.synaptic_weights["l4_l23"].data, cfg.w_min, cfg.w_max)
             total_change += dw.abs().mean().item()
 
             # L2/3 recurrent (signed weights - compact E/I approximation)
@@ -1606,14 +1602,13 @@ class LayeredCortex(NeuralRegion):
             )
             dw = updated_weights - self.synaptic_weights["l23_recurrent"].data
 
-            with torch.no_grad():
-                self.synaptic_weights["l23_recurrent"].data.copy_(updated_weights)
-                self.synaptic_weights["l23_recurrent"].data.fill_diagonal_(0.0)
-                clamp_weights(
-                    self.synaptic_weights["l23_recurrent"].data,
-                    cfg.l23_recurrent_w_min,
-                    cfg.l23_recurrent_w_max,
-                )
+            self.synaptic_weights["l23_recurrent"].data.copy_(updated_weights)
+            self.synaptic_weights["l23_recurrent"].data.fill_diagonal_(0.0)
+            clamp_weights(
+                self.synaptic_weights["l23_recurrent"].data,
+                cfg.l23_recurrent_w_min,
+                cfg.l23_recurrent_w_max,
+            )
 
             total_change += dw.abs().mean().item()
 
@@ -1654,9 +1649,8 @@ class LayeredCortex(NeuralRegion):
                     learning_rate=l5_lr,
                 )
                 dw = updated_weights - self.synaptic_weights["l23_l5"].data
-                with torch.no_grad():
-                    self.synaptic_weights["l23_l5"].data.copy_(updated_weights)
-                    clamp_weights(self.synaptic_weights["l23_l5"].data, cfg.w_min, cfg.w_max)
+                self.synaptic_weights["l23_l5"].data.copy_(updated_weights)
+                clamp_weights(self.synaptic_weights["l23_l5"].data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 
             # L2/3 → L6a (corticothalamic type I → TRN) - L6-specific dopamine
@@ -1671,9 +1665,8 @@ class LayeredCortex(NeuralRegion):
                     learning_rate=l6_lr,
                 )
                 dw = updated_weights - self.synaptic_weights["l23_l6a"].data
-                with torch.no_grad():
-                    self.synaptic_weights["l23_l6a"].data.copy_(updated_weights)
-                    clamp_weights(self.synaptic_weights["l23_l6a"].data, cfg.w_min, cfg.w_max)
+                self.synaptic_weights["l23_l6a"].data.copy_(updated_weights)
+                clamp_weights(self.synaptic_weights["l23_l6a"].data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 
             # L2/3 → L6b (corticothalamic type II → relay) - L6-specific dopamine
@@ -1687,9 +1680,8 @@ class LayeredCortex(NeuralRegion):
                     learning_rate=l6_lr,
                 )
                 dw = updated_weights - self.synaptic_weights["l23_l6b"].data
-                with torch.no_grad():
-                    self.synaptic_weights["l23_l6b"].data.copy_(updated_weights)
-                    clamp_weights(self.synaptic_weights["l23_l6b"].data, cfg.w_min, cfg.w_max)
+                self.synaptic_weights["l23_l6b"].data.copy_(updated_weights)
+                clamp_weights(self.synaptic_weights["l23_l6b"].data, cfg.w_min, cfg.w_max)
                 total_change += dw.abs().mean().item()
 
         # Store for monitoring

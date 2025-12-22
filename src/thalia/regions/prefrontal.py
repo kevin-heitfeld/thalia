@@ -447,21 +447,20 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
                 mean=0.0,
                 std=0.1,
                 device=self.device
-            )
+            ),
+            requires_grad=False
         )
         # Initialize with some self-excitation
-        with torch.no_grad():
-            self.rec_weights.data += torch.eye(
-                config.n_output, device=self.device
-            ) * config.recurrent_strength
+        self.rec_weights.data += torch.eye(
+            config.n_output, device=self.device
+        ) * config.recurrent_strength
 
         # Lateral inhibition weights
         self.inhib_weights = nn.Parameter(
             torch.ones(config.n_output, config.n_output, device=self.device)
             * config.recurrent_inhibition
         )
-        with torch.no_grad():
-            self.inhib_weights.data.fill_diagonal_(0.0)
+        self.inhib_weights.data.fill_diagonal_(0.0)
 
         # Dopamine gating system
         self.dopamine_system = DopamineGatingSystem(
@@ -792,10 +791,9 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
 
         # Optional: Apply synaptic scaling for homeostasis
         if cfg.homeostasis_enabled and metrics:
-            with torch.no_grad():
-                self.synaptic_weights["default"].data = self.homeostasis.normalize_weights(
-                    self.synaptic_weights["default"].data, dim=1
-                )
+            self.synaptic_weights["default"].data = self.homeostasis.normalize_weights(
+                self.synaptic_weights["default"].data, dim=1
+            )
 
         # ======================================================================
         # Update recurrent weights to strengthen WM patterns
@@ -806,12 +804,11 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
             # working_memory is already 1D [n_output] (ADR-005)
             wm = self.state.working_memory  # [n_output]
             dW_rec = cfg.rule_lr * torch.outer(wm, wm)  # [n_output, n_output]
-            with torch.no_grad():
-                self.rec_weights.data += dW_rec
-                self.rec_weights.data.fill_diagonal_(
-                    cfg.recurrent_strength
-                )  # Maintain self-excitation
-                self.rec_weights.data.clamp_(0.0, 1.0)
+            self.rec_weights.data += dW_rec
+            self.rec_weights.data.fill_diagonal_(
+                cfg.recurrent_strength
+            )  # Maintain self-excitation
+            self.rec_weights.data.clamp_(0.0, 1.0)
 
     def grow_input(
         self,
@@ -893,9 +890,8 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         )
         self.rec_weights.data = torch.cat([expanded_rec, new_rec_cols], dim=1)
         # Add self-excitation for new neurons
-        with torch.no_grad():
-            for i in range(n_new):
-                self.rec_weights.data[old_n_output + i, old_n_output + i] = self.pfc_config.recurrent_strength
+        for i in range(n_new):
+            self.rec_weights.data[old_n_output + i, old_n_output + i] = self.pfc_config.recurrent_strength
 
         # 3. Expand inhib_weights [n_output, n_output] → [n_output+n_new, n_output+n_new]
         new_inhib_rows = torch.ones(n_new, old_n_output, device=self.device) * self.pfc_config.recurrent_inhibition

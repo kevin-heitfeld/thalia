@@ -273,7 +273,6 @@ class SpikeDecoder(BaseSpikeDecoder):
 
         return logits
 
-    @torch.no_grad()
     def learn(
         self,
         target_ids: torch.Tensor,

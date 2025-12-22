@@ -529,10 +529,9 @@ class TrisynapticHippocampus(NeuralRegion):
             )
         )
         # No self-connections
-        with torch.no_grad():
-            self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)
-            # Clamp to positive (excitatory recurrent connections)
-            self.synaptic_weights["ca3_ca3"].data.clamp_(min=0.0)
+        self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)
+        # Clamp to positive (excitatory recurrent connections)
+        self.synaptic_weights["ca3_ca3"].data.clamp_(min=0.0)
 
         # CA3 → CA1: Feedforward (retrieved memory) - SPARSE! - AT CA1 DENDRITES
         self.synaptic_weights["ca3_ca1"] = nn.Parameter(
@@ -550,8 +549,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ca1_inhib"] = nn.Parameter(
             torch.ones(self.ca1_size, self.ca1_size, device=device) * 0.5
         )
-        with torch.no_grad():
-            self.synaptic_weights["ca1_inhib"].data.fill_diagonal_(0.0)
+        self.synaptic_weights["ca1_inhib"].data.fill_diagonal_(0.0)
 
     def _reset_subsystems(self, *names: str) -> None:
         """Reset state of named subsystems that have reset_state() method."""
@@ -1208,13 +1206,12 @@ class TrisynapticHippocampus(NeuralRegion):
         # Solution: After LIF processing, restore membrane potential for neurons
         # with high persistent activity. This models how I_NaP keeps neurons
         # near threshold even after spiking.
-        with torch.no_grad():
-            # Boost membrane for neurons with high persistent activity
-            # This counteracts the post-spike reset
-            # Membrane is guaranteed to exist after neurons.forward() call
-            assert self.ca3_neurons.membrane is not None, "CA3 membrane should exist after forward()"
-            persistent_boost = self.state.ca3_persistent * 1.5
-            self.ca3_neurons.membrane = self.ca3_neurons.membrane + persistent_boost
+        # Boost membrane for neurons with high persistent activity
+        # This counteracts the post-spike reset
+        # Membrane is guaranteed to exist after neurons.forward() call
+        assert self.ca3_neurons.membrane is not None, "CA3 membrane should exist after forward()"
+        persistent_boost = self.state.ca3_persistent * 1.5
+        self.ca3_neurons.membrane = self.ca3_neurons.membrane + persistent_boost
 
         # Apply sparsity - now WTA will favor neurons with high persistent activity
         # Membrane potentials are guaranteed to exist after forward() call
@@ -1320,10 +1317,9 @@ class TrisynapticHippocampus(NeuralRegion):
                 hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
                 dW = dW + hetero_dW
 
-            with torch.no_grad():
-                self.synaptic_weights["ca3_ca3"].data += dW
-                self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # No self-connections
-                clamp_weights(self.synaptic_weights["ca3_ca3"].data, self.tri_config.w_min, self.tri_config.w_max)
+            self.synaptic_weights["ca3_ca3"].data += dW
+            self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # No self-connections
+            clamp_weights(self.synaptic_weights["ca3_ca3"].data, self.tri_config.w_min, self.tri_config.w_max)
 
         # =====================================================================
         # 3. CA1: Coincidence Detection with Plastic EC→CA1 Pathway
@@ -1504,14 +1500,13 @@ class TrisynapticHippocampus(NeuralRegion):
                 effective_lr = base_lr
 
             dW = effective_lr * torch.outer(ca1_activity, ec_activity)
-            with torch.no_grad():
-                # Update the appropriate weight matrix
-                if ec_direct_input is not None and w_ec_l3_ca1 is not None:
-                    self.synaptic_weights["ec_l3_ca1"].data += dW
-                    clamp_weights(self.synaptic_weights["ec_l3_ca1"].data, cfg.w_min, cfg.w_max)
-                else:
-                    self.synaptic_weights["ec_ca1"].data += dW
-                    clamp_weights(self.synaptic_weights["ec_ca1"].data, cfg.w_min, cfg.w_max)
+            # Update the appropriate weight matrix
+            if ec_direct_input is not None and w_ec_l3_ca1 is not None:
+                self.synaptic_weights["ec_l3_ca1"].data += dW
+                clamp_weights(self.synaptic_weights["ec_l3_ca1"].data, cfg.w_min, cfg.w_max)
+            else:
+                self.synaptic_weights["ec_ca1"].data += dW
+                clamp_weights(self.synaptic_weights["ec_ca1"].data, cfg.w_min, cfg.w_max)
 
         self.state.ca1_spikes = ca1_spikes
 
@@ -1668,9 +1663,8 @@ class TrisynapticHippocampus(NeuralRegion):
             return
 
         # Apply homeostatic synaptic scaling to CA3 recurrent weights
-        with torch.no_grad():
-            self.synaptic_weights["ca3_ca3"].data = self.homeostasis.normalize_weights(self.synaptic_weights["ca3_ca3"].data, dim=1)
-            self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # Maintain no self-connections
+        self.synaptic_weights["ca3_ca3"].data = self.homeostasis.normalize_weights(self.synaptic_weights["ca3_ca3"].data, dim=1)
+        self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # Maintain no self-connections
 
         # Apply intrinsic plasticity (threshold adaptation) using homeostasis helper
         if self.state.ca3_spikes is not None:

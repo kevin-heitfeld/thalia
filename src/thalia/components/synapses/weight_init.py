@@ -148,7 +148,7 @@ class WeightInitializer:
         Returns:
             Weight matrix [n_output, n_input]
         """
-        return torch.randn(n_output, n_input, device=device) * std + mean
+        return torch.randn(n_output, n_input, device=device, requires_grad=False) * std + mean
 
     @staticmethod
     def uniform(
@@ -174,7 +174,7 @@ class WeightInitializer:
         Returns:
             Weight matrix [n_output, n_input]
         """
-        return torch.rand(n_output, n_input, device=device) * (high - low) + low
+        return torch.rand(n_output, n_input, device=device, requires_grad=False) * (high - low) + low
 
     @staticmethod
     def xavier(
@@ -202,7 +202,7 @@ class WeightInitializer:
             Weight matrix [n_output, n_input]
         """
         std = gain * math.sqrt(2.0 / (n_input + n_output))
-        return torch.randn(n_output, n_input, device=device) * std
+        return torch.randn(n_output, n_input, device=device, requires_grad=False) * std
 
     @staticmethod
     def kaiming(
@@ -234,7 +234,7 @@ class WeightInitializer:
         fan = n_input if mode == "fan_in" else n_output
         gain = math.sqrt(2.0) if nonlinearity == "relu" else math.sqrt(2.0 / (1 + 0.01**2))
         std = gain / math.sqrt(fan)
-        return torch.randn(n_output, n_input, device=device) * std
+        return torch.randn(n_output, n_input, device=device, requires_grad=False) * std
 
     @staticmethod
     def sparse_random(
@@ -264,10 +264,10 @@ class WeightInitializer:
             Weight matrix [n_output, n_input] with sparse connectivity
         """
         # Create random connectivity mask
-        mask = torch.rand(n_output, n_input, device=device) < sparsity
+        mask = torch.rand(n_output, n_input, device=device, requires_grad=False) < sparsity
 
         # Random weights where connected
-        weights = torch.rand(n_output, n_input, device=device) * weight_scale
+        weights = torch.rand(n_output, n_input, device=device, requires_grad=False) * weight_scale
         weights = weights * mask.float()
 
         if normalize_rows:
@@ -308,7 +308,7 @@ class WeightInitializer:
         Returns:
             Weight matrix [n_output, n_input] with topographic structure
         """
-        weights = torch.ones(n_output, n_input, device=device) * base_weight
+        weights = torch.ones(n_output, n_input, device=device, requires_grad=False) * base_weight
 
         sigma = n_output / sigma_factor
 
@@ -352,7 +352,7 @@ class WeightInitializer:
         Returns:
             Weight matrix [n_output, n_input]
         """
-        weights = torch.empty(n_output, n_input, device=device)
+        weights = torch.empty(n_output, n_input, device=device, requires_grad=False)
         nn.init.orthogonal_(weights, gain=gain)
         return weights
 
@@ -364,7 +364,7 @@ class WeightInitializer:
         **kwargs
     ) -> torch.Tensor:
         """All zeros initialization."""
-        return torch.zeros(n_output, n_input, device=device)
+        return torch.zeros(n_output, n_input, device=device, requires_grad=False)
 
     @staticmethod
     def ones(
@@ -374,7 +374,7 @@ class WeightInitializer:
         **kwargs
     ) -> torch.Tensor:
         """All ones initialization."""
-        return torch.ones(n_output, n_input, device=device)
+        return torch.ones(n_output, n_input, device=device, requires_grad=False)
 
     @staticmethod
     def identity(
@@ -389,8 +389,8 @@ class WeightInitializer:
         Creates identity matrix (padded/cropped if not square).
         """
         size = min(n_output, n_input)
-        weights = torch.zeros(n_output, n_input, device=device)
-        weights[:size, :size] = torch.eye(size, device=device)
+        weights = torch.zeros(n_output, n_input, device=device, requires_grad=False)
+        weights[:size, :size] = torch.eye(size, device=device, requires_grad=False)
         return weights
 
     @staticmethod
@@ -402,7 +402,7 @@ class WeightInitializer:
         **kwargs
     ) -> torch.Tensor:
         """Constant value initialization."""
-        return torch.full((n_output, n_input), value, device=device)
+        return torch.full((n_output, n_input), value, device=device, requires_grad=False)
 
 
 # Register all strategies

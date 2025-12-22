@@ -93,9 +93,8 @@ class HippocampusLearningComponent(LearningComponent):
 
         # Apply synaptic scaling (homeostatic normalization)
         if cfg.homeostasis_enabled:
-            with torch.no_grad():
-                w_ca3_ca3.data = self.homeostasis.normalize_weights(w_ca3_ca3.data, dim=1)
-                w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
+            w_ca3_ca3.data = self.homeostasis.normalize_weights(w_ca3_ca3.data, dim=1)
+            w_ca3_ca3.data.fill_diagonal_(0.0)  # Maintain no self-connections
 
             return {
                 "learning_applied": True,
