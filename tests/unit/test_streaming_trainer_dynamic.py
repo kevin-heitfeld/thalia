@@ -144,13 +144,16 @@ def test_streaming_trainer_init(mock_brain):
         enable_replay=True,
     )
 
+    # Explicitly set eval_frequency to test configuration handling
+    config.eval_frequency = 100
+
     trainer = StreamingTrainer(
         brain=mock_brain,
         config=config,
     )
 
-    # Test contract: trainer should be configured correctly
-    assert trainer.config.eval_frequency == 100, "Should use provided eval frequency"
+    # Test contract: trainer should use explicitly configured values
+    assert trainer.config.eval_frequency == 100, "Should use explicitly set eval frequency"
     assert trainer.config.enable_replay is True, "Should enable replay as configured"
 
 

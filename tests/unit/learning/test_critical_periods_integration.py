@@ -104,7 +104,7 @@ class TestCriticalPeriodIntegration:
         gating = CriticalPeriodGating()
 
         # Unknown domains should raise ConfigurationError
-        with pytest.raises(ConfigurationError):
+        with pytest.raises(ConfigurationError, match="(?i)(unknown|domain|not found|invalid)"):
             gating.get_window_status('nonexistent_domain', age=50000)
 
     def test_critical_period_gating_all_domains(self):

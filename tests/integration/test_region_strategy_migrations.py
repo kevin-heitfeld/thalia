@@ -13,6 +13,7 @@ import torch
 
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.learning import BCMStrategy, CompositeStrategy
+from thalia.regulation.learning_constants import TAU_BCM_THRESHOLD
 
 
 class TestLayeredCortexStrategyMigration:
@@ -45,10 +46,10 @@ class TestLayeredCortexStrategyMigration:
         assert len(cortex.bcm_l4.strategies) == 2
         assert isinstance(cortex.bcm_l4.strategies[1], BCMStrategy)
 
-        # Verify BCM config matches
+        # Verify BCM config matches default
         bcm_strategy = cortex.bcm_l4.strategies[1]
-        assert bcm_strategy.bcm_config.tau_theta == 5000.0
-        assert bcm_strategy.bcm_config.theta_init == 0.01
+        assert bcm_strategy.bcm_config.tau_theta == TAU_BCM_THRESHOLD
+        assert bcm_strategy.bcm_config.theta_init == 0.01  # Default theta_init
 
     def test_layered_cortex_bcm_disabled_works(self):
         """Test LayeredCortex works when BCM is disabled."""

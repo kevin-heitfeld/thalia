@@ -888,6 +888,240 @@ def test_strategy_weight_bounds():
 
 ---
 
+## Neuromodulator Edge Case Testing
+
+### Why Neuromodulator Testing Matters
+
+Neuromodulators (dopamine, acetylcholine, norepinephrine) are **critical** for:
+- **Learning gating:** Dopamine gates striatal plasticity
+- **Encoding/retrieval:** Acetylcholine switches hippocampal modes
+- **Arousal:** Norepinephrine modulates attention and gain
+
+**Biological Context:**
+- Real brains experience neuromodulator fluctuations
+- Reinforcement learning scenarios produce extreme dopamine values
+- System should gracefully handle out-of-range values
+
+### Pattern 1: Test Extreme Values
+
+Test regions don't crash with out-of-range neuromodulator values.
+
+```python
+@pytest.mark.parametrize("dopamine", [-10.0, -1.0, 0.0, 1.0, 10.0, 100.0])
+def test_striatum_handles_extreme_dopamine(dopamine):
+    """Test striatum doesn't crash with out-of-range dopamine.
+
+    Biological context: Dopamine typically [0, 1], but extreme RPE
+    scenarios can produce values outside this range. System should
+    saturate or clip, not crash.
+    """
+    striatum = Striatum(StriatumConfig(n_input=50, n_output=3))
+    striatum.set_neuromodulators(dopamine=dopamine)
+
+    input_spikes = torch.rand(50) > 0.8
+    output = striatum(input_spikes)
+
+    # Should not produce NaN or Inf
+    assert not torch.isnan(output).any(), f"NaN with dopamine={dopamine}"
+    assert not torch.isinf(output.float()).any(), f"Inf with dopamine={dopamine}"
+
+    # Output shape should be valid
+    assert output.shape[0] == striatum.config.n_output
+```
+
+**Apply to other modulators:**
+
+```python
+@pytest.mark.parametrize("acetylcholine", [-5.0, 0.0, 1.0, 5.0, 50.0])
+def test_hippocampus_handles_extreme_acetylcholine(acetylcholine):
+    """Test hippocampus handles out-of-range acetylcholine."""
+    # Similar pattern for ACh in hippocampus
+
+@pytest.mark.parametrize("norepinephrine", [-3.0, 0.0, 1.0, 3.0, 20.0])
+def test_prefrontal_handles_extreme_norepinephrine(norepinephrine):
+    """Test PFC handles out-of-range norepinephrine."""
+    # Similar pattern for NE in PFC
+```
+
+### Pattern 2: Test Invalid Values (NaN, Inf)
+
+Test regions reject NaN/Inf with clear error messages.
+
+```python
+def test_striatum_rejects_nan_dopamine():
+    """Test striatum raises clear error for NaN dopamine."""
+    striatum = Striatum(StriatumConfig(n_input=50, n_output=3))
+
+    # Should raise clear error (not silent failure)
+    with pytest.raises(
+        (ValueError, AssertionError),
+        match="(?i)(invalid|nan|dopamine|neuromodulator)"
+    ):
+        striatum.set_neuromodulators(dopamine=float('nan'))
+
+
+def test_striatum_rejects_inf_dopamine():
+    """Test striatum raises clear error for Inf dopamine."""
+    striatum = Striatum(StriatumConfig(n_input=50, n_output=3))
+
+    with pytest.raises(
+        (ValueError, AssertionError),
+        match="(?i)(invalid|inf|dopamine|neuromodulator)"
+    ):
+        striatum.set_neuromodulators(dopamine=float('inf'))
+```
+
+**Why validate error messages:**
+- Ensures users get helpful feedback
+- Documents expected behavior
+- Prevents silent failures
+
+### Pattern 3: Test Multi-Modulator Interactions
+
+Test regions handle multiple neuromodulators simultaneously.
+
+```python
+@pytest.mark.parametrize("dopamine,norepinephrine", [
+    (0.0, 0.0),   # Both at minimum
+    (1.0, 1.0),   # Both at maximum (normal operating range)
+    (0.0, 1.0),   # Opposing extremes
+    (1.0, 0.0),
+    (5.0, 5.0),   # Both elevated (stress-like state)
+    (-1.0, -1.0), # Both below range
+])
+def test_prefrontal_handles_combined_modulators(dopamine, norepinephrine):
+    """Test PFC handles multiple neuromodulator interactions.
+
+    Biological context: DA and NE interact in PFC for working memory
+    and cognitive control. System should handle all combinations.
+    """
+    pfc = Prefrontal(PrefrontalConfig(n_input=50, n_output=30))
+
+    pfc.set_neuromodulators(
+        dopamine=dopamine,
+        norepinephrine=norepinephrine,
+    )
+
+    input_spikes = torch.rand(50) > 0.8
+    output = pfc(input_spikes)
+
+    # Robustness with combined modulators
+    assert not torch.isnan(output).any()
+    assert not torch.isinf(output.float()).any()
+```
+
+### Pattern 4: Test Temporal Stability
+
+Test regions remain stable with rapidly changing neuromodulators.
+
+```python
+def test_striatum_stable_with_fluctuating_dopamine():
+    """Test striatum remains stable with rapidly changing dopamine.
+
+    Biological context: Dopamine fluctuates based on reward prediction
+    errors. System should handle temporal variability without instability.
+    """
+    striatum = Striatum(StriatumConfig(n_input=50, n_output=3))
+    input_spikes = torch.rand(50) > 0.8
+
+    # Vary dopamine across timesteps (simulating RPE fluctuations)
+    dopamine_sequence = [0.0, 1.0, 0.5, -0.5, 2.0, 0.3, 0.8]
+
+    for t, da in enumerate(dopamine_sequence):
+        striatum.set_neuromodulators(dopamine=da)
+        output = striatum(input_spikes)
+
+        # Should not crash or produce invalid outputs
+        assert not torch.isnan(output).any(), \
+            f"NaN at timestep {t} with dopamine={da}"
+        assert not torch.isinf(output.float()).any(), \
+            f"Inf at timestep {t} with dopamine={da}"
+```
+
+### Pattern 5: Test Learning Stability
+
+Test learning doesn't diverge with extreme neuromodulators.
+
+```python
+@pytest.mark.parametrize("modulator_value", [-100.0, 0.0, 1.0, 100.0, 1000.0])
+def test_learning_stable_with_extreme_modulators(modulator_value):
+    """Test learning doesn't diverge with extreme modulator values.
+
+    Critical for biological plausibility: Learning should saturate or clip,
+    not produce exploding gradients or infinite weight changes.
+    """
+    striatum = Striatum(StriatumConfig(n_input=50, n_output=3))
+
+    # Get initial weights
+    if hasattr(striatum, 'synaptic_weights'):
+        initial_weights = {}
+        for source, weights in striatum.synaptic_weights.items():
+            initial_weights[source] = weights.clone()
+
+    # Set extreme modulator
+    striatum.set_neuromodulators(dopamine=modulator_value)
+
+    # Run learning with strong input
+    input_spikes = torch.ones(50)
+    for _ in range(10):
+        striatum(input_spikes)
+
+    # Check weights are still valid
+    if hasattr(striatum, 'synaptic_weights'):
+        for source, weights in striatum.synaptic_weights.items():
+            assert not torch.isnan(weights).any(), "Learning produced NaN"
+            assert not torch.isinf(weights).any(), "Learning produced Inf"
+            # Weights should remain bounded
+            assert weights.min() >= -0.1, "Weights below valid range"
+            assert weights.max() <= 1.1, "Weights above valid range"
+```
+
+### Pattern 6: Document Expected Behavior
+
+When behavior is implementation-specific, document expectations.
+
+```python
+def test_dopamine_clipping_behavior():
+    """Test dopamine clipping behavior (documents implementation choice).
+
+    Implementation note: Regions may handle extreme dopamine differently:
+    - Option A: Clip to [0, 1] range internally
+    - Option B: Raise error for out-of-range values
+    - Option C: Allow full range but saturate learning
+
+    This test documents the chosen behavior for striatum.
+    """
+    striatum = Striatum(StriatumConfig(n_input=50, n_output=3))
+
+    # Set extremely high dopamine
+    striatum.set_neuromodulators(dopamine=100.0)
+
+    # Check if it was clipped (implementation-dependent)
+    if hasattr(striatum, '_dopamine'):
+        # Document observed behavior
+        assert 0.0 <= striatum._dopamine <= 10.0, \
+            "Expected: Dopamine clipped to [0, 10] range"
+        # Or: assert striatum._dopamine == 100.0, "No clipping applied"
+```
+
+### Checklist: Neuromodulator Testing
+
+For each region that uses neuromodulators:
+
+- ☑️ **Test extreme values** (negative, zero, very large)
+- ☑️ **Test NaN/Inf rejection** with clear error messages
+- ☑️ **Test multi-modulator combinations** (if region uses multiple)
+- ☑️ **Test temporal stability** with fluctuating values
+- ☑️ **Test learning stability** doesn't diverge
+- ☑️ **Document implementation choices** (clipping, saturation, rejection)
+
+**Priority Regions:**
+1. **Striatum** (dopamine-dependent learning)
+2. **Hippocampus** (acetylcholine encoding/retrieval switching)
+3. **Prefrontal** (dopamine + norepinephrine gating)
+
+---
+
 ## Network Integrity Validation
 
 ### Critical Tests for All Brain Architectures

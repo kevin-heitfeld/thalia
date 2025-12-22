@@ -201,10 +201,10 @@ def test_edge_cases():
         buffer.write(torch.zeros(5, dtype=torch.bool))
 
     # Test invalid construction
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="(?i)(delay|negative|invalid)"):
         CircularDelayBuffer(max_delay=-1, size=3)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="(?i)(size|positive|invalid)"):
         CircularDelayBuffer(max_delay=2, size=0)
 
 

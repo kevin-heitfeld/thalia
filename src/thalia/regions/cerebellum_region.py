@@ -71,6 +71,7 @@ from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
 from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.config.learning_config import ErrorCorrectiveLearningConfig
 from thalia.managers.component_registry import register_region
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
@@ -83,7 +84,6 @@ from thalia.components.neurons.neuron_constants import (
 )
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.neuromodulation.constants import compute_ne_gain
-from thalia.regulation.learning_constants import LEARNING_RATE_ERROR_CORRECTIVE
 from thalia.regions.base import NeuralComponentState
 from thalia.core.region_state import BaseRegionState
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval

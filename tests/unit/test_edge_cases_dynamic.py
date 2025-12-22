@@ -110,7 +110,10 @@ class TestDimensionMismatches:
         # Wrong size (expecting 10, giving 8)
         wrong_input = torch.zeros(8, dtype=torch.bool, device=device)
 
-        with pytest.raises((RuntimeError, ValueError, AssertionError)):
+        with pytest.raises(
+            (RuntimeError, ValueError, AssertionError),
+            match="(?i)(dimension|size|shape|expected|input)"
+        ):
             test_brain.forward(wrong_input, n_timesteps=1)
 
     def test_brain_rejects_too_large_input(self, test_brain, device):
@@ -118,7 +121,10 @@ class TestDimensionMismatches:
         # Too large (expecting 10, giving 15)
         wrong_input = torch.zeros(15, dtype=torch.bool, device=device)
 
-        with pytest.raises((RuntimeError, ValueError, AssertionError)):
+        with pytest.raises(
+            (RuntimeError, ValueError, AssertionError),
+            match="(?i)(dimension|size|shape|expected|input)"
+        ):
             test_brain.forward(wrong_input, n_timesteps=1)
 
 
