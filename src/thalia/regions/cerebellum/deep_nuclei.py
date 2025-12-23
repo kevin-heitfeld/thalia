@@ -218,16 +218,46 @@ class DeepCerebellarNuclei(nn.Module):
     def grow_output(self, n_new: int) -> None:
         """Grow DCN output neurons (alias for grow).
 
+        Expands deep cerebellar nucleus neuron population and adjusts
+        Purkinje cell → DCN weight matrix to accommodate new outputs.
+
         Args:
             n_new: Number of new output neurons to add
+
+        Example:
+            >>> dcn = DeepCerebellarNuclei(n_output=64, n_input=128, device=device)
+            >>> dcn.grow_output(16)  # Expands to 80 output neurons
+            >>> assert dcn.n_output == 80
         """
         return self.grow(n_new)
 
     def grow(self, n_new: int) -> None:
         """Grow DCN neuron population.
 
+        Expands the DCN output dimension by:
+        1. Adding new rows to Purkinje→DCN weights (Xavier initialization)
+        2. Growing the ConductanceLIF neuron population
+        3. Updating configuration and state dimensions
+
+        New weights are initialized with Xavier uniform and clamped to
+        config bounds (w_min, w_max) for biological plausibility.
+
         Args:
             n_new: Number of new DCN neurons to add
+
+        Effects:
+            - self.n_output increases by n_new
+            - self.weights expands from [n_output, n_input] to [n_output+n_new, n_input]
+            - self.neurons population grows by n_new
+
+        Example:
+            >>> dcn = DeepCerebellarNuclei(n_output=64, n_input=128, device=device)
+            >>> old_weights = dcn.weights.clone()
+            >>> dcn.grow(16)
+            >>> # Old weights preserved:
+            >>> assert torch.allclose(dcn.weights[:64], old_weights)
+            >>> # New weights initialized:
+            >>> assert dcn.weights.shape == (80, 128)
         """
         old_n_output = self.n_output
         self.n_output = old_n_output + n_new
