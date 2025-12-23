@@ -127,7 +127,7 @@ tau_E: float = 5.0   # Excitatory (AMPA-like)
    - Primary name: Short, anatomical (e.g., "cortex", "striatum")
    - Aliases: Descriptive, implementation-specific (e.g., "layered_cortex", "trisynaptic_hippocampus")
 
-**Files Affected**: 
+**Files Affected**:
 - `src/thalia/regions/hippocampus/trisynaptic.py` (line 131)
 - `src/thalia/regions/thalamus.py` (line 364)
 - `src/thalia/regions/multisensory.py` (line 162)
@@ -217,7 +217,7 @@ from thalia.learning import create_strategy, EligibilityTraceManager
 10. `regions/striatum/learning_component.py` - Simplified constant import
 11. `learning/rules/strategies.py` - Simplified eligibility import
 
-**Impact**: 
+**Impact**:
 - Reduced import verbosity from 3-4 levels to 2 levels
 - All imports remain backward compatible (old paths still work)
 - Improved code readability and consistency

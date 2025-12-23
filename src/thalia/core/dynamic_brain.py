@@ -50,7 +50,7 @@ from thalia.core.diagnostics import (
     BrainSystemDiagnostics,
 )
 from thalia.stimuli.base import StimulusPattern
-from thalia.components.coding.spike_utils import compute_firing_rate
+from thalia.components.coding import compute_firing_rate
 
 if TYPE_CHECKING:
     from thalia.config import GlobalConfig, ThaliaConfig

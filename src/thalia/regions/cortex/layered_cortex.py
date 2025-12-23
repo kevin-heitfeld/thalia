@@ -115,13 +115,11 @@ import torch.nn.functional as F
 from thalia.typing import LayeredCortexDiagnostics
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
-from thalia.neuromodulation.constants import compute_ne_gain
+from thalia.neuromodulation import compute_ne_gain
 from thalia.components.neurons import create_cortical_layer_neurons
-from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
-from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.components.synapses.traces import update_trace
+from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer, update_trace
 from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
-from thalia.components.coding.spike_utils import compute_firing_rate, compute_spike_count
+from thalia.components.coding import compute_firing_rate, compute_spike_count
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
 from thalia.utils.input_routing import InputRouter

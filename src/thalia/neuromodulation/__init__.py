@@ -22,6 +22,17 @@ from thalia.neuromodulation.homeostasis import (
     NeuromodulatorHomeostasisConfig,
 )
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
+from thalia.neuromodulation.constants import (
+    DA_BASELINE_STANDARD,
+    DA_BASELINE_STRIATUM,
+    ACH_BASELINE,
+    NE_BASELINE,
+    NE_GAIN_MIN,
+    NE_GAIN_MAX,
+    decay_constant_to_tau,
+    tau_to_decay_constant,
+    compute_ne_gain,
+)
 
 __all__ = [
     # VTA (Dopamine)
@@ -41,4 +52,15 @@ __all__ = [
     "NeuromodulatorHomeostasis",
     "NeuromodulatorHomeostasisConfig",
     "NeuromodulatorMixin",
+    # Constants
+    "DA_BASELINE_STANDARD",
+    "DA_BASELINE_STRIATUM",
+    "ACH_BASELINE",
+    "NE_BASELINE",
+    "NE_GAIN_MIN",
+    "NE_GAIN_MAX",
+    # Helper functions
+    "decay_constant_to_tau",
+    "tau_to_decay_constant",
+    "compute_ne_gain",
 ]

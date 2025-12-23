@@ -22,7 +22,7 @@ import torch.nn as nn
 from thalia.typing import SourceOutputs, DiagnosticsDict, StateDict
 from thalia.learning import create_strategy
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import WeightInitializer
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.mixins.resettable_mixin import ResettableMixin

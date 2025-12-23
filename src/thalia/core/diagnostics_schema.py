@@ -14,7 +14,7 @@ from typing import TypedDict, Any
 
 import torch
 
-from thalia.components.coding.spike_utils import compute_firing_rate
+from thalia.components.coding import compute_firing_rate
 
 
 class ActivityMetrics(TypedDict, total=False):

@@ -74,11 +74,10 @@ from thalia.core.errors import ConfigurationError
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
 from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
 from thalia.managers.component_registry import register_region
-from thalia.neuromodulation.constants import compute_ne_gain, DA_BASELINE_STANDARD
+from thalia.neuromodulation import compute_ne_gain, DA_BASELINE_STANDARD
 from thalia.regulation.learning_constants import LEARNING_RATE_STDP, WM_NOISE_STD_DEFAULT
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig

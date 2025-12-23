@@ -7,7 +7,7 @@ Centralizes management of VTA dopamine, LC norepinephrine, and NB acetylcholine 
 from typing import Dict, Any
 import torch
 
-from thalia.components.coding.spike_utils import compute_firing_rate
+from thalia.components.coding import compute_firing_rate
 from thalia.neuromodulation.systems.vta import VTADopamineSystem, VTAConfig
 from thalia.neuromodulation.systems.locus_coeruleus import LocusCoeruleusSystem, LocusCoeruleusConfig
 from thalia.neuromodulation.systems.nucleus_basalis import NucleusBasalisSystem, NucleusBasalisConfig

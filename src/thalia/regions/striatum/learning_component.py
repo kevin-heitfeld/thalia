@@ -17,7 +17,7 @@ import torch.nn as nn
 from thalia.core.region_components import LearningComponent
 from thalia.managers.base_manager import ManagerContext
 from thalia.components.neurons import WEIGHT_INIT_SCALE_SMALL
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import WeightInitializer
 from thalia.regulation.oscillator_constants import STRIATUM_PFC_MODULATION_LR
 
 if TYPE_CHECKING:

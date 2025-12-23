@@ -19,7 +19,7 @@ from typing import Dict, Optional
 import torch
 import torch.nn as nn
 
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import WeightInitializer
 from thalia.utils.core_utils import clamp_weights
 
 

@@ -73,8 +73,7 @@ from thalia.config.learning_config import ErrorCorrectiveLearningConfig
 from thalia.learning import EligibilityTraceManager, EligibilitySTDPConfig as STDPConfig
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.managers.component_registry import register_region
-from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
+from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, STPConfig, STPType
 from thalia.components.neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,

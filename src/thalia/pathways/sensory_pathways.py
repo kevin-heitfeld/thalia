@@ -111,7 +111,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.components.coding.spike_utils import compute_firing_rate
+from thalia.components.coding import compute_firing_rate
 from thalia.core.protocols.component import LearnableComponent
 from thalia.managers.component_registry import register_pathway
 

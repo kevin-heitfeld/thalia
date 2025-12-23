@@ -122,12 +122,11 @@ from thalia.components.neurons import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
-from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.components.synapses import ShortTermPlasticity, get_stp_config
+from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, get_stp_config
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
 from thalia.regions.striatum.exploration import ExplorationConfig
-from thalia.neuromodulation.constants import ACH_BASELINE, NE_BASELINE
+from thalia.neuromodulation import ACH_BASELINE, NE_BASELINE
 
 from .config import StriatumConfig, StriatumState
 from .action_selection import ActionSelectionMixin

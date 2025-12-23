@@ -34,7 +34,7 @@ from thalia.components.neurons import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import WeightInitializer
 from thalia.learning import ThreeFactorStrategy, ThreeFactorConfig
 from thalia.mixins import GrowthMixin, ResettableMixin
 

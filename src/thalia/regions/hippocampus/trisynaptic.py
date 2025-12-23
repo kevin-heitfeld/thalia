@@ -94,12 +94,9 @@ import torch.nn.functional as F
 from thalia.typing import HippocampusDiagnostics
 from thalia.core.errors import ComponentError
 from thalia.core.neural_region import NeuralRegion
-from thalia.neuromodulation.constants import compute_ne_gain
+from thalia.neuromodulation import compute_ne_gain
 from thalia.components.neurons import create_pyramidal_neurons
-from thalia.components.synapses.stp import ShortTermPlasticity
-from thalia.components.synapses.stp_presets import get_stp_config
-from thalia.components.synapses.traces import update_trace
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import ShortTermPlasticity, get_stp_config, update_trace, WeightInitializer
 from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
