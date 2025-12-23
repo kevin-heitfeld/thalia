@@ -6,8 +6,8 @@ replay into a single, well-tested implementation.
 **Common Elements Across Replay Implementations**:
 ===================================================
 1. **TIME COMPRESSION**: Replay 5-20x faster than real-time encoding
-2. **GAMMA-DRIVEN SEQUENCING**: Gamma oscillator coordinates replay slots
-3. **SLOT-BY-SLOT PATTERN REPLAY**: Sequential reactivation of memory patterns
+2. **GAMMA PHASE MODULATION**: Gamma phase creates temporal windows for replay
+3. **SEQUENTIAL PATTERN REPLAY**: Patterns activated based on gamma phase
 4. **SHARP-WAVE RIPPLE MODULATION**: High-frequency coordination signal
 5. **PATTERN PRIORITIZATION**: Replay important/recent experiences first
 
@@ -15,12 +15,13 @@ replay into a single, well-tested implementation.
 =====================
 - **During sleep/rest**: Hippocampus replays experiences at ~5-20x speed
 - **Sharp-wave ripples** (150-250 Hz): Coordinate replay timing
-- **Gamma oscillations** (40-100 Hz): Organize sequence slots
+- **Gamma oscillations** (40-100 Hz): Create temporal windows for pattern activation
+- **Phase Coding**: Sequence position encoded in gamma phase (emergent, not discrete)
 - **Function**: Strengthens hippocampus → cortex connections (consolidation)
 - **Priority**: Recent, surprising, or high-reward experiences replayed more
 
 Author: Thalia Project
-Date: December 2025
+Date: December 23, 2025
 """
 
 from __future__ import annotations
@@ -51,9 +52,9 @@ class ReplayConfig:
     compression_factor: float = 5.0  # How much faster than encoding (5-20x typical)
     dt_ms: float = 1.0               # Base time step in ms
 
-    # Gamma slot configuration (replaces oscillator config)
-    n_slots: int = 7                 # Number of gamma slots for sequence replay
-    slot_duration_ms: float = 18.0   # Duration per slot in ms (~18ms for 7 slots in 125ms theta)
+    # Gamma phase-based replay (replaces discrete slots)
+    phase_window_width: float = 0.5  # Gaussian width for phase-based pattern selection (radians)
+    max_patterns_per_cycle: int = 7  # Approximate capacity (emerges from gamma/theta ratio)
 
     # Ripple parameters (for sleep replay)
     ripple_enabled: bool = False
@@ -62,12 +63,12 @@ class ReplayConfig:
     ripple_gain: float = 3.0         # Amplification during ripple
 
     # Replay control
-    max_steps_per_slot: int = 30     # Safety limit for slot replay
+    max_patterns_per_replay: int = 30  # Safety limit for pattern replay
     mode: ReplayMode = ReplayMode.SEQUENCE
 
     # Pattern processing
-    apply_gating: bool = True        # Apply gamma gating to patterns
-    pattern_completion: bool = True  # Run through CA3 for completion
+    apply_phase_modulation: bool = True  # Apply gamma phase modulation to patterns
+    pattern_completion: bool = True      # Run through CA3 for completion
 
 
 @dataclass
@@ -183,58 +184,71 @@ class ReplayEngine(nn.Module):
         gating_fn: Optional[Callable],
         gamma_phase: float,
     ) -> ReplayResult:
-        """Replay a sequence using gamma phase timing from brain.
+        """Replay a sequence using continuous gamma phase modulation.
 
-        The gamma phase (0 to 2π) is converted to a slot index, allowing
-        for sub-slot precision and smooth phase-based replay.
+        Patterns are selected and modulated based on gamma phase using
+        Gaussian windows, allowing emergent phase-based activation
+        without hardcoded slot assignments.
 
         Args:
-            sequence: List of patterns to replay (one per slot)
+            sequence: List of patterns to replay
             pattern_processor: Optional function to process each pattern
-            gating_fn: Optional function to compute slot-specific gating
+            gating_fn: DEPRECATED - kept for backward compatibility but not used
             gamma_phase: Current gamma phase in radians [0, 2π]
         """
         import math
 
-        n_slots = len(sequence)
+        n_patterns = len(sequence)
 
         # Result tracking
         result = ReplayResult(
             compression_factor=self.config.compression_factor,
             mode_used=ReplayMode.SEQUENCE,
-            sequence_length=n_slots,
+            sequence_length=n_patterns,
         )
 
-        # Convert gamma phase to slot index using finer-grained timing
-        # gamma_phase ranges from 0 to 2π over one gamma cycle
-        # Map this to slot indices: phase=0 → slot 0, phase=2π → slot n_slots
-        normalized_phase = (gamma_phase % (2 * math.pi)) / (2 * math.pi)  # [0, 1]
-        current_slot = int(normalized_phase * n_slots) % n_slots
+        # EMERGENT PHASE-BASED PATTERN SELECTION (no hardcoded slots)
+        # Each pattern gets a preferred phase distributed across gamma cycle
+        # Patterns near current gamma phase are activated with Gaussian weighting
 
-        # Replay the pattern for the current slot
-        if current_slot < n_slots:
-            # Get pattern for this slot
-            pattern = sequence[current_slot]
+        replayed_patterns = []
 
-            # Apply gating if enabled
-            if self.config.apply_gating and gating_fn is not None:
-                gating = gating_fn(current_slot)
+        for pattern_idx, pattern in enumerate(sequence):
+            # Pattern's preferred phase (evenly distributed across gamma cycle)
+            preferred_phase = (2 * math.pi * pattern_idx) / n_patterns
+
+            # Phase distance (circular)
+            phase_diff = abs(gamma_phase - preferred_phase)
+            phase_diff = min(phase_diff, 2 * math.pi - phase_diff)
+
+            # Gaussian modulation based on phase proximity
+            width = self.config.phase_window_width
+            phase_modulation = math.exp(-(phase_diff ** 2) / (2 * width ** 2))
+
+            # Only activate patterns within phase window (>10% modulation)
+            if phase_modulation > 0.1:
+                # Apply phase modulation to pattern
                 if pattern.dim() == 1:
                     pattern = pattern.unsqueeze(0)
-                pattern = pattern * gating
 
-            # Process pattern (e.g., through CA3 for completion)
-            if pattern_processor is not None:
-                if pattern.dim() > 1:
-                    pattern = pattern.squeeze(0)
-                output = pattern_processor(pattern)
-            else:
-                output = pattern
+                if self.config.apply_phase_modulation:
+                    modulated_pattern = pattern * phase_modulation
+                else:
+                    modulated_pattern = pattern
 
-            # Record
-            result.replayed_patterns.append(output)
-            result.total_activity += output.sum().item()
-            result.slots_replayed = 1  # Single slot replayed per call
+                # Process pattern (e.g., through CA3 for completion)
+                if pattern_processor is not None:
+                    if modulated_pattern.dim() > 1:
+                        modulated_pattern = modulated_pattern.squeeze(0)
+                    output = pattern_processor(modulated_pattern)
+                else:
+                    output = modulated_pattern
+
+                replayed_patterns.append(output)
+                result.total_activity += output.sum().item()
+
+        result.replayed_patterns = replayed_patterns
+        result.slots_replayed = len(replayed_patterns)
 
         return result
 
@@ -325,7 +339,8 @@ class ReplayEngine(nn.Module):
             "compression_factor": self.config.compression_factor,
             "mode": self.config.mode.value,
             "ripple_enabled": self.config.ripple_enabled,
-            "n_slots": self.config.n_slots,
+            "phase_window_width": self.config.phase_window_width,
+            "max_patterns_per_cycle": self.config.max_patterns_per_cycle,
         }
 
         if self.config.ripple_enabled:

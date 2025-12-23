@@ -374,16 +374,15 @@ class TrisynapticHippocampus(NeuralRegion):
             self._coupled_amplitudes: Dict[str, float] = {}
 
             # Replay engine for sequence replay (lazy import to avoid circular dependency)
-            # NOTE: ReplayEngine receives timing via replay() parameters (gamma_phase, theta_slot)
+            # NOTE: ReplayEngine receives timing via replay() parameters (gamma_phase)
             # from hippocampus, which gets them from brain's centralized OscillatorManager
-            # Slot count emerges from gamma/theta ratio (~5-7 for 40Hz/8Hz)
-            emergent_slots = 7  # Approximate for replay engine (not used for gating)
+            # Capacity (~5-7 patterns) emerges from gamma/theta ratio (40Hz/8Hz)
             replay_config = ReplayConfig(
                 compression_factor=5.0,
-                n_slots=emergent_slots,
-                slot_duration_ms=18.0,  # ~18ms per slot for 7 slots in 125ms theta
+                phase_window_width=0.5,  # Gaussian width for phase-based selection
+                max_patterns_per_cycle=7,  # Approximate capacity (emergent)
                 mode=ReplayMode.SEQUENCE,
-                apply_gating=True,
+                apply_phase_modulation=True,
                 pattern_completion=True,
             )
             self.replay_engine = ReplayEngine(replay_config)
@@ -1970,29 +1969,18 @@ class TrisynapticHippocampus(NeuralRegion):
         if dt != self.replay_engine.config.dt_ms:
             self.replay_engine.config.dt_ms = dt
 
-        # Switch to time-based mode for replay
-        original_mode = self.tri_config.gamma_slot_mode
-        self.tri_config.gamma_slot_mode = "time"
-
         # Pattern processor: forward through CA3 for pattern completion
         # Theta modulation computed internally from self._theta_phase
         def process_pattern(pattern: torch.Tensor) -> torch.Tensor:
             return self.forward(pattern)
 
-        # Gating function: apply gamma gating to patterns
-        def get_gating(slot: int) -> float:
-            return self._get_gamma_gating(slot)
-
         # Run replay through unified engine, passing gamma phase from brain
         result = self.replay_engine.replay(
             episode=episode,
             pattern_processor=process_pattern,
-            gating_fn=get_gating,
+            gating_fn=None,  # No longer used (kept for backward compatibility)
             gamma_phase=self._gamma_phase,  # From brain's OscillatorManager
         )
-
-        # Restore original mode
-        self.tri_config.gamma_slot_mode = original_mode
 
         # Convert ReplayResult to dict format
         return {
@@ -2002,27 +1990,6 @@ class TrisynapticHippocampus(NeuralRegion):
             "compression_factor": result.compression_factor,
             "replayed_patterns": result.replayed_patterns,
         }
-
-    def _get_gamma_gating(self, slot: int) -> float:
-        """Get gamma gating strength for a specific slot."""
-        if not self.tri_config.theta_gamma_enabled:
-            return 1.0
-
-        cfg = self.tri_config
-        n_slots = cfg.gamma_n_slots
-
-        # Compute phase difference from target slot
-        target_phase = (slot / n_slots) * (2 * math.pi)
-        current_gamma_phase = self._gamma_phase  # From brain broadcast
-
-        # Gaussian gating around target phase
-        phase_diff = abs(current_gamma_phase - target_phase)
-        phase_diff = min(phase_diff, 2 * math.pi - phase_diff)  # Wrap around
-
-        gating = math.exp(-phase_diff ** 2 / (2 * 0.5 ** 2))  # σ = 0.5 radians
-
-        # Scale by gating strength
-        return 1.0 - cfg.gamma_gating_strength * (1.0 - gating)
 
     # endregion
 

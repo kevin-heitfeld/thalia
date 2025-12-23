@@ -15,7 +15,6 @@ from thalia.utils.delay_buffer import CircularDelayBuffer
 from thalia.utils.oscillator_utils import (
     compute_theta_encoding_retrieval,
     compute_ach_recurrent_suppression,
-    compute_gamma_phase_gate,
     compute_theta_gamma_coupling_gate,
     compute_oscillator_modulated_gain,
     compute_learning_rate_modulation,
@@ -31,7 +30,6 @@ __all__ = [
     "CircularDelayBuffer",
     "compute_theta_encoding_retrieval",
     "compute_ach_recurrent_suppression",
-    "compute_gamma_phase_gate",
     "compute_theta_gamma_coupling_gate",
     "compute_oscillator_modulated_gain",
     "compute_learning_rate_modulation",

@@ -8,10 +8,12 @@ and ensuring consistent biological behavior.
 Functions:
 - compute_theta_encoding_retrieval(): Theta-phase encoding/retrieval modulation
 - compute_ach_recurrent_suppression(): ACh-mediated recurrent suppression
-- compute_gamma_phase_gate(): Gamma-phase attention gating
+- compute_theta_gamma_coupling_gate(): Theta-gamma cross-frequency coupling
+- compute_oscillator_modulated_gain(): Generic oscillator-based gain modulation
+- compute_learning_rate_modulation(): Gamma-modulated learning rate
 
 Author: Thalia Project
-Date: December 21, 2025 (Architecture Review Tier 1.2)
+Date: December 23, 2025 (Architecture Review Tier 1.2)
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ from thalia.regulation.oscillator_constants import (
     THETA_RETRIEVAL_PHASE_SCALE,
     ACH_RECURRENT_SUPPRESSION,
     ACH_THRESHOLD_FOR_SUPPRESSION,
-    GAMMA_ATTENTION_THRESHOLD,
     THETA_GAMMA_PHASE_DIFF_SIGMA,
 )
 
@@ -121,56 +122,6 @@ def compute_ach_recurrent_suppression(ach_level: float) -> float:
         (1.0 - ACH_THRESHOLD_FOR_SUPPRESSION)
     )
     return 1.0 - ACH_RECURRENT_SUPPRESSION * suppression_factor
-
-
-def compute_gamma_phase_gate(
-    gamma_phase: float,
-    threshold: float = GAMMA_ATTENTION_THRESHOLD,
-) -> float:
-    """Compute gamma-phase attention gating.
-
-    Gamma rhythm creates temporal windows for selective processing.
-    Neurons only respond to inputs arriving during specific gamma phases.
-
-    Args:
-        gamma_phase: Gamma phase in radians [0, 2π]
-        threshold: Gating threshold [0.0, 1.0] (default from constants)
-
-    Returns:
-        Gating factor [0.0, 1.0]:
-        - 1.0 at gamma peak (optimal processing window)
-        - 0.0 at gamma trough (suppressed processing)
-
-    Biological Basis:
-        Gamma oscillations create temporal windows for binding and attention:
-        - **Gamma Peak**: Excitatory window for processing selected inputs
-        - **Gamma Trough**: Inhibitory suppression of unselected inputs
-
-        This implements attentional selection at millisecond timescales.
-
-    References:
-        - Fries (2009): Neuronal gamma-band synchronization as a fundamental
-          process in cortical computation
-        - Buzsáki & Wang (2012): Mechanisms of gamma oscillations
-        - Ni et al. (2016): Gamma-rhythmic gain modulation
-
-    Examples:
-        >>> # At gamma peak (full processing)
-        >>> gate = compute_gamma_phase_gate(0.0)
-        >>> assert gate == 1.0
-
-        >>> # At gamma trough (suppressed)
-        >>> gate = compute_gamma_phase_gate(math.pi)
-        >>> assert gate == 0.0
-    """
-    # Cosine gating: 1.0 at peak (phase=0), 0.0 at trough (phase=π)
-    gate_value = 0.5 * (1.0 + math.cos(gamma_phase))
-
-    # Apply threshold (below threshold → 0, above threshold → linear)
-    if gate_value < threshold:
-        return 0.0
-    else:
-        return (gate_value - threshold) / (1.0 - threshold)
 
 
 def compute_theta_gamma_coupling_gate(
@@ -300,7 +251,6 @@ def compute_learning_rate_modulation(
 __all__ = [
     "compute_theta_encoding_retrieval",
     "compute_ach_recurrent_suppression",
-    "compute_gamma_phase_gate",
     "compute_theta_gamma_coupling_gate",
     "compute_oscillator_modulated_gain",
     "compute_learning_rate_modulation",
