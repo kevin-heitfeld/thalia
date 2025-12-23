@@ -723,6 +723,10 @@ class CurriculumTrainer:
         self.training_history: List[TrainingResult] = []
         self.performance_history: Dict[str, List[float]] = {}
 
+        # Stage task loader cache (for backward compatibility testing)
+        self.stage_task_loaders: Dict[CurriculumStage, Any] = {}
+        self.stage_configs: Dict[CurriculumStage, StageConfig] = {}
+
         # Goal hierarchy cache (for Stages 3+)
         self._goal_hierarchies: Dict[str, Goal] = {}
 
@@ -2467,33 +2471,35 @@ class CurriculumTrainer:
 
                 total_count += 1
 
-                # Re-evaluate this criterion now
+                # Re-evaluate this criterion by re-running actual tasks
                 try:
-                    # For simplicity, we'll check if the brain can still
-                    # perform at 90% of the original level
-                    # This would require re-running tasks from that stage
+                    current_performance = self._run_regression_test(
+                        prev_stage, criterion, n_trials=50
+                    )
 
-                    # TODO: This needs a task loader for the previous stage
-                    # For now, we'll do a simplified check based on
-                    # current milestone results
+                    # Get original performance threshold from stage config
+                    prev_config = self.stage_configs.get(prev_stage)
+                    if prev_config and criterion in prev_config.success_criteria:
+                        original_threshold = prev_config.success_criteria[criterion]
+                        # Consider retained if current >= 90% of original threshold
+                        retention_threshold = original_threshold * 0.90
 
-                    # If we have current metrics for the same criterion,
-                    # check if they're within 90% of original
-                    if hasattr(self, '_last_milestone_results'):
-                        current_metrics = self._last_milestone_results
-                        if criterion in current_metrics:
-                            currently_passing = current_metrics[criterion]
-                            if currently_passing:
-                                retained_count += 1
-                            elif self.verbose:
-                                print(f"    ❌ Lost: {criterion} (from {prev_stage.name})")
-                        else:
-                            # Criterion not in current metrics - assume retained
-                            # (it may not be relevant for current stage)
+                        if current_performance >= retention_threshold:
                             retained_count += 1
+                            if self.verbose:
+                                print(f"    ✅ Retained: {criterion} = {current_performance:.3f} "
+                                      f"(threshold: {retention_threshold:.3f})")
+                        else:
+                            if self.verbose:
+                                print(f"    ❌ Lost: {criterion} = {current_performance:.3f} "
+                                      f"< {retention_threshold:.3f} (from {prev_stage.name})")
                     else:
-                        # No current metrics - assume retained
-                        retained_count += 1
+                        # No threshold available - assume retained if > 0.5
+                        if current_performance >= 0.50:
+                            retained_count += 1
+                        elif self.verbose:
+                            print(f"    ⚠️  {criterion}: {current_performance:.3f} "
+                                  f"(no original threshold available)")
 
                 except Exception as e:
                     if self.verbose:
@@ -2515,6 +2521,154 @@ class CurriculumTrainer:
 
         # All previous stages maintained
         return True
+
+    def _run_regression_test(
+        self,
+        stage: CurriculumStage,
+        criterion: str,
+        n_trials: int = 50,
+    ) -> float:
+        """Run regression test by re-executing tasks from a previous stage.
+
+        This method implements proper catastrophic forgetting detection by:
+        1. Loading the cached task loader for the target stage
+        2. Re-running actual tasks from that stage
+        3. Measuring current performance on those tasks
+
+        Args:
+            stage: Previous stage to test
+            criterion: Specific criterion to evaluate (e.g., 'mnist_accuracy')
+            n_trials: Number of test trials to run
+
+        Returns:
+            Current performance on the criterion (0.0 to 1.0)
+
+        Raises:
+            ValueError: If no task loader cached for the stage
+        """
+        # Get cached task loader for this stage
+        if stage not in self.stage_task_loaders:
+            raise ValueError(
+                f"No task loader cached for {stage.name}. "
+                f"Stage must complete successfully before regression testing."
+            )
+
+        task_loader = self.stage_task_loaders[stage]
+        stage_config = self.stage_configs[stage]
+
+        # Parse criterion to extract task name and metric
+        # Format: "task_metric" (e.g., "mnist_accuracy", "reaching_success")
+        parts = criterion.split('_')
+        if len(parts) >= 2:
+            task_name = '_'.join(parts[:-1])  # e.g., "mnist", "reaching"
+            metric = parts[-1]  # e.g., "accuracy", "success"
+        else:
+            task_name = criterion
+            metric = 'accuracy'
+
+        # Run test trials
+        correct = 0
+        total = 0
+        accumulated_value = 0.0
+
+        for _ in range(n_trials):
+            try:
+                # Get task sample
+                if hasattr(task_loader, 'get_test_sample'):
+                    task_data = task_loader.get_test_sample(task_name)
+                else:
+                    task_data = task_loader.get_task(task_name)
+
+                # Forward pass (disable learning to avoid corrupting weights)
+                original_plasticity_states = self._disable_plasticity()
+
+                try:
+                    output = self.brain.forward(
+                        task_data['input'],
+                        n_timesteps=task_data.get('n_timesteps', 10),
+                    )
+                finally:
+                    # Restore plasticity state
+                    self._restore_plasticity(original_plasticity_states)
+
+                # Evaluate based on metric type
+                if metric in ['accuracy', 'correct', 'success']:
+                    # Classification/binary success
+                    if 'label' in task_data:
+                        prediction = self._extract_prediction(output)
+                        correct += int(prediction == task_data['label'])
+                        total += 1
+                    elif 'reward' in task_data:
+                        # RL task: reward > 0 counts as success
+                        correct += int(task_data['reward'] > 0.0)
+                        total += 1
+                    elif 'target' in task_data:
+                        # Supervised task: check if close to target
+                        error = self._compute_error(output, task_data['target'])
+                        correct += int(error < 0.1)  # Threshold for success
+                        total += 1
+                elif metric in ['error', 'loss']:
+                    # Lower is better
+                    if 'target' in task_data:
+                        error = self._compute_error(output, task_data['target'])
+                        accumulated_value += error
+                        total += 1
+                elif metric == 'reward':
+                    # Higher is better
+                    if 'reward' in task_data:
+                        accumulated_value += task_data['reward']
+                        total += 1
+
+            except Exception as e:
+                # Skip failed trials
+                if self.verbose:
+                    print(f"      ⚠️  Trial failed: {e}")
+                continue
+
+        # Compute final performance
+        if total == 0:
+            return 0.0
+
+        if metric in ['accuracy', 'correct', 'success']:
+            return correct / total
+        elif metric in ['error', 'loss']:
+            # Convert error to performance (1 - normalized_error)
+            avg_error = accumulated_value / total
+            return max(0.0, 1.0 - avg_error)
+        elif metric == 'reward':
+            # Normalize reward to [0, 1] range (assuming rewards in [-1, 1])
+            avg_reward = accumulated_value / total
+            return (avg_reward + 1.0) / 2.0
+        else:
+            # Unknown metric
+            return 0.0
+
+    def _disable_plasticity(self) -> Dict[str, bool]:
+        """Disable learning in all regions to prevent weight corruption during testing.
+
+        Returns:
+            Dictionary mapping region names to their original plasticity states
+        """
+        original_states = {}
+
+        for name, component in self.brain.components.items():
+            if hasattr(component, 'plasticity_enabled'):
+                original_states[name] = component.plasticity_enabled
+                component.plasticity_enabled = False
+
+        return original_states
+
+    def _restore_plasticity(self, original_states: Dict[str, bool]) -> None:
+        """Restore plasticity states after testing.
+
+        Args:
+            original_states: Dictionary of original plasticity states from _disable_plasticity()
+        """
+        for name, was_enabled in original_states.items():
+            if name in self.brain.components:
+                component = self.brain.components[name]
+                if hasattr(component, 'plasticity_enabled'):
+                    component.plasticity_enabled = was_enabled
 
     def _check_growth_progress(self, stage: CurriculumStage) -> bool:
         """Check if growth has progressed appropriately for stage.
