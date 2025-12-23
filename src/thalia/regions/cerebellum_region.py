@@ -1021,6 +1021,8 @@ class Cerebellum(NeuralRegion):
 
         # Store output (NeuralRegion pattern - no state.t tracking)
         self.output_spikes = output_spikes
+        # Store effective input for learning (granule spikes in enhanced mode)
+        self.last_effective_input = effective_input
 
         # Axonal delays are handled by AxonalProjection pathways, not within regions
         return output_spikes
@@ -1141,12 +1143,56 @@ class Cerebellum(NeuralRegion):
 
             actual_dw = self.weights - old_weights
         else:
-            # Enhanced: No global weight update (Purkinje cells learn internally)
-            # TODO(research): Implement proper learning for individual Purkinje dendritic weights
-            # Current: Purkinje cells use internal parallel fiber synaptic weights
-            # Goal: Support per-dendrite plasticity for fine-grained cerebellar learning
-            # See: Ito (2001) - Cerebellar long-term depression
-            actual_dw = dw  # Use computed dw for metrics only
+            # Enhanced: Per-Purkinje cell dendritic learning (biologically accurate)
+            # Each Purkinje cell learns its own parallel fiber→dendrite synaptic weights
+            # This implements the classical LTD mechanism (Ito, 2001)
+            actual_dw = torch.zeros_like(self.weights)
+
+            # Get granule spikes (stored during forward pass)
+            if not hasattr(self, 'last_effective_input'):
+                # No forward pass yet, skip learning
+                return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
+
+            granule_spikes = self.last_effective_input  # [n_granule]
+
+            # Update each Purkinje cell's dendritic weights
+            for i, purkinje in enumerate(self.purkinje_cells):
+                if purkinje.pf_synaptic_weights is None:
+                    # Weights not initialized yet (no forward pass)
+                    continue
+
+                old_pf_weights = purkinje.pf_synaptic_weights.clone()
+
+                # Compute per-cell error
+                cell_error = error[i]  # Scalar error for this Purkinje cell
+
+                # Delta rule: Δw = lr × error × pre_activity
+                # Shape: [n_granule] (parallel fiber weights for this Purkinje cell)
+                cell_dw = cfg.learning_rate * cell_error * granule_spikes.float()
+
+                # Update this Purkinje cell's dendritic weights
+                new_weights = purkinje.pf_synaptic_weights.squeeze(0) + cell_dw
+                purkinje.pf_synaptic_weights.data = clamp_weights(
+                    new_weights.unsqueeze(0),
+                    cfg.w_min,
+                    cfg.w_max,
+                    inplace=False
+                )
+
+                # Apply synaptic homeostasis per Purkinje cell
+                if cfg.homeostasis_enabled:
+                    purkinje.pf_synaptic_weights.data = self.homeostasis.normalize_weights(
+                        purkinje.pf_synaptic_weights.data,
+                        dim=1
+                    )
+
+                # Track actual weight change for this cell (for metrics)
+                # Note: actual_dw has shape [n_output, n_input] but Purkinje weights are [1, n_granule]
+                # We'll just record the sum of changes per cell
+                cell_weight_change = (purkinje.pf_synaptic_weights.squeeze(0) - old_pf_weights.squeeze(0)).sum().item()
+                if i < actual_dw.shape[0]:
+                    # Store change magnitude in first column for metrics
+                    actual_dw[i, 0] = cell_weight_change
 
         ltp = actual_dw[actual_dw > 0].sum().item() if (actual_dw > 0).any() else 0.0
         ltd = actual_dw[actual_dw < 0].sum().item() if (actual_dw < 0).any() else 0.0
@@ -1211,6 +1257,19 @@ class Cerebellum(NeuralRegion):
         # Initialize IO membrane for gap junctions
         if self.gap_junctions_io is not None:
             self._io_membrane = torch.zeros(self.config.n_output, device=self.device)
+
+    def set_training_step(self, step: int) -> None:
+        """Update the current training step for neurogenesis tracking.
+
+        This should be called by the training loop to keep track of when neurons
+        are created during growth events.
+
+        Args:
+            step: Current global training step
+        """
+        # Cerebellum doesn't currently support neurogenesis, but we implement
+        # this method for API consistency with other regions
+        pass
 
     def grow_input(
         self,

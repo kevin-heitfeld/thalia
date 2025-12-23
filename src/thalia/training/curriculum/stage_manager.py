@@ -828,6 +828,12 @@ class CurriculumTrainer:
         try:
             # Main training loop
             for step in range(config.duration_steps):
+                # 0. Update neurogenesis tracking for all regions
+                # This enables proper timestamping of neurons created during growth
+                for _component_name, component in self.brain.components.items():
+                    if hasattr(component, 'set_training_step'):
+                        component.set_training_step(self.global_step)
+
                 # 1. Sample next task (interleaved practice)
                 if config.interleaved_practice:
                     task_name = self.task_sampler.sample_next_task(task_weights)

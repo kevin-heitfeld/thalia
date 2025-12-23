@@ -152,6 +152,11 @@ class EnhancedPurkinjeCell(nn.Module):
         """Get dendritic calcium levels (test compatibility)."""
         return self.dendrite_calcium
 
+    @property
+    def pf_synaptic_weights(self) -> Optional[torch.Tensor]:
+        """Get parallel fiber synaptic weights (alias for dendritic_weights)."""
+        return self.dendritic_weights
+
     def reset_state(self) -> None:
         """Reset Purkinje cell state."""
         self.dendrite_voltage.zero_()
