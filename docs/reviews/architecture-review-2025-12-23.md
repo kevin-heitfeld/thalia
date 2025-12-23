@@ -222,6 +222,34 @@ from thalia.learning import create_strategy, EligibilityTraceManager
 - All imports remain backward compatible (old paths still work)
 - Improved code readability and consistency
 
+**Additional Simplification (Second Pass - 2025-12-23)**:
+
+Continued import simplification across additional modules:
+
+**Neuromodulation Module Enhanced**:
+- Added constants: `DA_BASELINE_STANDARD`, `DA_BASELINE_STRIATUM`, `ACH_BASELINE`, `NE_BASELINE`, `NE_GAIN_MIN`, `NE_GAIN_MAX`
+- Added helpers: `compute_ne_gain`, `decay_constant_to_tau`, `tau_to_decay_constant`
+- Simplified: `neuromodulation.constants` → `neuromodulation`
+
+**Additional Modules** (already had exports, simplified usage):
+- `components.synapses.weight_init` → `components.synapses`
+- `components.synapses.stp` → `components.synapses`
+- `components.coding.spike_utils` → `components.coding`
+- `coordination.oscillator` → `coordination`
+
+**Additional Files Updated (19 files)**:
+- `neuromodulation/__init__.py`, `thalamus.py`, `prefrontal.py`, `layered_cortex.py`
+- `trisynaptic.py`, `striatum.py`, `pathway_base.py`, `learning_component.py`
+- `multisensory.py`, `cerebellum_region.py`, `sensory_pathways.py`
+- `manager.py`, `ei_balance.py`, `dynamic_brain.py`, `diagnostics_schema.py`
+- `neural_region.py`, `growth.py`, `growth_mixin.py`
+
+**Tier 1.3 Total Impact**:
+- **32 files updated** across 2 commits
+- **4 modules enhanced** with top-level exports
+- Consistent 2-level import pattern established
+- Zero breaking changes
+
 ---
 
 ### 1.4 Docstring Enhancement: Growth Methods
