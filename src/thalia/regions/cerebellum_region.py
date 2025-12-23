@@ -666,6 +666,9 @@ class Cerebellum(NeuralRegion):
         # We use the parallel fiber weights (or granule→Purkinje weights if enhanced)
         # to infer functional neighborhoods: Purkinje cells receiving similar inputs
         # likely receive error signals from neighboring IO neurons.
+        #
+        # GapJunctionCoupling expects afferent weights [n_neurons, n_input] and
+        # internally computes functional connectivity neighborhoods.
         self.gap_junctions_io: Optional[GapJunctionCoupling] = None
         if self.cerebellum_config.gap_junctions_enabled:
             from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
@@ -678,16 +681,13 @@ class Cerebellum(NeuralRegion):
                 interneuron_only=False,  # IO neurons are not interneurons (glutamatergic)
             )
 
-            # Use parallel fiber weights for neighborhood inference
-            # IO neurons projecting to Purkinje cells with similar inputs are anatomically close
-            # Compute pairwise cosine similarity between Purkinje weight patterns
+            # Pass actual parallel fiber weights to infer IO neuron neighborhoods
+            # IO neurons projecting to Purkinje cells with similar input patterns
+            # are anatomically close and thus coupled via gap junctions
             # weights shape: [n_output, n_input] → each row is a Purkinje cell's input pattern
-            weights_norm = torch.nn.functional.normalize(self.synaptic_weights["default"], p=2, dim=1)
-            similarity_matrix = weights_norm @ weights_norm.T  # [n_output, n_output]
-
             self.gap_junctions_io = GapJunctionCoupling(
                 n_neurons=config.n_output,
-                afferent_weights=similarity_matrix,  # [n_output, n_output] similarity matrix
+                afferent_weights=self.synaptic_weights["default"].detach(),  # Use actual weights, not similarity
                 config=gap_config,
                 interneuron_mask=None,  # All IO neurons participate
                 device=device,
@@ -1084,19 +1084,21 @@ class Cerebellum(NeuralRegion):
         # We model IO membrane potential as proportional to error magnitude
         # (larger errors → higher membrane potential → stronger complex spikes)
         if self.gap_junctions_io is not None:
-            # Use error as proxy for IO membrane potential
-            # IO neurons fire complex spikes proportional to error magnitude
-            io_membrane = error.abs()  # [n_output]
+            # Use error directly as proxy for IO membrane potential
+            # Gap junctions compute: I_gap = Σ g[i,j] * (V[j] - V[i])
+            # This adds a coupling current that pulls voltages toward neighbors
+            io_membrane = error  # [n_output] (signed error)
 
             # Apply gap junction coupling to synchronize neighboring IO neurons
-            coupled_membrane = self.gap_junctions_io(io_membrane)  # [n_output]
+            # This adds the coupling current to the membrane potential
+            # Note: Gap junctions can reduce signal if you're higher than neighbors
+            coupled_membrane = io_membrane + self.gap_junctions_io(io_membrane)  # [n_output]
 
-            # Preserve error sign but use synchronized magnitude
-            # This makes neighboring Purkinje cells receive similar error magnitudes
-            # while maintaining whether error was positive or negative
-            error = torch.sign(error) * coupled_membrane
+            # Use the synchronized membrane potential as the error signal
+            # This makes neighboring Purkinje cells receive correlated error signals
+            error = coupled_membrane
 
-            # Store magnitude only for state tracking (coupled_membrane is signed)
+            # Store absolute value for state tracking
             self._io_membrane = coupled_membrane.abs()
 
         if error.abs().max() < cfg.error_threshold:
