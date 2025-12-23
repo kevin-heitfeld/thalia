@@ -65,6 +65,7 @@ from thalia.components.neurons.neuron_constants import (
     TONIC_D1_GAIN_SCALE,
 )
 from thalia.neuromodulation.constants import compute_ne_gain
+from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 from thalia.neuromodulation.mixin import validate_finite
 
 if TYPE_CHECKING:
@@ -184,16 +185,22 @@ class ForwardPassCoordinator:
     def compute_theta_modulation(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute theta modulation factors.
 
+        Uses standard theta encoding/retrieval utility function for consistency
+        with other regions (hippocampus, prefrontal, cortex).
+
         Returns:
             (theta_baseline_mod, theta_contrast_mod, baseline_exc) - all tensors on self.device
         """
-        # Encoding peak at 0°, retrieval peak at 180°
-        encoding_mod = (1 + torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
-        retrieval_mod = (1 - torch.cos(torch.tensor(self._theta_phase, device=self.device))) / 2
+        # Use centralized utility function for consistency
+        encoding_mod, retrieval_mod = compute_theta_encoding_retrieval(self._theta_phase)
+
+        # Convert to tensors on device
+        encoding_tensor = torch.tensor(encoding_mod, device=self.device, dtype=torch.float32)
+        retrieval_tensor = torch.tensor(retrieval_mod, device=self.device, dtype=torch.float32)
 
         # Baseline and contrast modulation
-        theta_baseline_mod = THETA_BASELINE_MIN + THETA_BASELINE_RANGE * encoding_mod
-        theta_contrast_mod = THETA_CONTRAST_MIN + THETA_CONTRAST_RANGE * retrieval_mod
+        theta_baseline_mod = THETA_BASELINE_MIN + THETA_BASELINE_RANGE * encoding_tensor
+        theta_contrast_mod = THETA_CONTRAST_MIN + THETA_CONTRAST_RANGE * retrieval_tensor
 
         return (
             theta_baseline_mod,

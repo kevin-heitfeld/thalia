@@ -207,7 +207,7 @@ class TestPhasePreferenceEmergence:
         # Verify that CA3 shows temporal structure
         total_ca3_spikes = sum(spikes.sum().item() for spikes in ca3_activity_over_time)
 
-        print(f"\nEmergent capacity test:")
+        print("\nEmergent capacity test:")
         print(f"  Expected patterns: {n_patterns} (from {gamma_period_ms:.1f}ms gamma / {theta_period_ms:.1f}ms theta)")
         print(f"  Total CA3 spikes: {total_ca3_spikes}")
 

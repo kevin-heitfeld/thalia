@@ -84,7 +84,6 @@ References:
 - Colgin (2013): Theta-gamma coupling in hippocampus
 """
 
-import math
 from dataclasses import replace
 from typing import Optional, Dict, Any, List, Union, cast
 
