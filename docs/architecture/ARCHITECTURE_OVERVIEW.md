@@ -343,16 +343,30 @@ Hierarchical planning and temporal abstraction:
 
 **Location**: `src/thalia/regions/cerebellum_region.py`
 
-**Function**: Motor learning and error correction
+**Function**: Motor learning and error correction with coordinated plasticity
 
 **Learning Rules**:
-- Supervised delta rule (granule → Purkinje)
-- Error-driven adjustment
+- **Per-Purkinje dendritic learning**: Each Purkinje cell has independent parallel fiber synaptic weights
+- **Supervised delta rule**: Δw = learning_rate × error × pre_activity (LTD/LTP)
+- **Error-driven adjustment**: Climbing fiber signals from inferior olive (IO) neurons
+
+**Gap Junction Synchronization** (December 23, 2025):
+- **IO gap junctions**: Electrical synapses (<1ms coupling) synchronize complex spikes
+- **Functional connectivity**: Based on shared parallel fiber inputs (spatial proximity proxy)
+- **Coordinated learning**: Related Purkinje cells receive correlated error signals
+- **Biological accuracy**: Matches observed IO neuron synchronization (<50μm proximity)
 
 **Key Features**:
-- Precise timing
-- Motor adaptation
-- Forward models
+- **Precise timing**: Sub-millisecond temporal precision for motor control
+- **Motor adaptation**: Online error correction via climbing fiber feedback
+- **Forward models**: Predicts sensory consequences of actions
+- **Distributed plasticity**: Each Purkinje cell learns independently with gap junction coordination
+- **LTD/LTP mechanisms**: Depression for excess activity, potentiation for insufficient activity
+
+**Implementation Details**:
+- Enhanced microcircuit with granule cells, Golgi cells, basket/stellate interneurons
+- Gap junctions use `GapJunctionCoupling` with coupling current I_gap = Σ g[i,j] * (V[j] - V[i])
+- Tests: `test_purkinje_learning.py` (6 tests), `test_cerebellum_gap_junctions.py` (5 tests)
 
 #### Thalamus
 

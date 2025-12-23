@@ -1,7 +1,7 @@
 # Mixins Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all mixin classes used by `NeuralRegion`. These mixins provide standard functionality to all brain regions.
@@ -49,7 +49,7 @@ class NeuralRegion(nn.Module,
 
 ---
 
-### [``NeuromodulatorMixin``](../../src/thalia/neuromodulation/mixin.py#L131)
+### [``NeuromodulatorMixin``](../../src/thalia/neuromodulation/mixin.py#L211)
 
 **Source**: [`thalia/neuromodulation/mixin.py`](../../src/thalia/neuromodulation/mixin.py)
 
@@ -57,11 +57,11 @@ class NeuralRegion(nn.Module,
 
 **Public Methods**:
 
-- [`set_neuromodulators(dopamine, norepinephrine, acetylcholine)`](../../src/thalia/neuromodulation/mixin.py#L147)
-- [`set_neuromodulator(name, level)`](../../src/thalia/neuromodulation/mixin.py#L184)
-- [`decay_neuromodulators(dt_ms, dopamine_tau_ms, acetylcholine_tau_ms, norepinephrine_tau_ms)`](../../src/thalia/neuromodulation/mixin.py#L202)
-- [`get_effective_learning_rate(base_lr, dopamine_sensitivity)`](../../src/thalia/neuromodulation/mixin.py#L234)
-- [`get_neuromodulator_state()`](../../src/thalia/neuromodulation/mixin.py#L267)
+- [`set_neuromodulators(dopamine, norepinephrine, acetylcholine)`](../../src/thalia/neuromodulation/mixin.py#L227)
+- [`set_neuromodulator(name, level)`](../../src/thalia/neuromodulation/mixin.py#L276)
+- [`decay_neuromodulators(dt_ms, dopamine_tau_ms, acetylcholine_tau_ms, norepinephrine_tau_ms)`](../../src/thalia/neuromodulation/mixin.py#L301)
+- [`get_effective_learning_rate(base_lr, dopamine_sensitivity)`](../../src/thalia/neuromodulation/mixin.py#L333)
+- [`get_neuromodulator_state()`](../../src/thalia/neuromodulation/mixin.py#L366)
 
 ---
 

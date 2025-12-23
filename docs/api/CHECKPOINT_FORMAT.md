@@ -1,7 +1,7 @@
 # Checkpoint Format Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 > **📚 For complete binary format specification, version compatibility, and implementation details, see [checkpoint_format.md](../design/checkpoint_format.md)**

@@ -140,13 +140,19 @@ graph TD
 
 ### Implemented Features ✅
 - **Core Architecture**:
-  - Brain regions: Cortex (laminar L4→L2/3→L5), Hippocampus (DG→CA3→CA1), Striatum (D1/D2 pathways), PFC, Cerebellum, Thalamus
+  - Brain regions: Cortex (laminar L4→L2/3→L5), Hippocampus (DG→CA3→CA1), Striatum (D1/D2 pathways), PFC, Cerebellum (with gap junctions), Thalamus
   - AxonalProjection: Pure spike routing with CircularDelayBuffer delays
   - NeuralRegion: Base class with synaptic_weights dict at dendrites
 - **Learning & Plasticity**:
   - Learning strategies: STDP, BCM, Hebbian, three-factor (eligibility × dopamine)
   - Per-source learning: Different rules for different inputs
   - Strategy pattern: Pluggable, composable learning algorithms
+  - Cerebellum: Per-Purkinje dendritic learning with LTD/LTP mechanisms
+- **Biological Circuits** (December 2025):
+  - Striatum D1/D2 delays: 15ms (Go) vs 25ms (No-Go) temporal competition
+  - Thalamus-Cortex-TRN loop: Dual L6a/L6b feedback with attention gating
+  - Cerebellum gap junctions: IO neuron synchronization (<1ms coupling) for coordinated learning
+  - Cortical laminar delays: L4→L2/3→L5 microcircuit with proper timing
 - **Neuromodulation**:
   - Three systems: VTA (dopamine), LC (norepinephrine), NB (acetylcholine)
   - Centralized management with biological coordination

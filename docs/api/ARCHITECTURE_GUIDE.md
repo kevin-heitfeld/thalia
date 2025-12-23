@@ -1,7 +1,7 @@
 # Architecture Guide
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This guide provides architectural diagrams and design patterns for the Thalia framework.

@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -50,7 +50,7 @@ Total region states: 7
 
 ---
 
-### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L178)
+### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L213)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -66,21 +66,19 @@ Total region states: 7
 | `output_trace` | `Optional[torch.Tensor]` | `None` |
 | `stdp_eligibility` | `Optional[torch.Tensor]` | `None` |
 | `climbing_fiber_error` | `Optional[torch.Tensor]` | `None` |
+| `io_membrane` | `Optional[torch.Tensor]` | `None` |
 | `v_mem` | `Optional[torch.Tensor]` | `None` |
 | `g_exc` | `Optional[torch.Tensor]` | `None` |
 | `g_inh` | `Optional[torch.Tensor]` | `None` |
 | `stp_pf_purkinje_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
 | `stp_mf_granule_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
-| `dopamine` | `float` | `0.0` |
-| `acetylcholine` | `float` | `0.0` |
-| `norepinephrine` | `float` | `0.0` |
 | `granule_layer_state` | `Optional[Dict[str, Any]]` | `None` |
 | `purkinje_cells_state` | `Optional[list]` | `None` |
 | `deep_nuclei_state` | `Optional[Dict[str, Any]]` | `None` |
 
 ---
 
-### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L245)
+### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L265)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -92,13 +90,11 @@ Total region states: 7
 
 | Field | Type | Default |
 |-------|------|----------|
-| `dopamine` | `float` | `0.2` |
-| `acetylcholine` | `float` | `0.0` |
-| `norepinephrine` | `float` | `0.0` |
 | `dg_spikes` | `Optional[torch.Tensor]` | `None` |
 | `ca3_spikes` | `Optional[torch.Tensor]` | `None` |
 | `ca1_spikes` | `Optional[torch.Tensor]` | `None` |
 | `ca3_membrane` | `Optional[torch.Tensor]` | `None` |
+| `ca1_membrane` | `Optional[torch.Tensor]` | `None` |
 | `ca3_persistent` | `Optional[torch.Tensor]` | `None` |
 | `sample_trace` | `Optional[torch.Tensor]` | `None` |
 | `dg_trace` | `Optional[torch.Tensor]` | `None` |
@@ -113,7 +109,7 @@ Total region states: 7
 
 ---
 
-### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L191)
+### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L208)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -125,15 +121,13 @@ Total region states: 7
 
 | Field | Type | Default |
 |-------|------|----------|
-| `dopamine` | `float` | `0.0` |
-| `acetylcholine` | `float` | `0.0` |
-| `norepinephrine` | `float` | `0.0` |
 | `input_spikes` | `Optional[torch.Tensor]` | `None` |
 | `l4_spikes` | `Optional[torch.Tensor]` | `None` |
 | `l23_spikes` | `Optional[torch.Tensor]` | `None` |
 | `l5_spikes` | `Optional[torch.Tensor]` | `None` |
 | `l6a_spikes` | `Optional[torch.Tensor]` | `None` |
 | `l6b_spikes` | `Optional[torch.Tensor]` | `None` |
+| `l23_membrane` | `Optional[torch.Tensor]` | `None` |
 | `l23_recurrent_activity` | `Optional[torch.Tensor]` | `None` |
 | `l4_trace` | `Optional[torch.Tensor]` | `None` |
 | `l23_trace` | `Optional[torch.Tensor]` | `None` |
@@ -165,14 +159,11 @@ Total region states: 7
 | `working_memory` | `Optional[torch.Tensor]` | `None` |
 | `update_gate` | `Optional[torch.Tensor]` | `None` |
 | `active_rule` | `Optional[torch.Tensor]` | `None` |
-| `dopamine` | `float` | `0.2` |
-| `acetylcholine` | `float` | `0.0` |
-| `norepinephrine` | `float` | `0.0` |
 | `stp_recurrent_state` | `Optional[Dict[str, Any]]` | `None` |
 
 ---
 
-### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L205)
+### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L222)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -184,6 +175,7 @@ Total region states: 7
 
 | Field | Type | Default |
 |-------|------|----------|
+| `fsi_membrane` | `Optional[torch.Tensor]` | `None` |
 | `d1_pathway_state` | `Optional[Dict[str, Any]]` | `None` |
 | `d2_pathway_state` | `Optional[Dict[str, Any]]` | `None` |
 | `d1_votes_accumulated` | `Optional[torch.Tensor]` | `None` |
@@ -212,13 +204,10 @@ Total region states: 7
 | `stp_corticostriatal_x` | `Optional[torch.Tensor]` | `None` |
 | `stp_thalamostriatal_u` | `Optional[torch.Tensor]` | `None` |
 | `stp_thalamostriatal_x` | `Optional[torch.Tensor]` | `None` |
-| `dopamine` | `float` | `0.0` |
-| `acetylcholine` | `float` | `0.0` |
-| `norepinephrine` | `float` | `0.0` |
 
 ---
 
-### [``ThalamicRelayState``](../../src/thalia/regions/thalamus.py#L228)
+### [``ThalamicRelayState``](../../src/thalia/regions/thalamus.py#L237)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -230,9 +219,6 @@ Total region states: 7
 
 | Field | Type | Default |
 |-------|------|----------|
-| `dopamine` | `float` | `0.2` |
-| `acetylcholine` | `float` | `0.0` |
-| `norepinephrine` | `float` | `0.0` |
 | `relay_spikes` | `Optional[torch.Tensor]` | `None` |
 | `relay_membrane` | `Optional[torch.Tensor]` | `None` |
 | `trn_spikes` | `Optional[torch.Tensor]` | `None` |

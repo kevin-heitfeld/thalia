@@ -49,6 +49,12 @@ This document outlines the implementation plan for enhancing Thalia's delayed gr
 - 🔄 Verify hierarchical goals on essay writing (Stage 3)
 - 🔄 Benchmark temporal credit assignment windows
 
+**Recent Completions** (December 23, 2025):
+- ✅ Cerebellum gap junction synchronization (IO neurons)
+- ✅ Per-Purkinje cell dendritic learning (LTD/LTP)
+- ✅ Gap junction bug fixes (initialization + error propagation)
+- ✅ Comprehensive test coverage (11 tests, all passing)
+
 **Curriculum Integration** (Ready for Use ✅):
 - ✅ TD(λ) can be enabled via `use_td_lambda=True` in config
 - ✅ Dyna planning available via `src/thalia/planning/dyna.py`

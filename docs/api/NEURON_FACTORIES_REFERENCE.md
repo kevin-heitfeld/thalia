@@ -1,12 +1,12 @@
 # Neuron Factories Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all neuron factory functions for creating pre-configured neuron populations with biologically-motivated parameters.
 
-Total: **4** factory functions
+Total: **5** factory functions
 
 ![Factories](https://img.shields.io/badge/Factories-4-blue) ![Tested](https://img.shields.io/badge/Status-Tested-success) ![Biological](https://img.shields.io/badge/Type-Biologically--Accurate-orange)
 
@@ -53,6 +53,28 @@ graph LR
 
 ```python
 >>> l6b = create_cortical_layer_neurons(16, "L6b", device)
+```
+
+---
+
+### [``create_fast_spiking_neurons()``](../../src/thalia/components/neurons/neuron_factory.py) 🟢 Simple
+
+**Returns**: `ConductanceLIF`  
+**Source**: [`thalia/components/neurons/neuron_factory.py`](../../src/thalia/components/neurons/neuron_factory.py)
+
+**Description**: Create fast-spiking interneuron population (parvalbumin+).
+
+**Parameters**:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `n_neurons` | `int` | `—` | |
+| `device` | `torch.device` | `—` | |
+
+**Examples**:
+
+```python
+>>> fsi = NeuronFactory.create("fast_spiking", n_neurons=20, device="cpu")
 ```
 
 ---

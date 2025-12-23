@@ -1,21 +1,20 @@
 # Constants Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all module-level constants with biological context, ranges, and scientific references.
 
-Total: **187** constants
+Total: **172** constants
 
-![Constants](https://img.shields.io/badge/Constants-187-blue) ![Biological](https://img.shields.io/badge/Type-Biological-orange) ![References](https://img.shields.io/badge/Citations-Scientific-green)
+![Constants](https://img.shields.io/badge/Constants-172-blue) ![Biological](https://img.shields.io/badge/Type-Biological-orange) ![References](https://img.shields.io/badge/Citations-Scientific-green)
 
 ## 📊 Category Overview
 
 ```mermaid
 pie title Constants by Category
-    "Dopamine DA - Reward Predictio" : 5
-    "General" : 133
+    "General" : 123
     "LEARNING RATES dimensionless" : 8
     "MEMBRANE DYNAMICS TIME CONSTAN" : 14
     "MOTOR SPIKE PROBABILITIES" : 5
@@ -26,7 +25,6 @@ pie title Constants by Category
 
 ## 📑 Categories
 
-- [Dopamine (DA) - Reward Prediction Error and Reinforcement](#dopamine-(da)---reward-prediction-error-and-reinforcement)
 - [General](#general)
 - [LEARNING RATES (dimensionless)](#learning-rates-(dimensionless))
 - [MEMBRANE DYNAMICS TIME CONSTANTS (milliseconds)](#membrane-dynamics-time-constants-(milliseconds))
@@ -35,26 +33,11 @@ pie title Constants by Category
 - [Text Positioning](#text-positioning)
 - [UI Element Dimensions](#ui-element-dimensions)
 
-## Dopamine (DA) - Reward Prediction Error and Reinforcement
-
-| Constant | Value | Biological Range | Description |
-|----------|-------|------------------|-------------|
-| `DA_ACH_SUPPRESSION` | `0.3` | — | Dopamine (DA) - Reward Prediction Error and Reinforcement |
-| `NE_ACH_ENHANCEMENT` | `0.2` | — | ============================================================================= |
-| `NE_GAIN_MAX` | `1.5` | — | Phasic dopamine decay (reuptake by DAT transporters) |
-| `NE_GAIN_MIN` | `1.0` | — | No description |
-| `TARGET_NEUROMODULATOR_LEVEL` | `0.5` | — | ============================================================================= |
-
----
-
 ## General
 
 | Constant | Value | Biological Range | Description |
 |----------|-------|------------------|-------------|
 | `ACH_BASELINE` | `0.3` | — | No description |
-| `ACH_DECAY_PER_MS` | `0.98` | — | No description |
-| `ACH_ENCODING_LEVEL` | `0.8` | — | No description |
-| `ACH_RETRIEVAL_LEVEL` | `0.2` | — | No description |
 | `ADAPT_INCREMENT_CORTEX_L23` | `0.3` | — | Very strong adaptation for cortical L2/3 pyramidal neurons. |
 | `ADAPT_INCREMENT_MODERATE` | `0.05` | — | Moderate adaptation increment. |
 | `ADAPT_INCREMENT_NONE` | `0.0` | — | No adaptation (default). |
@@ -63,11 +46,8 @@ pie title Constants by Category
 | `DATASET_WEIGHT_MNIST` | `0.4` | — | MNIST dataset sampling weight for Birth stage (40%). |
 | `DATASET_WEIGHT_PHONOLOGY` | `0.3` | — | Phonology dataset weight for Birth stage (30%). |
 | `DATASET_WEIGHT_TEMPORAL` | `0.2` | — | Temporal sequence dataset weight for Birth stage (20%). |
-| `DA_BASELINE` | `0.3` | — | No description |
-| `DA_BURST_MAGNITUDE` | `1.0` | — | No description |
-| `DA_DIP_MAGNITUDE` | `-0.5` | — | No description |
-| `DA_PHASIC_DECAY_PER_MS` | `0.995` | — | No description |
-| `DA_TONIC_ALPHA` | `0.05` | — | No description |
+| `DA_BASELINE_STANDARD` | `0.2` | — | No description |
+| `DA_BASELINE_STRIATUM` | `0.3` | — | No description |
 | `E_EXCITATORY` | `3.0` | — | Excitatory reversal potential (normalized). |
 | `E_INHIBITORY` | `-0.5` | — | Inhibitory reversal potential (normalized). |
 | `E_LEAK` | `0.0` | — | Leak reversal potential (normalized). |
@@ -76,7 +56,6 @@ pie title Constants by Category
 | `G_LEAK_FAST` | `0.1` | — | Fast-spiking leak conductance (normalized). |
 | `G_LEAK_SLOW` | `0.033` | — | Slow-adapting leak conductance (normalized). |
 | `G_LEAK_STANDARD` | `0.05` | — | Standard leak conductance (normalized). |
-| `HOMEOSTATIC_TAU` | `0.999` | — | No description |
 | `HOMEOSTATIC_TAU_FAST` | `100.0` | — | Fast homeostatic adaptation (100ms). |
 | `HOMEOSTATIC_TAU_SLOW` | `10000.0` | — | Slow homeostatic adaptation (10 seconds). |
 | `HOMEOSTATIC_TAU_STANDARD` | `1000.0` | — | Standard homeostatic time constant (1 second). |
@@ -95,13 +74,10 @@ pie title Constants by Category
 | `LEARNING_RATE_STDP_SLOW` | `0.0001` | — | Slow STDP for stable, incremental learning. |
 | `LEARNING_RATE_THREE_FACTOR` | `0.001` | — | Dopamine-modulated three-factor learning rate (eligibility × dopamine). |
 | `MAX_FIRING_RATE_HZ` | `100.0` | — | Maximum acceptable firing rate before considering runaway activity (100 Hz). |
-| `MAX_RECEPTOR_SENSITIVITY` | `1.5` | — | No description |
 | `MIN_FIRING_RATE_HZ` | `0.1` | — | Minimum acceptable firing rate before considering neuron dead (0.1 Hz). |
-| `MIN_RECEPTOR_SENSITIVITY` | `0.5` | — | No description |
-| `NE_AROUSAL_ALPHA` | `0.1` | — | No description |
 | `NE_BASELINE` | `0.3` | — | No description |
-| `NE_BURST_MAGNITUDE` | `1.0` | — | No description |
-| `NE_DECAY_PER_MS` | `0.99` | — | No description |
+| `NE_GAIN_MAX` | `1.5` | — | No description |
+| `NE_GAIN_MIN` | `1.0` | — | No description |
 | `NOISE_STD_NONE` | `0.0` | — | No membrane noise (deterministic). |
 | `PREFRONTAL_PATIENCE_MIN` | `0.001` | — | Minimum patience parameter (k_min) for goal hierarchy. |
 | `PROGRESS_BAR_HEIGHT` | `0.5` | — | Height of horizontal progress bars. |
@@ -193,7 +169,7 @@ pie title Constants by Category
 
 Very strong adaptation for cortical L2/3 pyramidal neurons.
 
-**References**: Cormick et al. (1985), Vives et al. (2000)
+**References**: Vives et al. (2000), Cormick et al. (1985)
 
 **Source**: `[`thalia/components/neurons/neuron_constants.py`](../../src/thalia/components/neurons/neuron_constants.py)`
 
@@ -213,7 +189,7 @@ LTD amplitude for cortical STDP (depression when pre follows post).
 
 LTP amplitude for cortical STDP (potentiation when post follows pre).
 
-**References**: Clopath et al. (2010), Bi & Poo (1998)
+**References**: Bi & Poo (1998), Clopath et al. (2010)
 
 **Source**: `[`thalia/regulation/learning_constants.py`](../../src/thalia/regulation/learning_constants.py)`
 

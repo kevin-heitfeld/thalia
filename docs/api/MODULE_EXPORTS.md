@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 45 modules, 546 exports
+Total: 45 modules, 545 exports
 
 ## 📑 Table of Contents
 
@@ -1210,7 +1210,7 @@ from thalia.training.visualization import TrainingMonitor
 
 **Source**: [`thalia/utils/__init__.py`](../../src/thalia/utils/__init__.py)
 
-**Exports** (13):
+**Exports** (12):
 
 - `clamp_weights`
 - `cosine_similarity_safe`
@@ -1221,7 +1221,6 @@ from thalia.training.visualization import TrainingMonitor
 - `CircularDelayBuffer`
 - `compute_theta_encoding_retrieval`
 - `compute_ach_recurrent_suppression`
-- `compute_gamma_phase_gate`
 - `compute_theta_gamma_coupling_gate`
 - `compute_oscillator_modulated_gain`
 - `compute_learning_rate_modulation`

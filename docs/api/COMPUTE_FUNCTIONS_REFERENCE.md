@@ -1,20 +1,20 @@
 # Compute Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all `compute_*` utility functions that implement biological computations throughout the Thalia codebase.
 
-Total: **10** compute functions
+Total: **9** compute functions
 
-![Functions](https://img.shields.io/badge/Functions-10-blue) ![Biological](https://img.shields.io/badge/Type-Biologically--Grounded-orange) ![Utils](https://img.shields.io/badge/Category-Utilities-green)
+![Functions](https://img.shields.io/badge/Functions-9-blue) ![Biological](https://img.shields.io/badge/Type-Biologically--Grounded-orange) ![Utils](https://img.shields.io/badge/Category-Utilities-green)
 
 ## 📋 Quick Reference by Category
 
 | Category | Functions | Purpose |
 |----------|-----------|----------|
-| **Oscillator** | 6 | Phase-based modulation and coupling |
+| **Oscillator** | 5 | Phase-based modulation and coupling |
 | **Neuromodulation** | 1 | Dopamine, ACh effect computation |
 | **Sizing** | 3 | Region size calculations |
 
@@ -34,7 +34,7 @@ graph LR
 
 ## 🌊 Oscillator Modulation Functions
 
-### [``compute_ach_recurrent_suppression()``](../../src/thalia/utils/oscillator_utils.py#L76)
+### [``compute_ach_recurrent_suppression()``](../../src/thalia/utils/oscillator_utils.py#L77)
 
 **Returns**: `float`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
@@ -61,35 +61,7 @@ Biological Basis:
 
 ---
 
-### [``compute_gamma_phase_gate()``](../../src/thalia/utils/oscillator_utils.py#L126)
-
-**Returns**: `float`  
-**Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
-
-**Description**: Compute gamma-phase attention gating.
-
-**Parameters**:
-
-| Parameter | Type | Default |
-|-----------|------|----------|
-| `gamma_phase` | `float` | `-` |
-| `threshold` | `float` | `GAMMA_ATTENTION_THRESHOLD` |
-
-**Biological Context**:
-
-Biological Basis:
-    Gamma oscillations create temporal windows for binding and attention:
-    - **Gamma Peak**: Excitatory window for processing selected inputs
-
-**Examples**:
-
-```python
->>> assert gate == 0.0
-```
-
----
-
-### [``compute_learning_rate_modulation()``](../../src/thalia/utils/oscillator_utils.py#L264)
+### [``compute_learning_rate_modulation()``](../../src/thalia/utils/oscillator_utils.py#L215)
 
 **Returns**: `float`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
@@ -118,7 +90,7 @@ Biological Basis:
 
 ---
 
-### [``compute_oscillator_modulated_gain()``](../../src/thalia/utils/oscillator_utils.py#L225)
+### [``compute_oscillator_modulated_gain()``](../../src/thalia/utils/oscillator_utils.py#L176)
 
 **Returns**: `float`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
@@ -141,7 +113,7 @@ Biological Basis:
 
 ---
 
-### [``compute_theta_encoding_retrieval()``](../../src/thalia/utils/oscillator_utils.py#L31)
+### [``compute_theta_encoding_retrieval()``](../../src/thalia/utils/oscillator_utils.py#L32)
 
 **Returns**: `tuple[float, float]`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
@@ -168,7 +140,7 @@ Biological Basis:
 
 ---
 
-### [``compute_theta_gamma_coupling_gate()``](../../src/thalia/utils/oscillator_utils.py#L176)
+### [``compute_theta_gamma_coupling_gate()``](../../src/thalia/utils/oscillator_utils.py#L127)
 
 **Returns**: `float`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
@@ -199,7 +171,7 @@ Biological Basis:
 
 ## 💊 Neuromodulation Functions
 
-### [``compute_ne_gain()``](../../src/thalia/neuromodulation/constants.py#L159)
+### [``compute_ne_gain()``](../../src/thalia/neuromodulation/constants.py#L92)
 
 **Returns**: `float`  
 **Source**: [`thalia/neuromodulation/constants.py`](../../src/thalia/neuromodulation/constants.py)

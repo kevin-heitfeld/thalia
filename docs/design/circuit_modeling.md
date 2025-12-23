@@ -187,26 +187,42 @@ Key features:
 
 ---
 
-### 🟢 LOW PRIORITY: Cerebellum Microcircuit
+### ✅ IMPLEMENTED: Cerebellum Microcircuit with Gap Junction Synchronization
 
-**Status**: Simplified to parallel fiber→Purkinje→output
+**Status**: ✅ **FULLY IMPLEMENTED** (December 23, 2025)
 
 **Biological Detail**:
 - Mossy fibers → Granule cells: ~1-2ms
 - Granule cells → Purkinje cells (parallel fibers): ~2-4ms
 - Climbing fibers → Purkinje cells: ~1-2ms (error signal)
 - Purkinje cells → Deep cerebellar nuclei: ~1-2ms
+- **Inferior Olive (IO) gap junctions**: <1ms electrical coupling
 - **Total**: ~5-10ms (extremely fast, sub-millisecond precision possible)
 
-**Why Not Prioritized**:
-- Current simplified model sufficient for error-corrective learning
-- Extreme precision matters more for fine motor control
-- Our curriculum focuses on cognition/language over motor refinement
-- Could add later if motor precision becomes bottleneck
+**Gap Junction Implementation** (December 23, 2025):
+- **IO gap junctions**: Electrical synapses between IO neurons synchronize complex spikes
+- **Functional connectivity**: Based on shared parallel fiber inputs (spatial proximity proxy)
+- **Synchronization**: Coupling current I_gap = Σ g[i,j] * (V[j] - V[i]) pulls voltages together
+- **Biological accuracy**: <1ms coupling, creates synchronized complex spikes across Purkinje cells
+- **Learning coordination**: Related Purkinje cells receive correlated error signals
+
+**Implementation Details**:
+- **Per-Purkinje dendritic learning**: Each Purkinje cell has independent parallel fiber synaptic weights
+- **Gap junction initialization**: Uses actual synaptic weights (not pre-computed similarity)
+- **Error synchronization**: Signed error propagation through gap junction coupling
+- **Tests**: `test_cerebellum_gap_junctions.py` (5 tests), `test_purkinje_learning.py` (6 tests)
+
+**Why Gap Junctions Matter**:
+- **Coordinated learning**: Multiple Purkinje cells learn together for related motor patterns
+- **Timing precision**: Synchronized complex spikes enable precise motor timing
+- **Generalization**: Similar errors propagate to nearby Purkinje cells
+- **Biological fidelity**: Matches observed IO neuron synchronization (<50μm proximity)
 
 **Curriculum Relevance**:
-- **Stage -0.5**: Sensorimotor coordination (current model adequate)
-- **Later stages**: Minimal direct impact on cognitive tasks
+- **Stage -0.5**: Sensorimotor coordination (coordinated motor learning)
+- **Stage 1**: Fine motor control (precision grasping, manipulation)
+- **Stage 2**: Sequence timing (motor sequences, speech articulation)
+- **Later stages**: Cognitive timing (mental simulation precision)
 
 ---
 
@@ -248,6 +264,14 @@ Key features:
    - ✅ Comprehensive test suite covering all aspects
    - Impact: Dual-band gamma generation (25-35 Hz + 60-80 Hz)
    - Important for attention mechanisms across all stages
+
+3. **✅ Cerebellum gap junction synchronization** (COMPLETED - December 23, 2025)
+   - ✅ IO neuron gap junctions with functional connectivity
+   - ✅ Per-Purkinje dendritic learning (LTD/LTP)
+   - ✅ Error signal synchronization via coupling currents
+   - ✅ Comprehensive test suite (11 tests: 6 Purkinje + 5 gap junction)
+   - Impact: Coordinated cerebellar learning across modules
+   - Important for motor timing, sensorimotor coordination (Stage -0.5+)
 
 3. **✅ PFC-Striatum-Thalamus loop** (COMPLETED - December 2025)
    - ✅ PFC → Striatum (15ms) pathway configured

@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -55,12 +55,15 @@ Total: 3 configuration classes
 | `stp_ca3_recurrent_type` | `STPType` | `STPType.DEPRESSING_FAST` |
 | `adapt_increment` | `float` | `0.5` |
 | `ca3_feedback_inhibition` | `float` | `0.3` |
+| `gap_junctions_enabled` | `bool` | `True` |
+| `gap_junction_strength` | `float` | `0.12` |
+| `gap_junction_threshold` | `float` | `0.25` |
+| `gap_junction_max_neighbors` | `int` | `8` |
 | `heterosynaptic_ratio` | `float` | `0.1` |
 | `theta_reset_persistent` | `bool` | `True` |
 | `theta_reset_fraction` | `float` | `0.5` |
-| `gamma_n_slots` | `int` | `7` |
-| `gamma_gating_strength` | `float` | `0.5` |
-| `gamma_slot_mode` | `str` | `'item'` |
+| `phase_diversity_init` | `bool` | `True` |
+| `phase_jitter_std_ms` | `float` | `5.0` |
 | `use_her` | `bool` | `True` |
 | `her_k_hindsight` | `int` | `4` |
 | `her_replay_ratio` | `float` | `0.8` |
@@ -70,11 +73,11 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L140)
+- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L139)
 
 ---
 
-### [``LayeredCortexConfig``](../../src/thalia/regions/cortex/config.py#L26)
+### [``LayeredCortexConfig``](../../src/thalia/regions/cortex/config.py#L27)
 
 **Source**: [`thalia/regions/cortex/config.py`](../../src/thalia/regions/cortex/config.py)
 
@@ -107,6 +110,10 @@ Total: 3 configuration classes
 | `enable_spillover` | `bool` | `True` |
 | `spillover_mode` | `str` | `'connectivity'` |
 | `spillover_strength` | `float` | `0.15` |
+| `gap_junctions_enabled` | `bool` | `True` |
+| `gap_junction_strength` | `float` | `0.12` |
+| `gap_junction_threshold` | `float` | `0.25` |
+| `gap_junction_max_neighbors` | `int` | `8` |
 | `a_plus` | `float` | `STDP_A_PLUS_CORTEX` |
 | `a_minus` | `float` | `STDP_A_MINUS_CORTEX` |
 | `l23_recurrent_w_min` | `float` | `-1.5` |
@@ -128,11 +135,11 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`cortex`](../../src/thalia/regions/cortex/layered_cortex.py#L132)
+- [`cortex`](../../src/thalia/regions/cortex/layered_cortex.py#L134)
 
 ---
 
-### [``StriatumConfig``](../../src/thalia/regions/striatum/config.py#L25)
+### [``StriatumConfig``](../../src/thalia/regions/striatum/config.py#L24)
 
 **Source**: [`thalia/regions/striatum/config.py`](../../src/thalia/regions/striatum/config.py)
 
@@ -181,6 +188,12 @@ Total: 3 configuration classes
 | `tonic_modulates_exploration` | `bool` | `True` |
 | `tonic_exploration_scale` | `float` | `0.1` |
 | `beta_modulation_strength` | `float` | `0.3` |
+| `fsi_enabled` | `bool` | `True` |
+| `fsi_ratio` | `float` | `0.02` |
+| `gap_junctions_enabled` | `bool` | `True` |
+| `gap_junction_strength` | `float` | `0.15` |
+| `gap_junction_threshold` | `float` | `0.25` |
+| `gap_junction_max_neighbors` | `int` | `10` |
 | `use_goal_conditioning` | `bool` | `True` |
 | `pfc_size` | `int` | `128` |
 | `goal_modulation_strength` | `float` | `0.5` |
@@ -193,7 +206,7 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`striatum`](../../src/thalia/regions/striatum/striatum.py#L151)
+- [`striatum`](../../src/thalia/regions/striatum/striatum.py#L152)
 
 ---
 

@@ -1,7 +1,7 @@
 # Learning Strategies API
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 01:10:24
+> Last updated: 2025-12-23 15:50:40
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all learning strategy factory functions available in Thalia.
@@ -129,7 +129,7 @@ graph LR
 
 ---
 
-### [``create_strategy()``](../../src/thalia/learning/rules/strategies.py#L1041)
+### [``create_strategy()``](../../src/thalia/learning/rules/strategies.py#L1042)
 
 **Returns**: `BaseStrategy`
 
