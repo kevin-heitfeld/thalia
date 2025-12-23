@@ -454,13 +454,14 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         dg_membrane = h.dg_neurons.membrane if h.dg_neurons.membrane is not None else torch.zeros(n_dg, device=h.device)
 
         for i in range(n_dg):
-            neuron_id = f"hippo_dg_neuron_{i}_step0"
+            birth_step = h._neuron_birth_steps_dg[i].item() if hasattr(h, '_neuron_birth_steps_dg') else 0
+            neuron_id = f"hippo_dg_neuron_{i}_step{birth_step}"
 
             neuron_data = {
                 "id": neuron_id,
                 "layer": "DG",
                 "region": "hippocampus",
-                "created_step": 0,
+                "created_step": birth_step,
                 "membrane": dg_membrane[i].item(),
                 "incoming_synapses": self.extract_synapses_for_neuron(
                     i, h.synaptic_weights["ec_dg"], "ec_neuron"
@@ -473,7 +474,8 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         ca3_membrane = h.ca3_neurons.membrane if h.ca3_neurons.membrane is not None else torch.zeros(n_ca3, device=h.device)
 
         for i in range(n_ca3):
-            neuron_id = f"hippo_ca3_neuron_{i}_step0"
+            birth_step = h._neuron_birth_steps_ca3[i].item() if hasattr(h, '_neuron_birth_steps_ca3') else 0
+            neuron_id = f"hippo_ca3_neuron_{i}_step{birth_step}"
 
             # CA3 has two sets of incoming synapses: from DG and from CA3 (recurrent)
             all_synapses = self.extract_multi_source_synapses(
@@ -488,7 +490,7 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
                 "id": neuron_id,
                 "layer": "CA3",
                 "region": "hippocampus",
-                "created_step": 0,
+                "created_step": birth_step,
                 "membrane": ca3_membrane[i].item(),
                 "incoming_synapses": all_synapses,
             }
@@ -499,7 +501,8 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         ca1_membrane = h.ca1_neurons.membrane if h.ca1_neurons.membrane is not None else torch.zeros(n_ca1, device=h.device)
 
         for i in range(n_ca1):
-            neuron_id = f"hippo_ca1_neuron_{i}_step0"
+            birth_step = h._neuron_birth_steps_ca1[i].item() if hasattr(h, '_neuron_birth_steps_ca1') else 0
+            neuron_id = f"hippo_ca1_neuron_{i}_step{birth_step}"
 
             # CA1 has multiple input sources
             weight_source_pairs = [
@@ -518,7 +521,7 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
                 "id": neuron_id,
                 "layer": "CA1",
                 "region": "hippocampus",
-                "created_step": 0,
+                "created_step": birth_step,
                 "membrane": ca1_membrane[i].item(),
                 "incoming_synapses": all_synapses,
             }

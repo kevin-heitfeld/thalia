@@ -319,11 +319,9 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         update_gate = pfc.state.update_gate if pfc.state.update_gate is not None else torch.zeros(n_neurons, device=pfc.device)
 
         for i in range(n_neurons):
-            # Generate stable neuron ID
-            # TODO(enhancement): Track actual creation step for neurogenesis history
-            # Requires checkpoint manager to record growth events with timestamps
-            # For now, use step0 as default for all neurons at checkpoint time
-            neuron_id = f"pfc_neuron_{i}_step0"
+            # Generate stable neuron ID with actual creation timestep
+            birth_step = pfc._neuron_birth_steps[i].item() if hasattr(pfc, '_neuron_birth_steps') else 0
+            neuron_id = f"pfc_neuron_{i}_step{birth_step}"
 
             # Determine neuron type (rule vs working memory)
             # For now, simple heuristic: if update_gate is high, it's a WM neuron
@@ -333,7 +331,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
                 "id": neuron_id,
                 "type": neuron_type,
                 "region": "prefrontal",
-                "created_step": 0,
+                "created_step": birth_step,
                 "membrane": membrane[i].item(),
                 "working_memory": wm[i].item(),
                 "update_gate": update_gate[i].item(),

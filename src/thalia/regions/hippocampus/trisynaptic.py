@@ -447,6 +447,13 @@ class TrisynapticHippocampus(NeuralRegion):
         # State
         self.state = HippocampusState()
 
+        # Initialize neurogenesis history tracking
+        # Track creation timesteps for each neuron in each layer
+        self._neuron_birth_steps_dg = torch.zeros(self.dg_size, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps_ca3 = torch.zeros(self.ca3_size, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps_ca1 = torch.zeros(self.ca1_size, dtype=torch.long, device=self.device)
+        self._current_training_step = 0  # Updated externally by training loop
+
         # Checkpoint manager for neuromorphic format support
         self.checkpoint_manager = HippocampusCheckpointManager(self)
 
@@ -775,7 +782,16 @@ class TrisynapticHippocampus(NeuralRegion):
             torch.cat([expanded_ca1_rows, new_ca3_cols_to_ca1], dim=1)
         )
 
-        # 5. Expand neurons for all layers using factory functions
+        # 5.5. Expand EC→CA1 direct perforant path [ca1, n_input]
+        # Only expand rows (CA1), input size is fixed
+        new_ec_ca1_rows = self._create_new_weights(
+            n_new, self.tri_config.n_input, initialization, sparsity
+        )
+        self.synaptic_weights["ec_ca1"] = nn.Parameter(
+            torch.cat([self.synaptic_weights["ec_ca1"].data, new_ec_ca1_rows], dim=0)
+        )
+
+        # 6. Expand neurons for all layers using factory functions
         self.dg_size = new_dg_size
         self.dg_neurons = create_pyramidal_neurons(self.dg_size, self.device)
 
@@ -790,7 +806,18 @@ class TrisynapticHippocampus(NeuralRegion):
         self.ca1_size = new_ca1_size
         self.ca1_neurons = create_pyramidal_neurons(self.ca1_size, self.device)
 
-        # 6. Update config
+        # 6.5. Track neurogenesis history for new neurons
+        # Record creation timesteps for checkpoint analysis
+        new_dg_births = torch.full((dg_growth,), self._current_training_step, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps_dg = torch.cat([self._neuron_birth_steps_dg, new_dg_births])
+
+        new_ca3_births = torch.full((ca3_growth,), self._current_training_step, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps_ca3 = torch.cat([self._neuron_birth_steps_ca3, new_ca3_births])
+
+        new_ca1_births = torch.full((n_new,), self._current_training_step, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps_ca1 = torch.cat([self._neuron_birth_steps_ca1, new_ca1_births])
+
+        # 7. Update config
         self.config = replace(self.config, n_output=new_ca1_size)
 
     def grow_input(
@@ -2031,6 +2058,17 @@ class TrisynapticHippocampus(NeuralRegion):
     # endregion
 
     # region Diagnostics and Health Monitoring
+
+    def set_training_step(self, step: int) -> None:
+        """Update the current training step for neurogenesis tracking.
+
+        This should be called by the training loop to keep track of when neurons
+        are created during growth events in DG, CA3, and CA1.
+
+        Args:
+            step: Current global training step
+        """
+        self._current_training_step = step
 
     def get_diagnostics(self) -> HippocampusDiagnostics:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.

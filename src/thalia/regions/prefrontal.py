@@ -495,6 +495,11 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         )
         self.homeostasis = UnifiedHomeostasis(homeostasis_config)
 
+        # Initialize neurogenesis history tracking
+        # Tracks the creation timestep for each neuron (for checkpoint analysis)
+        self._neuron_birth_steps = torch.zeros(config.n_output, dtype=torch.long, device=self.device)
+        self._current_training_step = 0  # Updated externally by training loop
+
         # Initialize working memory state (1D tensors, ADR-005)
         self.state = PrefrontalState(
             working_memory=torch.zeros(config.n_output, device=self.device),
@@ -898,6 +903,11 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         # 4. Expand neurons using efficient in-place growth
         self.neurons.grow_neurons(n_new)
 
+        # 4.5. Track neurogenesis history for new neurons
+        # Record creation timestep for checkpoint analysis
+        new_birth_steps = torch.full((n_new,), self._current_training_step, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps = torch.cat([self._neuron_birth_steps, new_birth_steps])
+
         # 5. Update dopamine gating system
         self.dopamine_system = DopamineGatingSystem(
             n_neurons=new_n_output,
@@ -907,9 +917,33 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
             device=self.device,
         )
 
+        # 5.5. Expand state tensors for new neurons
+        if self.state.working_memory is not None:
+            new_wm = torch.zeros(n_new, device=self.device)
+            self.state.working_memory = torch.cat([self.state.working_memory, new_wm])
+
+        if self.state.update_gate is not None:
+            new_gate = torch.zeros(n_new, device=self.device)
+            self.state.update_gate = torch.cat([self.state.update_gate, new_gate])
+
+        if self.state.active_rule is not None:
+            new_rule = torch.zeros(n_new, device=self.device)
+            self.state.active_rule = torch.cat([self.state.active_rule, new_rule])
+
         # 6. Update configs
         self.config = replace(self.config, n_output=new_n_output)
         self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
+
+    def set_training_step(self, step: int) -> None:
+        """Update the current training step for neurogenesis tracking.
+
+        This should be called by the training loop to keep track of when neurons
+        are created during growth events.
+
+        Args:
+            step: Current global training step
+        """
+        self._current_training_step = step
 
     def get_diagnostics(self) -> PrefrontalDiagnostics:
         """Get diagnostics using DiagnosticsMixin helpers.
