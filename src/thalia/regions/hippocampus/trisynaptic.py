@@ -130,7 +130,7 @@ from .checkpoint_manager import HippocampusCheckpointManager
 
 @register_region(
     "hippocampus",
-    aliases=["trisynaptic"],
+    aliases=["trisynaptic", "trisynaptic_hippocampus"],
     description="DG→CA3→CA1 trisynaptic circuit with theta-modulated encoding/retrieval and episodic memory",
     version="2.0",
     author="Thalia Project",

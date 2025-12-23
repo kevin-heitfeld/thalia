@@ -479,6 +479,7 @@ class RetinalEncoder(nn.Module):
 
 @register_pathway(
     "visual",
+    aliases=["visual_pathway", "retinal_pathway"],
     description="Visual pathway from retinal encoding to cortical spikes",
     version="1.0",
     author="Thalia Project"
@@ -726,6 +727,7 @@ class CochlearEncoder(nn.Module):
 
 @register_pathway(
     "auditory",
+    aliases=["auditory_pathway", "cochlear_pathway"],
     description="Auditory pathway from cochlear encoding to cortical spikes",
     version="1.0",
     author="Thalia Project"
@@ -791,6 +793,7 @@ class LanguageConfig(SensoryPathwayConfig):
 
 @register_pathway(
     "language",
+    aliases=["language_pathway", "linguistic_pathway"],
     description="Language pathway from token encoding to cortical spikes",
     version="1.0",
     author="Thalia Project"

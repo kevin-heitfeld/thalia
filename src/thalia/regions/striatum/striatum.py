@@ -144,6 +144,7 @@ from .td_lambda import TDLambdaLearner, TDLambdaConfig
 
 @register_region(
     "striatum",
+    aliases=["basal_ganglia"],
     description="Reinforcement learning via dopamine-modulated three-factor rule with D1/D2 opponent pathways",
     version="2.1",  # Updated for NeuralRegion migration
     author="Thalia Project",

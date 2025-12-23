@@ -144,6 +144,7 @@ class PredictiveCortexState(NeuralComponentState):
 
 @register_region(
     "predictive_cortex",
+    aliases=["predictive"],
     description="Layered cortex with predictive coding and precision-weighted prediction errors",
     version="1.0",
     author="Thalia Project",

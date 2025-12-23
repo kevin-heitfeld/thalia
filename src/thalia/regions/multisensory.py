@@ -159,7 +159,12 @@ class MultimodalIntegrationConfig(NeuralComponentConfig, HebbianLearningConfig):
     use_gamma_binding: bool = True  # Enable gamma synchronization
 
 
-@register_region("multimodal_integration")
+@register_region(
+    "multimodal_integration",
+    aliases=["multimodal"],
+    description="Multimodal integration for cross-sensory fusion and binding",
+    version="1.0",
+)
 class MultimodalIntegration(NeuralRegion):
     """Multimodal integration region for cross-modal fusion.
 
