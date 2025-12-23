@@ -506,8 +506,8 @@ def test_striatum_extreme_dopamine():
 
     input_spikes = generate_sparse_spikes(50, firing_rate=0.5)
 
-    # Set extreme dopamine
-    striatum.set_neuromodulators(dopamine=10.0)
+    # Set extreme dopamine (at valid upper boundary)
+    striatum.set_neuromodulators(dopamine=2.0)
 
     # Run forward pass
     output = striatum(input_spikes)

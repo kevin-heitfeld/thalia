@@ -246,7 +246,6 @@ class HippocampusState(BaseRegionState):
     """State for hippocampus (trisynaptic circuit) with RegionState protocol compliance.
 
     Extends BaseRegionState with hippocampus-specific state:
-    - Neuromodulator levels (dopamine, acetylcholine, norepinephrine)
     - DG/CA3/CA1 layer activities and traces
     - CA3 persistent activity (attractor dynamics)
     - Sample trace for memory encoding
@@ -256,15 +255,13 @@ class HippocampusState(BaseRegionState):
     - Feedforward inhibition strength
     - Short-term plasticity (STP) state for 4 pathways
 
+    Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
+    inherited from BaseRegionState.
+
     The CA1 spikes ARE the output - no interpretation needed!
     Different CA1 spike patterns naturally emerge for match vs mismatch
     through the coincidence detection between CA3 (memory) and EC (current).
     """
-
-    # Neuromodulator state (not in BaseRegionState, must be explicit)
-    dopamine: float = 0.2
-    acetylcholine: float = 0.0
-    norepinephrine: float = 0.0
 
     # Layer activities (current spikes)
     dg_spikes: Optional[torch.Tensor] = None
@@ -392,11 +389,10 @@ class HippocampusState(BaseRegionState):
 
     def reset(self) -> None:
         """Reset state to default values (in-place mutation)."""
-        self.spikes = None
-        self.membrane = None
-        self.dopamine = 0.2
-        self.acetylcholine = 0.0
-        self.norepinephrine = 0.0
+        # Reset base state (spikes, membrane, neuromodulators with DA_BASELINE_STANDARD)
+        super().reset()
+
+        # Reset hippocampus-specific state
         self.dg_spikes = None
         self.ca3_spikes = None
         self.ca1_spikes = None

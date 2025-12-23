@@ -34,13 +34,12 @@ def device():
 # Extreme Value Tests - Striatum (Dopamine)
 # =============================================================================
 
-@pytest.mark.parametrize("dopamine", [-10.0, -1.0, 0.0, 1.0, 10.0, 100.0])
-def test_striatum_handles_extreme_dopamine(dopamine, device):
-    """Test striatum handles out-of-range dopamine values.
+@pytest.mark.parametrize("dopamine", [-2.0, -1.0, 0.0, 1.0, 2.0])
+def test_striatum_handles_valid_dopamine_range(dopamine, device):
+    """Test striatum handles valid dopamine values within biological range.
 
-    Biological context: Dopamine should be in [0, 1] range typically,
-    but system should not crash with extreme values from reward prediction
-    errors or other learning scenarios.
+    Biological context: Dopamine should be in [-2, 2] range for biological
+    plausibility. Values within this range should work without issues.
     """
     config = StriatumConfig(
         n_input=50,
@@ -67,16 +66,37 @@ def test_striatum_handles_extreme_dopamine(dopamine, device):
         f"Expected output size {expected_size}, got {output.shape[0]}"
 
 
+@pytest.mark.parametrize("dopamine", [-10.0, -3.0, 3.0, 10.0, 100.0])
+def test_striatum_rejects_extreme_dopamine(dopamine, device):
+    """Test striatum rejects out-of-range dopamine values.
+
+    Extreme values outside [-2, 2] indicate upstream bugs or configuration
+    errors and should be caught early with validation.
+    """
+    config = StriatumConfig(
+        n_input=50,
+        n_output=3,
+        population_coding=True,
+        neurons_per_action=4,
+        device=str(device),
+    )
+    striatum = Striatum(config)
+
+    # Should raise ValueError for out-of-range values
+    with pytest.raises(ValueError, match="(?i)(invalid|dopamine|range)"):
+        striatum.set_neuromodulators(dopamine=dopamine)
+
+
 # =============================================================================
 # Extreme Value Tests - Hippocampus (Acetylcholine)
 # =============================================================================
 
-@pytest.mark.parametrize("acetylcholine", [-5.0, 0.0, 1.0, 5.0, 50.0])
-def test_hippocampus_handles_extreme_acetylcholine(acetylcholine, device):
-    """Test hippocampus handles out-of-range acetylcholine values.
+@pytest.mark.parametrize("acetylcholine", [0.0, 0.5, 1.0, 1.5, 2.0])
+def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
+    """Test hippocampus handles valid acetylcholine values within biological range.
 
     Biological context: ACh modulates encoding vs retrieval in hippocampus.
-    System should degrade gracefully with extreme values rather than crash.
+    Values within [0, 2] range should work without issues.
     """
     config = HippocampusConfig(
         n_input=40,
@@ -97,39 +117,78 @@ def test_hippocampus_handles_extreme_acetylcholine(acetylcholine, device):
     assert output.shape[0] == hippocampus.config.n_output
 
 
+@pytest.mark.parametrize("acetylcholine", [-5.0, -1.0, 3.0, 5.0, 50.0])
+def test_hippocampus_rejects_extreme_acetylcholine(acetylcholine, device):
+    """Test hippocampus rejects out-of-range acetylcholine values.
+
+    Biological context: ACh should be in [0, 2] range for biological plausibility.
+    Values outside this range should be rejected early.
+    """
+    config = HippocampusConfig(
+        n_input=40,
+        n_output=20,
+        device=str(device),
+    )
+    hippocampus = Hippocampus(config)
+
+    # Should raise ValueError for out-of-range values
+    with pytest.raises(ValueError, match="(?i)(invalid|acetylcholine|range)"):
+        hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
+
+
 # =============================================================================
 # Extreme Value Tests - Prefrontal (Norepinephrine)
 # =============================================================================
 
-@pytest.mark.parametrize("norepinephrine", [-3.0, 0.0, 1.0, 3.0, 20.0])
-def test_prefrontal_handles_extreme_norepinephrine(norepinephrine, device):
-    """Test PFC handles out-of-range norepinephrine values.
+@pytest.mark.parametrize("norepinephrine", [0.0, 0.5, 1.0, 1.5, 2.0])
+def test_prefrontal_handles_valid_norepinephrine_range(norepinephrine, device):
+    """Test PFC handles valid norepinephrine values within biological range.
 
     Biological context: NE modulates arousal and working memory gating in PFC.
-    System should handle extreme values without instability.
+    Values within [0, 2] range should work without issues.
     """
     config = PrefrontalConfig(
-        n_input=50,
-        n_output=30,
+        n_input=30,
+        n_output=15,
         device=str(device),
     )
-    pfc = Prefrontal(config)
-    pfc.set_neuromodulators(norepinephrine=norepinephrine)
+    prefrontal = Prefrontal(config)
+    prefrontal.set_neuromodulators(norepinephrine=norepinephrine)
 
-    input_spikes = torch.rand(50, device=device) > 0.8
-    output = pfc(input_spikes)
+    input_spikes = torch.rand(30, device=device) > 0.8
+    output = prefrontal(input_spikes)
 
+    # Check stability
     assert not torch.isnan(output).any(), \
         f"NaN output with norepinephrine={norepinephrine}"
     assert not torch.isinf(output.float()).any(), \
         f"Inf output with norepinephrine={norepinephrine}"
+    assert output.shape[0] == prefrontal.config.n_output
+
+
+@pytest.mark.parametrize("norepinephrine", [-3.0, -1.0, 3.0, 5.0, 20.0])
+def test_prefrontal_rejects_extreme_norepinephrine(norepinephrine, device):
+    """Test PFC rejects out-of-range norepinephrine values.
+
+    Biological context: NE should be in [0, 2] range for biological plausibility.
+    Values outside this range should be rejected early.
+    """
+    config = PrefrontalConfig(
+        n_input=30,
+        n_output=15,
+        device=str(device),
+    )
+    prefrontal = Prefrontal(config)
+
+    # Should raise ValueError for out-of-range values
+    with pytest.raises(ValueError, match="(?i)(invalid|norepinephrine|range)"):
+        prefrontal.set_neuromodulators(norepinephrine=norepinephrine)
 
 
 # =============================================================================
 # Invalid Value Tests (NaN, Inf)
 # =============================================================================
 
-@pytest.mark.xfail(reason="TODO: Add NaN/Inf validation to set_neuromodulators()")
 def test_striatum_rejects_nan_dopamine(device):
     """Test striatum rejects NaN dopamine with clear error.
 
@@ -141,26 +200,24 @@ def test_striatum_rejects_nan_dopamine(device):
 
     # Should raise clear error for NaN
     with pytest.raises(
-        (ValueError, AssertionError),
+        ValueError,
         match="(?i)(invalid|nan|neuromodulator|dopamine)"
     ):
         striatum.set_neuromodulators(dopamine=float('nan'))
 
 
-@pytest.mark.xfail(reason="TODO: Add NaN/Inf validation to set_neuromodulators()")
 def test_striatum_rejects_inf_dopamine(device):
     """Test striatum rejects Inf dopamine with clear error."""
     config = StriatumConfig(n_input=50, n_output=3, device=str(device))
     striatum = Striatum(config)
 
     with pytest.raises(
-        (ValueError, AssertionError),
+        ValueError,
         match="(?i)(invalid|inf|neuromodulator|dopamine)"
     ):
         striatum.set_neuromodulators(dopamine=float('inf'))
 
 
-@pytest.mark.xfail(reason="TODO: Add NaN/Inf validation to set_neuromodulators()")
 def test_hippocampus_rejects_nan_acetylcholine(device):
     """Test hippocampus rejects NaN acetylcholine with clear error."""
     config = HippocampusConfig(
@@ -171,20 +228,19 @@ def test_hippocampus_rejects_nan_acetylcholine(device):
     hippocampus = Hippocampus(config)
 
     with pytest.raises(
-        (ValueError, AssertionError),
+        ValueError,
         match="(?i)(invalid|nan|neuromodulator|acetylcholine)"
     ):
         hippocampus.set_neuromodulators(acetylcholine=float('nan'))
 
 
-@pytest.mark.xfail(reason="TODO: Add NaN/Inf validation to set_neuromodulators()")
 def test_prefrontal_rejects_nan_norepinephrine(device):
     """Test PFC rejects NaN norepinephrine with clear error."""
     config = PrefrontalConfig(n_input=50, n_output=30, device=str(device))
     pfc = Prefrontal(config)
 
     with pytest.raises(
-        (ValueError, AssertionError),
+        ValueError,
         match="(?i)(invalid|nan|neuromodulator|norepinephrine)"
     ):
         pfc.set_neuromodulators(norepinephrine=float('nan'))
@@ -196,18 +252,18 @@ def test_prefrontal_rejects_nan_norepinephrine(device):
 
 @pytest.mark.parametrize("dopamine,norepinephrine", [
     (0.0, 0.0),   # Both at minimum
-    (1.0, 1.0),   # Both at maximum (normal operating range)
-    (0.0, 1.0),   # Opposing extremes
-    (1.0, 0.0),
-    (5.0, 5.0),   # Both elevated (stress-like state)
-    (-1.0, -1.0), # Both below range
+    (1.0, 1.0),   # Both at standard level
+    (2.0, 2.0),   # Both at maximum valid range
+    (0.0, 2.0),   # Opposing extremes within range
+    (2.0, 0.0),
+    (-1.0, 1.0),  # DA negative (punishment), NE elevated
+    (1.0, 0.5),   # Mixed moderate levels
 ])
-def test_prefrontal_handles_combined_modulators(dopamine, norepinephrine, device):
-    """Test PFC handles multiple neuromodulator interactions.
+def test_prefrontal_handles_valid_combined_modulators(dopamine, norepinephrine, device):
+    """Test PFC handles multiple neuromodulator interactions within valid ranges.
 
     Biological context: DA and NE interact in PFC for working memory
-    and cognitive control. System should handle all combinations without
-    instability or crashes.
+    and cognitive control. System should handle all valid combinations.
     """
     config = PrefrontalConfig(n_input=50, n_output=30, device=str(device))
     pfc = Prefrontal(config)
@@ -225,6 +281,28 @@ def test_prefrontal_handles_combined_modulators(dopamine, norepinephrine, device
         f"NaN with DA={dopamine}, NE={norepinephrine}"
     assert not torch.isinf(output.float()).any(), \
         f"Inf with DA={dopamine}, NE={norepinephrine}"
+
+
+@pytest.mark.parametrize("dopamine,norepinephrine", [
+    (5.0, 5.0),   # Both elevated beyond range
+    (-3.0, -1.0), # Both below range
+    (10.0, 0.0),  # DA way too high
+    (0.0, 10.0),  # NE way too high
+])
+def test_prefrontal_rejects_invalid_combined_modulators(dopamine, norepinephrine, device):
+    """Test PFC rejects invalid combinations of neuromodulators.
+
+    Should reject any combination where at least one modulator is out of range.
+    """
+    config = PrefrontalConfig(n_input=50, n_output=30, device=str(device))
+    pfc = Prefrontal(config)
+
+    # Should raise ValueError for any out-of-range value
+    with pytest.raises(ValueError, match="(?i)(invalid|dopamine|norepinephrine|range)"):
+        pfc.set_neuromodulators(
+            dopamine=dopamine,
+            norepinephrine=norepinephrine,
+        )
 
 
 # =============================================================================
@@ -289,12 +367,12 @@ def test_hippocampus_stable_with_fluctuating_acetylcholine(device):
 # Learning Stability Tests
 # =============================================================================
 
-@pytest.mark.parametrize("modulator_value", [-100.0, 0.0, 1.0, 100.0, 1000.0])
-def test_striatum_learning_stable_with_extreme_dopamine(modulator_value, device):
-    """Test striatal learning doesn't diverge with extreme dopamine.
+@pytest.mark.parametrize("modulator_value", [-2.0, -1.0, 0.0, 1.0, 2.0])
+def test_striatum_learning_stable_with_valid_dopamine(modulator_value, device):
+    """Test striatal learning doesn't diverge with valid dopamine range.
 
-    Critical for biological plausibility: Learning should saturate or clip,
-    not produce exploding gradients or infinite weight changes.
+    Critical for biological plausibility: Learning should remain stable
+    across the full valid dopamine range [-2, 2].
     """
     config = StriatumConfig(n_input=50, n_output=3, device=str(device))
     striatum = Striatum(config)
@@ -305,7 +383,7 @@ def test_striatum_learning_stable_with_extreme_dopamine(modulator_value, device)
         for source, weights in striatum.synaptic_weights.items():
             initial_weights[source] = weights.clone()
 
-    # Set extreme modulator
+    # Set valid modulator
     striatum.set_neuromodulators(dopamine=modulator_value)
 
     # Run learning with strong consistent input
@@ -327,9 +405,9 @@ def test_striatum_learning_stable_with_extreme_dopamine(modulator_value, device)
                 f"Weights above valid range with dopamine={modulator_value}"
 
 
-@pytest.mark.parametrize("acetylcholine", [-10.0, 0.0, 1.0, 10.0])
-def test_hippocampus_learning_stable_with_extreme_acetylcholine(acetylcholine, device):
-    """Test hippocampal learning remains stable with extreme acetylcholine.
+@pytest.mark.parametrize("acetylcholine", [0.0, 0.5, 1.0, 1.5, 2.0])
+def test_hippocampus_learning_stable_with_valid_acetylcholine(acetylcholine, device):
+    """Test hippocampal learning remains stable with valid acetylcholine range.
 
     ACh modulates learning rate in hippocampus. Extreme values should
     saturate learning, not cause divergence.
@@ -366,17 +444,17 @@ def test_hippocampus_learning_stable_with_extreme_acetylcholine(acetylcholine, d
 # Extended Stability Tests
 # =============================================================================
 
-def test_striatum_extended_run_with_extreme_dopamine(device):
-    """Test striatum stability over extended run with extreme dopamine.
+def test_striatum_extended_run_with_valid_dopamine(device):
+    """Test striatum stability over extended run with valid dopamine range.
 
     Longer test (100 steps) to catch delayed instabilities that might
-    not appear in short tests.
+    not appear in short tests. Uses maximum valid dopamine (2.0).
     """
     config = StriatumConfig(n_input=50, n_output=3, device=str(device))
     striatum = Striatum(config)
 
-    # Use extreme but realistic dopamine (e.g., large RPE)
-    striatum.set_neuromodulators(dopamine=5.0)
+    # Use maximum valid dopamine (e.g., large RPE)
+    striatum.set_neuromodulators(dopamine=2.0)
 
     input_spikes = torch.rand(50, device=device) > 0.8
 
@@ -405,6 +483,7 @@ def test_multi_region_neuromodulator_stability(device):
 
     Integration test: Multiple regions with different modulators should
     all remain stable when run together (simulating full brain).
+    Uses maximum valid values for each neuromodulator.
     """
     # Create multiple regions
     striatum = Striatum(StriatumConfig(n_input=50, n_output=3, device=str(device)))
@@ -413,10 +492,10 @@ def test_multi_region_neuromodulator_stability(device):
     ))
     pfc = Prefrontal(PrefrontalConfig(n_input=50, n_output=30, device=str(device)))
 
-    # Set different modulators for each
-    striatum.set_neuromodulators(dopamine=5.0)
-    hippocampus.set_neuromodulators(acetylcholine=3.0)
-    pfc.set_neuromodulators(dopamine=2.0, norepinephrine=4.0)
+    # Set different modulators for each (all within valid ranges)
+    striatum.set_neuromodulators(dopamine=2.0)
+    hippocampus.set_neuromodulators(acetylcholine=2.0)
+    pfc.set_neuromodulators(dopamine=2.0, norepinephrine=2.0)
 
     # Run all regions
     for _ in range(20):

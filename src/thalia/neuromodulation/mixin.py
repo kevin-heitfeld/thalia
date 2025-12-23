@@ -128,6 +128,86 @@ import math
 from typing import Optional
 
 
+# =============================================================================
+# Validation Control
+# =============================================================================
+
+# Module-level flag for numerical validation (mutable by design)
+# ruff: noqa: N816 (allow lowercase module-level variable)
+_enable_numerical_validation = True
+"""Global flag to enable/disable numerical validation.
+
+When True (default): Validates all neuromodulator values for NaN/Inf.
+When False: Skips validation for maximum performance.
+
+Set to False only for production/benchmarking after thorough testing.
+
+Usage:
+    import thalia.neuromodulation.mixin as nm_mixin
+    nm_mixin._enable_numerical_validation = False  # Disable validation
+"""
+
+
+def set_numerical_validation(enabled: bool) -> None:
+    """Enable or disable numerical validation globally.
+
+    Args:
+        enabled: True to enable validation, False to disable
+
+    Example:
+        >>> from thalia.neuromodulation.mixin import set_numerical_validation
+        >>> set_numerical_validation(False)  # Disable for benchmarking
+    """
+    global _enable_numerical_validation  # noqa: PLW0603
+    _enable_numerical_validation = enabled
+
+
+def validate_finite(
+    value: float,
+    name: str,
+    valid_range: Optional[tuple[float, float]] = None,
+) -> None:
+    """Validate that a numerical value is finite and optionally in range.
+
+    Args:
+        value: Value to validate
+        name: Parameter name for error message
+        valid_range: Optional (min, max) tuple for range checking
+
+    Raises:
+        ValueError: If value is NaN, Inf, or out of range
+
+    Example:
+        >>> validate_finite(dopamine, "dopamine", valid_range=(-1.0, 1.0))
+    """
+    if not _enable_numerical_validation:
+        return
+
+    # Check for NaN
+    if math.isnan(value):
+        raise ValueError(
+            f"Invalid {name}: NaN is not a valid neuromodulator value. "
+            f"This usually indicates a numerical instability upstream."
+        )
+
+    # Check for Inf
+    if math.isinf(value):
+        raise ValueError(
+            f"Invalid {name}: Inf is not a valid neuromodulator value. "
+            f"This usually indicates a numerical overflow upstream."
+        )
+
+    # Optional range check
+    if valid_range is not None:
+        min_val, max_val = valid_range
+        if value < min_val or value > max_val:
+            raise ValueError(
+                f"Invalid {name}: {value:.4f} is outside valid range "
+                f"[{min_val}, {max_val}]. Biological plausibility requires "
+                f"neuromodulators to remain in reasonable bounds."
+            )
+
+
 class NeuromodulatorMixin:
     """Mixin providing standardized neuromodulator handling for brain regions.
 
@@ -168,17 +248,29 @@ class NeuromodulatorMixin:
                           High = encoding mode, enhance sensory processing
                           Low = retrieval mode, suppress interference
 
+        Raises:
+            ValueError: If any neuromodulator value is NaN or Inf
+                       (when validation enabled)
+
         Note:
             For biological plausibility, all three neuromodulator systems
             should be updated together to maintain consistent brain state.
             This method ensures atomic updates without partial state.
             Any neuromodulator not specified will remain at its current value.
+
+            Validation can be disabled for performance via:
+                from thalia.neuromodulation.mixin import set_numerical_validation
+                set_numerical_validation(False)
         """
+        # Validate inputs (NaN/Inf checks)
         if dopamine is not None:
+            validate_finite(dopamine, "dopamine", valid_range=(-2.0, 2.0))
             self.state.dopamine = dopamine
         if norepinephrine is not None:
+            validate_finite(norepinephrine, "norepinephrine", valid_range=(0.0, 2.0))
             self.state.norepinephrine = norepinephrine
         if acetylcholine is not None:
+            validate_finite(acetylcholine, "acetylcholine", valid_range=(0.0, 2.0))
             self.state.acetylcholine = acetylcholine
 
     def set_neuromodulator(self, name: str, level: float) -> None:
@@ -189,7 +281,7 @@ class NeuromodulatorMixin:
             level: Level to set
 
         Raises:
-            ValueError: If name is not a recognized neuromodulator
+            ValueError: If name is not a recognized neuromodulator or value is invalid
         """
         valid_names = {'dopamine', 'acetylcholine', 'norepinephrine'}
         if name not in valid_names:
@@ -197,6 +289,13 @@ class NeuromodulatorMixin:
                 f"Unknown neuromodulator '{name}'. "
                 f"Valid names: {valid_names}"
             )
+
+        # Validate value based on neuromodulator type
+        if name == 'dopamine':
+            validate_finite(level, name, valid_range=(-2.0, 2.0))
+        else:  # norepinephrine, acetylcholine
+            validate_finite(level, name, valid_range=(0.0, 2.0))
+
         setattr(self.state, name, level)
 
     def decay_neuromodulators(

@@ -284,15 +284,15 @@ def test_thalamus_center_surround_filter(thalamus):
     assert has_positive or has_negative  # At least one should exist
 
 
-@pytest.mark.parametrize("norepinephrine", [-0.5, 0.0, 1.0, 1.5, 2.0])
+@pytest.mark.parametrize("norepinephrine", [0.0, 0.5, 1.0, 1.5, 2.0])
 def test_thalamus_extreme_norepinephrine(thalamus, norepinephrine):
     """Test thalamus stability with extreme norepinephrine values.
 
-    Phase 2 improvement: Tests edge cases beyond normal [0, 1] range.
+    Phase 2 improvement: Tests edge cases at boundaries of valid [0, 2] range.
     """
     input_spikes = generate_sparse_spikes(100, firing_rate=0.3)
 
-    # Set extreme NE value
+    # Set NE value (within valid biological range)
     thalamus.set_neuromodulators(norepinephrine=norepinephrine)
 
     # Forward pass should not crash

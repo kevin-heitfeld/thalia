@@ -18,6 +18,7 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.region_state import BaseRegionState
 from thalia.learning.rules.bcm import BCMConfig
 from thalia.regulation.learning_constants import STDP_A_PLUS_CORTEX, STDP_A_MINUS_CORTEX
+from thalia.neuromodulation.constants import DA_BASELINE_STANDARD, ACH_BASELINE, NE_BASELINE
 from thalia.components.neurons.neuron_constants import ADAPT_INCREMENT_CORTEX_L23
 from .robustness_config import RobustnessConfig
 
@@ -192,12 +193,14 @@ class LayeredCortexState(BaseRegionState):
     """State for layered cortex with RegionState protocol compliance.
 
     Extends BaseRegionState with cortex-specific state:
-    - Neuromodulator levels (dopamine, acetylcholine, norepinephrine)
     - 6-layer architecture (L4, L2/3, L5, L6a, L6b) with spikes and traces
     - L2/3 recurrent activity accumulation
     - Top-down modulation and attention gating
     - Feedforward inhibition and alpha suppression
     - Short-term plasticity (STP) state for L2/3 recurrent pathway
+
+    Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
+    inherited from BaseRegionState.
 
     The 6-layer structure reflects canonical cortical microcircuit:
     - L4: Main input layer (thalamic recipient)
@@ -206,11 +209,6 @@ class LayeredCortexState(BaseRegionState):
     - L6a: TRN feedback for attentional gating
     - L6b: Relay feedback for gain control
     """
-
-    # Neuromodulator state (explicit, not in BaseRegionState)
-    dopamine: float = 0.0
-    acetylcholine: float = 0.0
-    norepinephrine: float = 0.0
 
     # Input stored for continuous plasticity
     input_spikes: Optional[torch.Tensor] = None
@@ -323,9 +321,9 @@ class LayeredCortexState(BaseRegionState):
             # Base region state
             spikes=transfer_tensor(data.get("spikes")),
             membrane=transfer_tensor(data.get("membrane")),
-            dopamine=data.get("dopamine", 0.0),
-            acetylcholine=data.get("acetylcholine", 0.0),
-            norepinephrine=data.get("norepinephrine", 0.0),
+            dopamine=data.get("dopamine", DA_BASELINE_STANDARD),
+            acetylcholine=data.get("acetylcholine", ACH_BASELINE),
+            norepinephrine=data.get("norepinephrine", NE_BASELINE),
             # Input
             input_spikes=transfer_tensor(data.get("input_spikes")),
             # Layer spike states
@@ -361,11 +359,10 @@ class LayeredCortexState(BaseRegionState):
         Zeros all tensors and resets scalars to defaults.
         This is called when starting a new simulation or resetting the region.
         """
-        # Reset tensors
-        if self.spikes is not None:
-            self.spikes.zero_()
-        if self.membrane is not None:
-            self.membrane.zero_()
+        # Reset base state (spikes, membrane, neuromodulators)
+        super().reset()
+
+        # Reset input spikes
         if self.input_spikes is not None:
             self.input_spikes.zero_()
 
@@ -403,10 +400,7 @@ class LayeredCortexState(BaseRegionState):
         if self.gamma_attention_gate is not None:
             self.gamma_attention_gate.zero_()
 
-        # Reset scalars
-        self.dopamine = 0.0
-        self.acetylcholine = 0.0
-        self.norepinephrine = 0.0
+        # Reset scalars (neuromodulators handled by BaseRegionState.reset())
         self.ffi_strength = 0.0
         self.alpha_suppression = 1.0  # Reset to no suppression
         self.gamma_attention_phase = None

@@ -126,8 +126,9 @@ from thalia.components.neurons.neuron_constants import (
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
 from thalia.regions.striatum.exploration import ExplorationConfig
+from thalia.neuromodulation.constants import ACH_BASELINE, NE_BASELINE
 
-from .config import StriatumConfig
+from .config import StriatumConfig, StriatumState
 from .action_selection import ActionSelectionMixin
 from .pathway_base import StriatumPathwayConfig
 from .d1_pathway import D1Pathway
@@ -604,6 +605,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
 
         # =====================================================================
+        # STATE OBJECT - Required for NeuromodulatorMixin
+        # =====================================================================
+        # Initialize state object with neuromodulator fields
+        self.state = StriatumState(
+            dopamine=self.striatum_config.tonic_dopamine,
+            acetylcholine=ACH_BASELINE,
+            norepinephrine=NE_BASELINE,
+        )
+
+        # =====================================================================
         # CHECKPOINT MANAGER
         # =====================================================================
         # Handles state serialization/deserialization
@@ -856,7 +867,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         n_d2 = n_total
 
         # Initialize D1 weights using Xavier initialization
-        from thalia.components.synapses.weight_init import WeightInitializer
         d1_weights = WeightInitializer.xavier(
             n_output=n_d1,
             n_input=n_input,
@@ -1283,9 +1293,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             d2_spikes: D2 neuron population spikes [n_d2] (1D)
             chosen_action: If provided, only build eligibility for this action's neurons
         """
-        # Get timestep from config
-        dt = self.config.dt_ms
-
         # Ensure 1D
         if input_spikes.dim() != 1:
             input_spikes = input_spikes.squeeze()
@@ -1293,8 +1300,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             d1_spikes = d1_spikes.squeeze()
         if d2_spikes.dim() != 1:
             d2_spikes = d2_spikes.squeeze()
-
-        cfg = self.striatum_config
 
         # Get float versions for trace updates
         input_1d = input_spikes.float()
@@ -1847,19 +1852,34 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     ) -> None:
         """Set neuromodulator levels for striatum.
 
-        Delegates to forward_coordinator which manages neuromodulator state.
+        Delegates to forward_coordinator which manages neuromodulator state for
+        forward pass computations. Also updates self.state for diagnostics consistency.
 
         Args:
             dopamine: Dopamine level (affects D1/D2 gain, learning)
             norepinephrine: Norepinephrine level (affects arousal/gain)
             acetylcholine: Acetylcholine level (not used in striatum)
+
+        Note:
+            ForwardCoordinator maintains its own neuromodulator state (_tonic_dopamine,
+            _ne_level) for performance in tight forward loops. self.state is updated
+            for diagnostics and consistency with other regions.
         """
+        # Update forward_coordinator's private state (used in forward pass)
         if hasattr(self, 'forward_coordinator'):
             self.forward_coordinator.set_neuromodulators(
                 dopamine=dopamine,
                 norepinephrine=norepinephrine,
                 acetylcholine=acetylcholine,
             )
+
+        # Also update self.state for diagnostics consistency (inherited from mixin)
+        # Use mixin's validation by calling super()
+        super().set_neuromodulators(
+            dopamine=dopamine,
+            norepinephrine=norepinephrine,
+            acetylcholine=acetylcholine,
+        )
 
     # endregion
 

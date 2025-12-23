@@ -65,6 +65,7 @@ from thalia.components.neurons.neuron_constants import (
     TONIC_D1_GAIN_SCALE,
 )
 from thalia.neuromodulation.constants import compute_ne_gain
+from thalia.neuromodulation.mixin import validate_finite
 
 if TYPE_CHECKING:
     from .config import StriatumConfig
@@ -162,12 +163,21 @@ class ForwardPassCoordinator:
             dopamine: Dopamine level [0, 1] (tonic DA)
             norepinephrine: Norepinephrine level [0, 1]
             acetylcholine: Acetylcholine level [0, 1] (stored but not used by striatum)
+
+        Raises:
+            ValueError: If any neuromodulator value is NaN or Inf
         """
+        # Validate and set dopamine
         if dopamine is not None:
+            validate_finite(dopamine, "dopamine", valid_range=(-2.0, 2.0))
             self._tonic_dopamine = dopamine
+        # Validate and set norepinephrine
         if norepinephrine is not None:
+            validate_finite(norepinephrine, "norepinephrine", valid_range=(0.0, 2.0))
             self._ne_level = norepinephrine
+        # Validate and set acetylcholine
         if acetylcholine is not None:
+            validate_finite(acetylcholine, "acetylcholine", valid_range=(0.0, 2.0))
             # Store acetylcholine for get_state() even though striatum doesn't use it
             self._ach_level = acetylcholine
 

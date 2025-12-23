@@ -78,8 +78,8 @@ from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPTy
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
 from thalia.managers.component_registry import register_region
-from thalia.regulation.learning_constants import LEARNING_RATE_STDP
-from thalia.neuromodulation.constants import compute_ne_gain
+from thalia.neuromodulation.constants import compute_ne_gain, DA_BASELINE_STANDARD
+from thalia.regulation.learning_constants import LEARNING_RATE_STDP, WM_NOISE_STD_DEFAULT
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig
 from thalia.learning.strategy_mixin import LearningStrategyMixin
@@ -187,13 +187,12 @@ class PrefrontalState(BaseRegionState):
     """State for prefrontal cortex region.
 
     Implements RegionState protocol for checkpoint compatibility.
-    Inherits from BaseRegionState for common fields (spikes, membrane).
+    Inherits from BaseRegionState for common fields (spikes, membrane, neuromodulators).
 
     PFC-specific state:
     - working_memory: Active maintenance of task-relevant information
     - update_gate: Dopamine-gated update signals
     - active_rule: Current task rule representation
-    - dopamine: Current dopamine level (modulates gating)
     """
 
     STATE_VERSION: int = 1
@@ -201,6 +200,9 @@ class PrefrontalState(BaseRegionState):
     # Inherited from BaseRegionState:
     # - spikes: Optional[torch.Tensor] = None
     # - membrane: Optional[torch.Tensor] = None
+    # - dopamine: float = 0.0
+    # - acetylcholine: float = 0.0
+    # - norepinephrine: float = 0.0
 
     # PFC-specific state fields
     working_memory: Optional[torch.Tensor] = None
@@ -211,15 +213,6 @@ class PrefrontalState(BaseRegionState):
 
     active_rule: Optional[torch.Tensor] = None
     """Rule representation [n_neurons]."""
-
-    dopamine: float = 0.2
-    """Current dopamine level (baseline=0.2)."""
-
-    acetylcholine: float = 0.0
-    """Current acetylcholine level."""
-
-    norepinephrine: float = 0.0
-    """Current norepinephrine level."""
 
     # STP state (recurrent connections)
     stp_recurrent_state: Optional[Dict[str, Any]] = None
@@ -282,13 +275,13 @@ class PrefrontalState(BaseRegionState):
 
     def reset(self) -> None:
         """Reset state to initial conditions."""
-        super().reset()  # Reset base fields
+        # Reset base fields (spikes, membrane, neuromodulators with DA_BASELINE_STANDARD)
+        super().reset()
+
+        # Reset PFC-specific state
         self.working_memory = None
         self.update_gate = None
         self.active_rule = None
-        self.dopamine = 0.2  # Reset to baseline
-        self.acetylcholine = 0.0
-        self.norepinephrine = 0.0
         self.stp_recurrent_state = None
 
 
@@ -578,23 +571,6 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
                 if subsystem is not None and hasattr(subsystem, 'reset_state'):
                     subsystem.reset_state()
 
-    def set_neuromodulators(
-        self,
-        dopamine: Optional[float] = None,
-        acetylcholine: Optional[float] = None,
-        norepinephrine: Optional[float] = None,
-    ) -> None:
-        """Set neuromodulator levels (Brain → Region API).
-
-        Helper from BrainComponentBase for backward compatibility.
-        """
-        if dopamine is not None:
-            self.state.dopamine = dopamine
-        if acetylcholine is not None:
-            self.state.acetylcholine = acetylcholine
-        if norepinephrine is not None:
-            self.state.norepinephrine = norepinephrine
-
     def reset_state(self) -> None:
         """Reset state for new episode."""
         # Don't call super().reset_state() because it creates NeuralComponentState
@@ -603,7 +579,7 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
             working_memory=torch.zeros(self.config.n_output, device=self.device),
             update_gate=torch.zeros(self.config.n_output, device=self.device),
             active_rule=None,  # Optional, can be None
-            dopamine=0.2,  # Baseline
+            dopamine=DA_BASELINE_STANDARD,
         )
 
         # Reset subsystems using helper
@@ -746,7 +722,6 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         )
 
         # Add noise for stochasticity
-        from thalia.regulation.learning_constants import WM_NOISE_STD_DEFAULT
         wm_noise_std = getattr(self.pfc_config, 'wm_noise_std', WM_NOISE_STD_DEFAULT)
         noise = torch.randn_like(new_wm) * wm_noise_std
         self.state.working_memory = (new_wm + noise).clamp(min=0, max=1)
@@ -1041,7 +1016,6 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
 
         # Add small amount of noise (stochastic prediction)
         if self.training:
-            from thalia.regulation.learning_constants import WM_NOISE_STD_DEFAULT
             wm_noise_std = getattr(self.pfc_config, 'wm_noise_std', WM_NOISE_STD_DEFAULT)
             noise = torch.randn_like(prediction) * wm_noise_std
             prediction = prediction + noise

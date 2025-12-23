@@ -83,8 +83,8 @@ class TestHippocampusNeuromorphic:
     def test_synapses_stored_sparsely(self, small_hippocampus):
         """Only non-zero synapses should be stored."""
         # Set some weights to non-zero (use valid indices for n_input=4)
-        small_hippocampus.synaptic_weights["ec_dg"][0, 2] = 0.7
-        small_hippocampus.synaptic_weights["ec_dg"][0, 3] = 0.0  # Explicitly zero
+        small_hippocampus.synaptic_weights["ec_dg"].data[0, 2] = 0.7
+        small_hippocampus.synaptic_weights["ec_dg"].data[0, 3] = 0.0  # Explicitly zero
 
         state = small_hippocampus.checkpoint_manager.get_neuromorphic_state()
         dg_neuron_0 = [n for n in state["neurons"] if n["id"] == "hippo_dg_neuron_0_step0"][0]
@@ -103,9 +103,9 @@ class TestHippocampusNeuromorphic:
         checkpoint_path = tmp_path / "hippo.ckpt"
 
         # Set distinctive weights (use valid indices for n_input=4)
-        small_hippocampus.synaptic_weights["ec_dg"][0, 2] = 0.777  # DG neuron 0, EC input 2
-        small_hippocampus.synaptic_weights["dg_ca3"][2, 1] = 0.888  # CA3 neuron 2, DG input 1
-        small_hippocampus.synaptic_weights["ca3_ca1"][3, 2] = 0.999  # CA1 neuron 3, CA3 input 2
+        small_hippocampus.synaptic_weights["ec_dg"].data[0, 2] = 0.777  # DG neuron 0, EC input 2
+        small_hippocampus.synaptic_weights["dg_ca3"].data[2, 1] = 0.888  # CA3 neuron 2, DG input 1
+        small_hippocampus.synaptic_weights["ca3_ca1"].data[3, 2] = 0.999  # CA1 neuron 3, CA3 input 2
 
         # Save
         small_hippocampus.checkpoint_manager.save(checkpoint_path)
@@ -150,16 +150,16 @@ class TestHippocampusHybrid:
             small_hippocampus.checkpoint_manager.load(checkpoint_path)
 
 
-@pytest.mark.parametrize("acetylcholine", [-0.5, 0.0, 1.0, 1.5, 2.0])
+@pytest.mark.parametrize("acetylcholine", [0.0, 0.5, 1.0, 1.5, 2.0])
 def test_hippocampus_extreme_acetylcholine(small_hippocampus, acetylcholine):
     """Test hippocampus stability with extreme acetylcholine values.
 
-    Phase 2 improvement: Tests edge cases beyond normal [0, 1] range.
+    Phase 2 improvement: Tests edge cases at boundaries of valid [0, 2] range.
     ACh modulates encoding (high) vs retrieval (low) modes.
     """
     input_spikes = torch.rand(4) > 0.5
 
-    # Set extreme ACh value
+    # Set ACh value (within valid biological range)
     small_hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
 
     # Forward pass should not crash

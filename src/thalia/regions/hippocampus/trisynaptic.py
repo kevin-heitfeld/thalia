@@ -560,28 +560,6 @@ class TrisynapticHippocampus(NeuralRegion):
                 if subsystem is not None and hasattr(subsystem, 'reset_state'):
                     subsystem.reset_state()
 
-    def get_neuromodulator_state(self) -> Dict[str, float]:
-        """Return current neuromodulator levels as a dict."""
-        return {
-            "dopamine": self.state.dopamine,
-            "acetylcholine": self.state.acetylcholine,
-            "norepinephrine": self.state.norepinephrine,
-        }
-
-    def set_neuromodulators(
-        self,
-        dopamine: Optional[float] = None,
-        norepinephrine: Optional[float] = None,
-        acetylcholine: Optional[float] = None,
-    ) -> None:
-        """Set neuromodulator levels (Brain → Region API)."""
-        if dopamine is not None:
-            self.state.dopamine = dopamine
-        if norepinephrine is not None:
-            self.state.norepinephrine = norepinephrine
-        if acetylcholine is not None:
-            self.state.acetylcholine = acetylcholine
-
     def reset_state(self) -> None:
         """Reset state for new episode.
 

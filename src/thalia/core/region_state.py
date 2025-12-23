@@ -81,6 +81,12 @@ from pathlib import Path
 
 import torch
 
+from thalia.neuromodulation.constants import (
+    DA_BASELINE_STANDARD,
+    ACH_BASELINE,
+    NE_BASELINE,
+)
+
 
 # Type variable for state classes
 TRegionState = TypeVar("TRegionState", bound="RegionState")
@@ -114,7 +120,6 @@ class RegionState(ABC):
                 'stp_state': {...} if STP enabled else None,
             }
         """
-        pass
 
     @classmethod
     @abstractmethod
@@ -131,7 +136,6 @@ class RegionState(ABC):
         Note:
             Should handle version migration if state_version differs
         """
-        pass
 
     @abstractmethod
     def reset(self) -> None:
@@ -147,7 +151,6 @@ class RegionState(ABC):
         - Synaptic weights (NOT part of state, part of parameters)
         - Configuration
         """
-        pass
 
 
 @dataclass
@@ -160,6 +163,7 @@ class BaseRegionState:
     Common fields:
     - spikes: Recent spike history
     - membrane: Membrane potentials
+    - dopamine, acetylcholine, norepinephrine: Neuromodulator levels
     - STATE_VERSION: Version number for migration
     """
 
@@ -172,12 +176,26 @@ class BaseRegionState:
     membrane: Optional[torch.Tensor] = None
     """Current membrane potentials [n_neurons] (float)."""
 
+    # Neuromodulators (required by NeuromodulatorMixin)
+    # Default to biologically plausible tonic baseline levels
+    dopamine: float = DA_BASELINE_STANDARD
+    """Dopamine level (reward signal, gates learning). Baseline tonic level."""
+
+    acetylcholine: float = ACH_BASELINE
+    """Acetylcholine level (attention, encoding/retrieval mode)."""
+
+    norepinephrine: float = NE_BASELINE
+    """Norepinephrine level (arousal, gain modulation)."""
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize common state fields."""
         return {
             'state_version': self.STATE_VERSION,
             'spikes': self.spikes,
             'membrane': self.membrane,
+            'dopamine': self.dopamine,
+            'acetylcholine': self.acetylcholine,
+            'norepinephrine': self.norepinephrine,
         }
 
     @classmethod
@@ -200,12 +218,18 @@ class BaseRegionState:
         return cls(
             spikes=spikes,
             membrane=membrane,
+            dopamine=data.get('dopamine', DA_BASELINE_STANDARD),
+            acetylcholine=data.get('acetylcholine', ACH_BASELINE),
+            norepinephrine=data.get('norepinephrine', NE_BASELINE),
         )
 
     def reset(self) -> None:
         """Reset common state fields."""
         self.spikes = None
         self.membrane = None
+        self.dopamine = DA_BASELINE_STANDARD
+        self.acetylcholine = ACH_BASELINE
+        self.norepinephrine = NE_BASELINE
 
 
 # =====================================================================

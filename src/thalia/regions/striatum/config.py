@@ -15,10 +15,9 @@ import torch
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.config.learning_config import ModulatedLearningConfig
 from thalia.core.region_state import BaseRegionState
+from thalia.neuromodulation.constants import DA_BASELINE_STRIATUM
 from thalia.regulation.learning_constants import EMA_DECAY_FAST, LEARNING_RATE_HEBBIAN_SLOW
-from thalia.regulation.region_architecture_constants import (
-    STRIATUM_NEURONS_PER_ACTION,
-)
+from thalia.regulation.region_architecture_constants import STRIATUM_NEURONS_PER_ACTION
 
 
 @dataclass
@@ -337,12 +336,8 @@ class StriatumState(BaseRegionState):
     stp_thalamostriatal_x: Optional[torch.Tensor] = None
     """STP available resources for thalamostriatal pathway [n_pre, n_post]."""
 
-    # ========================================================================
-    # NEUROMODULATORS (explicit, not from mixin)
-    # ========================================================================
-    dopamine: float = 0.0
-    acetylcholine: float = 0.0
-    norepinephrine: float = 0.0
+    # Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
+    # inherited from BaseRegionState
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize state to dictionary.
@@ -403,7 +398,7 @@ class StriatumState(BaseRegionState):
             "stp_thalamostriatal_u": self.stp_thalamostriatal_u,
             "stp_thalamostriatal_x": self.stp_thalamostriatal_x,
 
-            # Neuromodulators
+            # Neuromodulators inherited from BaseRegionState
             "dopamine": self.dopamine,
             "acetylcholine": self.acetylcholine,
             "norepinephrine": self.norepinephrine,
@@ -477,8 +472,9 @@ class StriatumState(BaseRegionState):
             stp_thalamostriatal_u=to_device(data.get("stp_thalamostriatal_u")),
             stp_thalamostriatal_x=to_device(data.get("stp_thalamostriatal_x")),
 
-            # Neuromodulators
-            dopamine=data.get("dopamine", 0.0),
+            # Neuromodulators inherited from BaseRegionState
+            # Striatum uses higher baseline for RL
+            dopamine=data.get("dopamine", DA_BASELINE_STRIATUM),
             acetylcholine=data.get("acetylcholine", 0.0),
             norepinephrine=data.get("norepinephrine", 0.0),
         )
@@ -500,9 +496,12 @@ class StriatumState(BaseRegionState):
         - Goal modulation weights (learned parameters)
         - Pathway configurations
         """
-        # Reset base state
-        self.spikes = None
-        self.membrane = None
+        # Reset base state (spikes, membrane, neuromodulators)
+        super().reset()
+
+        # Striatum uses higher tonic dopamine than base
+        # This matches config.tonic_dopamine for exploration/RL
+        self.dopamine = DA_BASELINE_STRIATUM
 
         # Reset pathways (delegate to pathway reset)
         # Note: Pathway states will be reset via pathway.reset() calls
@@ -542,8 +541,3 @@ class StriatumState(BaseRegionState):
         self.trial_spike_count = 0
         self.trial_timesteps = 0
         self.homeostatic_scaling_applied = False
-
-        # Reset neuromodulators
-        self.dopamine = 0.0
-        self.acetylcholine = 0.0
-        self.norepinephrine = 0.0

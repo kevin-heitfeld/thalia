@@ -230,17 +230,14 @@ class ThalamicRelayState(BaseRegionState):
     """State for thalamic relay nucleus with RegionState protocol compliance.
 
     Extends BaseRegionState with thalamus-specific state:
-    - Neuromodulator levels (dopamine, acetylcholine, norepinephrine)
     - Relay and TRN neuron states (spikes, membrane potentials)
     - Burst/tonic mode state
     - Alpha oscillation gating state
     - Short-term plasticity (STP) state for sensory and L6 feedback pathways
-    """
 
-    # Neuromodulator state (not in BaseRegionState, must be explicit)
-    dopamine: float = 0.2
-    acetylcholine: float = 0.0
-    norepinephrine: float = 0.0
+    Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
+    inherited from BaseRegionState.
+    """
 
     # Relay neuron state
     relay_spikes: Optional[torch.Tensor] = None
@@ -341,11 +338,10 @@ class ThalamicRelayState(BaseRegionState):
 
     def reset(self) -> None:
         """Reset state to default values (in-place mutation)."""
-        self.spikes = None
-        self.membrane = None
-        self.dopamine = 0.2
-        self.acetylcholine = 0.0
-        self.norepinephrine = 0.0
+        # Reset base state (spikes, membrane, neuromodulators with DA_BASELINE_STANDARD)
+        super().reset()
+
+        # Reset thalamus-specific state
         self.relay_spikes = None
         self.relay_membrane = None
         self.trn_spikes = None
@@ -543,23 +539,6 @@ class ThalamicRelay(NeuralRegion):
     def _create_neurons(self) -> Optional[Any]:
         """Neurons created in __init__, return None."""
         return None
-
-    def set_neuromodulators(
-        self,
-        dopamine: Optional[float] = None,
-        acetylcholine: Optional[float] = None,
-        norepinephrine: Optional[float] = None,
-    ) -> None:
-        """Set neuromodulator levels (Brain → Region API).
-
-        Helper for backward compatibility with LearnableComponent pattern.
-        """
-        if dopamine is not None:
-            self.state.dopamine = dopamine
-        if acetylcholine is not None:
-            self.state.acetylcholine = acetylcholine
-        if norepinephrine is not None:
-            self.state.norepinephrine = norepinephrine
 
     def spike_diagnostics(self, spikes: torch.Tensor, prefix: str = "") -> Dict[str, Any]:
         """Compute spike statistics for diagnostics.

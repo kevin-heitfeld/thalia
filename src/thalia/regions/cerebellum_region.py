@@ -83,7 +83,12 @@ from thalia.components.neurons.neuron_constants import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
-from thalia.neuromodulation.constants import compute_ne_gain
+from thalia.neuromodulation.constants import (
+    compute_ne_gain,
+    DA_BASELINE_STANDARD,
+    ACH_BASELINE,
+    NE_BASELINE,
+)
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
@@ -183,7 +188,9 @@ class CerebellumState(BaseRegionState):
     - Climbing fiber error signal
     - Neuron state (classic mode) OR enhanced microcircuit state
     - Short-term plasticity state
-    - Neuromodulator levels
+
+    Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
+    inherited from BaseRegionState.
 
     Classic Mode Fields (use_enhanced_microcircuit=False):
     - v_mem, g_exc, g_inh: Direct Purkinje cell neuron state
@@ -220,13 +227,6 @@ class CerebellumState(BaseRegionState):
     # ========================================================================
     stp_pf_purkinje_state: Optional[Dict[str, torch.Tensor]] = None  # Classic mode STP
     stp_mf_granule_state: Optional[Dict[str, torch.Tensor]] = None   # Enhanced mode STP
-
-    # ========================================================================
-    # NEUROMODULATORS (explicit, not from mixin)
-    # ========================================================================
-    dopamine: float = 0.0
-    acetylcholine: float = 0.0
-    norepinephrine: float = 0.0
 
     # ========================================================================
     # ENHANCED MICROCIRCUIT STATE (use_enhanced=True)
@@ -294,13 +294,13 @@ class CerebellumState(BaseRegionState):
             return {k: v.to(dev) if v is not None else None for k, v in stp_state.items()}
 
         return cls(
-            # Traces (required)
-            input_trace=data["input_trace"].to(dev),
-            output_trace=data["output_trace"].to(dev),
-            stdp_eligibility=data["stdp_eligibility"].to(dev),
+            # Traces (may be None if state is uninitialized)
+            input_trace=to_device(data.get("input_trace")),
+            output_trace=to_device(data.get("output_trace")),
+            stdp_eligibility=to_device(data.get("stdp_eligibility")),
 
-            # Error signal (required)
-            climbing_fiber_error=data["climbing_fiber_error"].to(dev),
+            # Error signal (may be None if state is uninitialized)
+            climbing_fiber_error=to_device(data.get("climbing_fiber_error")),
 
             # Classic neuron state (optional)
             v_mem=to_device(data.get("v_mem")),
@@ -311,10 +311,10 @@ class CerebellumState(BaseRegionState):
             stp_pf_purkinje_state=stp_to_device(data.get("stp_pf_purkinje_state")),
             stp_mf_granule_state=stp_to_device(data.get("stp_mf_granule_state")),
 
-            # Neuromodulators
-            dopamine=data.get("dopamine", 0.0),
-            acetylcholine=data.get("acetylcholine", 0.0),
-            norepinephrine=data.get("norepinephrine", 0.0),
+            # Neuromodulators (base tonic baseline)
+            dopamine=data.get("dopamine", DA_BASELINE_STANDARD),
+            acetylcholine=data.get("acetylcholine", ACH_BASELINE),
+            norepinephrine=data.get("norepinephrine", NE_BASELINE),
 
             # Enhanced microcircuit (optional)
             granule_layer_state=data.get("granule_layer_state"),
@@ -324,13 +324,20 @@ class CerebellumState(BaseRegionState):
 
     def reset(self) -> None:
         """Reset state in-place (clears traces, resets neurons)."""
-        # Clear traces
-        self.input_trace.zero_()
-        self.output_trace.zero_()
-        self.stdp_eligibility.zero_()
+        # Reset base state (spikes, membrane, neuromodulators)
+        super().reset()
 
-        # Clear error
-        self.climbing_fiber_error.zero_()
+        # Clear traces (if initialized)
+        if self.input_trace is not None:
+            self.input_trace.zero_()
+        if self.output_trace is not None:
+            self.output_trace.zero_()
+        if self.stdp_eligibility is not None:
+            self.stdp_eligibility.zero_()
+
+        # Clear error (if initialized)
+        if self.climbing_fiber_error is not None:
+            self.climbing_fiber_error.zero_()
 
         # Reset classic neuron state
         if self.v_mem is not None:
