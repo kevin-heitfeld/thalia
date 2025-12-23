@@ -77,6 +77,7 @@ from thalia.regulation.region_constants import (
     THALAMUS_SPATIAL_FILTER_WIDTH,
     THALAMUS_CENTER_EXCITATION,
     THALAMUS_SURROUND_INHIBITION,
+    THALAMUS_SURROUND_WIDTH_RATIO,
     # Thalamus - Relay
     THALAMUS_RELAY_STRENGTH,
     # Striatum - TD(λ) Learning
@@ -232,6 +233,7 @@ __all__ = [
     "THALAMUS_SPATIAL_FILTER_WIDTH",
     "THALAMUS_CENTER_EXCITATION",
     "THALAMUS_SURROUND_INHIBITION",
+    "THALAMUS_SURROUND_WIDTH_RATIO",
     # Region Constants - Thalamus Relay
     "THALAMUS_RELAY_STRENGTH",
     # Region Constants - Striatum TD(λ)

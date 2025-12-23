@@ -18,6 +18,9 @@ from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
     V_REST_STANDARD,
+    # Spike detection
+    SPIKE_DETECTION_THRESHOLD,
+    SPIKE_ACTIVITY_THRESHOLD,
     # Reversal potentials
     E_LEAK,
     E_EXCITATORY,
@@ -67,6 +70,8 @@ __all__ = [
     "V_THRESHOLD_STANDARD",
     "V_RESET_STANDARD",
     "V_REST_STANDARD",
+    "SPIKE_DETECTION_THRESHOLD",
+    "SPIKE_ACTIVITY_THRESHOLD",
     "E_LEAK",
     "E_EXCITATORY",
     "E_INHIBITORY",

@@ -34,6 +34,8 @@ from typing import Any, Dict, Optional
 
 import torch
 
+from thalia.utils.time_constants import MS_PER_SECOND
+
 
 class DiagnosticsMixin:
     """Mixin providing common diagnostic computation patterns.
@@ -124,7 +126,7 @@ class DiagnosticsMixin:
         total_neurons = s.numel()
 
         # Firing rate (if binary spikes)
-        rate_hz = s.mean().item() * (1000.0 / dt_ms)
+        rate_hz = s.mean().item() * (MS_PER_SECOND / dt_ms)
 
         return {
             f"{prefix}sparsity": sparsity,

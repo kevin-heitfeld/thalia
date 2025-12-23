@@ -54,6 +54,7 @@ from thalia.components.coding.spike_coding import (
     SpikeCodingConfig,
     SpikeEncoder as BaseSpikeEncoder,
 )
+from thalia.utils.time_constants import TAU, SECONDS_PER_MS
 
 
 @dataclass
@@ -250,7 +251,7 @@ class SpikeEncoder(BaseSpikeEncoder):
         # Phase increment per timestep (radians)
         theta_freq_hz = 8.0  # 8 Hz theta oscillation
         dt_ms = 1.0  # 1ms timestep default
-        self.phase_increment = 2 * math.pi * theta_freq_hz * (dt_ms / 1000.0)
+        self.phase_increment = TAU * theta_freq_hz * (dt_ms * SECONDS_PER_MS)
 
     def reset_phase(self) -> None:
         """Reset theta phase for new sequence."""

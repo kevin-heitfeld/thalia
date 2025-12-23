@@ -306,9 +306,9 @@ class RetinalEncoder(nn.Module):
 
     def _create_dog_filters(self) -> None:
         """Create Difference of Gaussians filters for center-surround."""
-        size = 7
-        sigma_center = 1.0
-        sigma_surround = 2.0
+        size = DOG_FILTER_SIZE
+        sigma_center = DOG_SIGMA_CENTER
+        sigma_surround = DOG_SIGMA_SURROUND
 
         # Create coordinate grids
         x = torch.arange(size) - size // 2
@@ -377,7 +377,7 @@ class RetinalEncoder(nn.Module):
         # 2. Temporal contrast (respond to changes)
         if self.config.use_temporal_contrast:
             temporal_diff = photo_response - self.adaptation_state
-            self.adaptation_state = self.adaptation_state * 0.9 + photo_response * 0.1
+            self.adaptation_state = self.adaptation_state * RETINA_ADAPTATION_DECAY + photo_response * RETINA_ADAPTATION_RATE
         else:
             temporal_diff = photo_response
 
@@ -667,12 +667,12 @@ class CochlearEncoder(nn.Module):
         # 3. Hair cell processing
         # Half-wave rectification (already positive from magnitude)
         # Compressive nonlinearity (like hair cell response)
-        hair_cell_response = torch.pow(cochlear_response + 1e-6, 0.3)
+        hair_cell_response = torch.pow(cochlear_response + LATENCY_EPSILON, HAIR_CELL_COMPRESSION_EXPONENT)
 
         # 4. Adaptation (auditory nerve adapts to sustained sounds)
-        adapted = hair_cell_response - self.adaptation_state * 0.5
+        adapted = hair_cell_response - self.adaptation_state * HAIR_CELL_ADAPTATION_SUPPRESSION
         adapted = F.relu(adapted)
-        self.adaptation_state = self.adaptation_state * 0.95 + hair_cell_response * 0.05
+        self.adaptation_state = self.adaptation_state * AUDITORY_NERVE_ADAPTATION_DECAY + hair_cell_response * AUDITORY_NERVE_ADAPTATION_RATE
 
         # 5. Project to output size
         output_activity = self.output_projection(adapted)

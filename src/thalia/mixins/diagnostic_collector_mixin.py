@@ -13,6 +13,8 @@ from __future__ import annotations
 from typing import Optional
 import torch
 
+from thalia.utils.time_constants import MS_PER_SECOND
+
 
 class DiagnosticCollectorMixin:
     """Mixin for standardized diagnostic collection.
@@ -95,7 +97,7 @@ class DiagnosticCollectorMixin:
         Returns:
             Dictionary with rate statistics
         """
-        rate_hz = (spikes.float().mean() / dt) * 1000.0
+        rate_hz = (spikes.float().mean() / dt) * MS_PER_SECOND
         return {f"{name}_rate_hz": rate_hz.item()}
 
     def weight_diagnostics(
@@ -141,7 +143,7 @@ class DiagnosticCollectorMixin:
         """
         n_active = spikes.sum().item()
         n_total = spikes.numel()
-        rate_hz = (spikes.float().mean() / dt) * 1000.0
+        rate_hz = (spikes.float().mean() / dt) * MS_PER_SECOND
 
         stats = {
             f"{prefix}_active_count": int(n_active),

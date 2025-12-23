@@ -33,6 +33,8 @@ from enum import Enum
 import torch
 import torch.nn as nn
 
+from thalia.utils.time_constants import SECONDS_PER_MS, TAU
+
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.config import Episode
 
@@ -309,7 +311,7 @@ class ReplayEngine(nn.Module):
         # Compute ripple phase (oscillation)
         import math
         freq_hz = self.config.ripple_frequency
-        self._ripple_phase = 2.0 * math.pi * freq_hz * self._ripple_time / 1000.0
+        self._ripple_phase = TAU * freq_hz * self._ripple_time * SECONDS_PER_MS
 
         # Ripple value (sinusoid)
         ripple_value = math.sin(self._ripple_phase)

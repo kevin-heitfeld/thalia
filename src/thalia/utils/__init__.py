@@ -19,6 +19,7 @@ from thalia.utils.oscillator_utils import (
     compute_oscillator_modulated_gain,
     compute_learning_rate_modulation,
 )
+from thalia.utils.time_constants import MS_PER_SECOND, SECONDS_PER_MS, TAU, TWO_PI
 
 __all__ = [
     "clamp_weights",
@@ -33,4 +34,8 @@ __all__ = [
     "compute_theta_gamma_coupling_gate",
     "compute_oscillator_modulated_gain",
     "compute_learning_rate_modulation",
+    "MS_PER_SECOND",
+    "SECONDS_PER_MS",
+    "TAU",
+    "TWO_PI",
 ]

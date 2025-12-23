@@ -24,6 +24,23 @@ from thalia.pathways.sensory_pathways import (
     LanguagePathway,
 )
 
+# Sensory processing constants
+from thalia.pathways.sensory_constants import (
+    AUDITORY_NERVE_ADAPTATION_DECAY,
+    AUDITORY_NERVE_ADAPTATION_RATE,
+    COCHLEA_INTEGRATION_WINDOW_MS,
+    COCHLEA_MAX_FREQ_HZ,
+    COCHLEA_MIN_FREQ_HZ,
+    DOG_FILTER_SIZE,
+    DOG_SIGMA_CENTER,
+    DOG_SIGMA_SURROUND,
+    HAIR_CELL_ADAPTATION_SUPPRESSION,
+    HAIR_CELL_COMPRESSION_EXPONENT,
+    LATENCY_EPSILON,
+    RETINA_ADAPTATION_DECAY,
+    RETINA_ADAPTATION_RATE,
+)
+
 __all__ = [
     # Protocol
     "NeuralPathway",
@@ -34,4 +51,18 @@ __all__ = [
     "VisualPathway",
     "AuditoryPathway",
     "LanguagePathway",
+    # Sensory constants
+    "RETINA_ADAPTATION_DECAY",
+    "RETINA_ADAPTATION_RATE",
+    "DOG_FILTER_SIZE",
+    "DOG_SIGMA_CENTER",
+    "DOG_SIGMA_SURROUND",
+    "COCHLEA_MIN_FREQ_HZ",
+    "COCHLEA_MAX_FREQ_HZ",
+    "COCHLEA_INTEGRATION_WINDOW_MS",
+    "HAIR_CELL_COMPRESSION_EXPONENT",
+    "HAIR_CELL_ADAPTATION_SUPPRESSION",
+    "AUDITORY_NERVE_ADAPTATION_DECAY",
+    "AUDITORY_NERVE_ADAPTATION_RATE",
+    "LATENCY_EPSILON",
 ]

@@ -38,6 +38,15 @@ import torch
 import torch.nn as nn
 
 from thalia.config.neuron_config import BaseNeuronConfig
+from thalia.components.neurons.neuron_constants import (
+    MEMBRANE_CAPACITANCE_STANDARD,
+    G_LEAK_STANDARD,
+    E_LEAK,
+    E_EXCITATORY,
+    E_INHIBITORY,
+    TAU_EXCITATORY_CONDUCTANCE,
+    TAU_INHIBITORY_CONDUCTANCE,
+)
 
 
 # =============================================================================
@@ -99,17 +108,17 @@ class ConductanceLIFConfig(BaseNeuronConfig):
         noise_std: Membrane noise standard deviation (default: 0.0)
     """
     # Membrane properties
-    C_m: float = 1.0
-    g_L: float = 0.05  # τ_m = C_m/g_L = 20ms
+    C_m: float = MEMBRANE_CAPACITANCE_STANDARD
+    g_L: float = G_LEAK_STANDARD  # τ_m = C_m/g_L = 20ms
 
     # Reversal potentials (normalized units)
-    E_L: float = 0.0    # Leak/rest (≈ -65mV scaled to 0)
-    E_E: float = 3.0    # Excitatory (≈ 0mV, well above threshold)
-    E_I: float = -0.5   # Inhibitory (≈ -70mV, below rest)
+    E_L: float = E_LEAK    # Leak/rest (≈ -65mV scaled to 0)
+    E_E: float = E_EXCITATORY    # Excitatory (≈ 0mV, well above threshold)
+    E_I: float = E_INHIBITORY   # Inhibitory (≈ -70mV, below rest)
 
     # Synaptic time constants
-    tau_E: float = 5.0   # Excitatory (AMPA-like)
-    tau_I: float = 10.0  # Inhibitory (GABA_A-like)
+    tau_E: float = TAU_EXCITATORY_CONDUCTANCE   # Excitatory (AMPA-like)
+    tau_I: float = TAU_INHIBITORY_CONDUCTANCE  # Inhibitory (GABA_A-like)
 
     # Adaptation (conductance-based)
     tau_adapt: float = 100.0

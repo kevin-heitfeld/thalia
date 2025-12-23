@@ -119,6 +119,7 @@ from thalia.regulation.region_constants import (
     THALAMUS_SPATIAL_FILTER_WIDTH,
     THALAMUS_CENTER_EXCITATION,
     THALAMUS_SURROUND_INHIBITION,
+    THALAMUS_SURROUND_WIDTH_RATIO,
     THALAMUS_RELAY_STRENGTH,
     THALAMUS_NE_GAIN_SCALE,
     THALAMUS_MODE_THRESHOLD,
@@ -583,7 +584,7 @@ class ThalamicRelay(NeuralRegion):
 
         # Convert spike rate to Hz using dt_ms
         spike_rate = spikes.float().mean().item()
-        firing_rate_hz = spike_rate * (1000.0 / self.dt_ms)  # Convert to Hz
+        firing_rate_hz = spike_rate * (MS_PER_SECOND / self.dt_ms)  # Convert to Hz
 
         return {
             f"{prefix}spike_count": spikes.sum().item(),
@@ -661,7 +662,7 @@ class ThalamicRelay(NeuralRegion):
         )
 
         # Surround (wider Gaussian)
-        width_surround = width_center * 3.0
+        width_surround = width_center * THALAMUS_SURROUND_WIDTH_RATIO
         surround = self.thalamus_config.surround_inhibition * torch.exp(
             -distances**2 / (2 * width_surround**2)
         )

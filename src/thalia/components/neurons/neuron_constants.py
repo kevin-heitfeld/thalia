@@ -107,6 +107,37 @@ Slow inhibition, modulatory effects.
 G-protein coupled, affects excitability over hundreds of ms.
 """
 
+# Alias for backward compatibility and clarity
+TAU_EXCITATORY_CONDUCTANCE = TAU_SYN_EXCITATORY
+"""Excitatory conductance decay time constant (ms).
+
+Alias for TAU_SYN_EXCITATORY. Used in conductance-based neuron models
+to determine how quickly excitatory conductance decays after synaptic input.
+"""
+
+TAU_INHIBITORY_CONDUCTANCE = TAU_SYN_INHIBITORY
+"""Inhibitory conductance decay time constant (ms).
+
+Alias for TAU_SYN_INHIBITORY. Used in conductance-based neuron models
+to determine how quickly inhibitory conductance decays after synaptic input.
+"""
+
+# =============================================================================
+# MEMBRANE CAPACITANCE (normalized units)
+# =============================================================================
+
+MEMBRANE_CAPACITANCE_STANDARD = 1.0
+"""Standard membrane capacitance (normalized).
+
+Determines relationship between conductance and time constant:
+tau_mem = C_mem / g_leak
+
+Normalized to 1.0 for simplicity. Biological value ~1 μF/cm².
+"""
+
+# Alias for clarity in code
+C_MEM_STANDARD = MEMBRANE_CAPACITANCE_STANDARD
+
 # =============================================================================
 # VOLTAGE THRESHOLDS AND POTENTIALS (normalized units)
 # =============================================================================
@@ -125,6 +156,25 @@ V_RESET_STANDARD = 0.0
 Membrane potential immediately after spike.
 Normalized to 0.0 (matches resting potential in our convention).
 Biological equivalent: ~-70mV.
+"""
+
+# =============================================================================
+# SPIKE DETECTION THRESHOLDS
+# =============================================================================
+
+SPIKE_DETECTION_THRESHOLD = 0.5
+"""Binary spike detection threshold.
+
+Used to convert continuous values to binary spikes.
+Values > 0.5 are considered spikes (1), values <= 0.5 are not (0).
+Common in temporal coding and rate-to-spike conversion.
+"""
+
+SPIKE_ACTIVITY_THRESHOLD = 0.5
+"""Threshold for neuron activity detection.
+
+Used in diagnostics to count "active" neurons (those that spiked).
+A spike value > 0.5 indicates the neuron was active in that timestep.
 """
 
 V_REST_STANDARD = 0.0
@@ -472,3 +522,49 @@ SLOW_ADAPTING = {
     "tau_ref": TAU_REF_SLOW,
     "g_leak": G_LEAK_SLOW,
 }
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+__all__ = [
+    # Membrane time constants
+    "TAU_MEM_STANDARD",
+    "TAU_MEM_FAST",
+    "TAU_MEM_SLOW",
+    # Refractory periods
+    "TAU_REF_STANDARD",
+    "TAU_REF_FAST",
+    "TAU_REF_SLOW",
+    # Synaptic time constants
+    "TAU_SYN_EXCITATORY",
+    "TAU_SYN_INHIBITORY",
+    "TAU_SYN_NMDA",
+    "TAU_SYN_GABA_B",
+    "TAU_EXCITATORY_CONDUCTANCE",
+    "TAU_INHIBITORY_CONDUCTANCE",
+    # Voltage thresholds
+    "V_THRESHOLD_STANDARD",
+    "V_RESET_STANDARD",
+    "V_REST_STANDARD",
+    # Spike detection
+    "SPIKE_DETECTION_THRESHOLD",
+    "SPIKE_ACTIVITY_THRESHOLD",
+    # Reversal potentials
+    "E_LEAK",
+    "E_EXCITATORY",
+    "E_INHIBITORY",
+    # Conductances
+    "G_LEAK_STANDARD",
+    "G_LEAK_FAST",
+    "G_LEAK_SLOW",
+    "MEMBRANE_CAPACITANCE_STANDARD",
+    "C_MEM_STANDARD",
+    # Learning/pattern thresholds
+    "INTRINSIC_LEARNING_THRESHOLD",
+    "MATCH_THRESHOLD",
+    # Convenience presets
+    "STANDARD_PYRAMIDAL",
+    "FAST_SPIKING_INTERNEURON",
+    "SLOW_ADAPTING",
+]

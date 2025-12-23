@@ -203,6 +203,14 @@ Surround suppresses signals by 0.5x (50% reduction).
 Creates contrast enhancement at edges and boundaries.
 """
 
+THALAMUS_SURROUND_WIDTH_RATIO = 3.0
+"""Surround width as multiple of center width in DoG filters.
+
+Classical neuroscience finding: surround is typically 3x wider than center.
+This creates effective spatial bandpass filtering for edge detection.
+Maintains biological plausibility of receptive field structure.
+"""
+
 # =============================================================================
 # THALAMUS - RELAY PARAMETERS
 # =============================================================================

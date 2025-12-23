@@ -37,12 +37,25 @@ try:
 except ImportError:
     NETWORKX_AVAILABLE = False
 
+from thalia.visualization.constants import (
+    DEFAULT_NODE_SIZE_SCALE,
+    NODE_ALPHA_DEFAULT,
+    EDGE_ALPHA_DEFAULT,
+    EDGE_WIDTH_SCALE,
+    LAYOUT_K_FACTOR,
+    LAYOUT_ITERATIONS,
+    ARC_RADIUS,
+    LEGEND_FRAMEALPHA,
+    HIERARCHICAL_Y_SPACING,
+    HIERARCHICAL_X_SPACING,
+)
+
 
 def visualize_brain_topology(
     brain: Any,
     layout: str = 'hierarchical',
     figsize: Tuple[int, int] = (16, 12),
-    node_size_scale: float = 1000.0,
+    node_size_scale: float = DEFAULT_NODE_SIZE_SCALE,
     show_weights: bool = True,
     title: Optional[str] = None,
 ) -> Any:
@@ -113,7 +126,7 @@ def visualize_brain_topology(
     if layout == 'hierarchical':
         pos = _hierarchical_layout(G, region_info)
     elif layout == 'spring':
-        pos = nx.spring_layout(G, k=2.0, iterations=50)
+        pos = nx.spring_layout(G, k=LAYOUT_K_FACTOR, iterations=LAYOUT_ITERATIONS)
     elif layout == 'circular':
         pos = nx.circular_layout(G)
     elif layout == 'shell':
@@ -144,23 +157,23 @@ def visualize_brain_topology(
         G, pos,
         node_color=node_colors,
         node_size=node_sizes,
-        alpha=0.8,
+        alpha=NODE_ALPHA_DEFAULT,
         ax=ax,
     )
 
     # Draw edges with varying thickness based on weight
     edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
     max_weight = max(edge_weights) if edge_weights else 1.0
-    edge_widths = [w / max_weight * 5.0 for w in edge_weights]
+    edge_widths = [w / max_weight * EDGE_WIDTH_SCALE for w in edge_weights]
 
     nx.draw_networkx_edges(
         G, pos,
         width=edge_widths,
-        alpha=0.6,
+        alpha=EDGE_ALPHA_DEFAULT,
         edge_color='#888888',
         arrows=True,
         arrowsize=20,
-        connectionstyle='arc3,rad=0.1',
+        connectionstyle=f'arc3,rad={ARC_RADIUS}',
         ax=ax,
     )
 
@@ -192,7 +205,7 @@ def visualize_brain_topology(
     ax.legend(
         handles=legend_patches,
         loc='upper right',
-        framealpha=0.9,
+        framealpha=LEGEND_FRAMEALPHA,
         fontsize=10,
     )
 
@@ -425,12 +438,12 @@ def _hierarchical_layout(G: Any, region_info: Dict[str, Any]) -> Dict[str, Tuple
 
     # Assign positions
     pos = {}
-    y_spacing = 2.0
+    y_spacing = HIERARCHICAL_Y_SPACING
     max_nodes_in_layer = max(len(nodes) for nodes in layer_nodes.values())
 
     for layer, nodes in layer_nodes.items():
         n_nodes = len(nodes)
-        x_spacing = 3.0 if n_nodes > 1 else 0
+        x_spacing = HIERARCHICAL_X_SPACING if n_nodes > 1 else 0
         x_start = -(n_nodes - 1) * x_spacing / 2
 
         for i, node in enumerate(sorted(nodes)):

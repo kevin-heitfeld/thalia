@@ -42,6 +42,8 @@ from thalia.components.neurons.neuron_constants import (
     G_LEAK_STANDARD,
     TAU_SYN_EXCITATORY,
     TAU_SYN_INHIBITORY,
+    TAU_EXCITATORY_CONDUCTANCE,
+    TAU_INHIBITORY_CONDUCTANCE,
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
     E_LEAK,
@@ -49,6 +51,8 @@ from thalia.components.neurons.neuron_constants import (
     E_INHIBITORY,
     TAU_MEM_STANDARD,
     TAU_MEM_FAST,
+    TAU_REF_FAST,
+    FAST_SPIKING_INTERNEURON,
 )
 
 
@@ -253,8 +257,8 @@ def create_relay_neurons(
         E_I=E_INHIBITORY,
         g_L=G_LEAK_STANDARD,
         tau_mem=TAU_MEM_STANDARD,
-        tau_E=5.0,  # Fast excitatory (sensory input)
-        tau_I=10.0,  # Slower inhibitory (from TRN)
+        tau_E=TAU_EXCITATORY_CONDUCTANCE,  # Fast excitatory (sensory input)
+        tau_I=TAU_INHIBITORY_CONDUCTANCE,  # Slower inhibitory (from TRN)
         **overrides,
     )
     neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
@@ -466,8 +470,6 @@ def create_fast_spiking_neurons(
         >>> fsi = NeuronFactory.create("fast_spiking", n_neurons=20, device="cpu")
     """
     # Fast-spiking configuration (parvalbumin+ interneurons)
-    from thalia.components.neurons.neuron_constants import FAST_SPIKING_INTERNEURON
-
     # Start with preset and apply overrides
     fsi_config = {**FAST_SPIKING_INTERNEURON}
     fsi_config.update(overrides)
@@ -481,8 +483,8 @@ def create_fast_spiking_neurons(
         E_I=E_INHIBITORY,
         tau_E=TAU_SYN_EXCITATORY,
         tau_I=TAU_SYN_INHIBITORY,
-        tau_ref=fsi_config.get("tau_ref", 2.0),  # Fast refractory
-        g_L=fsi_config.get("g_leak", 0.05),  # High leak
+        tau_ref=fsi_config.get("tau_ref", TAU_REF_FAST),  # Fast refractory
+        g_L=fsi_config.get("g_leak", G_LEAK_STANDARD),  # High leak
         tau_mem=fsi_config.get("tau_mem", TAU_MEM_FAST),  # Fast dynamics
     )
 

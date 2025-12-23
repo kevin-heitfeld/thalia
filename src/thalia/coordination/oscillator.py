@@ -65,6 +65,7 @@ import random
 import torch.nn as nn
 
 from thalia.core.errors import ConfigurationError
+from thalia.utils.time_constants import TAU
 
 
 @dataclass
@@ -137,7 +138,7 @@ class BrainOscillator(nn.Module, ABC):
 
     def _update_phase_increment(self) -> None:
         """Update phase increment based on current frequency."""
-        self._phase_per_ms = 2.0 * math.pi * self._frequency_hz / 1000.0
+        self._phase_per_ms = TAU * self._frequency_hz / MS_PER_SECOND
 
     def advance(self, dt_ms: Optional[float] = None) -> None:
         """
@@ -159,8 +160,8 @@ class BrainOscillator(nn.Module, ABC):
             noise = random.gauss(0, self.config.phase_noise_std)
             self._phase += noise
 
-        # Wrap to [0, 2π)
-        self._phase = self._phase % (2.0 * math.pi)
+        # Wrap to [0, τ)
+        self._phase = self._phase % TAU
 
         # Update time
         self.time_ms += dt
@@ -174,7 +175,7 @@ class BrainOscillator(nn.Module, ABC):
         Args:
             target_phase: Target phase in radians
         """
-        self._phase = target_phase % (2.0 * math.pi)
+        self._phase = target_phase % TAU
 
     def set_frequency(self, frequency_hz: float) -> None:
         """
@@ -204,7 +205,7 @@ class BrainOscillator(nn.Module, ABC):
         """
         Period of one complete oscillation cycle in milliseconds.
 
-        Subclasses should return: 1000.0 / frequency_hz
+        Subclasses should return: MS_PER_SECOND / frequency_hz
         """
         pass
 
@@ -302,7 +303,7 @@ class SinusoidalOscillator(BrainOscillator):
     @property
     def oscillation_period_ms(self) -> float:
         """Period of one complete oscillation cycle in milliseconds."""
-        return 1000.0 / self._frequency_hz
+        return MS_PER_SECOND / self._frequency_hz
 
     @property
     def signal(self) -> float:
@@ -970,7 +971,7 @@ class OscillatorManager:
             return 0  # No theta oscillator
 
         # Calculate progress through theta cycle [0, 1)
-        theta_progress = theta.phase / (2.0 * math.pi)
+        theta_progress = theta.phase / TAU
 
         # Map to slot index
         slot = int(theta_progress * n_slots) % n_slots
