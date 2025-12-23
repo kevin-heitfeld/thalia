@@ -197,6 +197,25 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     ca3_feedback_inhibition: float = 0.3  # Inhibition per total activity
 
     # =========================================================================
+    # GAP JUNCTIONS (Electrical Synapses)
+    # =========================================================================
+    # Gap junctions between CA1 interneurons (basket cells, bistratified cells)
+    # provide fast electrical coupling for theta-gamma synchronization.
+    # Critical for precise spike timing in episodic memory encoding/retrieval.
+    #
+    # Biological evidence:
+    # - Fukuda & Kosaka (2000): Gap junctions in hippocampal GABAergic networks
+    # - Traub et al. (2003): Electrical coupling essential for gamma in CA1
+    # - Hormuzdi et al. (2001): Connexin36-mediated interneuron coupling
+    #
+    # CA1 interneurons (~10-15% of CA1 population) have dense gap junction
+    # networks that synchronize inhibition during theta-gamma nested oscillations.
+    gap_junctions_enabled: bool = True  # Enable gap junctions in CA1 interneurons
+    gap_junction_strength: float = 0.12  # Coupling strength (biological: 0.05-0.2)
+    gap_junction_threshold: float = 0.25  # Neighborhood connectivity threshold
+    gap_junction_max_neighbors: int = 8  # Max neighbors per interneuron (biological: 4-12)
+
+    # =========================================================================
     # HETEROSYNAPTIC PLASTICITY
     # =========================================================================
     # Synapses to inactive postsynaptic neurons weaken when nearby neurons
@@ -272,6 +291,9 @@ class HippocampusState(BaseRegionState):
     # CA3 recurrent state
     ca3_membrane: Optional[torch.Tensor] = None
 
+    # CA1 membrane voltages (for gap junction coupling)
+    ca1_membrane: Optional[torch.Tensor] = None
+
     # CA3 bistable persistent activity trace
     # Models I_NaP/I_CAN currents that allow neurons to maintain firing
     # without continuous external input. This is essential for stable
@@ -320,6 +342,8 @@ class HippocampusState(BaseRegionState):
             # CA3 state
             "ca3_membrane": self.ca3_membrane,
             "ca3_persistent": self.ca3_persistent,
+            # CA1 state (gap junctions)
+            "ca1_membrane": self.ca1_membrane,
             # Memory and traces
             "sample_trace": self.sample_trace,
             "dg_trace": self.dg_trace,
@@ -374,6 +398,8 @@ class HippocampusState(BaseRegionState):
             # CA3 state
             ca3_membrane=transfer_tensor(data.get("ca3_membrane")),
             ca3_persistent=transfer_tensor(data.get("ca3_persistent")),
+            # CA1 state (gap junctions, added 2025-01, backward compatible)
+            ca1_membrane=transfer_tensor(data.get("ca1_membrane")),
             # Memory and traces
             sample_trace=transfer_tensor(data.get("sample_trace")),
             dg_trace=transfer_tensor(data.get("dg_trace")),

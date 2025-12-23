@@ -41,6 +41,7 @@ from thalia.components.neurons.neuron_factory import (
     create_relay_neurons,
     create_trn_neurons,
     create_cortical_layer_neurons,
+    create_fast_spiking_neurons,
 )
 from thalia.components.neurons.dendritic import (
     DendriticBranch,
@@ -84,6 +85,7 @@ __all__ = [
     "create_relay_neurons",
     "create_trn_neurons",
     "create_cortical_layer_neurons",
+    "create_fast_spiking_neurons",
     # Dendritic computation
     "DendriticBranch",
     "DendriticBranchConfig",

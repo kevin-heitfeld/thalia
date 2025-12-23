@@ -359,6 +359,38 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.d2_pathway = D2Pathway(pathway_config)
 
         # =====================================================================
+        # FSI (FAST-SPIKING INTERNEURONS) - Parvalbumin+ Interneurons
+        # =====================================================================
+        # FSI are ~2% of striatal neurons, provide feedforward inhibition
+        # Critical for action selection timing (Koós & Tepper 1999)
+        # Gap junction networks enable ultra-fast synchronization (<0.1ms)
+        if self.striatum_config.fsi_enabled:
+            self.fsi_size = int(config.n_output * self.striatum_config.fsi_ratio)
+            # FSI have fast kinetics (tau_mem ~5ms vs ~20ms for MSNs)
+            from thalia.components.neurons import create_fast_spiking_neurons
+            self.fsi_neurons = create_fast_spiking_neurons(
+                n_neurons=self.fsi_size,
+                device=self.device,
+            )
+
+            # Store gap junction config BEFORE weight initialization
+            if self.striatum_config.gap_junctions_enabled:
+                from thalia.components.gap_junctions import GapJunctionConfig
+                self._gap_config_fsi = GapJunctionConfig(
+                    enabled=True,
+                    coupling_strength=self.striatum_config.gap_junction_strength,
+                    connectivity_threshold=self.striatum_config.gap_junction_threshold,
+                    max_neighbors=self.striatum_config.gap_junction_max_neighbors,
+                )
+                self.gap_junctions_fsi = None  # Will be initialized after weights
+            else:
+                self.gap_junctions_fsi = None  # Gap junctions disabled
+        else:
+            self.fsi_size = 0
+            self.fsi_neurons = None
+            self.gap_junctions_fsi = None
+
+        # =====================================================================
         # INITIALIZE SYNAPTIC WEIGHTS (Phase 2 - Option B)
         # =====================================================================
         # Weights are stored in parent's synaptic_weights dict, NOT in pathways.
@@ -893,6 +925,34 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Store sizes for easy access
         self.n_d1 = n_d1
         self.n_d2 = n_d2
+
+        # =====================================================================
+        # FSI WEIGHTS AND GAP JUNCTIONS
+        # =====================================================================
+        # If FSI enabled, create weights from inputs to FSI
+        # FSI use these weights for both: (1) spike generation, (2) gap junction neighborhoods
+        if self.fsi_size > 0:
+            # Initialize FSI weights (input → FSI)
+            fsi_weights = WeightInitializer.xavier(
+                n_output=self.fsi_size,
+                n_input=n_input,
+                gain=0.3,  # Slightly stronger than MSNs (FSI are more excitable)
+                device=self.device,
+            ) * self.config.w_max
+
+            # Register FSI as input source
+            self.add_input_source("fsi", n_input, sparsity=0.0, weight_scale=1.0)
+            self.synaptic_weights["fsi"].data = fsi_weights
+
+            # Create gap junction coupling (uses fsi weights for neighborhoods)
+            if hasattr(self, '_gap_config_fsi'):
+                from thalia.components.gap_junctions import GapJunctionCoupling
+                self.gap_junctions_fsi = GapJunctionCoupling(
+                    n_neurons=self.fsi_size,
+                    afferent_weights=self.synaptic_weights["fsi"],
+                    config=self._gap_config_fsi,
+                    device=self.device,
+                )
 
     def _link_pathway_weights_to_parent(self) -> None:
         """Pass parent reference to D1/D2 pathways for weight access.
@@ -1568,6 +1628,37 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
 
         # =====================================================================
+        # FSI (FAST-SPIKING INTERNEURONS) - Feedforward Inhibition
+        # =====================================================================
+        # FSI process inputs in parallel with MSNs but with:
+        # 1. Gap junction coupling for synchronization (<0.1ms)
+        # 2. Feedforward inhibition to MSNs (sharpens action timing)
+        # Biology: FSI are parvalbumin+ interneurons (~2% of striatum)
+        fsi_inhibition = torch.zeros(self.config.n_output, device=self.device)
+        if self.fsi_size > 0:
+            # Compute FSI synaptic current (weights applied at dendrites)
+            fsi_weights = self.synaptic_weights["fsi"]
+            fsi_synaptic_current = fsi_weights @ input_spikes  # [n_fsi]
+
+            # Apply gap junction coupling (if enabled and state available)
+            if self.gap_junctions_fsi is not None and self.state.fsi_membrane is not None:
+                gap_current = self.gap_junctions_fsi(self.state.fsi_membrane)
+                fsi_synaptic_current = fsi_synaptic_current + gap_current
+
+            # Update FSI neurons (fast kinetics, tau_mem ~5ms)
+            fsi_spikes, fsi_membrane = self.fsi_neurons(
+                g_exc_input=fsi_synaptic_current,
+                g_inh_input=torch.zeros_like(fsi_synaptic_current),  # FSI receive minimal inhibition
+            )
+
+            # Store FSI membrane for next timestep gap junctions
+            self.state.fsi_membrane = fsi_membrane
+
+            # FSI provide feedforward inhibition to ALL MSNs (broadcast)
+            # Each FSI spike contributes 0.5 inhibitory conductance (strong!)
+            fsi_inhibition = torch.sum(fsi_spikes) * 0.5
+
+        # =====================================================================
         # FORWARD PASS COORDINATION - Delegate to ForwardPassCoordinator
         # =====================================================================
         # ForwardPassCoordinator handles all the complex modulation logic:
@@ -1576,10 +1667,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # - Tonic dopamine and norepinephrine gain modulation
         # - Goal-conditioned modulation (PFC → Striatum)
         # - Homeostatic excitability modulation
+        # - FSI feedforward inhibition (sharpens action timing)
         # - D1/D2 neuron population execution
         d1_spikes, d2_spikes, pfc_goal_context = self.forward_coordinator.forward(
             input_spikes=input_spikes,
             recent_spikes=self.state_tracker.recent_spikes,
+            fsi_inhibition=fsi_inhibition,  # FSI feedforward inhibition
         )
 
         # =====================================================================
@@ -1843,6 +1936,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self._d1_delay_buffer.zero_()
         if self._d2_delay_buffer is not None:
             self._d2_delay_buffer.zero_()
+
+        # Reset FSI neurons and state
+        if self.fsi_size > 0:
+            # Reset FSI neuron dynamics
+            if self.fsi_neurons is not None:
+                self.fsi_neurons.reset_state()
+            # Initialize FSI membrane state for gap junctions
+            self.state.fsi_membrane = torch.zeros(self.fsi_size, device=self.device)
 
     def set_neuromodulators(
         self,

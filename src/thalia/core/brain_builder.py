@@ -499,12 +499,13 @@ class BrainBuilder:
         components: Dict[str, LearnableComponent],
         target_name: str,
     ) -> "AxonalProjection":
-        """Create AxonalProjection from connection specs.
+        """Create AxonalProjection from connection specs with per-target delay support.
 
         AxonalProjection has different initialization than standard pathways:
-        - Takes list of (region_name, port, size, delay_ms) tuples
+        - Takes list of (region_name, port, size, delay_ms[, target_delays]) tuples
         - NO config class with n_input/n_output
         - Handles multi-source concatenation internally
+        - Supports per-target delay variation for realistic axonal branching
 
         Args:
             target_specs: List of ConnectionSpec for this target
@@ -512,11 +513,11 @@ class BrainBuilder:
             target_name: Name of target component
 
         Returns:
-            AxonalProjection instance
+            AxonalProjection instance with target-specific delays
         """
         from thalia.pathways.axonal_projection import AxonalProjection
 
-        # Build sources list: [(region_name, port, size, delay_ms), ...]
+        # Build sources list: [(region_name, port, size, delay_ms[, target_delays]), ...]
         sources = []
         for spec in target_specs:
             source_comp = components[spec.source]
@@ -525,18 +526,33 @@ class BrainBuilder:
             # Get axonal delay (default: 2.0ms)
             delay_ms = spec.config_params.get("axonal_delay_ms", 2.0)
 
-            sources.append((
-                spec.source,      # region_name
-                spec.source_port, # port (can be None)
-                source_size,      # size
-                delay_ms,         # delay_ms
-            ))
+            # Check for per-target delays
+            target_delays = spec.config_params.get("target_delays", None)
 
-        # Create AxonalProjection
+            if target_delays:
+                # New format with per-target delays
+                sources.append((
+                    spec.source,      # region_name
+                    spec.source_port, # port (can be None)
+                    source_size,      # size
+                    delay_ms,         # default delay
+                    target_delays,    # dict of target-specific delays
+                ))
+            else:
+                # Standard format (backward compatible)
+                sources.append((
+                    spec.source,      # region_name
+                    spec.source_port, # port (can be None)
+                    source_size,      # size
+                    delay_ms,         # delay_ms
+                ))
+
+        # Create AxonalProjection with target_name for delay selection
         projection = AxonalProjection(
             sources=sources,
             device=self.global_config.device,
             dt_ms=self.global_config.dt_ms,
+            target_name=target_name,  # NEW: enables per-target delay selection
         )
 
         return projection
@@ -1079,7 +1095,9 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Synapses are located at TARGET dendrites, not in the pathway.
 
     # Thalamus → Cortex: Thalamocortical projection
-    builder.connect("thalamus", "cortex", pathway_type="axonal")
+    # Fast, heavily myelinated pathway (Jones 2007, Sherman & Guillery 2006)
+    # Distance: ~2-3cm, conduction velocity: ~10-20 m/s → 2-3ms delay
+    builder.connect("thalamus", "cortex", pathway_type="axonal", axonal_delay_ms=2.5)
 
     # Cortex L6a/L6b → Thalamus: Dual corticothalamic feedback pathways
     # L6a (type I) → TRN: Inhibitory modulation for selective attention (slow pathway, low gamma 25-35 Hz)
@@ -1102,26 +1120,41 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6b", target_port="l6b_feedback", axonal_delay_ms=5.0)
 
     # Cortex ⇄ Hippocampus: Bidirectional memory integration
-    builder.connect("cortex", "hippocampus", pathway_type="axonal")
-    builder.connect("hippocampus", "cortex", pathway_type="axonal")
+    # Entorhinal cortex ↔ hippocampus: moderately myelinated (Witter et al. 2000)
+    # Distance: ~3-5cm, conduction velocity: ~5-10 m/s → 5-8ms delay
+    builder.connect("cortex", "hippocampus", pathway_type="axonal", axonal_delay_ms=6.5)
+    builder.connect("hippocampus", "cortex", pathway_type="axonal", axonal_delay_ms=6.5)
 
     # Cortex → PFC: Executive control pathway
-    builder.connect("cortex", "pfc", pathway_type="axonal")
+    # Corticocortical long-range connections (Miller & Cohen 2001)
+    # Distance: ~5-10cm, conduction velocity: ~3-8 m/s → 10-15ms delay
+    builder.connect("cortex", "pfc", pathway_type="axonal", axonal_delay_ms=12.5)
 
     # Multi-source → Striatum: Corticostriatal + hippocampostriatal + PFC inputs
     # These will be automatically combined into single multi-source AxonalProjection
-    builder.connect("cortex", "striatum", pathway_type="axonal")
-    builder.connect("hippocampus", "striatum", pathway_type="axonal")
-    builder.connect("pfc", "striatum", pathway_type="axonal")
+    # Per-target delays model different myelination patterns (Gerfen & Surmeier 2011):
+    # - Cortex → Striatum: Fast, heavily myelinated, short distance (~2-4cm) → 3-5ms
+    # - Hippocampus → Striatum: Moderate, longer distance (~4-6cm) → 7-10ms
+    # - PFC → Striatum: Variable, longest distance (~6-10cm) → 12-18ms
+    builder.connect("cortex", "striatum", pathway_type="axonal", axonal_delay_ms=4.0)
+    builder.connect("hippocampus", "striatum", pathway_type="axonal", axonal_delay_ms=8.5)
+    builder.connect("pfc", "striatum", pathway_type="axonal", axonal_delay_ms=15.0)
 
     # Striatum → PFC: Basal ganglia gating of working memory
-    builder.connect("striatum", "pfc", pathway_type="axonal")
+    # Via thalamus (MD/VA nuclei), total distance ~8-12cm (Haber 2003)
+    # Includes striatum→thalamus→PFC relay → 15-20ms total delay
+    builder.connect("striatum", "pfc", pathway_type="axonal", axonal_delay_ms=17.5)
 
     # Cerebellum: Motor/cognitive forward models
     # Receives multi-modal input (sensory + goals), outputs predictions
-    builder.connect("cortex", "cerebellum", pathway_type="axonal")  # Sensorimotor input
-    builder.connect("pfc", "cerebellum", pathway_type="axonal")     # Goal/context input
-    builder.connect("cerebellum", "cortex", pathway_type="axonal")  # Forward model predictions
+    # Corticopontocerebellar pathway: via pontine nuclei (Schmahmann 1996)
+    # Distance: ~10-15cm total, includes relay → 20-30ms delay
+    builder.connect("cortex", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0)  # Sensorimotor input
+    # PFC → Cerebellum: similar pathway length
+    builder.connect("pfc", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0)     # Goal/context input
+    # Cerebellum → Cortex: via thalamus (VL/VA nuclei), moderately fast
+    # Distance: ~8-12cm, includes thalamic relay → 15-20ms delay
+    builder.connect("cerebellum", "cortex", pathway_type="axonal", axonal_delay_ms=17.5)  # Forward model predictions
 
 
 # Register built-in presets

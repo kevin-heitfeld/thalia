@@ -98,6 +98,7 @@ import torch.nn as nn
 from thalia.typing import ThalamicRelayDiagnostics
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.region_state import BaseRegionState
+from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.utils.input_routing import InputRouter
 from thalia.managers.component_registry import register_region
@@ -198,6 +199,13 @@ class ThalamicRelayConfig(NeuralComponentConfig):
 
     relay_to_cortex_delay_ms: float = 2.0
     """Relay → cortex thalamocortical delay (~2ms, handled by AxonalProjection)."""
+
+    # Gap junctions (TRN interneuron synchronization)
+    gap_junctions_enabled: bool = True
+    """Enable gap junction coupling in TRN for fast synchronization."""
+
+    gap_junction_strength: float = 0.15
+    """Gap junction conductance (biological: 0.05-0.3, Landisman 2002)."""
 
     # Short-Term Plasticity (STP) - HIGH PRIORITY for sensory gating
     stp_enabled: bool = True
@@ -479,6 +487,31 @@ class ThalamicRelay(NeuralRegion):
             ),
             requires_grad=False
         )
+
+        # =====================================================================
+        # GAP JUNCTIONS (TRN interneuron synchronization)
+        # =====================================================================
+        # TRN neurons are densely coupled via gap junctions (Landisman et al. 2002)
+        # This enables ultra-fast synchronization for coherent inhibitory volleys
+        self.gap_junctions: Optional[GapJunctionCoupling] = None
+        if config.gap_junctions_enabled:
+            gap_config = GapJunctionConfig(
+                enabled=True,
+                coupling_strength=config.gap_junction_strength,
+                connectivity_threshold=0.2,  # Liberal coupling (TRN is densely connected)
+                max_neighbors=10,  # TRN has ~6-12 gap junction partners (Galarreta 1999)
+                interneuron_only=True,  # All TRN neurons are inhibitory
+            )
+
+            # Use input_to_trn weights to define functional neighborhoods
+            # TRN neurons sharing sensory inputs are anatomically close
+            self.gap_junctions = GapJunctionCoupling(
+                n_neurons=self.n_trn,
+                afferent_weights=self.input_to_trn,  # Shared sensory inputs
+                config=gap_config,
+                interneuron_mask=None,  # All TRN neurons are interneurons
+                device=self.device,
+            )
 
         # =====================================================================
         # CENTER-SURROUND RECEPTIVE FIELDS
@@ -946,9 +979,19 @@ class ThalamicRelay(NeuralRegion):
         else:
             trn_inhibition = torch.zeros(self.n_trn, device=self.device)
 
+        # Gap junction coupling (TRN synchronization)
+        # Ultra-fast electrical coupling (<0.1ms) for coherent inhibitory volleys
+        trn_gap_current = torch.zeros(self.n_trn, device=self.device)
+        if self.gap_junctions is not None and self.state.trn_membrane is not None:
+            # Apply voltage coupling based on previous timestep's membrane potentials
+            trn_gap_current = self.gap_junctions(self.state.trn_membrane)
+            # Gap junction current is excitatory (depolarizing current from neighbors)
+            # Add to excitation rather than inhibition
+            trn_excitation = trn_excitation + trn_gap_current
+
         # Update TRN neurons (ADR-005: 1D tensors)
         trn_spikes, trn_membrane = self.trn_neurons(
-            g_exc_input=trn_excitation,  # [n_trn]
+            g_exc_input=trn_excitation,  # [n_trn] (includes gap junction coupling)
             g_inh_input=trn_inhibition,  # [n_trn]
         )
 

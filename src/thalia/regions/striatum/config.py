@@ -144,6 +144,24 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     beta_modulation_strength: float = 0.3  # [0, 1] - strength of beta influence
 
     # =========================================================================
+    # FSI (FAST-SPIKING INTERNEURONS) - Parvalbumin+ Interneurons
+    # =========================================================================
+    # FSI are ~2% of striatal neurons (vs 95% MSNs) but critical for timing:
+    # - Feedforward inhibition sharpens action selection
+    # - Gap junction networks enable ultra-fast synchronization (<0.1ms)
+    # - Synchronize MSN activity during beta oscillations (13-30 Hz)
+    # - Critical for action initiation timing and motor control
+    # Biology: Koós & Tepper (1999), Gittis et al. (2010)
+    fsi_enabled: bool = True
+    fsi_ratio: float = 0.02  # FSI as fraction of total striatal neurons (2%)
+
+    # Gap junction configuration for FSI networks
+    gap_junctions_enabled: bool = True
+    gap_junction_strength: float = 0.15  # Biological: 0.05-0.3
+    gap_junction_threshold: float = 0.25  # Neighborhood inference threshold
+    gap_junction_max_neighbors: int = 10  # Biological: 4-12 neighbors
+
+    # =========================================================================
     # GOAL-CONDITIONED VALUES (Phase 1 Week 2-3 Enhancement)
     # =========================================================================
     # Enable PFC goal context to modulate striatal action values
@@ -224,6 +242,12 @@ class StriatumState(BaseRegionState):
     """
 
     STATE_VERSION: int = 1
+
+    # ========================================================================
+    # FSI (FAST-SPIKING INTERNEURON) STATE
+    # ========================================================================
+    fsi_membrane: Optional[torch.Tensor] = None
+    """FSI membrane potentials [n_fsi] for gap junction coupling."""
 
     # ========================================================================
     # D1/D2 OPPONENT PATHWAY STATES
@@ -425,6 +449,9 @@ class StriatumState(BaseRegionState):
             # Base state
             spikes=to_device(data.get("spikes")),
             membrane=to_device(data.get("membrane")),
+
+            # FSI state (backward compatible)
+            fsi_membrane=to_device(data.get("fsi_membrane")),
 
             # D1/D2 pathways
             d1_pathway_state=data.get("d1_pathway_state"),

@@ -222,6 +222,25 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Oscillator phases and amplitudes managed by mixin properties
 
+        # =====================================================================
+        # GAP JUNCTIONS (Electrical Synapses) - Config Setup
+        # =====================================================================
+        # Store gap junction config BEFORE weight initialization so it can be
+        # used during _init_circuit_weights() to create gap junction module.
+        if config.gap_junctions_enabled:
+            from thalia.components.gap_junctions import GapJunctionConfig
+
+            self._gap_config_ca1 = GapJunctionConfig(
+                enabled=True,
+                coupling_strength=config.gap_junction_strength,
+                connectivity_threshold=config.gap_junction_threshold,
+                max_neighbors=config.gap_junction_max_neighbors,
+                interneuron_only=True,
+            )
+            self.gap_junctions_ca1: Optional[GapJunctionCoupling] = None
+        else:
+            self.gap_junctions_ca1 = None
+
         # Override weights with trisynaptic circuit weights
         self._init_circuit_weights()
 
@@ -562,6 +581,17 @@ class TrisynapticHippocampus(NeuralRegion):
         )
         self.synaptic_weights["ca1_inhib"].data.fill_diagonal_(0.0)
 
+        # Create gap junction network for CA1 interneurons (if enabled)
+        if hasattr(self, '_gap_config_ca1'):
+            from thalia.components.gap_junctions import GapJunctionCoupling
+
+            self.gap_junctions_ca1 = GapJunctionCoupling(
+                n_neurons=self.ca1_size,
+                afferent_weights=self.synaptic_weights["ca1_inhib"],
+                config=self._gap_config_ca1,
+                device=device,
+            )
+
     def _reset_subsystems(self, *names: str) -> None:
         """Reset state of named subsystems that have reset_state() method."""
         for name in names:
@@ -638,6 +668,7 @@ class TrisynapticHippocampus(NeuralRegion):
             ca1_spikes=torch.zeros(self.ca1_size, device=device),
             ca3_membrane=torch.zeros(self.ca3_size, device=device),
             ca3_persistent=torch.zeros(self.ca3_size, device=device),
+            ca1_membrane=torch.zeros(self.ca1_size, device=device),  # For gap junction coupling
             sample_trace=None,  # Set during sample encoding
             dg_trace=torch.zeros(self.dg_size, device=device),
             ca3_trace=torch.zeros(self.ca3_size, device=device),
@@ -1435,8 +1466,16 @@ class TrisynapticHippocampus(NeuralRegion):
                 self.synaptic_weights["ca1_inhib"].t()
             ))
 
+        # Apply gap junction coupling (electrical synapses between interneurons)
+        if self.gap_junctions_ca1 is not None and self.state.ca1_membrane is not None:
+            # Get coupling current from neighboring interneurons
+            gap_current = self.gap_junctions_ca1(self.state.ca1_membrane)
+            # Add gap junction depolarization to excitatory input
+            ca1_g_exc = ca1_g_exc + gap_current
+
         # Run through CA1 neurons (ConductanceLIF with E/I separation)
-        ca1_spikes, _ = self.ca1_neurons(ca1_g_exc, ca1_g_inh)
+        ca1_spikes, ca1_membrane = self.ca1_neurons(ca1_g_exc, ca1_g_inh)
+        self.state.ca1_membrane = ca1_membrane  # Store for next timestep gap junctions
 
         # Apply sparsity (more lenient during retrieval to allow mismatch detection)
         # Membrane potentials are guaranteed to exist after forward() call

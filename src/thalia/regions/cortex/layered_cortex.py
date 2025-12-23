@@ -102,6 +102,7 @@ from thalia.components.neurons import create_cortical_layer_neurons
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.synapses.traces import update_trace
+from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
 from thalia.components.coding.spike_utils import compute_firing_rate, compute_spike_count
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
@@ -388,6 +389,28 @@ class LayeredCortex(NeuralRegion):
         self.stp_l23_recurrent.to(device)
 
         # =====================================================================
+        # GAP JUNCTIONS for L2/3 interneuron synchronization
+        # =====================================================================
+        # Basket cells and chandelier cells have dense gap junction networks
+        # Critical for cortical gamma oscillations (30-80 Hz) and precise timing
+        # ~70-80% of cortical gap junctions are interneuron-interneuron (Bennett 2004)
+        self.gap_junctions_l23: Optional[GapJunctionCoupling] = None
+        if cfg.gap_junctions_enabled:
+            gap_config = GapJunctionConfig(
+                enabled=True,
+                coupling_strength=cfg.gap_junction_strength,
+                connectivity_threshold=cfg.gap_junction_threshold,
+                max_neighbors=cfg.gap_junction_max_neighbors,
+                interneuron_only=True,  # Only couple inhibitory neurons
+            )
+
+            # Use l23_inhib weights to define functional neighborhoods
+            # Interneurons that inhibit similar pyramidal cells are anatomically close
+            # Note: We'll initialize this after weights are created (see _init_weights)
+            # For now, store config for later initialization
+            self._gap_config_l23 = gap_config
+
+        # =====================================================================
         # INTER-LAYER AXONAL DELAYS
         # =====================================================================
         # Create delay buffers for biological signal propagation within layers
@@ -573,6 +596,20 @@ class LayeredCortex(NeuralRegion):
         l23_inhib_weights.fill_diagonal_(0.0)
         self.synaptic_weights["l23_inhib"] = nn.Parameter(l23_inhib_weights)
 
+        # =====================================================================
+        # GAP JUNCTIONS (L2/3 interneurons) - Initialize after weights created
+        # =====================================================================
+        # Now that l23_inhib weights exist, create gap junction network
+        # Interneurons that share inhibitory targets are anatomically close
+        if hasattr(self, '_gap_config_l23') and self._gap_config_l23.enabled:
+            self.gap_junctions_l23 = GapJunctionCoupling(
+                n_neurons=self.l23_size,
+                afferent_weights=self.synaptic_weights["l23_inhib"],  # Shared targets → proximity
+                config=self._gap_config_l23,
+                interneuron_mask=None,  # All L2/3 lateral neurons treated as interneurons
+                device=self.device,
+            )
+
         # Note: L6 → TRN weights are not stored in cortex.
         # They will be created and managed by the thalamus component
         # because TRN is part of thalamic circuitry.
@@ -633,6 +670,7 @@ class LayeredCortex(NeuralRegion):
             l6b_trace=torch.zeros(self.l6b_size, device=dev),
             top_down_modulation=None,
             ffi_strength=0.0,
+            l23_membrane=torch.zeros(self.l23_size, device=dev),  # For gap junction coupling
         )
 
         # Restore/initialize oscillator signals
@@ -1172,9 +1210,19 @@ class LayeredCortex(NeuralRegion):
             self._l23_threshold_offset is not None):
             l23_input = l23_input - self._l23_threshold_offset
 
-        l23_spikes, _ = self.l23_neurons(F.relu(l23_input), F.relu(l23_input) * 0.25)
+        # GAP JUNCTION COUPLING (L2/3 interneuron synchronization)
+        # Ultra-fast electrical coupling for gamma synchronization
+        # Apply gap junction current based on previous timestep's membrane potentials
+        if self.gap_junctions_l23 is not None and self.state.l23_membrane is not None:
+            # Get coupling current from neighboring interneurons
+            gap_current = self.gap_junctions_l23(self.state.l23_membrane)
+            # Add gap junction depolarization to input
+            l23_input = l23_input + gap_current
+
+        l23_spikes, l23_membrane = self.l23_neurons(F.relu(l23_input), F.relu(l23_input) * 0.25)
         l23_spikes = self._apply_sparsity_1d(l23_spikes, cfg.l23_sparsity)
         self.state.l23_spikes = l23_spikes
+        self.state.l23_membrane = l23_membrane  # Store for next timestep gap junctions
 
         # Inter-layer shape check: L2/3 → L5
         assert l23_spikes.shape == (self.l23_size,), (
@@ -1954,6 +2002,8 @@ class LayeredCortex(NeuralRegion):
             last_plasticity_delta=self.state.last_plasticity_delta,
             # STP state
             stp_l23_recurrent_state=stp_state,
+            # Gap junction state
+            l23_membrane=self.state.l23_membrane.clone() if self.state.l23_membrane is not None else None,
         )
 
     def load_state(self, state: LayeredCortexState) -> None:
@@ -2036,5 +2086,9 @@ class LayeredCortex(NeuralRegion):
         # Restore STP state
         if state.stp_l23_recurrent_state is not None:
             self.stp_l23_recurrent.load_state(state.stp_l23_recurrent_state)
+
+        # Restore gap junction state
+        if state.l23_membrane is not None:
+            self.state.l23_membrane = state.l23_membrane.to(self.device)
 
     # endregion

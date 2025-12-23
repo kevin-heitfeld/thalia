@@ -92,6 +92,22 @@ class LayeredCortexConfig(NeuralComponentConfig):
     spillover_mode: str = "connectivity"  # Use shared inputs for neighborhood
     spillover_strength: float = 0.15  # 15% of direct synaptic strength (biological range)
 
+    # Gap junctions (L2/3 interneuron synchronization)
+    # Basket cells and chandelier cells in L2/3 have dense gap junction networks
+    # Critical for cortical gamma oscillations (30-80 Hz) and precise spike timing
+    # ~70-80% of cortical gap junctions are interneuron-interneuron (Bennett 2004)
+    gap_junctions_enabled: bool = True
+    """Enable gap junction coupling in L2/3 interneurons."""
+
+    gap_junction_strength: float = 0.12
+    """Gap junction conductance for L2/3 interneurons (biological: 0.05-0.2)."""
+
+    gap_junction_threshold: float = 0.25
+    """Connectivity threshold for gap junction coupling (shared inputs)."""
+
+    gap_junction_max_neighbors: int = 8
+    """Maximum gap junction neighbors per interneuron (biological: 4-12)."""
+
     # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
     # are inherited from NeuralComponentConfig
     # Override with cortical values from constants:
@@ -220,6 +236,9 @@ class LayeredCortexState(BaseRegionState):
     l6a_spikes: Optional[torch.Tensor] = None  # L6a → TRN pathway
     l6b_spikes: Optional[torch.Tensor] = None  # L6b → relay pathway
 
+    # L2/3 membrane potential (for gap junction coupling)
+    l23_membrane: Optional[torch.Tensor] = None
+
     # L2/3 recurrent activity (accumulated over time)
     l23_recurrent_activity: Optional[torch.Tensor] = None
 
@@ -270,6 +289,8 @@ class LayeredCortexState(BaseRegionState):
             "l5_spikes": self.l5_spikes,
             "l6a_spikes": self.l6a_spikes,
             "l6b_spikes": self.l6b_spikes,
+            # L2/3 membrane for gap junctions
+            "l23_membrane": self.l23_membrane,
             # L2/3 recurrent activity
             "l23_recurrent_activity": self.l23_recurrent_activity,
             # STDP traces
@@ -351,6 +372,8 @@ class LayeredCortexState(BaseRegionState):
             last_plasticity_delta=data.get("last_plasticity_delta", 0.0),
             # STP state
             stp_l23_recurrent_state=transfer_nested_dict(data.get("stp_l23_recurrent_state")),
+            # Gap junction state (added 2025-01, backward compatible)
+            l23_membrane=transfer_tensor(data.get("l23_membrane")),
         )
 
     def reset(self) -> None:

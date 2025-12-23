@@ -28,18 +28,25 @@ from thalia.core.pathway_state import AxonalProjectionState
 
 @dataclass
 class SourceSpec:
-    """Specification for an axonal source.
+    """Specification for an axonal source with per-target delay variation.
+
+    Supports realistic axonal branching where collaterals to different targets
+    have different conduction velocities (myelination, distance, diameter).
 
     Attributes:
         region_name: Name of source region
         port: Optional output port (e.g., 'l23', 'l5', 'ca1')
         size: Number of axons from this source
-        delay_ms: Axonal conduction delay in milliseconds
+        delay_ms: Default axonal conduction delay in milliseconds
+        target_delays: Optional dict mapping target names to specific delays
+            Example: {"striatum": 5.0, "thalamus": 10.0}
+            If not specified, uses delay_ms for all targets
     """
     region_name: str
     port: Optional[str] = None
     size: int = 0
     delay_ms: float = 2.0
+    target_delays: Optional[Dict[str, float]] = None
 
     def compound_key(self) -> str:
         """Get compound key for this source (region:port or just region).
@@ -50,6 +57,19 @@ class SourceSpec:
         if self.port:
             return f"{self.region_name}:{self.port}"
         return self.region_name
+
+    def get_delay_for_target(self, target_name: str) -> float:
+        """Get axonal delay to a specific target.
+
+        Args:
+            target_name: Name of target region
+
+        Returns:
+            Delay in milliseconds (target-specific or default)
+        """
+        if self.target_delays and target_name in self.target_delays:
+            return self.target_delays[target_name]
+        return self.delay_ms
 
 
 @register_pathway(
@@ -99,11 +119,24 @@ class AxonalProjection(RoutingComponent):
 
     def __init__(
         self,
-        sources: List[Tuple[str, Optional[str], int, float]],
+        sources: List[Union[Tuple[str, Optional[str], int, float], Tuple[str, Optional[str], int, float, Dict[str, float]]]],
         device: str = "cpu",
         dt_ms: float = 1.0,
         config: Optional[Union[NeuralComponentConfig, Dict[str, Any]]] = None,
+        target_name: Optional[str] = None,
     ):
+        """Initialize axonal projection with optional per-target delays.
+
+        Args:
+            sources: List of source specifications, each can be:
+                - (region_name, port, size, delay_ms): Single delay for all targets
+                - (region_name, port, size, delay_ms, target_delays): Per-target delays
+                  where target_delays is Dict[target_name, delay_ms]
+            device: Torch device
+            dt_ms: Simulation timestep
+            config: Optional configuration
+            target_name: Name of target region (for per-target delay selection)
+        """
         # Create minimal config for RoutingComponent
         from types import SimpleNamespace
         if config is None:
@@ -113,18 +146,25 @@ class AxonalProjection(RoutingComponent):
         super().__init__(config)
 
         self.dt_ms = dt_ms
+        self.target_name = target_name
 
         # Parse sources into SourceSpec objects
         self.sources: List[SourceSpec] = []
         total_size = 0
 
         for source_tuple in sources:
-            if len(source_tuple) == 4:
+            if len(source_tuple) == 5:
+                # New: (region_name, port, size, delay_ms, target_delays)
+                region_name, port, size, delay_ms, target_delays = source_tuple
+            elif len(source_tuple) == 4:
+                # Standard: (region_name, port, size, delay_ms)
                 region_name, port, size, delay_ms = source_tuple
+                target_delays = None
             elif len(source_tuple) == 3:
                 # Backward compatibility: (region_name, port, size)
                 region_name, port, size = source_tuple
                 delay_ms = 2.0  # Default
+                target_delays = None
             else:
                 raise ValueError(f"Invalid source tuple: {source_tuple}")
 
@@ -133,6 +173,7 @@ class AxonalProjection(RoutingComponent):
                 port=port,
                 size=size,
                 delay_ms=delay_ms,
+                target_delays=target_delays,
             )
             self.sources.append(spec)
             total_size += size
@@ -146,9 +187,12 @@ class AxonalProjection(RoutingComponent):
         self.config.n_output = self.n_output
 
         # Create delay buffers for each source
+        # Use target-specific delay if available, otherwise default delay
         self._delay_buffers: Dict[str, CircularDelayBuffer] = {}
         for spec in self.sources:
-            delay_steps = int(spec.delay_ms / self.dt_ms)
+            # Get appropriate delay for this target
+            effective_delay = spec.get_delay_for_target(target_name) if target_name else spec.delay_ms
+            delay_steps = int(effective_delay / self.dt_ms)
             source_key = spec.compound_key()
             self._delay_buffers[source_key] = CircularDelayBuffer(
                 max_delay=delay_steps,
@@ -168,9 +212,15 @@ class AxonalProjection(RoutingComponent):
         Biologically accurate: Returns dict so target regions can route inputs
         to different neuron populations (e.g., thalamus sensory→relay, L6→TRN).
 
+        Per-Target Delays:
+        When SourceSpec includes target_delays, the appropriate delay is used
+        automatically based on target_name specified during initialization.
+        This models realistic axonal branching where collaterals to different
+        targets have different conduction velocities.
+
         Delays are implemented via circular buffers internally. Each timestep:
         1. Write current spikes to buffer
-        2. Read delayed spikes from buffer
+        2. Read delayed spikes from buffer (using target-specific delay)
         3. Advance buffer pointer
 
         Args:
@@ -199,7 +249,9 @@ class AxonalProjection(RoutingComponent):
             # Get compound key (e.g., "cortex:l6a" or just "cortex")
             source_key = source_spec.compound_key()
             buffer = self._delay_buffers[source_key]
-            delay_steps = int(source_spec.delay_ms / self.dt_ms)
+            # Use target-specific delay if available
+            effective_delay = source_spec.get_delay_for_target(self.target_name) if self.target_name else source_spec.delay_ms
+            delay_steps = int(effective_delay / self.dt_ms)
 
             # Get current spikes from source
             if not isinstance(source_outputs, dict) or source_key not in source_outputs:
@@ -411,7 +463,13 @@ class AxonalProjection(RoutingComponent):
         source_strs = []
         for spec in self.sources:
             port_str = f"[{spec.port}]" if spec.port else ""
-            source_strs.append(f"{spec.region_name}{port_str}({spec.size}, {spec.delay_ms}ms)")
+            if spec.target_delays and self.target_name:
+                # Show target-specific delay
+                delay = spec.get_delay_for_target(self.target_name)
+                source_strs.append(f"{spec.region_name}{port_str}({spec.size}, {delay}ms→{self.target_name})")
+            else:
+                source_strs.append(f"{spec.region_name}{port_str}({spec.size}, {spec.delay_ms}ms)")
 
         sources = " + ".join(source_strs)
-        return f"AxonalProjection({sources} → {self.n_output} axons)"
+        target_str = f" → {self.target_name}" if self.target_name else ""
+        return f"AxonalProjection({sources}{target_str}: {self.n_output} axons)"

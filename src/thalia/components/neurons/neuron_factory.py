@@ -48,6 +48,7 @@ from thalia.components.neurons.neuron_constants import (
     E_EXCITATORY,
     E_INHIBITORY,
     TAU_MEM_STANDARD,
+    TAU_MEM_FAST,
 )
 
 
@@ -417,10 +418,84 @@ def create_cortical_layer_neurons(
     return neurons
 
 
+@NeuronFactory.register("fast_spiking")
+def create_fast_spiking_neurons(
+    n_neurons: int,
+    device: torch.device,
+    **overrides
+) -> ConductanceLIF:
+    """Create fast-spiking interneuron population (parvalbumin+).
+
+    Fast-spiking interneurons (FSI) are characterized by:
+    - Fast membrane time constant (tau_mem ~5-10ms)
+    - Short refractory period (tau_ref ~2ms)
+    - High leak conductance (fast membrane decay)
+    - Provide feedforward/feedback inhibition
+    - Dense gap junction networks for synchronization
+    - Critical for gamma oscillations (30-80 Hz)
+
+    Common uses:
+    - Striatal FSI (~2% of striatum, parvalbumin+)
+    - Cortical basket cells and chandelier cells
+    - Hippocampal basket cells
+    - Cerebellar basket cells
+
+    Biology: Koós & Tepper (1999), Gittis et al. (2010)
+
+    Args:
+        n_neurons: Number of FSI neurons to create
+        device: Device for tensor allocation ("cpu" or "cuda")
+        **overrides: Custom parameters to override defaults
+
+    Returns:
+        ConductanceLIF neuron population configured as FSI
+
+    Examples:
+        >>> from thalia.components.neurons import create_fast_spiking_neurons
+        >>> fsi = create_fast_spiking_neurons(n_neurons=20, device="cpu")
+
+        # With custom parameters
+        >>> fsi = create_fast_spiking_neurons(
+        ...     n_neurons=20,
+        ...     device="cpu",
+        ...     tau_mem=8.0,  # Slightly slower FSI
+        ... )
+
+        # Via registry
+        >>> from thalia.components.neurons import NeuronFactory
+        >>> fsi = NeuronFactory.create("fast_spiking", n_neurons=20, device="cpu")
+    """
+    # Fast-spiking configuration (parvalbumin+ interneurons)
+    from thalia.components.neurons.neuron_constants import FAST_SPIKING_INTERNEURON
+
+    # Start with preset and apply overrides
+    fsi_config = {**FAST_SPIKING_INTERNEURON}
+    fsi_config.update(overrides)
+
+    # Build conductance-based config
+    config = ConductanceLIFConfig(
+        v_threshold=fsi_config.get("v_threshold", V_THRESHOLD_STANDARD),
+        v_reset=fsi_config.get("v_reset", V_RESET_STANDARD),
+        E_L=fsi_config.get("v_rest", E_LEAK),
+        E_E=E_EXCITATORY,
+        E_I=E_INHIBITORY,
+        tau_E=TAU_SYN_EXCITATORY,
+        tau_I=TAU_SYN_INHIBITORY,
+        tau_ref=fsi_config.get("tau_ref", 2.0),  # Fast refractory
+        g_L=fsi_config.get("g_leak", 0.05),  # High leak
+        tau_mem=fsi_config.get("tau_mem", TAU_MEM_FAST),  # Fast dynamics
+    )
+
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+    neurons.to(device)
+    return neurons
+
+
 __all__ = [
     "NeuronFactory",
     "create_pyramidal_neurons",
     "create_relay_neurons",
     "create_trn_neurons",
     "create_cortical_layer_neurons",
+    "create_fast_spiking_neurons",
 ]

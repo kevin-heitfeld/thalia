@@ -321,12 +321,14 @@ class ForwardPassCoordinator:
         self,
         input_spikes: torch.Tensor,
         recent_spikes: torch.Tensor,
+        fsi_inhibition: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """Compute D1/D2 spikes from input.
 
         Args:
             input_spikes: Input spikes [n_input] (1D)
             recent_spikes: Recent spike history for lateral inhibition [n_output]
+            fsi_inhibition: FSI feedforward inhibition [n_output] or scalar (optional)
 
         Returns:
             (d1_spikes, d2_spikes, pfc_goal_context)
@@ -386,6 +388,17 @@ class ForwardPassCoordinator:
         if self.config.lateral_inhibition:
             d1_g_inh = d1_g_inh + recent_spikes * self.config.inhibition_strength * 0.5
 
+        # Add FSI feedforward inhibition (sharpens action selection timing)
+        if fsi_inhibition is not None:
+            # FSI inhibition is broadcast to all MSNs (scalar or tensor)
+            if isinstance(fsi_inhibition, torch.Tensor):
+                if fsi_inhibition.numel() == 1:
+                    d1_g_inh = d1_g_inh + fsi_inhibition.item()
+                else:
+                    d1_g_inh = d1_g_inh + fsi_inhibition
+            else:
+                d1_g_inh = d1_g_inh + fsi_inhibition
+
         # Run D1 neurons
         d1_spikes, _ = self.d1_neurons(d1_g_exc, d1_g_inh)
 
@@ -396,6 +409,17 @@ class ForwardPassCoordinator:
         # Add lateral inhibition if enabled
         if self.config.lateral_inhibition:
             d2_g_inh = d2_g_inh + recent_spikes * self.config.inhibition_strength * 0.5
+
+        # Add FSI feedforward inhibition (sharpens action selection timing)
+        if fsi_inhibition is not None:
+            # FSI inhibition is broadcast to all MSNs (scalar or tensor)
+            if isinstance(fsi_inhibition, torch.Tensor):
+                if fsi_inhibition.numel() == 1:
+                    d2_g_inh = d2_g_inh + fsi_inhibition.item()
+                else:
+                    d2_g_inh = d2_g_inh + fsi_inhibition
+            else:
+                d2_g_inh = d2_g_inh + fsi_inhibition
 
         # Run D2 neurons
         d2_spikes, _ = self.d2_neurons(d2_g_exc, d2_g_inh)
