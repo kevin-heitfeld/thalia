@@ -81,6 +81,10 @@ from thalia.learning.strategy_registry import (
 from thalia.learning.strategy_mixin import (
     LearningStrategyMixin,
 )
+from thalia.learning.eligibility import (
+    EligibilityTraceManager,
+    STDPConfig as EligibilitySTDPConfig,
+)
 
 __all__ = [
     # BCM (Bienenstock-Cooper-Munro)
@@ -136,4 +140,7 @@ __all__ = [
     "create_cerebellum_strategy",
     # Strategy Mixin for Regions
     "LearningStrategyMixin",
+    # Eligibility Traces
+    "EligibilityTraceManager",
+    "EligibilitySTDPConfig",
 ]

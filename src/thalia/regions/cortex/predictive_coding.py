@@ -84,7 +84,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.regulation.learning_constants import LEARNING_RATE_PRECISION
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 

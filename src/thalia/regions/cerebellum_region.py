@@ -70,13 +70,14 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.config.learning_config import ErrorCorrectiveLearningConfig
-from thalia.learning.eligibility.trace_manager import EligibilityTraceManager, STDPConfig
+from thalia.learning import EligibilityTraceManager, EligibilitySTDPConfig as STDPConfig
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.managers.component_registry import register_region
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.neurons.neuron_constants import (
+from thalia.components.neurons import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
     E_LEAK,

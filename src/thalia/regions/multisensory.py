@@ -97,13 +97,13 @@ import math
 
 import torch
 
-from thalia.components.neurons.neuron_factory import create_pyramidal_neurons
+from thalia.components.neurons import create_pyramidal_neurons
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.config.learning_config import HebbianLearningConfig
 from thalia.managers.component_registry import register_region
 from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.learning.rules.strategies import HebbianStrategy, HebbianConfig
+from thalia.learning import HebbianStrategy, HebbianConfig
 from thalia.regulation.learning_constants import LEARNING_RATE_HEBBIAN_SLOW, SILENCE_DETECTION_THRESHOLD
 from thalia.coordination.oscillator import SinusoidalOscillator
 

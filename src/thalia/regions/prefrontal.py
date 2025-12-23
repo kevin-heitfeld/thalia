@@ -73,7 +73,7 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.errors import ConfigurationError
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager

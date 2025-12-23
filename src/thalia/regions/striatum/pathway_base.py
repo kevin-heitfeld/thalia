@@ -25,16 +25,17 @@ import torch
 import torch.nn as nn
 
 from thalia.core.base.component_config import PathwayConfig
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.synapses.weight_init import WeightInitializer
-from thalia.learning import ThreeFactorStrategy, ThreeFactorConfig
-from thalia.components.neurons.neuron_constants import (
+from thalia.components.neurons import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
     V_THRESHOLD_STANDARD,
     V_RESET_STANDARD,
     E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
 )
+from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.learning import ThreeFactorStrategy, ThreeFactorConfig
 from thalia.mixins import GrowthMixin, ResettableMixin
 
 
