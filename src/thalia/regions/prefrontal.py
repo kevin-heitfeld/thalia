@@ -529,9 +529,15 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
                 self.discounter = HyperbolicDiscounter(hd_config)
 
     def _create_neurons(self) -> ConductanceLIF:
-        """Create conductance-based LIF neurons with slow dynamics and SFA."""
+        """Create conductance-based LIF neurons with slow dynamics and SFA.
+
+        PFC neurons have significantly different dynamics than standard pyramidal neurons:
+        - Much slower leak (τ_m ≈ 50ms vs 20ms) for temporal integration
+        - Slower synaptic time constants for sustained integration
+        - Spike-frequency adaptation for stable working memory
+        """
         cfg = self.pfc_config
-        # Slower dynamics for temporal integration + spike-frequency adaptation
+        # Custom config for PFC-specific slow dynamics
         neuron_config = ConductanceLIFConfig(
             g_L=0.02,  # Slower leak (τ_m ≈ 50ms with C_m=1.0)
             tau_E=10.0,  # Slower excitatory (for integration)
@@ -540,6 +546,7 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
             tau_adapt=cfg.adapt_tau,
         )
         neurons = ConductanceLIF(cfg.n_output, neuron_config)
+        neurons.to(torch.device(cfg.device))
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for recurrent connections

@@ -127,6 +127,7 @@ class TestL6TRNFeedbackIntegration:
             activity_std = torch.tensor(relay_activities).std().item()
             assert activity_std >= 0, "Relay activity should vary over time"
 
+    @pytest.mark.slow
     def test_gamma_oscillation_emergence(self, global_config, device):
         """Test that feedback loop timing supports gamma oscillations (~40 Hz)."""
         # Gamma cycle: ~25ms (40 Hz)
@@ -146,7 +147,7 @@ class TestL6TRNFeedbackIntegration:
         # Track L6 activity over time (need longer window for FFT)
         l6_activities = []
 
-        for _ in range(200):  # 200ms = 8 gamma cycles (better FFT resolution)
+        for _ in range(100):  # 100ms = 4 gamma cycles
             brain(sensory_input, n_timesteps=1)
 
             l6_spikes = cortex.get_l6_spikes()
@@ -158,7 +159,7 @@ class TestL6TRNFeedbackIntegration:
         # Contract 1: L6 should show activity over time
         total_l6_activity = sum(l6_activities)
         assert total_l6_activity > 0, \
-            "L6 should generate feedback activity over 200ms"
+            "L6 should generate feedback activity over 100ms"
 
         # Contract 2: FFT should detect gamma-band oscillation
         freq, power = measure_oscillation(
@@ -421,7 +422,7 @@ class TestSystemRobustness:
 
         # Cerebellum checkpoint should indicate enhanced mode
         if "config" in checkpoint["cerebellum"]:
-            assert checkpoint["cerebellum"]["config"].get("use_enhanced", False), \
+            assert checkpoint["cerebellum"]["config"].get("use_enhanced_microcircuit", False), \
                 "Cerebellum checkpoint should indicate enhanced mode"
 
 

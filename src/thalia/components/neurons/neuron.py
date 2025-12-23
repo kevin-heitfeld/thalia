@@ -224,35 +224,53 @@ class ConductanceLIF(nn.Module):
         device = self.C_m.device
 
         # Membrane starts at leak reversal (resting potential)
-        self.membrane = torch.full(
+        membrane = torch.full(
             (self.n_neurons,),
             self.config.E_L,
             device=device,
             dtype=torch.float32
         )
+        # Remove old attribute/buffer if exists, then register as buffer
+        if hasattr(self, "membrane"):
+            delattr(self, "membrane")
+        self.register_buffer("membrane", membrane, persistent=False)
 
         # All conductances start at zero
-        self.g_E = torch.zeros(
+        g_E = torch.zeros(
             self.n_neurons,
             device=device,
             dtype=torch.float32
         )
-        self.g_I = torch.zeros(
-            self.n_neurons,
-            device=device,
-            dtype=torch.float32
-        )
-        self.g_adapt = torch.zeros(
-            self.n_neurons,
-            device=device,
-            dtype=torch.float32
-        )
+        if hasattr(self, "g_E"):
+            delattr(self, "g_E")
+        self.register_buffer("g_E", g_E, persistent=False)
 
-        self.refractory = torch.zeros(
+        g_I = torch.zeros(
+            self.n_neurons,
+            device=device,
+            dtype=torch.float32
+        )
+        if hasattr(self, "g_I"):
+            delattr(self, "g_I")
+        self.register_buffer("g_I", g_I, persistent=False)
+
+        g_adapt = torch.zeros(
+            self.n_neurons,
+            device=device,
+            dtype=torch.float32
+        )
+        if hasattr(self, "g_adapt"):
+            delattr(self, "g_adapt")
+        self.register_buffer("g_adapt", g_adapt, persistent=False)
+
+        refractory = torch.zeros(
             self.n_neurons,
             device=device,
             dtype=torch.int32
         )
+        if hasattr(self, "refractory"):
+            delattr(self, "refractory")
+        self.register_buffer("refractory", refractory, persistent=False)
 
     def adjust_thresholds(
         self,

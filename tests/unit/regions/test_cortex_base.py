@@ -179,6 +179,7 @@ class TestLayeredCortex(RegionTestBase):
     def test_plasticity_continuous(self):
         """Test plasticity occurs continuously during forward passes."""
         params = self.get_default_params()
+        params["bcm_enabled"] = True  # Enable BCM+STDP learning
         region = self.create_region(**params)
 
         # Get initial weights (if accessible)
@@ -202,9 +203,3 @@ class TestLayeredCortex(RegionTestBase):
             # With continuous active input, weights should change
             # (unless learning rate is zero, which is not default)
             assert weights_changed, "Expected weight changes from continuous plasticity"
-
-
-# NOTE: All standard tests (initialization, forward pass, growth, state management,
-# device transfer, neuromodulators, diagnostics) are inherited from RegionTestBase
-# and automatically run without needing to be written here. This eliminates ~100
-# lines of boilerplate code while ensuring consistent test coverage.

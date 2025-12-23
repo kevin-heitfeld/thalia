@@ -12,6 +12,10 @@ from __future__ import annotations
 
 from typing import TypedDict, Any
 
+import torch
+
+from thalia.components.coding.spike_utils import compute_firing_rate
+
 
 class ActivityMetrics(TypedDict, total=False):
     """Standard activity metrics for all regions.
@@ -170,8 +174,6 @@ def compute_activity_metrics(
     Returns:
         ActivityMetrics dict with firing_rate, spike_count, sparsity, etc.
     """
-    import torch
-
     if not isinstance(output_spikes, torch.Tensor):
         output_spikes = torch.tensor(output_spikes)
 
@@ -180,7 +182,7 @@ def compute_activity_metrics(
         output_spikes = output_spikes[-1]  # Use last timestep
 
     n_neurons = output_spikes.shape[0] if total_neurons is None else total_neurons
-    firing_rate = output_spikes.float().mean().item()
+    firing_rate = compute_firing_rate(output_spikes)
 
     return ActivityMetrics(
         firing_rate=firing_rate,
@@ -206,8 +208,6 @@ def compute_plasticity_metrics(
     Returns:
         PlasticityMetrics dict with weight statistics
     """
-    import torch
-
     if not isinstance(weights, torch.Tensor):
         weights = torch.tensor(weights)
 
@@ -247,8 +247,6 @@ def compute_health_metrics(
     Returns:
         HealthMetrics dict with health indicators
     """
-    import torch
-
     issues = []
     has_nan = False
     has_inf = False

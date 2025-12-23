@@ -60,7 +60,7 @@ When to Use:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, asdict
 from typing import Optional, Dict, Any, Union
 
 import torch
@@ -1243,7 +1243,10 @@ class Cerebellum(NeuralRegion):
         - config: Configuration for validation
         """
         state = self.get_state()
-        return state.to_dict()
+        state_dict = state.to_dict()
+        # Add config to dict for checkpoint validation
+        state_dict["config"] = asdict(self.config)
+        return state_dict
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.

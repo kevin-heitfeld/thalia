@@ -26,8 +26,7 @@ class TestCerebellum(RegionTestBase):
         return {
             "n_input": 100,
             "n_output": 50,
-            "n_granule": 200,  # Mossy fiber expansion
-            "n_purkinje": 50,
+            "granule_expansion_factor": 2.0,  # Mossy fiber expansion
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -37,8 +36,7 @@ class TestCerebellum(RegionTestBase):
         return {
             "n_input": 20,
             "n_output": 10,
-            "n_granule": 40,
-            "n_purkinje": 10,
+            "granule_expansion_factor": 2.0,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -64,14 +62,15 @@ class TestCerebellum(RegionTestBase):
         region.forward(input_spikes)
 
         # Verify granule layer exists and expands representation
-        assert params["n_granule"] > params["n_input"], \
+        expected_granules = int(params["n_input"] * params["granule_expansion_factor"])
+        assert expected_granules > params["n_input"], \
             "Granule cells should expand input representation"
 
         # Check if granule activity is tracked
         state = region.get_state()
         if hasattr(state, "granule_spikes"):
             if state.granule_spikes is not None:
-                assert state.granule_spikes.shape[0] == params["n_granule"]
+                assert state.granule_spikes.shape[0] == expected_granules
 
     def test_purkinje_cell_output(self):
         """Test Purkinje cells produce cerebellar output."""
@@ -83,13 +82,13 @@ class TestCerebellum(RegionTestBase):
         output = region.forward(input_spikes)
 
         # Output should match Purkinje cell count
-        assert output.shape[0] == params["n_purkinje"]
+        assert output.shape[0] == params["n_output"]
 
         # Check Purkinje activity in state
         state = region.get_state()
         if hasattr(state, "purkinje_spikes"):
             if state.purkinje_spikes is not None:
-                assert state.purkinje_spikes.shape[0] == params["n_purkinje"]
+                assert state.purkinje_spikes.shape[0] == params["n_output"]
 
     def test_climbing_fiber_error_signal(self):
         """Test climbing fiber provides error signal for learning."""
@@ -101,13 +100,13 @@ class TestCerebellum(RegionTestBase):
 
         # Check if region accepts error signal
         if "error_signal" in region.forward.__code__.co_varnames:
-            error = torch.ones(params["n_purkinje"], device=region.device) * 0.5
+            error = torch.ones(params["n_output"], device=region.device) * 0.5
             output = region.forward(input_spikes, error_signal=error)
-            assert output.shape[0] == params["n_purkinje"]
+            assert output.shape[0] == params["n_output"]
         else:
             # Just verify forward works without error
             output = region.forward(input_spikes)
-            assert output.shape[0] == params["n_purkinje"]
+            assert output.shape[0] == params["n_output"]
 
     def test_parallel_fiber_plasticity(self):
         """Test LTD/LTP at parallel fiber → Purkinje synapses."""
@@ -185,7 +184,7 @@ class TestCerebellum(RegionTestBase):
                 input_spikes = torch.ones(params["n_input"], device=region.device)
 
             output = region.forward(input_spikes)
-            assert output.shape[0] == params["n_purkinje"]
+            assert output.shape[0] == params["n_output"]
 
         # Cerebellum should have processed temporal pattern
         # (Detailed timing tests would require monitoring predictions)
@@ -242,7 +241,7 @@ class TestCerebellum(RegionTestBase):
         if hasattr(state, "complex_spikes"):
             # Complex spikes should be tracked
             if state.complex_spikes is not None:
-                assert state.complex_spikes.shape[0] == params["n_purkinje"]
+                assert state.complex_spikes.shape[0] == params["n_output"]
 
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)

@@ -638,6 +638,11 @@ class TrisynapticHippocampus(NeuralRegion):
         # Reset feedback inhibition trace
         self._ca3_activity_trace = torch.zeros(1, device=device)
 
+        # Preserve neuromodulator values if state already exists
+        dopamine = self.state.dopamine if hasattr(self, 'state') and self.state is not None else 0.2
+        acetylcholine = self.state.acetylcholine if hasattr(self, 'state') and self.state is not None else 0.0
+        norepinephrine = self.state.norepinephrine if hasattr(self, 'state') and self.state is not None else 0.0
+
         # 1D architecture - no batch dimension
         self.state = HippocampusState(
             dg_spikes=torch.zeros(self.dg_size, device=device),
@@ -651,6 +656,10 @@ class TrisynapticHippocampus(NeuralRegion):
             nmda_trace=torch.zeros(self.ca1_size, device=device),
             stored_dg_pattern=None,  # Set during sample phase
             ffi_strength=0.0,
+            # Preserve neuromodulators across lazy initialization
+            dopamine=dopamine,
+            acetylcholine=acetylcholine,
+            norepinephrine=norepinephrine,
         )
 
     # region Growth and Neurogenesis

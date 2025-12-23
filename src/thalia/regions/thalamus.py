@@ -104,6 +104,7 @@ from thalia.managers.component_registry import register_region
 from thalia.components.neurons.neuron_factory import create_relay_neurons, create_trn_neurons
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
+from thalia.components.coding.spike_utils import compute_firing_rate, compute_spike_count
 from thalia.regulation.region_constants import (
     THALAMUS_BURST_THRESHOLD,
     THALAMUS_TONIC_THRESHOLD,
@@ -410,7 +411,6 @@ class ThalamicRelay(NeuralRegion):
 
         # Store config for backward compatibility
         self.config = config
-        self.device = config.device
 
         # Set n_input for compatibility (NeuralRegion doesn't track this by default)
         self.n_input = config.n_input
@@ -1126,7 +1126,7 @@ class ThalamicRelay(NeuralRegion):
 
         # Compute plasticity metrics from relay gain (primary modifiable weights)
         plasticity = None
-        if self.config.learning_enabled:
+        if self.config.learn:
             plasticity = compute_plasticity_metrics(
                 weights=self.relay_gain.data,
                 learning_rate=self.config.learning_rate,
@@ -1186,15 +1186,15 @@ class ThalamicRelay(NeuralRegion):
         # Relay neuron details
         if self.state.relay_spikes is not None:
             region_specific["relay_activity"] = {
-                "active_count": int(self.state.relay_spikes.sum().item()),
-                "firing_rate": float(self.state.relay_spikes.mean().item()),
+                "active_count": compute_spike_count(self.state.relay_spikes),
+                "firing_rate": compute_firing_rate(self.state.relay_spikes),
             }
 
         # TRN details
         if self.state.trn_spikes is not None:
             region_specific["trn_activity"] = {
-                "active_count": int(self.state.trn_spikes.sum().item()),
-                "firing_rate": float(self.state.trn_spikes.mean().item()),
+                "active_count": compute_spike_count(self.state.trn_spikes),
+                "firing_rate": compute_firing_rate(self.state.trn_spikes),
             }
 
         # Return in standardized format

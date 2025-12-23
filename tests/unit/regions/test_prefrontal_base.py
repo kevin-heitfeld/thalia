@@ -26,8 +26,6 @@ class TestPrefrontal(RegionTestBase):
         return {
             "n_input": 100,
             "n_output": 50,
-            "n_rule_neurons": 20,
-            "n_wm_neurons": 30,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -37,8 +35,6 @@ class TestPrefrontal(RegionTestBase):
         return {
             "n_input": 20,
             "n_output": 10,
-            "n_rule_neurons": 4,
-            "n_wm_neurons": 6,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -103,10 +99,8 @@ class TestPrefrontal(RegionTestBase):
         input_spikes = torch.ones(params["n_input"], device=region.device)
         region.forward(input_spikes)
 
-        # Verify config specifies rule and WM neuron counts
-        assert region.config.n_rule_neurons == params["n_rule_neurons"]
-        assert region.config.n_wm_neurons == params["n_wm_neurons"]
-        assert region.config.n_output == params["n_rule_neurons"] + params["n_wm_neurons"]
+        # Verify PFC has output neurons
+        assert region.config.n_output == params["n_output"]
 
     def test_recurrent_connections(self):
         """Test PFC has recurrent connections for maintenance."""

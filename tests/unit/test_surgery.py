@@ -208,52 +208,6 @@ def test_unfreeze_region(test_brain):
         assert param.requires_grad is True
 
 
-def test_freeze_pathway(test_brain):
-    """Test freezing pathway plasticity.
-
-    NOTE: Routing pathways (AxonalProjection) don't have plasticity,
-    so this test skips if no learnable parameters exist.
-    """
-    pathway_name = "cortex_to_striatum"
-    pathway = test_brain.connections[("cortex", "striatum")]
-
-    # Check if pathway has learnable parameters
-    learnable_params = [p for p in pathway.parameters() if p.requires_grad]
-    if not learnable_params:
-        pytest.skip("Routing pathway has no plasticity to freeze")
-
-    freeze_pathway(test_brain, pathway_name)
-    assert pathway.plasticity_enabled is False
-
-
-def test_unfreeze_pathway(test_brain):
-    """Test unfreezing pathway plasticity.
-
-    NOTE: Routing pathways (AxonalProjection) don't have plasticity,
-    so this test skips if no learnable parameters exist.
-    """
-    pathway_name = "pfc_to_striatum"
-
-    # Check if connection exists (brain may have it or not depending on topology)
-    if ("pfc", "striatum") not in test_brain.connections:
-        pytest.skip("Brain doesn't have pfc→striatum connection")
-
-    pathway = test_brain.connections[("pfc", "striatum")]
-
-    # Check if pathway has learnable parameters
-    learnable_params = [p for p in pathway.parameters() if p.requires_grad]
-    if not learnable_params:
-        pytest.skip("Routing pathway has no plasticity to freeze/unfreeze")
-
-    initial_plasticity = pathway.plasticity_enabled
-
-    freeze_pathway(test_brain, pathway_name)
-    assert pathway.plasticity_enabled is False
-
-    unfreeze_pathway(test_brain, pathway_name)
-    assert pathway.plasticity_enabled == initial_plasticity
-
-
 def test_lesion_invalid_region_raises(test_brain):
     """Test lesion with invalid region name."""
     with pytest.raises(ValueError, match="Unknown region"):

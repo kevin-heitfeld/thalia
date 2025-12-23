@@ -74,6 +74,69 @@ class TestStriatum(RegionTestBase):
         expected_neurons = params["n_output"] * params["neurons_per_action"]
         assert output.shape[0] == expected_neurons
 
+    def test_initialization(self):
+        """Test striatum initializes with n_output expansion for population coding."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # With population coding, config.n_output gets expanded
+        # Original: params["n_output"] = 5 actions
+        # Expanded: region.config.n_output = 5 * 4 = 20 neurons
+        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        assert region.config.n_output == expected_n_output
+        assert region.config.n_input == params["n_input"]
+
+    def test_initialization_minimal(self):
+        """Test striatum initializes with minimal params and expansion."""
+        params = self.get_min_params()
+        region = self.create_region(**params)
+
+        # Verify expansion happened
+        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        assert region.config.n_output == expected_n_output
+
+    def test_forward_pass_tensor_input(self):
+        """Test forward returns expanded neuron output."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        output = region.forward(input_spikes)
+
+        # Output should be expanded neuron count
+        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        assert output.shape[0] == expected_n_output
+
+    def test_forward_pass_dict_input(self):
+        """Test forward with dict input returns expanded output."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+        input_dict = self.get_input_dict(params["n_input"], device=region.device.type)
+        output = region.forward(input_dict)
+
+        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        assert output.shape[0] == expected_n_output
+
+    def test_forward_pass_zero_input(self):
+        """Test zero input handling with expansion."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        output = region.forward(input_spikes)
+
+        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        assert output.shape[0] == expected_n_output
+
+    def test_forward_pass_multiple_calls(self):
+        """Test multiple forwards with expansion."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        expected_n_output = params["n_output"] * params["neurons_per_action"]
+
+        for _ in range(10):
+            output = region.forward(input_spikes)
+            assert output.shape[0] == expected_n_output
+
     def test_population_coding(self):
         """Test population coding for action representation."""
         params = self.get_default_params()
@@ -87,12 +150,14 @@ class TestStriatum(RegionTestBase):
         state = region.get_state()
 
         # Verify vote accumulation for population coding
+        # Votes are per-action (not per-neuron)
         if hasattr(state, "d1_votes_accumulated"):
             assert state.d1_votes_accumulated is not None
-            assert state.d1_votes_accumulated.shape[0] == params["n_output"] * params["neurons_per_action"]
+            assert state.d1_votes_accumulated.shape[0] == params["n_output"]  # n_actions
 
         if hasattr(state, "d2_votes_accumulated"):
             assert state.d2_votes_accumulated is not None
+            assert state.d2_votes_accumulated.shape[0] == params["n_output"]  # n_actions
 
     def test_action_selection(self):
         """Test striatum selects actions based on vote competition."""

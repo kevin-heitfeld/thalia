@@ -1000,7 +1000,7 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
 
         # Check firing rate
         if self.state.spikes is not None:
-            firing_rate = float(compute_firing_rate(self.state.spikes))
+            firing_rate = compute_firing_rate(self.state.spikes)
 
             if firing_rate < 0.01:  # Less than 1%
                 issues.append(IssueReport(

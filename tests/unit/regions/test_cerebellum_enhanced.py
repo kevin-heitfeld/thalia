@@ -511,7 +511,7 @@ class TestEnhancedCerebellumIntegration:
 
         # Contract: checkpoint should include enhanced components
         assert "config" in state, "Checkpoint should include config"
-        assert state["config"]["use_enhanced"], \
+        assert state["config"]["use_enhanced_microcircuit"], \
             "Config should indicate enhanced mode"
 
         if "enhanced_state" in state:
@@ -673,8 +673,8 @@ class TestBackwardCompatibility:
         enhanced_state = cerebellum_enhanced.get_full_state()
 
         # Contract: checkpoints should indicate their mode
-        assert not classic_state["config"]["use_enhanced"]
-        assert enhanced_state["config"]["use_enhanced"]
+        assert not classic_state["config"]["use_enhanced_microcircuit"]
+        assert enhanced_state["config"]["use_enhanced_microcircuit"]
 
         # Contract: loading wrong checkpoint should fail
         with pytest.raises(Exception):  # CheckpointError

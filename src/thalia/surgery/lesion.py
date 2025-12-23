@@ -241,11 +241,11 @@ def _save_lesion_state(
     """Save region state before lesion."""
     region_impl = _get_region(brain, region_name)
 
-    # Save weights
+    # Save weights - save ALL parameters (not just trainable)
+    # Some regions have non-trainable modulation weights that need restoration
     original_weights = {}
     for name, param in region_impl.named_parameters():
-        if param.requires_grad:
-            original_weights[name] = param.data.clone()
+        original_weights[name] = param.data.clone()
 
     # Save plasticity state
     original_plasticity = getattr(region_impl, "plasticity_enabled", True)
@@ -265,8 +265,9 @@ def _save_lesion_state(
 def _zero_region_weights(region_impl) -> None:
     """Zero all weights in a region."""
     for param in region_impl.parameters():
-        if param.requires_grad:
-            param.data.zero_()
+        # Zero all parameters, not just trainable ones
+        # (some regions have non-trainable modulation weights that should be lesioned)
+        param.data.zero_()
 
 
 def _zero_neurons_weights(region_impl, neuron_indices: torch.Tensor) -> None:

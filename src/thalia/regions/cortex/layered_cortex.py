@@ -102,6 +102,7 @@ from thalia.components.neurons import create_cortical_layer_neurons
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.synapses.traces import update_trace
+from thalia.components.coding.spike_utils import compute_firing_rate, compute_spike_count
 from thalia.managers.component_registry import register_region
 from thalia.utils.core_utils import ensure_1d, clamp_weights
 from thalia.utils.input_routing import InputRouter
@@ -239,15 +240,15 @@ class LayeredCortex(NeuralRegion):
             dt_ms=config.dt_ms,
         )
 
-        # Store config and device for compatibility
-        self.config = parent_config = NeuralComponentConfig(
+        # Store config for compatibility (device is already set by parent NeuralRegion)
+        self.config = NeuralComponentConfig(
             n_input=config.n_input,
             n_output=actual_output,
             dt_ms=config.dt_ms,
             axonal_delay_ms=config.axonal_delay_ms,
             device=config.device,
         )
-        self.device = config.device
+        # Note: self.device is already set by NeuralRegion.__init__() as torch.device
 
         # Initialize layers
         self._init_layers()
@@ -1760,7 +1761,7 @@ class LayeredCortex(NeuralRegion):
 
         # Compute plasticity metrics from L2/3 recurrent (most dynamic)
         plasticity = None
-        if cfg.learning_enabled:
+        if cfg.learn:
             plasticity = compute_plasticity_metrics(
                 weights=self.synaptic_weights["l23_recurrent"].data,
                 learning_rate=cfg.learning_rate,
@@ -1815,28 +1816,28 @@ class LayeredCortex(NeuralRegion):
         # Layer-specific activity
         if self.state.l4_spikes is not None:
             region_specific["layer_activity"]["l4"] = {
-                "active_count": int(self.state.l4_spikes.sum().item()),
-                "firing_rate": float(self.state.l4_spikes.mean().item()),
+                "active_count": compute_spike_count(self.state.l4_spikes),
+                "firing_rate": compute_firing_rate(self.state.l4_spikes),
             }
         if self.state.l23_spikes is not None:
             region_specific["layer_activity"]["l23"] = {
-                "active_count": int(self.state.l23_spikes.sum().item()),
-                "firing_rate": float(self.state.l23_spikes.mean().item()),
+                "active_count": compute_spike_count(self.state.l23_spikes),
+                "firing_rate": compute_firing_rate(self.state.l23_spikes),
             }
         if self.state.l5_spikes is not None:
             region_specific["layer_activity"]["l5"] = {
-                "active_count": int(self.state.l5_spikes.sum().item()),
-                "firing_rate": float(self.state.l5_spikes.mean().item()),
+                "active_count": compute_spike_count(self.state.l5_spikes),
+                "firing_rate": compute_firing_rate(self.state.l5_spikes),
             }
         if self.state.l6a_spikes is not None:
             region_specific["layer_activity"]["l6a"] = {
-                "active_count": int(self.state.l6a_spikes.sum().item()),
-                "firing_rate": float(self.state.l6a_spikes.mean().item()),
+                "active_count": compute_spike_count(self.state.l6a_spikes),
+                "firing_rate": compute_firing_rate(self.state.l6a_spikes),
             }
         if self.state.l6b_spikes is not None:
             region_specific["layer_activity"]["l6b"] = {
-                "active_count": int(self.state.l6b_spikes.sum().item()),
-                "firing_rate": float(self.state.l6b_spikes.mean().item()),
+                "active_count": compute_spike_count(self.state.l6b_spikes),
+                "firing_rate": compute_firing_rate(self.state.l6b_spikes),
             }
 
         # Recurrent activity

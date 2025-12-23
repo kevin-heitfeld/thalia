@@ -27,9 +27,6 @@ class TestHippocampus(RegionTestBase):
         return {
             "n_input": 100,
             "n_output": 30,  # CA1 output size
-            "dg_size": 50,
-            "ca3_size": 40,
-            "ca1_size": 30,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -39,9 +36,6 @@ class TestHippocampus(RegionTestBase):
         return {
             "n_input": 20,
             "n_output": 10,
-            "dg_size": 15,
-            "ca3_size": 12,
-            "ca1_size": 10,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -67,17 +61,18 @@ class TestHippocampus(RegionTestBase):
         # Forward pass
         output = region.forward(input_spikes)
 
-        # Verify output is CA1 activity
-        assert output.shape[0] == params["ca1_size"]
+        # Verify output is CA1 activity (should match n_output)
+        assert output.shape[0] == params["n_output"]
 
         # Verify state has all three layers
         state = region.get_state()
         assert hasattr(state, "dg_spikes")
         assert hasattr(state, "ca3_spikes")
         assert hasattr(state, "ca1_spikes")
-        assert state.dg_spikes.shape[0] == params["dg_size"]
-        assert state.ca3_spikes.shape[0] == params["ca3_size"]
-        assert state.ca1_spikes.shape[0] == params["ca1_size"]
+        # Sizes are computed from config ratios
+        assert state.dg_spikes.shape[0] == region.dg_size
+        assert state.ca3_spikes.shape[0] == region.ca3_size
+        assert state.ca1_spikes.shape[0] == region.ca1_size
 
     def test_pattern_separation_in_dg(self):
         """Test DG provides pattern separation (sparse coding)."""
@@ -112,7 +107,7 @@ class TestHippocampus(RegionTestBase):
             # Should have CA3→CA3 recurrent weights
             assert "ca3_ca3" in region.synaptic_weights
             ca3_recurrent = region.synaptic_weights["ca3_ca3"]
-            assert ca3_recurrent.shape == (params["ca3_size"], params["ca3_size"])
+            assert ca3_recurrent.shape == (region.ca3_size, region.ca3_size)
 
     def test_ca3_persistent_activity(self):
         """Test CA3 maintains persistent activity (working memory)."""
@@ -127,7 +122,7 @@ class TestHippocampus(RegionTestBase):
         state = region.get_state()
         if hasattr(state, "ca3_persistent"):
             assert state.ca3_persistent is not None
-            assert state.ca3_persistent.shape[0] == params["ca3_size"]
+            assert state.ca3_persistent.shape[0] == region.ca3_size
 
     def test_theta_encoding_retrieval(self):
         """Test theta phase modulates encoding vs retrieval."""
@@ -170,13 +165,14 @@ class TestHippocampus(RegionTestBase):
 
         # Provide both EC layer II (via DG) and layer III (direct to CA1)
         input_spikes = torch.ones(params["n_input"], device=region.device)
-        ec_l3_input = torch.ones(params["n_input"] // 2, device=region.device)
+        # ec_direct_input should match n_input size (ec_l3_input_size defaults to n_input)
+        ec_l3_input = torch.ones(params["n_input"], device=region.device)
 
         # Forward with direct EC→CA1
         output = region.forward(input_spikes, ec_direct_input=ec_l3_input)
 
-        # Should not error
-        assert output.shape[0] == params["ca1_size"]
+        # Should not error and return ca1_size
+        assert output.shape[0] == region.ca1_size
 
     def test_episodic_memory_buffer(self):
         """Test hippocampus maintains episode buffer."""

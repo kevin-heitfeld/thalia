@@ -858,7 +858,8 @@ class ThreeFactorStrategy(BaseStrategy):
         self.eligibility = self.decay_elig * self.eligibility
 
         # Add new Hebbian correlation: outer product [n_post, n_pre]
-        hebbian = torch.outer(post.float(), pre.float())
+        # Ensure hebbian is on the same device as eligibility
+        hebbian = torch.outer(post.float().to(module_device), pre.float().to(module_device))
         self.eligibility = self.eligibility + hebbian
 
         return self.eligibility

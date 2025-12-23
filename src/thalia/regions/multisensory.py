@@ -336,7 +336,7 @@ class MultimodalIntegration(NeuralRegion):
         if config.learning_enabled:
             hebbian_config = HebbianConfig(
                 learning_rate=config.learning_rate,
-                decay_rate=config.decay_rate,
+                decay_rate=config.hebbian_decay,
             )
             self.hebbian_strategy = HebbianStrategy(hebbian_config)
         else:

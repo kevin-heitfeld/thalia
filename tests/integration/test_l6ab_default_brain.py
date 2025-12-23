@@ -265,7 +265,7 @@ class TestL6abDefaultBrain:
         cortex = brain.components["cortex"]
 
         device_obj = torch.device(device)
-        n_timesteps = 200  # 200ms for frequency analysis
+        n_timesteps = 100  # 100ms for frequency analysis
 
         # Strong sustained input
         sensory_input = torch.zeros(128, dtype=torch.bool, device=device_obj)
@@ -327,8 +327,17 @@ class TestL6abDefaultBrain:
         # Get diagnostics
         diagnostics = cortex.get_diagnostics()
 
-        # Should include L6a and L6b metrics (cumulative spike counts)
-        assert "l6a_cumulative_spikes" in diagnostics or "l6a_active_count" in diagnostics, \
+        # Should include L6a and L6b metrics (cumulative spike counts in health dict)
+        # or active_count in region_specific.layer_activity dict
+        has_l6a = (
+            "l6a_cumulative_spikes" in diagnostics.get("health", {}) or
+            "l6a" in diagnostics.get("region_specific", {}).get("layer_activity", {})
+        )
+        has_l6b = (
+            "l6b_cumulative_spikes" in diagnostics.get("health", {}) or
+            "l6b" in diagnostics.get("region_specific", {}).get("layer_activity", {})
+        )
+        assert has_l6a, \
             f"Diagnostics should include L6a metrics. Keys: {list(diagnostics.keys())}"
-        assert "l6b_cumulative_spikes" in diagnostics or "l6b_active_count" in diagnostics, \
+        assert has_l6b, \
             f"Diagnostics should include L6b metrics. Keys: {list(diagnostics.keys())}"

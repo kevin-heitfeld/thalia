@@ -131,8 +131,9 @@ class TestElasticTensorMetadata:
             "Capacity should provide headroom for growth"
 
         # Verify actions are tracked separately
-        expected_n_output = base_config_population.n_output
-        assert neuron_state["n_output"] == expected_n_output  # Total neurons in config
+        # With population coding, n_output gets expanded: 5 actions * 10 neurons = 50
+        expected_n_output = base_config_population.n_output * base_config_population.neurons_per_action
+        assert neuron_state["n_output"] == expected_n_output  # Total neurons after expansion
 
     def test_growth_works_with_population_coding(self, base_config_population, tmp_path):
         """Growing brain should work correctly with population coding."""

@@ -26,7 +26,7 @@ class TestThalamus(RegionTestBase):
         return {
             "n_input": 100,
             "n_output": 80,  # Typically fewer neurons than cortex
-            "n_trn": 30,  # Thalamic reticular nucleus
+            "trn_ratio": 0.3,  # Thalamic reticular nucleus as fraction of relay neurons
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -36,16 +36,20 @@ class TestThalamus(RegionTestBase):
         return {
             "n_input": 20,
             "n_output": 15,
-            "n_trn": 5,
+            "trn_ratio": 0.3,
             "device": "cpu",
             "dt_ms": 1.0,
         }
 
     def get_input_dict(self, n_input, device="cpu"):
-        """Return dict input for thalamus (sensory + feedback)."""
+        """Return dict input for thalamus (sensory + optional feedback).
+
+        Sensory input is full n_input (NOT split).
+        Feedback is optional modulatory input (different targets: TRN/relay).
+        """
         return {
-            "sensory": torch.zeros(n_input // 2, device=device),
-            "feedback": torch.zeros(n_input // 2, device=device),
+            "sensory": torch.zeros(n_input, device=device),
+            # Feedback is optional, omit to test sensory-only mode
         }
 
     # =========================================================================
@@ -80,7 +84,7 @@ class TestThalamus(RegionTestBase):
         state = region.get_state()
         if hasattr(state, "trn_spikes"):
             if state.trn_spikes is not None:
-                assert state.trn_spikes.shape[0] == params["n_trn"]
+                assert state.trn_spikes.shape[0] == region.n_trn
 
     def test_l6_feedback_modulation(self):
         """Test L6 cortical feedback modulates thalamic relay."""
@@ -214,17 +218,14 @@ class TestThalamus(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # Multiple input sources (visual, auditory, etc.)
-        multi_input = {
-            "visual": torch.ones(params["n_input"] // 3, device=region.device),
-            "auditory": torch.ones(params["n_input"] // 3, device=region.device),
-            "somatosensory": torch.ones(params["n_input"] // 3, device=region.device),
-        }
+        # Thalamus uses port-based routing (single sensory input to relay neurons)
+        # NOT multi-source dict with arbitrary keys
+        sensory_input = torch.ones(params["n_input"], device=region.device)
 
-        # Forward with multi-source (if supported)
-        output = region.forward(multi_input)
+        # Forward with sensory input
+        output = region.forward(sensory_input)
 
-        # Should integrate all sources
+        # Should relay sensory input
         assert output.shape[0] == params["n_output"]
 
 

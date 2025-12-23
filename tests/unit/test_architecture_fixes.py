@@ -191,10 +191,12 @@ class TestEnhancements:
         # Get diagnostics to verify DA is being used per-layer
         diag = cortex.get_diagnostics()
 
-        # Contract: Diagnostics should show layer-specific activity
+        # Contract: Diagnostics should show activity metrics
         # (Layer-specific DA affects firing rates, which appear in diagnostics)
-        assert 'l4_firing_rate_hz' in diag or 'firing_rate_hz' in diag, \
-            "Cortex should report layer activity influenced by DA"
+        assert 'activity' in diag, \
+            "Cortex should report activity metrics"
+        assert 'firing_rate' in diag['activity'], \
+            "Activity should include firing rate"
 
         # Behavioral contract: DA modulation should be stable (no NaN)
         assert not torch.isnan(output_with_da.float()).any(), \

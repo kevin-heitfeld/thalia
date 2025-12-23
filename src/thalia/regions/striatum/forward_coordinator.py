@@ -161,13 +161,15 @@ class ForwardPassCoordinator:
         Args:
             dopamine: Dopamine level [0, 1] (tonic DA)
             norepinephrine: Norepinephrine level [0, 1]
-            acetylcholine: Acetylcholine level [0, 1] (not used by striatum)
+            acetylcholine: Acetylcholine level [0, 1] (stored but not used by striatum)
         """
         if dopamine is not None:
             self._tonic_dopamine = dopamine
         if norepinephrine is not None:
             self._ne_level = norepinephrine
-        # acetylcholine not used by striatum
+        if acetylcholine is not None:
+            # Store acetylcholine for get_state() even though striatum doesn't use it
+            self._ach_level = acetylcholine
 
     def compute_theta_modulation(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute theta modulation factors.

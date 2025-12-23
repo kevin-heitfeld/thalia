@@ -2056,7 +2056,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Get neuromodulator levels from forward_coordinator
         dopamine = self.forward_coordinator._tonic_dopamine if hasattr(self.forward_coordinator, '_tonic_dopamine') else 0.0
         norepinephrine = self.forward_coordinator._ne_level if hasattr(self.forward_coordinator, '_ne_level') else 0.0
-        acetylcholine = 0.0  # Not used by striatum
+        acetylcholine = self.forward_coordinator._ach_level if hasattr(self.forward_coordinator, '_ach_level') else 0.0
 
         return StriatumState(
             # Base state
@@ -2087,8 +2087,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             last_expected=self.state_tracker._last_expected if hasattr(self.state_tracker, '_last_expected') else None,
 
             # Goal modulation (optional)
-            pfc_modulation_d1=self.pfc_modulation_d1.detach().clone() if hasattr(self, 'pfc_modulation_d1') else None,
-            pfc_modulation_d2=self.pfc_modulation_d2.detach().clone() if hasattr(self, 'pfc_modulation_d2') else None,
+            pfc_modulation_d1=self.pfc_modulation_d1.detach().clone() if hasattr(self, 'pfc_modulation_d1') and self.pfc_modulation_d1 is not None else None,
+            pfc_modulation_d2=self.pfc_modulation_d2.detach().clone() if hasattr(self, 'pfc_modulation_d2') and self.pfc_modulation_d2 is not None else None,
 
             # Delay buffers (optional)
             d1_delay_buffer=self._d1_delay_buffer.detach().clone() if hasattr(self, '_d1_delay_buffer') and self._d1_delay_buffer is not None else None,
@@ -2174,13 +2174,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.state_tracker._last_expected = state.last_expected
 
         # Restore STP state (optional)
-        if state.stp_corticostriatal_u is not None and self.stp_corticostriatal is not None:
+        if state.stp_corticostriatal_u is not None and self.stp_corticostriatal is not None and self.stp_corticostriatal.u is not None:
             self.stp_corticostriatal.u.data = state.stp_corticostriatal_u.to(self.device)
-        if state.stp_corticostriatal_x is not None and self.stp_corticostriatal is not None:
+        if state.stp_corticostriatal_x is not None and self.stp_corticostriatal is not None and self.stp_corticostriatal.x is not None:
             self.stp_corticostriatal.x.data = state.stp_corticostriatal_x.to(self.device)
-        if state.stp_thalamostriatal_u is not None and self.stp_thalamostriatal is not None:
+        if state.stp_thalamostriatal_u is not None and self.stp_thalamostriatal is not None and self.stp_thalamostriatal.u is not None:
             self.stp_thalamostriatal.u.data = state.stp_thalamostriatal_u.to(self.device)
-        if state.stp_thalamostriatal_x is not None and self.stp_thalamostriatal is not None:
+        if state.stp_thalamostriatal_x is not None and self.stp_thalamostriatal is not None and self.stp_thalamostriatal.x is not None:
             self.stp_thalamostriatal.x.data = state.stp_thalamostriatal_x.to(self.device)
 
         # Restore goal modulation (optional)

@@ -210,7 +210,9 @@ def create_pyramidal_neurons(
         tau_mem=TAU_MEM_STANDARD,
         **overrides,  # Allow customization
     )
-    return ConductanceLIF(n_neurons=n_neurons, config=config)
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+    neurons.to(device)
+    return neurons
 
 
 @NeuronFactory.register("relay")
@@ -254,7 +256,9 @@ def create_relay_neurons(
         tau_I=10.0,  # Slower inhibitory (from TRN)
         **overrides,
     )
-    return ConductanceLIF(n_neurons=n_neurons, config=config)
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+    neurons.to(device)
+    return neurons
 
 
 @NeuronFactory.register("trn")
@@ -295,7 +299,9 @@ def create_trn_neurons(
         tau_I=8.0,  # Fast inhibitory
         **overrides,
     )
-    return ConductanceLIF(n_neurons=n_neurons, config=config)
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+    neurons.to(device)
+    return neurons
 
 
 @NeuronFactory.register("cortical_layer")
@@ -405,7 +411,10 @@ def create_cortical_layer_neurons(
     layer_config.update(overrides)
 
     config = ConductanceLIFConfig(**layer_config)
-    return ConductanceLIF(n_neurons=n_neurons, config=config)
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+    # Move neurons to specified device (neurons are created on CPU by default)
+    neurons.to(device)
+    return neurons
 
 
 __all__ = [
