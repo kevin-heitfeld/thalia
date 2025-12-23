@@ -1,22 +1,42 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 20:11:04
+> Last updated: 2025-12-23 01:10:24
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
 
 Total: 47 enumerations
 
+## 📑 Table of Contents
+
+Jump to category:
+
+- [Thalia/Components](#thaliacomponents) (3 enums)
+- [Thalia/Config](#thaliaconfig) (5 enums)
+- [Thalia/Core](#thaliacore) (1 enums)
+- [Thalia/Datasets](#thaliadatasets) (8 enums)
+- [Thalia/Decision Making](#thaliadecision-making) (1 enums)
+- [Thalia/Diagnostics](#thaliadiagnostics) (5 enums)
+- [Thalia/Environments](#thaliaenvironments) (1 enums)
+- [Thalia/Io](#thaliaio) (2 enums)
+- [Thalia/Language](#thalialanguage) (1 enums)
+- [Thalia/Learning](#thalialearning) (1 enums)
+- [Thalia/Memory](#thaliamemory) (1 enums)
+- [Thalia/Pathways](#thaliapathways) (1 enums)
+- [Thalia/Regions](#thaliaregions) (5 enums)
+- [Thalia/Tasks](#thaliatasks) (4 enums)
+- [Thalia/Training](#thaliatraining) (8 enums)
+
 ## Enumerations by Category
 
-### Components
+### Thalia/Components
 
-#### `CodingStrategy` (Enum)
+#### [``CodingStrategy``](../../src/thalia/components/coding/spike_coding.py#L37) (Enum)
 
 Spike coding strategies (shared across encoders/decoders).
 
-**Source**: `components\coding\spike_coding.py`
+**Source**: [`thalia/components/coding/spike_coding.py`](../../src/thalia/components/coding/spike_coding.py)
 
 **Members**:
 
@@ -30,11 +50,11 @@ Spike coding strategies (shared across encoders/decoders).
 
 ---
 
-#### `InitStrategy` (Enum)
+#### [``InitStrategy``](../../src/thalia/components/synapses/weight_init.py#L81) (Enum)
 
 Weight initialization strategies.
 
-**Source**: `components\synapses\weight_init.py`
+**Source**: [`thalia/components/synapses/weight_init.py`](../../src/thalia/components/synapses/weight_init.py)
 
 **Members**:
 
@@ -52,11 +72,11 @@ Weight initialization strategies.
 
 ---
 
-#### `STPType` (Enum)
+#### [``STPType``](../../src/thalia/components/synapses/stp.py#L53) (Enum)
 
 Predefined synapse types based on Markram et al. (1998) classification.
 
-**Source**: `components\synapses\stp.py`
+**Source**: [`thalia/components/synapses/stp.py`](../../src/thalia/components/synapses/stp.py)
 
 **Members**:
 
@@ -69,16 +89,16 @@ Predefined synapse types based on Markram et al. (1998) classification.
 
 ---
 
-### Config
+### Thalia/Config
 
-#### `CortexType` (Enum)
+#### [``CortexType``](../../src/thalia/config/brain_config.py#L38) (Enum)
 
 Types of cortex implementation.
 
 LAYERED: Standard feedforward layered cortex (L4 → L2/3 → L5)
 PREDICTIVE: Layered cortex with predictive coding (local error signals)
 
-**Source**: `config\brain_config.py`
+**Source**: [`thalia/config/brain_config.py`](../../src/thalia/config/brain_config.py)
 
 **Members**:
 
@@ -87,11 +107,11 @@ PREDICTIVE: Layered cortex with predictive coding (local error signals)
 
 ---
 
-#### `CurriculumStage` (IntEnum)
+#### [``CurriculumStage``](../../src/thalia/config/curriculum_growth.py#L50) (IntEnum)
 
 Curriculum stages matching main training plan.
 
-**Source**: `config\curriculum_growth.py`
+**Source**: [`thalia/config/curriculum_growth.py`](../../src/thalia/config/curriculum_growth.py)
 
 **Members**:
 
@@ -104,11 +124,11 @@ Curriculum stages matching main training plan.
 
 ---
 
-#### `DecodingType` (Enum)
+#### [``DecodingType``](../../src/thalia/config/language_config.py#L30) (Enum)
 
 Types of spike decoding strategies.
 
-**Source**: `config\language_config.py`
+**Source**: [`thalia/config/language_config.py`](../../src/thalia/config/language_config.py)
 
 **Members**:
 
@@ -119,11 +139,11 @@ Types of spike decoding strategies.
 
 ---
 
-#### `EncodingType` (Enum)
+#### [``EncodingType``](../../src/thalia/config/language_config.py#L21) (Enum)
 
 Types of spike encoding strategies.
 
-**Source**: `config\language_config.py`
+**Source**: [`thalia/config/language_config.py`](../../src/thalia/config/language_config.py)
 
 **Members**:
 
@@ -135,11 +155,11 @@ Types of spike encoding strategies.
 
 ---
 
-#### `RegionType` (Enum)
+#### [``RegionType``](../../src/thalia/config/brain_config.py#L29) (Enum)
 
 Types of brain regions.
 
-**Source**: `config\brain_config.py`
+**Source**: [`thalia/config/brain_config.py`](../../src/thalia/config/brain_config.py)
 
 **Members**:
 
@@ -151,13 +171,13 @@ Types of brain regions.
 
 ---
 
-### Core
+### Thalia/Core
 
-#### `DiagnosticLevel` (Enum)
+#### [``DiagnosticLevel``](../../src/thalia/core/diagnostics.py#L46) (Enum)
 
 Verbosity levels for diagnostics.
 
-**Source**: `core\diagnostics.py`
+**Source**: [`thalia/core/diagnostics.py`](../../src/thalia/core/diagnostics.py)
 
 **Members**:
 
@@ -168,13 +188,13 @@ Verbosity levels for diagnostics.
 
 ---
 
-### Datasets
+### Thalia/Datasets
 
-#### `AgreementType` (Enum)
+#### [``AgreementType``](../../src/thalia/datasets/grammar.py#L42) (Enum)
 
 Subject-verb agreement types.
 
-**Source**: `datasets\grammar.py`
+**Source**: [`thalia/datasets/grammar.py`](../../src/thalia/datasets/grammar.py)
 
 **Members**:
 
@@ -183,11 +203,11 @@ Subject-verb agreement types.
 
 ---
 
-#### `GrammarRule` (Enum)
+#### [``GrammarRule``](../../src/thalia/datasets/grammar.py#L32) (Enum)
 
 Types of grammar rules to test.
 
-**Source**: `datasets\grammar.py`
+**Source**: [`thalia/datasets/grammar.py`](../../src/thalia/datasets/grammar.py)
 
 **Members**:
 
@@ -200,11 +220,11 @@ Types of grammar rules to test.
 
 ---
 
-#### `Language` (Enum)
+#### [``Language``](../../src/thalia/datasets/grammar.py#L25) (Enum)
 
 Supported languages for grammar tasks.
 
-**Source**: `datasets\grammar.py`
+**Source**: [`thalia/datasets/grammar.py`](../../src/thalia/datasets/grammar.py)
 
 **Members**:
 
@@ -214,11 +234,11 @@ Supported languages for grammar tasks.
 
 ---
 
-#### `Language` (Enum)
+#### [``Language``](../../src/thalia/datasets/phonology.py#L26) (Enum)
 
 Supported languages for phonological training.
 
-**Source**: `datasets\phonology.py`
+**Source**: [`thalia/datasets/phonology.py`](../../src/thalia/datasets/phonology.py)
 
 **Members**:
 
@@ -228,11 +248,11 @@ Supported languages for phonological training.
 
 ---
 
-#### `Language` (Enum)
+#### [``Language``](../../src/thalia/datasets/reading.py#L24) (Enum)
 
 Supported languages for reading tasks.
 
-**Source**: `datasets\reading.py`
+**Source**: [`thalia/datasets/reading.py`](../../src/thalia/datasets/reading.py)
 
 **Members**:
 
@@ -242,11 +262,11 @@ Supported languages for reading tasks.
 
 ---
 
-#### `PatternType` (Enum)
+#### [``PatternType``](../../src/thalia/datasets/temporal_sequences.py#L23) (Enum)
 
 Types of sequential patterns.
 
-**Source**: `datasets\temporal_sequences.py`
+**Source**: [`thalia/datasets/temporal_sequences.py`](../../src/thalia/datasets/temporal_sequences.py)
 
 **Members**:
 
@@ -258,11 +278,11 @@ Types of sequential patterns.
 
 ---
 
-#### `PhonemeCategory` (Enum)
+#### [``PhonemeCategory``](../../src/thalia/datasets/phonology.py#L33) (Enum)
 
 Phoneme categories for discrimination tasks (multi-language).
 
-**Source**: `datasets\phonology.py`
+**Source**: [`thalia/datasets/phonology.py`](../../src/thalia/datasets/phonology.py)
 
 **Members**:
 
@@ -301,11 +321,11 @@ Phoneme categories for discrimination tasks (multi-language).
 
 ---
 
-#### `ReadingTask` (Enum)
+#### [``ReadingTask``](../../src/thalia/datasets/reading.py#L31) (Enum)
 
 Types of reading tasks.
 
-**Source**: `datasets\reading.py`
+**Source**: [`thalia/datasets/reading.py`](../../src/thalia/datasets/reading.py)
 
 **Members**:
 
@@ -317,13 +337,13 @@ Types of reading tasks.
 
 ---
 
-### Decision Making
+### Thalia/Decision Making
 
-#### `SelectionMode` (Enum)
+#### [``SelectionMode``](../../src/thalia/decision_making/action_selection.py#L26) (Enum)
 
 Action selection strategies.
 
-**Source**: `decision_making\action_selection.py`
+**Source**: [`thalia/decision_making/action_selection.py`](../../src/thalia/decision_making/action_selection.py)
 
 **Members**:
 
@@ -334,13 +354,13 @@ Action selection strategies.
 
 ---
 
-### Diagnostics
+### Thalia/Diagnostics
 
-#### `CriticalityState` (Enum)
+#### [``CriticalityState``](../../src/thalia/diagnostics/criticality.py#L65) (Enum)
 
 Network criticality state.
 
-**Source**: `diagnostics\criticality.py`
+**Source**: [`thalia/diagnostics/criticality.py`](../../src/thalia/diagnostics/criticality.py)
 
 **Members**:
 
@@ -350,11 +370,11 @@ Network criticality state.
 
 ---
 
-#### `HealthIssue` (Enum)
+#### [``HealthIssue``](../../src/thalia/diagnostics/health_monitor.py#L49) (Enum)
 
 Types of network health issues.
 
-**Source**: `diagnostics\health_monitor.py`
+**Source**: [`thalia/diagnostics/health_monitor.py`](../../src/thalia/diagnostics/health_monitor.py)
 
 **Members**:
 
@@ -370,13 +390,13 @@ Types of network health issues.
 
 ---
 
-#### `IssueSeverity` (Enum)
+#### [``IssueSeverity``](../../src/thalia/diagnostics/health_monitor.py#L62) (Enum)
 
 Severity levels for health issues.
 
 Values represent severity scores (0-100, higher = worse).
 
-**Source**: `diagnostics\health_monitor.py`
+**Source**: [`thalia/diagnostics/health_monitor.py`](../../src/thalia/diagnostics/health_monitor.py)
 
 **Members**:
 
@@ -387,11 +407,11 @@ Values represent severity scores (0-100, higher = worse).
 
 ---
 
-#### `MetacognitiveStage` (Enum)
+#### [``MetacognitiveStage``](../../src/thalia/diagnostics/metacognition.py#L30) (Enum)
 
 Developmental stages of metacognitive ability.
 
-**Source**: `diagnostics\metacognition.py`
+**Source**: [`thalia/diagnostics/metacognition.py`](../../src/thalia/diagnostics/metacognition.py)
 
 **Members**:
 
@@ -402,11 +422,11 @@ Developmental stages of metacognitive ability.
 
 ---
 
-#### `OscillatorIssue` (Enum)
+#### [``OscillatorIssue``](../../src/thalia/diagnostics/oscillator_health.py#L56) (Enum)
 
 Types of oscillator health issues.
 
-**Source**: `diagnostics\oscillator_health.py`
+**Source**: [`thalia/diagnostics/oscillator_health.py`](../../src/thalia/diagnostics/oscillator_health.py)
 
 **Members**:
 
@@ -421,13 +441,13 @@ Types of oscillator health issues.
 
 ---
 
-### Environments
+### Thalia/Environments
 
-#### `SpikeEncoding` (Enum)
+#### [``SpikeEncoding``](../../src/thalia/environments/sensorimotor_wrapper.py#L133) (Enum)
 
 Spike encoding strategies for proprioception.
 
-**Source**: `environments\sensorimotor_wrapper.py`
+**Source**: [`thalia/environments/sensorimotor_wrapper.py`](../../src/thalia/environments/sensorimotor_wrapper.py)
 
 **Members**:
 
@@ -437,13 +457,13 @@ Spike encoding strategies for proprioception.
 
 ---
 
-### Io
+### Thalia/Io
 
-#### `DType` (IntEnum)
+#### [``DType``](../../src/thalia/io/tensor_encoding.py#L29) (IntEnum)
 
 Supported data types.
 
-**Source**: `io\tensor_encoding.py`
+**Source**: [`thalia/io/tensor_encoding.py`](../../src/thalia/io/tensor_encoding.py)
 
 **Members**:
 
@@ -456,11 +476,11 @@ Supported data types.
 
 ---
 
-#### `EncodingType` (IntEnum)
+#### [``EncodingType``](../../src/thalia/io/tensor_encoding.py#L23) (IntEnum)
 
 Tensor encoding types.
 
-**Source**: `io\tensor_encoding.py`
+**Source**: [`thalia/io/tensor_encoding.py`](../../src/thalia/io/tensor_encoding.py)
 
 **Members**:
 
@@ -469,13 +489,13 @@ Tensor encoding types.
 
 ---
 
-### Language
+### Thalia/Language
 
-#### `PositionEncodingType` (Enum)
+#### [``PositionEncodingType``](../../src/thalia/language/position.py#L54) (Enum)
 
 Types of position encoding.
 
-**Source**: `language\position.py`
+**Source**: [`thalia/language/position.py`](../../src/thalia/language/position.py)
 
 **Members**:
 
@@ -486,13 +506,13 @@ Types of position encoding.
 
 ---
 
-### Learning
+### Thalia/Learning
 
-#### `SocialCueType` (Enum)
+#### [``SocialCueType``](../../src/thalia/learning/social_learning.py#L21) (Enum)
 
 Types of social cues.
 
-**Source**: `learning\social_learning.py`
+**Source**: [`thalia/learning/social_learning.py`](../../src/thalia/learning/social_learning.py)
 
 **Members**:
 
@@ -504,13 +524,13 @@ Types of social cues.
 
 ---
 
-### Memory
+### Thalia/Memory
 
-#### `SleepStage` (Enum)
+#### [``SleepStage``](../../src/thalia/memory/consolidation/consolidation.py#L108) (Enum)
 
 Sleep stages during consolidation.
 
-**Source**: `memory\consolidation\consolidation.py`
+**Source**: [`thalia/memory/consolidation/consolidation.py`](../../src/thalia/memory/consolidation/consolidation.py)
 
 **Members**:
 
@@ -519,13 +539,13 @@ Sleep stages during consolidation.
 
 ---
 
-### Pathways
+### Thalia/Pathways
 
-#### `Modality` (Enum)
+#### [``Modality``](../../src/thalia/pathways/sensory_pathways.py#L119) (Enum)
 
 Sensory modalities.
 
-**Source**: `pathways\sensory_pathways.py`
+**Source**: [`thalia/pathways/sensory_pathways.py`](../../src/thalia/pathways/sensory_pathways.py)
 
 **Members**:
 
@@ -537,13 +557,13 @@ Sensory modalities.
 
 ---
 
-### Regions
+### Thalia/Regions
 
-#### `ErrorType` (Enum)
+#### [``ErrorType``](../../src/thalia/regions/cortex/predictive_coding.py#L92) (Enum)
 
 Types of prediction errors.
 
-**Source**: `regions\cortex\predictive_coding.py`
+**Source**: [`thalia/regions/cortex/predictive_coding.py`](../../src/thalia/regions/cortex/predictive_coding.py)
 
 **Members**:
 
@@ -553,11 +573,11 @@ Types of prediction errors.
 
 ---
 
-#### `GoalStatus` (Enum)
+#### [``GoalStatus``](../../src/thalia/regions/prefrontal_hierarchy.py#L36) (Enum)
 
 Status of a goal in the hierarchy.
 
-**Source**: `regions\prefrontal_hierarchy.py`
+**Source**: [`thalia/regions/prefrontal_hierarchy.py`](../../src/thalia/regions/prefrontal_hierarchy.py)
 
 **Members**:
 
@@ -569,11 +589,11 @@ Status of a goal in the hierarchy.
 
 ---
 
-#### `HERStrategy` (Enum)
+#### [``HERStrategy``](../../src/thalia/regions/hippocampus/hindsight_relabeling.py#L33) (Enum)
 
 Strategy for selecting hindsight goals.
 
-**Source**: `regions\hippocampus\hindsight_relabeling.py`
+**Source**: [`thalia/regions/hippocampus/hindsight_relabeling.py`](../../src/thalia/regions/hippocampus/hindsight_relabeling.py)
 
 **Members**:
 
@@ -584,11 +604,11 @@ Strategy for selecting hindsight goals.
 
 ---
 
-#### `LearningRule` (Enum)
+#### [``LearningRule``](../../src/thalia/regions/base.py#L24) (Enum)
 
 Types of learning rules used in different brain regions.
 
-**Source**: `regions\base.py`
+**Source**: [`thalia/regions/base.py`](../../src/thalia/regions/base.py)
 
 **Members**:
 
@@ -606,11 +626,11 @@ Types of learning rules used in different brain regions.
 
 ---
 
-#### `ReplayMode` (Enum)
+#### [``ReplayMode``](../../src/thalia/regions/hippocampus/replay_engine.py#L39) (Enum)
 
 Replay execution mode.
 
-**Source**: `regions\hippocampus\replay_engine.py`
+**Source**: [`thalia/regions/hippocampus/replay_engine.py`](../../src/thalia/regions/hippocampus/replay_engine.py)
 
 **Members**:
 
@@ -620,13 +640,13 @@ Replay execution mode.
 
 ---
 
-### Tasks
+### Thalia/Tasks
 
-#### `MovementDirection` (Enum)
+#### [``MovementDirection``](../../src/thalia/tasks/sensorimotor.py#L52) (Enum)
 
 Basic movement directions.
 
-**Source**: `tasks\sensorimotor.py`
+**Source**: [`thalia/tasks/sensorimotor.py`](../../src/thalia/tasks/sensorimotor.py)
 
 **Members**:
 
@@ -640,11 +660,11 @@ Basic movement directions.
 
 ---
 
-#### `SensorimotorTaskType` (Enum)
+#### [``SensorimotorTaskType``](../../src/thalia/tasks/sensorimotor.py#L44) (Enum)
 
 Types of sensorimotor tasks.
 
-**Source**: `tasks\sensorimotor.py`
+**Source**: [`thalia/tasks/sensorimotor.py`](../../src/thalia/tasks/sensorimotor.py)
 
 **Members**:
 
@@ -655,11 +675,11 @@ Types of sensorimotor tasks.
 
 ---
 
-#### `StimulusType` (Enum)
+#### [``StimulusType``](../../src/thalia/tasks/executive_function.py#L53) (Enum)
 
 Stimulus categories for Go/No-Go.
 
-**Source**: `tasks\executive_function.py`
+**Source**: [`thalia/tasks/executive_function.py`](../../src/thalia/tasks/executive_function.py)
 
 **Members**:
 
@@ -669,11 +689,11 @@ Stimulus categories for Go/No-Go.
 
 ---
 
-#### `TaskType` (Enum)
+#### [``TaskType``](../../src/thalia/tasks/executive_function.py#L37) (Enum)
 
 Types of executive function tasks.
 
-**Source**: `tasks\executive_function.py`
+**Source**: [`thalia/tasks/executive_function.py`](../../src/thalia/tasks/executive_function.py)
 
 **Members**:
 
@@ -687,9 +707,9 @@ Types of executive function tasks.
 
 ---
 
-### Training
+### Thalia/Training
 
-#### `AttentionStage` (Enum)
+#### [``AttentionStage``](../../src/thalia/training/curriculum/constants.py#L35) (Enum)
 
 Developmental stages of attention control.
 
@@ -712,7 +732,7 @@ References:
 - Colombo (2001): Infant attention development
 - Diamond (2013): Executive function emergence
 
-**Source**: `training\curriculum\constants.py`
+**Source**: [`thalia/training/curriculum/constants.py`](../../src/thalia/training/curriculum/constants.py)
 
 **Members**:
 
@@ -723,11 +743,11 @@ References:
 
 ---
 
-#### `GateDecision` (Enum)
+#### [``GateDecision``](../../src/thalia/training/curriculum/stage_gates.py#L29) (Enum)
 
 Gate decision outcomes.
 
-**Source**: `training\curriculum\stage_gates.py`
+**Source**: [`thalia/training/curriculum/stage_gates.py`](../../src/thalia/training/curriculum/stage_gates.py)
 
 **Members**:
 
@@ -738,11 +758,11 @@ Gate decision outcomes.
 
 ---
 
-#### `InterventionType` (Enum)
+#### [``InterventionType``](../../src/thalia/training/curriculum/stage_monitoring.py#L28) (Enum)
 
 Types of interventions that can be triggered.
 
-**Source**: `training\curriculum\stage_monitoring.py`
+**Source**: [`thalia/training/curriculum/stage_monitoring.py`](../../src/thalia/training/curriculum/stage_monitoring.py)
 
 **Members**:
 
@@ -755,11 +775,11 @@ Types of interventions that can be triggered.
 
 ---
 
-#### `LogLevel` (Enum)
+#### [``LogLevel``](../../src/thalia/training/curriculum/logger.py#L56) (Enum)
 
 Logging levels for curriculum training.
 
-**Source**: `training\curriculum\logger.py`
+**Source**: [`thalia/training/curriculum/logger.py`](../../src/thalia/training/curriculum/logger.py)
 
 **Members**:
 
@@ -770,11 +790,11 @@ Logging levels for curriculum training.
 
 ---
 
-#### `MechanismPriority` (IntEnum)
+#### [``MechanismPriority``](../../src/thalia/training/curriculum/stage_manager.py#L191) (IntEnum)
 
 Priority levels for cognitive mechanisms.
 
-**Source**: `training\curriculum\stage_manager.py`
+**Source**: [`thalia/training/curriculum/stage_manager.py`](../../src/thalia/training/curriculum/stage_manager.py)
 
 **Members**:
 
@@ -785,11 +805,11 @@ Priority levels for cognitive mechanisms.
 
 ---
 
-#### `NoiseType` (Enum)
+#### [``NoiseType``](../../src/thalia/training/curriculum/noise_scheduler.py#L57) (Enum)
 
 Types of noise that can be scheduled.
 
-**Source**: `training\curriculum\noise_scheduler.py`
+**Source**: [`thalia/training/curriculum/noise_scheduler.py`](../../src/thalia/training/curriculum/noise_scheduler.py)
 
 **Members**:
 
@@ -800,11 +820,11 @@ Types of noise that can be scheduled.
 
 ---
 
-#### `PhonologyTaskType` (Enum)
+#### [``PhonologyTaskType``](../../src/thalia/training/datasets/loaders.py#L434) (Enum)
 
 Task types for phonology stage.
 
-**Source**: `training\datasets\loaders.py`
+**Source**: [`thalia/training/datasets/loaders.py`](../../src/thalia/training/datasets/loaders.py)
 
 **Members**:
 
@@ -815,11 +835,11 @@ Task types for phonology stage.
 
 ---
 
-#### `TaskType` (Enum)
+#### [``TaskType``](../../src/thalia/training/datasets/loaders.py#L108) (Enum)
 
 Task types for sensorimotor stage.
 
-**Source**: `training\datasets\loaders.py`
+**Source**: [`thalia/training/datasets/loaders.py`](../../src/thalia/training/datasets/loaders.py)
 
 **Members**:
 

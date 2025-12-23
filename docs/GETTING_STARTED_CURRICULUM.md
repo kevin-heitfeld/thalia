@@ -389,7 +389,7 @@ brain.set_threshold_multiplier(0.8)
 ## Getting Help
 
 - **Implementation questions**: See [`curriculum_implementation.md`](design/curriculum_implementation.md)
-- **Architecture questions**: See [`architecture.md`](design/architecture.md)
+- **Architecture questions**: See [`ARCHITECTURE_OVERVIEW.md`](architecture/ARCHITECTURE_OVERVIEW.md)
 - **Checkpoint issues**: See [`checkpoint_format.md`](design/checkpoint_format.md)
 - **Component patterns**: See [`patterns/component-parity.md`](patterns/component-parity.md)
 

@@ -1,58 +1,136 @@
-# Mixin Patterns Guide
+﻿# Mixin Patterns Guide
 
 **Date**: December 7, 2025
 **Purpose**: Understanding Thalia's mixin system
+
+> **ðŸ“š For complete method signatures and parameters of core NeuralRegion mixins, see [MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md)**
+
+This guide focuses on **usage patterns** and **when to use** different mixins (both core and specialized).
 
 ---
 
 ## Overview
 
 Thalia uses **mixins** to share functionality across brain regions without deep inheritance hierarchies. This guide covers:
-- What mixins are available
-- What methods each mixin provides
+- What mixins are available (core and specialized)
+- When to use each mixin
 - How to use mixins effectively
 - Method resolution order (MRO) considerations
 
+### Core vs Specialized Mixins
+
+**Core Mixins** (used by all NeuralRegion subclasses):
+- `DiagnosticsMixin` - Health monitoring
+- `NeuromodulatorMixin` - Neuromodulator handling
+- `GrowthMixin` - Dynamic growth support
+- `ResettableMixin` - State reset functionality
+
+**Specialized Mixins** (region-specific):
+- `ActionSelectionMixin` - Action selection for striatum
+- Other specialized mixins for specific regions
+
+> For complete API reference of core mixins, see [MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md)
+
 ---
 
-## Available Mixins
+## Core Mixins (All Regions)
 
 ### 1. DiagnosticsMixin
 **File**: `src/thalia/mixins/diagnostics_mixin.py`
 **Purpose**: Health monitoring and diagnostics
 
-**Provides**:
-```python
-# Health checks
-check_health() -> HealthMetrics
-get_firing_rate(spikes: torch.Tensor) -> float
-check_weight_health(weights: torch.Tensor, name: str) -> WeightHealth
+> For complete method signatures, see [DiagnosticsMixin in MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md#diagnosticsmixin)
 
-# Spike monitoring
-detect_runaway_excitation(spikes: torch.Tensor) -> bool
-detect_silence(spikes: torch.Tensor) -> bool
+**Key Methods**:
+- `weight_diagnostics()` - Weight statistics (mean, std, sparsity)
+- `spike_diagnostics()` - Firing rates and spike statistics
+- `collect_standard_diagnostics()` - Full diagnostic report
 
-# Weight monitoring
-check_gradient_health(param: torch.nn.Parameter) -> GradientHealth
-```
-
-**Usage**:
+**Usage Pattern**:
 ```python
 class MyRegion(NeuralComponent, DiagnosticsMixin):
     def forward(self, x):
         output = self._compute(x)
 
-        # Check health after computation
-        health = self.check_health()
-        if not health.is_healthy:
-            logger.warning(f"Health issue: {health.issues}")
+        # Collect diagnostics for monitoring
+        diagnostics = self.collect_standard_diagnostics(
+            region_name="my_region",
+            weight_matrices={"weights": self.weights},
+            spike_tensors={"output": output}
+        )
 
         return output
 ```
 
 ---
 
-### 2. ActionSelectionMixin
+### 2. NeuromodulatorMixin
+**File**: `src/thalia/neuromodulation/mixin.py`
+**Purpose**: Standardized neuromodulator handling
+
+> For complete method signatures, see [NeuromodulatorMixin in MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md#neuromodulatormixin)
+
+**Key Methods**:
+- `set_neuromodulators()` - Set dopamine, acetylcholine, norepinephrine
+- `get_effective_learning_rate()` - Modulate learning by dopamine
+- `get_neuromodulator_state()` - Get current neuromodulator levels
+
+**Usage Pattern**:
+```python
+class MyRegion(NeuralComponent, NeuromodulatorMixin):
+    def forward(self, x):
+        # Get dopamine-modulated learning rate
+        effective_lr = self.get_effective_learning_rate(
+            base_lr=self.config.learning_rate,
+            dopamine_sensitivity=2.0
+        )
+
+        # Apply learning with modulation
+        self.apply_learning(effective_lr)
+        return output
+```
+
+---
+
+### 3. GrowthMixin
+**File**: `src/thalia/mixins/growth_mixin.py`
+**Purpose**: Support for dynamic neuron growth
+
+> For complete method signatures, see [GrowthMixin in MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md#growthmixin)
+
+**Usage Pattern**:
+```python
+class MyRegion(NeuralComponent, GrowthMixin):
+    def grow_output(self, n_new: int):
+        # Growth mixin provides utilities for expanding regions
+        super().grow_output(n_new)
+```
+
+---
+
+### 4. ResettableMixin
+**File**: `src/thalia/mixins/resettable_mixin.py`
+**Purpose**: State reset functionality
+
+> For complete method signatures, see [ResettableMixin in MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md#resettablemixin)
+
+**Key Methods**:
+- `reset_state()` - Reset region to initial state
+- `reset_standard_state()` - Reset specific state attributes
+
+**Usage Pattern**:
+```python
+class MyRegion(NeuralComponent, ResettableMixin):
+    def reset_state(self):
+        # Reset standard attributes
+        self.reset_standard_state(['v_mem', 'trace', 'adaptation'])
+```
+
+---
+
+## Specialized Mixins (Region-Specific)
+
+### ActionSelectionMixin (Striatum)
 **File**: `src/thalia/regions/striatum/action_selection.py`
 **Purpose**: Action selection strategies
 
@@ -164,7 +242,7 @@ class L5Pyramidal(NeuralComponent, DendriticComputationMixin):
 
 ## Mixin Method Reference
 
-> **📚 For complete mixin API documentation with all method signatures, see [MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md)**
+> **ðŸ“š For complete mixin API documentation with all method signatures, see [MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md)**
 
 This section focuses on **usage patterns** and **best practices** for working with mixins.
 
@@ -226,555 +304,169 @@ effective_lr = self.get_effective_learning_rate(
 
 ---
 
-### ActionSelectionMixin Methods
+## Usage Patterns
+
+### Diagnostic Monitoring Pattern
 
 ```python
-def select_action_softmax(
-    self,
-    q_values: torch.Tensor,
-    temperature: float = 1.0
-) -> int:
-    """Select action using softmax policy.
-
-    Args:
-        q_values: Action values [n_actions]
-        temperature: Softmax temperature (higher = more random)
-
-    Returns:
-        Selected action index
-    """
-
-def select_action_greedy(
-    self,
-    q_values: torch.Tensor,
-    epsilon: float = 0.1
-) -> int:
-    """Epsilon-greedy action selection.
-
-    Args:
-        q_values: Action values [n_actions]
-        epsilon: Probability of random action
-
-    Returns:
-        Selected action index
-    """
-
-def select_action_thompson(
-    self,
-    q_values: torch.Tensor,
-    uncertainty: torch.Tensor
-) -> int:
-    """Thompson sampling (sample from posterior).
-
-    Args:
-        q_values: Mean action values [n_actions]
-        uncertainty: Uncertainty estimates [n_actions]
-
-    Returns:
-        Selected action index
-    """
-
-def compute_policy(
-    self,
-    q_values: torch.Tensor,
-    temperature: float = 1.0
-) -> torch.Tensor:
-    """Compute softmax policy without sampling.
-
-    Args:
-        q_values: Action values [n_actions]
-        temperature: Softmax temperature
-
-    Returns:
-        Action probabilities [n_actions]
-    """
-
-def add_exploration_noise(
-    self,
-    q_values: torch.Tensor,
-    noise_std: float = 0.1
-) -> torch.Tensor:
-    """Add Gaussian exploration noise to Q-values.
-
-    Args:
-        q_values: Action values [n_actions]
-        noise_std: Standard deviation of noise
-
-    Returns:
-        Noisy Q-values
-    """
-```
-
----
-
-### SpikingNeuronMixin Methods
-
-```python
-def lif_dynamics(
-    self,
-    v_mem: torch.Tensor,
-    i_syn: torch.Tensor,
-    dt_ms: float = 1.0,
-    tau_mem_ms: float = 20.0,
-    v_threshold: float = 1.0,
-    v_reset: float = 0.0
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Leaky integrate-and-fire dynamics.
-
-    dV/dt = (-V + I) / tau_mem
-
-    Args:
-        v_mem: Membrane voltage [batch, neurons]
-        i_syn: Synaptic current [batch, neurons]
-        dt_ms: Timestep in milliseconds
-        tau_mem_ms: Membrane time constant
-        v_threshold: Spike threshold
-        v_reset: Reset voltage after spike
-
-    Returns:
-        (new_v_mem, spikes) both [batch, neurons]
-    """
-
-def adaptive_lif_dynamics(
-    self,
-    v_mem: torch.Tensor,
-    adaptation: torch.Tensor,
-    i_syn: torch.Tensor,
-    dt_ms: float = 1.0,
-    tau_mem_ms: float = 20.0,
-    tau_adapt_ms: float = 100.0,
-    adaptation_increment: float = 0.1
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Adaptive LIF with spike-frequency adaptation.
-
-    Returns:
-        (new_v_mem, new_adaptation, spikes)
-    """
-
-def spike_from_voltage(
-    self,
-    v_mem: torch.Tensor,
-    threshold: float = 1.0
-) -> torch.Tensor:
-    """Generate binary spikes from voltage.
-
-    Args:
-        v_mem: Membrane voltage
-        threshold: Spike threshold
-
-    Returns:
-        Binary spikes (0 or 1)
-    """
-
-def soft_spike(
-    self,
-    v_mem: torch.Tensor,
-    threshold: float = 1.0,
-    sharpness: float = 10.0
-) -> torch.Tensor:
-    """Differentiable soft spike function (sigmoid).
-
-    Args:
-        v_mem: Membrane voltage
-        threshold: Center of sigmoid
-        sharpness: Slope of sigmoid
-
-    Returns:
-        Soft spikes (0 to 1)
-    """
-```
-
----
-
-### DendriticComputationMixin Methods
-
-```python
-def dendritic_integration(
-    self,
-    proximal_input: torch.Tensor,
-    distal_input: torch.Tensor,
-    modulatory_input: Optional[torch.Tensor] = None,
-    proximal_weight: float = 0.7,
-    distal_weight: float = 0.3
-) -> torch.Tensor:
-    """Integrate inputs across dendritic compartments.
-
-    Args:
-        proximal_input: Feed-forward input (near soma)
-        distal_input: Feedback input (apical dendrite)
-        modulatory_input: Optional neuromodulation
-        proximal_weight: Weight for proximal input
-        distal_weight: Weight for distal input
-
-    Returns:
-        Integrated dendritic signal
-    """
-
-def compute_nmda_spike(
-    self,
-    dendritic_voltage: torch.Tensor,
-    threshold: float = 0.5,
-    sharpness: float = 10.0
-) -> torch.Tensor:
-    """Compute NMDA-mediated dendritic spike.
-
-    Args:
-        dendritic_voltage: Voltage in apical dendrite
-        threshold: NMDA spike threshold
-        sharpness: Spike sharpness
-
-    Returns:
-        NMDA spike strength (0 to 1)
-    """
-
-def plateau_potential(
-    self,
-    dendritic_activity: torch.Tensor,
-    tau_ms: float = 50.0,
-    dt_ms: float = 1.0
-) -> torch.Tensor:
-    """Compute prolonged plateau potential after dendritic spike.
-
-    Args:
-        dendritic_activity: Dendritic spike activity
-        tau_ms: Plateau decay time constant
-        dt_ms: Timestep
-
-    Returns:
-        Plateau potential
-    """
-```
-
----
-
-## Method Resolution Order (MRO)
-
-When a class inherits from multiple mixins, **method resolution order** matters.
-
-### Example MRO:
-```python
-class Striatum(NeuralComponent, DiagnosticsMixin, ActionSelectionMixin):
-    pass
-
-# MRO: Striatum → NeuralComponent → DiagnosticsMixin → ActionSelectionMixin → object
-```
-
-**Method lookup**:
-1. Search `Striatum`
-2. Search `NeuralComponent`
-3. Search `DiagnosticsMixin`
-4. Search `ActionSelectionMixin`
-5. Search `object`
-
----
-
-### Name Collision Example
-
-If two mixins have the same method:
-
-```python
-class MixinA:
-    def process(self, x):
-        return x * 2
-
-class MixinB:
-    def process(self, x):
-        return x + 1
-
-class MyClass(MixinA, MixinB):
-    pass
-
-obj = MyClass()
-obj.process(5)  # Returns 10 (MixinA's version, first in MRO)
-```
-
-**Solution**: Use descriptive method names to avoid collisions.
-
----
-
-## When to Create a New Mixin
-
-### ✅ Create New Mixin When:
-
-1. **Multiple regions need the same functionality**
-   ```python
-   # Good: Create mixin for shared oscillation code
-   class OscillationMixin:
-       def generate_theta(self, freq_hz, phase): ...
-       def generate_gamma(self, freq_hz): ...
-
-   class Hippocampus(NeuralComponent, OscillationMixin):
-       pass
-
-   class PrefrontalCortex(NeuralComponent, OscillationMixin):
-       pass
-   ```
-
-2. **Cross-cutting concerns** (logging, diagnostics, monitoring)
-   ```python
-   class PerformanceMonitoringMixin:
-       def start_timing(self): ...
-       def stop_timing(self): ...
-       def log_performance(self): ...
-   ```
-
-3. **Optional functionality** (can be mixed in or not)
-   ```python
-   class VisualizationMixin:
-       def plot_activity(self): ...
-       def save_animation(self): ...
-   ```
-
----
-
-### ❌ Don't Create Mixin When:
-
-1. **Only one class needs it** → Just add methods to that class
-2. **Functionality is tightly coupled to state** → Use inheritance instead
-3. **Complex interactions between mixins** → Refactor to composition
-
----
-
-## Mixin Best Practices
-
-### ✅ Keep Mixins Focused
-```python
-# Good: Focused on one concern
-class DiagnosticsMixin:
-    def check_health(self): ...
-    def get_firing_rate(self): ...
-
-# Bad: Too many unrelated things
-class UtilsMixin:
-    def check_health(self): ...
-    def select_action(self): ...
-    def load_weights(self): ...
-    def plot_results(self): ...
-```
-
----
-
-### ✅ Use Descriptive Method Names
-```python
-# Good: Clear what mixin provides
-class SpikingNeuronMixin:
-    def lif_dynamics(self, ...): ...
-    def adaptive_lif_dynamics(self, ...): ...
-
-# Bad: Generic names likely to collide
-class NeuronMixin:
-    def update(self, ...): ...  # What kind of update?
-    def compute(self, ...): ...  # Compute what?
-```
-
----
-
-### ✅ Document Mixin Dependencies
-```python
-class MyMixin:
-    """Provides utility methods for brain regions.
-
-    This mixin assumes the class has:
-        - self.state.spikes (torch.Tensor)
-        - self.config.dt_ms (float)
-
-    Example:
-        class MyRegion(NeuralComponent, MyMixin):
-            pass
-    """
-```
-
----
-
-### ✅ Avoid State in Mixins
-```python
-# Good: Stateless mixin (pure functions)
-class ActionSelectionMixin:
-    def select_action_softmax(self, q_values, temperature):
-        # No self.state or self.attributes
-        probs = torch.softmax(q_values / temperature, dim=-1)
-        return torch.multinomial(probs, 1).item()
-
-# Bad: Mixin with state (couples to host class)
-class ActionSelectionMixin:
-    def __init__(self):
-        self.last_action = None  # State in mixin
-```
-
----
-
-### ✅ Make Mixins Independent
-```python
-# Good: Can use DiagnosticsMixin without ActionSelectionMixin
-class DiagnosticsMixin:
-    def check_health(self):
-        # Standalone functionality
-        pass
-
-# Bad: DiagnosticsMixin depends on ActionSelectionMixin
-class DiagnosticsMixin:
-    def check_health(self):
-        # Assumes self.select_action() exists
-        action = self.select_action(...)  # Coupling!
-```
-
----
-
-## Real-World Examples
-
-### Example 1: Striatum
-```python
-class Striatum(NeuralComponent, DiagnosticsMixin, ActionSelectionMixin):
-    """Basal ganglia striatum with action selection.
-
-    Mixins Used:
-        - DiagnosticsMixin: check_health(), detect_runaway_excitation()
-        - ActionSelectionMixin: select_action_softmax()
-    """
-
-    def forward(self, sensory_input, reward_signal):
-        # Compute Q-values
-        q_values = self._compute_q_values(sensory_input)
-
-        # Use ActionSelectionMixin
-        action = self.select_action_softmax(
-            q_values,
-            temperature=self.config.softmax_temperature
+class MyRegion(NeuralRegion):
+    def forward(self, x):
+        output = self._compute(x)
+
+        # Collect comprehensive diagnostics
+        diagnostics = self.collect_standard_diagnostics(
+            region_name="my_region",
+            weight_matrices={"weights": self.weights},
+            spike_tensors={"output": output}
         )
 
-        # Use DiagnosticsMixin
-        health = self.check_health()
-        if not health.is_healthy:
-            logger.warning("Striatum health issue")
+        return output
+```
+
+### Neuromodulator-Gated Learning Pattern
+
+```python
+class MyRegion(NeuralRegion):
+    def apply_learning(self, pre_spikes, post_spikes):
+        # Get dopamine-modulated learning rate
+        effective_lr = self.get_effective_learning_rate(
+            base_lr=self.config.learning_rate,
+            dopamine_sensitivity=2.0
+        )
+
+        # Only learn when dopamine is present
+        if self.neuromodulators.dopamine > 0.3:
+            weight_update = pre_spikes * post_spikes * effective_lr
+            self.weights += weight_update
+```
+
+### Action Selection Pattern (Striatum)
+
+```python
+class Striatum(NeuralRegion, ActionSelectionMixin):
+    def select_action(self, state, exploration=True):
+        q_values = self.compute_q_values(state)
+
+        if exploration:
+            # Softmax exploration
+            action = self.select_action_softmax(
+                q_values,
+                temperature=self.config.temperature
+            )
+        else:
+            # Greedy exploitation
+            action = self.select_action_greedy(
+                q_values,
+                epsilon=0.0
+            )
 
         return action
 ```
 
 ---
 
-### Example 2: Layer 5 Pyramidal Neurons
+## Method Resolution Order (MRO)
+
+When using multiple mixins, Python's MRO determines method lookup order:
+
 ```python
-class L5Pyramidal(NeuralComponent, SpikingNeuronMixin, DendriticComputationMixin):
-    """Layer 5 pyramidal neurons with dendritic computation.
+class MyRegion(NeuralComponent, DiagnosticsMixin, NeuromodulatorMixin):
+    pass
 
-    Mixins Used:
-        - SpikingNeuronMixin: lif_dynamics()
-        - DendriticComputationMixin: dendritic_integration(), compute_nmda_spike()
-    """
+# MRO: MyRegion â†’ NeuralComponent â†’ DiagnosticsMixin â†’ NeuromodulatorMixin â†’ ...
+```
 
-    def forward(self, proximal_input, distal_feedback):
-        # Use DendriticComputationMixin
-        integrated = self.dendritic_integration(
-            proximal_input,
-            distal_feedback
-        )
+**Best Practices**:
+1. **Order matters**: Place most specific mixins first
+2. **Avoid conflicts**: Don't use mixins with overlapping method names
+3. **Use super()**: Always call `super()` in overridden methods
+4. **Check MRO**: Use `MyRegion.__mro__` to inspect resolution order
 
-        # Use SpikingNeuronMixin
-        self.state.v_mem, spikes = self.lif_dynamics(
-            self.state.v_mem,
-            integrated,
-            dt_ms=self.config.dt_ms
-        )
+### Example: Proper super() Usage
 
-        return spikes
+```python
+class MyRegion(NeuralComponent, DiagnosticsMixin):
+    def reset_state(self):
+        # Call parent's reset first
+        super().reset_state()
+
+        # Then reset region-specific state
+        self.custom_state = torch.zeros(...)
 ```
 
 ---
 
-### Example 3: Hippocampus (No Mixins)
+## When to Create New Mixins
+
+**Create a new mixin when**:
+- âœ… Functionality is shared across 3+ regions
+- âœ… Methods are cohesive (related to single concern)
+- âœ… No state dependencies (or minimal state)
+- âœ… Can be tested independently
+
+**Don't create a mixin when**:
+- âŒ Only used by single region (just use methods)
+- âŒ Requires complex region-specific state
+- âŒ Logic is tightly coupled to specific region
+
+### Example: Good Mixin Candidate
+
 ```python
-class TrisynapticHippocampus(NeuralComponent):
-    """Hippocampus with specialized circuit.
+# âœ… GOOD: Shared, cohesive, stateless
+class CompetitiveInhibitionMixin:
+    """WTA competition for sparse coding."""
 
-    Mixins Used: None
+    def apply_wta_inhibition(
+        self,
+        activity: torch.Tensor,
+        k: int
+    ) -> torch.Tensor:
+        """Keep top-k neurons, inhibit rest."""
+        topk_vals, topk_idx = activity.topk(k)
+        inhibited = torch.zeros_like(activity)
+        inhibited.scatter_(0, topk_idx, topk_vals)
+        return inhibited
+```
 
-    Note: Hippocampus uses highly specialized computations
-    that aren't shared with other regions, so mixins aren't needed.
-    """
+### Example: Bad Mixin Candidate
 
-    def forward(self, input_pattern):
-        # Specialized DG→CA3→CA1 circuit
-        dg_out = self._dentate_gyrus(input_pattern)
-        ca3_out = self._ca3_autoassociation(dg_out)
-        ca1_out = self._ca1_comparison(ca3_out, input_pattern)
-        return ca1_out
+```python
+# âŒ BAD: Too specific, requires hippocampus state
+class PatternCompletionMixin:
+    """Only used by hippocampus CA3."""
+
+    def complete_pattern(self, partial_input):
+        # Requires CA3-specific recurrent weights
+        return self.ca3_recurrent @ partial_input
 ```
 
 ---
 
-## Adding Mixin Documentation to Classes
+## Testing Mixins
 
-### Recommended Pattern:
+Mixins should be tested independently:
+
 ```python
-class Striatum(NeuralComponent, DiagnosticsMixin, ActionSelectionMixin):
-    """Basal ganglia striatum for action selection.
+# Test mixin in isolation
+class MockRegion(DiagnosticsMixin):
+    def __init__(self):
+        self.weights = torch.randn(10, 10)
 
-    The striatum learns action values through dopamine-modulated
-    plasticity and selects actions using softmax policy.
+def test_weight_diagnostics():
+    region = MockRegion()
+    diag = region.weight_diagnostics(
+        region.weights,
+        prefix="test"
+    )
 
-    Mixins Provide:
-        From DiagnosticsMixin:
-            - check_health() → HealthMetrics
-            - get_firing_rate(spikes) → float
-            - detect_runaway_excitation(spikes) → bool
-
-        From ActionSelectionMixin:
-            - select_action_softmax(q_values, temperature) → int
-            - select_action_greedy(q_values, epsilon) → int
-            - compute_policy(q_values, temperature) → torch.Tensor
-
-    Attributes:
-        state (StriatumState): Mutable state (spikes, dopamine, eligibility)
-        config (StriatumConfig): Configuration parameters
-        w_cortex_to_d1 (torch.Tensor): Cortex → D1 pathway weights
-        w_cortex_to_d2 (torch.Tensor): Cortex → D2 pathway weights
-    """
+    assert "test/mean" in diag
+    assert "test/std" in diag
 ```
 
 ---
 
-## FAQ
+## See Also
 
-**Q: Can mixins have `__init__`?**
-A: Yes, but be careful with `super().__init__()` to avoid MRO issues. Prefer stateless mixins.
-
-**Q: How do I know which methods come from mixins?**
-A: Check the class docstring (should list mixin methods) or use `dir(obj)` and `type(obj).__mro__`.
-
-**Q: What if two mixins have the same method?**
-A: First one in the inheritance list wins (left-to-right). Avoid name collisions with descriptive names.
-
-**Q: Should I create a mixin or use composition?**
-A: **Mixin** for stateless utilities shared across many classes. **Composition** for stateful objects.
-
-**Q: Can a mixin inherit from another mixin?**
-A: Yes, but keep the hierarchy shallow. Deep mixin hierarchies are hard to reason about.
-
----
-
-## Summary
-
-**Available Mixins**:
-- `DiagnosticsMixin`: Health monitoring
-- `ActionSelectionMixin`: Action selection strategies
-- `SpikingNeuronMixin`: Spiking neuron dynamics
-- `DendriticComputationMixin`: Dendritic integration
-
-**When to use**:
-- Multiple regions need same functionality
-- Cross-cutting concerns (diagnostics, monitoring)
-- Optional functionality
-
-**Best practices**:
-- Keep mixins focused and stateless
-- Use descriptive method names
-- Document what the mixin assumes
-- List mixin methods in class docstrings
-
----
-
-**Last Updated**: December 7, 2025
-**See Also**:
-- `docs/patterns/state-management.md` - State patterns
-- `docs/patterns/configuration.md` - Configuration guide
-- `src/thalia/core/` - Mixin implementations
+- **[MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md)** - Complete API reference for all core mixins
+- **[component-parity.md](component-parity.md)** - Component design patterns
+- **[state-management.md](state-management.md)** - When to use mixins vs state classes

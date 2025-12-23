@@ -1,5 +1,9 @@
 # Curriculum Training Quick Reference
 
+> **Purpose**: Quick reference for curriculum training API and common usage patterns
+
+This guide provides copy-paste examples for curriculum training. For comprehensive curriculum strategy and theory, see [curriculum_strategy.md](design/curriculum_strategy.md).
+
 ## Quick API Reference
 
 ### Initialize Trainer

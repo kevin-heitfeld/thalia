@@ -36,6 +36,7 @@ from thalia.components.neurons.neuron_constants import (
     FAST_SPIKING_INTERNEURON,
 )
 from thalia.components.neurons.neuron_factory import (
+    NeuronFactory,
     create_pyramidal_neurons,
     create_relay_neurons,
     create_trn_neurons,
@@ -77,7 +78,8 @@ __all__ = [
     "ADAPT_INCREMENT_CORTEX_L23",
     "STANDARD_PYRAMIDAL",
     "FAST_SPIKING_INTERNEURON",
-    # Neuron factory functions
+    # Neuron factory
+    "NeuronFactory",
     "create_pyramidal_neurons",
     "create_relay_neurons",
     "create_trn_neurons",

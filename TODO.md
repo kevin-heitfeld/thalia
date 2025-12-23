@@ -58,6 +58,7 @@
 
 ---
 
+- What happens when we increase `gamma_n_slots: int = 7`?
 - `docs\design\circuit_modeling_plan.md`
 - Consciousness / Self-Awareness:
   - https://www.youtube.com/watch?v=OlnioeAtloY

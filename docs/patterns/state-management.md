@@ -468,7 +468,7 @@ A: Currently Thalia enforces single-instance (no batching). State tensors are 1D
 **Last Updated**: December 22, 2025
 **See Also**:
 - `docs/patterns/configuration.md` - Configuration patterns
-- `docs/design/architecture.md` - Overall architecture
+- `docs/architecture/ARCHITECTURE_OVERVIEW.md` - Overall architecture
 - `thalia/regions/base.py` - NeuralComponent base class
 - `docs/api/STATE_CLASSES_REFERENCE.md` - All state classes
 - `docs/design/state-management-refactoring-plan.md` - State refactoring details
@@ -826,7 +826,7 @@ When creating a new region with state:
 **Last Updated**: December 22, 2025
 **See Also**:
 - `docs/patterns/configuration.md` - Configuration patterns
-- `docs/design/architecture.md` - Overall architecture
+- `docs/architecture/ARCHITECTURE_OVERVIEW.md` - Overall architecture
 - `thalia/regions/base.py` - NeuralComponent base class
 - `docs/api/STATE_CLASSES_REFERENCE.md` - All state classes (auto-generated)
 - `docs/api/CHECKPOINT_FORMAT.md` - Checkpoint structure

@@ -154,7 +154,6 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # =========================================================================
     # Enable theta-gamma coupling from centralized oscillator manager
     theta_gamma_enabled: bool = True  # Use centralized oscillators for sequence encoding
-    gamma_n_slots: int = 7  # Number of gamma cycles per theta cycle
 
     # =========================================================================
     # SHORT-TERM PLASTICITY (STP)

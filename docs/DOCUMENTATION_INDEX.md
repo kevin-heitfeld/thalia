@@ -144,7 +144,7 @@ Detailed technical specifications for core systems.
 | **circuit_modeling.md** | Circuit timing and D1/D2 delays | 🟢 Current | copilot-instructions |
 | **neuron_models.md** | LIF and ConductanceLIF neurons | 🟢 Current | Pattern references |
 | **parallel_execution.md** | Multi-core CPU performance | 🟢 Current | ADR-014 |
-| **architecture.md** | System architecture details | 🟢 Current | state-management.md |
+
 | **README.md** | Design directory overview | 🟢 Current | Documentation hub |
 
 ### Archived Design Documents
@@ -252,7 +252,6 @@ Architecture Decision Records (ADRs) documenting key technical choices.
 ### System Architecture
 - `architecture/ARCHITECTURE_OVERVIEW.md` — Complete overview
 - `architecture/CENTRALIZED_SYSTEMS.md` — Global coordination
-- `design/architecture.md` — Technical details
 
 ### Implementation Patterns
 - `patterns/component-parity.md` — Regions and pathways

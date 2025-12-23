@@ -65,6 +65,23 @@ Each region uses pluggable learning strategies:
 
 ## Code Patterns
 
+### Neuron Creation
+```python
+# Use NeuronFactory registry for dynamic creation
+from thalia.components.neurons import NeuronFactory
+
+neurons = NeuronFactory.create("pyramidal", n_neurons=100, device=device)
+relay = NeuronFactory.create("relay", n_neurons=64, device=device)
+l23 = NeuronFactory.create("cortical_layer", n_neurons=256, device=device, layer="L2/3")
+
+# Available types: pyramidal, relay, trn, cortical_layer
+types = NeuronFactory.list_types()
+
+# Direct function calls also work (traditional approach)
+from thalia.components.neurons import create_pyramidal_neurons
+neurons = create_pyramidal_neurons(n_neurons=100, device=device)
+```
+
 ### Weight Initialization
 ```python
 # Always use WeightInitializer registry
@@ -178,6 +195,7 @@ from thalia.training.visualization import TrainingMonitor
 
 # Neuron models
 from thalia.components.neurons import (
+    NeuronFactory,
     ConductanceLIF,
     ConductanceLIFConfig,
     create_pyramidal_neurons,

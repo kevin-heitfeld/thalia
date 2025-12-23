@@ -1,10 +1,12 @@
 # Checkpoint Format Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 20:11:04
+> Last updated: 2025-12-23 01:10:24
 > Generated from: `scripts/generate_api_docs.py`
 
-This document describes the checkpoint file format used by Thalia. Checkpoints are created using `brain.save_checkpoint()` and restored with `brain.load_checkpoint()`.
+> **📚 For complete binary format specification, version compatibility, and implementation details, see [checkpoint_format.md](../design/checkpoint_format.md)**
+
+This document provides a quick reference for checkpoint usage and the state dictionary structure returned by `brain.get_full_state()`.
 
 ## Overview
 
@@ -20,25 +22,23 @@ checkpoint.thalia
 └── config (brain configuration)
 ```
 
-## Top-Level Structure
+## Top-Level State Structure
 
-The checkpoint is a dictionary with these top-level keys:
-
-### Keys from `DynamicBrain.get_full_state()`
+The checkpoint is a dictionary with these top-level keys returned by `DynamicBrain.get_full_state()`:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `global_config` | `Any` | Component state |
-| `current_time` | `Any` | Component state |
-| `topology` | `Any` | Component state |
-| `regions` | `Dict[str, Any]` | Component state |
-| `pathways` | `Dict[str, Any]` | Component state |
-| `oscillators` | `Dict[str, Any]` | Component state |
-| `neuromodulators` | `Dict[str, Any]` | Component state |
-| `config` | `Dict[str, Any]` | Component state |
-| `growth_history` | `List[Any]` | Component state |
+| `global_config` | `Any` | Global configuration |
+| `current_time` | `Any` | Current simulation time |
+| `topology` | `Any` | Brain topology graph |
+| `regions` | `Dict[str, Any]` | All region states |
+| `pathways` | `Dict[str, Any]` | All pathway states |
+| `oscillators` | `Dict[str, Any]` | Oscillator states |
+| `neuromodulators` | `Dict[str, Any]` | Neuromodulator levels |
+| `config` | `Dict[str, Any]` | Brain configuration |
+| `growth_history` | `List[Any]` | Growth event log |
 
-**Source**: `core\dynamic_brain.py`
+**Source**: [`thalia/core/dynamic_brain.py`](../../src/thalia/core/dynamic_brain.py)
 
 ## Component State Structure
 
@@ -46,48 +46,34 @@ Each component (region or pathway) stores its state in the checkpoint.
 
 ### NeuralRegion State (Base Class)
 
-All regions include these fields:
+All regions include these base fields:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `type` | `Any` | Base region data |
-| `n_neurons` | `Any` | Base region data |
-| `n_input` | `Any` | Base region data |
-| `n_output` | `Any` | Base region data |
-| `device` | `Any` | Base region data |
-| `dt_ms` | `Any` | Base region data |
-| `default_learning_rule` | `Any` | Base region data |
-| `input_sources` | `Any` | Base region data |
-| `synaptic_weights` | `Dict[str, Any]` | Base region data |
-| `plasticity_enabled` | `Any` | Base region data |
+| `type` | `Any` | Region type identifier |
+| `n_neurons` | `Any` | Number of neurons |
+| `n_input` | `Any` | Input dimension |
+| `n_output` | `Any` | Output dimension |
+| `device` | `Any` | Device (CPU/GPU) |
+| `dt_ms` | `Any` | Timestep in milliseconds |
+| `default_learning_rule` | `Any` | Default learning strategy |
+| `input_sources` | `Any` | Input source names |
+| `synaptic_weights` | `Dict[str, Any]` | Weight matrices per source |
+| `plasticity_enabled` | `Any` | Learning enabled flag |
 
-**Source**: `core\neural_region.py`
+**Source**: [`thalia/core/neural_region.py`](../../src/thalia/core/neural_region.py)
 
-## File Format Details
+## File Formats
 
-Checkpoints can be saved in multiple formats:
+Checkpoints can be saved in two formats:
 
-1. **PyTorch Format** (`.pt`, `.pth`, `.ckpt`) - Standard PyTorch `torch.save()` format
-2. **Binary Format** (`.thalia`, `.thalia.zst`) - Custom binary format with compression
-
-### Compression Support
-
-- `.zst` extension → Zstandard compression
-- `.lz4` extension → LZ4 compression
-- No extension → Uncompressed
-
-### Precision Policies
-
-Checkpoints support mixed precision:
-
-- `fp32` - Full precision (default)
-- `fp16` - Half precision (smaller files, some accuracy loss)
-- `mixed` - fp16 for weights, fp32 for critical state
+1. **PyTorch Format** (`.pt`, `.pth`, `.ckpt`) - Standard PyTorch `torch.save()` format (default)
+2. **Binary Format** (`.thalia`, `.thalia.zst`) - Custom binary format with compression (advanced)
 
 ## Usage Examples
 
 ```python
-# Save checkpoint
+# Save checkpoint (PyTorch format - default)
 brain.save_checkpoint(
     "checkpoints/epoch_100.ckpt",
     metadata={"epoch": 100, "loss": 0.42}
@@ -96,7 +82,7 @@ brain.save_checkpoint(
 # Load checkpoint
 brain.load_checkpoint("checkpoints/epoch_100.ckpt")
 
-# Save with compression
+# Save with compression (binary format)
 brain.save_checkpoint("checkpoints/epoch_100.thalia.zst", compression="zstd")
 
 # Save with mixed precision
@@ -104,8 +90,6 @@ brain.save_checkpoint("checkpoints/epoch_100.ckpt", precision_policy="fp16")
 ```
 
 ## Validation
-
-Use `CheckpointManager.validate()` to check checkpoint integrity:
 
 ```python
 from thalia.io import CheckpointManager
@@ -116,13 +100,9 @@ if not is_valid:
     print(f"Checkpoint invalid: {error}")
 ```
 
-## Version Compatibility
+## See Also
 
-Checkpoints include version metadata for compatibility checking:
-
-- `checkpoint_format_version` - Format version (2.0+)
-- `thalia_version` - Thalia library version
-- `pytorch_version` - PyTorch version used
-
-The checkpoint manager can migrate old formats when loading.
+- **[Checkpoint Format Specification](../design/checkpoint_format.md)** - Complete binary format details, byte layouts, compression algorithms
+- **[Curriculum Strategy](../design/curriculum_strategy.md)** - Training stages and checkpoint usage in curriculum training
+- **[GETTING_STARTED_CURRICULUM](../GETTING_STARTED_CURRICULUM.md)** - Tutorial including checkpoint management
 

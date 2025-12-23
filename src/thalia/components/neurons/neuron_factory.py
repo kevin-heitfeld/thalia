@@ -6,13 +6,21 @@ reducing boilerplate configuration code and centralizing biological parameter ch
 
 Usage:
 ======
-    from thalia.components.neurons import create_pyramidal_neurons, create_relay_neurons
+    from thalia.components.neurons import NeuronFactory, create_pyramidal_neurons
 
-    # Simple usage with defaults
+    # Direct function call (traditional approach)
     dg_neurons = create_pyramidal_neurons(n_neurons=128, device=device)
 
+    # Using registry (dynamic approach)
+    neurons = NeuronFactory.create("pyramidal", n_neurons=128, device=device)
+
+    # List available neuron types
+    available = NeuronFactory.list_types()
+    print(available)  # ['pyramidal', 'relay', 'trn', 'cortical_layer']
+
     # Custom overrides for regional specialization
-    ca3_neurons = create_pyramidal_neurons(
+    ca3_neurons = NeuronFactory.create(
+        "pyramidal",
         n_neurons=32,
         device=device,
         adapt_increment=0.1,  # CA3-specific adaptation
@@ -20,12 +28,13 @@ Usage:
     )
 
     # Relay neurons with specific configuration
-    relay = create_relay_neurons(n_neurons=64, device=device)
+    relay = NeuronFactory.create("relay", n_neurons=64, device=device)
 
 Author: Thalia Project
-Date: December 12, 2025
+Date: December 2025
 """
 
+from typing import Callable, Dict, List
 import torch
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
@@ -42,6 +51,118 @@ from thalia.components.neurons.neuron_constants import (
 )
 
 
+class NeuronFactory:
+    """
+    Centralized neuron factory registry.
+
+    Provides standardized neuron creation methods used across Thalia.
+    Supports both direct function calls and dynamic registry-based creation.
+
+    Examples:
+        # Registry-based creation
+        >>> pyramidal = NeuronFactory.create("pyramidal", n_neurons=100, device=device)
+        >>> relay = NeuronFactory.create("relay", n_neurons=50, device=device)
+
+        # List available types
+        >>> types = NeuronFactory.list_types()
+        >>> print(types)  # ['pyramidal', 'relay', 'trn', 'cortical_layer']
+
+        # Check if type exists
+        >>> if NeuronFactory.has_type("pyramidal"):
+        ...     neurons = NeuronFactory.create("pyramidal", 100, device)
+    """
+
+    # Registry of neuron factory functions
+    _registry: Dict[str, Callable] = {}
+
+    @classmethod
+    def register(cls, neuron_type: str):
+        """Decorator to register a neuron factory function.
+
+        Args:
+            neuron_type: Identifier for the neuron type (e.g., "pyramidal", "relay")
+
+        Examples:
+            >>> @NeuronFactory.register("custom")
+            ... def create_custom_neurons(n_neurons, device, **overrides):
+            ...     config = ConductanceLIFConfig(...)
+            ...     return ConductanceLIF(n_neurons, config)
+        """
+        def decorator(func: Callable) -> Callable:
+            cls._registry[neuron_type] = func
+            return func
+        return decorator
+
+    @classmethod
+    def create(
+        cls,
+        neuron_type: str,
+        n_neurons: int,
+        device: torch.device,
+        **overrides
+    ) -> ConductanceLIF:
+        """Create neurons by type name.
+
+        Args:
+            neuron_type: Type identifier (e.g., "pyramidal", "relay", "trn", "cortical_layer")
+            n_neurons: Number of neurons to create
+            device: Device for tensor allocation
+            **overrides: Custom parameters to override defaults
+
+        Returns:
+            ConductanceLIF neuron population
+
+        Raises:
+            ValueError: If neuron_type is not registered
+
+        Examples:
+            >>> neurons = NeuronFactory.create("pyramidal", 128, device)
+            >>> relay = NeuronFactory.create("relay", 64, device, v_threshold=0.9)
+            >>> l23 = NeuronFactory.create(
+            ...     "cortical_layer", 256, device, layer="L2/3", adapt_increment=0.4
+            ... )
+        """
+        if neuron_type not in cls._registry:
+            available = ", ".join(sorted(cls._registry.keys()))
+            raise ValueError(
+                f"Unknown neuron type: '{neuron_type}'. "
+                f"Available types: {available}. "
+                f"Use NeuronFactory.register() to add custom types."
+            )
+        return cls._registry[neuron_type](n_neurons=n_neurons, device=device, **overrides)
+
+    @classmethod
+    def list_types(cls) -> List[str]:
+        """Get list of available neuron types.
+
+        Returns:
+            Sorted list of registered neuron type names
+
+        Examples:
+            >>> types = NeuronFactory.list_types()
+            >>> print(types)
+            ['cortical_layer', 'pyramidal', 'relay', 'trn']
+        """
+        return sorted(cls._registry.keys())
+
+    @classmethod
+    def has_type(cls, neuron_type: str) -> bool:
+        """Check if a neuron type is registered.
+
+        Args:
+            neuron_type: Type identifier to check
+
+        Returns:
+            True if the type is registered, False otherwise
+
+        Examples:
+            >>> if NeuronFactory.has_type("pyramidal"):
+            ...     neurons = NeuronFactory.create("pyramidal", 100, device)
+        """
+        return neuron_type in cls._registry
+
+
+@NeuronFactory.register("pyramidal")
 def create_pyramidal_neurons(
     n_neurons: int,
     device: torch.device,
@@ -92,6 +213,7 @@ def create_pyramidal_neurons(
     return ConductanceLIF(n_neurons=n_neurons, config=config)
 
 
+@NeuronFactory.register("relay")
 def create_relay_neurons(
     n_neurons: int,
     device: torch.device,
@@ -135,6 +257,7 @@ def create_relay_neurons(
     return ConductanceLIF(n_neurons=n_neurons, config=config)
 
 
+@NeuronFactory.register("trn")
 def create_trn_neurons(
     n_neurons: int,
     device: torch.device,
@@ -175,6 +298,7 @@ def create_trn_neurons(
     return ConductanceLIF(n_neurons=n_neurons, config=config)
 
 
+@NeuronFactory.register("cortical_layer")
 def create_cortical_layer_neurons(
     n_neurons: int,
     layer: str,
@@ -285,6 +409,7 @@ def create_cortical_layer_neurons(
 
 
 __all__ = [
+    "NeuronFactory",
     "create_pyramidal_neurons",
     "create_relay_neurons",
     "create_trn_neurons",

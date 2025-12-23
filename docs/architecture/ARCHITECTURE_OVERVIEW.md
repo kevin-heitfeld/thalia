@@ -588,7 +588,7 @@ docs/
 - `HIERARCHICAL_GOALS_COMPLETE.md` - Goal hierarchy implementation
 
 ### Design Documents
-- `../design/architecture.md` - Original architecture design
+
 - `../design/neuron_models.md` - Neuron model specifications
 - `../design/curriculum_strategy.md` - Training curriculum
 

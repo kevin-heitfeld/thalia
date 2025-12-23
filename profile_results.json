@@ -1,0 +1,209 @@
+{
+  "thalamus": {
+    "type": "ThalamicRelay",
+    "execution": null,
+    "code": {
+      "lines": 0,
+      "functions": 0,
+      "classes": 0,
+      "complexity": 0
+    }
+  },
+  "cortex": {
+    "type": "LayeredCortex",
+    "execution": null,
+    "code": {
+      "lines": 0,
+      "functions": 0,
+      "classes": 0,
+      "complexity": 0
+    }
+  },
+  "hippocampus": {
+    "type": "TrisynapticHippocampus",
+    "execution": null,
+    "code": {
+      "lines": 0,
+      "functions": 0,
+      "classes": 0,
+      "complexity": 0
+    }
+  },
+  "pfc": {
+    "type": "Prefrontal",
+    "execution": null,
+    "code": {
+      "lines": 0,
+      "functions": 0,
+      "classes": 0,
+      "complexity": 0
+    }
+  },
+  "striatum": {
+    "type": "Striatum",
+    "execution": null,
+    "code": {
+      "lines": 0,
+      "functions": 0,
+      "classes": 0,
+      "complexity": 0
+    }
+  },
+  "cerebellum": {
+    "type": "Cerebellum",
+    "execution": null,
+    "code": {
+      "lines": 0,
+      "functions": 0,
+      "classes": 0,
+      "complexity": 0
+    }
+  },
+  "_full_forward_pass": {
+    "type": "DynamicBrain.forward",
+    "execution": {
+      "mean_ms": 218.90038900543004,
+      "min_ms": 154.7790000331588,
+      "max_ms": 305.52500003250316,
+      "median_ms": 232.78510000091046,
+      "p95_ms": 287.6883000135422,
+      "p99_ms": 305.52500003250316
+    },
+    "code": {
+      "lines": 0,
+      "functions": 0,
+      "classes": 0,
+      "complexity": 0
+    }
+  },
+  "region_base": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 76,
+      "functions": 0,
+      "classes": 2,
+      "complexity": 0
+    }
+  },
+  "region_cerebellum_region": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 1389,
+      "functions": 31,
+      "classes": 4,
+      "complexity": 54
+    }
+  },
+  "region_factory": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 271,
+      "functions": 12,
+      "classes": 2,
+      "complexity": 13
+    }
+  },
+  "region_multisensory": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 1088,
+      "functions": 14,
+      "classes": 2,
+      "complexity": 49
+    }
+  },
+  "region_prefrontal": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 1284,
+      "functions": 30,
+      "classes": 4,
+      "complexity": 56
+    }
+  },
+  "region_prefrontal_checkpoint_manager": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 379,
+      "functions": 11,
+      "classes": 1,
+      "complexity": 26
+    }
+  },
+  "region_prefrontal_hierarchy": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 557,
+      "functions": 21,
+      "classes": 6,
+      "complexity": 40
+    }
+  },
+  "region_stimulus_gating": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 262,
+      "functions": 7,
+      "classes": 2,
+      "complexity": 5
+    }
+  },
+  "region_thalamus": {
+    "type": "region_implementation",
+    "execution": null,
+    "code": {
+      "lines": 1404,
+      "functions": 26,
+      "classes": 3,
+      "complexity": 48
+    }
+  },
+  "pathway_axonal_projection": {
+    "type": "pathway_implementation",
+    "execution": null,
+    "code": {
+      "lines": 417,
+      "functions": 16,
+      "classes": 2,
+      "complexity": 20
+    }
+  },
+  "pathway_dynamic_pathway_manager": {
+    "type": "pathway_implementation",
+    "execution": null,
+    "code": {
+      "lines": 235,
+      "functions": 7,
+      "classes": 1,
+      "complexity": 31
+    }
+  },
+  "pathway_protocol": {
+    "type": "pathway_implementation",
+    "execution": null,
+    "code": {
+      "lines": 191,
+      "functions": 3,
+      "classes": 1,
+      "complexity": 1
+    }
+  },
+  "pathway_sensory_pathways": {
+    "type": "pathway_implementation",
+    "execution": null,
+    "code": {
+      "lines": 1091,
+      "functions": 34,
+      "classes": 12,
+      "complexity": 37
+    }
+  }
+}

@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 20:11:04
+> Last updated: 2025-12-23 01:10:24
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -34,11 +34,11 @@ RegionState (Protocol)
 
 Total region states: 7
 
-### `AxonalProjectionState`
+### [``AxonalProjectionState``](../../src/thalia/core/pathway_state.py#L130)
 
 **Base Class**: `PathwayState`  
 **Version**: 1  
-**Source**: `thalia\core\pathway_state.py`
+**Source**: [`thalia/core/pathway_state.py`](../../src/thalia/core/pathway_state.py)
 
 **Description**: State for AxonalProjection with delay buffers.
 
@@ -46,15 +46,15 @@ Total region states: 7
 
 | Field | Type | Default |
 |-------|------|----------|
-| `delay_buffers` | `Dict[str, Tuple[torch.Tensor, int, int, int]]` | `field(default_factory=dict)` |
+| `delay_buffers` | `Dict[str, Tuple[torch.Tensor, int, int, int]]` | `{}` |
 
 ---
 
-### `CerebellumState`
+### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L178)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: `thalia\regions\cerebellum_region.py`
+**Source**: [`thalia/regions/cerebellum_region.py`](../../src/thalia/regions/cerebellum_region.py)
 
 **Description**: Complete state for Cerebellum region.
 
@@ -80,11 +80,11 @@ Total region states: 7
 
 ---
 
-### `HippocampusState`
+### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L245)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: `thalia\regions\hippocampus\config.py`
+**Source**: [`thalia/regions/hippocampus/config.py`](../../src/thalia/regions/hippocampus/config.py)
 
 **Description**: State for hippocampus (trisynaptic circuit) with RegionState protocol compliance.
 
@@ -113,11 +113,11 @@ Total region states: 7
 
 ---
 
-### `LayeredCortexState`
+### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L191)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: `thalia\regions\cortex\config.py`
+**Source**: [`thalia/regions/cortex/config.py`](../../src/thalia/regions/cortex/config.py)
 
 **Description**: State for layered cortex with RegionState protocol compliance.
 
@@ -150,11 +150,11 @@ Total region states: 7
 
 ---
 
-### `PrefrontalState`
+### [``PrefrontalState``](../../src/thalia/regions/prefrontal.py#L186)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: `thalia\regions\prefrontal.py`
+**Source**: [`thalia/regions/prefrontal.py`](../../src/thalia/regions/prefrontal.py)
 
 **Description**: State for prefrontal cortex region.
 
@@ -172,11 +172,11 @@ Total region states: 7
 
 ---
 
-### `StriatumState`
+### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L205)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: `thalia\regions\striatum\config.py`
+**Source**: [`thalia/regions/striatum/config.py`](../../src/thalia/regions/striatum/config.py)
 
 **Description**: Complete state for Striatum region.
 
@@ -218,11 +218,11 @@ Total region states: 7
 
 ---
 
-### `ThalamicRelayState`
+### [``ThalamicRelayState``](../../src/thalia/regions/thalamus.py#L228)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: `thalia\regions\thalamus.py`
+**Source**: [`thalia/regions/thalamus.py`](../../src/thalia/regions/thalamus.py)
 
 **Description**: State for thalamic relay nucleus with RegionState protocol compliance.
 

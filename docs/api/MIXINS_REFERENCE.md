@@ -1,7 +1,7 @@
 # Mixins Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 20:11:04
+> Last updated: 2025-12-23 01:10:24
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all mixin classes used by `NeuralRegion`. These mixins provide standard functionality to all brain regions.
@@ -22,59 +22,59 @@ class NeuralRegion(nn.Module,
 
 ## Mixin Classes
 
-### `DiagnosticsMixin`
+### [``DiagnosticsMixin``](../../src/thalia/mixins/diagnostics_mixin.py#L38)
 
-**Source**: `thalia\mixins\diagnostics_mixin.py`
+**Source**: [`thalia/mixins/diagnostics_mixin.py`](../../src/thalia/mixins/diagnostics_mixin.py)
 
 **Description**: Mixin providing common diagnostic computation patterns.
 
 **Public Methods**:
 
-- `weight_diagnostics(weights, prefix, include_histogram)`
-- `spike_diagnostics(spikes, prefix, dt_ms)`
-- `trace_diagnostics(trace, prefix)`
-- `learning_diagnostics(ltp, ltd, prefix)`
-- `membrane_diagnostics(membrane, threshold, prefix)`
-- `similarity_diagnostics(pattern_a, pattern_b, prefix, eps)`
-- `collect_all_diagnostics(weights, spikes, traces)`
-- `collect_standard_diagnostics(region_name, weight_matrices, spike_tensors, trace_tensors, custom_metrics)`
+- [`weight_diagnostics(weights, prefix, include_histogram)`](../../src/thalia/mixins/diagnostics_mixin.py#L49)
+- [`spike_diagnostics(spikes, prefix, dt_ms)`](../../src/thalia/mixins/diagnostics_mixin.py#L100)
+- [`trace_diagnostics(trace, prefix)`](../../src/thalia/mixins/diagnostics_mixin.py#L138)
+- [`learning_diagnostics(ltp, ltd, prefix)`](../../src/thalia/mixins/diagnostics_mixin.py#L163)
+- [`membrane_diagnostics(membrane, threshold, prefix)`](../../src/thalia/mixins/diagnostics_mixin.py#L190)
+- [`similarity_diagnostics(pattern_a, pattern_b, prefix, eps)`](../../src/thalia/mixins/diagnostics_mixin.py#L218)
+- [`collect_all_diagnostics(weights, spikes, traces)`](../../src/thalia/mixins/diagnostics_mixin.py#L260)
+- [`collect_standard_diagnostics(region_name, weight_matrices, spike_tensors, trace_tensors, custom_metrics)`](../../src/thalia/mixins/diagnostics_mixin.py#L294)
 
 ---
 
-### `GrowthMixin`
+### [``GrowthMixin``](../../src/thalia/mixins/growth_mixin.py#L26)
 
-**Source**: `thalia\mixins\growth_mixin.py`
+**Source**: [`thalia/mixins/growth_mixin.py`](../../src/thalia/mixins/growth_mixin.py)
 
 **Description**: Mixin providing utility methods for region neuron growth.
 
 ---
 
-### `NeuromodulatorMixin`
+### [``NeuromodulatorMixin``](../../src/thalia/neuromodulation/mixin.py#L131)
 
-**Source**: `thalia\neuromodulation\mixin.py`
+**Source**: [`thalia/neuromodulation/mixin.py`](../../src/thalia/neuromodulation/mixin.py)
 
 **Description**: Mixin providing standardized neuromodulator handling for brain regions.
 
 **Public Methods**:
 
-- `set_neuromodulators(dopamine, norepinephrine, acetylcholine)`
-- `set_neuromodulator(name, level)`
-- `decay_neuromodulators(dt_ms, dopamine_tau_ms, acetylcholine_tau_ms, norepinephrine_tau_ms)`
-- `get_effective_learning_rate(base_lr, dopamine_sensitivity)`
-- `get_neuromodulator_state()`
+- [`set_neuromodulators(dopamine, norepinephrine, acetylcholine)`](../../src/thalia/neuromodulation/mixin.py#L147)
+- [`set_neuromodulator(name, level)`](../../src/thalia/neuromodulation/mixin.py#L184)
+- [`decay_neuromodulators(dt_ms, dopamine_tau_ms, acetylcholine_tau_ms, norepinephrine_tau_ms)`](../../src/thalia/neuromodulation/mixin.py#L202)
+- [`get_effective_learning_rate(base_lr, dopamine_sensitivity)`](../../src/thalia/neuromodulation/mixin.py#L234)
+- [`get_neuromodulator_state()`](../../src/thalia/neuromodulation/mixin.py#L267)
 
 ---
 
-### `ResettableMixin`
+### [``ResettableMixin``](../../src/thalia/mixins/resettable_mixin.py#L16)
 
-**Source**: `thalia\mixins\resettable_mixin.py`
+**Source**: [`thalia/mixins/resettable_mixin.py`](../../src/thalia/mixins/resettable_mixin.py)
 
 **Description**: Mixin for components with resettable state.
 
 **Public Methods**:
 
-- `reset_state()`
-- `reset_standard_state(state_attrs)`
+- [`reset_state()`](../../src/thalia/mixins/resettable_mixin.py#L33)
+- [`reset_standard_state(state_attrs)`](../../src/thalia/mixins/resettable_mixin.py#L48)
 
 ---
 

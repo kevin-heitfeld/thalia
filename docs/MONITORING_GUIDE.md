@@ -238,6 +238,8 @@ else:
 
 ## 5. BrainActivityVisualization - Publication Videos
 
+> **⚠️ PLANNED FEATURE** - Not yet implemented. This section describes planned functionality.
+
 **Purpose**: Create beautiful Manim animations for papers/presentations.
 
 **When to use**:
@@ -246,8 +248,9 @@ else:
 - Presentation slides
 - Social media content
 
-**Usage**:
+**Planned Usage**:
 ```python
+# NOTE: This class is not yet implemented
 from thalia.visualization import BrainActivityVisualization
 
 viz = BrainActivityVisualization("checkpoint.thalia")
@@ -276,7 +279,7 @@ viz.render_growth("growth.mp4", checkpoints=[...])
 
 **Usage** (typically internal):
 ```python
-from thalia.training.curriculum_trainer import CognitiveLoadMonitor, MechanismPriority
+from thalia.training.curriculum.stage_manager import CognitiveLoadMonitor, MechanismPriority
 
 monitor = CognitiveLoadMonitor(load_threshold=0.9)
 

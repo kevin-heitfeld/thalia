@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 20:11:04
+> Last updated: 2025-12-23 01:10:24
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -10,9 +10,9 @@ Total: 3 configuration classes
 
 ## Configuration Classes
 
-### `HippocampusConfig`
+### [``HippocampusConfig``](../../src/thalia/regions/hippocampus/config.py#L55)
 
-**Source**: `thalia\regions\hippocampus\config.py`
+**Source**: [`thalia/regions/hippocampus/config.py`](../../src/thalia/regions/hippocampus/config.py)
 
 **Description**: Configuration for hippocampus (trisynaptic circuit).
 
@@ -48,7 +48,6 @@ Total: 3 configuration classes
 | `ca3_persistent_gain` | `float` | `3.0` |
 | `ec_l3_input_size` | `int` | `0` |
 | `theta_gamma_enabled` | `bool` | `True` |
-| `gamma_n_slots` | `int` | `7` |
 | `stp_enabled` | `bool` | `True` |
 | `stp_mossy_type` | `STPType` | `STPType.FACILITATING_STRONG` |
 | `stp_schaffer_type` | `STPType` | `STPType.DEPRESSING` |
@@ -69,11 +68,15 @@ Total: 3 configuration classes
 | `her_goal_tolerance` | `float` | `0.1` |
 | `her_buffer_size` | `int` | `1000` |
 
+**Used By**:
+
+- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L140)
+
 ---
 
-### `LayeredCortexConfig`
+### [``LayeredCortexConfig``](../../src/thalia/regions/cortex/config.py#L26)
 
-**Source**: `thalia\regions\cortex\config.py`
+**Source**: [`thalia/regions/cortex/config.py`](../../src/thalia/regions/cortex/config.py)
 
 **Description**: Configuration for layered cortical microcircuit.
 
@@ -81,11 +84,11 @@ Total: 3 configuration classes
 
 | Field | Type | Default |
 |-------|------|-------|
-| `l4_size` | `int` | `field(default=0)` |
-| `l23_size` | `int` | `field(default=0)` |
-| `l5_size` | `int` | `field(default=0)` |
-| `l6a_size` | `int` | `field(default=0)` |
-| `l6b_size` | `int` | `field(default=0)` |
+| `l4_size` | `int` | `0` |
+| `l23_size` | `int` | `0` |
+| `l5_size` | `int` | `0` |
+| `l6a_size` | `int` | `0` |
+| `l6b_size` | `int` | `0` |
 | `l4_sparsity` | `float` | `0.15` |
 | `l23_sparsity` | `float` | `0.1` |
 | `l5_sparsity` | `float` | `0.2` |
@@ -121,13 +124,17 @@ Total: 3 configuration classes
 | `gamma_attention_width` | `float` | `0.3` |
 | `bcm_enabled` | `bool` | `False` |
 | `bcm_config` | `Optional[BCMConfig]` | `None` |
-| `robustness` | `Optional[RobustnessConfig]` | `field(default=None)` |
+| `robustness` | `Optional[RobustnessConfig]` | `None` |
+
+**Used By**:
+
+- [`cortex`](../../src/thalia/regions/cortex/layered_cortex.py#L132)
 
 ---
 
-### `StriatumConfig`
+### [``StriatumConfig``](../../src/thalia/regions/striatum/config.py#L25)
 
-**Source**: `thalia\regions\striatum\config.py`
+**Source**: [`thalia/regions/striatum/config.py`](../../src/thalia/regions/striatum/config.py)
 
 **Description**: Configuration specific to striatal regions.
 
@@ -184,5 +191,42 @@ Total: 3 configuration classes
 | `growth_enabled` | `bool` | `True` |
 | `reserve_capacity` | `float` | `0.5` |
 
+**Used By**:
+
+- [`striatum`](../../src/thalia/regions/striatum/striatum.py#L151)
+
 ---
+
+## 💡 Configuration Best Practices
+
+### Common Patterns
+
+1. **Start with defaults**: All configs have biologically-motivated defaults
+2. **Override selectively**: Only change what's needed for your task
+3. **Validate early**: Use config validation before training
+4. **Document changes**: Keep notes on why you changed defaults
+
+### Performance Considerations
+
+- **Layer sizes**: Larger = more capacity but slower training
+- **Sparsity**: Higher sparsity = faster but less connectivity
+- **Learning rates**: Too high = instability, too low = slow learning
+- **Time constants**: Should match biological ranges (ms scale)
+
+### Common Pitfalls
+
+⚠️ **Too small networks**: Use at least 64 neurons per region
+
+⚠️ **Mismatched time scales**: Keep tau values in biological range (5-200ms)
+
+⚠️ **Extreme learning rates**: Stay within 0.0001-0.01 range
+
+⚠️ **Disabled plasticity**: Ensure learning strategies are enabled
+
+## 📚 Related Documentation
+
+- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these configs
+- [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rules and parameters
+- [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - Configuration examples
+- [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) - Enum types used in configs
 

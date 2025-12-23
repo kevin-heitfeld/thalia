@@ -557,6 +557,6 @@ def compare_results(result_seq, result_par, tolerance=0.5):
 ## See Also
 
 - [Event-Driven Architecture](../design/event_system.md)
-- [Brain Regions](../design/architecture.md)
+- [Brain Regions](../architecture/ARCHITECTURE_OVERVIEW.md#brain-regions)
 - [Performance Tuning](../patterns/performance.md)
 - [Testing Guide](../../CONTRIBUTING.md#testing)

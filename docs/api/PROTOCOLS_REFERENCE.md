@@ -1,7 +1,7 @@
 # Protocols Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 20:11:04
+> Last updated: 2025-12-23 01:10:24
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all Protocol classes defining interfaces for duck-typed components in Thalia.
@@ -10,11 +10,11 @@ Total: 8 protocols
 
 ## Protocol Classes
 
-### `BrainComponent`
+### [``BrainComponent``](../../src/thalia/core/protocols/component.py#L43)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
-**Source**: `thalia\core\protocols\component.py`
+**Source**: [`thalia/core/protocols/component.py`](../../src/thalia/core/protocols/component.py)
 
 **Description**: Unified protocol for all brain components (regions AND pathways).
 
@@ -55,11 +55,11 @@ def load_full_state(state: Dict[str, Any]):
 
 ---
 
-### `Configurable`
+### [``Configurable``](../../src/thalia/core/protocols/neural.py#L179)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
-**Source**: `thalia\core\protocols\neural.py`
+**Source**: [`thalia/core/protocols/neural.py`](../../src/thalia/core/protocols/neural.py)
 
 **Description**: Protocol for components initialized from configuration.
 
@@ -73,11 +73,11 @@ def from_thalia_config(cls, config: Any):
 
 ---
 
-### `Diagnosable`
+### [``Diagnosable``](../../src/thalia/core/protocols/neural.py#L137)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
-**Source**: `thalia\core\protocols\neural.py`
+**Source**: [`thalia/core/protocols/neural.py`](../../src/thalia/core/protocols/neural.py)
 
 **Description**: Protocol for components that provide diagnostic information.
 
@@ -91,11 +91,11 @@ def get_diagnostics():
 
 ---
 
-### `Forwardable`
+### [``Forwardable``](../../src/thalia/core/protocols/neural.py#L113)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
-**Source**: `thalia\core\protocols\neural.py`
+**Source**: [`thalia/core/protocols/neural.py`](../../src/thalia/core/protocols/neural.py)
 
 **Description**: Protocol for components that process input through forward pass.
 
@@ -109,11 +109,11 @@ def forward(input_spikes: torch.Tensor):
 
 ---
 
-### `Learnable`
+### [``Learnable``](../../src/thalia/core/protocols/neural.py#L84)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
-**Source**: `thalia\core\protocols\neural.py`
+**Source**: [`thalia/core/protocols/neural.py`](../../src/thalia/core/protocols/neural.py)
 
 **Description**: Protocol for components with synaptic plasticity.
 
@@ -127,21 +127,21 @@ def learn(input_spikes: torch.Tensor, output_spikes: torch.Tensor):
 
 ---
 
-### `NeuralComponentProtocol`
+### [``NeuralComponentProtocol``](../../src/thalia/core/protocols/neural.py#L204)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
-**Source**: `thalia\core\protocols\neural.py`
+**Source**: [`thalia/core/protocols/neural.py`](../../src/thalia/core/protocols/neural.py)
 
 **Description**: Full protocol for neural components (regions, pathways, populations).
 
 ---
 
-### `Resettable`
+### [``Resettable``](../../src/thalia/core/protocols/neural.py#L52)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
-**Source**: `thalia\core\protocols\neural.py`
+**Source**: [`thalia/core/protocols/neural.py`](../../src/thalia/core/protocols/neural.py)
 
 **Description**: Protocol for components that can reset their state.
 
@@ -155,11 +155,11 @@ def reset_state():
 
 ---
 
-### `WeightContainer`
+### [``WeightContainer``](../../src/thalia/core/protocols/neural.py#L163)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
-**Source**: `thalia\core\protocols\neural.py`
+**Source**: [`thalia/core/protocols/neural.py`](../../src/thalia/core/protocols/neural.py)
 
 **Description**: Protocol for components that have learnable weights.
 

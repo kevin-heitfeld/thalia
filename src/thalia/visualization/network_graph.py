@@ -311,7 +311,17 @@ def plot_connectivity_matrix(
 # =============================================================================
 
 def _get_neuron_count(region: Any) -> int:
-    """Get neuron count from region."""
+    """Get neuron count from region.
+
+    Args:
+        region: NeuralRegion instance to query
+
+    Returns:
+        Number of neurons in the region, or 0 if unavailable
+
+    Note:
+        Tries multiple attribute paths: n_neurons, config.n_neurons, membrane.shape[0]
+    """
     # Try various attributes
     if hasattr(region, 'n_neurons'):
         return region.n_neurons
@@ -324,7 +334,19 @@ def _get_neuron_count(region: Any) -> int:
 
 
 def _get_region_type(name: str) -> str:
-    """Infer region type from name."""
+    """Infer region type from name.
+
+    Args:
+        name: Region name (e.g., 'cortex', 'hippocampus')
+
+    Returns:
+        Region type category: 'prefrontal', 'sensory', 'striatum',
+        'hippocampus', 'cerebellum', 'thalamus', 'vta', 'motor',
+        'cortex', or 'other'
+
+    Note:
+        Uses substring matching on lowercased name
+    """
     name_lower = name.lower()
 
     # Check specific types first (before more general ones)
@@ -351,7 +373,17 @@ def _get_region_type(name: str) -> str:
 
 
 def _get_pathway_strength(pathway: Any) -> float:
-    """Get average connection strength from pathway."""
+    """Get average connection strength from pathway.
+
+    Args:
+        pathway: AxonalProjection or pathway instance
+
+    Returns:
+        Mean absolute connection strength, or 0.0 if weights unavailable
+
+    Note:
+        Returns 0.0 for pathways without weights attribute
+    """
     if hasattr(pathway, 'weights'):
         weights = pathway.weights
         if weights is not None:
@@ -410,7 +442,26 @@ def _hierarchical_layout(G: Any, region_info: Dict[str, Any]) -> Dict[str, Tuple
 
 
 def _get_graphviz_color(region_type: str) -> str:
-    """Get Graphviz color name for region type."""
+    """Get Graphviz color name for region type.
+
+    Args:
+        region_type: Region category (from _get_region_type)
+
+    Returns:
+        Graphviz color name for the region type
+
+    Color mapping:
+        - sensory: 'lightcoral'
+        - cortex: 'lightblue'
+        - striatum: 'lightgreen'
+        - hippocampus: 'lightpink'
+        - cerebellum: 'plum'
+        - thalamus: 'wheat'
+        - vta: 'lightyellow'
+        - prefrontal: 'lightcyan'
+        - motor: 'peachpuff'
+        - other: 'lightgray' (default)
+    """
     colors = {
         'sensory': 'lightcoral',
         'cortex': 'lightblue',

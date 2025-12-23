@@ -1,18 +1,39 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-22 20:11:04
+> Last updated: 2025-12-23 01:10:24
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
 Total: 45 modules, 546 exports
 
+## 📑 Table of Contents
+
+Quick jump to module:
+
+- [thalia](#thalia) | - [thalia.components](#thaliacomponents) | - [thalia.components.coding](#thaliacomponentscoding)
+- [thalia.components.neurons](#thaliacomponentsneurons) | - [thalia.components.synapses](#thaliacomponentssynapses) | - [thalia.config](#thaliaconfig)
+- [thalia.coordination](#thaliacoordination) | - [thalia.core](#thaliacore) | - [thalia.core.base](#thaliacorebase)
+- [thalia.core.protocols](#thaliacoreprotocols) | - [thalia.datasets](#thaliadatasets) | - [thalia.decision_making](#thaliadecision_making)
+- [thalia.diagnostics](#thaliadiagnostics) | - [thalia.environments](#thaliaenvironments) | - [thalia.io](#thaliaio)
+- [thalia.language](#thalialanguage) | - [thalia.learning](#thalialearning) | - [thalia.learning.eligibility](#thalialearningeligibility)
+- [thalia.learning.homeostasis](#thalialearninghomeostasis) | - [thalia.learning.rules](#thalialearningrules) | - [thalia.managers](#thaliamanagers)
+- [thalia.memory](#thaliamemory) | - [thalia.memory.consolidation](#thaliamemoryconsolidation) | - [thalia.mixins](#thaliamixins)
+- [thalia.neuromodulation](#thalianeuromodulation) | - [thalia.neuromodulation.systems](#thalianeuromodulationsystems) | - [thalia.pathways](#thaliapathways)
+- [thalia.planning](#thaliaplanning) | - [thalia.regions](#thaliaregions) | - [thalia.regions.cerebellum](#thaliaregionscerebellum)
+- [thalia.regions.cortex](#thaliaregionscortex) | - [thalia.regions.hippocampus](#thaliaregionshippocampus) | - [thalia.regions.striatum](#thaliaregionsstriatum)
+- [thalia.regulation](#thaliaregulation) | - [thalia.stimuli](#thaliastimuli) | - [thalia.surgery](#thaliasurgery)
+- [thalia.synapses](#thaliasynapses) | - [thalia.tasks](#thaliatasks) | - [thalia.training](#thaliatraining)
+- [thalia.training.curriculum](#thaliatrainingcurriculum) | - [thalia.training.datasets](#thaliatrainingdatasets) | - [thalia.training.evaluation](#thaliatrainingevaluation)
+- [thalia.training.visualization](#thaliatrainingvisualization) | - [thalia.utils](#thaliautils) | - [thalia.visualization](#thaliavisualization)
+
+
 ## Module Exports
 
 ### `thalia`
 
-**Source**: `thalia\__init__.py`
+**Source**: [`thalia/__init__.py`](../../src/thalia/__init__.py)
 
 **Exports** (20):
 
@@ -47,7 +68,7 @@ from thalia import __version__
 
 ### `thalia.components`
 
-**Source**: `thalia\components\__init__.py`
+**Source**: [`thalia/components/__init__.py`](../../src/thalia/components/__init__.py)
 
 **Exports** (20):
 
@@ -82,7 +103,7 @@ from thalia.components import ConductanceLIF
 
 ### `thalia.components.coding`
 
-**Source**: `thalia\components\coding\__init__.py`
+**Source**: [`thalia/components/coding/__init__.py`](../../src/thalia/components/coding/__init__.py)
 
 **Exports** (12):
 
@@ -109,7 +130,7 @@ from thalia.components.coding import CodingStrategy
 
 ### `thalia.components.neurons`
 
-**Source**: `thalia\components\neurons\__init__.py`
+**Source**: [`thalia/components/neurons/__init__.py`](../../src/thalia/components/neurons/__init__.py)
 
 **Exports** (20):
 
@@ -144,7 +165,7 @@ from thalia.components.neurons import ConductanceLIF
 
 ### `thalia.components.synapses`
 
-**Source**: `thalia\components\synapses\__init__.py`
+**Source**: [`thalia/components/synapses/__init__.py`](../../src/thalia/components/synapses/__init__.py)
 
 **Exports** (17):
 
@@ -176,7 +197,7 @@ from thalia.components.synapses import InitStrategy
 
 ### `thalia.config`
 
-**Source**: `thalia\config\__init__.py`
+**Source**: [`thalia/config/__init__.py`](../../src/thalia/config/__init__.py)
 
 **Exports** (20):
 
@@ -211,7 +232,7 @@ from thalia.config import ThaliaConfig
 
 ### `thalia.coordination`
 
-**Source**: `thalia\coordination\__init__.py`
+**Source**: [`thalia/coordination/__init__.py`](../../src/thalia/coordination/__init__.py)
 
 **Exports** (9):
 
@@ -235,7 +256,7 @@ from thalia.coordination import OscillatorManager
 
 ### `thalia.core`
 
-**Source**: `thalia\core\__init__.py`
+**Source**: [`thalia/core/__init__.py`](../../src/thalia/core/__init__.py)
 
 **Exports** (20):
 
@@ -270,7 +291,7 @@ from thalia.core import ThaliaError
 
 ### `thalia.core.base`
 
-**Source**: `thalia\core\base\__init__.py`
+**Source**: [`thalia/core/base/__init__.py`](../../src/thalia/core/base/__init__.py)
 
 **Exports** (3):
 
@@ -288,7 +309,7 @@ from thalia.core.base import NeuralComponentConfig
 
 ### `thalia.core.protocols`
 
-**Source**: `thalia\core\protocols\__init__.py`
+**Source**: [`thalia/core/protocols/__init__.py`](../../src/thalia/core/protocols/__init__.py)
 
 **Exports** (14):
 
@@ -317,7 +338,7 @@ from thalia.core.protocols import BrainComponent
 
 ### `thalia.datasets`
 
-**Source**: `thalia\datasets\__init__.py`
+**Source**: [`thalia/datasets/__init__.py`](../../src/thalia/datasets/__init__.py)
 
 **Exports** (20):
 
@@ -352,7 +373,7 @@ from thalia.datasets import PhonologicalDataset
 
 ### `thalia.decision_making`
 
-**Source**: `thalia\decision_making\__init__.py`
+**Source**: [`thalia/decision_making/__init__.py`](../../src/thalia/decision_making/__init__.py)
 
 **Exports** (3):
 
@@ -370,7 +391,7 @@ from thalia.decision_making import ActionSelector
 
 ### `thalia.diagnostics`
 
-**Source**: `thalia\diagnostics\__init__.py`
+**Source**: [`thalia/diagnostics/__init__.py`](../../src/thalia/diagnostics/__init__.py)
 
 **Exports** (20):
 
@@ -405,7 +426,7 @@ from thalia.diagnostics import CriticalityConfig
 
 ### `thalia.environments`
 
-**Source**: `thalia\environments\__init__.py`
+**Source**: [`thalia/environments/__init__.py`](../../src/thalia/environments/__init__.py)
 
 **Exports** (3):
 
@@ -423,7 +444,7 @@ from thalia.environments import SensorimotorWrapper
 
 ### `thalia.io`
 
-**Source**: `thalia\io\__init__.py`
+**Source**: [`thalia/io/__init__.py`](../../src/thalia/io/__init__.py)
 
 **Exports** (12):
 
@@ -450,7 +471,7 @@ from thalia.io import BrainCheckpoint
 
 ### `thalia.language`
 
-**Source**: `thalia\language\__init__.py`
+**Source**: [`thalia/language/__init__.py`](../../src/thalia/language/__init__.py)
 
 **Exports** (9):
 
@@ -474,7 +495,7 @@ from thalia.language import SpikeEncoder
 
 ### `thalia.learning`
 
-**Source**: `thalia\learning\__init__.py`
+**Source**: [`thalia/learning/__init__.py`](../../src/thalia/learning/__init__.py)
 
 **Exports** (20):
 
@@ -509,7 +530,7 @@ from thalia.learning import BCMRule
 
 ### `thalia.learning.eligibility`
 
-**Source**: `thalia\learning\eligibility\__init__.py`
+**Source**: [`thalia/learning/eligibility/__init__.py`](../../src/thalia/learning/eligibility/__init__.py)
 
 **Exports** (2):
 
@@ -526,7 +547,7 @@ from thalia.learning.eligibility import EligibilityTraceManager
 
 ### `thalia.learning.homeostasis`
 
-**Source**: `thalia\learning\homeostasis\__init__.py`
+**Source**: [`thalia/learning/homeostasis/__init__.py`](../../src/thalia/learning/homeostasis/__init__.py)
 
 **Exports** (12):
 
@@ -553,7 +574,7 @@ from thalia.learning.homeostasis import UnifiedHomeostasis
 
 ### `thalia.learning.rules`
 
-**Source**: `thalia\learning\rules\__init__.py`
+**Source**: [`thalia/learning/rules/__init__.py`](../../src/thalia/learning/rules/__init__.py)
 
 **Exports** (16):
 
@@ -584,7 +605,7 @@ from thalia.learning.rules import BCMRule
 
 ### `thalia.managers`
 
-**Source**: `thalia\managers\__init__.py`
+**Source**: [`thalia/managers/__init__.py`](../../src/thalia/managers/__init__.py)
 
 **Exports** (7):
 
@@ -606,7 +627,7 @@ from thalia.managers import ComponentRegistry
 
 ### `thalia.memory`
 
-**Source**: `thalia\memory\__init__.py`
+**Source**: [`thalia/memory/__init__.py`](../../src/thalia/memory/__init__.py)
 
 **Exports** (20):
 
@@ -641,7 +662,7 @@ from thalia.memory import SequenceMemory
 
 ### `thalia.memory.consolidation`
 
-**Source**: `thalia\memory\consolidation\__init__.py`
+**Source**: [`thalia/memory/consolidation/__init__.py`](../../src/thalia/memory/consolidation/__init__.py)
 
 **Exports** (18):
 
@@ -674,7 +695,7 @@ from thalia.memory.consolidation import MemoryPressureDetector
 
 ### `thalia.mixins`
 
-**Source**: `thalia\mixins\__init__.py`
+**Source**: [`thalia/mixins/__init__.py`](../../src/thalia/mixins/__init__.py)
 
 **Exports** (6):
 
@@ -695,7 +716,7 @@ from thalia.mixins import DeviceMixin
 
 ### `thalia.neuromodulation`
 
-**Source**: `thalia\neuromodulation\__init__.py`
+**Source**: [`thalia/neuromodulation/__init__.py`](../../src/thalia/neuromodulation/__init__.py)
 
 **Exports** (13):
 
@@ -723,7 +744,7 @@ from thalia.neuromodulation import VTADopamineSystem
 
 ### `thalia.neuromodulation.systems`
 
-**Source**: `thalia\neuromodulation\systems\__init__.py`
+**Source**: [`thalia/neuromodulation/systems/__init__.py`](../../src/thalia/neuromodulation/systems/__init__.py)
 
 **Exports** (9):
 
@@ -747,7 +768,7 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 
 ### `thalia.pathways`
 
-**Source**: `thalia\pathways\__init__.py`
+**Source**: [`thalia/pathways/__init__.py`](../../src/thalia/pathways/__init__.py)
 
 **Exports** (6):
 
@@ -768,7 +789,7 @@ from thalia.pathways import NeuralPathway
 
 ### `thalia.planning`
 
-**Source**: `thalia\planning\__init__.py`
+**Source**: [`thalia/planning/__init__.py`](../../src/thalia/planning/__init__.py)
 
 **Exports** (5):
 
@@ -788,7 +809,7 @@ from thalia.planning import MentalSimulationCoordinator
 
 ### `thalia.regions`
 
-**Source**: `thalia\regions\__init__.py`
+**Source**: [`thalia/regions/__init__.py`](../../src/thalia/regions/__init__.py)
 
 **Exports** (20):
 
@@ -823,7 +844,7 @@ from thalia.regions import LearningRule
 
 ### `thalia.regions.cerebellum`
 
-**Source**: `thalia\regions\cerebellum\__init__.py`
+**Source**: [`thalia/regions/cerebellum/__init__.py`](../../src/thalia/regions/cerebellum/__init__.py)
 
 **Exports** (5):
 
@@ -843,7 +864,7 @@ from thalia.regions.cerebellum import GranuleCellLayer
 
 ### `thalia.regions.cortex`
 
-**Source**: `thalia\regions\cortex\__init__.py`
+**Source**: [`thalia/regions/cortex/__init__.py`](../../src/thalia/regions/cortex/__init__.py)
 
 **Exports** (7):
 
@@ -865,7 +886,7 @@ from thalia.regions.cortex import LayeredCortex
 
 ### `thalia.regions.hippocampus`
 
-**Source**: `thalia\regions\hippocampus\__init__.py`
+**Source**: [`thalia/regions/hippocampus/__init__.py`](../../src/thalia/regions/hippocampus/__init__.py)
 
 **Exports** (7):
 
@@ -887,7 +908,7 @@ from thalia.regions.hippocampus import Hippocampus
 
 ### `thalia.regions.striatum`
 
-**Source**: `thalia\regions\striatum\__init__.py`
+**Source**: [`thalia/regions/striatum/__init__.py`](../../src/thalia/regions/striatum/__init__.py)
 
 **Exports** (8):
 
@@ -910,7 +931,7 @@ from thalia.regions.striatum import Striatum
 
 ### `thalia.regulation`
 
-**Source**: `thalia\regulation\__init__.py`
+**Source**: [`thalia/regulation/__init__.py`](../../src/thalia/regulation/__init__.py)
 
 **Exports** (20):
 
@@ -945,7 +966,7 @@ from thalia.regulation import DEFAULT_EPSILON_EXPLORATION
 
 ### `thalia.stimuli`
 
-**Source**: `thalia\stimuli\__init__.py`
+**Source**: [`thalia/stimuli/__init__.py`](../../src/thalia/stimuli/__init__.py)
 
 **Exports** (5):
 
@@ -965,7 +986,7 @@ from thalia.stimuli import StimulusPattern
 
 ### `thalia.surgery`
 
-**Source**: `thalia\surgery\__init__.py`
+**Source**: [`thalia/surgery/__init__.py`](../../src/thalia/surgery/__init__.py)
 
 **Exports** (11):
 
@@ -991,7 +1012,7 @@ from thalia.surgery import lesion_region
 
 ### `thalia.synapses`
 
-**Source**: `thalia\synapses\__init__.py`
+**Source**: [`thalia/synapses/__init__.py`](../../src/thalia/synapses/__init__.py)
 
 **Exports** (2):
 
@@ -1008,7 +1029,7 @@ from thalia.synapses import AfferentSynapses
 
 ### `thalia.tasks`
 
-**Source**: `thalia\tasks\__init__.py`
+**Source**: [`thalia/tasks/__init__.py`](../../src/thalia/tasks/__init__.py)
 
 **Exports** (20):
 
@@ -1043,7 +1064,7 @@ from thalia.tasks import ExecutiveFunctionTasks
 
 ### `thalia.training`
 
-**Source**: `thalia\training\__init__.py`
+**Source**: [`thalia/training/__init__.py`](../../src/thalia/training/__init__.py)
 
 **Exports** (20):
 
@@ -1078,7 +1099,7 @@ from thalia.training import TextDataPipeline
 
 ### `thalia.training.curriculum`
 
-**Source**: `thalia\training\curriculum\__init__.py`
+**Source**: [`thalia/training/curriculum/__init__.py`](../../src/thalia/training/curriculum/__init__.py)
 
 **Exports** (20):
 
@@ -1113,7 +1134,7 @@ from thalia.training.curriculum import AttentionStage
 
 ### `thalia.training.datasets`
 
-**Source**: `thalia\training\datasets\__init__.py`
+**Source**: [`thalia/training/datasets/__init__.py`](../../src/thalia/training/datasets/__init__.py)
 
 **Exports** (20):
 
@@ -1148,7 +1169,7 @@ from thalia.training.datasets import BaseTaskLoader
 
 ### `thalia.training.evaluation`
 
-**Source**: `thalia\training\evaluation\__init__.py`
+**Source**: [`thalia/training/evaluation/__init__.py`](../../src/thalia/training/evaluation/__init__.py)
 
 **Exports** (5):
 
@@ -1168,7 +1189,7 @@ from thalia.training.evaluation import MetacognitiveCalibrator
 
 ### `thalia.training.visualization`
 
-**Source**: `thalia\training\visualization\__init__.py`
+**Source**: [`thalia/training/visualization/__init__.py`](../../src/thalia/training/visualization/__init__.py)
 
 **Exports** (4):
 
@@ -1187,7 +1208,7 @@ from thalia.training.visualization import TrainingMonitor
 
 ### `thalia.utils`
 
-**Source**: `thalia\utils\__init__.py`
+**Source**: [`thalia/utils/__init__.py`](../../src/thalia/utils/__init__.py)
 
 **Exports** (13):
 
@@ -1215,7 +1236,7 @@ from thalia.utils import clamp_weights
 
 ### `thalia.visualization`
 
-**Source**: `thalia\visualization\__init__.py`
+**Source**: [`thalia/visualization/__init__.py`](../../src/thalia/visualization/__init__.py)
 
 **Exports** (3):
 

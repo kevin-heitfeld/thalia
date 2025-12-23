@@ -4,7 +4,9 @@
 **Status**: Phase 1B Complete ✅
 **Last Updated**: December 13, 2025
 
-> **Related Document**: See [`curriculum_strategy.md`](curriculum_strategy.md) for training stages and curriculum design.
+> **Related Documents**:
+> - [`curriculum_strategy.md`](curriculum_strategy.md) - Training stages and curriculum design
+> - [`../api/CHECKPOINT_FORMAT.md`](../api/CHECKPOINT_FORMAT.md) - Quick reference for checkpoint usage and state structure
 
 ## Overview
 
