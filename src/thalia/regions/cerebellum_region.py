@@ -178,6 +178,36 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
     stp_pf_purkinje_type: STPType = STPType.DEPRESSING  # Parallel fiber depression
     stp_mf_granule_type: STPType = STPType.FACILITATING  # Mossy fiber facilitation
 
+    # =========================================================================
+    # GAP JUNCTIONS (Inferior Olive Synchronization)
+    # =========================================================================
+    # Inferior olive (IO) neurons are electrically coupled via gap junctions,
+    # creating synchronized complex spikes across multiple Purkinje cells.
+    # This coordination is critical for motor learning and timing precision.
+    #
+    # Biology:
+    # - IO neurons form one of the densest gap junction networks in the brain
+    # - Synchronization time: <1ms (ultra-fast electrical coupling)
+    # - Functional role: Coordinates learning across multiple cerebellar modules
+    # - Complex spikes arrive synchronously at related Purkinje cells
+    #
+    # References:
+    # - Llinás & Yarom (1981): Electrophysiology of IO gap junctions
+    # - De Zeeuw et al. (1998): Gap junctions in IO create synchronous climbing fiber activity
+    # - Leznik & Llinás (2005): Role of gap junctions in IO oscillations
+    # - Schweighofer et al. (1999): Computational role of IO synchronization
+    gap_junctions_enabled: bool = True
+    """Enable gap junction coupling in inferior olive neurons."""
+
+    gap_junction_strength: float = 0.18
+    """Gap junction conductance for IO neurons (biological: 0.1-0.3, IO has stronger coupling)."""
+
+    gap_junction_threshold: float = 0.20
+    """Connectivity threshold for gap junction coupling (shared error patterns)."""
+
+    gap_junction_max_neighbors: int = 12
+    """Maximum gap junction neighbors per IO neuron (biological: 6-15, IO is densely coupled)."""
+
 
 @dataclass
 class CerebellumState(BaseRegionState):
@@ -214,6 +244,7 @@ class CerebellumState(BaseRegionState):
     # CLIMBING FIBER ERROR (both modes)
     # ========================================================================
     climbing_fiber_error: Optional[torch.Tensor] = None     # [n_output] - Error signal from IO
+    io_membrane: Optional[torch.Tensor] = None              # [n_output] - IO membrane for gap junctions
 
     # ========================================================================
     # CLASSIC MODE NEURON STATE (use_enhanced=False)
@@ -249,6 +280,7 @@ class CerebellumState(BaseRegionState):
 
             # Error signal
             "climbing_fiber_error": self.climbing_fiber_error,
+            "io_membrane": self.io_membrane,
 
             # Classic neuron state
             "v_mem": self.v_mem,
@@ -555,6 +587,10 @@ class Cerebellum(NeuralRegion):
         self._beta_phase: float = 0.0
         self._gamma_phase: float = 0.0
 
+        # IO membrane potential for gap junction coupling
+        # Only used if gap_junctions_enabled; stored at cerebellum level like climbing_fiber.error
+        self._io_membrane: Optional[torch.Tensor] = None
+
         # Homeostasis for synaptic scaling
         homeostasis_config = UnifiedHomeostasisConfig(
             weight_budget=config.weight_budget * config.n_input,  # Total budget per neuron
@@ -619,6 +655,43 @@ class Cerebellum(NeuralRegion):
         else:
             self.stp_pf_purkinje = None
             self.stp_mf_granule = None
+
+        # =====================================================================
+        # GAP JUNCTIONS (Inferior Olive Synchronization)
+        # =====================================================================
+        # IO neurons are densely coupled via gap junctions, creating synchronized
+        # complex spikes across multiple Purkinje cells. This is critical for
+        # coordinated motor learning across cerebellar modules.
+        #
+        # We use the parallel fiber weights (or granule→Purkinje weights if enhanced)
+        # to infer functional neighborhoods: Purkinje cells receiving similar inputs
+        # likely receive error signals from neighboring IO neurons.
+        self.gap_junctions_io: Optional[GapJunctionCoupling] = None
+        if self.cerebellum_config.gap_junctions_enabled:
+            from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
+
+            gap_config = GapJunctionConfig(
+                enabled=True,
+                coupling_strength=self.cerebellum_config.gap_junction_strength,
+                connectivity_threshold=self.cerebellum_config.gap_junction_threshold,
+                max_neighbors=self.cerebellum_config.gap_junction_max_neighbors,
+                interneuron_only=False,  # IO neurons are not interneurons (glutamatergic)
+            )
+
+            # Use parallel fiber weights for neighborhood inference
+            # IO neurons projecting to Purkinje cells with similar inputs are anatomically close
+            # Compute pairwise cosine similarity between Purkinje weight patterns
+            # weights shape: [n_output, n_input] → each row is a Purkinje cell's input pattern
+            weights_norm = torch.nn.functional.normalize(self.synaptic_weights["default"], p=2, dim=1)
+            similarity_matrix = weights_norm @ weights_norm.T  # [n_output, n_output]
+
+            self.gap_junctions_io = GapJunctionCoupling(
+                n_neurons=config.n_output,
+                afferent_weights=similarity_matrix,  # [n_output, n_output] similarity matrix
+                config=gap_config,
+                interneuron_mask=None,  # All IO neurons participate
+                device=device,
+            )
 
     def _initialize_weights_tensor(self, n_output: int, n_input: int) -> torch.nn.Parameter:
         """Initialize weights tensor (no longer part of LearnableComponent pattern)."""
@@ -993,6 +1066,37 @@ class Cerebellum(NeuralRegion):
         error = self.climbing_fiber.compute_error(output_spikes.float(), target.float())
         # error is already 1D from compute_error()
 
+        # ======================================================================
+        # GAP JUNCTION SYNCHRONIZATION (Inferior Olive)
+        # ======================================================================
+        # IO neurons synchronize error signals via gap junctions (<1ms coupling).
+        # This creates synchronized complex spikes across related Purkinje cells,
+        # coordinating learning in multiple cerebellar modules.
+        #
+        # Biological rationale:
+        # - IO neurons with similar error patterns are anatomically close
+        # - Gap junctions synchronize their firing to create simultaneous
+        #   complex spikes in multiple Purkinje cells
+        # - This coordinates motor learning across cerebellar regions
+        #
+        # We model IO membrane potential as proportional to error magnitude
+        # (larger errors → higher membrane potential → stronger complex spikes)
+        if self.gap_junctions_io is not None:
+            # Use error as proxy for IO membrane potential
+            # IO neurons fire complex spikes proportional to error magnitude
+            io_membrane = error.abs()  # [n_output]
+
+            # Apply gap junction coupling to synchronize neighboring IO neurons
+            coupled_membrane = self.gap_junctions_io(io_membrane)  # [n_output]
+
+            # Preserve error sign but use synchronized magnitude
+            # This makes neighboring Purkinje cells receive similar error magnitudes
+            # while maintaining whether error was positive or negative
+            error = torch.sign(error) * coupled_membrane
+
+            # Store magnitude only for state tracking (coupled_membrane is signed)
+            self._io_membrane = coupled_membrane.abs()
+
         if error.abs().max() < cfg.error_threshold:
             return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
 
@@ -1103,6 +1207,10 @@ class Cerebellum(NeuralRegion):
 
         # Reset subsystems (trace manager handles its own traces)
         self._reset_subsystems('_trace_manager', 'climbing_fiber', 'stp_pf_purkinje', 'stp_mf_granule')
+
+        # Initialize IO membrane for gap junctions
+        if self.gap_junctions_io is not None:
+            self._io_membrane = torch.zeros(self.config.n_output, device=self.device)
 
     def grow_input(
         self,
@@ -1310,6 +1418,10 @@ class Cerebellum(NeuralRegion):
         cf_state = self.climbing_fiber.get_state()
         climbing_error = cf_state.get("error", torch.zeros(self.config.n_output, device=self.device))
 
+        # Get IO membrane (gap junction coupling state)
+        # If gap junctions are disabled, io_membrane will be None
+        io_mem = self._io_membrane
+
         return CerebellumState(
             # Traces
             input_trace=self.input_trace.clone(),
@@ -1318,6 +1430,7 @@ class Cerebellum(NeuralRegion):
 
             # Error signal
             climbing_fiber_error=climbing_error.clone(),
+            io_membrane=io_mem.clone() if io_mem is not None else None,
 
             # Classic neuron state
             v_mem=v_mem.clone() if v_mem is not None else None,
@@ -1355,6 +1468,14 @@ class Cerebellum(NeuralRegion):
 
         # Restore climbing fiber error
         self.climbing_fiber.error.copy_(state.climbing_fiber_error.to(self.device))
+
+        # Restore IO membrane (gap junction state) - backward compatible
+        # Old checkpoints won't have io_membrane field
+        if state.io_membrane is not None:
+            self._io_membrane = state.io_membrane.to(self.device)
+        elif self.gap_junctions_io is not None:
+            # Initialize for new gap junction module if not in checkpoint
+            self._io_membrane = torch.zeros(self.config.n_output, device=self.device)
 
         # Restore classic neuron state (if not using enhanced microcircuit)
         if not self.use_enhanced and self.neurons is not None:
