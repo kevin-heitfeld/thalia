@@ -143,7 +143,6 @@ class ReplayEngine(nn.Module):
         self,
         episode: Episode,
         pattern_processor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
-        gating_fn: Optional[Callable[[int], float]] = None,
         gamma_phase: float = 0.0,
     ) -> ReplayResult:
         """Replay an episode with time compression.
@@ -156,9 +155,6 @@ class ReplayEngine(nn.Module):
             pattern_processor: Function to process each pattern
                                (e.g., lambda p: hippocampus.forward(p, phase=DELAY))
                                If None, patterns are returned as-is
-            gating_fn: Function to compute gating for each slot
-                       (e.g., lambda slot: get_gamma_gating(slot))
-                       If None, no gating applied
             gamma_phase: Current gamma phase from brain's OscillatorManager (radians [0, 2π])
 
         Returns:
@@ -170,7 +166,6 @@ class ReplayEngine(nn.Module):
             return self._replay_sequence(
                 episode.sequence,
                 pattern_processor,
-                gating_fn,
                 gamma_phase,
             )
         else:
@@ -181,7 +176,6 @@ class ReplayEngine(nn.Module):
         self,
         sequence: List[torch.Tensor],
         pattern_processor: Optional[Callable],
-        gating_fn: Optional[Callable],
         gamma_phase: float,
     ) -> ReplayResult:
         """Replay a sequence using continuous gamma phase modulation.
@@ -193,7 +187,6 @@ class ReplayEngine(nn.Module):
         Args:
             sequence: List of patterns to replay
             pattern_processor: Optional function to process each pattern
-            gating_fn: DEPRECATED - kept for backward compatibility but not used
             gamma_phase: Current gamma phase in radians [0, 2π]
         """
         import math

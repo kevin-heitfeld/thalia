@@ -1978,7 +1978,6 @@ class TrisynapticHippocampus(NeuralRegion):
         result = self.replay_engine.replay(
             episode=episode,
             pattern_processor=process_pattern,
-            gating_fn=None,  # No longer used (kept for backward compatibility)
             gamma_phase=self._gamma_phase,  # From brain's OscillatorManager
         )
 
