@@ -370,7 +370,7 @@ class TestStrategyComposition:
 class TestRegionIntegration:
     """Test strategies integrated with actual brain regions."""
 
-    @pytest.mark.parametrize("device", ["cpu"])  # TODO: Fix CUDA device handling
+    @pytest.mark.parametrize("device", ["cpu", "cuda"])
     def test_prefrontal_uses_stdp_strategy(self, device):
         """Test Prefrontal region uses STDPStrategy correctly."""
         config = PrefrontalConfig(
