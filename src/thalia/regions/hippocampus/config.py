@@ -213,20 +213,21 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     theta_reset_fraction: float = 0.5    # How much to decay (0=none, 1=full)
 
     # =========================================================================
-    # GAMMA SLOTS (Theta-Gamma Coupling)
+    # THETA-GAMMA COUPLING (Phase Coding - EMERGENT)
     # =========================================================================
-    # Note: Theta-gamma coupling itself (frequency, strength) is handled by
-    # the centralized OscillatorManager. These parameters control how the
-    # hippocampus uses the gamma oscillation for working memory.
-    gamma_n_slots: int = 7                # Working memory slots per theta cycle
-    gamma_gating_strength: float = 0.5    # How much gamma gates CA3 activity
+    # Note: Theta-gamma coupling (frequency, strength) is handled by the
+    # centralized OscillatorManager. Phase preferences EMERGE from:
+    # 1. Synaptic delays (different neurons receive inputs at different times)
+    # 2. STDP (neurons strengthen connections at their preferred phase)
+    # 3. Dendritic integration (~15ms window naturally filters by timing)
+    #
+    # Working memory capacity = gamma_freq / theta_freq (~40Hz / 8Hz ≈ 5-7 slots)
+    # This emerges automatically - no hardcoded slots needed!
 
-    # Slot mode determines how items are assigned to gamma slots:
-    # - "item": Each forward() call advances to next slot (position-based)
-    #           Best for discrete token sequences where timing is variable
-    # - "time": Slot determined by oscillator phase (time-based)
-    #           Best for continuous input or replay where timing matters
-    gamma_slot_mode: str = "item"  # "item" or "time"
+    # Phase diversity initialization: adds timing jitter to initial weights
+    # This seeds the emergence of phase preferences (otherwise all neurons identical)
+    phase_diversity_init: bool = True     # Initialize weights with timing diversity
+    phase_jitter_std_ms: float = 5.0      # Std dev of timing jitter (0-10ms)
 
     # =========================================================================
     # HINDSIGHT EXPERIENCE REPLAY (HER)

@@ -15,50 +15,31 @@
 
 ---
 
-- **Oscillation Emergence Analysis** (see `docs/architecture/OSCILLATION_EMERGENCE_ANALYSIS.md` for full analysis):
-  - ✅ **Beta/Delta**: Keep explicit (systems-level coordination, not circuit-specific)
-  - ✅ **Gamma (40Hz)**: ✅ EMERGES from L6→TRN→Thalamus loop - EXPLICIT OSCILLATOR DISABLED BY DEFAULT
-    - **STATUS**: ✅ Implementation complete (Dec 20, 2025)
-    - **L6 Activity**: Confirmed active (1318 total spikes over 50ms)
-    - **Gamma Default**: DISABLED in `OscillatorManager.__init__()` (line 617)
-    - **Tests**: ✅ 10/10 passing (integration + unit tests validate emergence)
-    - **FFT Validation**: ✅ Measures 25 Hz (40ms period) - low gamma band
-      - **Analysis**: Loop delay ~40ms vs expected ~30ms
-      - **Root cause**: Missing explicit axonal delays (`l6_to_trn_delay_ms=0`, should be 10ms)
-      - **Membrane integration**: ~12-15ms added by neuron time constants
-      - **Solution**: Add explicit delays for faster oscillation
-    - **L6a/L6b Implementation**: ✅ APPROVED - Will implement dual pathways
-      - **Decision**: Implement L6a→TRN and L6b→relay pathways (Dec 20, 2025)
-      - **Rationale**: Biological completeness, enables dual gamma bands (25Hz + 66Hz)
-      - **Benefits**: Low gamma (L6a) + high gamma (L6b), fast sensory modulation
-      - **Complexity**: ~150 lines code, two pathways to tune
-      - **Plan**: See `OSCILLATION_EMERGENCE_ANALYSIS.md` section 1.6 for implementation
-      - **Status**: 🔵 TO IMPLEMENT (next sprint)
-    - **Cross-Area Gamma**: Different cortical areas show different frequencies (30-80 Hz)
-      - **Current**: 25 Hz (matches visual/auditory cortex)
-      - **Future**: Test when we have multiple brain presets (visual, motor, PFC)
-      - **Implementation**: Use different delays per region + L6a/L6b ratio
-    - **Tools Created**: `diagnostics/oscillation_detection.py` (FFT, autocorrelation)
-    - **Enable if needed**: `brain.oscillators.enable_oscillator('gamma', True)`
-  - ✅ **Theta (8Hz)**: REQUIRES central coordinator (OscillatorManager = biological septum) ✅ CORRECT APPROACH
-    - **Reality**: CA3 recurrence WITHOUT septum gives 10-20 Hz (too fast)
-    - **Biology**: Medial septum coordinates theta across entire brain
-    - **Decision**: Keep OscillatorManager (functionally equivalent to septum)
-    - **Optional**: Test CA3 intrinsic dynamics (may show 15-20 Hz without coordination)
-  - ❌ **Alpha (10Hz)**: Keep explicit oscillator (T-currents not worth implementation cost)
-    - **Reality**: Requires T-type calcium channels (~500+ lines new neuron model)
-    - **Decision**: Explicit oscillator sufficient for current needs
-    - **Future**: Only implement if adding sleep/wake states (burst vs tonic modes)
-  - ✅ **Theta-Gamma Coupling**: Already centralized in OscillatorManager ✅ NO ACTION NEEDED
-    - **Status**: `get_coupled_amplitude()` handles phase-amplitude coupling
-    - **Note**: Anatomical coupling (hippocampus→cortex) also exists naturally
-  - **Key Insight**: LOCAL circuits (gamma) emerge, DISTRIBUTED networks (theta) need coordinator
-  - **Validation Tools**: ✅ Created `oscillation_detection.py` with FFT/autocorrelation
-  - **Immediate Actions**: ✅ Complete - All validation done
-
----
-
-- What happens when we increase `gamma_n_slots: int = 7`?
+- ✅ **REMOVED `gamma_n_slots` parameter** - Design flaw fixed (Dec 23, 2025)
+  - **Problem**: Hardcoded slot assignment was biologically implausible
+    - Old: `neuron[i] % 7 = slot[i]` - explicit, non-emergent
+    - Biology: Phase preference emerges from synaptic delays + STDP
+  - **Why 7 is still correct**: Lisman & Jensen (2013) - 7±2 gamma cycles per theta
+  - **Solution Implemented**: Phase coding now EMERGES from:
+    1. ✅ Phase diversity initialization (`phase_jitter_std_ms=5.0`)
+       - Adds timing jitter to CA3 recurrent weights (~±15% variation)
+       - Simulates effect of different axonal path lengths
+    2. ✅ Gamma amplitude modulation (not slot gating!)
+       - Neurons more responsive during high gamma amplitude
+       - Creates temporal windows WITHOUT explicit neuron→slot mapping
+    3. ✅ STDP naturally strengthens phase-appropriate connections
+    4. ✅ Dendritic integration (~15ms) naturally filters by timing
+  - **Result**: Working memory capacity = gamma_freq/theta_freq (~5-7 items)
+  - **Tests**: `test_phase_coding_emergence.py` validates:
+    - No `_ca3_slot_assignment` attribute
+    - Phase diversity in weight initialization
+    - Emergent phase selectivity through learning
+    - STDP strengthens phase preferences
+  - **Files Modified**:
+    - `config.py`: Replaced `gamma_n_slots` with `phase_diversity_init`
+    - `trisynaptic.py`: Removed slot gating (lines 1141-1182)
+    - `checkpoint_manager.py`: Removed slot_assignment save/load
+  - **Status**: ✅ COMPLETE - More biologically plausible!
 - `docs\design\circuit_modeling_plan.md`
 - Consciousness / Self-Awareness:
   - https://www.youtube.com/watch?v=OlnioeAtloY

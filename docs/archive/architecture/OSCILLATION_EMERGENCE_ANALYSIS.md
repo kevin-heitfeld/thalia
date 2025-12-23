@@ -2,7 +2,7 @@
 
 **Date**: December 20, 2025
 **Status**: ✅ IMPLEMENTED - Gamma Disabled by Default
-**Related**: `TODO.md`, `L6_TRN_FEEDBACK_LOOP.md`
+**Related**: `L6_TRN_FEEDBACK_LOOP.md`
 
 ---
 

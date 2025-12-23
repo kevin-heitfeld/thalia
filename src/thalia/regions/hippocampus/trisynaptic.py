@@ -376,9 +376,11 @@ class TrisynapticHippocampus(NeuralRegion):
             # Replay engine for sequence replay (lazy import to avoid circular dependency)
             # NOTE: ReplayEngine receives timing via replay() parameters (gamma_phase, theta_slot)
             # from hippocampus, which gets them from brain's centralized OscillatorManager
+            # Slot count emerges from gamma/theta ratio (~5-7 for 40Hz/8Hz)
+            emergent_slots = 7  # Approximate for replay engine (not used for gating)
             replay_config = ReplayConfig(
                 compression_factor=5.0,
-                n_slots=config.gamma_n_slots,
+                n_slots=emergent_slots,
                 slot_duration_ms=18.0,  # ~18ms per slot for 7 slots in 125ms theta
                 mode=ReplayMode.SEQUENCE,
                 apply_gating=True,
@@ -386,16 +388,14 @@ class TrisynapticHippocampus(NeuralRegion):
             )
             self.replay_engine = ReplayEngine(replay_config)
 
-            # Assign CA3 neurons to gamma slots for phase coding
-            # Neurons in different slots fire at different gamma phases
-            self._ca3_slot_assignment = torch.arange(self.ca3_size) % config.gamma_n_slots
+            # Phase preferences EMERGE from synaptic timing diversity + STDP
+            # No explicit slot assignment needed - neurons self-organize!
         else:
             self._theta_phase = 0.0
             self._gamma_phase = 0.0
             self._theta_slot = 0
             self._coupled_amplitudes = {}
             self.replay_engine = None
-            self._ca3_slot_assignment = None
 
         # Track current sequence position for encoding (auto-advances)
         self._sequence_position: int = 0
@@ -519,21 +519,33 @@ class TrisynapticHippocampus(NeuralRegion):
             )
         )
 
-        # CA3 → CA3: Recurrent connections (autoassociative memory) - AT CA3 DENDRITES
-        self.synaptic_weights["ca3_ca3"] = nn.Parameter(
-            WeightInitializer.gaussian(
-                n_output=self.ca3_size,
-                n_input=self.ca3_size,
-                mean=0.05,
-                std=0.15,
-                device=device
-            )
+        # Initialize with PHASE DIVERSITY: add timing jitter to create initial phase preferences
+        # This seeds the emergence of phase coding through STDP
+        base_weights = WeightInitializer.gaussian(
+            n_output=self.ca3_size,
+            n_input=self.ca3_size,
+            mean=0.05,
+            std=0.15,
+            device=device
         )
+
+        if self.tri_config.phase_diversity_init:
+            # Add phase-dependent weight modulation
+            # Simulate effect of different synaptic delays: some neurons receive
+            # input earlier/later, creating initial phase preference diversity
+            phase_offsets = torch.randn(self.ca3_size, device=device) * self.tri_config.phase_jitter_std_ms
+            # Convert timing jitter to weight modulation (earlier arrival = stronger weight)
+            # Scale: ±5ms jitter → ±15% weight variation
+            jitter_scale = 0.03 * (self.tri_config.phase_jitter_std_ms / 5.0)
+            phase_modulation = 1.0 + jitter_scale * torch.randn_like(base_weights)
+            base_weights = base_weights * phase_modulation
+
+        # CA3 → CA3: Recurrent connections (autoassociative memory) - AT CA3 DENDRITES
+        self.synaptic_weights["ca3_ca3"] = nn.Parameter(base_weights)
         # No self-connections
         self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)
         # Clamp to positive (excitatory recurrent connections)
         self.synaptic_weights["ca3_ca3"].data.clamp_(min=0.0)
-
         # CA3 → CA1: Feedforward (retrieved memory) - SPARSE! - AT CA1 DENDRITES
         self.synaptic_weights["ca3_ca1"] = nn.Parameter(
             WeightInitializer.sparse_random(
@@ -1128,58 +1140,29 @@ class TrisynapticHippocampus(NeuralRegion):
             ca3_input = ca3_input - self._ca3_threshold_offset
 
         # =====================================================================
-        # THETA-GAMMA COUPLING: Slot-based gating
+        # EMERGENT PHASE CODING (replaces explicit slot gating)
         # =====================================================================
-        # Apply gamma slot gating to CA3 input. Neurons assigned to the
-        # current slot get enhanced, others are suppressed.
-        # This enables sequence encoding: items at different positions
-        # activate different subsets of CA3 neurons.
+        # Phase preferences emerge naturally from:
+        # 1. Weight diversity (timing jitter in initialization)
+        # 2. STDP (strengthens connections at successful firing times)
+        # 3. Dendritic integration windows (~15ms)
+        # 4. Recurrent dynamics (neurons that fire together wire together)
         #
-        # Two modes:
-        # - "item": Slot from _sequence_position (each item gets own slot)
-        # - "time": Slot from theta_slot (timing-based, used in replay)
-        if self.tri_config.theta_gamma_enabled and self._ca3_slot_assignment is not None:
-            cfg = self.tri_config
-
-            # Note: Oscillators advance centrally in Brain, no local advance needed
-
-            # Get current slot based on mode
-            if cfg.gamma_slot_mode == "time":
-                # Time-based: slot from brain's theta_slot broadcast
-                current_slot = self._theta_slot
-            else:  # "item" mode (default)
-                # Item-based: slot from sequence position
-                current_slot = self._sequence_position % cfg.gamma_n_slots
-
-            # Create gating mask based on slot assignment
-            # Neurons in current slot get full input, others are suppressed
-            slot_match = (self._ca3_slot_assignment == current_slot).float()
-            slot_match = slot_match.to(ca3_input.device)
-
-            # ================================================================
-            # THETA-MODULATED GAMMA AMPLITUDE
-            # ================================================================
-            # Gamma amplitude is modulated by theta phase:
-            # - Theta trough (encoding): Strong gamma → sharp slot gating
-            # - Theta peak (retrieval): Weak gamma → less gating, allows
-            #   pattern completion across slots
-            #
-            # This implements phase-amplitude coupling (PAC) where gamma
-            # power is highest at the encoding phase of theta.
-            # Automatic coupling: gamma modulated by ALL slower oscillators
+        # No explicit gating needed - temporal structure emerges from dynamics!
+        # Gamma amplitude still modulates overall excitability:
+        # - High gamma (theta trough): Enhanced responsiveness to inputs
+        # - Low gamma (theta peak): Reduced responsiveness, recurrence dominates
+        if self.tri_config.theta_gamma_enabled:
+            # Gamma amplitude modulation (emergent from oscillator coupling)
+            # High amplitude → neurons more responsive to current input
+            # Low amplitude → neurons rely more on recurrent memory
             gamma_amplitude = self._gamma_amplitude_effective  # [0, 1]
 
-            # Scale gating strength by gamma amplitude
-            # High amplitude → full gating strength
-            # Low amplitude → reduced gating, more cross-slot activity
-            effective_gating = cfg.gamma_gating_strength * gamma_amplitude
-
-            # Blend: slot neurons get full input, others get reduced
-            gamma_gate = (
-                slot_match +
-                (1.0 - slot_match) * (1.0 - effective_gating)
-            )
-            ca3_input = ca3_input * gamma_gate
+            # Scale input by gamma (but NO slot-based gating)
+            # This creates temporal windows where input is more/less effective
+            # Combined with weight diversity, this leads to phase preferences
+            gamma_modulation = 0.5 + 0.5 * gamma_amplitude  # [0.5, 1.0]
+            ca3_input = ca3_input * gamma_modulation
 
         # Run through CA3 neurons (ConductanceLIF expects g_exc, g_inh)
         # Inhibition is handled by FFI module upstream

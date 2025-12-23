@@ -186,7 +186,6 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
             "sequence_position": h._sequence_position,
             "ca3_threshold_offset": h._ca3_threshold_offset.detach().clone() if h._ca3_threshold_offset is not None else None,
             "ca3_activity_history": h._ca3_activity_history.detach().clone() if h._ca3_activity_history is not None else None,
-            "ca3_slot_assignment": h._ca3_slot_assignment.detach().clone() if h._ca3_slot_assignment is not None else None,
             "dg_ca3_delay_buffer": h._dg_ca3_delay_buffer.detach().clone() if h._dg_ca3_delay_buffer is not None else None,
             "dg_ca3_delay_pointer": h._dg_ca3_delay_ptr,
             "ca3_ca1_delay_buffer": h._ca3_ca1_delay_buffer.detach().clone() if h._ca3_ca1_delay_buffer is not None else None,
@@ -372,8 +371,6 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
             h._ca3_threshold_offset = region_state["ca3_threshold_offset"].to(h.device)
         if region_state["ca3_activity_history"] is not None:
             h._ca3_activity_history = region_state["ca3_activity_history"].to(h.device)
-        if region_state["ca3_slot_assignment"] is not None:
-            h._ca3_slot_assignment = region_state["ca3_slot_assignment"].to(h.device)
         if region_state["dg_ca3_delay_buffer"] is not None:
             h._dg_ca3_delay_buffer = region_state["dg_ca3_delay_buffer"].to(h.device)
             h._dg_ca3_delay_ptr = region_state["dg_ca3_delay_pointer"]
