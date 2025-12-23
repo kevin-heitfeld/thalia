@@ -5,7 +5,7 @@
 Port-based routing allows multi-layer regions to expose specific internal outputs for targeted connections. Instead of routing all outputs to all targets, ports enable biologically-accurate layer-specific connectivity patterns.
 
 **Why Ports?**
-- **Biological accuracy**: Cortex L2/3 → other cortex, L5 → striatum, L6 → thalamus
+- **Biological accuracy**: Cortex L2/3 → other cortex, L5 → striatum, L6a → TRN, L6b → relay
 - **Explicit routing**: Clear intent in architecture definitions
 - **Flexible connectivity**: Same region can have multiple projection types
 - **No manual slicing**: Builder handles output selection automatically
@@ -21,7 +21,7 @@ from thalia.core.brain_builder import BrainBuilder
 
 builder = BrainBuilder(global_config)
 
-# Add layered cortex (4 layers: L4, L2/3, L5, L6)
+# Add layered cortex (6 layers: L4, L2/3, L5, L6a, L6b)
 builder.add_component(
     "cortex", "layered_cortex",
     n_input=784,
@@ -29,13 +29,15 @@ builder.add_component(
     l4_size=128,
     l23_size=128,   # Cortico-cortical output
     l5_size=96,     # Subcortical output
-    l6_size=32,     # Corticothalamic feedback
+    l6a_size=16,    # CT type I → TRN (spatial attention)
+    l6b_size=16,    # CT type II → relay (gain modulation)
 )
 
 # Layer-specific routing with source_port
 builder.connect("cortex", "hippocampus", source_port="l23")  # Cortico-cortical
 builder.connect("cortex", "striatum", source_port="l5")      # Cortico-subcortical
-builder.connect("cortex", "thalamus", source_port="l6")      # Corticothalamic
+builder.connect("cortex", "thalamus", source_port="l6a", target_port="trn")  # CT type I → TRN
+builder.connect("cortex", "thalamus", source_port="l6b", target_port="relay")  # CT type II → relay
 ```
 
 **Without ports**, all connections would receive the concatenated output `[L2/3_spikes, L5_spikes]`, mixing projection types.
@@ -63,7 +65,8 @@ builder.connect("entorhinal", "hippocampus", target_port="ec_l3")
 **Available Ports**:
 - `"l23"` → Layer 2/3 (cortico-cortical connections)
 - `"l5"` → Layer 5 (cortico-subcortical connections)
-- `"l6"` → Layer 6 (corticothalamic feedback)
+- `"l6a"` → Layer 6a (CT type I → TRN, spatial attention, low gamma)
+- `"l6b"` → Layer 6b (CT type II → relay, gain modulation, high gamma)
 - `"l4"` → Layer 4 (rarely used externally)
 
 **Biological Projections**:
@@ -76,8 +79,9 @@ builder.connect("v1", "hippocampus", source_port="l23")
 builder.connect("motor_cortex", "striatum", source_port="l5")
 builder.connect("pfc", "thalamus", source_port="l5")
 
-# Corticothalamic feedback (L6 → thalamus TRN)
-builder.connect("cortex", "thalamus", source_port="l6", target_port="trn")
+# Corticothalamic feedback (dual pathways)
+builder.connect("cortex", "thalamus", source_port="l6a", target_port="trn")  # Spatial attention
+builder.connect("cortex", "thalamus", source_port="l6b", target_port="relay")  # Gain modulation
 ```
 
 **Default Output** (no port specified):
@@ -168,6 +172,10 @@ def _get_source_output_size(source_name: str, source_port: Optional[str]) -> int
         return config["l23_size"]
     elif source_port == "l5":
         return config["l5_size"]
+    elif source_port == "l6a":
+        return config["l6a_size"]
+    elif source_port == "l6b":
+        return config["l6b_size"]
     # ... etc
 ```
 
@@ -192,7 +200,7 @@ spec = ConnectionSpec(
 ```python
 def _get_source_output_size(self, source_name: str, source_port: Optional[str]) -> int:
     # ... existing code ...
-    
+
     # Add new region
     if source_spec.registry_name == "my_region":
         if source_port == "port_a":
@@ -205,11 +213,11 @@ def _get_source_output_size(self, source_name: str, source_port: Optional[str]) 
 ```python
 class MyRegion(NeuralComponent):
     """Multi-output region with port-based routing.
-    
+
     **Port-Based Routing**:
     - source_port="port_a" → Primary output
     - source_port="port_b" → Secondary output
-    
+
     Usage:
         >>> builder.connect("my_region", "target", source_port="port_a")
     """
@@ -248,7 +256,8 @@ builder.add_component(
     l4_size=128,
     l23_size=128,
     l5_size=96,
-    l6_size=32,
+    l6a_size=16,
+    l6b_size=16,
 )
 
 # ❌ Missing layer sizes (will raise error during connection)
@@ -261,7 +270,7 @@ Make target port expectations clear:
 ```python
 class MyRegion(NeuralComponent):
     """Region with feedforward + modulatory inputs.
-    
+
     **Target Ports**:
     - target_port="feedforward" → Counted in n_input (default)
     - target_port="modulation" → Sets modulation_size config param
@@ -293,9 +302,9 @@ builder.add_component("pfc", "layered_cortex", ...)
 builder.connect("v1", "v2", source_port="l23")
 builder.connect("v2", "pfc", source_port="l23")
 
-# Feedback: L6 → previous cortex (top-down modulation)
-builder.connect("v2", "v1", source_port="l6", target_port="top_down")
-builder.connect("pfc", "v2", source_port="l6", target_port="top_down")
+# Feedback: L6a → previous cortex (top-down modulation via TRN)
+builder.connect("v2", "v1", source_port="l6a", target_port="top_down")
+builder.connect("pfc", "v2", source_port="l6a", target_port="top_down")
 ```
 
 ### Pattern 2: Cortico-Basal Ganglia Loop
@@ -340,7 +349,7 @@ builder.connect("hippocampus", "pfc")
 print(region.__doc__)  # Look for "Port-Based Routing" section
 ```
 
-### Error: "Must specify all layer sizes (l4_size, l23_size, l5_size, l6_size)"
+### Error: "Must specify all layer sizes (l4_size, l23_size, l5_size, l6a_size, l6b_size)"
 
 **Cause**: Using `source_port` with cortex without explicit layer sizes.
 
@@ -352,7 +361,8 @@ builder.add_component(
     l4_size=128,
     l23_size=128,
     l5_size=96,
-    l6_size=32,
+    l6a_size=16,
+    l6b_size=16,
 )
 ```
 
@@ -387,4 +397,4 @@ print(builder._connections)
 **Implementation**:
 - BrainBuilder: Connection orchestration with port routing
 - AxonalProjection: Pure spike routing (no weights)
-- LayeredCortex: 4-layer architecture with biological projections
+- LayeredCortex: 6-layer architecture with biological projections (L4, L2/3, L5, L6a, L6b)

@@ -1,7 +1,7 @@
 # Constants Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 15:50:40
+> Last updated: 2025-12-23 17:33:00
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all module-level constants with biological context, ranges, and scientific references.
@@ -189,7 +189,7 @@ LTD amplitude for cortical STDP (depression when pre follows post).
 
 LTP amplitude for cortical STDP (potentiation when post follows pre).
 
-**References**: Bi & Poo (1998), Clopath et al. (2010)
+**References**: Clopath et al. (2010), Bi & Poo (1998)
 
 **Source**: `[`thalia/regulation/learning_constants.py`](../../src/thalia/regulation/learning_constants.py)`
 

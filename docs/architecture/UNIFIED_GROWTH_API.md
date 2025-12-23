@@ -47,7 +47,7 @@ component.grow_output(n_new: int)
 
 ### ✅ LayeredCortex
 - `grow_input()`: Expands `w_input_l4` columns for upstream growth
-- `grow_output()`: Distributes growth across L4/L2/3/L5 maintaining layer ratios
+- `grow_output()`: Distributes growth across L4/L2/3/L5/L6a/L6b maintaining layer ratios
 - **Includes**: `w_l23_inhib`, `l23_phase_prefs`, STP module expansion
 
 ### ✅ TrisynapticHippocampus
@@ -68,12 +68,15 @@ component.grow_output(n_new: int)
 ### Cortex Layer Ratios
 
 LayeredCortex grows neurons **proportionally across layers** based on ratios:
-- Default ratios: L4=1.0, L2/3=1.5, L5=1.0
+- Default ratios: L4=1.0, L2/3=1.5, L5=1.0, L6a=0.25, L6b=0.25
 - Calling `grow_output(30)` actually adds:
   - L4: 30 neurons
   - L2/3: 45 neurons
   - L5: 30 neurons
+  - L6a: 7-8 neurons
+  - L6b: 7-8 neurons
   - **Total output** (L2/3 + L5): **75** (not 30!)
+  - **L6a/L6b**: Available via port routing
 
 This is **correct behavior** - the cortex maintains architectural proportions.
 
@@ -137,7 +140,7 @@ v1 = LayeredCortex(
 v1.grow_input(10)  # Expands w_input_l4: [L4, 128] → [L4, 138]
 
 # V1 itself expands (will add ~95 to output due to layer ratios)
-v1.grow_output(40)  # Adds L4:40, L2/3:60, L5:40 → output +100
+v1.grow_output(40)  # Adds L4:40, L2/3:60, L5:40, L6a:10, L6b:10 → output +100
 ```
 
 ### End-to-End Growth with GrowthCoordinator

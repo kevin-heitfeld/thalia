@@ -1,7 +1,7 @@
 # Compute Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 15:50:40
+> Last updated: 2025-12-23 17:33:00
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all `compute_*` utility functions that implement biological computations throughout the Thalia codebase.

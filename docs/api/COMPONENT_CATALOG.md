@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 15:50:40
+> Last updated: 2025-12-23 17:33:00
 > Generated from: `scripts/generate_api_docs.py`
 
 ![Components](https://img.shields.io/badge/Regions-8-blue) ![Pathways](https://img.shields.io/badge/Pathways-4-green) ![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)
@@ -178,7 +178,7 @@ Total: **8** regions
 
 ### `cortex`
 
-**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L134)
+**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L152)
 
 **Aliases**: `layered_cortex`
 

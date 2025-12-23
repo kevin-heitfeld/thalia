@@ -224,6 +224,8 @@ class PredictiveCortexState(RegionState):
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None
+    l6a_spikes: Optional[torch.Tensor] = None
+    l6b_spikes: Optional[torch.Tensor] = None
 
     # Predictive coding signals
     prediction: Optional[torch.Tensor] = None
@@ -273,6 +275,8 @@ class PredictiveCortex(NeuralComponent):
         self.state.l4_spikes = self.cortex.state.l4_spikes
         self.state.l23_spikes = self.cortex.state.l23_spikes
         self.state.l5_spikes = self.cortex.state.l5_spikes
+        self.state.l6a_spikes = self.cortex.state.l6a_spikes
+        self.state.l6b_spikes = self.cortex.state.l6b_spikes
 
         # Compute own state
         self.state.prediction, self.state.error = self.prediction_layer(...)
@@ -411,11 +415,15 @@ class LayeredCortexState(RegionState):
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None
+    l6a_spikes: Optional[torch.Tensor] = None
+    l6b_spikes: Optional[torch.Tensor] = None
 
     # Layer voltages
     l4_voltage: Optional[torch.Tensor] = None
     l23_voltage: Optional[torch.Tensor] = None
     l5_voltage: Optional[torch.Tensor] = None
+    l6a_voltage: Optional[torch.Tensor] = None
+    l6b_voltage: Optional[torch.Tensor] = None
 
     # Plasticity signals
     eligibility: Optional[torch.Tensor] = None

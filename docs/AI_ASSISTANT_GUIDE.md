@@ -306,7 +306,7 @@ grep_search(query="source_port|target_port", isRegexp=True, includePattern="src/
 ```
 
 **Port Types:**
-- **Source Ports**: Layer-specific outputs (cortex: 'l23', 'l5', 'l4')
+- **Source Ports**: Layer-specific outputs (cortex: 'l23', 'l5', 'l6a', 'l6b', 'l4')
 - **Target Ports**: Input types ('feedforward', 'top_down', 'ec_l3', 'pfc_modulation')
 
 **How It Works:**

@@ -12,8 +12,8 @@ Architecture (based on canonical cortical microcircuit):
     ┌───────────────────────────────────┐
     │          LAYER 2/3                │ ← Superficial pyramidal cells
     │   (Cortico-cortical output)       │ → To other cortical areas
-    │   - Receives from L4              │ → Attention pathway target
-    │   - Lateral recurrent connections │
+    │   - Receives from L4              │ → Gamma attention gating
+    │   - Lateral recurrent connections │ → Gap junctions for sync
     │   - Top-down feedback target      │
     └───────────────┬───────────────────┘
                     │
@@ -31,18 +31,36 @@ Architecture (based on canonical cortical microcircuit):
     │   - Receives from L2/3            │ → Motor/action-related output
     │   - Different output pathway      │
     │   - Burst-capable neurons         │
+    └───────────────┬───────────────────┘
+                    │
+    ┌───────────────┴───────────────────┐
+    │          LAYER 6a                 │ ← CT Type I (low gamma)
+    │   (Corticothalamic → TRN)         │ → Spatial attention via TRN
+    │   - Receives from L2/3            │ → Inhibitory modulation
+    │   - Projects to thalamic TRN      │
+    │   - Sparse, low-gamma firing      │
+    └───────────────────────────────────┘
+                    │
+    ┌───────────────┴───────────────────┐
+    │          LAYER 6b                 │ ← CT Type II (high gamma)
+    │   (Corticothalamic → Relay)       │ → Fast gain modulation
+    │   - Receives from L2/3            │ → Direct relay excitation
+    │   - Projects to thalamic relay    │
+    │   - Dense, high-gamma firing      │
     └───────────────────────────────────┘
 
-FILE ORGANIZATION (~1940 lines)
+FILE ORGANIZATION (~2000 lines)
 ================================
 Lines 1-150:     Module docstring, imports, class registration
-Lines 151-350:   __init__() and layer initialization
+Lines 151-350:   __init__() and layer initialization (L4/L2/3/L5/L6a/L6b)
 Lines 351-500:   L4 forward pass (input processing)
 Lines 501-700:   L2/3 forward pass (recurrent processing)
 Lines 701-850:   L5 forward pass (output generation)
-Lines 851-1000:  Learning (BCM + STDP for inter-layer connections)
-Lines 1001-1150: Growth and homeostasis
-Lines 1151-1940: Diagnostics and utility methods
+Lines 851-950:   L6a forward pass (corticothalamic type I → TRN)
+Lines 951-1050:  L6b forward pass (corticothalamic type II → relay)
+Lines 1051-1200: Learning (BCM + STDP for inter-layer connections)
+Lines 1201-1350: Growth and homeostasis
+Lines 1351-2000: Diagnostics and utility methods
 
 QUICK NAVIGATION
 ================
@@ -140,6 +158,8 @@ class LayeredCortex(NeuralRegion):
     - **L4**: Input layer - receives thalamic/sensory input, feedforward processing
     - **L2/3**: Processing layer - recurrent computation, outputs to other cortex
     - **L5**: Output layer - projects to subcortical structures (striatum, etc.)
+    - **L6a**: CT Type I - projects to thalamic TRN (spatial attention, low gamma)
+    - **L6b**: CT Type II - projects to thalamic relay (gain modulation, high gamma)
 
     **Key Insight**:
     Output to next cortical area comes from a DIFFERENT layer (L2/3) than the
@@ -148,13 +168,15 @@ class LayeredCortex(NeuralRegion):
 
     **Information Flow**:
     1. External input → L4 (feedforward processing)
-    2. L4 → L2/3 (local integration)
-    3. L2/3 → L2/3 (recurrent processing, lateral connections)
-    4. L2/3 → L5 (deep projection)
-    5. L2/3 → L6 (corticothalamic feedback projection)
-    6. L2/3 → Other cortex (cortico-cortical output)
-    7. L5 → Subcortical (striatum, thalamus, brainstem)
-    8. L6 → Thalamus TRN (attentional feedback loop)
+    2. L4 → L2/3 (local integration with axonal delays)
+    3. L2/3 → L2/3 (recurrent processing with STP and gap junctions)
+    4. L2/3 → L5 (deep projection with axonal delays)
+    5. L2/3 → L6a (corticothalamic type I with axonal delays)
+    6. L2/3 → L6b (corticothalamic type II with axonal delays)
+    7. L2/3 → Other cortex (cortico-cortical output)
+    8. L5 → Subcortical (striatum, thalamus, brainstem)
+    9. L6a → Thalamus TRN (spatial attention via inhibitory modulation)
+    10. L6b → Thalamus Relay (fast gain modulation via excitatory drive)
 
     **Learning Mechanisms**:
     - **Intra-layer**: BCM rule for homeostatic plasticity
@@ -165,13 +187,15 @@ class LayeredCortex(NeuralRegion):
     Concatenated [L2/3_spikes, L5_spikes] for routing:
     - First n_l23 neurons: Cortico-cortical pathway
     - Last n_l5 neurons: Subcortical pathway
-    - L6 spikes: Available via port routing (source_port="l6")
+    - L6a spikes: Available via port routing (source_port="l6a")
+    - L6b spikes: Available via port routing (source_port="l6b")
 
     **Port-Based Routing**:
     Access specific layers via ports in BrainBuilder.connect():
     - source_port="l23" → Cortico-cortical connections
     - source_port="l5" → Cortico-subcortical connections
-    - source_port="l6" → Corticothalamic feedback (TRN modulation)
+    - source_port="l6a" → Corticothalamic type I (TRN inhibitory modulation)
+    - source_port="l6b" → Corticothalamic type II (relay excitatory modulation)
 
     **Usage Example**:
 
@@ -182,8 +206,9 @@ class LayeredCortex(NeuralRegion):
             n_output=128,  # Total output size (L2/3 + L5)
             l4_size=64,    # Input layer
             l23_size=96,   # Processing/cortico-cortical output (1.5x)
-            l5_size=64,    # Subcortical output
-            l6_size=32,    # Corticothalamic feedback (0.5x)
+            l5_size=32,    # Subcortical output
+            l6a_size=16,   # CT type I → TRN (0.25x, sparse low-gamma)
+            l6b_size=16,   # CT type II → relay (0.25x, dense high-gamma)
         )
         cortex = LayeredCortex(config)
 
@@ -194,6 +219,10 @@ class LayeredCortex(NeuralRegion):
         l23_size = cortex.l23_size
         cortico_output = output[:l23_size]  # To other cortex
         subcortical_output = output[l23_size:]  # To striatum/thalamus
+
+        # Access L6 outputs via port routing
+        l6a_spikes = cortex.get_port_output("l6a")  # To TRN
+        l6b_spikes = cortex.get_port_output("l6b")  # To relay
 
     **Mixins Provide**:
 

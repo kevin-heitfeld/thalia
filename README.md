@@ -79,7 +79,7 @@ brain.deliver_reward(external_reward=1.0)
 ```mermaid
 graph TD
     A[Sensory Input] --> B[Thalamus]
-    B -->|5ms delay| C[Cortex L4→L2/3→L5]
+    B -->|5ms delay| C[Cortex L4→L2/3→L5→L6a/L6b]
     C -->|3ms| D[Hippocampus DG→CA3→CA1]
     C -->|5ms| E[Striatum D1/D2]
     C -->|3ms| F[Prefrontal Cortex]
@@ -88,6 +88,8 @@ graph TD
     E -->|6ms| G[Cerebellum]
     F -.->|Attention| C
     D -.->|Replay| C
+    C -.->|L6a TRN| B
+    C -.->|L6b Relay| B
 
     style C fill:#e1f5ff
     style D fill:#ffe1e1
@@ -112,7 +114,7 @@ graph TD
 - **Temporal Coordination**: Theta (8Hz), alpha (10Hz), gamma (40Hz) oscillations with cross-frequency coupling
 - **Planning Systems**: TD(λ) credit assignment, Dyna-style planning, hierarchical goals
 - **Memory Systems**: One-shot episodic (hippocampus), working memory (PFC), procedural (striatum)
-- **Circuit Modeling**: Laminar cortex (L4→L2/3→L5), trisynaptic hippocampus (DG→CA3→CA1), D1/D2 striatal pathways
+- **Circuit Modeling**: Laminar cortex (L4→L2/3→L5, L6a/L6b corticothalamic), trisynaptic hippocampus (DG→CA3→CA1), D1/D2 striatal pathways
 - **Clock-Driven Execution**: Regular timesteps (1ms) with biologically accurate axonal delays (1-20ms)
 
 ## Documentation
@@ -140,7 +142,7 @@ graph TD
 
 ### Implemented Features ✅
 - **Core Architecture**:
-  - Brain regions: Cortex (laminar L4→L2/3→L5), Hippocampus (DG→CA3→CA1), Striatum (D1/D2 pathways), PFC, Cerebellum (with gap junctions), Thalamus
+  - Brain regions: Cortex (6-layer L4→L2/3→L5→L6a/L6b), Hippocampus (DG→CA3→CA1), Striatum (D1/D2 pathways), PFC, Cerebellum (with gap junctions), Thalamus
   - AxonalProjection: Pure spike routing with CircularDelayBuffer delays
   - NeuralRegion: Base class with synaptic_weights dict at dendrites
 - **Learning & Plasticity**:
