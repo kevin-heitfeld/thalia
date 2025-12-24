@@ -81,7 +81,6 @@ from thalia.neuromodulation import compute_ne_gain, DA_BASELINE_STANDARD
 from thalia.regulation.learning_constants import LEARNING_RATE_STDP, WM_NOISE_STD_DEFAULT
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.learning import LearningStrategyRegistry, STDPConfig
-from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval, compute_oscillator_modulated_gain
 from thalia.regulation.oscillator_constants import (
@@ -364,7 +363,7 @@ class DopamineGatingSystem:
     author="Thalia Project",
     config_class=PrefrontalConfig,
 )
-class Prefrontal(LearningStrategyMixin, NeuralRegion):
+class Prefrontal(NeuralRegion):
     """Prefrontal cortex with dopamine-gated working memory.
 
     Implements:
@@ -1232,6 +1231,18 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         Args:
             state: PrefrontalState to restore
         """
+        # Use mixin helpers for common restoration
+        super().load_state(state)  # Restores: membrane, conductances, traces, neuromodulators
+
+        # PFC-specific state restoration
+        self._load_custom_state(state)
+
+    def _load_custom_state(self, state: PrefrontalState) -> None:
+        """Restore PFC-specific state components.
+
+        Args:
+            state: PrefrontalState to restore from
+        """
         # Restore basic state
         if state.spikes is not None:
             self.state.spikes = state.spikes.to(self.device).clone()
@@ -1246,9 +1257,7 @@ class Prefrontal(LearningStrategyMixin, NeuralRegion):
         if state.active_rule is not None:
             self.state.active_rule = state.active_rule.to(self.device).clone()
 
-        self.state.dopamine = state.dopamine
-        self.state.acetylcholine = state.acetylcholine
-        self.state.norepinephrine = state.norepinephrine
+        # Neuromodulators already restored by super().load_state() via _restore_neuromodulators()
 
         # Restore STP state
         if state.stp_recurrent_state is not None and self.stp_recurrent is not None:

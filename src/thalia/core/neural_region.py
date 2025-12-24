@@ -26,6 +26,8 @@ from thalia.components.synapses import WeightInitializer
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.mixins.resettable_mixin import ResettableMixin
+from thalia.mixins.state_loading_mixin import StateLoadingMixin
+from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
 from thalia.core.protocols.component import BrainComponentMixin
 
@@ -48,7 +50,7 @@ class LearningStrategy(Protocol):
         ...
 
 
-class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin):
+class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin, StateLoadingMixin, LearningStrategyMixin):
     """Base class for brain regions with biologically accurate synaptic inputs.
 
     This is a NEW hierarchy for v3.0 architecture, independent of the legacy
@@ -65,6 +67,8 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
     - GrowthMixin: Dynamic expansion (grow_input/grow_output)
     - ResettableMixin: State reset helpers
     - DiagnosticsMixin: Health monitoring and metrics
+    - StateLoadingMixin: Common state restoration (load_state with helpers)
+    - LearningStrategyMixin: Pluggable learning rules (STDP, BCM, three-factor, etc.)
 
     Regions in the new architecture:
     1. Own their synaptic weights (one weight matrix per input source)

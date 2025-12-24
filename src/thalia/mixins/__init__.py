@@ -11,6 +11,7 @@ Available Mixins:
 - DiagnosticCollectorMixin: Helper methods for consistent diagnostic collection
 - DiagnosticsMixin: Advanced diagnostic tracking and pathology detection
 - GrowthMixin: Neuron expansion utilities and template methods
+- StateLoadingMixin: Common state restoration logic for load_state()
 """
 
 from thalia.mixins.device_mixin import DeviceMixin
@@ -19,6 +20,7 @@ from thalia.mixins.configurable_mixin import ConfigurableMixin
 from thalia.mixins.diagnostic_collector_mixin import DiagnosticCollectorMixin
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.mixins.growth_mixin import GrowthMixin
+from thalia.mixins.state_loading_mixin import StateLoadingMixin
 
 __all__ = [
     'DeviceMixin',
@@ -27,4 +29,5 @@ __all__ = [
     'DiagnosticCollectorMixin',
     'DiagnosticsMixin',
     'GrowthMixin',
+    'StateLoadingMixin',
 ]
