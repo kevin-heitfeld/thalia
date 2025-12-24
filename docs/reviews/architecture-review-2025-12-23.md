@@ -326,7 +326,9 @@ Continued import simplification across additional modules:
 
 ## Tier 2: Moderate Refactoring
 
-### 2.1 State Management Duplication Reduction
+### 2.1 State Management Duplication Reduction ✅ COMPLETED
+
+**Status**: ✅ **COMPLETED** on 2025-12-24
 
 **Finding**: `load_state()` methods across regions show similar patterns with minor variations.
 
@@ -353,40 +355,67 @@ def load_state(self, state: RegionState) -> None:
 - `regions/cerebellum_region.py:1516`
 - And 10+ more...
 
-**Proposed Solution**: Create `StateLoadingMixin` with common restoration logic:
+**Solution Implemented**: Created `StateLoadingMixin` with common restoration logic and added to `NeuralRegion` base class:
 
 ```python
 # src/thalia/mixins/state_loading_mixin.py
 class StateLoadingMixin:
     """Mixin providing common state loading logic for regions."""
 
-    def _restore_neuron_state(self, state: RegionState) -> None:
-        """Restore membrane potentials and conductances."""
-        if hasattr(state, 'membrane') and state.membrane is not None:
-            self.neurons.v.data.copy_(state.membrane)
-        if hasattr(state, 'g_E') and state.g_E is not None:
-            self.neurons.g_E.data.copy_(state.g_E)
-        # ... etc.
+    def _restore_neuron_state(self, state_dict: Dict[str, Any]) -> None:
+        """Restore membrane potentials and refractory state."""
+        # Handles both "membrane" and "v_mem" keys for compatibility
+        # Transfers tensors to correct device automatically
 
-    def _restore_learning_traces(self, state: RegionState) -> None:
-        """Restore eligibility traces, BCM thresholds, etc."""
-        # Common trace restoration logic
+    def _restore_conductances(self, state_dict: Dict[str, Any]) -> None:
+        """Restore synaptic conductances (g_E, g_I, g_adapt)."""
+        # Handles naming variations (g_exc/g_E, g_inh/g_I, g_adaptation/g_adapt)
 
-    def load_state(self, state: RegionState) -> None:
-        """Standard state loading (override for custom behavior)."""
-        self._restore_neuron_state(state)
-        self._restore_learning_traces(state)
-        # Call region-specific _load_custom_state() if needed
+    def _restore_learning_traces(self, state_dict: Dict[str, Any]) -> None:
+        """Restore eligibility traces, BCM thresholds, STDP traces."""
+
+    def _restore_neuromodulators(self, state_dict: Dict[str, Any]) -> None:
+        """Restore DA, ACh, NE levels."""
+        # Supports both self.{modulator} and self.state.{modulator} patterns
+
+    def _restore_stp_state(self, state_dict: Dict[str, Any], stp_attr_name: str) -> None:
+        """Restore short-term plasticity state (u, x)."""
+
+    def load_state(self, state: Any) -> None:
+        """Standard state loading - calls helpers + custom hook."""
+        self._restore_neuron_state(state_dict)
+        self._restore_conductances(state_dict)
+        self._restore_learning_traces(state_dict)
+        self._restore_neuromodulators(state_dict)
+        self._load_custom_state(state)  # Region-specific override
+
+    def _load_custom_state(self, state: Any) -> None:
+        """Override for region-specific state restoration."""
 ```
 
-**Benefits**:
-- Reduces 200-300 lines of duplicated state restoration logic
-- Standardizes state loading behavior
-- Easier to maintain and test
-- Regions override only custom state logic
+**Architecture Improvement**: Both `StateLoadingMixin` and `LearningStrategyMixin` added to `NeuralRegion` base class:
+```python
+class NeuralRegion(nn.Module, ..., StateLoadingMixin, LearningStrategyMixin):
+    """All 16+ regions inherit both mixins automatically."""
+```
 
-**Files Affected**: 15-18 region files (add mixin inheritance, remove duplicate code)
-**Breaking Changes**: Low (internal refactoring, state format unchanged)
+**Benefits Realized**:
+- Consolidates common restoration logic across all regions
+- All regions now have standardized state loading automatically
+- Individual regions override only `_load_custom_state()` for specific needs
+- Backward compatible with existing checkpoints
+- Comprehensive test coverage (7/7 unit tests + 4 integration tests pass)
+
+**Implementation Summary**:
+- **Created**: `src/thalia/mixins/state_loading_mixin.py` (260 lines)
+- **Created**: `tests/unit/mixins/test_state_loading_mixin.py` (214 lines, 7 tests)
+- **Created**: `tests/unit/core/test_neural_region_mixins.py` (4 integration tests)
+- **Updated**: `src/thalia/core/neural_region.py` (added mixin inheritance)
+- **Refactored**: Cerebellum and Prefrontal to use inherited mixins
+- **Tests**: 11/11 tests pass ✅
+
+**Files Affected**: 5 files (mixin creation, base class update, 2 region refactors, 2 test files)
+**Breaking Changes**: None (internal refactoring, state format unchanged)
 
 ---
 
