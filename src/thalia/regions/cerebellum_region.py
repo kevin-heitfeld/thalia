@@ -616,9 +616,9 @@ class Cerebellum(NeuralRegion):
         # SHORT-TERM PLASTICITY (STP)
         # =====================================================================
         # Initialize STP modules for cerebellar pathways if enabled
-        if self.cerebellum_config.stp_enabled:
-            device = torch.device(config.device)
+        device = torch.device(config.device)
 
+        if self.cerebellum_config.stp_enabled:
             # Parallel Fibers→Purkinje: DEPRESSING (CRITICAL for timing)
             # This implements the temporal high-pass filter that makes the
             # cerebellum respond to CHANGES rather than sustained input.
@@ -1522,6 +1522,18 @@ class Cerebellum(NeuralRegion):
         Args:
             state: CerebellumState to restore from.
         """
+        # Use mixin helpers for common restoration
+        super().load_state(state)  # Restores: membrane, conductances, traces, neuromodulators
+
+        # Cerebellum-specific state restoration
+        self._load_custom_state(state)
+
+    def _load_custom_state(self, state: CerebellumState) -> None:
+        """Restore cerebellum-specific state components.
+
+        Args:
+            state: CerebellumState to restore from.
+        """
         # Restore traces
         self._trace_manager.input_trace.copy_(state.input_trace.to(self.device))
         self._trace_manager.output_trace.copy_(state.output_trace.to(self.device))
@@ -1575,7 +1587,4 @@ class Cerebellum(NeuralRegion):
             # Then load the actual state values
             self.stp_mf_granule.load_state(state.stp_mf_granule_state)
 
-        # Restore neuromodulators
-        self.state.dopamine = state.dopamine
-        self.state.acetylcholine = state.acetylcholine
-        self.state.norepinephrine = state.norepinephrine
+        # Neuromodulators already restored by super().load_state() via _restore_neuromodulators()
