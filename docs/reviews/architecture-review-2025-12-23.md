@@ -419,7 +419,9 @@ class NeuralRegion(nn.Module, ..., StateLoadingMixin, LearningStrategyMixin):
 
 ---
 
-### 2.2 Consolidate Checkpoint Manager Implementations
+### 2.2 Consolidate Checkpoint Manager Implementations ✅ COMPLETED
+
+**Status**: ✅ **COMPLETED** on 2025-12-20 (commit 715b1e7)
 
 **Finding**: Multiple checkpoint manager implementations with similar structure.
 
@@ -437,24 +439,45 @@ class NeuralRegion(nn.Module, ..., StateLoadingMixin, LearningStrategyMixin):
 3. Differences are primarily in state dataclass fields
 4. 70-80% of code is identical
 
-**Proposed Solution**:
-1. Extract common checkpoint operations to `BaseCheckpointManager`:
-   - Timestamp handling
-   - Metadata generation
-   - Directory management
-   - Format conversion (PyTorch vs binary)
+**Solution Implemented**: Enhanced `BaseCheckpointManager` with shared save/load orchestration:
 
-2. Region managers override only:
-   - `_collect_region_state()` - region-specific state extraction
-   - `_restore_region_state()` - region-specific state restoration
+1. **Common Operations Extracted to BaseCheckpointManager**:
+   - `save()` - Automatic format selection (neuromorphic vs elastic tensor)
+   - `load()` - Automatic format detection from hybrid_metadata
+   - `package_neuromorphic_state()` - Standardized state packaging
+   - `extract_synapses_for_neuron()` - Shared synapse extraction
+   - `extract_multi_source_synapses()` - Multi-input synapse handling
+   - `extract_typed_synapses()` - Type-labeled synapse extraction
+   - `_get_elastic_tensor_metadata()` - Capacity tracking helpers
+   - `validate_checkpoint_compatibility()` - Version validation
 
-**Benefits**:
-- Reduce 400-500 lines of duplicated checkpoint logic
-- Easier to add new checkpoint features (e.g., compression, versioning)
-- Consistent checkpoint format across regions
+2. **Region Managers Implement Abstract Methods**:
+   - `_get_neurons_data()` - Extract per-neuron data with synapses
+   - `_get_learning_state()` - Extract STP, STDP, eligibility traces
+   - `_get_neuromodulator_state()` - Extract DA/ACh/NE levels
+   - `_get_region_state()` - Extract region-specific state
+   - `get_neuromorphic_state()` - Compose full neuromorphic checkpoint
+   - `load_neuromorphic_state()` - Restore from neuromorphic format
+   - `_should_use_neuromorphic()` - Format selection criteria
+   - `_get_region()` - Return region instance
+   - `_get_selection_criteria()` - Return format selection metadata
 
-**Files Affected**: 3 checkpoint manager files + base class
-**Breaking Changes**: Low (internal refactoring, checkpoint format preserved)
+**Benefits Realized**:
+- Reduced ~240 lines of duplicated save/load code
+- Consistent checkpoint format across all regions
+- Easier to add new checkpoint features (compression, versioning)
+- Hybrid format support (auto-selection between neuromorphic and elastic tensor)
+- No breaking changes to external API
+
+**Implementation Summary**:
+- **Enhanced**: `src/thalia/managers/base_checkpoint_manager.py` (+122 lines)
+- **Refactored**: `StriatumCheckpointManager` (-80 duplicate lines)
+- **Refactored**: `HippocampusCheckpointManager` (-86 duplicate lines)
+- **Refactored**: `PrefrontalCheckpointManager` (-82 duplicate lines)
+- **Total**: 5 files changed, 222 insertions(+), 239 deletions(-)
+
+**Files Affected**: 4 files (1 base class enhanced, 3 region managers refactored)
+**Breaking Changes**: None (internal refactoring, checkpoint format preserved)
 
 ---
 
