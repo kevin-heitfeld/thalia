@@ -722,70 +722,88 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # 1. Expand input→DG weights [dg, input]
         # Add rows for new DG neurons
-        new_input_dg = self._create_new_weights(
-            dg_growth, self.tri_config.n_input, initialization, sparsity
-        )
         self.synaptic_weights["ec_dg"] = nn.Parameter(
-            torch.cat([self.synaptic_weights["ec_dg"].data, new_input_dg], dim=0)
+            self._grow_weight_matrix_rows(
+                self.synaptic_weights["ec_dg"].data,
+                dg_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 2. Expand DG→CA3 weights [ca3, dg]
         # Add rows for new CA3 neurons, columns for new DG neurons
         # First expand rows (new CA3 neurons receiving from all DG)
-        new_ca3_rows = self._create_new_weights(
-            ca3_growth, old_dg_size, initialization, sparsity
+        expanded_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["dg_ca3"].data,
+            ca3_growth,
+            initializer=initialization,
+            sparsity=sparsity
         )
-        expanded_rows = torch.cat([self.synaptic_weights["dg_ca3"].data, new_ca3_rows], dim=0)
         # Then expand columns (all CA3 receiving from new DG)
-        new_dg_cols = self._create_new_weights(
-            new_ca3_size, dg_growth, initialization, sparsity
-        )
         self.synaptic_weights["dg_ca3"] = nn.Parameter(
-            torch.cat([expanded_rows, new_dg_cols], dim=1)
+            self._grow_weight_matrix_cols(
+                expanded_rows,
+                dg_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 3. Expand EC→CA3 direct perforant path [ca3, n_input]
         # Only expand rows (CA3), input size is fixed
-        new_ec_ca3_rows = self._create_new_weights(
-            ca3_growth, self.tri_config.n_input, initialization, sparsity
-        )
         self.synaptic_weights["ec_ca3"] = nn.Parameter(
-            torch.cat([self.synaptic_weights["ec_ca3"].data, new_ec_ca3_rows], dim=0)
+            self._grow_weight_matrix_rows(
+                self.synaptic_weights["ec_ca3"].data,
+                ca3_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 4. Expand CA3→CA3 recurrent weights [ca3, ca3]
         # Add rows and columns for new CA3 neurons
-        new_ca3_recurrent_rows = self._create_new_weights(
-            ca3_growth, old_ca3_size, initialization, sparsity
-        )
-        expanded_recurrent_rows = torch.cat([self.synaptic_weights["ca3_ca3"].data, new_ca3_recurrent_rows], dim=0)
-        new_ca3_recurrent_cols = self._create_new_weights(
-            new_ca3_size, ca3_growth, initialization, sparsity
+        expanded_recurrent_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["ca3_ca3"].data,
+            ca3_growth,
+            initializer=initialization,
+            sparsity=sparsity
         )
         self.synaptic_weights["ca3_ca3"] = nn.Parameter(
-            torch.cat([expanded_recurrent_rows, new_ca3_recurrent_cols], dim=1)
+            self._grow_weight_matrix_cols(
+                expanded_recurrent_rows,
+                ca3_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 5. Expand CA3→CA1 weights [ca1, ca3]
         # Add rows for new CA1 neurons, columns for new CA3 neurons
-        new_ca1_rows = self._create_new_weights(
-            n_new, old_ca3_size, initialization, sparsity
-        )
-        expanded_ca1_rows = torch.cat([self.synaptic_weights["ca3_ca1"].data, new_ca1_rows], dim=0)
-        new_ca3_cols_to_ca1 = self._create_new_weights(
-            new_ca1_size, ca3_growth, initialization, sparsity
+        expanded_ca1_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["ca3_ca1"].data,
+            n_new,
+            initializer=initialization,
+            sparsity=sparsity
         )
         self.synaptic_weights["ca3_ca1"] = nn.Parameter(
-            torch.cat([expanded_ca1_rows, new_ca3_cols_to_ca1], dim=1)
+            self._grow_weight_matrix_cols(
+                expanded_ca1_rows,
+                ca3_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 5.5. Expand EC→CA1 direct perforant path [ca1, n_input]
         # Only expand rows (CA1), input size is fixed
-        new_ec_ca1_rows = self._create_new_weights(
-            n_new, self.tri_config.n_input, initialization, sparsity
-        )
         self.synaptic_weights["ec_ca1"] = nn.Parameter(
-            torch.cat([self.synaptic_weights["ec_ca1"].data, new_ec_ca1_rows], dim=0)
+            self._grow_weight_matrix_rows(
+                self.synaptic_weights["ec_ca1"].data,
+                n_new,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 6. Expand neurons for all layers using factory functions
@@ -842,19 +860,23 @@ class TrisynapticHippocampus(NeuralRegion):
         new_n_input = old_n_input + n_new
 
         # Expand EC→DG weights [dg, input] → [dg, input+n_new]
-        new_input_cols = self._create_new_weights(
-            self.dg_size, n_new, initialization, sparsity
-        )
         self.synaptic_weights["ec_dg"] = nn.Parameter(
-            torch.cat([self.synaptic_weights["ec_dg"].data, new_input_cols], dim=1)
+            self._grow_weight_matrix_cols(
+                self.synaptic_weights["ec_dg"].data,
+                n_new,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # Expand EC→CA3 direct perforant path [ca3, input] → [ca3, input+n_new]
-        new_perforant_cols = self._create_new_weights(
-            self.ca3_size, n_new, initialization, sparsity
-        )
         self.synaptic_weights["ec_ca3"] = nn.Parameter(
-            torch.cat([self.synaptic_weights["ec_ca3"].data, new_perforant_cols], dim=1)
+            self._grow_weight_matrix_cols(
+                self.synaptic_weights["ec_ca3"].data,
+                n_new,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # Update config

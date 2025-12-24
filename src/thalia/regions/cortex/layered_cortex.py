@@ -821,80 +821,108 @@ class LayeredCortex(NeuralRegion):
 
         # 2. Expand L4→L2/3 weights [l23, l4]
         # Add rows for new L2/3 neurons, columns for new L4 neurons
-        new_l23_rows = self._create_new_weights(
-            l23_growth, old_l4_size, initialization, sparsity
-        )
-        expanded_l23_rows = torch.cat([self.synaptic_weights["l4_l23"].data, new_l23_rows], dim=0)
-        new_l4_cols = self._create_new_weights(
-            new_l23_size, l4_growth, initialization, sparsity
+        expanded_l23_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["l4_l23"].data,
+            l23_growth,
+            initializer=initialization,
+            sparsity=sparsity
         )
         self.synaptic_weights["l4_l23"] = nn.Parameter(
-            torch.cat([expanded_l23_rows, new_l4_cols], dim=1)
+            self._grow_weight_matrix_cols(
+                expanded_l23_rows,
+                l4_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 3. Expand L2/3→L2/3 recurrent weights [l23, l23]
         # Add rows and columns for new L2/3 neurons
-        new_l23_recurrent_rows = self._create_new_weights(
-            l23_growth, old_l23_size, initialization, sparsity
-        )
-        expanded_recurrent_rows = torch.cat([self.synaptic_weights["l23_recurrent"].data, new_l23_recurrent_rows], dim=0)
-        new_l23_recurrent_cols = self._create_new_weights(
-            new_l23_size, l23_growth, initialization, sparsity
+        expanded_recurrent_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["l23_recurrent"].data,
+            l23_growth,
+            initializer=initialization,
+            sparsity=sparsity
         )
         self.synaptic_weights["l23_recurrent"] = nn.Parameter(
-            torch.cat([expanded_recurrent_rows, new_l23_recurrent_cols], dim=1)
+            self._grow_weight_matrix_cols(
+                expanded_recurrent_rows,
+                l23_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 3b. Expand L2/3 inhibitory weights [l23, l23]
         # Same structure as recurrent, but negative weights for inhibition
-        new_l23_inhib_rows = -torch.abs(self._create_new_weights(
-            l23_growth, old_l23_size, initialization, sparsity
-        ))
-        expanded_inhib_rows = torch.cat([self.synaptic_weights["l23_inhib"].data, new_l23_inhib_rows], dim=0)
-        new_l23_inhib_cols = -torch.abs(self._create_new_weights(
-            new_l23_size, l23_growth, initialization, sparsity
-        ))
-        self.synaptic_weights["l23_inhib"].data = torch.cat([expanded_inhib_rows, new_l23_inhib_cols], dim=1)
+        expanded_inhib_rows = -torch.abs(
+            self._grow_weight_matrix_rows(
+                self.synaptic_weights["l23_inhib"].data,
+                l23_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
+        )
+        self.synaptic_weights["l23_inhib"].data = -torch.abs(
+            self._grow_weight_matrix_cols(
+                expanded_inhib_rows,
+                l23_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
+        )
         # Zero out diagonal (no self-inhibition)
         self.synaptic_weights["l23_inhib"].data.fill_diagonal_(0.0)
 
         # 4. Expand L2/3→L5 weights [l5, l23]
         # Add rows for new L5 neurons, columns for new L2/3 neurons
-        new_l5_rows = self._create_new_weights(
-            l5_growth, old_l23_size, initialization, sparsity
-        )
-        expanded_l5_rows = torch.cat([self.synaptic_weights["l23_l5"].data, new_l5_rows], dim=0)
-        new_l23_cols_to_l5 = self._create_new_weights(
-            new_l5_size, l23_growth, initialization, sparsity
+        expanded_l5_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["l23_l5"].data,
+            l5_growth,
+            initializer=initialization,
+            sparsity=sparsity
         )
         self.synaptic_weights["l23_l5"] = nn.Parameter(
-            torch.cat([expanded_l5_rows, new_l23_cols_to_l5], dim=1)
+            self._grow_weight_matrix_cols(
+                expanded_l5_rows,
+                l23_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 4b. Expand L2/3→L6a weights [l6a, l23]
         # Add rows for new L6a neurons, columns for new L2/3 neurons
-        new_l6a_rows = self._create_new_weights(
-            l6a_growth, old_l23_size, initialization, sparsity
-        )
-        expanded_l6a_rows = torch.cat([self.synaptic_weights["l23_l6a"].data, new_l6a_rows], dim=0)
-        new_l23_cols_to_l6a = self._create_new_weights(
-            new_l6a_size, l23_growth, initialization, sparsity
+        expanded_l6a_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["l23_l6a"].data,
+            l6a_growth,
+            initializer=initialization,
+            sparsity=sparsity
         )
         self.synaptic_weights["l23_l6a"] = nn.Parameter(
-            torch.cat([expanded_l6a_rows, new_l23_cols_to_l6a], dim=1)
+            self._grow_weight_matrix_cols(
+                expanded_l6a_rows,
+                l23_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # 4c. Expand L2/3→L6b weights [l6b, l23]
         # Add rows for new L6b neurons, columns for new L2/3 neurons
-        new_l6b_rows = self._create_new_weights(
-            l6b_growth, old_l23_size, initialization, sparsity
-        )
-        expanded_l6b_rows = torch.cat([self.synaptic_weights["l23_l6b"].data, new_l6b_rows], dim=0)
-        new_l23_cols_to_l6b = self._create_new_weights(
-            new_l6b_size, l23_growth, initialization, sparsity
+        expanded_l6b_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["l23_l6b"].data,
+            l6b_growth,
+            initializer=initialization,
+            sparsity=sparsity
         )
         self.synaptic_weights["l23_l6b"] = nn.Parameter(
-            torch.cat([expanded_l6b_rows, new_l23_cols_to_l6b], dim=1)
+            self._grow_weight_matrix_cols(
+                expanded_l6b_rows,
+                l23_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # Update main weights reference (for base class compatibility)
@@ -979,11 +1007,13 @@ class LayeredCortex(NeuralRegion):
 
         # Expand input→L4 weights [l4, input] → [l4, input+n_new]
         # Add COLUMNS for new input neurons
-        new_input_cols = self._create_new_weights(
-            self.l4_size, n_new, initialization, sparsity
-        )
         self.synaptic_weights["input"] = nn.Parameter(
-            torch.cat([self.synaptic_weights["input"].data, new_input_cols], dim=1)  # Add columns
+            self._grow_weight_matrix_cols(
+                self.synaptic_weights["input"].data,
+                n_new,
+                initializer=initialization,
+                sparsity=sparsity
+            )
         )
 
         # Update config

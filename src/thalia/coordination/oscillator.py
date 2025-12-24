@@ -65,7 +65,7 @@ import random
 import torch.nn as nn
 
 from thalia.core.errors import ConfigurationError
-from thalia.utils.time_constants import TAU
+from thalia.utils.time_constants import TAU, MS_PER_SECOND
 
 
 @dataclass

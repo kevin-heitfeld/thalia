@@ -1292,10 +1292,12 @@ class Cerebellum(NeuralRegion):
         new_n_input = old_n_input + n_new
 
         # Expand self.weights [n_output, input] → [n_output, input+n_new]
-        new_input_cols = self._create_new_weights(
-            self.config.n_output, n_new, initialization, sparsity
+        self.weights.data = self._grow_weight_matrix_cols(
+            self.weights.data,
+            n_new,
+            initializer=initialization,
+            sparsity=sparsity
         )
-        self.weights.data = torch.cat([self.weights.data, new_input_cols], dim=1)
 
         # Update trace manager for new input size
         stdp_config = STDPConfig(

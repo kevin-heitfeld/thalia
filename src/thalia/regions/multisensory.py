@@ -658,24 +658,30 @@ class MultimodalIntegration(NeuralRegion):
 
         # Expand visual input weights
         if visual_growth > 0:
-            new_visual_cols = self._create_new_weights(
-                self.visual_pool_size, visual_growth, initialization, sparsity
+            self.visual_input_weights = self._grow_weight_matrix_cols(
+                self.visual_input_weights,
+                visual_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.visual_input_weights = torch.cat([self.visual_input_weights, new_visual_cols], dim=1)
 
         # Expand auditory input weights
         if auditory_growth > 0:
-            new_auditory_cols = self._create_new_weights(
-                self.auditory_pool_size, auditory_growth, initialization, sparsity
+            self.auditory_input_weights = self._grow_weight_matrix_cols(
+                self.auditory_input_weights,
+                auditory_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.auditory_input_weights = torch.cat([self.auditory_input_weights, new_auditory_cols], dim=1)
 
         # Expand language input weights
         if language_growth > 0:
-            new_language_cols = self._create_new_weights(
-                self.language_pool_size, language_growth, initialization, sparsity
+            self.language_input_weights = self._grow_weight_matrix_cols(
+                self.language_input_weights,
+                language_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.language_input_weights = torch.cat([self.language_input_weights, new_language_cols], dim=1)
 
         # Update config
         new_visual_size = self.config.visual_input_size + visual_growth
@@ -737,47 +743,61 @@ class MultimodalIntegration(NeuralRegion):
 
         # Expand visual input weights [visual_pool, visual_input]
         if visual_growth > 0:
-            new_visual_rows = self._create_new_weights(
-                visual_growth, self.config.visual_input_size, initialization, sparsity
+            self.visual_input_weights = self._grow_weight_matrix_rows(
+                self.visual_input_weights,
+                visual_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.visual_input_weights = torch.cat([self.visual_input_weights, new_visual_rows], dim=0)
 
         # Expand auditory input weights [auditory_pool, auditory_input]
         if auditory_growth > 0:
-            new_auditory_rows = self._create_new_weights(
-                auditory_growth, self.config.auditory_input_size, initialization, sparsity
+            self.auditory_input_weights = self._grow_weight_matrix_rows(
+                self.auditory_input_weights,
+                auditory_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.auditory_input_weights = torch.cat([self.auditory_input_weights, new_auditory_rows], dim=0)
 
         # Expand language input weights [language_pool, language_input]
         if language_growth > 0:
-            new_language_rows = self._create_new_weights(
-                language_growth, self.config.language_input_size, initialization, sparsity
+            self.language_input_weights = self._grow_weight_matrix_rows(
+                self.language_input_weights,
+                language_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.language_input_weights = torch.cat([self.language_input_weights, new_language_rows], dim=0)
 
         # Expand cross-modal weights (complex - need to handle both dimensions)
         # Visual ↔ Auditory
         if visual_growth > 0 or auditory_growth > 0:
             # visual_to_auditory [auditory, visual]
-            new_rows = self._create_new_weights(
-                auditory_growth, old_visual, initialization, sparsity
+            expanded = self._grow_weight_matrix_rows(
+                self.visual_to_auditory,
+                auditory_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
+            self.visual_to_auditory = self._grow_weight_matrix_cols(
+                expanded,
+                visual_growth,
+                initializer=initialization,
+                sparsity=sparsity
             ) * self.multisensory_config.cross_modal_strength
-            expanded = torch.cat([self.visual_to_auditory, new_rows], dim=0)
-            new_cols = self._create_new_weights(
-                self.auditory_pool_size, visual_growth, initialization, sparsity
-            ) * self.multisensory_config.cross_modal_strength
-            self.visual_to_auditory = torch.cat([expanded, new_cols], dim=1)
 
             # auditory_to_visual [visual, auditory]
-            new_rows = self._create_new_weights(
-                visual_growth, old_auditory, initialization, sparsity
+            expanded = self._grow_weight_matrix_rows(
+                self.auditory_to_visual,
+                visual_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
+            self.auditory_to_visual = self._grow_weight_matrix_cols(
+                expanded,
+                auditory_growth,
+                initializer=initialization,
+                sparsity=sparsity
             ) * self.multisensory_config.cross_modal_strength
-            expanded = torch.cat([self.auditory_to_visual, new_rows], dim=0)
-            new_cols = self._create_new_weights(
-                self.visual_pool_size, auditory_growth, initialization, sparsity
-            ) * self.multisensory_config.cross_modal_strength
-            self.auditory_to_visual = torch.cat([expanded, new_cols], dim=1)
 
         # Similar expansions for other cross-modal connections would go here...
         # (abbreviated for brevity, but follows same pattern)
