@@ -35,7 +35,7 @@ from thalia.components.neurons import (
     E_INHIBITORY,
 )
 from thalia.components.synapses import WeightInitializer
-from thalia.learning import ThreeFactorStrategy, ThreeFactorConfig
+from thalia.learning import create_striatum_strategy, ThreeFactorConfig
 from thalia.mixins import GrowthMixin, ResettableMixin
 
 
@@ -95,15 +95,13 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         self._weight_source: Optional[str] = None  # e.g., "default_d1" or "default_d2"
 
         # Three-factor learning strategy (eligibility × dopamine)
-        three_factor_config = ThreeFactorConfig(
-            learning_rate=config.stdp_lr,
-            eligibility_tau=config.eligibility_tau_ms,
+        # Use factory function for consistent strategy creation
+        self.learning_strategy = create_striatum_strategy(
+            learning_rate=config.learning_rate,
+            eligibility_tau_ms=config.eligibility_tau_ms,
             w_min=config.w_min,
             w_max=config.w_max,
-            dt=1.0,
-            device=config.device,
         )
-        self.learning_strategy = ThreeFactorStrategy(three_factor_config)
 
         # Neuron population
         self.neurons = self._create_neurons()

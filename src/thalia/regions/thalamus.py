@@ -1252,15 +1252,14 @@ class ThalamicRelay(NeuralRegion):
         old_n_input = self.config.n_input
         new_n_input = old_n_input + n_new
 
-        # Use GrowthMixin helper (Architecture Review 2025-12-21, Tier 1.1)
+        # Use GrowthMixin helper (Architecture Review 2025-12-24, Tier 2.5)
         # Expand input_to_trn [n_trn, input] → [n_trn, input+n_new]
-        new_input_trn_cols = self._create_new_weights(
-            n_output=self.n_trn,
-            n_input=n_new,
-            initialization=initialization,
-            sparsity=sparsity,
+        self.input_to_trn.data = self._grow_weight_matrix_cols(
+            self.input_to_trn.data,
+            n_new,
+            initializer=initialization,
+            sparsity=sparsity
         )
-        self.input_to_trn.data = torch.cat([self.input_to_trn.data, new_input_trn_cols], dim=1)
 
         # Rebuild center-surround filter with new input size
         self.config = replace(self.config, n_input=new_n_input)
@@ -1294,86 +1293,77 @@ class ThalamicRelay(NeuralRegion):
         new_n_trn = int(new_n_relay * self.thalamus_config.trn_ratio)
         n_trn_growth = new_n_trn - old_n_trn
 
-        # Use GrowthMixin helper (Architecture Review 2025-12-21, Tier 1.1)
+        # Use GrowthMixin helpers (Architecture Review 2025-12-24, Tier 2.5)
         # 1. Expand relay_gain [n_relay] → [n_relay+n_new]
         new_relay_gains = torch.ones(n_new, device=self.device) * self.thalamus_config.relay_strength
         self.relay_gain.data = torch.cat([self.relay_gain.data, new_relay_gains])
 
         # 2. Expand input_to_trn [n_trn, input] → [n_trn+growth, input]
         if n_trn_growth > 0:
-            new_input_trn_rows = self._create_new_weights(
-                n_output=n_trn_growth,
-                n_input=self.config.n_input,
-                initialization=initialization,
-                sparsity=sparsity,
+            self.input_to_trn.data = self._grow_weight_matrix_rows(
+                self.input_to_trn.data,
+                n_trn_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.input_to_trn.data = torch.cat([self.input_to_trn.data, new_input_trn_rows], dim=0)
 
         # 3. Expand relay_to_trn [n_trn, n_relay] → [n_trn+growth, n_relay+n_new]
         if n_trn_growth > 0:
-            # Add rows for new TRN neurons
-            new_relay_trn_rows = self._create_new_weights(
-                n_output=n_trn_growth,
-                n_input=old_n_relay,
-                initialization=initialization,
-                sparsity=sparsity,
+            # Add rows then columns for new TRN and relay neurons
+            expanded_relay_trn = self._grow_weight_matrix_rows(
+                self.relay_to_trn.data,
+                n_trn_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            expanded_relay_trn = torch.cat([self.relay_to_trn.data, new_relay_trn_rows], dim=0)
-            # Add columns for new relay neurons
-            new_relay_trn_cols = self._create_new_weights(
-                n_output=new_n_trn,
-                n_input=n_new,
-                initialization=initialization,
-                sparsity=sparsity,
+            self.relay_to_trn.data = self._grow_weight_matrix_cols(
+                expanded_relay_trn,
+                n_new,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.relay_to_trn.data = torch.cat([expanded_relay_trn, new_relay_trn_cols], dim=1)
         else:
             # Just add columns
-            new_relay_trn_cols = self._create_new_weights(
-                n_output=old_n_trn,
-                n_input=n_new,
-                initialization=initialization,
-                sparsity=sparsity,
+            self.relay_to_trn.data = self._grow_weight_matrix_cols(
+                self.relay_to_trn.data,
+                n_new,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.relay_to_trn.data = torch.cat([self.relay_to_trn.data, new_relay_trn_cols], dim=1)
 
         # 4. Expand trn_to_relay [n_relay, n_trn] → [n_relay+n_new, n_trn+growth]
         # Add rows for new relay neurons
-        new_trn_relay_rows = self._create_new_weights(
-            n_output=n_new,
-            n_input=old_n_trn,
-            initialization=initialization,
-            sparsity=sparsity,
+        expanded_trn_relay = self._grow_weight_matrix_rows(
+            self.trn_to_relay.data,
+            n_new,
+            initializer=initialization,
+            sparsity=sparsity
         )
-        expanded_trn_relay = torch.cat([self.trn_to_relay.data, new_trn_relay_rows], dim=0)
         if n_trn_growth > 0:
             # Add columns for new TRN neurons
-            new_trn_relay_cols = self._create_new_weights(
-                n_output=new_n_relay,
-                n_input=n_trn_growth,
-                initialization=initialization,
-                sparsity=sparsity,
+            self.trn_to_relay.data = self._grow_weight_matrix_cols(
+                expanded_trn_relay,
+                n_trn_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.trn_to_relay.data = torch.cat([expanded_trn_relay, new_trn_relay_cols], dim=1)
         else:
             self.trn_to_relay.data = expanded_trn_relay
 
         # 5. Expand trn_recurrent [n_trn, n_trn] → [n_trn+growth, n_trn+growth]
         if n_trn_growth > 0:
-            new_trn_recurrent_rows = self._create_new_weights(
-                n_output=n_trn_growth,
-                n_input=old_n_trn,
-                initialization=initialization,
-                sparsity=sparsity,
+            expanded_trn_recurrent = self._grow_weight_matrix_rows(
+                self.trn_recurrent.data,
+                n_trn_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            expanded_trn_recurrent = torch.cat([self.trn_recurrent.data, new_trn_recurrent_rows], dim=0)
-            new_trn_recurrent_cols = self._create_new_weights(
-                n_output=new_n_trn,
-                n_input=n_trn_growth,
-                initialization=initialization,
-                sparsity=sparsity,
+            self.trn_recurrent.data = self._grow_weight_matrix_cols(
+                expanded_trn_recurrent,
+                n_trn_growth,
+                initializer=initialization,
+                sparsity=sparsity
             )
-            self.trn_recurrent.data = torch.cat([expanded_trn_recurrent, new_trn_recurrent_cols], dim=1)
 
         # 6. Expand neuron populations using efficient in-place growth (ConductanceLIF)
         self.n_relay = new_n_relay

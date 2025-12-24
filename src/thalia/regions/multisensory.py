@@ -103,7 +103,7 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.config.learning_config import HebbianLearningConfig
 from thalia.managers.component_registry import register_region
 from thalia.components.synapses import WeightInitializer
-from thalia.learning import HebbianStrategy, HebbianConfig
+from thalia.learning import create_strategy
 from thalia.regulation.learning_constants import LEARNING_RATE_HEBBIAN_SLOW, SILENCE_DETECTION_THRESHOLD
 from thalia.coordination import SinusoidalOscillator
 
@@ -339,11 +339,12 @@ class MultimodalIntegration(NeuralRegion):
         # =====================================================================
 
         if config.learning_enabled:
-            hebbian_config = HebbianConfig(
+            # Use factory function for consistent strategy creation
+            self.hebbian_strategy = create_strategy(
+                "hebbian",
                 learning_rate=config.learning_rate,
                 decay_rate=config.hebbian_decay,
             )
-            self.hebbian_strategy = HebbianStrategy(hebbian_config)
         else:
             self.hebbian_strategy = None
 
