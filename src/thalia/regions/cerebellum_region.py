@@ -835,9 +835,26 @@ class Cerebellum(NeuralRegion):
             )
 
         # =====================================================================
-        # 2. UPDATE CONFIG
+        # 2. UPDATE CONFIG (including explicit sizes)
         # =====================================================================
-        self.config = replace(self.config, n_output=new_n_output)
+        # Update config with new sizes
+        if self.use_enhanced:
+            # Update granule_size if using enhanced microcircuit
+            # Note: granule_size doesn't change when adding Purkinje cells
+            # (it's determined by input size and expansion factor)
+            self.config = replace(
+                self.config,
+                n_output=new_n_output,
+                purkinje_size=new_n_output,  # Purkinje size = output size
+            )
+            self.cerebellum_config = replace(
+                self.cerebellum_config,
+                n_output=new_n_output,
+                purkinje_size=new_n_output,
+            )
+        else:
+            self.config = replace(self.config, n_output=new_n_output)
+            self.cerebellum_config = replace(self.cerebellum_config, n_output=new_n_output)
 
         # =====================================================================
         # 3. EXPAND NEURON POPULATION (classic pathway only)

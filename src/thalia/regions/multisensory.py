@@ -814,9 +814,23 @@ class MultimodalIntegration(NeuralRegion):
             device=self.device,
         ) * self.multisensory_config.integration_strength
 
-        # Update configs
-        self.config = replace(self.config, n_output=new_n_output)
-        self.multisensory_config = replace(self.multisensory_config, n_output=new_n_output)
+        # Update configs (including explicit pool sizes)
+        self.config = replace(
+            self.config,
+            n_output=new_n_output,
+            visual_pool_size=self.visual_pool_size,
+            auditory_pool_size=self.auditory_pool_size,
+            language_pool_size=self.language_pool_size,
+            integration_pool_size=self.integration_pool_size,
+        )
+        self.multisensory_config = replace(
+            self.multisensory_config,
+            n_output=new_n_output,
+            visual_pool_size=self.visual_pool_size,
+            auditory_pool_size=self.auditory_pool_size,
+            language_pool_size=self.language_pool_size,
+            integration_pool_size=self.integration_pool_size,
+        )
 
     def get_diagnostics(self) -> dict[str, Any]:
         """Get diagnostic information in standardized DiagnosticsDict format.

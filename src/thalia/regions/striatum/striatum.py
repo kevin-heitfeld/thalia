@@ -233,19 +233,35 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # POPULATION CODING SETUP
         # =====================================================================
-        # If population_coding is enabled, config contains explicit d1_size and d2_size
-        # n_output in config = number of ACTIONS
-        # actual neurons = d1_size (or d2_size, they should be equal)
-        self.n_actions = config.n_output
+        # If population_coding is enabled, config contains explicit fields:
+        # - d1_size, d2_size: Total neurons in each pathway
+        # - n_actions: Number of discrete actions
+        # - neurons_per_action: Neurons per action (population coding)
+        #
+        # These should be computed via compute_striatum_sizes() helper
         if self.striatum_config.population_coding:
-            # Read explicit sizes from config
-            actual_n_output = self.striatum_config.d1_size
-            self.neurons_per_action = actual_n_output // self.n_actions
+            # Read explicit parameters from config
+            self.n_actions = self.striatum_config.n_actions
+            self.neurons_per_action = self.striatum_config.neurons_per_action
+            actual_n_output = self.striatum_config.d1_size + self.striatum_config.d2_size
+
+            # Validate consistency
+            expected_total = self.n_actions * self.neurons_per_action
+            if actual_n_output != expected_total:
+                raise ValueError(
+                    f"Striatum: d1_size ({self.striatum_config.d1_size}) + "
+                    f"d2_size ({self.striatum_config.d2_size}) = {actual_n_output} "
+                    f"but n_actions ({self.n_actions}) × neurons_per_action "
+                    f"({self.neurons_per_action}) = {expected_total}. "
+                    f"Use compute_striatum_sizes() to ensure consistency."
+                )
+
             # Override n_output to be the total number of neurons
             config = replace(config, n_output=actual_n_output)
             self.striatum_config = config
         else:
             self.neurons_per_action = 1
+            self.n_actions = config.n_output
 
         # =====================================================================
         # INITIALIZE NEURAL REGION (Phase 2)
@@ -1144,11 +1160,24 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # 2. UPDATE CONFIG (DO THIS BEFORE CREATING NEURONS!)
         # =====================================================================
         # Neurons are created based on config.n_output, so update it first
-        # BOTH config.n_output and striatum_config.n_output store TOTAL NEURONS
-        # We track n_actions separately in self.n_actions
+        # Update all explicit size fields in BOTH configs
         self.n_actions += n_new
-        self.config = replace(self.config, n_output=new_n_output)
-        self.striatum_config = replace(self.striatum_config, n_output=new_n_output)
+        new_d1_size = self.striatum_config.d1_size + n_new_d1
+        new_d2_size = self.striatum_config.d2_size + n_new_d2
+        self.config = replace(
+            self.config,
+            n_output=new_n_output,
+            d1_size=new_d1_size,
+            d2_size=new_d2_size,
+            n_actions=self.n_actions,
+        )
+        self.striatum_config = replace(
+            self.striatum_config,
+            n_output=new_n_output,
+            d1_size=new_d1_size,
+            d2_size=new_d2_size,
+            n_actions=self.n_actions,
+        )
 
         # Update elastic tensor capacity tracking (Phase 1)
         self.n_neurons_active = new_n_output

@@ -1380,9 +1380,19 @@ class ThalamicRelay(NeuralRegion):
         # 7. Rebuild center-surround filter with new output size
         self._build_center_surround_filter()
 
-        # 8. Update configs
-        self.config = replace(self.config, n_output=new_n_relay)
-        self.thalamus_config = replace(self.thalamus_config, n_output=new_n_relay)
+        # 8. Update configs (including explicit sizes)
+        self.config = replace(
+            self.config,
+            n_output=new_n_relay,
+            relay_size=new_n_relay,
+            trn_size=new_n_trn,
+        )
+        self.thalamus_config = replace(
+            self.thalamus_config,
+            n_output=new_n_relay,
+            relay_size=new_n_relay,
+            trn_size=new_n_trn,
+        )
 
     def learn(
         self,

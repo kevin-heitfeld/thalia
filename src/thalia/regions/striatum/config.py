@@ -57,6 +57,8 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     # Explicit pathway sizes (computed via helper from n_actions and neurons_per_action)
     d1_size: int = field(default=0)  # Total D1 MSN neurons
     d2_size: int = field(default=0)  # Total D2 MSN neurons
+    n_actions: int = field(default=0)  # Number of discrete actions
+    neurons_per_action: int = field(default=10)  # Neurons per action (population coding)
 
     # =========================================================================
     # D1/D2 OPPONENT PATHWAYS

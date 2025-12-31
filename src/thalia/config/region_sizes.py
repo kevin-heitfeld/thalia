@@ -299,7 +299,7 @@ def compute_striatum_sizes(
         d1_d2_ratio: Ratio of D1 to D2 pathway sizes (default 0.5 = equal)
 
     Returns:
-        Dict with d1_size, d2_size, total_size
+        Dict with d1_size, d2_size, total_size, n_actions, neurons_per_action
     """
     total_size = n_actions * neurons_per_action
     d1_size = int(total_size * d1_d2_ratio)
@@ -310,6 +310,7 @@ def compute_striatum_sizes(
         "d2_size": d2_size,
         "total_size": total_size,
         "n_actions": n_actions,
+        "neurons_per_action": neurons_per_action,
     }
 
 
