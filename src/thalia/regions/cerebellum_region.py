@@ -60,7 +60,7 @@ When to Use:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace, asdict
+from dataclasses import dataclass, replace, asdict, field
 from typing import Optional, Dict, Any, Union
 
 import torch
@@ -140,7 +140,8 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
     # - Dendritic computation in Purkinje cells (complex/simple spikes)
     # - DCN integration (Purkinje sculpts tonic output)
     use_enhanced_microcircuit: bool = True
-    granule_expansion_factor: float = 4.0  # Granule cells per mossy fiber
+    granule_size: int = field(default=0)  # Explicit granule cell count
+    purkinje_size: int = field(default=0)  # Explicit Purkinje cell count (typically = n_output)
     granule_sparsity: float = 0.03  # Fraction of granule cells active (3%)
     purkinje_n_dendrites: int = 100  # Simplified dendritic compartments
 
@@ -530,7 +531,7 @@ class Cerebellum(NeuralRegion):
             # Granule cell layer (sparse expansion)
             self.granule_layer = GranuleCellLayer(
                 n_mossy_fibers=config.n_input,
-                expansion_factor=self.cerebellum_config.granule_expansion_factor,
+                expansion_factor=self.cerebellum_config.granule_size / config.n_input,
                 sparsity=self.cerebellum_config.granule_sparsity,
                 device=config.device,
                 dt_ms=config.dt_ms,

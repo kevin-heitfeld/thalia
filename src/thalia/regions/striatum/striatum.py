@@ -233,15 +233,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # POPULATION CODING SETUP
         # =====================================================================
-        # If population_coding is enabled, we create N neurons per action
+        # If population_coding is enabled, config contains explicit d1_size and d2_size
         # n_output in config = number of ACTIONS
-        # actual neurons = n_actions * neurons_per_action
+        # actual neurons = d1_size (or d2_size, they should be equal)
         self.n_actions = config.n_output
         if self.striatum_config.population_coding:
-            self.neurons_per_action = self.striatum_config.neurons_per_action
+            # Read explicit sizes from config
+            actual_n_output = self.striatum_config.d1_size
+            self.neurons_per_action = actual_n_output // self.n_actions
             # Override n_output to be the total number of neurons
-            actual_n_output = self.n_actions * self.neurons_per_action
-            # Create modified config with expanded output
             config = replace(config, n_output=actual_n_output)
             self.striatum_config = config
         else:

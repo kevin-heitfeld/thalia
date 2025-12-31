@@ -286,26 +286,100 @@ def compute_cortex_layer_sizes(input_size: int) -> dict:
     }
 
 
-def compute_striatum_size(
-    cortex_size: int,
+def compute_striatum_sizes(
     n_actions: int,
-    population_coding: bool = False,
     neurons_per_action: int = NEURONS_PER_ACTION_DEFAULT,
-) -> int:
-    """Compute striatum size based on cortex input and actions.
+    d1_d2_ratio: float = 0.5,
+) -> dict:
+    """Compute explicit striatum pathway sizes.
 
     Args:
-        cortex_size: Size of cortical input
         n_actions: Number of discrete actions
-        population_coding: Whether to use population coding
-        neurons_per_action: Neurons per action (if population coding)
+        neurons_per_action: Neurons per action (population coding)
+        d1_d2_ratio: Ratio of D1 to D2 pathway sizes (default 0.5 = equal)
 
     Returns:
-        Total striatum size (MSN count)
+        Dict with d1_size, d2_size, total_size
     """
-    if population_coding:
-        # Population coding: n_actions * neurons_per_action
-        return n_actions * neurons_per_action
-    else:
-        # Single neuron per action (simpler)
-        return n_actions
+    total_size = n_actions * neurons_per_action
+    d1_size = int(total_size * d1_d2_ratio)
+    d2_size = total_size - d1_size  # Ensure they sum exactly
+
+    return {
+        "d1_size": d1_size,
+        "d2_size": d2_size,
+        "total_size": total_size,
+        "n_actions": n_actions,
+    }
+
+
+def compute_thalamus_sizes(relay_size: int, trn_ratio: float = 0.3) -> dict:
+    """Compute thalamus layer sizes.
+
+    Args:
+        relay_size: Size of relay neuron population (output size)
+        trn_ratio: TRN size as fraction of relay size (default 0.3)
+
+    Returns:
+        Dict with relay_size, trn_size
+    """
+    trn_size = int(relay_size * trn_ratio)
+
+    return {
+        "relay_size": relay_size,
+        "trn_size": trn_size,
+    }
+
+
+def compute_multisensory_sizes(
+    total_size: int,
+    visual_ratio: float = 0.3,
+    auditory_ratio: float = 0.3,
+    language_ratio: float = 0.2,
+) -> dict:
+    """Compute multisensory pool sizes.
+
+    Args:
+        total_size: Total number of neurons
+        visual_ratio: Fraction for visual pool (default 0.3)
+        auditory_ratio: Fraction for auditory pool (default 0.3)
+        language_ratio: Fraction for language pool (default 0.2)
+
+    Returns:
+        Dict with visual_size, auditory_size, language_size, integration_size
+    """
+    visual_size = int(total_size * visual_ratio)
+    auditory_size = int(total_size * auditory_ratio)
+    language_size = int(total_size * language_ratio)
+    integration_size = total_size - visual_size - auditory_size - language_size
+
+    return {
+        "visual_size": visual_size,
+        "auditory_size": auditory_size,
+        "language_size": language_size,
+        "integration_size": integration_size,
+        "total_size": total_size,
+    }
+
+
+def compute_cerebellum_sizes(
+    purkinje_size: int,
+    granule_expansion: float = 4.0,
+) -> dict:
+    """Compute cerebellum layer sizes.
+
+    Args:
+        purkinje_size: Number of Purkinje cells (= output size)
+        granule_expansion: Granule cell expansion factor (default 4.0)
+
+    Returns:
+        Dict with granule_size, purkinje_size
+    """
+    # Granule layer expands from mossy fiber input
+    # For simplicity, assume purkinje_size determines the scale
+    granule_size = int(purkinje_size * granule_expansion)
+
+    return {
+        "granule_size": granule_size,
+        "purkinje_size": purkinje_size,
+    }

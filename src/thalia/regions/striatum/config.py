@@ -7,7 +7,7 @@ reinforcement learning system, and StriatumState for state management.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 
 import torch
@@ -17,7 +17,6 @@ from thalia.config.learning_config import ModulatedLearningConfig
 from thalia.core.region_state import BaseRegionState
 from thalia.neuromodulation.constants import DA_BASELINE_STRIATUM
 from thalia.regulation.learning_constants import EMA_DECAY_FAST, LEARNING_RATE_HEBBIAN_SLOW
-from thalia.regulation.region_architecture_constants import STRIATUM_NEURONS_PER_ACTION
 
 
 @dataclass
@@ -55,7 +54,9 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     # POPULATION CODING
     # =========================================================================
     population_coding: bool = True
-    neurons_per_action: int = STRIATUM_NEURONS_PER_ACTION
+    # Explicit pathway sizes (computed via helper from n_actions and neurons_per_action)
+    d1_size: int = field(default=0)  # Total D1 MSN neurons
+    d2_size: int = field(default=0)  # Total D2 MSN neurons
 
     # =========================================================================
     # D1/D2 OPPONENT PATHWAYS

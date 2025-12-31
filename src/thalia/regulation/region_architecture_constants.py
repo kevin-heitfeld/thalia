@@ -245,6 +245,47 @@ Reference: Gerfen & Surmeier (2011) - Modulation of striatal projection systems
 """
 
 # =============================================================================
+# THALAMUS ARCHITECTURE
+# =============================================================================
+
+THALAMUS_TRN_RATIO = 0.3
+"""Thalamic reticular nucleus size as fraction of relay neurons.
+
+TRN provides inhibitory modulation of relay neurons. Smaller than relay
+population but sufficient for attentional gating and oscillatory dynamics.
+
+Reference: Sherman & Guillery (2013) - Functional organization of thalamus
+"""
+
+# =============================================================================
+# MULTISENSORY ARCHITECTURE
+# =============================================================================
+
+MULTISENSORY_VISUAL_RATIO = 0.3
+"""Visual pool fraction in multisensory integration areas."""
+
+MULTISENSORY_AUDITORY_RATIO = 0.3
+"""Auditory pool fraction in multisensory integration areas."""
+
+MULTISENSORY_LANGUAGE_RATIO = 0.2
+"""Language pool fraction in multisensory integration areas."""
+
+MULTISENSORY_INTEGRATION_RATIO = 0.2
+"""Integration pool fraction (computed as remainder)."""
+
+# =============================================================================
+# CEREBELLUM ARCHITECTURE
+# =============================================================================
+
+CEREBELLUM_GRANULE_EXPANSION = 4.0
+"""Granule cell expansion factor.
+
+Granule layer is 4× larger than mossy fiber input for sparse pattern separation.
+
+Reference: Eccles et al. (1967) - Cerebellum as a neuronal machine
+"""
+
+# =============================================================================
 # PREFRONTAL CORTEX ARCHITECTURE
 # =============================================================================
 
@@ -350,6 +391,15 @@ __all__ = [
     # Striatum
     "STRIATUM_NEURONS_PER_ACTION",
     "STRIATUM_D1_D2_RATIO",
+    # Thalamus
+    "THALAMUS_TRN_RATIO",
+    # Multisensory
+    "MULTISENSORY_VISUAL_RATIO",
+    "MULTISENSORY_AUDITORY_RATIO",
+    "MULTISENSORY_LANGUAGE_RATIO",
+    "MULTISENSORY_INTEGRATION_RATIO",
+    # Cerebellum
+    "CEREBELLUM_GRANULE_EXPANSION",
     # Prefrontal
     "PFC_WM_CAPACITY_RATIO",
     # Cerebellum

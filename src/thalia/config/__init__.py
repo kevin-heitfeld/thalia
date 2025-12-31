@@ -57,9 +57,14 @@ from thalia.regulation.region_architecture_constants import (
     CORTEX_L6_RATIO,
     STRIATUM_NEURONS_PER_ACTION,
     STRIATUM_D1_D2_RATIO,
-    PFC_WM_CAPACITY_RATIO,
+    THALAMUS_TRN_RATIO,
+    MULTISENSORY_VISUAL_RATIO,
+    MULTISENSORY_AUDITORY_RATIO,
+    MULTISENSORY_LANGUAGE_RATIO,
+    MULTISENSORY_INTEGRATION_RATIO,
     CEREBELLUM_GRANULE_EXPANSION,
     CEREBELLUM_PURKINJE_PER_DCN,
+    PFC_WM_CAPACITY_RATIO,
     METACOG_ABSTENTION_STAGE1,
     METACOG_ABSTENTION_STAGE2,
     METACOG_ABSTENTION_STAGE3,
@@ -69,8 +74,6 @@ from thalia.regulation.region_architecture_constants import (
 
 from .base import BaseConfig
 
-# Note: BaseNeuronConfig not exported here to avoid circular import
-# Import directly: from thalia.config.neuron_config import BaseNeuronConfig
 from .learning_config import (
     BaseLearningConfig,
     ModulatedLearningConfig,
@@ -121,7 +124,10 @@ from .region_sizes import (
     # Utility functions
     compute_hippocampus_sizes,
     compute_cortex_layer_sizes,
-    compute_striatum_size,
+    compute_striatum_sizes,
+    compute_thalamus_sizes,
+    compute_multisensory_sizes,
+    compute_cerebellum_sizes,
 )
 
 __all__ = [
@@ -183,7 +189,10 @@ __all__ = [
     "DEFAULT_N_ACTIONS",
     "compute_hippocampus_sizes",
     "compute_cortex_layer_sizes",
-    "compute_striatum_size",
+    "compute_striatum_sizes",
+    "compute_thalamus_sizes",
+    "compute_multisensory_sizes",
+    "compute_cerebellum_sizes",
     # Region architecture constants
     "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
     "HIPPOCAMPUS_CA3_SIZE_RATIO",
@@ -196,6 +205,12 @@ __all__ = [
     "CORTEX_L6_RATIO",
     "STRIATUM_NEURONS_PER_ACTION",
     "STRIATUM_D1_D2_RATIO",
+    "THALAMUS_TRN_RATIO",
+    "MULTISENSORY_VISUAL_RATIO",
+    "MULTISENSORY_AUDITORY_RATIO",
+    "MULTISENSORY_LANGUAGE_RATIO",
+    "MULTISENSORY_INTEGRATION_RATIO",
+    "CEREBELLUM_GRANULE_EXPANSION",
     "PFC_WM_CAPACITY_RATIO",
     "CEREBELLUM_GRANULE_EXPANSION",
     "CEREBELLUM_PURKINJE_PER_DCN",

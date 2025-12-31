@@ -91,7 +91,7 @@ Date: December 12, 2025 (Tier 3 Implementation)
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Optional, Dict, Any
 import math
 
@@ -136,11 +136,11 @@ class MultimodalIntegrationConfig(NeuralComponentConfig, HebbianLearningConfig):
     auditory_input_size: int = 0
     language_input_size: int = 0
 
-    # Pool sizes (as fractions of n_output)
-    visual_pool_ratio: float = 0.3
-    auditory_pool_ratio: float = 0.3
-    language_pool_ratio: float = 0.2
-    integration_pool_ratio: float = 0.2
+    # Pool sizes (explicit, computed from ratios via helper)
+    visual_pool_size: int = field(default=0)
+    auditory_pool_size: int = field(default=0)
+    language_pool_size: int = field(default=0)
+    integration_pool_size: int = field(default=0)
 
     # Connection strengths
     cross_modal_strength: float = 0.4
@@ -190,28 +190,23 @@ class MultimodalIntegration(NeuralRegion):
         self.config = config
         self.multisensory_config = config  # Store for growth methods
 
-        # Validate pool ratios sum to ~1.0
-        total_ratio = (
-            config.visual_pool_ratio +
-            config.auditory_pool_ratio +
-            config.language_pool_ratio +
-            config.integration_pool_ratio
-        )
-        if not (0.95 <= total_ratio <= 1.05):
-            raise ValueError(
-                f"Pool ratios must sum to ~1.0, got {total_ratio:.3f}"
-            )
+        # Read pool sizes from config (computed via helper function)
+        self.visual_pool_size = config.visual_pool_size
+        self.auditory_pool_size = config.auditory_pool_size
+        self.language_pool_size = config.language_pool_size
+        self.integration_pool_size = config.integration_pool_size
 
-        # Calculate pool sizes
-        self.visual_pool_size = int(config.n_output * config.visual_pool_ratio)
-        self.auditory_pool_size = int(config.n_output * config.auditory_pool_ratio)
-        self.language_pool_size = int(config.n_output * config.language_pool_ratio)
-        self.integration_pool_size = (
-            config.n_output -
-            self.visual_pool_size -
-            self.auditory_pool_size -
-            self.language_pool_size
+        # Validate pool sizes sum to n_output
+        total_size = (
+            self.visual_pool_size +
+            self.auditory_pool_size +
+            self.language_pool_size +
+            self.integration_pool_size
         )
+        if total_size != config.n_output:
+            raise ValueError(
+                f"Pool sizes must sum to n_output ({config.n_output}), got {total_size}"
+            )
 
         # Create neurons for each pool
         self.neurons = create_pyramidal_neurons(
@@ -725,10 +720,14 @@ class MultimodalIntegration(NeuralRegion):
         old_n_output = self.config.n_output
         new_n_output = old_n_output + n_new
 
-        # Calculate growth per pool based on ratios
-        visual_growth = int(n_new * self.multisensory_config.visual_pool_ratio)
-        auditory_growth = int(n_new * self.multisensory_config.auditory_pool_ratio)
-        language_growth = int(n_new * self.multisensory_config.language_pool_ratio)
+        # Calculate growth per pool based on current size ratios (dynamic)
+        visual_ratio = self.visual_pool_size / old_n_output
+        auditory_ratio = self.auditory_pool_size / old_n_output
+        language_ratio = self.language_pool_size / old_n_output
+
+        visual_growth = int(n_new * visual_ratio)
+        auditory_growth = int(n_new * auditory_ratio)
+        language_growth = int(n_new * language_ratio)
         integration_growth = n_new - visual_growth - auditory_growth - language_growth
 
         # Update pool sizes

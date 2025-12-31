@@ -88,7 +88,7 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from typing import Optional, Dict, Any, Union
 import math
 
@@ -112,7 +112,6 @@ from thalia.regulation.region_constants import (
     THALAMUS_BURST_GAIN,
     THALAMUS_ALPHA_SUPPRESSION,
     THALAMUS_ALPHA_GATE_THRESHOLD,
-    THALAMUS_TRN_RATIO,
     THALAMUS_TRN_INHIBITION,
     THALAMUS_TRN_RECURRENT,
     THALAMUS_SPATIAL_FILTER_WIDTH,
@@ -166,9 +165,10 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     alpha_gate_threshold: float = THALAMUS_ALPHA_GATE_THRESHOLD
     """Alpha phase threshold for suppression (0 = trough, π = peak)."""
 
-    # TRN (inhibitory shell) - simplified
-    trn_ratio: float = THALAMUS_TRN_RATIO
-    """TRN neurons as fraction of relay neurons."""
+    # Layer sizes (REQUIRED - explicit sizes for clarity)
+    # Use compute_thalamus_sizes() helper to calculate from relay size
+    relay_size: int = field(default=0)  # Relay neuron population
+    trn_size: int = field(default=0)    # TRN neuron population
 
     trn_inhibition_strength: float = THALAMUS_TRN_INHIBITION
     """Strength of TRN → relay inhibition."""
@@ -402,9 +402,9 @@ class ThalamicRelay(NeuralRegion):
         """
         self.thalamus_config = config
 
-        # Compute layer sizes
-        self.n_relay = config.n_output  # Relay neurons = output size
-        self.n_trn = int(config.n_output * config.trn_ratio)
+        # Layer sizes from config (explicit, like LayeredCortex)
+        self.n_relay = config.relay_size
+        self.n_trn = config.trn_size
 
         # Initialize NeuralRegion with relay neurons as the primary population
         super().__init__(
@@ -1290,7 +1290,8 @@ class ThalamicRelay(NeuralRegion):
         old_n_relay = self.n_relay
         old_n_trn = self.n_trn
         new_n_relay = old_n_relay + n_new
-        new_n_trn = int(new_n_relay * self.thalamus_config.trn_ratio)
+        # Maintain current TRN ratio (compute from current sizes, not config)
+        new_n_trn = int(new_n_relay * self.n_trn / self.n_relay)
         n_trn_growth = new_n_trn - old_n_trn
 
         # Use GrowthMixin helpers (Architecture Review 2025-12-24, Tier 2.5)
