@@ -151,6 +151,12 @@ class TrisynapticHippocampus(NeuralRegion):
     └──────────────┘               │ ◄──────── (recurrent loop back to CA3)
                                    ▼
                             ┌──────────────┐
+                            │     CA2      │  Social memory & temporal context
+                            │              │  Weak CA3 plasticity (stability hub)
+                            └──────┬───────┘
+                                   │           ┌─────── Direct bypass (Schaffer)
+                                   ▼           ▼
+                            ┌──────────────┐
                             │     CA1      │  Output layer with comparison
                             │              │  COINCIDENCE DETECTION: match vs mismatch
                             └──────────────┘
@@ -159,14 +165,25 @@ class TrisynapticHippocampus(NeuralRegion):
                             Output (to cortex/striatum)
     ```
 
-    Two pathways to CA3:
+    Four pathways to CA3:
     - EC→DG→CA3: Pattern-separated (sparse), strong during encoding
     - EC→CA3 direct: Preserves similarity (less sparse), provides retrieval cues
+    
+    CA2 layer (social memory):
+    - CA3→CA2: Weak plasticity (10x lower) - stability mechanism
+    - EC→CA2: Strong direct input for temporal encoding
+    - CA2→CA1: Provides temporal/social context to decision layer
+    
+    CA1 receives from:
+    - CA3 direct (Schaffer collaterals): Pattern completion
+    - CA2: Temporal/social context
+    - EC direct: Current sensory input
 
     Key biological features:
     1. THETA MODULATION: 6-10 Hz oscillations separate encoding from retrieval
     2. FEEDFORWARD INHIBITION: Stimulus onset triggers transient inhibition
     3. CONTINUOUS DYNAMICS: No artificial resets - everything flows naturally
+    4. CA2 STABILITY: Resistant to CA3 interference, critical for social memory
 
     All computations are spike-based. No rate accumulation!
 
@@ -204,11 +221,12 @@ class TrisynapticHippocampus(NeuralRegion):
         # Compute layer sizes
         self.dg_size = int(config.n_input * config.dg_expansion)
         self.ca3_size = int(self.dg_size * config.ca3_size_ratio)
+        self.ca2_size = int(self.dg_size * config.ca2_size_ratio)  # CA2: social memory hub
         self.ca1_size = config.n_output  # CA1 matches output
 
         # Initialize NeuralRegion with total neurons across all layers
         super().__init__(
-            n_neurons=self.dg_size + self.ca3_size + self.ca1_size,
+            n_neurons=self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size,
             neuron_config=None,  # We create custom neurons for each layer
             default_learning_rule="hebbian",  # Hippocampus uses Hebbian learning
             device=config.device,
@@ -252,6 +270,9 @@ class TrisynapticHippocampus(NeuralRegion):
             adapt_increment=config.adapt_increment,  # SFA enabled!
             tau_adapt=config.adapt_tau,
         )
+        # CA2: Social memory and temporal context (standard pyramidal)
+        self.ca2_neurons = create_pyramidal_neurons(self.ca2_size, self.device)
+        # CA1: Output layer
         self.ca1_neurons = create_pyramidal_neurons(self.ca1_size, self.device)
 
         # Stimulus gating module (transient inhibition at stimulus changes)
@@ -317,25 +338,71 @@ class TrisynapticHippocampus(NeuralRegion):
                 per_synapse=True,
             )
             self.stp_ca3_recurrent.to(device)
+
+            # =========================================================================
+            # CA2 PATHWAYS: Social memory and temporal context
+            # =========================================================================
+            # CA3→CA2: DEPRESSION - stability mechanism
+            # Weak plasticity (10x lower than typical) prevents runaway activity
+            # and makes CA2 resistant to CA3 pattern completion interference
+            self.stp_ca3_ca2 = ShortTermPlasticity(
+                n_pre=self.ca3_size,
+                n_post=self.ca2_size,
+                config=get_stp_config("schaffer_collateral", dt=1.0),  # Use Schaffer preset (depressing)
+                per_synapse=True,
+            )
+            self.stp_ca3_ca2.to(device)
+
+            # CA2→CA1: FACILITATING - temporal sequences
+            # Repeated CA2 activity facilitates transmission to CA1,
+            # supporting temporal context and sequence encoding
+            self.stp_ca2_ca1 = ShortTermPlasticity(
+                n_pre=self.ca2_size,
+                n_post=self.ca1_size,
+                config=get_stp_config("mossy_fiber", dt=1.0),  # Use mossy fiber preset (facilitating)
+                per_synapse=True,
+            )
+            self.stp_ca2_ca1.to(device)
+
+            # EC→CA2 Direct: DEPRESSION - similar to EC→CA1
+            # Direct cortical input to CA2 for temporal encoding
+            self.stp_ec_ca2 = ShortTermPlasticity(
+                n_pre=config.n_input,
+                n_post=self.ca2_size,
+                config=get_stp_config("ec_ca1", dt=1.0),  # Use EC→CA1 preset (depressing)
+                per_synapse=True,
+            )
+            self.stp_ec_ca2.to(device)
         else:
             self.stp_mossy = None
             self.stp_schaffer = None
             self.stp_ec_ca1 = None
             self.stp_ca3_recurrent = None
+            self.stp_ca3_ca2 = None
+            self.stp_ca2_ca1 = None
+            self.stp_ec_ca2 = None
 
         # =====================================================================
         # INTER-LAYER AXONAL DELAYS
         # =====================================================================
         # Create delay buffers for biological signal propagation within circuit
         # DG→CA3 delay: Mossy fiber transmission (~3ms biologically)
-        # CA3→CA1 delay: Schaffer collateral transmission (~3ms biologically)
+        # CA3→CA2 delay: Short proximity-based delay (~2ms biologically)
+        # CA2→CA1 delay: Short proximity-based delay (~2ms biologically)
+        # CA3→CA1 delay: Schaffer collateral transmission (~3ms biologically, direct bypass)
         # Uses circular buffer mechanism from AxonalDelaysMixin
         self._dg_ca3_delay_steps = int(config.dg_to_ca3_delay_ms / config.dt_ms)
+        self._ca3_ca2_delay_steps = int(config.ca3_to_ca2_delay_ms / config.dt_ms)
+        self._ca2_ca1_delay_steps = int(config.ca2_to_ca1_delay_ms / config.dt_ms)
         self._ca3_ca1_delay_steps = int(config.ca3_to_ca1_delay_ms / config.dt_ms)
 
         # Initialize delay buffers (lazily initialized on first use)
         self._dg_ca3_delay_buffer: Optional[torch.Tensor] = None
         self._dg_ca3_delay_ptr: int = 0
+        self._ca3_ca2_delay_buffer: Optional[torch.Tensor] = None
+        self._ca3_ca2_delay_ptr: int = 0
+        self._ca2_ca1_delay_buffer: Optional[torch.Tensor] = None
+        self._ca2_ca1_delay_ptr: int = 0
         self._ca3_ca1_delay_buffer: Optional[torch.Tensor] = None
         self._ca3_ca1_delay_ptr: int = 0
 
@@ -568,7 +635,50 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)
         # Clamp to positive (excitatory recurrent connections)
         self.synaptic_weights["ca3_ca3"].data.clamp_(min=0.0)
+
+        # =====================================================================
+        # CA2 PATHWAYS: Social memory and temporal context
+        # =====================================================================
+        # CA3 → CA2: Weak plasticity (stability mechanism) - AT CA2 DENDRITES
+        # CA2 is resistant to CA3 pattern completion interference
+        self.synaptic_weights["ca3_ca2"] = nn.Parameter(
+            WeightInitializer.sparse_random(
+                n_output=self.ca2_size,
+                n_input=self.ca3_size,
+                sparsity=0.3,  # Moderate connectivity
+                weight_scale=0.2,  # Weaker than typical (stability)
+                normalize_rows=True,
+                device=device
+            )
+        )
+
+        # EC → CA2: Direct input for temporal encoding - AT CA2 DENDRITES
+        self.synaptic_weights["ec_ca2"] = nn.Parameter(
+            WeightInitializer.sparse_random(
+                n_output=self.ca2_size,
+                n_input=self.tri_config.n_input,
+                sparsity=0.3,  # Similar to EC→CA3
+                weight_scale=0.4,  # Strong direct encoding
+                normalize_rows=True,
+                device=device
+            )
+        )
+
+        # CA2 → CA1: Output to decision layer - AT CA1 DENDRITES
+        # Provides temporal/social context to CA1 processing
+        self.synaptic_weights["ca2_ca1"] = nn.Parameter(
+            WeightInitializer.sparse_random(
+                n_output=self.ca1_size,
+                n_input=self.ca2_size,
+                sparsity=0.2,  # Selective projection
+                weight_scale=0.3,  # Moderate weights
+                normalize_rows=False,  # Pattern-specific
+                device=device
+            )
+        )
+
         # CA3 → CA1: Feedforward (retrieved memory) - SPARSE! - AT CA1 DENDRITES
+        # This is the DIRECT bypass pathway (Schaffer collaterals)
         self.synaptic_weights["ca3_ca1"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca1_size,
@@ -646,11 +756,18 @@ class TrisynapticHippocampus(NeuralRegion):
 
         self.dg_neurons.reset_state()
         self.ca3_neurons.reset_state()
+        self.ca2_neurons.reset_state()  # CA2 neurons
         self.ca1_neurons.reset_state()
 
         # Reset STP state for all pathways
         if self.stp_mossy is not None:
             self.stp_mossy.reset_state()
+        if self.stp_ca3_ca2 is not None:
+            self.stp_ca3_ca2.reset_state()
+        if self.stp_ca2_ca1 is not None:
+            self.stp_ca2_ca1.reset_state()
+        if self.stp_ec_ca2 is not None:
+            self.stp_ec_ca2.reset_state()
         if self.stp_schaffer is not None:
             self.stp_schaffer.reset_state()
         if self.stp_ec_ca1 is not None:
@@ -670,6 +787,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.state = HippocampusState(
             dg_spikes=torch.zeros(self.dg_size, device=device),
             ca3_spikes=torch.zeros(self.ca3_size, device=device),
+            ca2_spikes=torch.zeros(self.ca2_size, device=device),  # CA2 state
             ca1_spikes=torch.zeros(self.ca1_size, device=device),
             ca3_membrane=torch.zeros(self.ca3_size, device=device),
             ca3_persistent=torch.zeros(self.ca3_size, device=device),
@@ -677,6 +795,7 @@ class TrisynapticHippocampus(NeuralRegion):
             sample_trace=None,  # Set during sample encoding
             dg_trace=torch.zeros(self.dg_size, device=device),
             ca3_trace=torch.zeros(self.ca3_size, device=device),
+            ca2_trace=torch.zeros(self.ca2_size, device=device),  # CA2 trace
             nmda_trace=torch.zeros(self.ca1_size, device=device),
             stored_dg_pattern=None,  # Set during sample phase
             ffi_strength=0.0,
@@ -1370,6 +1489,100 @@ class TrisynapticHippocampus(NeuralRegion):
             clamp_weights(self.synaptic_weights["ca3_ca3"].data, self.tri_config.w_min, self.tri_config.w_max)
 
         # =====================================================================
+        # CA2: Social Memory and Temporal Context Layer
+        # =====================================================================
+        # CA2 sits between CA3 and CA1, providing:
+        # - Temporal context encoding (when events occurred)
+        # - Social information processing (future: agent interactions)
+        # - Stability mechanism (weak CA3→CA2 plasticity prevents interference)
+        #
+        # Key properties:
+        # - Receives CA3 input (but resists CA3 pattern completion)
+        # - Strong direct EC input (for temporal encoding)
+        # - Projects to CA1 (providing context to decision layer)
+
+        # APPLY CA3→CA2 AXONAL DELAY
+        if self._ca3_ca2_delay_steps > 0:
+            if self._ca3_ca2_delay_buffer is None:
+                max_delay_steps = max(1, self._ca3_ca2_delay_steps * 2 + 1)
+                self._ca3_ca2_delay_buffer = torch.zeros(
+                    max_delay_steps, self.ca3_size,
+                    device=ca3_spikes.device, dtype=torch.bool
+                )
+                self._ca3_ca2_delay_ptr = 0
+
+            self._ca3_ca2_delay_buffer[self._ca3_ca2_delay_ptr] = ca3_spikes
+            read_idx = (self._ca3_ca2_delay_ptr - self._ca3_ca2_delay_steps) % self._ca3_ca2_delay_buffer.shape[0]
+            ca3_spikes_for_ca2 = self._ca3_ca2_delay_buffer[read_idx]
+            self._ca3_ca2_delay_ptr = (self._ca3_ca2_delay_ptr + 1) % self._ca3_ca2_delay_buffer.shape[0]
+        else:
+            ca3_spikes_for_ca2 = ca3_spikes
+
+        # CA3→CA2 input with STP (depressing - stability mechanism)
+        if self.stp_ca3_ca2 is not None:
+            stp_efficacy = self.stp_ca3_ca2(ca3_spikes_for_ca2.float())
+            effective_w_ca3_ca2 = self.synaptic_weights["ca3_ca2"] * stp_efficacy.T
+            ca2_from_ca3 = torch.matmul(effective_w_ca3_ca2, ca3_spikes_for_ca2.float())
+        else:
+            ca2_from_ca3 = torch.matmul(self.synaptic_weights["ca3_ca2"], ca3_spikes_for_ca2.float())
+
+        # EC→CA2 direct input with STP (depressing - temporal encoding)
+        if self.stp_ec_ca2 is not None:
+            stp_efficacy = self.stp_ec_ca2(input_spikes.float())
+            effective_w_ec_ca2 = self.synaptic_weights["ec_ca2"] * stp_efficacy.T
+            ca2_from_ec = torch.matmul(effective_w_ec_ca2, input_spikes.float())
+        else:
+            ca2_from_ec = torch.matmul(self.synaptic_weights["ec_ca2"], input_spikes.float())
+
+        # Combine CA2 inputs (both CA3 pattern and direct EC encoding)
+        ca2_input = ca2_from_ca3 + ca2_from_ec
+
+        # Run through CA2 neurons
+        ca2_g_exc = F.relu(ca2_input)
+        ca2_spikes, _ = self.ca2_neurons(ca2_g_exc, g_inh_input=None)
+
+        # Apply sparsity
+        ca2_spikes = self._apply_wta_sparsity(
+            ca2_spikes,
+            self.tri_config.ca2_sparsity,
+            self.ca2_neurons.membrane,
+        )
+        self.state.ca2_spikes = ca2_spikes
+
+        # CA3→CA2 WEAK PLASTICITY (stability mechanism)
+        # 10x weaker learning than typical - prevents CA2 from being dominated by CA3
+        ca3_activity_for_ca2 = ca3_spikes_for_ca2.float()
+        ca2_activity = ca2_spikes.float()
+
+        if ca3_activity_for_ca2.sum() > 0 and ca2_activity.sum() > 0:
+            # Very weak learning rate (stability hub)
+            base_lr = self.tri_config.ca3_ca2_learning_rate * encoding_mod
+
+            if self.tri_config.theta_gamma_enabled:
+                gamma_mod = self._gamma_amplitude_effective
+                effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
+            else:
+                effective_lr = base_lr
+
+            dW = effective_lr * torch.outer(ca2_activity, ca3_activity_for_ca2)
+            self.synaptic_weights["ca3_ca2"].data += dW
+            clamp_weights(self.synaptic_weights["ca3_ca2"].data, self.tri_config.w_min, self.tri_config.w_max)
+
+        # EC→CA2 STRONG PLASTICITY (temporal encoding)
+        if input_spikes.float().sum() > 0 and ca2_activity.sum() > 0:
+            base_lr = self.tri_config.ec_ca2_learning_rate * encoding_mod
+
+            if self.tri_config.theta_gamma_enabled:
+                gamma_mod = self._gamma_amplitude_effective
+                effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
+            else:
+                effective_lr = base_lr
+
+            dW = effective_lr * torch.outer(ca2_activity, input_spikes.float())
+            self.synaptic_weights["ec_ca2"].data += dW
+            clamp_weights(self.synaptic_weights["ec_ca2"].data, self.tri_config.w_min, self.tri_config.w_max)
+
+        # =====================================================================
         # 3. CA1: Coincidence Detection with Plastic EC→CA1 Pathway
         # =====================================================================
         # The key insight: EC→CA1 weights LEARN during sample phase to align
@@ -1499,8 +1712,36 @@ class TrisynapticHippocampus(NeuralRegion):
         # CA3 contribution: stronger during encoding
         ca3_contribution = ca1_from_ca3 * (CA3_CA1_ENCODING_SCALE + CA3_CA1_ENCODING_SCALE * encoding_mod)
 
-        # Total CA1 input
-        ca1_input = ca3_contribution + ampa_current + nmda_current
+        # APPLY CA2→CA1 AXONAL DELAY
+        if self._ca2_ca1_delay_steps > 0:
+            if self._ca2_ca1_delay_buffer is None:
+                max_delay_steps = max(1, self._ca2_ca1_delay_steps * 2 + 1)
+                self._ca2_ca1_delay_buffer = torch.zeros(
+                    max_delay_steps, self.ca2_size,
+                    device=ca2_spikes.device, dtype=torch.bool
+                )
+                self._ca2_ca1_delay_ptr = 0
+
+            self._ca2_ca1_delay_buffer[self._ca2_ca1_delay_ptr] = ca2_spikes
+            read_idx = (self._ca2_ca1_delay_ptr - self._ca2_ca1_delay_steps) % self._ca2_ca1_delay_buffer.shape[0]
+            ca2_spikes_delayed = self._ca2_ca1_delay_buffer[read_idx]
+            self._ca2_ca1_delay_ptr = (self._ca2_ca1_delay_ptr + 1) % self._ca2_ca1_delay_buffer.shape[0]
+        else:
+            ca2_spikes_delayed = ca2_spikes
+
+        # CA2→CA1 contribution with STP (facilitating - temporal sequences)
+        if self.stp_ca2_ca1 is not None:
+            stp_efficacy = self.stp_ca2_ca1(ca2_spikes_delayed.float())
+            effective_w_ca2_ca1 = self.synaptic_weights["ca2_ca1"] * stp_efficacy.T
+            ca1_from_ca2 = torch.matmul(effective_w_ca2_ca1, ca2_spikes_delayed.float())
+        else:
+            ca1_from_ca2 = torch.matmul(self.synaptic_weights["ca2_ca1"], ca2_spikes_delayed.float())
+
+        # Apply FFI to CA2 contribution as well
+        ca1_from_ca2 = ca1_from_ca2 * ffi_factor
+
+        # Total CA1 input (now includes CA2 temporal/social context)
+        ca1_input = ca3_contribution + ca1_from_ca2 + ampa_current + nmda_current
 
         # Split excitation and inhibition for ConductanceLIF
         # Excitatory: CA3 + EC pathways
@@ -1564,6 +1805,26 @@ class TrisynapticHippocampus(NeuralRegion):
                 self.synaptic_weights["ec_ca1"].data += dW
                 clamp_weights(self.synaptic_weights["ec_ca1"].data, cfg.w_min, cfg.w_max)
 
+        # ---------------------------------------------------------
+        # HEBBIAN LEARNING: CA2→CA1 plasticity (during encoding)
+        # ---------------------------------------------------------
+        # CA2 provides temporal/social context to CA1
+        # Moderate learning rate (between CA3→CA2 weak and EC→CA1 strong)
+        ca2_activity_delayed = ca2_spikes_delayed.float()
+
+        if ca2_activity_delayed.sum() > 0 and ca1_activity.sum() > 0:
+            base_lr = cfg.ca2_ca1_learning_rate * encoding_mod
+
+            if self.tri_config.theta_gamma_enabled:
+                gamma_mod = self._gamma_amplitude_effective
+                effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
+            else:
+                effective_lr = base_lr
+
+            dW = effective_lr * torch.outer(ca1_activity, ca2_activity_delayed)
+            self.synaptic_weights["ca2_ca1"].data += dW
+            clamp_weights(self.synaptic_weights["ca2_ca1"].data, cfg.w_min, cfg.w_max)
+
         self.state.ca1_spikes = ca1_spikes
 
         # =====================================================================
@@ -1573,6 +1834,8 @@ class TrisynapticHippocampus(NeuralRegion):
             update_trace(self.state.dg_trace, dg_spikes, tau=self.tri_config.tau_plus_ms, dt=dt)
         if self.state.ca3_trace is not None:
             update_trace(self.state.ca3_trace, ca3_spikes, tau=self.tri_config.tau_plus_ms, dt=dt)
+        if self.state.ca2_trace is not None:
+            update_trace(self.state.ca2_trace, ca2_spikes, tau=self.tri_config.tau_plus_ms, dt=dt)
 
         # Store spikes in base state for compatibility
         # CA1 spikes ARE the output - downstream learns from these patterns!

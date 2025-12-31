@@ -71,6 +71,7 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # Layer sizes (relative to input)
     dg_expansion: float = HIPPOCAMPUS_DG_EXPANSION_FACTOR  # DG has 5x more neurons than input
     ca3_size_ratio: float = HIPPOCAMPUS_CA3_SIZE_RATIO    # CA3 is half of DG
+    ca2_size_ratio: float = 0.25  # CA2 is ~50% of CA3 (small but crucial region)
     ca1_size_ratio: float = HIPPOCAMPUS_CA1_SIZE_RATIO    # CA1 matches output
 
     # DG sparsity (VERY sparse for pattern separation)
@@ -80,6 +81,10 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # CA3 recurrent dynamics
     ca3_recurrent_strength: float = 0.4  # Strength of recurrent connections
     ca3_sparsity: float = 0.10           # 10% active
+
+    # CA2 dynamics (social memory and temporal context)
+    ca2_sparsity: float = 0.12     # 12% active (slightly higher than CA3)
+    ca2_plasticity_resistance: float = 0.1  # CA3→CA2 has 10x weaker plasticity (stability hub)
 
     # CA1 output
     ca1_sparsity: float = 0.15     # 15% active
@@ -109,7 +114,10 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
 
     # Pathway-specific learning rates
     # Note: learning_rate (inherited from STDPLearningConfig) is used for CA3 recurrent
-    ec_ca1_learning_rate: float = 0.5  # Strong learning for EC→CA1 alignment
+    ca3_ca2_learning_rate: float = 0.001  # Very weak CA3→CA2 (stability mechanism)
+    ec_ca2_learning_rate: float = 0.01    # Strong EC→CA2 direct (temporal encoding)
+    ca2_ca1_learning_rate: float = 0.005  # Moderate CA2→CA1 (social context to output)
+    ec_ca1_learning_rate: float = 0.5     # Strong learning for EC→CA1 alignment
 
     # Feedforward inhibition parameters
     ffi_threshold: float = 0.3       # Input change threshold to trigger FFI
@@ -121,13 +129,17 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # =========================================================================
     # Biological signal propagation times within hippocampal circuit:
     # - DG→CA3 (mossy fibers): ~3ms
-    # - CA3→CA1 (Schaffer collaterals): ~3ms
-    # Total circuit latency: ~6ms (much faster than theta cycle ~100-150ms)
+    # - CA3→CA2: ~2ms (shorter due to proximity)
+    # - CA2→CA1: ~2ms
+    # - CA3→CA1 (Schaffer collaterals): ~3ms (direct bypass)
+    # Total circuit latency: ~7ms (slightly longer with CA2)
     #
     # Set to 0.0 for instant processing (current behavior, backward compatible)
     # Set to biological values for realistic temporal dynamics and STDP timing
     dg_to_ca3_delay_ms: float = 0.0  # DG→CA3 axonal delay (0=instant)
-    ca3_to_ca1_delay_ms: float = 0.0  # CA3→CA1 axonal delay (0=instant)
+    ca3_to_ca2_delay_ms: float = 0.0  # CA3→CA2 axonal delay (0=instant)
+    ca2_to_ca1_delay_ms: float = 0.0  # CA2→CA1 axonal delay (0=instant)
+    ca3_to_ca1_delay_ms: float = 0.0  # CA3→CA1 axonal delay (0=instant, direct bypass)
 
     # CA3 Bistable Neuron Parameters
     # Real CA3 pyramidal neurons have intrinsic bistability via I_NaP (persistent
@@ -161,15 +173,22 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # Biologically, different hippocampal pathways have distinct STP properties:
     # - Mossy Fibers (DG→CA3): STRONGLY FACILITATING - repeated DG activity
     #   causes progressively stronger CA3 activation (U~0.03, τ_f~500ms)
+    # - CA3→CA2: DEPRESSING - stability mechanism, prevents runaway activity
+    # - CA2→CA1: FACILITATING - temporal sequences benefit from facilitation
     # - Schaffer Collaterals (CA3→CA1): MIXED/DEPRESSING - high-frequency
     #   activity causes depression, enabling novelty detection
     # - EC→CA1 direct: DEPRESSING - initial stimulus is strongest
+    # - EC→CA2 direct: DEPRESSING - similar to EC→CA1
     #
     # References:
     # - Salin et al. (1996): Mossy fiber facilitation (U=0.03!)
     # - Dobrunz & Stevens (1997): Schaffer collateral STP
+    # - Chevaleyre & Siegelbaum (2010): CA2 plasticity properties
     stp_enabled: bool = True
     stp_mossy_type: STPType = STPType.FACILITATING_STRONG  # DG→CA3 (MF)
+    stp_ca3_ca2_type: STPType = STPType.DEPRESSING         # CA3→CA2 (stability)
+    stp_ca2_ca1_type: STPType = STPType.FACILITATING       # CA2→CA1 (sequences)
+    stp_ec_ca2_type: STPType = STPType.DEPRESSING          # EC→CA2 direct
     stp_schaffer_type: STPType = STPType.DEPRESSING        # CA3→CA1 (SC)
     stp_ec_ca1_type: STPType = STPType.DEPRESSING          # EC→CA1 direct
     # CA3→CA3 recurrent: DEPRESSING - prevents frozen attractors
@@ -263,17 +282,17 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
 
 @dataclass
 class HippocampusState(BaseRegionState):
-    """State for hippocampus (trisynaptic circuit) with RegionState protocol compliance.
+    """State for hippocampus (DG→CA3→CA2→CA1 circuit) with RegionState protocol compliance.
 
     Extends BaseRegionState with hippocampus-specific state:
-    - DG/CA3/CA1 layer activities and traces
+    - DG/CA3/CA2/CA1 layer activities and traces
     - CA3 persistent activity (attractor dynamics)
     - Sample trace for memory encoding
     - STDP traces for multiple pathways
     - NMDA trace for temporal integration
     - Stored DG pattern for match/mismatch detection
     - Feedforward inhibition strength
-    - Short-term plasticity (STP) state for 4 pathways
+    - Short-term plasticity (STP) state for 7 pathways
 
     Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
     inherited from BaseRegionState.
@@ -286,6 +305,7 @@ class HippocampusState(BaseRegionState):
     # Layer activities (current spikes)
     dg_spikes: Optional[torch.Tensor] = None
     ca3_spikes: Optional[torch.Tensor] = None
+    ca2_spikes: Optional[torch.Tensor] = None  # CA2: Social memory and temporal context
     ca1_spikes: Optional[torch.Tensor] = None
 
     # CA3 recurrent state
@@ -306,6 +326,7 @@ class HippocampusState(BaseRegionState):
     # STDP traces
     dg_trace: Optional[torch.Tensor] = None
     ca3_trace: Optional[torch.Tensor] = None
+    ca2_trace: Optional[torch.Tensor] = None
 
     # NMDA trace for temporal integration (slow kinetics)
     nmda_trace: Optional[torch.Tensor] = None
@@ -316,8 +337,11 @@ class HippocampusState(BaseRegionState):
     # Current feedforward inhibition strength
     ffi_strength: float = 0.0
 
-    # Short-term plasticity state for 4 pathways
+    # Short-term plasticity state for 7 pathways
     stp_mossy_state: Optional[Dict[str, torch.Tensor]] = None         # DG→CA3 facilitation
+    stp_ca3_ca2_state: Optional[Dict[str, torch.Tensor]] = None       # CA3→CA2 depression
+    stp_ca2_ca1_state: Optional[Dict[str, torch.Tensor]] = None       # CA2→CA1 facilitation
+    stp_ec_ca2_state: Optional[Dict[str, torch.Tensor]] = None        # EC→CA2 direct
     stp_schaffer_state: Optional[Dict[str, torch.Tensor]] = None      # CA3→CA1 depression
     stp_ec_ca1_state: Optional[Dict[str, torch.Tensor]] = None        # EC→CA1 direct
     stp_ca3_recurrent_state: Optional[Dict[str, torch.Tensor]] = None # CA3 recurrent
@@ -326,7 +350,7 @@ class HippocampusState(BaseRegionState):
         """Serialize state to dictionary for checkpointing.
 
         Returns:
-            Dictionary with all state fields, including nested STP states for 4 pathways.
+            Dictionary with all state fields, including nested STP states for 7 pathways.
         """
         return {
             # Base region state
@@ -338,6 +362,7 @@ class HippocampusState(BaseRegionState):
             # Layer activities
             "dg_spikes": self.dg_spikes,
             "ca3_spikes": self.ca3_spikes,
+            "ca2_spikes": self.ca2_spikes,
             "ca1_spikes": self.ca1_spikes,
             # CA3 state
             "ca3_membrane": self.ca3_membrane,
@@ -348,11 +373,15 @@ class HippocampusState(BaseRegionState):
             "sample_trace": self.sample_trace,
             "dg_trace": self.dg_trace,
             "ca3_trace": self.ca3_trace,
+            "ca2_trace": self.ca2_trace,
             "nmda_trace": self.nmda_trace,
             "stored_dg_pattern": self.stored_dg_pattern,
             "ffi_strength": self.ffi_strength,
-            # STP state (nested dicts for 4 pathways)
+            # STP state (nested dicts for 7 pathways)
             "stp_mossy_state": self.stp_mossy_state,
+            "stp_ca3_ca2_state": self.stp_ca3_ca2_state,
+            "stp_ca2_ca1_state": self.stp_ca2_ca1_state,
+            "stp_ec_ca2_state": self.stp_ec_ca2_state,
             "stp_schaffer_state": self.stp_schaffer_state,
             "stp_ec_ca1_state": self.stp_ec_ca1_state,
             "stp_ca3_recurrent_state": self.stp_ca3_recurrent_state,
@@ -394,6 +423,7 @@ class HippocampusState(BaseRegionState):
             # Layer activities
             dg_spikes=transfer_tensor(data.get("dg_spikes")),
             ca3_spikes=transfer_tensor(data.get("ca3_spikes")),
+            ca2_spikes=transfer_tensor(data.get("ca2_spikes")),  # Backward compatible (None if missing)
             ca1_spikes=transfer_tensor(data.get("ca1_spikes")),
             # CA3 state
             ca3_membrane=transfer_tensor(data.get("ca3_membrane")),
@@ -404,11 +434,15 @@ class HippocampusState(BaseRegionState):
             sample_trace=transfer_tensor(data.get("sample_trace")),
             dg_trace=transfer_tensor(data.get("dg_trace")),
             ca3_trace=transfer_tensor(data.get("ca3_trace")),
+            ca2_trace=transfer_tensor(data.get("ca2_trace")),  # Backward compatible (None if missing)
             nmda_trace=transfer_tensor(data.get("nmda_trace")),
             stored_dg_pattern=transfer_tensor(data.get("stored_dg_pattern")),
             ffi_strength=data.get("ffi_strength", 0.0),
-            # STP state (nested dicts for 4 pathways)
+            # STP state (nested dicts for 7 pathways, backward compatible)
             stp_mossy_state=transfer_nested_dict(data.get("stp_mossy_state")),
+            stp_ca3_ca2_state=transfer_nested_dict(data.get("stp_ca3_ca2_state")),
+            stp_ca2_ca1_state=transfer_nested_dict(data.get("stp_ca2_ca1_state")),
+            stp_ec_ca2_state=transfer_nested_dict(data.get("stp_ec_ca2_state")),
             stp_schaffer_state=transfer_nested_dict(data.get("stp_schaffer_state")),
             stp_ec_ca1_state=transfer_nested_dict(data.get("stp_ec_ca1_state")),
             stp_ca3_recurrent_state=transfer_nested_dict(data.get("stp_ca3_recurrent_state")),
@@ -422,16 +456,21 @@ class HippocampusState(BaseRegionState):
         # Reset hippocampus-specific state
         self.dg_spikes = None
         self.ca3_spikes = None
+        self.ca2_spikes = None
         self.ca1_spikes = None
         self.ca3_membrane = None
         self.ca3_persistent = None
         self.sample_trace = None
         self.dg_trace = None
         self.ca3_trace = None
+        self.ca2_trace = None
         self.nmda_trace = None
         self.stored_dg_pattern = None
         self.ffi_strength = 0.0
         self.stp_mossy_state = None
+        self.stp_ca3_ca2_state = None
+        self.stp_ca2_ca1_state = None
+        self.stp_ec_ca2_state = None
         self.stp_schaffer_state = None
         self.stp_ec_ca1_state = None
         self.stp_ca3_recurrent_state = None
