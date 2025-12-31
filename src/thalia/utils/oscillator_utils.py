@@ -26,6 +26,7 @@ from thalia.regulation.oscillator_constants import (
     ACH_RECURRENT_SUPPRESSION,
     ACH_THRESHOLD_FOR_SUPPRESSION,
     THETA_GAMMA_PHASE_DIFF_SIGMA,
+    GAMMA_LEARNING_MODULATION_SCALE,
 )
 
 
@@ -215,7 +216,7 @@ def compute_oscillator_modulated_gain(
 def compute_learning_rate_modulation(
     base_lr: float,
     gamma_modulation: float,
-    scale: float = 0.5,
+    scale: float = GAMMA_LEARNING_MODULATION_SCALE,
 ) -> float:
     """Compute gamma-modulated learning rate.
 
@@ -225,7 +226,8 @@ def compute_learning_rate_modulation(
     Args:
         base_lr: Base learning rate
         gamma_modulation: Gamma phase modulation [0.0, 1.0]
-        scale: Modulation scale (default: 0.5 for 50-100% range)
+        scale: Modulation scale (default: GAMMA_LEARNING_MODULATION_SCALE = 0.5
+               for 50-100% range)
 
     Returns:
         Modulated learning rate = base_lr * (scale + scale * gamma_mod)

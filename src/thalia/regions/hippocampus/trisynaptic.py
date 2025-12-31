@@ -114,6 +114,7 @@ from thalia.regulation.oscillator_constants import (
     CA3_RECURRENT_GATE_RANGE,
     CA3_CA1_ENCODING_SCALE,
     CA1_SPARSITY_RETRIEVAL_BOOST,
+    GAMMA_LEARNING_MODULATION_SCALE,
 )
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
@@ -1236,7 +1237,8 @@ class TrisynapticHippocampus(NeuralRegion):
             # Scale input by gamma (but NO slot-based gating)
             # This creates temporal windows where input is more/less effective
             # Combined with weight diversity, this leads to phase preferences
-            gamma_modulation = 0.5 + 0.5 * gamma_amplitude  # [0.5, 1.0]
+            scale = GAMMA_LEARNING_MODULATION_SCALE
+            gamma_modulation = scale + scale * gamma_amplitude  # [0.5, 1.0]
             ca3_input = ca3_input * gamma_modulation
 
         # Run through CA3 neurons (ConductanceLIF expects g_exc, g_inh)

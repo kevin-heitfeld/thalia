@@ -210,8 +210,12 @@ Neurons only process input during specific gamma phases (attention windows).
 GAMMA_LEARNING_MODULATION_SCALE: float = 0.5
 """Scale factor for gamma-phase learning rate modulation.
 
-effective_lr = base_lr * (0.5 + 0.5 * gamma_mod)
+effective_lr = base_lr * (SCALE + SCALE * gamma_mod)
 Range: [50%, 100%] of base learning rate
+
+Also used for gamma-phase input gain modulation:
+effective_input = input * (SCALE + SCALE * gamma_amplitude)
+Range: [50%, 100%] of base input
 """
 
 # =============================================================================
