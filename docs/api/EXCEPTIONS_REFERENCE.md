@@ -1,7 +1,7 @@
 # Exceptions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 17:33:00
+> Last updated: 2025-12-31 19:33:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all custom exception classes in Thalia.

@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 17:33:00
+> Last updated: 2025-12-31 19:33:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -10,7 +10,7 @@ Total: 3 configuration classes
 
 ## Configuration Classes
 
-### [``HippocampusConfig``](../../src/thalia/regions/hippocampus/config.py#L55)
+### [``HippocampusConfig``](../../src/thalia/regions/hippocampus/config.py#L52)
 
 **Source**: [`thalia/regions/hippocampus/config.py`](../../src/thalia/regions/hippocampus/config.py)
 
@@ -21,13 +21,16 @@ Total: 3 configuration classes
 | Field | Type | Default |
 |-------|------|-------|
 | `learning_rate` | `float` | `LEARNING_RATE_ONE_SHOT` |
-| `dg_expansion` | `float` | `HIPPOCAMPUS_DG_EXPANSION_FACTOR` |
-| `ca3_size_ratio` | `float` | `HIPPOCAMPUS_CA3_SIZE_RATIO` |
-| `ca1_size_ratio` | `float` | `HIPPOCAMPUS_CA1_SIZE_RATIO` |
+| `dg_size` | `int` | `0` |
+| `ca3_size` | `int` | `0` |
+| `ca2_size` | `int` | `0` |
+| `ca1_size` | `int` | `0` |
 | `dg_sparsity` | `float` | `HIPPOCAMPUS_SPARSITY_TARGET` |
 | `dg_inhibition` | `float` | `5.0` |
 | `ca3_recurrent_strength` | `float` | `0.4` |
 | `ca3_sparsity` | `float` | `0.1` |
+| `ca2_sparsity` | `float` | `0.12` |
+| `ca2_plasticity_resistance` | `float` | `0.1` |
 | `ca1_sparsity` | `float` | `0.15` |
 | `coincidence_window` | `float` | `5.0` |
 | `enable_spillover` | `bool` | `True` |
@@ -38,11 +41,16 @@ Total: 3 configuration classes
 | `nmda_threshold` | `float` | `0.4` |
 | `nmda_steepness` | `float` | `12.0` |
 | `ampa_ratio` | `float` | `0.05` |
+| `ca3_ca2_learning_rate` | `float` | `0.001` |
+| `ec_ca2_learning_rate` | `float` | `0.01` |
+| `ca2_ca1_learning_rate` | `float` | `0.005` |
 | `ec_ca1_learning_rate` | `float` | `0.5` |
 | `ffi_threshold` | `float` | `0.3` |
 | `ffi_strength` | `float` | `0.8` |
 | `ffi_tau` | `float` | `5.0` |
 | `dg_to_ca3_delay_ms` | `float` | `0.0` |
+| `ca3_to_ca2_delay_ms` | `float` | `0.0` |
+| `ca2_to_ca1_delay_ms` | `float` | `0.0` |
 | `ca3_to_ca1_delay_ms` | `float` | `0.0` |
 | `ca3_persistent_tau` | `float` | `300.0` |
 | `ca3_persistent_gain` | `float` | `3.0` |
@@ -50,6 +58,9 @@ Total: 3 configuration classes
 | `theta_gamma_enabled` | `bool` | `True` |
 | `stp_enabled` | `bool` | `True` |
 | `stp_mossy_type` | `STPType` | `STPType.FACILITATING_STRONG` |
+| `stp_ca3_ca2_type` | `STPType` | `STPType.DEPRESSING` |
+| `stp_ca2_ca1_type` | `STPType` | `STPType.FACILITATING` |
+| `stp_ec_ca2_type` | `STPType` | `STPType.DEPRESSING` |
 | `stp_schaffer_type` | `STPType` | `STPType.DEPRESSING` |
 | `stp_ec_ca1_type` | `STPType` | `STPType.DEPRESSING` |
 | `stp_ca3_recurrent_type` | `STPType` | `STPType.DEPRESSING_FAST` |
@@ -73,7 +84,7 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L139)
+- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L137)
 
 ---
 
@@ -135,11 +146,11 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`cortex`](../../src/thalia/regions/cortex/layered_cortex.py#L152)
+- [`cortex`](../../src/thalia/regions/cortex/layered_cortex.py#L150)
 
 ---
 
-### [``StriatumConfig``](../../src/thalia/regions/striatum/config.py#L24)
+### [``StriatumConfig``](../../src/thalia/regions/striatum/config.py#L23)
 
 **Source**: [`thalia/regions/striatum/config.py`](../../src/thalia/regions/striatum/config.py)
 
@@ -153,7 +164,8 @@ Total: 3 configuration classes
 | `lateral_inhibition` | `bool` | `True` |
 | `inhibition_strength` | `float` | `2.0` |
 | `population_coding` | `bool` | `True` |
-| `neurons_per_action` | `int` | `STRIATUM_NEURONS_PER_ACTION` |
+| `d1_size` | `int` | `0` |
+| `d2_size` | `int` | `0` |
 | `d1_lr_scale` | `float` | `1.0` |
 | `d2_lr_scale` | `float` | `1.0` |
 | `d1_da_sensitivity` | `float` | `1.0` |
@@ -206,7 +218,7 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`striatum`](../../src/thalia/regions/striatum/striatum.py#L152)
+- [`striatum`](../../src/thalia/regions/striatum/striatum.py#L153)
 
 ---
 

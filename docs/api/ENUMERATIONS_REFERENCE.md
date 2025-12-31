@@ -1,7 +1,7 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 17:33:00
+> Last updated: 2025-12-31 19:33:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
@@ -491,7 +491,7 @@ Tensor encoding types.
 
 ### Thalia/Language
 
-#### [``PositionEncodingType``](../../src/thalia/language/position.py#L54) (Enum)
+#### [``PositionEncodingType``](../../src/thalia/language/position.py#L56) (Enum)
 
 Types of position encoding.
 
@@ -626,7 +626,7 @@ Types of learning rules used in different brain regions.
 
 ---
 
-#### [``ReplayMode``](../../src/thalia/regions/hippocampus/replay_engine.py#L40) (Enum)
+#### [``ReplayMode``](../../src/thalia/regions/hippocampus/replay_engine.py#L42) (Enum)
 
 Replay execution mode.
 

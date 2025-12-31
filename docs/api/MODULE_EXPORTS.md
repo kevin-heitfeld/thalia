@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 17:33:00
+> Last updated: 2025-12-31 19:33:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 45 modules, 545 exports
+Total: 45 modules, 586 exports
 
 ## 📑 Table of Contents
 
@@ -145,6 +145,8 @@ from thalia.components.coding import CodingStrategy
 - `V_THRESHOLD_STANDARD`
 - `V_RESET_STANDARD`
 - `V_REST_STANDARD`
+- `SPIKE_DETECTION_THRESHOLD`
+- `SPIKE_ACTIVITY_THRESHOLD`
 - `E_LEAK`
 - `E_EXCITATORY`
 - `E_INHIBITORY`
@@ -152,8 +154,6 @@ from thalia.components.coding import CodingStrategy
 - `G_LEAK_FAST`
 - `G_LEAK_SLOW`
 - `ADAPT_INCREMENT_NONE`
-- `ADAPT_INCREMENT_MODERATE`
-- `ADAPT_INCREMENT_STRONG`
 
 **Usage**:
 
@@ -697,7 +697,7 @@ from thalia.memory.consolidation import MemoryPressureDetector
 
 **Source**: [`thalia/mixins/__init__.py`](../../src/thalia/mixins/__init__.py)
 
-**Exports** (6):
+**Exports** (7):
 
 - `DeviceMixin`
 - `ResettableMixin`
@@ -705,6 +705,7 @@ from thalia.memory.consolidation import MemoryPressureDetector
 - `DiagnosticCollectorMixin`
 - `DiagnosticsMixin`
 - `GrowthMixin`
+- `StateLoadingMixin`
 
 **Usage**:
 
@@ -718,7 +719,7 @@ from thalia.mixins import DeviceMixin
 
 **Source**: [`thalia/neuromodulation/__init__.py`](../../src/thalia/neuromodulation/__init__.py)
 
-**Exports** (13):
+**Exports** (20):
 
 - `VTADopamineSystem`
 - `VTA`
@@ -733,6 +734,13 @@ from thalia.mixins import DeviceMixin
 - `NeuromodulatorHomeostasis`
 - `NeuromodulatorHomeostasisConfig`
 - `NeuromodulatorMixin`
+- `DA_BASELINE_STANDARD`
+- `DA_BASELINE_STRIATUM`
+- `ACH_BASELINE`
+- `NE_BASELINE`
+- `NE_GAIN_MIN`
+- `NE_GAIN_MAX`
+- `decay_constant_to_tau`
 
 **Usage**:
 
@@ -770,7 +778,7 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 
 **Source**: [`thalia/pathways/__init__.py`](../../src/thalia/pathways/__init__.py)
 
-**Exports** (6):
+**Exports** (19):
 
 - `NeuralPathway`
 - `AxonalProjection`
@@ -778,6 +786,19 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 - `VisualPathway`
 - `AuditoryPathway`
 - `LanguagePathway`
+- `RETINA_ADAPTATION_DECAY`
+- `RETINA_ADAPTATION_RATE`
+- `DOG_FILTER_SIZE`
+- `DOG_SIGMA_CENTER`
+- `DOG_SIGMA_SURROUND`
+- `COCHLEA_MIN_FREQ_HZ`
+- `COCHLEA_MAX_FREQ_HZ`
+- `COCHLEA_INTEGRATION_WINDOW_MS`
+- `HAIR_CELL_COMPRESSION_EXPONENT`
+- `HAIR_CELL_ADAPTATION_SUPPRESSION`
+- `AUDITORY_NERVE_ADAPTATION_DECAY`
+- `AUDITORY_NERVE_ADAPTATION_RATE`
+- `LATENCY_EPSILON`
 
 **Usage**:
 
@@ -1210,7 +1231,7 @@ from thalia.training.visualization import TrainingMonitor
 
 **Source**: [`thalia/utils/__init__.py`](../../src/thalia/utils/__init__.py)
 
-**Exports** (12):
+**Exports** (16):
 
 - `clamp_weights`
 - `cosine_similarity_safe`
@@ -1224,6 +1245,10 @@ from thalia.training.visualization import TrainingMonitor
 - `compute_theta_gamma_coupling_gate`
 - `compute_oscillator_modulated_gain`
 - `compute_learning_rate_modulation`
+- `MS_PER_SECOND`
+- `SECONDS_PER_MS`
+- `TAU`
+- `TWO_PI`
 
 **Usage**:
 
@@ -1237,11 +1262,27 @@ from thalia.utils import clamp_weights
 
 **Source**: [`thalia/visualization/__init__.py`](../../src/thalia/visualization/__init__.py)
 
-**Exports** (3):
+**Exports** (19):
 
 - `visualize_brain_topology`
 - `export_topology_to_graphviz`
 - `plot_connectivity_matrix`
+- `DEFAULT_NODE_SIZE_SCALE`
+- `NODE_ALPHA_DEFAULT`
+- `EDGE_ALPHA_DEFAULT`
+- `EDGE_WIDTH_SCALE`
+- `LAYOUT_K_FACTOR`
+- `LAYOUT_ITERATIONS`
+- `ARC_RADIUS`
+- `LEGEND_FRAMEALPHA`
+- `HIERARCHICAL_Y_SPACING`
+- `HIERARCHICAL_X_SPACING`
+- `DPI_DEFAULT`
+- `DPI_MEDIUM`
+- `DPI_HIGH_RES`
+- `FIGURE_SIZE_SMALL`
+- `FIGURE_SIZE_MEDIUM`
+- `FIGURE_SIZE_LARGE`
 
 **Usage**:
 

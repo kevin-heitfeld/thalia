@@ -1,24 +1,24 @@
 # Constants Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 17:33:00
+> Last updated: 2025-12-31 19:33:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all module-level constants with biological context, ranges, and scientific references.
 
-Total: **172** constants
+Total: **176** constants
 
-![Constants](https://img.shields.io/badge/Constants-172-blue) ![Biological](https://img.shields.io/badge/Type-Biological-orange) ![References](https://img.shields.io/badge/Citations-Scientific-green)
+![Constants](https://img.shields.io/badge/Constants-176-blue) ![Biological](https://img.shields.io/badge/Type-Biological-orange) ![References](https://img.shields.io/badge/Citations-Scientific-green)
 
 ## 📊 Category Overview
 
 ```mermaid
 pie title Constants by Category
-    "General" : 123
+    "General" : 122
     "LEARNING RATES dimensionless" : 8
-    "MEMBRANE DYNAMICS TIME CONSTAN" : 14
+    "MEMBRANE DYNAMICS TIME CONSTAN" : 13
     "MOTOR SPIKE PROBABILITIES" : 5
-    "SYNAPTIC TIME CONSTANTS millis" : 6
+    "SYNAPTIC TIME CONSTANTS millis" : 12
     "Text Positioning" : 8
     "UI Element Dimensions" : 8
 ```
@@ -38,10 +38,6 @@ pie title Constants by Category
 | Constant | Value | Biological Range | Description |
 |----------|-------|------------------|-------------|
 | `ACH_BASELINE` | `0.3` | — | No description |
-| `ADAPT_INCREMENT_CORTEX_L23` | `0.3` | — | Very strong adaptation for cortical L2/3 pyramidal neurons. |
-| `ADAPT_INCREMENT_MODERATE` | `0.05` | — | Moderate adaptation increment. |
-| `ADAPT_INCREMENT_NONE` | `0.0` | — | No adaptation (default). |
-| `ADAPT_INCREMENT_STRONG` | `0.1` | — | Strong adaptation increment. |
 | `DATASET_WEIGHT_GAZE` | `0.1` | — | Gaze following dataset weight for Birth stage (10%). |
 | `DATASET_WEIGHT_MNIST` | `0.4` | — | MNIST dataset sampling weight for Birth stage (40%). |
 | `DATASET_WEIGHT_PHONOLOGY` | `0.3` | — | Phonology dataset weight for Birth stage (30%). |
@@ -74,11 +70,11 @@ pie title Constants by Category
 | `LEARNING_RATE_STDP_SLOW` | `0.0001` | — | Slow STDP for stable, incremental learning. |
 | `LEARNING_RATE_THREE_FACTOR` | `0.001` | — | Dopamine-modulated three-factor learning rate (eligibility × dopamine). |
 | `MAX_FIRING_RATE_HZ` | `100.0` | — | Maximum acceptable firing rate before considering runaway activity (100 Hz). |
+| `MEMBRANE_CAPACITANCE_STANDARD` | `1.0` | — | Standard membrane capacitance (normalized). |
 | `MIN_FIRING_RATE_HZ` | `0.1` | — | Minimum acceptable firing rate before considering neuron dead (0.1 Hz). |
 | `NE_BASELINE` | `0.3` | — | No description |
 | `NE_GAIN_MAX` | `1.5` | — | No description |
 | `NE_GAIN_MIN` | `1.0` | — | No description |
-| `NOISE_STD_NONE` | `0.0` | — | No membrane noise (deterministic). |
 | `PREFRONTAL_PATIENCE_MIN` | `0.001` | — | Minimum patience parameter (k_min) for goal hierarchy. |
 | `PROGRESS_BAR_HEIGHT` | `0.5` | — | Height of horizontal progress bars. |
 | `PROPRIOCEPTION_NOISE_SCALE` | `0.1` | — | Proprioceptive noise standard deviation. |
@@ -88,6 +84,8 @@ pie title Constants by Category
 | `SENSORIMOTOR_WEIGHT_PREDICTION` | `0.25` | — | Prediction task weight (25%). |
 | `SENSORIMOTOR_WEIGHT_REACHING` | `0.25` | — | Reaching task weight (25%). |
 | `SILENCE_THRESHOLD_HZ` | `0.5` | — | Firing rate below which region is considered silent (0.5 Hz). |
+| `SPIKE_ACTIVITY_THRESHOLD` | `0.5` | — | Threshold for neuron activity detection. |
+| `SPIKE_DETECTION_THRESHOLD` | `0.5` | — | Binary spike detection threshold. |
 | `SPIKE_PROBABILITY_HIGH` | `0.5` | — | High motor activity spike probability (50%). |
 | `SPIKE_PROBABILITY_LOW` | `0.15` | — | Low motor activity spike probability (15%). |
 | `SPIKE_PROBABILITY_MEDIUM` | `0.3` | — | Medium motor activity spike probability (30%). |
@@ -149,6 +147,7 @@ pie title Constants by Category
 | `THALAMUS_SPATIAL_CENTER_SPARSITY` | `0.2` | — | Sparsity for center-surround spatial filters. |
 | `THALAMUS_SPATIAL_FILTER_WIDTH` | `0.15` | — | Gaussian filter width for center-surround receptive fields. |
 | `THALAMUS_SURROUND_INHIBITION` | `0.5` | — | Surround inhibition strength in receptive field. |
+| `THALAMUS_SURROUND_WIDTH_RATIO` | `3.0` | — | Surround width as multiple of center width in DoG filters. |
 | `THALAMUS_TONIC_THRESHOLD` | `0.3` | — | Membrane potential threshold for tonic mode (normalized). |
 | `THALAMUS_TRN_FEEDBACK_SCALE` | `0.4` | — | Weight scale for TRN feedback connections. |
 | `THALAMUS_TRN_FEEDBACK_SPARSITY` | `0.2` | — | Sparsity for cortex → TRN feedback connections. |
@@ -162,16 +161,6 @@ pie title Constants by Category
 | `V_THRESHOLD_STANDARD` | `1.0` | — | Standard spike threshold (normalized). |
 
 ### Detailed Documentation
-
-#### `ADAPT_INCREMENT_CORTEX_L23`
-
-**Value**: `0.3`
-
-Very strong adaptation for cortical L2/3 pyramidal neurons.
-
-**References**: Vives et al. (2000), Cormick et al. (1985)
-
-**Source**: `[`thalia/components/neurons/neuron_constants.py`](../../src/thalia/components/neurons/neuron_constants.py)`
 
 #### `STDP_A_MINUS_CORTEX`
 
@@ -224,20 +213,31 @@ Long eligibility trace (2 seconds).
 
 | Constant | Value | Biological Range | Description |
 |----------|-------|------------------|-------------|
-| `DECISION_THRESHOLD_DEFAULT` | `0.5` | — | Default decision threshold (normalized). |
-| `NE_MAX_GAIN` | `1.5` | — | No description |
+| `ADAPT_INCREMENT_CORTEX_L23` | `0.3` | — | Very strong adaptation for cortical L2/3 pyramidal neurons. |
+| `ADAPT_INCREMENT_MODERATE` | `0.05` | — | Moderate adaptation increment. |
+| `ADAPT_INCREMENT_NONE` | `0.0` | — | No adaptation (default). |
+| `ADAPT_INCREMENT_STRONG` | `0.1` | — | Strong adaptation increment. |
 | `NOISE_STD_LOW` | `0.01` | — | Low membrane noise. |
 | `NOISE_STD_MODERATE` | `0.05` | — | Moderate membrane noise. |
-| `PROPRIOCEPTION_NOISE_SCALE` | `0.05` | — | Proprioceptive feedback noise scale. |
+| `NOISE_STD_NONE` | `0.0` | — | No membrane noise (deterministic). |
 | `SPIKE_PROBABILITY_HIGH` | `0.2` | — | High spike probability threshold. |
 | `SPIKE_PROBABILITY_LOW` | `0.1` | — | Low spike probability threshold. |
 | `SPIKE_PROBABILITY_MEDIUM` | `0.15` | — | Medium spike probability threshold. |
-| `STIMULUS_STRENGTH_HIGH` | `0.8` | — | High stimulus strength. |
-| `THETA_BASELINE_MIN` | `0.7` | — | Minimum theta baseline modulation factor. |
-| `TONIC_D1_GAIN_SCALE` | `0.5` | — | Tonic dopamine modulation of D1 pathway gain. |
 | `WEIGHT_INIT_SCALE_MODERATE` | `0.2` | — | Moderate weight initialization scale. |
 | `WEIGHT_INIT_SCALE_SMALL` | `0.1` | — | Small weight initialization scale. |
 | `WEIGHT_INIT_SCALE_SPARSITY_DEFAULT` | `0.3` | — | Default sparsity for sparse connectivity. |
+
+### Detailed Documentation
+
+#### `ADAPT_INCREMENT_CORTEX_L23`
+
+**Value**: `0.3`
+
+Very strong adaptation for cortical L2/3 pyramidal neurons.
+
+**References**: Cormick et al. (1985), Vives et al. (2000)
+
+**Source**: `[`thalia/components/neurons/neuron_constants.py`](../../src/thalia/components/neurons/neuron_constants.py)`
 
 ---
 
@@ -258,11 +258,17 @@ Long eligibility trace (2 seconds).
 | Constant | Value | Biological Range | Description |
 |----------|-------|------------------|-------------|
 | `BASELINE_EXCITATION_SCALE` | `1.2` | — | Baseline excitation scale factor. |
+| `DECISION_THRESHOLD_DEFAULT` | `0.5` | — | Default decision threshold (normalized). |
 | `INTRINSIC_LEARNING_THRESHOLD` | `0.3` | — | Intrinsic reward threshold for learning. |
 | `MATCH_THRESHOLD` | `0.5` | — | Pattern match threshold. |
+| `NE_MAX_GAIN` | `1.5` | — | No description |
+| `PROPRIOCEPTION_NOISE_SCALE` | `0.05` | — | Proprioceptive feedback noise scale. |
+| `STIMULUS_STRENGTH_HIGH` | `0.8` | — | High stimulus strength. |
+| `THETA_BASELINE_MIN` | `0.7` | — | Minimum theta baseline modulation factor. |
 | `THETA_BASELINE_RANGE` | `0.3` | — | Theta baseline modulation range. |
 | `THETA_CONTRAST_MIN` | `0.8` | — | Minimum theta contrast modulation factor. |
 | `THETA_CONTRAST_RANGE` | `0.2` | — | Theta contrast modulation range. |
+| `TONIC_D1_GAIN_SCALE` | `0.5` | — | Tonic dopamine modulation of D1 pathway gain. |
 
 ---
 

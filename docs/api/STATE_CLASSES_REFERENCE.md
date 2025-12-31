@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 17:33:00
+> Last updated: 2025-12-31 19:33:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -50,7 +50,7 @@ Total region states: 7
 
 ---
 
-### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L213)
+### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L214)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -78,13 +78,13 @@ Total region states: 7
 
 ---
 
-### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L265)
+### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L282)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
 **Source**: [`thalia/regions/hippocampus/config.py`](../../src/thalia/regions/hippocampus/config.py)
 
-**Description**: State for hippocampus (trisynaptic circuit) with RegionState protocol compliance.
+**Description**: State for hippocampus (DG→CA3→CA2→CA1 circuit) with RegionState protocol compliance.
 
 **Fields**:
 
@@ -92,6 +92,7 @@ Total region states: 7
 |-------|------|----------|
 | `dg_spikes` | `Optional[torch.Tensor]` | `None` |
 | `ca3_spikes` | `Optional[torch.Tensor]` | `None` |
+| `ca2_spikes` | `Optional[torch.Tensor]` | `None` |
 | `ca1_spikes` | `Optional[torch.Tensor]` | `None` |
 | `ca3_membrane` | `Optional[torch.Tensor]` | `None` |
 | `ca1_membrane` | `Optional[torch.Tensor]` | `None` |
@@ -99,10 +100,14 @@ Total region states: 7
 | `sample_trace` | `Optional[torch.Tensor]` | `None` |
 | `dg_trace` | `Optional[torch.Tensor]` | `None` |
 | `ca3_trace` | `Optional[torch.Tensor]` | `None` |
+| `ca2_trace` | `Optional[torch.Tensor]` | `None` |
 | `nmda_trace` | `Optional[torch.Tensor]` | `None` |
 | `stored_dg_pattern` | `Optional[torch.Tensor]` | `None` |
 | `ffi_strength` | `float` | `0.0` |
 | `stp_mossy_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
+| `stp_ca3_ca2_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
+| `stp_ca2_ca1_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
+| `stp_ec_ca2_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
 | `stp_schaffer_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
 | `stp_ec_ca1_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
 | `stp_ca3_recurrent_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
@@ -144,7 +149,7 @@ Total region states: 7
 
 ---
 
-### [``PrefrontalState``](../../src/thalia/regions/prefrontal.py#L186)
+### [``PrefrontalState``](../../src/thalia/regions/prefrontal.py#L184)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -163,7 +168,7 @@ Total region states: 7
 
 ---
 
-### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L222)
+### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L223)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  

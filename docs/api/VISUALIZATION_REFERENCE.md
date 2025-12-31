@@ -1,7 +1,7 @@
 # Visualization Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-23 17:33:01
+> Last updated: 2025-12-31 19:33:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all visualization and plotting functions for analyzing brain topology, training progress, and diagnostic metrics.
@@ -36,7 +36,7 @@ graph TD
 
 ## 🧠 Network Topology Visualization
 
-### [``export_topology_to_graphviz()``](../../src/thalia/visualization/network_graph.py#L209)
+### [``export_topology_to_graphviz()``](../../src/thalia/visualization/network_graph.py#L222)
 
 **Returns**: `None`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
@@ -59,7 +59,7 @@ graph TD
 
 ---
 
-### [``plot_connectivity_matrix()``](../../src/thalia/visualization/network_graph.py#L256)
+### [``plot_connectivity_matrix()``](../../src/thalia/visualization/network_graph.py#L269)
 
 **Returns**: `None`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
@@ -76,7 +76,7 @@ graph TD
 
 ---
 
-### [``visualize_brain_topology()``](../../src/thalia/visualization/network_graph.py#L41)
+### [``visualize_brain_topology()``](../../src/thalia/visualization/network_graph.py#L54)
 
 **Returns**: `Any`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
@@ -90,7 +90,7 @@ graph TD
 | `brain` | `Any` | `-` |
 | `layout` | `str` | `'hierarchical'` |
 | `figsize` | `Tuple[int, int]` | `(16, 12)` |
-| `node_size_scale` | `float` | `1000.0` |
+| `node_size_scale` | `float` | `DEFAULT_NODE_SIZE_SCALE` |
 | `show_weights` | `bool` | `True` |
 | `title` | `Optional[str]` | `None` |
 
