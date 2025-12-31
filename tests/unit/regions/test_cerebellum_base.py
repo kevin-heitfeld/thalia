@@ -11,6 +11,7 @@ import torch
 
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
+from thalia.config import compute_cerebellum_sizes
 
 
 class TestCerebellum(RegionTestBase):
@@ -18,6 +19,16 @@ class TestCerebellum(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create Cerebellum instance for testing."""
+        # If using old-style params, compute explicit sizes
+        if "granule_expansion_factor" in kwargs:
+            purkinje_size = kwargs.pop("n_output")
+            expansion = kwargs.pop("granule_expansion_factor")
+            sizes = compute_cerebellum_sizes(purkinje_size, expansion)
+            kwargs["granule_size"] = sizes["granule_size"]
+            kwargs["purkinje_size"] = sizes["purkinje_size"]
+            kwargs["n_output"] = purkinje_size
+            kwargs["use_enhanced_microcircuit"] = True
+
         config = CerebellumConfig(**kwargs)
         return Cerebellum(config)
 

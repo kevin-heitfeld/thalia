@@ -18,6 +18,16 @@ class TestThalamus(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create ThalamicRelay instance for testing."""
+        # If using old-style trn_ratio param, compute explicit sizes
+        if "trn_ratio" in kwargs:
+            from thalia.config import compute_thalamus_sizes
+            relay_size = kwargs.pop("n_output")
+            trn_ratio = kwargs.pop("trn_ratio")
+            sizes = compute_thalamus_sizes(relay_size, trn_ratio)
+            kwargs["relay_size"] = sizes["relay_size"]
+            kwargs["trn_size"] = sizes["trn_size"]
+            kwargs["n_output"] = relay_size
+
         config = ThalamicRelayConfig(**kwargs)
         return ThalamicRelay(config)
 

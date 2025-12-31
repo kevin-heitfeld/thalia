@@ -43,11 +43,18 @@ def cerebellum_classic_config(device):
 @pytest.fixture
 def cerebellum_enhanced_config(device):
     """Enhanced cerebellum configuration with granule layer and DCN."""
+    from thalia.config import compute_cerebellum_sizes
+
+    purkinje_size = 64
+    granule_expansion = 4.0
+    sizes = compute_cerebellum_sizes(purkinje_size, granule_expansion)
+
     return CerebellumConfig(
         n_input=128,
-        n_output=64,
+        n_output=purkinje_size,
         use_enhanced_microcircuit=True,  # Enhanced pathway
-        granule_expansion_factor=4.0,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         granule_sparsity=0.03,
         purkinje_n_dendrites=100,
         dt_ms=1.0,
@@ -432,13 +439,13 @@ class TestEnhancedCerebellumIntegration:
         # Extract expected values from config
         n_input = cerebellum_enhanced.config.n_input
         n_output = cerebellum_enhanced.config.n_output
-        expansion = cerebellum_enhanced.config.granule_expansion_factor
+        expected_granule_size = cerebellum_enhanced.config.granule_size
 
         # Contract: granule layer exists
         assert cerebellum_enhanced.granule_layer is not None, \
             "Enhanced cerebellum should have granule layer"
-        assert cerebellum_enhanced.granule_layer.n_granule == int(n_input * expansion), \
-            f"Granule layer should have {expansion}× expansion"
+        assert cerebellum_enhanced.granule_layer.n_granule == expected_granule_size, \
+            f"Granule layer should have {expected_granule_size} cells"
 
         # Contract: enhanced Purkinje cells exist
         assert cerebellum_enhanced.purkinje_cells is not None, \
