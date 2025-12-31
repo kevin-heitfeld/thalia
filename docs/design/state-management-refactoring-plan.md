@@ -87,7 +87,7 @@ class NeuralComponentState:
 
 | Region | State Class | Location | Fields | Notes |
 |--------|-------------|----------|--------|-------|
-| Hippocampus | `HippocampusState` | `hippocampus/config.py:234` | 10+ fields | DG/CA3/CA1 spikes, traces, persistent activity |
+| Hippocampus | `HippocampusState` | `hippocampus/config.py:234` | 10+ fields | DG/CA3/CA2/CA1 spikes, traces, persistent activity |
 | Cortex | `LayeredCortexState` | `cortex/config.py:191` | 15+ fields | L4/L2/3/L5/L6a/L6b spikes, traces, modulation |
 | Prefrontal | `PrefrontalState` | `prefrontal.py:185` | 4 fields | Working memory, gates, rules |
 | Thalamus | `ThalamicRelayState` | `thalamus.py:201` | 8 fields | Relay/TRN spikes, mode, gating |
@@ -2393,7 +2393,7 @@ def test_hippocampus_v1_to_v2_migration():
    - ✅ Checkpoint strategy: Save both global and local effects
 
 6. **Existing State Dataclasses**
-   - ✅ HippocampusState: 10+ fields (DG/CA3/CA1 spikes, traces, persistent activity)
+   - ✅ HippocampusState: 10+ fields (DG/CA3/CA2/CA1 spikes, traces, persistent activity)
    - ✅ LayeredCortexState: 15+ fields (L4/L2/3/L5/L6a/L6b, traces, modulation)
    - ✅ PrefrontalState: 4 fields (working memory, gates, rules)
    - ✅ ThalamicRelayState: 8 fields (relay/TRN spikes, mode, gating)

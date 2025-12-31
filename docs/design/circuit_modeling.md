@@ -38,17 +38,20 @@ This document prioritizes biological circuit implementations based on:
 
 ---
 
-### ✅ Hippocampus: DG→CA3→CA1 Trisynaptic Circuit
-**Status**: Fully implemented with inter-layer delays
+### ✅ Hippocampus: DG→CA3→CA2→CA1 Trisynaptic Circuit
+**Status**: Fully implemented with inter-layer delays (CA2 added December 31, 2025)
 
 **Biological Timing**:
 - DG→CA3: ~3ms (mossy fiber, sparse pattern separation)
+- CA3→CA2: ~3ms (weak plasticity, stability hub)
+- CA2→CA1: ~3ms (temporal/social context)
 - CA3→CA1: ~3ms (Schaffer collateral, pattern completion)
-- Total: ~6ms within hippocampus (completes in one theta cycle ~100-150ms with cortex)
+- Total: ~6-9ms within hippocampus (completes in one theta cycle ~100-150ms with cortex)
 
 **Functional Role**:
 - DG: Pattern separation (orthogonalize similar inputs)
 - CA3: Auto-associative memory (pattern completion)
+- CA2: Social/temporal memory (stability hub, weak CA3 plasticity)
 - CA1: Comparator (match retrieval vs input)
 
 **Curriculum Relevance**:

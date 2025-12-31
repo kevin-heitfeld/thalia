@@ -52,7 +52,7 @@ component.grow_output(n_new: int)
 
 ### ✅ TrisynapticHippocampus
 - `grow_input()`: Expands EC input weights (`w_ec_dg`, `w_ec_ca3`)
-- `grow_output()`: Distributes growth across DG/CA3/CA1 layers
+- `grow_output()`: Distributes growth across DG/CA3/CA2/CA1 layers
 
 ### ✅ Striatum
 - `grow_input()`: Expands D1/D2 pathway weight columns

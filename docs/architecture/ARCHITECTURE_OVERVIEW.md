@@ -84,7 +84,7 @@ DynamicBrain (Component-Based Architecture)
 │   │   ├── Learning Strategies: Dict[source_name, Strategy]
 │   │   └── Forward: Dict[str, Tensor] → Tensor
 │   ├── LayeredCortex (L4→L2/3→L5 microcircuit)
-│   ├── TrisynapticHippocampus (DG→CA3→CA1)
+│   ├── TrisynapticHippocampus (DG→CA3→CA2→CA1)
 │   ├── Striatum (D1/D2 pathways, three-factor learning)
 │   ├── Prefrontal (working memory, gated Hebbian)
 │   ├── Cerebellum (error-corrective, motor learning)
@@ -295,6 +295,7 @@ Hierarchical planning and temporal abstraction:
 **Subregions**:
 - **DG** (Dentate Gyrus) - Pattern separation
 - **CA3** - Autoassociative memory, pattern completion
+- **CA2** - Social memory, temporal context (stability hub)
 - **CA1** - Output gating, context integration
 
 **Learning Rules**:

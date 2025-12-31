@@ -47,7 +47,7 @@ if ach_level > ACH_ENCODING_THRESHOLD:
     suppression = 1.0 - ACH_SUPPRESSION_STRENGTH * acetylcholine
 ```
 
-**Impact**: 
+**Impact**:
 - **Files Affected**: ~10-15 files across utils/, visualization/, regions/
 - **Breaking Changes**: None (internal refactoring only)
 - **Benefits**: Improved biological interpretability, easier tuning
@@ -160,8 +160,8 @@ weights = torch.randn(n_output, n_input, device=device) * 0.1
 def grow_input(self, n_new: int) -> None:
     old_n_input = self.weights.shape[1]
     new_weights = torch.zeros(
-        self.weights.shape[0], 
-        old_n_input + n_new, 
+        self.weights.shape[0],
+        old_n_input + n_new,
         device=self.device
     )
     new_weights[:, :old_n_input] = self.weights
@@ -204,14 +204,14 @@ def grow_output(self, n_new: int) -> None:
         self.weights, n_new, initializer='xavier'
     )
     self.weights = nn.Parameter(new_weights)
-    
+
     # Expand neurons
     old_neurons = self.neurons
     self.neurons = ConductanceLIF(
-        old_neurons.n_neurons + n_new, 
+        old_neurons.n_neurons + n_new,
         old_neurons.config
     )
-    
+
     # Update config
     self.config.n_output += n_new
 ```
@@ -222,14 +222,14 @@ def grow_source(self, source_name: str, new_size: int) -> None:
     """Grow specific input source."""
     old_size = self.input_sizes[source_name]
     n_new = new_size - old_size
-    
+
     # Expand weights for this source
     old_weights = self.synaptic_weights[source_name]
     new_weights = self._grow_weight_matrix_cols(
         old_weights, n_new, initializer='sparse_random', sparsity=0.2
     )
     self.synaptic_weights[source_name] = nn.Parameter(new_weights)
-    
+
     # Update tracking
     self.input_sizes[source_name] = new_size
 ```
@@ -240,20 +240,20 @@ def grow_output(self, n_new: int) -> None:
     """Add neurons to output layer (L5)."""
     # Distribute to layer (60% of growth)
     n_l5_new = int(n_new * 0.6)
-    
+
     # Grow L5 neurons
     old_l5_neurons = self.l5_neurons
     self.l5_neurons = create_pyramidal_neurons(
         old_l5_neurons.n_neurons + n_l5_new, self.device
     )
-    
+
     # Grow inter-layer connections (L2/3 → L5)
     self.w_l23_l5 = nn.Parameter(
         self._grow_weight_matrix_rows(
             self.w_l23_l5, n_l5_new, initializer='gaussian'
         )
     )
-    
+
     # Update config
     self.config.l5_size += n_l5_new
     self.config.n_output += n_l5_new
@@ -340,11 +340,11 @@ def create_cortex_strategy(
     **kwargs
 ) -> CompositeStrategy:
     """Create cortex learning strategy (STDP + BCM).
-    
+
     Biological motivation:
     - STDP: Spike-timing based Hebbian plasticity
     - BCM: Sliding threshold for metaplasticity
-    
+
     Returns:
         CompositeStrategy with STDP modulated by BCM threshold
     """
@@ -354,13 +354,13 @@ def create_cortex_strategy(
         a_minus=stdp_a_minus,
         **kwargs
     ))
-    
+
     bcm = BCMStrategy(BCMConfig(
         learning_rate=learning_rate,
         tau_theta=bcm_tau_theta,
         **kwargs
     ))
-    
+
     return CompositeStrategy([stdp, bcm])
 ```
 
@@ -398,16 +398,16 @@ def create_cortex_strategy(
 ```python
 def get_diagnostics(self) -> Dict[str, Any]:
     diag = {"region": "striatum"}
-    
+
     # Weight stats
     diag["d1_weight_mean"] = self.d1_weights.mean().item()
     diag["d1_weight_std"] = self.d1_weights.std().item()
     # ... repeat for d2, fsi, etc.
-    
+
     # Spike stats
     diag["d1_sparsity"] = 1.0 - self.d1_spikes.mean().item()
     # ... repeat
-    
+
     return diag
 ```
 
@@ -479,7 +479,7 @@ class LearningStrategy(Protocol):
     def compute_update(...) -> Tuple[Tensor, Dict]:
         """Standard batch update (current API)."""
         ...
-    
+
     def compute_update_streaming(...) -> Iterator[Tuple[Tensor, Dict]]:
         """Optional streaming API for large regions (future)."""
         ...
@@ -509,7 +509,7 @@ class LearningStrategy(Protocol):
 **Observation**: Large files are **justified** because they represent single biological computations:
 - Striatum: D1/D2 opponent pathways interact every timestep
 - LayeredCortex: L4→L2/3→L5 cascade is one biological circuit
-- Hippocampus: DG→CA3→CA1 trisynaptic loop is one memory operation
+- Hippocampus: DG→CA3→CA2→CA1 circuit is one memory operation
 
 **Recommendation**: **No further decomposition needed** - current structure is appropriate.
 
@@ -552,7 +552,7 @@ with torch.no_grad():  # For independent regions
 
 **Recommendation**: **Not pursued** - biological sequentiality is a feature, not a bug.
 
-**Rationale**: 
+**Rationale**:
 - Axonal delays (1-50ms) mean biological regions ARE sequential
 - Current clock-driven simulation respects causality
 - Parallelism handled at batch level (multiple environments)
@@ -573,7 +573,7 @@ with torch.no_grad():  # For independent regions
 
 **Assessment**: ✅ **Justified exception**
 
-**Rationale**: 
+**Rationale**:
 - **Different timescale**: Metacognitive calibration operates at trial boundaries (~seconds), not timesteps (~milliseconds)
 - **Supervisory learning**: Calibrating confidence against actual outcomes is fundamentally supervised
 - **Isolated scope**: Does NOT affect brain regions (no backprop through regions)
@@ -765,7 +765,7 @@ self.trn_neurons = create_trn_neurons(self.n_trn, self.device)
 
 # Custom config (also acceptable)
 self.neurons = ConductanceLIF(
-    n_neurons, 
+    n_neurons,
     ConductanceLIFConfig(tau_mem=15.0, g_leak=0.05)
 )
 ```
@@ -792,7 +792,7 @@ class StriatumLearningComponent(BaseManager[StriatumLearningConfig]):
         self.eligibility_d1 = torch.zeros(
             context.n_output, context.n_input, device=context.device
         )
-    
+
     def apply_learning(self, ...):
         # Three-factor rule implementation
         ...
@@ -806,7 +806,7 @@ class StriatumLearningComponent(BaseManager[StriatumLearningConfig]):
 
 **Adoption**: ~70% (new regions use mixins, legacy regions use manual patterns)
 
-**Observation**: 
+**Observation**:
 - Recent regions (Prefrontal, recent Striatum updates) use `_grow_weight_matrix_cols/rows()`
 - Legacy regions (Cerebellum, older parts of Cortex) use manual expansion
 - Both approaches work correctly
@@ -926,7 +926,7 @@ class StriatumLearningComponent(BaseManager[StriatumLearningConfig]):
 
 **Risk Level**: 🔴 **Significant** (but NOT recommended)
 
-**Items**: 
+**Items**:
 - Unified learning strategy API evolution (DEFERRED)
 - Further component decomposition (NOT NEEDED)
 - Async/parallel region processing (NOT PURSUED)

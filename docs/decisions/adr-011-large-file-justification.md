@@ -25,7 +25,7 @@ The large file sizes are **justified by biological circuit integrity** and **not
 #### 1. Biological Circuit Cohesion
 
 **Hippocampus trisynaptic.py forward() method (~700 lines)**:
-- Implements the DG→CA3→CA1 trisynaptic circuit as a single narrative flow
+- Implements the DG→CA3→CA2→CA1 circuit as a single narrative flow
 - Each stage depends on the previous stage's output within the same timestep
 - Theta modulation coordinates all three stages simultaneously
 - Splitting would require artificial boundaries that don't exist biologically
@@ -56,7 +56,7 @@ Both regions ALREADY extract orthogonal concerns into components:
 - `replay_engine.py`: Sequence replay logic
 - `hindsight_relabeling.py`: HER integration
 
-**What remains in trisynaptic.py**: The core circuit (DG/CA3/CA1 dynamics) - this IS the hippocampus!
+**What remains in trisynaptic.py**: The core circuit (DG/CA3/CA2/CA1 dynamics) - this IS the hippocampus!
 
 **Cortex components**:
 - Uses mixins: `LearningStrategyMixin`, `NeuromodulatorMixin`, `DiagnosticsMixin`
@@ -119,7 +119,7 @@ Each section is **irreducible** - removing ANY line breaks biological plausibili
 ### What We WILL NOT Do
 
 1. **Split forward() methods** into artificial components
-2. **Extract circuit stages** (DG/CA3/CA1 or L4/L2/3/L5) into separate files
+2. **Extract circuit stages** (DG/CA3/CA2/CA1 or L4/L2/3/L5) into separate files
 3. **Force component boundaries** that don't exist biologically
 
 ## Comparison: When to Split vs. When to Keep Cohesive
