@@ -88,6 +88,17 @@ This supports pattern completion: partial cues → full memory.
 Biological range: 0.3-0.5 (rat: ~300k CA3 vs ~1M DG).
 """
 
+CA2_TO_DG_RATIO = 0.25
+"""CA2 to Dentate Gyrus size ratio.
+
+CA2 has ~25% as many neurons as DG (~50% of CA3 size).
+Small but crucial region for social memory and temporal context.
+Weak CA3→CA2 plasticity creates stability hub.
+
+Biological basis: CA2 is the smallest hippocampal subfield.
+References: Hitti & Siegelbaum (2014), Chevaleyre & Siegelbaum (2010)
+"""
+
 CA1_TO_CA3_RATIO = 1.0
 """CA1 to CA3 size ratio.
 
@@ -239,15 +250,17 @@ def compute_hippocampus_sizes(ec_input_size: int) -> dict:
         ec_input_size: Size of entorhinal cortex input
 
     Returns:
-        Dict with dg_size, ca3_size, ca1_size
+        Dict with dg_size, ca3_size, ca2_size, ca1_size
     """
     dg_size = int(ec_input_size * DG_TO_EC_EXPANSION)
     ca3_size = int(dg_size * CA3_TO_DG_RATIO)
+    ca2_size = int(dg_size * CA2_TO_DG_RATIO)
     ca1_size = int(ca3_size * CA1_TO_CA3_RATIO)
 
     return {
         "dg_size": dg_size,
         "ca3_size": ca3_size,
+        "ca2_size": ca2_size,
         "ca1_size": ca1_size,
     }
 

@@ -168,12 +168,12 @@ class TrisynapticHippocampus(NeuralRegion):
     Four pathways to CA3:
     - EC→DG→CA3: Pattern-separated (sparse), strong during encoding
     - EC→CA3 direct: Preserves similarity (less sparse), provides retrieval cues
-    
+
     CA2 layer (social memory):
     - CA3→CA2: Weak plasticity (10x lower) - stability mechanism
     - EC→CA2: Strong direct input for temporal encoding
     - CA2→CA1: Provides temporal/social context to decision layer
-    
+
     CA1 receives from:
     - CA3 direct (Schaffer collaterals): Pattern completion
     - CA2: Temporal/social context
@@ -218,11 +218,11 @@ class TrisynapticHippocampus(NeuralRegion):
         # Debug flag for learning investigation (set externally)
         self._debug_hippo = False
 
-        # Compute layer sizes
-        self.dg_size = int(config.n_input * config.dg_expansion)
-        self.ca3_size = int(self.dg_size * config.ca3_size_ratio)
-        self.ca2_size = int(self.dg_size * config.ca2_size_ratio)  # CA2: social memory hub
-        self.ca1_size = config.n_output  # CA1 matches output
+        # Layer sizes from config (explicit, like LayeredCortex)
+        self.dg_size = config.dg_size
+        self.ca3_size = config.ca3_size
+        self.ca2_size = config.ca2_size
+        self.ca1_size = config.ca1_size
 
         # Initialize NeuralRegion with total neurons across all layers
         super().__init__(
@@ -831,14 +831,21 @@ class TrisynapticHippocampus(NeuralRegion):
         old_ca1_size = self.ca1_size
         new_ca1_size = old_ca1_size + n_new
 
-        # Maintain circuit ratios
-        dg_growth = int(n_new * self.tri_config.dg_expansion / self.tri_config.ca1_size_ratio)
+        # Maintain current circuit ratios (compute from current sizes, not config)
+        # This preserves whatever architecture the hippocampus currently has
+        total_current = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
+        dg_growth = int(n_new * self.dg_size / self.ca1_size)
+        ca3_growth = int(n_new * self.ca3_size / self.ca1_size)
+        ca2_growth = int(n_new * self.ca2_size / self.ca1_size)
+
         old_dg_size = self.dg_size
         new_dg_size = old_dg_size + dg_growth
 
-        ca3_growth = int(dg_growth * self.tri_config.ca3_size_ratio / self.tri_config.dg_expansion)
         old_ca3_size = self.ca3_size
         new_ca3_size = old_ca3_size + ca3_growth
+
+        old_ca2_size = self.ca2_size
+        new_ca2_size = old_ca2_size + ca2_growth
 
         # 1. Expand input→DG weights [dg, input]
         # Add rows for new DG neurons

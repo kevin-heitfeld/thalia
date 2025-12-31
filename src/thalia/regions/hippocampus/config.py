@@ -7,7 +7,7 @@ trisynaptic hippocampus (DG→CA3→CA1).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 
 import torch
@@ -18,9 +18,6 @@ from thalia.core.region_state import BaseRegionState
 from thalia.components.synapses.stp import STPType
 from thalia.regulation.learning_constants import LEARNING_RATE_ONE_SHOT
 from thalia.regulation.region_architecture_constants import (
-    HIPPOCAMPUS_DG_EXPANSION_FACTOR,
-    HIPPOCAMPUS_CA3_SIZE_RATIO,
-    HIPPOCAMPUS_CA1_SIZE_RATIO,
     HIPPOCAMPUS_SPARSITY_TARGET,
 )
 
@@ -68,11 +65,12 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # Override default learning rate with CA3-specific fast learning
     learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
 
-    # Layer sizes (relative to input)
-    dg_expansion: float = HIPPOCAMPUS_DG_EXPANSION_FACTOR  # DG has 5x more neurons than input
-    ca3_size_ratio: float = HIPPOCAMPUS_CA3_SIZE_RATIO    # CA3 is half of DG
-    ca2_size_ratio: float = 0.25  # CA2 is ~50% of CA3 (small but crucial region)
-    ca1_size_ratio: float = HIPPOCAMPUS_CA1_SIZE_RATIO    # CA1 matches output
+    # Layer sizes (REQUIRED - explicit sizes for clarity, like LayeredCortex)
+    # Use compute_hippocampus_sizes() helper to calculate from input size
+    dg_size: int = field(default=0)   # Dentate Gyrus (pattern separation)
+    ca3_size: int = field(default=0)  # CA3 (pattern completion)
+    ca2_size: int = field(default=0)  # CA2 (social memory, temporal context)
+    ca1_size: int = field(default=0)  # CA1 (output, match/mismatch)
 
     # DG sparsity (VERY sparse for pattern separation)
     dg_sparsity: float = HIPPOCAMPUS_SPARSITY_TARGET

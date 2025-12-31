@@ -48,6 +48,7 @@ from thalia.core.base.component_config import (
 from thalia.regulation.region_architecture_constants import (
     HIPPOCAMPUS_DG_EXPANSION_FACTOR,
     HIPPOCAMPUS_CA3_SIZE_RATIO,
+    HIPPOCAMPUS_CA2_SIZE_RATIO,
     HIPPOCAMPUS_CA1_SIZE_RATIO,
     HIPPOCAMPUS_SPARSITY_TARGET,
     CORTEX_L4_RATIO,
@@ -106,6 +107,7 @@ from .region_sizes import (
     # Hippocampus ratios
     DG_TO_EC_EXPANSION,
     CA3_TO_DG_RATIO,
+    CA2_TO_DG_RATIO,
     CA1_TO_CA3_RATIO,
     # Cortex ratios
     L4_TO_INPUT_RATIO,
@@ -170,6 +172,7 @@ __all__ = [
     # Region size constants
     "DG_TO_EC_EXPANSION",
     "CA3_TO_DG_RATIO",
+    "CA2_TO_DG_RATIO",
     "CA1_TO_CA3_RATIO",
     "L4_TO_INPUT_RATIO",
     "L23_TO_L4_RATIO",
@@ -184,6 +187,7 @@ __all__ = [
     # Region architecture constants
     "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
     "HIPPOCAMPUS_CA3_SIZE_RATIO",
+    "HIPPOCAMPUS_CA2_SIZE_RATIO",
     "HIPPOCAMPUS_CA1_SIZE_RATIO",
     "HIPPOCAMPUS_SPARSITY_TARGET",
     "CORTEX_L4_RATIO",

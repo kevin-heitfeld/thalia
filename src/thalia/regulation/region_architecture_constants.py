@@ -56,6 +56,17 @@ for auto-associative memory formation. Ratio reflects anatomical measurements.
 Reference: Amaral et al. (1990) - Hippocampal formation anatomy
 """
 
+HIPPOCAMPUS_CA2_SIZE_RATIO = 0.25
+"""CA2 size as fraction of DG size.
+
+CA2 is a small but crucial region between CA3 and CA1, approximately 50% of CA3
+size. Provides social memory processing and temporal context encoding. Weak
+CA3→CA2 plasticity creates a stability hub resistant to catastrophic interference.
+
+Reference: Hitti & Siegelbaum (2014) - CA2 essential for social memory
+Reference: Chevaleyre & Siegelbaum (2010) - CA2 plasticity properties
+"""
+
 # =============================================================================
 # CORTICAL LAYER ARCHITECTURE
 # =============================================================================
@@ -328,6 +339,7 @@ __all__ = [
     # Hippocampus
     "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
     "HIPPOCAMPUS_CA3_SIZE_RATIO",
+    "HIPPOCAMPUS_CA2_SIZE_RATIO",
     "HIPPOCAMPUS_CA1_SIZE_RATIO",
     "HIPPOCAMPUS_SPARSITY_TARGET",
     # Cortex
