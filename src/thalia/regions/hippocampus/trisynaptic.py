@@ -516,6 +516,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # Track creation timesteps for each neuron in each layer
         self._neuron_birth_steps_dg = torch.zeros(self.dg_size, dtype=torch.long, device=self.device)
         self._neuron_birth_steps_ca3 = torch.zeros(self.ca3_size, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps_ca2 = torch.zeros(self.ca2_size, dtype=torch.long, device=self.device)
         self._neuron_birth_steps_ca1 = torch.zeros(self.ca1_size, dtype=torch.long, device=self.device)
         self._current_training_step = 0  # Updated externally by training loop
 
@@ -888,6 +889,17 @@ class TrisynapticHippocampus(NeuralRegion):
             )
         )
 
+        # 3.5. Expand EC→CA2 direct perforant path [ca2, n_input]
+        # Only expand rows (CA2), input size is fixed
+        self.synaptic_weights["ec_ca2"] = nn.Parameter(
+            self._grow_weight_matrix_rows(
+                self.synaptic_weights["ec_ca2"].data,
+                ca2_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
+        )
+
         # 4. Expand CA3→CA3 recurrent weights [ca3, ca3]
         # Add rows and columns for new CA3 neurons
         expanded_recurrent_rows = self._grow_weight_matrix_rows(
@@ -899,6 +911,23 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ca3_ca3"] = nn.Parameter(
             self._grow_weight_matrix_cols(
                 expanded_recurrent_rows,
+                ca3_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
+        )
+
+        # 4.5. Expand CA3→CA2 weights [ca2, ca3]
+        # Add rows for new CA2 neurons, columns for new CA3 neurons
+        expanded_ca2_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["ca3_ca2"].data,
+            ca2_growth,
+            initializer=initialization,
+            sparsity=sparsity
+        )
+        self.synaptic_weights["ca3_ca2"] = nn.Parameter(
+            self._grow_weight_matrix_cols(
+                expanded_ca2_rows,
                 ca3_growth,
                 initializer=initialization,
                 sparsity=sparsity
@@ -922,7 +951,24 @@ class TrisynapticHippocampus(NeuralRegion):
             )
         )
 
-        # 5.5. Expand EC→CA1 direct perforant path [ca1, n_input]
+        # 5.5. Expand CA2→CA1 weights [ca1, ca2]
+        # Add rows for new CA1 neurons, columns for new CA2 neurons
+        expanded_ca1_ca2_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["ca2_ca1"].data,
+            n_new,
+            initializer=initialization,
+            sparsity=sparsity
+        )
+        self.synaptic_weights["ca2_ca1"] = nn.Parameter(
+            self._grow_weight_matrix_cols(
+                expanded_ca1_ca2_rows,
+                ca2_growth,
+                initializer=initialization,
+                sparsity=sparsity
+            )
+        )
+
+        # 5.6. Expand EC→CA1 direct perforant path [ca1, n_input]
         # Only expand rows (CA1), input size is fixed
         self.synaptic_weights["ec_ca1"] = nn.Parameter(
             self._grow_weight_matrix_rows(
@@ -945,6 +991,9 @@ class TrisynapticHippocampus(NeuralRegion):
             tau_adapt=self.tri_config.adapt_tau,
         )
 
+        self.ca2_size = new_ca2_size
+        self.ca2_neurons = create_pyramidal_neurons(self.ca2_size, self.device)
+
         self.ca1_size = new_ca1_size
         self.ca1_neurons = create_pyramidal_neurons(self.ca1_size, self.device)
 
@@ -956,11 +1005,78 @@ class TrisynapticHippocampus(NeuralRegion):
         new_ca3_births = torch.full((ca3_growth,), self._current_training_step, dtype=torch.long, device=self.device)
         self._neuron_birth_steps_ca3 = torch.cat([self._neuron_birth_steps_ca3, new_ca3_births])
 
+        new_ca2_births = torch.full((ca2_growth,), self._current_training_step, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps_ca2 = torch.cat([self._neuron_birth_steps_ca2, new_ca2_births])
+
         new_ca1_births = torch.full((n_new,), self._current_training_step, dtype=torch.long, device=self.device)
         self._neuron_birth_steps_ca1 = torch.cat([self._neuron_birth_steps_ca1, new_ca1_births])
 
-        # 7. Update config
+        # 6.6. Expand CA1 lateral inhibition matrix [ca1, ca1]
+        # Add rows and columns for new CA1 neurons
+        expanded_ca1_inhib_rows = self._grow_weight_matrix_rows(
+            self.synaptic_weights["ca1_inhib"].data,
+            n_new,
+            initializer='gaussian',  # Match original initialization
+            sparsity=0.0  # Dense lateral inhibition
+        )
+        self.synaptic_weights["ca1_inhib"] = nn.Parameter(
+            self._grow_weight_matrix_cols(
+                expanded_ca1_inhib_rows,
+                n_new,
+                initializer='gaussian',
+                sparsity=0.0
+            )
+        )
+        self.synaptic_weights["ca1_inhib"].data.fill_diagonal_(0.0)  # No self-inhibition
+
+        # Recreate gap junctions with new CA1 size
+        if hasattr(self, 'gap_junctions_ca1') and self.gap_junctions_ca1 is not None:
+            from thalia.components.gap_junctions import GapJunctionCoupling
+            self.gap_junctions_ca1 = GapJunctionCoupling(
+                n_neurons=self.ca1_size,
+                afferent_weights=self.synaptic_weights["ca1_inhib"],
+                config=self._gap_config_ca1,
+                device=self.device,
+            )
+
+        # 7. Grow STP modules if they exist
+        # All STP modules need to grow when their pre/post populations expand
+        if self.stp_mossy is not None:
+            # DG→CA3: Both pre (DG) and post (CA3) grow
+            self.stp_mossy.grow(dg_growth, target='pre')
+            self.stp_mossy.grow(ca3_growth, target='post')
+
+        if self.stp_schaffer is not None:
+            # CA3→CA1: Both pre (CA3) and post (CA1) grow
+            self.stp_schaffer.grow(ca3_growth, target='pre')
+            self.stp_schaffer.grow(n_new, target='post')
+
+        if self.stp_ca3_recurrent is not None:
+            # CA3→CA3: Both sides grow by same amount
+            self.stp_ca3_recurrent.grow(ca3_growth, target='pre')
+            self.stp_ca3_recurrent.grow(ca3_growth, target='post')
+
+        if self.stp_ca3_ca2 is not None:
+            # CA3→CA2: Both grow
+            self.stp_ca3_ca2.grow(ca3_growth, target='pre')
+            self.stp_ca3_ca2.grow(ca2_growth, target='post')
+
+        if self.stp_ca2_ca1 is not None:
+            # CA2→CA1: Both pre (CA2) and post (CA1) grow
+            self.stp_ca2_ca1.grow(ca2_growth, target='pre')
+            self.stp_ca2_ca1.grow(n_new, target='post')
+
+        if self.stp_ec_ca1 is not None:
+            # EC→CA1: Only post (CA1) grows, pre (EC input) is fixed
+            self.stp_ec_ca1.grow(n_new, target='post')
+
+        if self.stp_ec_ca2 is not None:
+            # EC→CA2: Only post (CA2) grows, pre (EC input) is fixed
+            self.stp_ec_ca2.grow(ca2_growth, target='post')
+
+        # 8. Update config (both references for backward compatibility)
         self.config = replace(self.config, n_output=new_ca1_size)
+        self.tri_config = self.config
 
     def grow_input(
         self,
@@ -1006,8 +1122,39 @@ class TrisynapticHippocampus(NeuralRegion):
             )
         )
 
-        # Update config
+        # Expand EC→CA2 direct perforant path [ca2, input] → [ca2, input+n_new]
+        self.synaptic_weights["ec_ca2"] = nn.Parameter(
+            self._grow_weight_matrix_cols(
+                self.synaptic_weights["ec_ca2"].data,
+                n_new,
+                initializer=initialization,
+                sparsity=sparsity
+            )
+        )
+
+        # Expand EC→CA1 direct perforant path [ca1, input] → [ca1, input+n_new]
+        # (only if ec_l3_input_size was 0, meaning EC goes through standard input)
+        if self.tri_config.ec_l3_input_size == 0:
+            self.synaptic_weights["ec_ca1"] = nn.Parameter(
+                self._grow_weight_matrix_cols(
+                    self.synaptic_weights["ec_ca1"].data,
+                    n_new,
+                    initializer=initialization,
+                    sparsity=sparsity
+                )
+            )
+
+        # Grow STP modules that receive EC input (n_pre must expand)
+        # Note: stp_ec_ca1 uses ec_l3_input_size if set, otherwise config.n_input
+        if self.stp_ec_ca1 is not None and self.tri_config.ec_l3_input_size == 0:
+            self.stp_ec_ca1.grow(n_new, target='pre')
+
+        if self.stp_ec_ca2 is not None:
+            self.stp_ec_ca2.grow(n_new, target='pre')
+
+        # Update config (both references for backward compatibility)
         self.config = replace(self.config, n_input=new_n_input)
+        self.tri_config = self.config
 
     # endregion
 
