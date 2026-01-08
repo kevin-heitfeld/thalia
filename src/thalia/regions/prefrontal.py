@@ -561,6 +561,12 @@ class Prefrontal(NeuralRegion):
         else:
             self.stp_recurrent = None
 
+        # =====================================================================
+        # Phase 2 Registration: Opt-in auto-growth for STP modules
+        if self.stp_recurrent is not None:
+            # Recurrent STP (n_output -> n_output): only grows during grow_output
+            self._register_stp('stp_recurrent', direction='post', recurrent=True)
+
         return neurons
 
     def _reset_subsystems(self, *names: str) -> None:
@@ -811,19 +817,25 @@ class Prefrontal(NeuralRegion):
             initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
             sparsity: Connection sparsity for new input neurons (if sparse_random)
         """
+        old_n_input = self.config.n_input
+
         # Use GrowthMixin helper (Architecture Review 2025-12-24, Tier 2.5)
-        self.synaptic_weights["default"] = nn.Parameter(
-            self._grow_weight_matrix_cols(
-                self.synaptic_weights["default"].data,
-                n_new,
-                initializer=initialization,
-                sparsity=sparsity
-            )
+        self.synaptic_weights["default"].data = self._grow_weight_matrix_cols(
+            self.synaptic_weights["default"].data,
+            n_new,
+            initializer=initialization,
+            sparsity=sparsity
         )
+
+        # NOTE: Do NOT grow STP here - Prefrontal only has recurrent STP,
+        # which tracks n_output (not n_input) and is grown in grow_output() only
 
         # Update config
         self.config = replace(self.config, n_input=self.config.n_input + n_new)
         self.pfc_config = replace(self.pfc_config, n_input=self.pfc_config.n_input + n_new)
+
+        # Validate growth completed correctly
+        self._validate_input_growth(old_n_input, n_new)
 
     def grow_output(
         self,
@@ -845,13 +857,11 @@ class Prefrontal(NeuralRegion):
 
         # Use GrowthMixin helpers (Architecture Review 2025-12-24, Tier 2.5)
         # 1. Expand synaptic_weights["default"] [n_output, input] → [n_output+n_new, input]
-        self.synaptic_weights["default"] = nn.Parameter(
-            self._grow_weight_matrix_rows(
-                self.synaptic_weights["default"].data,
-                n_new,
-                initializer=initialization,
-                sparsity=sparsity
-            )
+        self.synaptic_weights["default"].data = self._grow_weight_matrix_rows(
+            self.synaptic_weights["default"].data,
+            n_new,
+            initializer=initialization,
+            sparsity=sparsity
         )
 
         # 2. Expand rec_weights [n_output, n_output] → [n_output+n_new, n_output+n_new]
@@ -910,15 +920,15 @@ class Prefrontal(NeuralRegion):
             new_rule = torch.zeros(n_new, device=self.device)
             self.state.active_rule = torch.cat([self.state.active_rule, new_rule])
 
-        # 5.6. Grow STP module if it exists
-        # Recurrent STP needs both pre and post to grow (same population)
-        if self.stp_recurrent is not None:
-            self.stp_recurrent.grow(n_new, target='pre')
-            self.stp_recurrent.grow(n_new, target='post')
+        # 5.6. Phase 2: Auto-grow registered STP modules
+        self._auto_grow_registered_components('output', n_new)
 
         # 6. Update configs
         self.config = replace(self.config, n_output=new_n_output)
         self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
+
+        # 7. Validate growth completed correctly
+        self._validate_output_growth(old_n_output, n_new)
 
     def set_training_step(self, step: int) -> None:
         """Update the current training step for neurogenesis tracking.

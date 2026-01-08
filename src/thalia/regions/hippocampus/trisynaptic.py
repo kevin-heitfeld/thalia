@@ -1039,8 +1039,8 @@ class TrisynapticHippocampus(NeuralRegion):
                 device=self.device,
             )
 
-        # 7. Grow STP modules if they exist
-        # All STP modules need to grow when their pre/post populations expand
+        # 7. Grow STP modules using manual growth (not auto-grow due to complex multi-layer architecture)
+        # Hippocampus has multiple internal pathways with different growth rates per layer
         if self.stp_mossy is not None:
             # DG→CA3: Both pre (DG) and post (CA3) grow
             self.stp_mossy.grow(dg_growth, target='pre')
@@ -1077,6 +1077,11 @@ class TrisynapticHippocampus(NeuralRegion):
         # 8. Update config (both references for backward compatibility)
         self.config = replace(self.config, n_output=new_ca1_size)
         self.tri_config = self.config
+
+        # 9. Validate growth completed correctly
+        # Note: Hippocampus has multi-layer architecture, so skip neuron check
+        # (CA1 neurons are n_output, but DG/CA3/CA2 neurons scale differently)
+        self._validate_output_growth(old_ca1_size, n_new, check_neurons=False)
 
     def grow_input(
         self,
@@ -1155,6 +1160,9 @@ class TrisynapticHippocampus(NeuralRegion):
         # Update config (both references for backward compatibility)
         self.config = replace(self.config, n_input=new_n_input)
         self.tri_config = self.config
+
+        # Validate growth completed correctly
+        self._validate_input_growth(old_n_input, n_new)
 
     # endregion
 

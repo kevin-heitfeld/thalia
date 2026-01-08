@@ -987,6 +987,12 @@ class LayeredCortex(NeuralRegion):
         self.config = replace(self.config, n_output=new_total_output)
         self.layer_config = replace(self.layer_config, n_output=new_total_output)
 
+        # 8. Validate growth completed correctly
+        # Note: Layered cortex has multi-layer architecture, skip neuron check
+        # (L2/3 + L5 neurons = n_output, but L4/L6 neurons scale differently)
+        old_total_output = old_l23_size + old_l5_size
+        self._validate_output_growth(old_total_output, n_new, check_neurons=False)
+
     def grow_input(
         self,
         n_new: int,
@@ -1036,6 +1042,9 @@ class LayeredCortex(NeuralRegion):
         # Update config
         self.layer_config = replace(self.layer_config, n_input=new_n_input)
         self.config = replace(self.config, n_input=new_n_input)
+
+        # Validate growth completed correctly
+        self._validate_input_growth(old_n_input, n_new)
 
     # endregion
 

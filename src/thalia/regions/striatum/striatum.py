@@ -1273,13 +1273,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         new_fsi_weights
                     ], dim=0)
 
-        # 4.5. GROW STP MODULES if they exist
+        # 4.5. GROW STP MODULES using auto-detection
         # =====================================================================
         # STP modules track n_post (total MSN count), need to expand
-        if self.stp_corticostriatal is not None:
-            self.stp_corticostriatal.grow(n_new_neurons, target='post')
-        if self.stp_thalamostriatal is not None:
-            self.stp_thalamostriatal.grow(n_new_neurons, target='post')
+        self._auto_grow_stp_modules('post', n_new_neurons)
 
         # 4.6. GROW HOMEOSTASIS COMPONENT if it exists
         # =====================================================================
@@ -1332,6 +1329,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 scale=1.0,  # Default scale for PFC modulation
             )
 
+        # =====================================================================
+        # 7. VALIDATE GROWTH
+        # =====================================================================
+        # Striatum uses population coding: n_output = n_actions, not total neurons
+        # Skip standard neuron check and validate manually
+        old_n_actions = self.n_actions - n_new
+        self._validate_output_growth(old_n_actions, n_new, check_neurons=False)
+
     def grow_input(
         self,
         n_new: int,
@@ -1363,11 +1368,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.d1_pathway.grow_input(n_new_inputs=n_new)
         self.d2_pathway.grow_input(n_new_inputs=n_new)
 
-        # Grow STP modules if they exist (track n_pre = input size)
-        if self.stp_corticostriatal is not None:
-            self.stp_corticostriatal.grow(n_new, target='pre')
-        if self.stp_thalamostriatal is not None:
-            self.stp_thalamostriatal.grow(n_new, target='pre')
+        # Grow STP modules using auto-detection (track n_pre = input size)
+        self._auto_grow_stp_modules('pre', n_new)
 
         # Grow TD(λ) traces for both D1 and D2
         if self.td_lambda_d1 is not None:
@@ -1377,6 +1379,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Update striatum config
         self.config = replace(self.config, n_input=new_n_input)
+
+        # Validate growth completed correctly
+        self._validate_input_growth(old_n_input, n_new)
 
     def _initialize_pathway_weights(self) -> torch.Tensor:
         """Initialize weights for D1 or D2 pathway with balanced, principled scaling.

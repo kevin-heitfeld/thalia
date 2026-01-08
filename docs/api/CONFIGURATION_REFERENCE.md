@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-31 19:33:39
+> Last updated: 2026-01-09 00:11:42
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -166,6 +166,8 @@ Total: 3 configuration classes
 | `population_coding` | `bool` | `True` |
 | `d1_size` | `int` | `0` |
 | `d2_size` | `int` | `0` |
+| `n_actions` | `int` | `0` |
+| `neurons_per_action` | `int` | `10` |
 | `d1_lr_scale` | `float` | `1.0` |
 | `d2_lr_scale` | `float` | `1.0` |
 | `d1_da_sensitivity` | `float` | `1.0` |

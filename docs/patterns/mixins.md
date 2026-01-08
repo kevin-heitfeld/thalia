@@ -98,13 +98,63 @@ class MyRegion(NeuralComponent, NeuromodulatorMixin):
 
 > For complete method signatures, see [GrowthMixin in MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md#growthmixin)
 
-**Usage Pattern**:
+**Key Features**:
+- **Phase 1** (January 2026): Validation helpers for post-growth correctness
+- **Phase 2** (January 2026): Opt-in registration API for automatic component growth
+
+**Phase 1 Validation Helpers**:
 ```python
 class MyRegion(NeuralComponent, GrowthMixin):
     def grow_output(self, n_new: int):
-        # Growth mixin provides utilities for expanding regions
-        super().grow_output(n_new)
+        old_n = self.config.n_output
+
+        # ... perform growth ...
+
+        # Validate growth completed correctly
+        self._validate_output_growth(
+            old_n,
+            n_new,
+            check_neurons=True,      # Verify neuron count
+            check_config=True,       # Verify config updated
+            check_state_buffers=True # Verify state tensors
+        )
 ```
+
+**Phase 2 Registration API**:
+```python
+class MyRegion(NeuralComponent, GrowthMixin):
+    def __init__(self, config):
+        super().__init__(config)
+
+        # Create STP modules
+        self.stp_feedforward = ShortTermPlasticity(...)
+        self.stp_recurrent = ShortTermPlasticity(...)
+
+        # Register for automatic growth
+        # Non-recurrent: grows in both contexts
+        self._register_stp('stp_feedforward', direction='both')
+
+        # Recurrent: grows both pre+post during grow_output
+        self._register_stp('stp_recurrent', direction='post', recurrent=True)
+
+    def grow_output(self, n_new: int):
+        # ... expand weights and neurons ...
+
+        # Automatically grow all registered STP modules
+        self._auto_grow_registered_components('output', n_new)
+
+        # Validate
+        self._validate_output_growth(old_n, n_new)
+```
+
+**STP Direction Semantics**:
+- `direction='pre'`: Grow during `grow_input()` only (tracks external inputs)
+- `direction='post'`: Grow during `grow_output()` only (tracks outputs)
+- `direction='both'`: Non-recurrent STP that participates in both contexts
+  - During `grow_input()`: grows 'pre' dimension
+  - During `grow_output()`: grows 'post' dimension
+- `recurrent=True`: For recurrent STP (same population)
+  - During `grow_output()`: grows BOTH 'pre' and 'post' dimensions
 
 ---
 

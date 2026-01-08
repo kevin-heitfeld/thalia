@@ -882,6 +882,22 @@ class Cerebellum(NeuralRegion):
         # =====================================================================
         self._trace_manager = self._trace_manager.grow_dimension(n_new, dimension='output')
 
+        # =====================================================================
+        # 5. GROW STP MODULES (manual growth due to complex routing)
+        # =====================================================================
+        # stp_pf_purkinje tracks parallel fiber→Purkinje, needs post growth
+        if self.stp_pf_purkinje is not None:
+            self.stp_pf_purkinje.grow(n_new, target='post')
+        # stp_mf_granule tracks mossy→granule, does NOT grow with output
+        # (granule size is determined by input * expansion, not output)
+
+        # =====================================================================
+        # 6. VALIDATE GROWTH
+        # =====================================================================
+        # Skip neuron check since enhanced mode uses purkinje_cells list
+        # instead of self.neurons, and classic mode already grew neurons
+        self._validate_output_growth(old_n_output, n_new, check_neurons=not self.use_enhanced)
+
     def forward(
         self,
         inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
@@ -1345,9 +1361,8 @@ class Cerebellum(NeuralRegion):
             device=self.device,
         )
 
-        # Grow STP module if enabled
-        if self.stp_mf_granule is not None:
-            self.stp_mf_granule.grow(n_new)
+        # Grow STP modules for input dimension (auto-detect all modules)
+        self._auto_grow_stp_modules('pre', n_new)
 
         # Grow granule layer if using enhanced microcircuit
         if self.use_enhanced and self.granule_layer is not None:
@@ -1358,6 +1373,9 @@ class Cerebellum(NeuralRegion):
         # Update config (for both classic and enhanced modes)
         self.config = replace(self.config, n_input=new_n_input)
         self.cerebellum_config = replace(self.cerebellum_config, n_input=new_n_input)
+
+        # Validate growth completed correctly
+        self._validate_input_growth(old_n_input, n_new)
 
     def get_diagnostics(self) -> CerebellumDiagnostics:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.

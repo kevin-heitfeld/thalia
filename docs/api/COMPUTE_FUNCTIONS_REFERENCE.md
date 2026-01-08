@@ -1,7 +1,7 @@
 # Compute Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-31 19:33:39
+> Last updated: 2026-01-09 00:11:42
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all `compute_*` utility functions that implement biological computations throughout the Thalia codebase.
@@ -201,7 +201,7 @@ Args:
 
 ## 📏 Region Sizing Functions
 
-### [``compute_cerebellum_sizes()``](../../src/thalia/config/region_sizes.py#L365)
+### [``compute_cerebellum_sizes()``](../../src/thalia/config/region_sizes.py#L366)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -247,7 +247,7 @@ Args:
 
 ---
 
-### [``compute_multisensory_sizes()``](../../src/thalia/config/region_sizes.py#L334)
+### [``compute_multisensory_sizes()``](../../src/thalia/config/region_sizes.py#L335)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -282,7 +282,7 @@ Args:
 
 ---
 
-### [``compute_thalamus_sizes()``](../../src/thalia/config/region_sizes.py#L316)
+### [``compute_thalamus_sizes()``](../../src/thalia/config/region_sizes.py#L317)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)

@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2025-12-31 19:33:39
+> Last updated: 2026-01-09 00:11:42
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -168,7 +168,7 @@ Total region states: 7
 
 ---
 
-### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L223)
+### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L225)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  

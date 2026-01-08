@@ -565,6 +565,21 @@ class ThalamicRelay(NeuralRegion):
         self._alpha_phase: float = 0.0
         self._alpha_amplitude: float = 1.0
 
+        # =====================================================================
+        # PHASE 2: REGISTER COMPONENTS FOR AUTO-GROWTH (opt-in)
+        # =====================================================================
+        # Phase 2 Registration: Opt-in auto-growth for STP modules
+        # Register STP modules with their growth patterns:
+        if self.stp_sensory_relay is not None:
+            # Non-recurrent (n_input -> n_relay): grows in both contexts
+            self._register_stp('stp_sensory_relay', direction='both')
+        if self.stp_l6_feedback is not None:
+            # Recurrent (n_relay -> n_relay): only grows during grow_output
+            self._register_stp('stp_l6_feedback', direction='post', recurrent=True)
+
+        # Note: TRN growth is manual (maintains current ratio, not fixed ratio)
+        # Note: TRN growth is manual (maintains current ratio, not fixed ratio)
+
     def _initialize_weights(self) -> Optional[torch.Tensor]:
         """Weights initialized in __init__, return None."""
         return None
@@ -1261,9 +1276,8 @@ class ThalamicRelay(NeuralRegion):
             sparsity=sparsity
         )
 
-        # Grow STP module if it exists (tracks n_pre = input size)
-        if self.stp_sensory_relay is not None:
-            self.stp_sensory_relay.grow(n_new, target='pre')
+        # Phase 2: Auto-grow registered STP modules
+        self._auto_grow_registered_components('input', n_new)
 
         # Rebuild center-surround filter with new input size
         self.config = replace(self.config, n_input=new_n_input)
@@ -1377,16 +1391,12 @@ class ThalamicRelay(NeuralRegion):
         # Grow relay neurons
         self.relay_neurons.grow_neurons(n_new)
 
-        # Grow TRN neurons
+        # Grow TRN neurons (manual - ratio-based scaling is complex)
         if n_trn_growth > 0:
             self.trn_neurons.grow_neurons(n_trn_growth)
 
-        # Grow STP modules if they exist
-        if self.stp_sensory_relay is not None:
-            self.stp_sensory_relay.grow(n_new, target='post')
-        if self.stp_l6_feedback is not None:
-            # L6 feedback STP tracks relay neurons on both pre and post
-            self.stp_l6_feedback.grow(n_new, target='post')
+        # Phase 2: Auto-grow registered STP modules
+        self._auto_grow_registered_components('output', n_new)
 
         # 7. Rebuild center-surround filter with new output size
         self._build_center_surround_filter()
