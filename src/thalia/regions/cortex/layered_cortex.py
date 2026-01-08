@@ -778,24 +778,29 @@ class LayeredCortex(NeuralRegion):
     ) -> None:
         """Grow output dimension by expanding all layers proportionally.
 
-        This expands L4, L2/3, L5, and L6 proportionally to maintain current architecture.
-        Growth is distributed according to current layer size ratios.
+        This expands L2/3 and L5 (output layers) by n_new neurons total,
+        and grows internal layers (L4, L6a, L6b) proportionally to maintain
+        current architecture ratios.
 
         All inter-layer weights are expanded to accommodate new neurons.
 
         Args:
-            n_new: Number of neurons to add to total cortex size
+            n_new: Number of neurons to add to output (L2/3 + L5)
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        # Calculate proportional growth based on current layer sizes
-        # Maintain current ratios between layers
-        total_current = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
-        l4_growth = int(n_new * self.l4_size / total_current)
-        l23_growth = int(n_new * self.l23_size / total_current)
-        l5_growth = int(n_new * self.l5_size / total_current)
-        l6a_growth = int(n_new * self.l6a_size / total_current)
-        l6b_growth = int(n_new * self.l6b_size / total_current)
+        # Distribute n_new across output layers (L2/3 and L5) proportionally
+        output_total = self.l23_size + self.l5_size
+        l23_growth = int(n_new * self.l23_size / output_total)
+        l5_growth = n_new - l23_growth  # Ensure exact n_new growth
+
+        # Grow internal layers (L4, L6) proportionally to L2/3 growth
+        # (they support the output layers)
+        internal_total = self.l4_size + self.l6a_size + self.l6b_size
+        growth_ratio = l23_growth / self.l23_size if self.l23_size > 0 else 0
+        l4_growth = int(self.l4_size * growth_ratio)
+        l6a_growth = int(self.l6a_size * growth_ratio)
+        l6b_growth = int(self.l6b_size * growth_ratio)
 
         old_l4_size = self.l4_size
         old_l23_size = self.l23_size
@@ -963,6 +968,18 @@ class LayeredCortex(NeuralRegion):
         from thalia.utils.core_utils import initialize_phase_preferences
         new_phase_prefs = initialize_phase_preferences(l23_growth, device=self.device)
         self.l23_phase_prefs.data = torch.cat([self.l23_phase_prefs.data, new_phase_prefs])
+
+        # 6c. Recreate gap junctions if enabled (coupling matrix size must match L2/3)
+        if self.gap_junctions_l23 is not None:
+            self.gap_junctions_l23 = GapJunctionCoupling(
+                n_neurons=new_l23_size,
+                afferent_weights=self.synaptic_weights["l23_inhib"],  # Use updated weights
+                config=GapJunctionConfig(
+                    coupling_strength=self.layer_config.gap_junction_strength,
+                ),
+                interneuron_mask=None,
+                device=self.device,
+            )
 
         # 7. Update configs
         new_total_output = new_l23_size + new_l5_size

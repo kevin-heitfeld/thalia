@@ -873,7 +873,8 @@ class Cerebellum(NeuralRegion):
                     )
                 )
 
-            # Grow DCN output
+            # Grow DCN to accept more Purkinje inputs and produce more outputs
+            self.deep_nuclei.grow_input(n_new, source='purkinje')
             self.deep_nuclei.grow_output(n_new)
 
         # =====================================================================
@@ -1317,6 +1318,15 @@ class Cerebellum(NeuralRegion):
             sparsity=sparsity
         )
 
+        # Determine trace manager input size (depends on pathway)
+        if self.use_enhanced and self.granule_layer is not None:
+            # Enhanced: trace manager tracks granule→purkinje
+            # Note: granule count doesn't change when input grows, only connections
+            trace_input_size = self.granule_layer.n_granule
+        else:
+            # Classic: trace manager tracks mossy→purkinje
+            trace_input_size = new_n_input
+
         # Update trace manager for new input size
         stdp_config = STDPConfig(
             stdp_tau_ms=self.cerebellum_config.tau_plus_ms,
@@ -1329,13 +1339,23 @@ class Cerebellum(NeuralRegion):
             heterosynaptic_ratio=self.cerebellum_config.heterosynaptic_ratio,
         )
         self._trace_manager = EligibilityTraceManager(
-            n_input=new_n_input,
+            n_input=trace_input_size,
             n_output=self.config.n_output,
             config=stdp_config,
             device=self.device,
         )
 
-        # Update config
+        # Grow STP module if enabled
+        if self.stp_mf_granule is not None:
+            self.stp_mf_granule.grow(n_new)
+
+        # Grow granule layer if using enhanced microcircuit
+        if self.use_enhanced and self.granule_layer is not None:
+            self.granule_layer.grow_input(n_new)
+            # Also grow deep nuclei mossy input (receives same mossy fibers)
+            self.deep_nuclei.grow_input(n_new, source='mossy')
+
+        # Update config (for both classic and enhanced modes)
         self.config = replace(self.config, n_input=new_n_input)
         self.cerebellum_config = replace(self.cerebellum_config, n_input=new_n_input)
 

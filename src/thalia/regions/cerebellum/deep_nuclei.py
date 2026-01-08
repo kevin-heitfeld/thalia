@@ -304,5 +304,47 @@ class DeepCerebellarNuclei(nn.Module):
         )
         self.dcn_neurons.to(self.device)
 
+    def grow_input(self, n_new: int, source: str = 'purkinje') -> None:
+        """Grow input dimension from Purkinje or mossy fibers.
+
+        Expands weight matrix columns to accept more input neurons.
+
+        Args:
+            n_new: Number of new input neurons
+            source: 'purkinje' or 'mossy' - which input to grow
+
+        Effects:
+            - Adds columns to purkinje_to_dcn or mossy_to_dcn
+            - Updates n_purkinje or n_mossy
+        """
+        if source == 'purkinje':
+            # Add columns to Purkinje→DCN weights
+            new_weights = WeightInitializer.sparse_random(
+                n_output=self.n_output,
+                n_input=n_new,
+                sparsity=0.2,
+                scale=1.5,
+                device=self.device,
+            ).abs()
+            self.purkinje_to_dcn = nn.Parameter(
+                torch.cat([self.purkinje_to_dcn.data, new_weights], dim=1)
+            )
+            self.n_purkinje += n_new
+        elif source == 'mossy':
+            # Add columns to mossy→DCN weights
+            new_weights = WeightInitializer.sparse_random(
+                n_output=self.n_output,
+                n_input=n_new,
+                sparsity=0.1,
+                scale=0.8,
+                device=self.device,
+            ).abs()
+            self.mossy_to_dcn = nn.Parameter(
+                torch.cat([self.mossy_to_dcn.data, new_weights], dim=1)
+            )
+            self.n_mossy += n_new
+        else:
+            raise ValueError(f"Unknown source: {source}. Use 'purkinje' or 'mossy'.")
+
 
 __all__ = ["DeepCerebellarNuclei"]

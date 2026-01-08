@@ -232,7 +232,6 @@ class RegionTestBase(ABC):
             output = region.forward(input_spikes)
             assert output.shape[0] == params["n_output"]
 
-    @pytest.mark.skipif(lambda self: self.skip_growth_tests(), reason="Region doesn't support growth")
     def test_grow_output(self):
         """Test region can grow output dimension (add neurons)."""
         if self.skip_growth_tests():
@@ -255,7 +254,6 @@ class RegionTestBase(ABC):
         output = region.forward(input_spikes)
         assert output.shape[0] == original_output + n_new
 
-    @pytest.mark.skipif(lambda self: self.skip_growth_tests(), reason="Region doesn't support growth")
     def test_grow_input(self):
         """Test region can grow input dimension (accept more inputs)."""
         if self.skip_growth_tests():
@@ -278,7 +276,6 @@ class RegionTestBase(ABC):
         output = region.forward(input_spikes)
         assert output.shape[0] == params["n_output"]
 
-    @pytest.mark.skipif(lambda self: self.skip_growth_tests(), reason="Region doesn't support growth")
     def test_growth_preserves_state(self):
         """Test growth preserves existing neuron state."""
         if self.skip_growth_tests():

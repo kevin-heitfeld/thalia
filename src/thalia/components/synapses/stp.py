@@ -324,6 +324,82 @@ class ShortTermPlasticity(nn.Module):
         if state["x"] is not None:
             self.x = state["x"].to(self.U.device)
 
+    def grow(self, n_new: int, target: str = 'pre') -> None:
+        """Grow STP dimensions by adding new neurons.
+
+        Args:
+            n_new: Number of neurons to add
+            target: 'pre' or 'post' - which dimension to grow
+
+        Effects:
+            - Updates n_pre or n_post
+            - Expands state tensors (u, x) with baseline values
+        """
+        if target == 'pre':
+            old_n_pre = self.n_pre
+            self.n_pre = old_n_pre + n_new
+
+            if self.u is not None and self.x is not None:
+                if self.per_synapse:
+                    # Add new rows: [old_n_pre, n_post] → [new_n_pre, n_post]
+                    new_u = torch.full(
+                        (n_new, self.n_post),
+                        self.config.U,
+                        device=self.u.device,
+                        dtype=torch.float32,
+                    )
+                    new_x = torch.ones(
+                        (n_new, self.n_post),
+                        device=self.x.device,
+                        dtype=torch.float32,
+                    )
+                    self.u = torch.cat([self.u, new_u], dim=0)
+                    self.x = torch.cat([self.x, new_x], dim=0)
+                else:
+                    # Add new elements: [old_n_pre] → [new_n_pre]
+                    new_u = torch.full(
+                        (n_new,),
+                        self.config.U,
+                        device=self.u.device,
+                        dtype=torch.float32,
+                    )
+                    new_x = torch.ones(
+                        (n_new,),
+                        device=self.x.device,
+                        dtype=torch.float32,
+                    )
+                    self.u = torch.cat([self.u, new_u], dim=0)
+                    self.x = torch.cat([self.x, new_x], dim=0)
+
+        elif target == 'post':
+            if self.n_post is None:
+                raise ValueError("Cannot grow 'post' dimension when n_post is None")
+
+            old_n_post = self.n_post
+            self.n_post = old_n_post + n_new
+
+            if self.u is not None and self.x is not None:
+                if self.per_synapse:
+                    # Add new columns: [n_pre, old_n_post] → [n_pre, new_n_post]
+                    new_u = torch.full(
+                        (self.n_pre, n_new),
+                        self.config.U,
+                        device=self.u.device,
+                        dtype=torch.float32,
+                    )
+                    new_x = torch.ones(
+                        (self.n_pre, n_new),
+                        device=self.x.device,
+                        dtype=torch.float32,
+                    )
+                    self.u = torch.cat([self.u, new_u], dim=1)
+                    self.x = torch.cat([self.x, new_x], dim=1)
+                else:
+                    # No change needed - per-pre state doesn't depend on n_post
+                    pass
+        else:
+            raise ValueError(f"Unknown target: {target}. Use 'pre' or 'post'.")
+
     def __repr__(self) -> str:
         synapse_str = f"{self.n_pre}→{self.n_post}" if self.n_post else f"{self.n_pre}"
         return (
