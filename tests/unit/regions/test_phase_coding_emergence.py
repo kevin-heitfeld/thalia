@@ -16,6 +16,7 @@ import torch
 import numpy as np
 
 from thalia.regions.hippocampus import TrisynapticHippocampus, HippocampusConfig
+from thalia.config import compute_hippocampus_sizes
 
 
 @pytest.fixture
@@ -27,12 +28,14 @@ def device():
 @pytest.fixture
 def hippocampus_config(device):
     """Hippocampus config with phase diversity enabled."""
+    sizes = compute_hippocampus_sizes(64)
     return HippocampusConfig(
         n_input=64,
         n_output=128,  # CA1
-        dg_expansion=4.0,
-        ca3_size_ratio=0.5,
-        ca1_size_ratio=1.0,
+        dg_size=sizes["dg_size"],
+        ca3_size=sizes["ca3_size"],
+        ca2_size=sizes["ca2_size"],
+        ca1_size=sizes["ca1_size"],
         theta_gamma_enabled=True,
         phase_diversity_init=True,  # Enable phase diversity
         phase_jitter_std_ms=5.0,

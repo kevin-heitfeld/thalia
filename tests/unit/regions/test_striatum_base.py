@@ -12,6 +12,7 @@ import torch
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
+from thalia.config import compute_striatum_sizes
 
 
 class TestStriatum(RegionTestBase):
@@ -19,6 +20,16 @@ class TestStriatum(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create Striatum instance for testing."""
+        # If using old-style params (n_output + neurons_per_action), convert to explicit sizes
+        if "d1_size" not in kwargs and "d2_size" not in kwargs and "n_output" in kwargs:
+            n_actions = kwargs.get("n_output", 1)
+            neurons_per_action = kwargs.get("neurons_per_action", 10)
+            sizes = compute_striatum_sizes(n_actions, neurons_per_action)
+            kwargs["d1_size"] = sizes["d1_size"]
+            kwargs["d2_size"] = sizes["d2_size"]
+            kwargs["n_actions"] = sizes["n_actions"]
+            kwargs["neurons_per_action"] = sizes["neurons_per_action"]
+
         config = StriatumConfig(**kwargs)
         return Striatum(config)
 

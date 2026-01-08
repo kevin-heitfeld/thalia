@@ -14,29 +14,43 @@ import torch
 import numpy as np
 
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.config import compute_thalamus_sizes
+
+
+@pytest.fixture
+def thalamus_config():
+    """Standard thalamus config with explicit sizes for STP tests."""
+    relay_size = 10
+    sizes = compute_thalamus_sizes(relay_size)
+    return ThalamicRelayConfig(
+        n_input=20,
+        n_output=relay_size,
+        relay_size=sizes["relay_size"],
+        trn_size=sizes["trn_size"],
+        device="cpu",
+    )
 
 
 class TestThalamusSTPConfiguration:
     """Test STP configuration and initialization."""
 
-    def test_stp_enabled_by_default(self):
+    def test_stp_enabled_by_default(self, thalamus_config):
         """Test that STP is enabled by default (HIGH PRIORITY biological justification)."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
-        assert config.stp_enabled is True, "STP should be enabled by default (HIGH PRIORITY)"
+        assert thalamus_config.stp_enabled is True, "STP should be enabled by default (HIGH PRIORITY)"
         assert thalamus.stp_sensory_relay is not None, "Sensory relay STP should be initialized"
         assert thalamus.stp_l6_feedback is not None, "L6 feedback STP should be initialized"
 
     def test_stp_can_be_disabled(self):
         """Test that STP can be disabled via config."""
+        relay_size = 10
+        sizes = compute_thalamus_sizes(relay_size)
         config = ThalamicRelayConfig(
             n_input=20,
-            n_output=10,
+            n_output=relay_size,
+            relay_size=sizes["relay_size"],
+            trn_size=sizes["trn_size"],
             device="cpu",
             stp_enabled=False,
         )
@@ -45,30 +59,19 @@ class TestThalamusSTPConfiguration:
         assert thalamus.stp_sensory_relay is None, "STP should be disabled"
         assert thalamus.stp_l6_feedback is None, "L6 feedback STP should be disabled"
 
-    def test_stp_types_correct(self):
+    def test_stp_types_correct(self, thalamus_config):
         """Test that STP types are set correctly."""
         from thalia.components.synapses.stp import STPType
 
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-        )
-
         # Check config values
-        assert config.stp_sensory_relay_type == STPType.DEPRESSING, \
+        assert thalamus_config.stp_sensory_relay_type == STPType.DEPRESSING, \
             "Sensory relay STP should be depressing (U=0.4)"
-        assert config.stp_l6_feedback_type == STPType.DEPRESSING, \
+        assert thalamus_config.stp_l6_feedback_type == STPType.DEPRESSING, \
             "L6 feedback STP should be depressing (U=0.7)"
 
-    def test_stp_dimensions_correct(self):
+    def test_stp_dimensions_correct(self, thalamus_config):
         """Test that STP modules have correct dimensions."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Sensory relay dimensions
         assert thalamus.stp_sensory_relay.n_pre == 20, "Input dimension should match"
@@ -82,15 +85,9 @@ class TestThalamusSTPConfiguration:
 class TestSensoryRelayDepression:
     """Test sensory relay → thalamus depression (novelty detection)."""
 
-    def test_sustained_input_depresses(self):
+    def test_sustained_input_depresses(self, thalamus_config):
         """Test that sustained sensory input shows depression over time."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Create sustained input pattern
         input_spikes = torch.zeros(20, dtype=torch.bool)
@@ -110,15 +107,9 @@ class TestSensoryRelayDepression:
             assert late_activity <= early_activity, \
                 f"Depression should reduce or maintain activity (early={early_activity:.2f}, late={late_activity:.2f})"
 
-    def test_novel_input_stronger_than_sustained(self):
+    def test_novel_input_stronger_than_sustained(self, thalamus_config):
         """Test that novel inputs get stronger transmission than sustained inputs."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Pattern A (will be sustained)
         pattern_a = torch.zeros(20, dtype=torch.bool)
@@ -148,15 +139,9 @@ class TestSensoryRelayDepression:
         assert efficacy_b > efficacy_a, \
             f"Novel input should be stronger (novel={efficacy_b:.3f}, sustained={efficacy_a:.3f})"
 
-    def test_sensory_adaptation(self):
+    def test_sensory_adaptation(self, thalamus_config):
         """Test that thalamus adapts to sustained sensory input (habituation)."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Sustained sensory pattern
         pattern = torch.zeros(20, dtype=torch.bool)
@@ -175,12 +160,16 @@ class TestSensoryRelayDepression:
         assert late_efficacy < early_efficacy * 0.9, \
             f"Adaptation should reduce efficacy (early={early_efficacy:.3f}, late={late_efficacy:.3f})"
 
-    def test_stp_vs_no_stp_novelty(self):
-        """Test that STP improves novelty detection compared to no STP."""
+    def test_stp_enables_adaptation(self):
+        """Test that STP enables adaptation compared to no STP."""
         # With STP
+        relay_size = 10
+        sizes = compute_thalamus_sizes(relay_size)
         config_stp = ThalamicRelayConfig(
             n_input=20,
-            n_output=10,
+            n_output=relay_size,
+            relay_size=sizes["relay_size"],
+            trn_size=sizes["trn_size"],
             device="cpu",
             stp_enabled=True,
         )
@@ -189,7 +178,9 @@ class TestSensoryRelayDepression:
         # Without STP
         config_no_stp = ThalamicRelayConfig(
             n_input=20,
-            n_output=10,
+            n_output=relay_size,
+            relay_size=sizes["relay_size"],
+            trn_size=sizes["trn_size"],
             device="cpu",
             stp_enabled=False,
         )
@@ -228,15 +219,9 @@ class TestSensoryRelayDepression:
 class TestSensoryRelayRecovery:
     """Test recovery dynamics of sensory relay depression."""
 
-    def test_depression_recovers_during_silence(self):
+    def test_depression_recovers_during_silence(self, thalamus_config):
         """Test that depression recovers during silence (no input)."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Active pattern
         pattern = torch.zeros(20, dtype=torch.bool)
@@ -267,11 +252,15 @@ class TestSensoryRelayRecovery:
 class TestL6FeedbackDepression:
     """Test L6 cortical feedback → thalamus depression (dynamic gain control)."""
 
-    def test_l6_feedback_depresses(self):
+    def test_l6_feedback_depression(self):
         """Test that sustained L6 feedback shows strong depression."""
+        relay_size = 10
+        sizes = compute_thalamus_sizes(relay_size)
         config = ThalamicRelayConfig(
             n_input=20,
-            n_output=10,
+            n_output=relay_size,
+            relay_size=sizes["relay_size"],
+            trn_size=sizes["trn_size"],
             device="cpu",
             stp_enabled=True,
         )
@@ -294,15 +283,9 @@ class TestL6FeedbackDepression:
         assert late < early * 0.8, \
             f"L6 feedback should show strong depression (early={early:.3f}, late={late:.3f})"
 
-    def test_l6_feedback_stronger_depression_than_sensory(self):
+    def test_l6_feedback_stronger_depression_than_sensory(self, thalamus_config):
         """Test that L6 feedback has stronger depression than sensory input (U=0.7 vs U=0.4)."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Sensory pattern
         sensory = torch.zeros(20, dtype=torch.bool)
@@ -334,15 +317,9 @@ class TestL6FeedbackDepression:
 class TestSTPStateManagement:
     """Test STP state management (reset, checkpointing)."""
 
-    def test_stp_reset(self):
+    def test_stp_reset(self, thalamus_config):
         """Test that reset_state clears STP state."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Active pattern
         pattern = torch.zeros(20, dtype=torch.bool)
@@ -388,15 +365,9 @@ class TestSTPStateManagement:
 class TestBiologicalPlausibility:
     """Test that STP behavior matches biological data."""
 
-    def test_sensory_depression_magnitude_realistic(self):
+    def test_sensory_depression_magnitude_realistic(self, thalamus_config):
         """Test that sensory depression magnitude is in biological range (U=0.4, moderate)."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Active pattern
         pattern = torch.zeros(20, dtype=torch.bool)
@@ -419,15 +390,9 @@ class TestBiologicalPlausibility:
             assert 0.3 < depression_ratio < 0.9, \
                 f"Depression should be in biological range (got {depression_ratio:.2f})"
 
-    def test_l6_depression_magnitude_realistic(self):
+    def test_l6_depression_magnitude_realistic(self, thalamus_config):
         """Test that L6 feedback depression magnitude is in biological range (U=0.7, strong)."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # L6 feedback pattern
         pattern = torch.zeros(10, dtype=torch.bool)
@@ -450,15 +415,9 @@ class TestBiologicalPlausibility:
             assert 0.15 < depression_ratio < 0.7, \
                 f"Strong depression should be in biological range (got {depression_ratio:.2f})"
 
-    def test_novelty_detection_functional(self):
+    def test_novelty_detection_functional(self, thalamus_config):
         """Test that STP enables functional novelty detection in sensory relay."""
-        config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=10,
-            device="cpu",
-            stp_enabled=True,
-        )
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(thalamus_config)
 
         # Pattern A (background)
         pattern_a = torch.zeros(20, dtype=torch.bool)

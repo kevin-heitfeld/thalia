@@ -15,13 +15,17 @@ import pytest
 import torch
 
 from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
+from thalia.config import compute_cerebellum_sizes
 
 
 def test_io_gap_junction_initialization():
     """Test gap junction module is properly initialized in cerebellum."""
+    sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
@@ -37,9 +41,12 @@ def test_io_gap_junction_initialization():
 
 def test_io_gap_junction_disabled():
     """Test gap junctions can be disabled via config."""
+    sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         gap_junctions_enabled=False,
     )
@@ -50,14 +57,13 @@ def test_io_gap_junction_disabled():
 
 
 def test_io_membrane_synchronization():
-    """Test that gap junctions synchronize error signals across neighboring IO neurons.
-
-    IO neurons with similar error patterns (anatomically close) should have
-    synchronized membrane potentials after gap junction coupling.
-    """
+    """Test that gap junctions synchronize IO neuron membrane potentials."""
+    sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
@@ -102,9 +108,12 @@ def test_error_sign_preservation():
     Biology: IO neurons synchronize to create simultaneous complex spikes,
     but the sign of the error (LTP vs LTD) must be preserved for each Purkinje cell.
     """
+    sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
@@ -136,9 +145,12 @@ def test_error_sign_preservation():
 
 def test_io_gap_junction_state_serialization():
     """Test that io_membrane state is properly saved and loaded."""
+    sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
@@ -217,9 +229,12 @@ def test_io_gap_junction_backward_compatibility():
 
 def test_io_gap_junction_reset_state():
     """Test that reset_state properly initializes io_membrane."""
+    sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         gap_junctions_enabled=True,
     )
@@ -255,10 +270,13 @@ def test_io_coupling_strength_scaling():
 
     Stronger gap junctions should produce stronger synchronization.
     """
+    sizes = compute_cerebellum_sizes(purkinje_size=50)
     # Weak coupling
     config_weak = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.05,  # Weak
@@ -268,6 +286,8 @@ def test_io_coupling_strength_scaling():
     config_strong = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.25,  # Strong
@@ -318,12 +338,14 @@ def test_io_coupling_strength_scaling():
 
 def test_io_gap_junctions_with_enhanced_microcircuit():
     """Test gap junctions work correctly with enhanced cerebellar microcircuit."""
+    sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
         n_input=100,
         n_output=50,
+        granule_size=sizes["granule_size"],
+        purkinje_size=sizes["purkinje_size"],
         device="cpu",
         use_enhanced_microcircuit=True,
-        granule_expansion_factor=4.0,
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
     )

@@ -12,13 +12,19 @@ import pytest
 import torch
 from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
 from thalia.regions.hippocampus.config import HippocampusConfig
+from thalia.config import compute_hippocampus_sizes
 
 
 def test_gap_junctions_can_be_disabled():
     """Gap junctions can be disabled via configuration."""
+    sizes = compute_hippocampus_sizes(32)
     cfg = HippocampusConfig(
         n_input=32,
         n_output=64,
+        dg_size=sizes["dg_size"],
+        ca3_size=sizes["ca3_size"],
+        ca2_size=sizes["ca2_size"],
+        ca1_size=sizes["ca1_size"],
         gap_junctions_enabled=False,
     )
     hippo = TrisynapticHippocampus(cfg)
@@ -29,9 +35,14 @@ def test_gap_junctions_can_be_disabled():
 
 def test_gap_junctions_enabled_by_default():
     """Gap junctions are enabled by default."""
+    sizes = compute_hippocampus_sizes(32)
     cfg = HippocampusConfig(
         n_input=32,
         n_output=64,
+        dg_size=sizes["dg_size"],
+        ca3_size=sizes["ca3_size"],
+        ca2_size=sizes["ca2_size"],
+        ca1_size=sizes["ca1_size"],
     )
     hippo = TrisynapticHippocampus(cfg)
 
@@ -50,9 +61,14 @@ def test_gap_junction_creates_coupling():
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    sizes = compute_hippocampus_sizes(32)
     cfg = HippocampusConfig(
         n_input=32,
         n_output=64,
+        dg_size=sizes["dg_size"],
+        ca3_size=sizes["ca3_size"],
+        ca2_size=sizes["ca2_size"],
+        ca1_size=sizes["ca1_size"],
         gap_junction_strength=0.15,  # Strong coupling for clear effect
         gap_junction_max_neighbors=8,
         gap_junctions_enabled=True,
@@ -103,9 +119,14 @@ def test_gap_junction_creates_coupling():
 
 def test_gap_junction_state_management():
     """Gap junction state (ca1_membrane) is properly managed."""
+    sizes = compute_hippocampus_sizes(32)
     cfg = HippocampusConfig(
         n_input=32,
         n_output=64,
+        dg_size=sizes["dg_size"],
+        ca3_size=sizes["ca3_size"],
+        ca2_size=sizes["ca2_size"],
+        ca1_size=sizes["ca1_size"],
         gap_junctions_enabled=True,
     )
     hippo = TrisynapticHippocampus(cfg)
@@ -125,9 +146,14 @@ def test_gap_junction_state_management():
 
 def test_gap_junction_state_serialization():
     """Gap junction state (ca1_membrane) is included in state save/load."""
+    sizes = compute_hippocampus_sizes(32)
     cfg = HippocampusConfig(
         n_input=32,
         n_output=64,
+        dg_size=sizes["dg_size"],
+        ca3_size=sizes["ca3_size"],
+        ca2_size=sizes["ca2_size"],
+        ca1_size=sizes["ca1_size"],
         gap_junctions_enabled=True,
     )
     hippo = TrisynapticHippocampus(cfg)
@@ -178,9 +204,14 @@ def test_gap_junction_backward_compatibility():
 
 def test_gap_junction_uses_ca1_inhib_weights():
     """Gap junctions use ca1_inhib weights to infer neighborhoods."""
+    sizes = compute_hippocampus_sizes(32)
     cfg = HippocampusConfig(
         n_input=32,
         n_output=64,
+        dg_size=sizes["dg_size"],
+        ca3_size=sizes["ca3_size"],
+        ca2_size=sizes["ca2_size"],
+        ca1_size=sizes["ca1_size"],
         gap_junctions_enabled=True,
     )
     hippo = TrisynapticHippocampus(cfg)
@@ -199,9 +230,14 @@ def test_gap_junction_integration_with_theta():
     """Gap junctions work correctly with theta-gamma coupled processing."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    sizes = compute_hippocampus_sizes(32)
     cfg = HippocampusConfig(
         n_input=32,
         n_output=64,
+        dg_size=sizes["dg_size"],
+        ca3_size=sizes["ca3_size"],
+        ca2_size=sizes["ca2_size"],
+        ca1_size=sizes["ca1_size"],
         gap_junctions_enabled=True,
         theta_gamma_enabled=True,  # Enable theta-gamma coupling
         device=device,

@@ -12,6 +12,7 @@ import torch
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.hippocampus import Hippocampus
 from thalia.regions.hippocampus.config import HippocampusConfig
+from thalia.config import compute_hippocampus_sizes
 
 
 class TestHippocampus(RegionTestBase):
@@ -19,6 +20,16 @@ class TestHippocampus(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create Hippocampus instance for testing."""
+        # If explicit sizes not provided, compute from n_input
+        if "dg_size" not in kwargs and "ca3_size" not in kwargs and "n_input" in kwargs:
+            sizes = compute_hippocampus_sizes(kwargs["n_input"])
+            kwargs["dg_size"] = sizes["dg_size"]
+            kwargs["ca3_size"] = sizes["ca3_size"]
+            kwargs["ca2_size"] = sizes["ca2_size"]
+            kwargs["ca1_size"] = sizes["ca1_size"]
+            # Update n_output to match computed CA1 size
+            kwargs["n_output"] = sizes["ca1_size"]
+
         config = HippocampusConfig(**kwargs)
         return Hippocampus(config)
 
@@ -26,7 +37,7 @@ class TestHippocampus(RegionTestBase):
         """Return default hippocampus parameters."""
         return {
             "n_input": 100,
-            "n_output": 30,  # CA1 output size
+            "n_output": 200,  # Must match computed ca1_size from compute_hippocampus_sizes(100)
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -35,7 +46,7 @@ class TestHippocampus(RegionTestBase):
         """Return minimal valid parameters for quick tests."""
         return {
             "n_input": 20,
-            "n_output": 10,
+            "n_output": 40,  # Must match computed ca1_size from compute_hippocampus_sizes(20)
             "device": "cpu",
             "dt_ms": 1.0,
         }
