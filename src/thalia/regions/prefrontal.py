@@ -910,6 +910,12 @@ class Prefrontal(NeuralRegion):
             new_rule = torch.zeros(n_new, device=self.device)
             self.state.active_rule = torch.cat([self.state.active_rule, new_rule])
 
+        # 5.6. Grow STP module if it exists
+        # Recurrent STP needs both pre and post to grow (same population)
+        if self.stp_recurrent is not None:
+            self.stp_recurrent.grow(n_new, target='pre')
+            self.stp_recurrent.grow(n_new, target='post')
+
         # 6. Update configs
         self.config = replace(self.config, n_output=new_n_output)
         self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
