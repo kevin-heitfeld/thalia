@@ -270,6 +270,33 @@ class StriatumStateTracker:
         self._last_expected = 0.0
         self._homeostatic_scaling_applied = False
 
+    def grow(self, n_new_actions: int, n_new_neurons: int) -> None:
+        """Grow state tracker to accommodate more actions and neurons.
+
+        Args:
+            n_new_actions: Number of new actions being added
+            n_new_neurons: Number of new neurons being added to n_output
+        """
+        # Expand vote accumulators [n_actions]
+        self._d1_votes_accumulated = torch.cat([
+            self._d1_votes_accumulated,
+            torch.zeros(n_new_actions, device=self.device)
+        ], dim=0)
+        self._d2_votes_accumulated = torch.cat([
+            self._d2_votes_accumulated,
+            torch.zeros(n_new_actions, device=self.device)
+        ], dim=0)
+
+        # Expand recent_spikes [n_output]
+        self.recent_spikes = torch.cat([
+            self.recent_spikes,
+            torch.zeros(n_new_neurons, device=self.device)
+        ], dim=0)
+
+        # Update counts
+        self.n_actions += n_new_actions
+        self.n_output += n_new_neurons
+
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics for state tracker.
 

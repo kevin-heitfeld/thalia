@@ -566,9 +566,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # Corticostriatal STP: DEPRESSING (U=0.4)
             # Applied to D1 and D2 MSN populations
             # Context-dependent filtering prevents saturation from sustained cortical input
+            # Use explicit d1_size + d2_size for n_post (config.n_output may be ambiguous)
+            n_total_msns = config.d1_size + config.d2_size
             self.stp_corticostriatal = ShortTermPlasticity(
                 n_pre=config.n_input,
-                n_post=config.n_output,  # Total MSNs (D1 + D2 populations)
+                n_post=n_total_msns,  # Total MSNs (D1 + D2 populations)
                 config=get_stp_config("corticostriatal", dt=config.dt_ms),
                 per_synapse=True,
             )
@@ -580,7 +582,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # (keeping for future multi-source routing enhancement)
             self.stp_thalamostriatal = ShortTermPlasticity(
                 n_pre=config.n_input,
-                n_post=config.n_output,
+                n_post=n_total_msns,
                 config=get_stp_config("thalamostriatal", dt=config.dt_ms),
                 per_synapse=True,
             )
@@ -1120,8 +1122,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         """
         # Calculate actual number of neurons to add (population coding)
         n_new_neurons = n_new * self.neurons_per_action
-        old_n_output = self.config.n_output
-        new_n_output = old_n_output + n_new_neurons
+
+        # OLD: old_n_output = self.config.n_output (ambiguous - could be actions or neurons)
+        # NEW: Use explicit pathway sizes to get current neuron count
+        old_n_neurons = self.config.d1_size + self.config.d2_size
+        new_n_neurons = old_n_neurons + n_new_neurons
 
         # =====================================================================
         # 0. ASSIGN NEURON IDS TO NEW NEURONS (Phase 2 - Neuromorphic)
@@ -1159,28 +1164,32 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # 2. UPDATE CONFIG (DO THIS BEFORE CREATING NEURONS!)
         # =====================================================================
-        # Neurons are created based on config.n_output, so update it first
+        # Neurons are created based on pathway sizes, so update them first
         # Update all explicit size fields in BOTH configs
         self.n_actions += n_new
         new_d1_size = self.striatum_config.d1_size + n_new_d1
         new_d2_size = self.striatum_config.d2_size + n_new_d2
+
+        # n_output tracks number of ACTIONS (for interface consistency)
+        new_n_actions = self.n_actions
+
         self.config = replace(
             self.config,
-            n_output=new_n_output,
+            n_output=new_n_actions,      # Actions, not neurons
             d1_size=new_d1_size,
             d2_size=new_d2_size,
             n_actions=self.n_actions,
         )
         self.striatum_config = replace(
             self.striatum_config,
-            n_output=new_n_output,
+            n_output=new_n_actions,      # Actions, not neurons
             d1_size=new_d1_size,
             d2_size=new_d2_size,
             n_actions=self.n_actions,
         )
 
         # Update elastic tensor capacity tracking (Phase 1)
-        self.n_neurons_active = new_n_output
+        self.n_neurons_active = new_n_neurons
         # Check if we need to expand capacity
         if self.n_neurons_active > self.n_neurons_capacity:
             # Growth exceeded reserved capacity - reallocate with new headroom
@@ -1211,11 +1220,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.d2_pathway.eligibility = expanded_2d['d2_eligibility']
         if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
             self.td_lambda_d1.traces.traces = expanded_2d['td_lambda_d1_traces']
-            self.td_lambda_d1.traces.n_output = new_n_output
+            self.td_lambda_d1.traces.n_output = new_n_neurons
             self.td_lambda_d1.n_actions = self.n_actions
         if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
             self.td_lambda_d2.traces.traces = expanded_2d['td_lambda_d2_traces']
-            self.td_lambda_d2.traces.n_output = new_n_output
+            self.td_lambda_d2.traces.n_output = new_n_neurons
             self.td_lambda_d2.n_actions = self.n_actions
 
         # Build state dict for all 1D tensors [n_neurons]
@@ -1236,25 +1245,56 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, 'd2_pathway') and self.d2_pathway.neurons is not None:
             self.d2_pathway.neurons.grow_neurons(n_new_neurons)
 
+        # Expand FSI neurons (fast-spiking interneurons) if enabled
+        if self.fsi_neurons is not None:
+            # FSI size scales with n_output (fsi_ratio * n_output)
+            new_fsi_size = int(self.n_actions * self.neurons_per_action * self.striatum_config.fsi_ratio)
+            n_new_fsi = new_fsi_size - self.fsi_size
+            if n_new_fsi > 0:
+                self.fsi_neurons.grow_neurons(n_new_fsi)
+                self.fsi_size = new_fsi_size
+
+                # Grow FSI weights if they exist
+                if "fsi" in self.synaptic_weights:
+                    old_fsi_weights = self.synaptic_weights["fsi"]
+                    n_input = old_fsi_weights.shape[1]
+
+                    # Initialize new weights for new FSI neurons
+                    new_fsi_weights = WeightInitializer.xavier(
+                        n_output=n_new_fsi,
+                        n_input=n_input,
+                        gain=0.3,
+                        device=self.device,
+                    ) * self.config.w_max
+
+                    # Concatenate with existing weights
+                    self.synaptic_weights["fsi"].data = torch.cat([
+                        old_fsi_weights,
+                        new_fsi_weights
+                    ], dim=0)
+
+        # 4.5. GROW STP MODULES if they exist
+        # =====================================================================
+        # STP modules track n_post (total MSN count), need to expand
+        if self.stp_corticostriatal is not None:
+            self.stp_corticostriatal.grow(n_new_neurons, target='post')
+        if self.stp_thalamostriatal is not None:
+            self.stp_thalamostriatal.grow(n_new_neurons, target='post')
+
+        # 4.6. GROW HOMEOSTASIS COMPONENT if it exists
+        # =====================================================================
+        # Homeostasis tracks per-neuron activity, needs to expand
+        if self.homeostasis is not None:
+            self.homeostasis.grow(n_new_neurons)
+
         # =====================================================================
         # 5. UPDATE ACTION-RELATED TRACKING (1D per action, not per neuron)
         # =====================================================================
-        # Expand D1/D2 vote accumulators [n_actions] via state_tracker
-        self.state_tracker._d1_votes_accumulated = torch.cat([
-            self.state_tracker._d1_votes_accumulated,
-            torch.zeros(n_new, device=self.device)
-        ], dim=0)
-        self.state_tracker._d2_votes_accumulated = torch.cat([
-            self.state_tracker._d2_votes_accumulated,
-            torch.zeros(n_new, device=self.device)
-        ], dim=0)
+        # Expand state tracker (vote accumulators, recent_spikes, counts)
+        self.state_tracker.grow(n_new, n_new_neurons)
 
         # Expand exploration manager (handles action_counts and other exploration state)
         self.exploration.grow(self.n_actions)
-
-        # Expand homeostasis manager if it exists
-        if self.homeostasis is not None:
-            self.homeostasis.grow(n_new_neurons)
 
         # Value estimates for new actions (start at 0)
         if hasattr(self, 'value_estimates'):
@@ -1319,8 +1359,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Delegate to internal pathway grow_input() methods
         # (Pathways handle weight expansion, eligibility reset)
-        self.d1_pathway.grow_input(n_new_inputs=n_new, initialization=initialization)
-        self.d2_pathway.grow_input(n_new_inputs=n_new, initialization=initialization)
+        # Note: Pathways use their default Xavier initialization
+        self.d1_pathway.grow_input(n_new_inputs=n_new)
+        self.d2_pathway.grow_input(n_new_inputs=n_new)
+
+        # Grow STP modules if they exist (track n_pre = input size)
+        if self.stp_corticostriatal is not None:
+            self.stp_corticostriatal.grow(n_new, target='pre')
+        if self.stp_thalamostriatal is not None:
+            self.stp_thalamostriatal.grow(n_new, target='pre')
 
         # Grow TD(λ) traces for both D1 and D2
         if self.td_lambda_d1 is not None:
@@ -1664,8 +1711,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # 1. Gap junction coupling for synchronization (<0.1ms)
         # 2. Feedforward inhibition to MSNs (sharpens action timing)
         # Biology: FSI are parvalbumin+ interneurons (~2% of striatum)
-        fsi_inhibition = torch.zeros(self.config.n_output, device=self.device)
-        if self.fsi_size > 0:
+        fsi_inhibition = 0.0  # Scalar value broadcast to all MSNs
+        if self.fsi_size > 0 and "fsi" in self.synaptic_weights:
             # Compute FSI synaptic current (weights applied at dendrites)
             fsi_weights = self.synaptic_weights["fsi"]
             fsi_synaptic_current = fsi_weights @ input_spikes  # [n_fsi]

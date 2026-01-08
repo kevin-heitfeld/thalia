@@ -1261,6 +1261,10 @@ class ThalamicRelay(NeuralRegion):
             sparsity=sparsity
         )
 
+        # Grow STP module if it exists (tracks n_pre = input size)
+        if self.stp_sensory_relay is not None:
+            self.stp_sensory_relay.grow(n_new, target='pre')
+
         # Rebuild center-surround filter with new input size
         self.config = replace(self.config, n_input=new_n_input)
         self._build_center_surround_filter()
@@ -1376,6 +1380,13 @@ class ThalamicRelay(NeuralRegion):
         # Grow TRN neurons
         if n_trn_growth > 0:
             self.trn_neurons.grow_neurons(n_trn_growth)
+
+        # Grow STP modules if they exist
+        if self.stp_sensory_relay is not None:
+            self.stp_sensory_relay.grow(n_new, target='post')
+        if self.stp_l6_feedback is not None:
+            # L6 feedback STP tracks relay neurons on both pre and post
+            self.stp_l6_feedback.grow(n_new, target='post')
 
         # 7. Rebuild center-surround filter with new output size
         self._build_center_surround_filter()

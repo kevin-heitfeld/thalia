@@ -65,6 +65,59 @@ class TestStriatum(RegionTestBase):
         }
 
     # =========================================================================
+    # OVERRIDE BASE TESTS FOR POPULATION CODING
+    # =========================================================================
+
+    def test_grow_output(self):
+        """Test striatum can grow output dimension (accounts for population coding)."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        original_n_actions = params["n_output"]
+        neurons_per_action = params["neurons_per_action"]
+        n_new_actions = 10
+
+        # Grow output (adds actions, which adds neurons_per_action neurons per action)
+        region.grow_output(n_new_actions)
+
+        # Verify config updated (tracks actions, not neurons)
+        assert region.config.n_output == original_n_actions + n_new_actions
+        assert region.n_actions == original_n_actions + n_new_actions
+
+        # Verify forward pass still works with new size
+        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        output = region.forward(input_spikes)
+
+        # Output is per-neuron (d1_spikes), not per-action
+        expected_neurons = (original_n_actions + n_new_actions) * neurons_per_action
+        assert output.shape[0] == expected_neurons, \
+            f"Expected {expected_neurons} neurons, got {output.shape[0]}"
+
+    def test_grow_input(self):
+        """Test striatum can grow input dimension (accounts for population coding)."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        original_n_input = params["n_input"]
+        n_new_input = 20
+        neurons_per_action = params["neurons_per_action"]
+
+        # Grow input
+        region.grow_input(n_new_input)
+
+        # Verify config updated
+        assert region.config.n_input == original_n_input + n_new_input
+
+        # Verify forward pass still works with larger input
+        input_spikes = torch.zeros(original_n_input + n_new_input, device=region.device)
+        output = region.forward(input_spikes)
+
+        # Output size should NOT change (still same number of actions/neurons)
+        expected_neurons = params["n_output"] * neurons_per_action
+        assert output.shape[0] == expected_neurons, \
+            f"Expected {expected_neurons} neurons, got {output.shape[0]}"
+
+    # =========================================================================
     # STRIATUM-SPECIFIC TESTS
     # =========================================================================
 

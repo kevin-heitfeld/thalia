@@ -600,3 +600,29 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         # Restore striatum-specific state if present
         if "action_budgets" in state and hasattr(self, 'action_budgets'):
             self.action_budgets = state["action_budgets"].to(self.config.device)
+
+    def grow(self, n_new_neurons: int) -> None:
+        """Grow the homeostasis component to support more neurons.
+
+        Expands activity tracking and excitability buffers for new neurons.
+
+        Args:
+            n_new_neurons: Number of new neurons to add
+        """
+        # Update neuron count
+        old_n_neurons = self.n_neurons
+        self.n_neurons += n_new_neurons
+
+        # Expand activity tracking buffers [n_neurons]
+        new_d1_activity = torch.zeros(n_new_neurons, device=self.d1_activity_avg.device)
+        self.d1_activity_avg = torch.cat([self.d1_activity_avg, new_d1_activity])
+
+        new_d2_activity = torch.zeros(n_new_neurons, device=self.d2_activity_avg.device)
+        self.d2_activity_avg = torch.cat([self.d2_activity_avg, new_d2_activity])
+
+        # Expand excitability buffers [n_neurons] - start at neutral (1.0)
+        new_d1_excitability = torch.ones(n_new_neurons, device=self.d1_excitability.device)
+        self.d1_excitability = torch.cat([self.d1_excitability, new_d1_excitability])
+
+        new_d2_excitability = torch.ones(n_new_neurons, device=self.d2_excitability.device)
+        self.d2_excitability = torch.cat([self.d2_excitability, new_d2_excitability])

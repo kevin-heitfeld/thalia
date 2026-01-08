@@ -337,7 +337,7 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
 
         # Concatenate along input dimension (columns)
         expanded = torch.cat([self.weights.data, new_cols], dim=1)
-        self.weights = nn.Parameter(expanded)
+        self.weights.data = expanded
 
         # Reset eligibility traces (new dimensions)
         self.learning_strategy.reset_state()

@@ -226,8 +226,9 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
         # Update internal neuron count
         self.n_neurons += n_new_neurons
 
-        # Unified homeostasis automatically adapts to weight tensor size
-        # No explicit resizing needed as normalization is per-tensor operation
+        # Delegate to unified homeostasis to expand activity tracking
+        if self.unified_homeostasis is not None:
+            self.unified_homeostasis.grow(n_new_neurons)
 
     def get_homeostasis_diagnostics(self) -> Dict[str, Any]:
         """Get homeostasis-specific diagnostics."""
