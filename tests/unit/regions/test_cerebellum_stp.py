@@ -21,8 +21,8 @@ class TestCerebellumSTPConfiguration:
     def test_stp_enabled_by_default(self):
         """Test that STP is enabled by default (biological justification)."""
         config = CerebellumConfig(
-            n_input=10,
-            n_output=5,
+            input_size=10,
+            purkinje_size=5,
             device="cpu",
             use_enhanced_microcircuit=False,
         )
@@ -34,8 +34,8 @@ class TestCerebellumSTPConfiguration:
     def test_stp_can_be_disabled(self):
         """Test that STP can be disabled via config."""
         config = CerebellumConfig(
-            n_input=10,
-            n_output=5,
+            input_size=10,
+            purkinje_size=5,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=False,
@@ -49,8 +49,8 @@ class TestCerebellumSTPConfiguration:
         from thalia.components.synapses.stp import STPType
 
         config = CerebellumConfig(
-            n_input=10,
-            n_output=5,
+            input_size=10,
+            purkinje_size=5,
             device="cpu",
             use_enhanced_microcircuit=False,
         )
@@ -64,8 +64,8 @@ class TestCerebellumSTPConfiguration:
     def test_stp_dimensions_correct(self):
         """Test that STP modules have correct dimensions."""
         config = CerebellumConfig(
-            n_input=10,
-            n_output=5,
+            input_size=10,
+            purkinje_size=5,
             device="cpu",
             use_enhanced_microcircuit=False,
         )
@@ -82,8 +82,8 @@ class TestParallelFiberDepression:
     def test_sustained_input_depresses(self):
         """Test that sustained input shows depression over time."""
         config = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -109,8 +109,8 @@ class TestParallelFiberDepression:
     def test_novel_input_stronger_than_sustained(self):
         """Test that novel inputs get stronger transmission than sustained inputs."""
         config = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -144,8 +144,8 @@ class TestParallelFiberDepression:
     def test_change_detection(self):
         """Test that cerebellum responds more to changes than steady state."""
         config = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -183,8 +183,8 @@ class TestParallelFiberDepression:
         """Test that STP improves change detection compared to no STP."""
         # With STP
         config_stp = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -193,8 +193,8 @@ class TestParallelFiberDepression:
 
         # Without STP
         config_no_stp = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=False,
@@ -234,8 +234,8 @@ class TestParallelFiberRecovery:
     def test_depression_recovers_over_time(self):
         """Test that depression recovers during silence (no input)."""
         config = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -277,8 +277,8 @@ class TestSTPStateManagement:
     def test_stp_reset(self):
         """Test that reset_state clears STP state."""
         config = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -311,8 +311,8 @@ class TestSTPStateManagement:
     def test_stp_state_in_reset_subsystems(self):
         """Test that STP modules are included in reset_subsystems call."""
         config = CerebellumConfig(
-            n_input=10,
-            n_output=5,
+            input_size=10,
+            purkinje_size=5,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -333,8 +333,8 @@ class TestBiologicalPlausibility:
     def test_depression_magnitude_realistic(self):
         """Test that depression magnitude is in biological range (30-70%)."""
         config = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -370,8 +370,8 @@ class TestBiologicalPlausibility:
     def test_temporal_precision(self):
         """Test that STP enables sub-10ms temporal discrimination."""
         config = CerebellumConfig(
-            n_input=20,
-            n_output=10,
+            input_size=20,
+            purkinje_size=10,
             device="cpu",
             use_enhanced_microcircuit=False,
             stp_enabled=True,
@@ -407,3 +407,4 @@ class TestBiologicalPlausibility:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

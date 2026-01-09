@@ -20,13 +20,9 @@ from thalia.config import compute_thalamus_sizes
 @pytest.fixture
 def thalamus_config():
     """Standard thalamus config with explicit sizes for STP tests."""
-    relay_size = 10
-    sizes = compute_thalamus_sizes(relay_size)
     return ThalamicRelayConfig(
-        n_input=20,
-        n_output=relay_size,
-        relay_size=sizes["relay_size"],
-        trn_size=sizes["trn_size"],
+        input_size=20,
+        relay_size=10,
         device="cpu",
     )
 
@@ -44,13 +40,9 @@ class TestThalamusSTPConfiguration:
 
     def test_stp_can_be_disabled(self):
         """Test that STP can be disabled via config."""
-        relay_size = 10
-        sizes = compute_thalamus_sizes(relay_size)
         config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=relay_size,
-            relay_size=sizes["relay_size"],
-            trn_size=sizes["trn_size"],
+            input_size=20,
+            relay_size=10,
             device="cpu",
             stp_enabled=False,
         )
@@ -163,13 +155,9 @@ class TestSensoryRelayDepression:
     def test_stp_enables_adaptation(self):
         """Test that STP enables adaptation compared to no STP."""
         # With STP
-        relay_size = 10
-        sizes = compute_thalamus_sizes(relay_size)
         config_stp = ThalamicRelayConfig(
-            n_input=20,
-            n_output=relay_size,
-            relay_size=sizes["relay_size"],
-            trn_size=sizes["trn_size"],
+            input_size=20,
+            relay_size=10,
             device="cpu",
             stp_enabled=True,
         )
@@ -177,10 +165,8 @@ class TestSensoryRelayDepression:
 
         # Without STP
         config_no_stp = ThalamicRelayConfig(
-            n_input=20,
-            n_output=relay_size,
-            relay_size=sizes["relay_size"],
-            trn_size=sizes["trn_size"],
+            input_size=20,
+            relay_size=10,
             device="cpu",
             stp_enabled=False,
         )
@@ -254,13 +240,9 @@ class TestL6FeedbackDepression:
 
     def test_l6_feedback_depression(self):
         """Test that sustained L6 feedback shows strong depression."""
-        relay_size = 10
-        sizes = compute_thalamus_sizes(relay_size)
         config = ThalamicRelayConfig(
-            n_input=20,
-            n_output=relay_size,
-            relay_size=sizes["relay_size"],
-            trn_size=sizes["trn_size"],
+            input_size=20,
+            relay_size=10,
             device="cpu",
             stp_enabled=True,
         )
