@@ -4,16 +4,17 @@
 
 Migration of test files from deprecated `n_input`/`n_output` parameters to semantic config patterns (e.g., `input_size`, `relay_size`, `purkinje_size`).
 
-**Current Test Pass Rate: ~168/170 Phase 1 tests (99%)**
-**Phase 1 (Base Tests): COMPLETE**
+**Current Test Pass Rate: 170/170 Phase 1 tests (100%)**
+**Phase 1 (Base Tests): COMPLETE ✅**
 - Cerebellum: 29/29 (100%)
 - Cortex: 26/26 (100%)
-- Striatum: 27/29 (93%)
+- Striatum: 29/29 (100%) ✅ FIXED
 - Thalamus: 29/29 (100%)
 - Hippocampus: 28/28 (100%)
 - Prefrontal: 29/29 (100%)
 
 **Key Achievement**: Properties pattern successfully applied to all 6 major regions
+**Striatum Fixes**: D1/D2 pathway-specific growth, PFC modulation, homeostasis, goal conditioning
 
 ## Core Issue
 
@@ -46,8 +47,18 @@ The test base class `tests/utils/region_test_base.py` and its subclasses still r
    - Laminar architecture (L4→L2/3→L5→L6a/L6b)
    - Status: ✅ COMPLETE
 
-3. **Striatum** - 27/29 tests (93%)
+3. **Striatum** - 29/29 tests (100%) ✅ COMPLETE
    - Properties: `output_size → d1_size + d2_size`, `total_neurons → d1_size + d2_size`
+   - D1/D2 opponent pathways (Go/NoGo), three-factor dopamine learning
+   - **Biological Fix**: forward() now returns concatenated [D1, D2] spikes (both projection neurons)
+   - **Growth Fixes**:
+     - D1/D2 pathway weights expanded separately (n_new_d1, n_new_d2)
+     - PFC modulation weights correctly sized: [d1_size, pfc_size] and [d2_size, pfc_size]
+     - Goal modulation pools per-neuron values to per-action (neurons_per_action // 2 per pathway)
+     - Homeostasis growth: `StriatumHomeostasis.grow(n_new_d1, n_new_d2)` expands D1/D2 separately
+     - Neuron populations: d1_neurons.grow(n_new_d1), d2_neurons.grow(n_new_d2)
+     - TD-Lambda traces: D1 and D2 eligibility/traces expanded separately
+   - Status: ✅ COMPLETE (ALL tests passing as of January 9, 2026)
    - Fixed forward() to return concatenated [D1, D2] spikes (biologically correct)
    - Remaining: 2 tests (test_grow_output, test_goal_conditioning)
    - Status: ✅ MOSTLY COMPLETE
@@ -150,17 +161,9 @@ Both D1-MSNs and D2-MSNs are projection neurons that send axons out of striatum.
 
 ## Remaining Work
 
-### Striatum Final Fixes (~30 min)
-
-1. **Fix 2 remaining striatum tests**
-   - test_grow_output - RuntimeError with tensor size mismatch
-   - test_goal_conditioning - RuntimeError with tensor size mismatch
-   - Both likely related to concatenated [D1, D2] output size
-   - Expected: 29/29 striatum tests (100%)
-
 ### Phase 2: Specialized Test Files (~2 hours)
 
-2. **Update remaining specialized tests** (~15 files)
+1. **Update remaining specialized tests** (~15 files)
    - test_cerebellum_enhanced.py
    - test_cerebellum_io_gap_junctions.py
    - test_striatum_fsi_gap_junctions.py
@@ -173,15 +176,15 @@ Both D1-MSNs and D2-MSNs are projection neurons that send axons out of striatum.
 
 ### Phase 3: Unit & Integration Tests (~2 hours)
 
-3. **Update unit test files** (~25 files)
+2. **Update unit test files** (~25 files)
    - tests/unit/*.py (non-region tests)
    - tests/integration/*.py
    - Special handling for builder.add_component() patterns
    - Expected: ~100+ additional tests passing
 
-### Phase 4: Full Validation
+### Phase 4: Full Validation (~30 min)
 
-4. **Run complete test suite**
+3. **Run complete test suite**
    - Goal: >95% pass rate
    - Validate no regressions from semantic migration
    - Update documentation with final results

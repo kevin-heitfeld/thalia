@@ -607,6 +607,41 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         if "action_budgets" in state and hasattr(self, 'action_budgets'):
             self.action_budgets = state["action_budgets"].to(self.config.device)
 
+    def grow(self, n_new_d1: int, n_new_d2: int) -> None:
+        """Grow the striatum homeostasis to support more D1 and D2 neurons.
+
+        Args:
+            n_new_d1: Number of new D1 neurons to add
+            n_new_d2: Number of new D2 neurons to add
+        """
+        # Update sizes
+        self.d1_size += n_new_d1
+        self.d2_size += n_new_d2
+        self.n_neurons = self.d1_size  # For backward compatibility
+
+        # Expand D1 activity tracking buffers
+        new_d1_activity = torch.zeros(n_new_d1, device=self.d1_activity_avg.device)
+        self.d1_activity_avg = torch.cat([self.d1_activity_avg, new_d1_activity])
+
+        # Expand D1 excitability buffers - start at neutral (1.0)
+        new_d1_excitability = torch.ones(n_new_d1, device=self.d1_excitability.device)
+        self.d1_excitability = torch.cat([self.d1_excitability, new_d1_excitability])
+
+        # Expand D2 activity tracking buffers
+        new_d2_activity = torch.zeros(n_new_d2, device=self.d2_activity_avg.device)
+        self.d2_activity_avg = torch.cat([self.d2_activity_avg, new_d2_activity])
+
+        # Expand D2 excitability buffers - start at neutral (1.0)
+        new_d2_excitability = torch.ones(n_new_d2, device=self.d2_excitability.device)
+        self.d2_excitability = torch.cat([self.d2_excitability, new_d2_excitability])
+
+
+# =========================================================================
+# BASE CLASS GROW (for non-striatum regions)
+# =========================================================================
+class UnifiedHomeostasisGrowable:
+    """Mixin to provide grow() for non-striatum UnifiedHomeostasis instances."""
+
     def grow(self, n_new_neurons: int) -> None:
         """Grow the homeostasis component to support more neurons.
 

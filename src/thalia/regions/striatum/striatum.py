@@ -583,20 +583,20 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Learning: Three-factor rule extended with goal context:
         #   Δw = eligibility × dopamine × goal_context
         if self.config.use_goal_conditioning:
-            # Initialize PFC → D1 modulation weights
+            # Initialize PFC → D1 modulation weights [d1_size, pfc_size]
             self.pfc_modulation_d1 = nn.Parameter(
                 WeightInitializer.sparse_random(
-                    n_output=self.config.total_neurons,  # D1 neurons
+                    n_output=self.config.d1_size,  # D1 neurons only
                     n_input=self.config.pfc_size,
                     sparsity=0.3,
                     device=torch.device(self.config.device),
                 ),
                 requires_grad=False
             )
-            # Initialize PFC → D2 modulation weights
+            # Initialize PFC → D2 modulation weights [d2_size, pfc_size]
             self.pfc_modulation_d2 = nn.Parameter(
                 WeightInitializer.sparse_random(
-                    n_output=self.config.total_neurons,  # D2 neurons
+                    n_output=self.config.d2_size,  # D2 neurons only
                     n_input=self.config.pfc_size,
                     sparsity=0.3,
                     device=torch.device(self.config.device),
@@ -1130,16 +1130,18 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # Use base class helper with striatum-specific scale (w_max * 0.2)
         # CRITICAL: Use .data to update Parameter in-place, not direct assignment
+        # Expand D1 pathway by D1 neurons only
         self.d1_pathway.weights.data = self._expand_weights(
             current_weights=self.d1_pathway.weights,
-            n_new=n_new_neurons,
+            n_new=n_new_d1,  # D1 pathway grows by n_new_d1
             initialization=initialization,
             sparsity=sparsity,
             scale=self.config.w_max * 0.2,
         )
+        # Expand D2 pathway by D2 neurons only
         self.d2_pathway.weights.data = self._expand_weights(
             current_weights=self.d2_pathway.weights,
-            n_new=n_new_neurons,
+            n_new=n_new_d2,  # D2 pathway grows by n_new_d2
             initialization=initialization,
             sparsity=sparsity,
             scale=self.config.w_max * 0.2,
@@ -1174,29 +1176,34 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # 3. EXPAND STATE TENSORS using base helper
         # =====================================================================
-        # Build state dict for all 2D tensors [n_neurons, dim]
-        state_2d = {
+        # D1 and D2 pathways grow separately, so expand their tensors separately
+
+        # Expand D1 pathway tensors
+        state_2d_d1 = {
             'd1_eligibility': self.d1_pathway.eligibility,
+        }
+        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
+            state_2d_d1['td_lambda_d1_traces'] = self.td_lambda_d1.traces.traces
+
+        expanded_2d_d1 = self._expand_state_tensors(state_2d_d1, n_new_d1)
+        self.d1_pathway.eligibility = expanded_2d_d1['d1_eligibility']
+        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
+            self.td_lambda_d1.traces.traces = expanded_2d_d1['td_lambda_d1_traces']
+            self.td_lambda_d1.traces.n_output = new_d1_size
+            self.td_lambda_d1.n_actions = self.n_actions
+
+        # Expand D2 pathway tensors
+        state_2d_d2 = {
             'd2_eligibility': self.d2_pathway.eligibility,
         }
-
-        # Add TD-lambda traces if present
-        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
-            state_2d['td_lambda_d1_traces'] = self.td_lambda_d1.traces.traces
         if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
-            state_2d['td_lambda_d2_traces'] = self.td_lambda_d2.traces.traces
+            state_2d_d2['td_lambda_d2_traces'] = self.td_lambda_d2.traces.traces
 
-        # Expand all 2D state tensors at once
-        expanded_2d = self._expand_state_tensors(state_2d, n_new_neurons)
-        self.d1_pathway.eligibility = expanded_2d['d1_eligibility']
-        self.d2_pathway.eligibility = expanded_2d['d2_eligibility']
-        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
-            self.td_lambda_d1.traces.traces = expanded_2d['td_lambda_d1_traces']
-            self.td_lambda_d1.traces.n_output = new_n_neurons
-            self.td_lambda_d1.n_actions = self.n_actions
+        expanded_2d_d2 = self._expand_state_tensors(state_2d_d2, n_new_d2)
+        self.d2_pathway.eligibility = expanded_2d_d2['d2_eligibility']
         if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
-            self.td_lambda_d2.traces.traces = expanded_2d['td_lambda_d2_traces']
-            self.td_lambda_d2.traces.n_output = new_n_neurons
+            self.td_lambda_d2.traces.traces = expanded_2d_d2['td_lambda_d2_traces']
+            self.td_lambda_d2.traces.n_output = new_d2_size
             self.td_lambda_d2.n_actions = self.n_actions
 
         # Build state dict for all 1D tensors [n_neurons]
@@ -1211,11 +1218,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # 4. EXPAND NEURON POPULATIONS using efficient in-place growth (ConductanceLIF)
         # =====================================================================
-        # Expand D1-MSN and D2-MSN neuron populations
+        # Expand D1-MSN and D2-MSN neuron populations separately
         if hasattr(self, 'd1_pathway') and self.d1_pathway.neurons is not None:
-            self.d1_pathway.neurons.grow_neurons(n_new_neurons)
+            self.d1_pathway.neurons.grow_neurons(n_new_d1)  # D1 pathway grows by n_new_d1
         if hasattr(self, 'd2_pathway') and self.d2_pathway.neurons is not None:
-            self.d2_pathway.neurons.grow_neurons(n_new_neurons)
+            self.d2_pathway.neurons.grow_neurons(n_new_d2)  # D2 pathway grows by n_new_d2
 
         # Expand FSI neurons (fast-spiking interneurons) if enabled
         if self.fsi_neurons is not None:
@@ -1252,9 +1259,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # 4.6. GROW HOMEOSTASIS COMPONENT if it exists
         # =====================================================================
-        # Homeostasis tracks per-neuron activity, needs to expand
+        # Homeostasis tracks per-neuron activity, needs to expand D1 and D2 separately
         if self.homeostasis is not None:
-            self.homeostasis.grow(n_new_neurons)
+            self.homeostasis.grow(n_new_d1, n_new_d2)
 
         # =====================================================================
         # 5. UPDATE ACTION-RELATED TRACKING (1D per action, not per neuron)
@@ -1282,11 +1289,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # 6. EXPAND PFC MODULATION WEIGHTS (using base helper)
         # =====================================================================
-        # PFC modulation weights [n_output, pfc_size] need to expand for new neurons
+        # PFC modulation weights need to expand separately for D1 and D2 pathways
+        # pfc_modulation_d1: [d1_size, pfc_size] → [d1_size + n_new_d1, pfc_size]
+        # pfc_modulation_d2: [d2_size, pfc_size] → [d2_size + n_new_d2, pfc_size]
         if hasattr(self, 'pfc_modulation_d1') and self.pfc_modulation_d1 is not None:
             self.pfc_modulation_d1 = self._expand_weights(
                 current_weights=self.pfc_modulation_d1,
-                n_new=n_new_neurons,
+                n_new=n_new_d1,  # Expand D1 modulation by D1 neurons only
                 initialization='sparse_random',
                 sparsity=0.3,
                 scale=1.0,  # Default scale for PFC modulation
@@ -1295,7 +1304,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, 'pfc_modulation_d2') and self.pfc_modulation_d2 is not None:
             self.pfc_modulation_d2 = self._expand_weights(
                 current_weights=self.pfc_modulation_d2,
-                n_new=n_new_neurons,
+                n_new=n_new_d2,  # Expand D2 modulation by D2 neurons only
                 initialization='sparse_random',
                 sparsity=0.3,
                 scale=1.0,  # Default scale for PFC modulation

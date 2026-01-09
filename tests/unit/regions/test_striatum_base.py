@@ -384,8 +384,12 @@ class TestStriatum(RegionTestBase):
         state = region.get_state()
         if hasattr(state, "pfc_modulation_d1") and hasattr(state, "pfc_modulation_d2"):
             if state.pfc_modulation_d1 is not None:
-                # Should have modulation weights for each neuron × PFC size
-                expected_shape = (self._get_config_output_size(region.config) * params["neurons_per_action"], params["pfc_size"])
+                # Should have modulation weights for D1 neurons × PFC size
+                # D1 and D2 each have (n_actions * neurons_per_action / 2) neurons
+                n_actions = self._get_config_output_size(region.config)
+                neurons_per_pathway = (params["neurons_per_action"] // 2)
+                expected_d1_size = n_actions * neurons_per_pathway
+                expected_shape = (expected_d1_size, params["pfc_size"])
                 assert state.pfc_modulation_d1.shape == expected_shape
 
 

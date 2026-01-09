@@ -244,8 +244,8 @@ class ForwardPassCoordinator:
         """Compute goal-conditioned modulation of D1/D2 activations.
 
         Args:
-            d1_activation: D1 activations [n_output]
-            d2_activation: D2 activations [n_output]
+            d1_activation: D1 activations [n_actions] (action-level)
+            d2_activation: D2 activations [n_actions] (action-level)
             pfc_goal_context: PFC goal context [pfc_size] or None
 
         Returns:
@@ -261,15 +261,30 @@ class ForwardPassCoordinator:
         if pfc_goal_context.dtype == torch.bool:
             pfc_goal_context = pfc_goal_context.float()
 
-        # Compute goal modulation via learned PFC → striatum weights
-        goal_mod_d1 = torch.sigmoid(
+        # Compute per-neuron goal modulation via learned PFC → striatum weights
+        # pfc_modulation_d1: [d1_size, pfc_size]
+        # pfc_goal_context: [pfc_size]
+        # goal_mod_d1_neurons: [d1_size] (per-neuron)
+        goal_mod_d1_neurons = torch.sigmoid(
             torch.matmul(self.pfc_modulation_d1, pfc_goal_context)
         )
-        goal_mod_d2 = torch.sigmoid(
+        goal_mod_d2_neurons = torch.sigmoid(
             torch.matmul(self.pfc_modulation_d2, pfc_goal_context)
         )
 
-        # Modulate activations by goal context
+        # Pool per-neuron modulation to per-action level
+        # Each action has neurons_per_pathway MSNs in each pathway
+        # d1_size = n_actions * neurons_per_pathway
+        if self.config.neurons_per_action > 1:
+            neurons_per_pathway = self.config.neurons_per_action // 2
+            goal_mod_d1 = goal_mod_d1_neurons.view(self.config.n_actions, neurons_per_pathway).mean(dim=1)
+            goal_mod_d2 = goal_mod_d2_neurons.view(self.config.n_actions, neurons_per_pathway).mean(dim=1)
+        else:
+            # neurons_per_action == 1: MSN level = action level (1:1)
+            goal_mod_d1 = goal_mod_d1_neurons
+            goal_mod_d2 = goal_mod_d2_neurons
+
+        # Modulate activations by goal context (both at action level now)
         strength = self.config.goal_modulation_strength
         d1_activation = d1_activation * (1.0 + strength * (goal_mod_d1 - 0.5))
         d2_activation = d2_activation * (1.0 + strength * (goal_mod_d2 - 0.5))

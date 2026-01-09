@@ -228,18 +228,19 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
         # Delegate to unified homeostasis controller
         self.unified_homeostasis.update_activity(d1_spikes, d2_spikes, decay=decay_value)
 
-    def grow(self, n_new_neurons: int) -> None:
-        """Grow the homeostasis component to support more neurons.
+    def grow(self, n_new_d1: int, n_new_d2: int) -> None:
+        """Grow the homeostasis component to support more D1 and D2 neurons.
 
         Args:
-            n_new_neurons: Number of new neurons to add
+            n_new_d1: Number of new D1 neurons to add
+            n_new_d2: Number of new D2 neurons to add
         """
-        # Update internal neuron count
-        self.n_neurons += n_new_neurons
+        # Update internal neuron count (total)
+        self.n_neurons += (n_new_d1 + n_new_d2)
 
-        # Delegate to unified homeostasis to expand activity tracking
+        # Delegate to unified homeostasis to expand activity tracking for D1 and D2
         if self.unified_homeostasis is not None:
-            self.unified_homeostasis.grow(n_new_neurons)
+            self.unified_homeostasis.grow(n_new_d1, n_new_d2)
 
     def get_homeostasis_diagnostics(self) -> Dict[str, Any]:
         """Get homeostasis-specific diagnostics."""
