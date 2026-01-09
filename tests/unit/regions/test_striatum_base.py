@@ -20,17 +20,18 @@ class TestStriatum(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create Striatum instance for testing."""
-        # If using old-style params (n_output + neurons_per_action), convert to explicit sizes
-        if "d1_size" not in kwargs and "d2_size" not in kwargs and "n_output" in kwargs:
-            n_actions = kwargs.get("n_output", 1)
-            neurons_per_action = kwargs.get("neurons_per_action", 10)
-            sizes = compute_striatum_sizes(n_actions, neurons_per_action)
-            kwargs["d1_size"] = sizes["d1_size"]
-            kwargs["d2_size"] = sizes["d2_size"]
-            kwargs["n_actions"] = sizes["n_actions"]
-            kwargs["neurons_per_action"] = sizes["neurons_per_action"]
+        # Use builder pattern if no explicit sizes provided
+        if "d1_size" not in kwargs and "d2_size" not in kwargs:
+            n_actions = kwargs.pop("n_output", 4)  # Remove n_output, will be set by builder
+            neurons_per_action = kwargs.pop("neurons_per_action", 10)  # Remove to avoid conflict
+            config = StriatumConfig.from_n_actions(
+                n_actions=n_actions,
+                neurons_per_action=neurons_per_action,
+                **kwargs
+            )
+        else:
+            config = StriatumConfig(**kwargs)
 
-        config = StriatumConfig(**kwargs)
         return Striatum(config)
 
     def get_default_params(self):
@@ -80,18 +81,18 @@ class TestStriatum(RegionTestBase):
         # Grow output (adds actions, which adds neurons_per_action neurons per action)
         region.grow_output(n_new_actions)
 
-        # Verify config updated (tracks actions, not neurons)
-        assert region.config.n_output == original_n_actions + n_new_actions
+        # Verify config updated (n_output is total neurons, not actions)
+        expected_total_neurons = (original_n_actions + n_new_actions) * neurons_per_action
+        assert region.config.n_output == expected_total_neurons
         assert region.n_actions == original_n_actions + n_new_actions
 
         # Verify forward pass still works with new size
         input_spikes = torch.zeros(params["n_input"], device=region.device)
         output = region.forward(input_spikes)
 
-        # Output is per-neuron (d1_spikes), not per-action
-        expected_neurons = (original_n_actions + n_new_actions) * neurons_per_action
-        assert output.shape[0] == expected_neurons, \
-            f"Expected {expected_neurons} neurons, got {output.shape[0]}"
+        # Output is per-neuron (d1_spikes), same as config.n_output
+        assert output.shape[0] == expected_total_neurons, \
+            f"Expected {expected_total_neurons} neurons, got {output.shape[0]}"
 
     def test_grow_input(self):
         """Test striatum can grow input dimension (accounts for population coding)."""

@@ -25,33 +25,40 @@ class TestLayeredCortex(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create LayeredCortex instance for testing."""
+        # Always use direct config creation (params dict already has all sizes computed)
         config = LayeredCortexConfig(**kwargs)
         return LayeredCortex(config)
 
     def get_default_params(self):
-        """Return default cortex parameters."""
+        """Return default cortex parameters (will use builder)."""
+        # Create config via builder to get computed sizes
+        config = LayeredCortexConfig.from_input_size(n_input=100, device="cpu", dt_ms=1.0)
         return {
-            "n_input": 100,
-            "n_output": 50,  # Cortex output is concatenated L2/3 + L5
-            "l4_size": 80,
-            "l23_size": 30,
-            "l5_size": 20,
-            "l6a_size": 15,
-            "l6b_size": 10,
+            "n_input": config.n_input,
+            "n_output": config.n_output,
+            "n_neurons": config.n_neurons,
+            "l4_size": config.l4_size,
+            "l23_size": config.l23_size,
+            "l5_size": config.l5_size,
+            "l6a_size": config.l6a_size,
+            "l6b_size": config.l6b_size,
             "device": "cpu",
             "dt_ms": 1.0,
         }
 
     def get_min_params(self):
-        """Return minimal valid parameters for quick tests."""
+        """Return minimal valid parameters for quick tests (will use builder)."""
+        # Create config via builder to get computed sizes
+        config = LayeredCortexConfig.from_input_size(n_input=20, device="cpu", dt_ms=1.0)
         return {
-            "n_input": 20,
-            "n_output": 10,
-            "l4_size": 15,
-            "l23_size": 6,
-            "l5_size": 4,
-            "l6a_size": 3,
-            "l6b_size": 2,
+            "n_input": config.n_input,
+            "n_output": config.n_output,
+            "n_neurons": config.n_neurons,
+            "l4_size": config.l4_size,
+            "l23_size": config.l23_size,
+            "l5_size": config.l5_size,
+            "l6a_size": config.l6a_size,
+            "l6b_size": config.l6b_size,
             "device": "cpu",
             "dt_ms": 1.0,
         }

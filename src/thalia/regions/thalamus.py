@@ -232,6 +232,79 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     thalamic transmission, enabling efficient filtering.
     """
 
+    def __post_init__(self) -> None:
+        """Auto-compute layer sizes from n_output if both are 0, then validate."""
+        # Auto-compute if both relay_size and trn_size are 0
+        if self.relay_size == 0 and self.trn_size == 0:
+            from thalia.config.region_sizes import compute_thalamus_sizes
+            # Use n_output as relay_size if specified, else default to 80
+            relay_size = self.n_output if self.n_output > 0 else 80
+            sizes = compute_thalamus_sizes(relay_size)
+            object.__setattr__(self, "relay_size", sizes["relay_size"])
+            object.__setattr__(self, "trn_size", sizes["trn_size"])
+            # Update n_output and n_neurons
+            object.__setattr__(self, "n_output", sizes["relay_size"])
+            total_neurons = sizes["relay_size"] + sizes["trn_size"]
+            object.__setattr__(self, "n_neurons", total_neurons)
+
+        # Validate after computation
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate size constraints.
+
+        Raises:
+            ValueError: If any size is 0 or n_neurons doesn't match total
+        """
+        if self.relay_size == 0 or self.trn_size == 0:
+            raise ValueError(
+                f"Layer sizes must be > 0. Got relay={self.relay_size}, "
+                f"trn={self.trn_size}. Either specify both explicitly or let them auto-compute."
+            )
+
+        total = self.relay_size + self.trn_size
+        if self.n_neurons != total:
+            raise ValueError(
+                f"n_neurons ({self.n_neurons}) must equal sum of layer sizes ({total})"
+            )
+
+        if self.n_output != self.relay_size:
+            raise ValueError(
+                f"n_output ({self.n_output}) must equal relay_size ({self.relay_size}). "
+                "Relay neurons are the output of thalamus."
+            )
+
+    @classmethod
+    def from_relay_size(
+        cls,
+        relay_size: int,
+        **kwargs
+    ) -> "ThalamicRelayConfig":
+        """Create config with TRN size computed from relay size.
+
+        Uses biological ratio: TRN ≈ 30% of relay neurons
+
+        Args:
+            relay_size: Number of relay neurons
+            **kwargs: Additional config parameters
+
+        Returns:
+            ThalamicRelayConfig with computed TRN size
+
+        Example:
+            >>> config = ThalamicRelayConfig.from_relay_size(relay_size=80, device="cpu")
+            >>> config.trn_size  # 24
+        """
+        from thalia.config.region_sizes import compute_thalamus_sizes
+        sizes = compute_thalamus_sizes(relay_size)
+        return cls(
+            n_output=sizes["relay_size"],
+            n_neurons=sizes["relay_size"] + sizes["trn_size"],
+            relay_size=sizes["relay_size"],
+            trn_size=sizes["trn_size"],
+            **kwargs
+        )
+
 
 @dataclass
 class ThalamicRelayState(BaseRegionState):
@@ -398,11 +471,11 @@ class ThalamicRelay(NeuralRegion):
         """Initialize thalamic relay.
 
         Args:
-            config: Thalamic relay configuration
+            config: Thalamic relay configuration (already validated and sized by config.__post_init__)
         """
-        self.thalamus_config = config
+        self.config = config
 
-        # Layer sizes from config (explicit, like LayeredCortex)
+        # Layer sizes from config (auto-computed or explicit)
         self.n_relay = config.relay_size
         self.n_trn = config.trn_size
 
@@ -670,14 +743,14 @@ class ThalamicRelay(NeuralRegion):
         )
 
         # Center (narrow Gaussian)
-        width_center = self.thalamus_config.spatial_filter_width
-        center = self.thalamus_config.center_excitation * torch.exp(
+        width_center = self.config.spatial_filter_width
+        center = self.config.center_excitation * torch.exp(
             -distances**2 / (2 * width_center**2)
         )
 
         # Surround (wider Gaussian)
         width_surround = width_center * THALAMUS_SURROUND_WIDTH_RATIO
-        surround = self.thalamus_config.surround_inhibition * torch.exp(
+        surround = self.config.surround_inhibition * torch.exp(
             -distances**2 / (2 * width_surround**2)
         )
 
@@ -726,7 +799,7 @@ class ThalamicRelay(NeuralRegion):
         # This gives: phase=0 → gate=1-strength, phase=π → gate=1.0
 
         alpha_modulation = THALAMUS_ALPHA_SUPPRESSION * (1.0 + math.cos(self._alpha_phase))
-        gate = 1.0 - self.thalamus_config.alpha_suppression_strength * alpha_modulation
+        gate = 1.0 - self.config.alpha_suppression_strength * alpha_modulation
 
         # Broadcast to all neurons (ADR-005: 1D)
         gate_tensor = torch.full(
@@ -756,8 +829,8 @@ class ThalamicRelay(NeuralRegion):
             self.state.current_mode = torch.ones_like(membrane)
 
         # Update mode based on thresholds
-        burst_mask = membrane < self.thalamus_config.burst_threshold
-        tonic_mask = membrane > self.thalamus_config.tonic_threshold
+        burst_mask = membrane < self.config.burst_threshold
+        tonic_mask = membrane > self.config.tonic_threshold
 
         self.state.current_mode = torch.where(
             burst_mask,
@@ -868,7 +941,7 @@ class ThalamicRelay(NeuralRegion):
         # Biological function: Cortex directly amplifies specific relay neurons for precision processing
         # BIOLOGICAL CONSTRAINT: L6b size must match n_relay (enforced at build time)
         if cortical_l6b_feedback is not None:
-            l6b_excitation = cortical_l6b_feedback.float() * self.thalamus_config.l6b_to_relay_strength
+            l6b_excitation = cortical_l6b_feedback.float() * self.config.l6b_to_relay_strength
 
             # Validate size (should be guaranteed by builder)
             if l6b_excitation.shape[0] != self.n_relay:
@@ -946,7 +1019,7 @@ class ThalamicRelay(NeuralRegion):
             # Amplify burst spikes
             burst_amplified = torch.where(
                 burst_mask,
-                burst_amplified * self.thalamus_config.burst_gain,
+                burst_amplified * self.config.burst_gain,
                 burst_amplified
             )
 
@@ -974,7 +1047,7 @@ class ThalamicRelay(NeuralRegion):
         trn_excitation_l6a = torch.zeros(self.n_trn, device=self.device)
         if cortical_l6a_feedback is not None:
             # Scale L6a feedback appropriately (moderate strength)
-            trn_excitation_l6a = cortical_l6a_feedback.float() * self.thalamus_config.l6a_to_trn_strength
+            trn_excitation_l6a = cortical_l6a_feedback.float() * self.config.l6a_to_trn_strength
 
             # Validate size (should be guaranteed by builder)
             if trn_excitation_l6a.shape[0] != self.n_trn:
@@ -1284,7 +1357,7 @@ class ThalamicRelay(NeuralRegion):
         self._build_center_surround_filter()
 
         # Update config
-        self.thalamus_config = replace(self.thalamus_config, n_input=new_n_input)
+        self.config = replace(self.config, n_input=new_n_input)
 
     def grow_output(
         self,
@@ -1314,7 +1387,7 @@ class ThalamicRelay(NeuralRegion):
 
         # Use GrowthMixin helpers (Architecture Review 2025-12-24, Tier 2.5)
         # 1. Expand relay_gain [n_relay] → [n_relay+n_new]
-        new_relay_gains = torch.ones(n_new, device=self.device) * self.thalamus_config.relay_strength
+        new_relay_gains = torch.ones(n_new, device=self.device) * self.config.relay_strength
         self.relay_gain.data = torch.cat([self.relay_gain.data, new_relay_gains])
 
         # 2. Expand input_to_trn [n_trn, input] → [n_trn+growth, input]
@@ -1401,16 +1474,11 @@ class ThalamicRelay(NeuralRegion):
         # 7. Rebuild center-surround filter with new output size
         self._build_center_surround_filter()
 
-        # 8. Update configs (including explicit sizes)
+        # 8. Update config
         self.config = replace(
             self.config,
             n_output=new_n_relay,
-            relay_size=new_n_relay,
-            trn_size=new_n_trn,
-        )
-        self.thalamus_config = replace(
-            self.thalamus_config,
-            n_output=new_n_relay,
+            n_neurons=new_n_relay + new_n_trn,
             relay_size=new_n_relay,
             trn_size=new_n_trn,
         )

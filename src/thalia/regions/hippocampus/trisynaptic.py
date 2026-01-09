@@ -210,15 +210,11 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def __init__(self, config: HippocampusConfig):
         """Initialize trisynaptic hippocampus."""
-        # Store config
-        self.tri_config = config
-        self.config = config  # For backward compatibility
+        # Store config (already validated and sized by config.__post_init__)
+        self.config = config
         self.device = torch.device(config.device)
 
-        # Debug flag for learning investigation (set externally)
-        self._debug_hippo = False
-
-        # Layer sizes from config (explicit, like LayeredCortex)
+        # Layer sizes from config (auto-computed or explicit)
         self.dg_size = config.dg_size
         self.ca3_size = config.ca3_size
         self.ca2_size = config.ca2_size
@@ -525,7 +521,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights created in _init_circuit_weights."""
-        return nn.Parameter(torch.zeros(self.tri_config.n_output, self.tri_config.n_input))
+        return nn.Parameter(torch.zeros(self.config.n_output, self.config.n_input))
 
     def _create_neurons(self):
         """Placeholder - neurons created in __init__."""
@@ -533,19 +529,19 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def _init_circuit_weights(self) -> None:
         """Initialize all circuit weights."""
-        device = torch.device(self.tri_config.device)
+        device = torch.device(self.config.device)
 
         # =====================================================================
         # EXTERNAL WEIGHTS: Move to synaptic_weights dict (NeuralRegion pattern)
         # =====================================================================
         # Register external input source and create synaptic weights
-        self.add_input_source("ec", n_input=self.tri_config.n_input)
+        self.add_input_source("ec", n_input=self.config.n_input)
 
         # EC → DG: Random sparse projections (pattern separation)
         self.synaptic_weights["ec_dg"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.dg_size,
-                n_input=self.tri_config.n_input,
+                n_input=self.config.n_input,
                 sparsity=0.3,  # 30% connectivity
                 weight_scale=0.5,  # Strong weights for propagation
                 normalize_rows=True,  # Normalize for reliable propagation
@@ -557,7 +553,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca3"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca3_size,
-                n_input=self.tri_config.n_input,
+                n_input=self.config.n_input,
                 sparsity=0.4,  # Less sparse than DG path
                 weight_scale=0.3,  # Weaker than DG→CA3
                 normalize_rows=True,
@@ -569,7 +565,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca1"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca1_size,
-                n_input=self.tri_config.n_input,
+                n_input=self.config.n_input,
                 sparsity=0.20,  # Each CA1 sees only 20% of EC
                 weight_scale=0.3,  # Strong individual weights
                 normalize_rows=False,  # NO normalization - pattern-specific!
@@ -578,7 +574,7 @@ class TrisynapticHippocampus(NeuralRegion):
         )
 
         # EC Layer III → CA1: Separate pathway for raw sensory input (optional)
-        self._ec_l3_input_size = self.tri_config.ec_l3_input_size
+        self._ec_l3_input_size = self.config.ec_l3_input_size
         if self._ec_l3_input_size > 0:
             self.add_input_source("ec_l3", n_input=self._ec_l3_input_size)
             self.synaptic_weights["ec_l3_ca1"] = nn.Parameter(
@@ -619,14 +615,14 @@ class TrisynapticHippocampus(NeuralRegion):
             device=device
         )
 
-        if self.tri_config.phase_diversity_init:
+        if self.config.phase_diversity_init:
             # Add phase-dependent weight modulation
             # Simulate effect of different synaptic delays: some neurons receive
             # input earlier/later, creating initial phase preference diversity
-            phase_offsets = torch.randn(self.ca3_size, device=device) * self.tri_config.phase_jitter_std_ms
+            phase_offsets = torch.randn(self.ca3_size, device=device) * self.config.phase_jitter_std_ms
             # Convert timing jitter to weight modulation (earlier arrival = stronger weight)
             # Scale: ±5ms jitter → ±15% weight variation
-            jitter_scale = 0.03 * (self.tri_config.phase_jitter_std_ms / 5.0)
+            jitter_scale = 0.03 * (self.config.phase_jitter_std_ms / 5.0)
             phase_modulation = 1.0 + jitter_scale * torch.randn_like(base_weights)
             base_weights = base_weights * phase_modulation
 
@@ -657,7 +653,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca2"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca2_size,
-                n_input=self.tri_config.n_input,
+                n_input=self.config.n_input,
                 sparsity=0.3,  # Similar to EC→CA3
                 weight_scale=0.4,  # Strong direct encoding
                 normalize_rows=True,
@@ -987,8 +983,8 @@ class TrisynapticHippocampus(NeuralRegion):
         self.ca3_neurons = create_pyramidal_neurons(
             self.ca3_size,
             self.device,
-            adapt_increment=self.tri_config.adapt_increment,
-            tau_adapt=self.tri_config.adapt_tau,
+            adapt_increment=self.config.adapt_increment,
+            tau_adapt=self.config.adapt_tau,
         )
 
         self.ca2_size = new_ca2_size
@@ -1074,9 +1070,18 @@ class TrisynapticHippocampus(NeuralRegion):
             # EC→CA2: Only post (CA2) grows, pre (EC input) is fixed
             self.stp_ec_ca2.grow(ca2_growth, target='post')
 
-        # 8. Update config (both references for backward compatibility)
-        self.config = replace(self.config, n_output=new_ca1_size)
-        self.tri_config = self.config
+        # 8. Update config
+        # Must update all layer sizes plus n_neurons to satisfy validation
+        new_total_neurons = new_dg_size + new_ca3_size + new_ca2_size + new_ca1_size
+        self.config = replace(
+            self.config,
+            n_output=new_ca1_size,
+            ca1_size=new_ca1_size,
+            ca2_size=new_ca2_size,
+            ca3_size=new_ca3_size,
+            dg_size=new_dg_size,
+            n_neurons=new_total_neurons,
+        )
 
         # 9. Validate growth completed correctly
         # Note: Hippocampus has multi-layer architecture, so skip neuron check
@@ -1139,7 +1144,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Expand EC→CA1 direct perforant path [ca1, input] → [ca1, input+n_new]
         # (only if ec_l3_input_size was 0, meaning EC goes through standard input)
-        if self.tri_config.ec_l3_input_size == 0:
+        if self.config.ec_l3_input_size == 0:
             self.synaptic_weights["ec_ca1"] = nn.Parameter(
                 self._grow_weight_matrix_cols(
                     self.synaptic_weights["ec_ca1"].data,
@@ -1151,15 +1156,14 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Grow STP modules that receive EC input (n_pre must expand)
         # Note: stp_ec_ca1 uses ec_l3_input_size if set, otherwise config.n_input
-        if self.stp_ec_ca1 is not None and self.tri_config.ec_l3_input_size == 0:
+        if self.stp_ec_ca1 is not None and self.config.ec_l3_input_size == 0:
             self.stp_ec_ca1.grow(n_new, target='pre')
 
         if self.stp_ec_ca2 is not None:
             self.stp_ec_ca2.grow(n_new, target='pre')
 
-        # Update config (both references for backward compatibility)
+        # Update config
         self.config = replace(self.config, n_input=new_n_input)
-        self.tri_config = self.config
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
@@ -1204,7 +1208,7 @@ class TrisynapticHippocampus(NeuralRegion):
             port_mapping={
                 "ec": ["ec", "cortex", "input", "default"],
             },
-            defaults={"ec": torch.zeros(self.tri_config.n_input, device=self.device)},
+            defaults={"ec": torch.zeros(self.config.n_input, device=self.device)},
             component_name="TrisynapticHippocampus",
         )
         input_spikes = routed["ec"]
@@ -1222,9 +1226,9 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        assert input_spikes.shape[0] == self.tri_config.n_input, (
+        assert input_spikes.shape[0] == self.config.n_input, (
             f"TrisynapticHippocampus.forward: input_spikes has shape {input_spikes.shape} "
-            f"but n_input={self.tri_config.n_input}. Check that cortex output matches hippocampus input."
+            f"but n_input={self.config.n_input}. Check that cortex output matches hippocampus input."
         )
         if ec_direct_input is not None:
             ec_direct_input = ec_direct_input.squeeze()
@@ -1232,7 +1236,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 f"TrisynapticHippocampus.forward: ec_direct_input must be 1D, "
                 f"got shape {ec_direct_input.shape}"
             )
-            expected_ec_size = self._ec_l3_input_size if self._ec_l3_input_size > 0 else self.tri_config.n_input
+            expected_ec_size = self._ec_l3_input_size if self._ec_l3_input_size > 0 else self.config.n_input
             assert ec_direct_input.shape[0] == expected_ec_size, (
                 f"TrisynapticHippocampus.forward: ec_direct_input has shape {ec_direct_input.shape} "
                 f"but expected size={expected_ec_size} (ec_l3_input_size={self._ec_l3_input_size}). "
@@ -1268,10 +1272,10 @@ class TrisynapticHippocampus(NeuralRegion):
                 if self.state.ca3_persistent is not None:
                     self.state.ca3_persistent = self.state.ca3_persistent * 0.2
                 self._pending_theta_reset = False
-            elif (self.tri_config.theta_reset_persistent and
+            elif (self.config.theta_reset_persistent and
                   self.state.ca3_persistent is not None):
                 # Normal theta trough: partial decay of persistent activity
-                reset_fraction = self.tri_config.theta_reset_fraction
+                reset_fraction = self.config.theta_reset_fraction
                 self.state.ca3_persistent = self.state.ca3_persistent * (1.0 - reset_fraction)
 
         # =====================================================================
@@ -1303,7 +1307,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # Membrane potentials are guaranteed to exist after forward() call
         dg_spikes = self._apply_wta_sparsity(
             dg_spikes,
-            self.tri_config.dg_sparsity,
+            self.config.dg_sparsity,
             self.dg_neurons.membrane,
         )
         self.state.dg_spikes = dg_spikes
@@ -1430,13 +1434,13 @@ class TrisynapticHippocampus(NeuralRegion):
             ca3_rec = torch.matmul(
                 effective_w_ca3_ca3,
                 self.state.ca3_spikes.float()
-            ) * self.tri_config.ca3_recurrent_strength * rec_gate * ach_recurrent_modulation  # [ca3_size]
+            ) * self.config.ca3_recurrent_strength * rec_gate * ach_recurrent_modulation  # [ca3_size]
         else:
             # Recurrent from previous CA3 activity (theta-gated + ACh-modulated)
             ca3_rec = torch.matmul(
                 self.synaptic_weights["ca3_ca3"],
                 self.state.ca3_spikes.float() if self.state.ca3_spikes is not None else torch.zeros(self.ca3_size, device=input_spikes.device)
-            ) * self.tri_config.ca3_recurrent_strength * rec_gate * ach_recurrent_modulation  # [ca3_size]
+            ) * self.config.ca3_recurrent_strength * rec_gate * ach_recurrent_modulation  # [ca3_size]
 
         # =====================================================================
         # ACTIVITY-DEPENDENT FEEDBACK INHIBITION
@@ -1452,7 +1456,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self._ca3_activity_trace.mul_(0.9).add_(current_activity, alpha=0.1)
 
         # Compute feedback inhibition (scales with activity trace)
-        feedback_inhibition = self._ca3_activity_trace * self.tri_config.ca3_feedback_inhibition
+        feedback_inhibition = self._ca3_activity_trace * self.config.ca3_feedback_inhibition
 
         # =====================================================================
         # BISTABLE PERSISTENT ACTIVITY (models I_NaP / I_CAN currents)
@@ -1473,7 +1477,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.state.ca3_persistent = torch.zeros(self.ca3_size, device=input_spikes.device)
 
         ca3_persistent_input: torch.Tensor = (
-            self.state.ca3_persistent * self.tri_config.ca3_persistent_gain
+            self.state.ca3_persistent * self.config.ca3_persistent_gain
         )
 
         # Total CA3 input = feedforward + recurrent + persistent - inhibition
@@ -1492,7 +1496,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
         # Neurons that fire too much have higher thresholds (less excitable)
-        if (self.tri_config.homeostasis_enabled and
+        if (self.config.homeostasis_enabled and
             self._ca3_threshold_offset is not None):
             ca3_input = ca3_input - self._ca3_threshold_offset
 
@@ -1509,7 +1513,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # Gamma amplitude still modulates overall excitability:
         # - High gamma (theta trough): Enhanced responsiveness to inputs
         # - Low gamma (theta peak): Reduced responsiveness, recurrence dominates
-        if self.tri_config.theta_gamma_enabled:
+        if self.config.theta_gamma_enabled:
             # Gamma amplitude modulation (emergent from oscillator coupling)
             # High amplitude → neurons more responsive to current input
             # Low amplitude → neurons rely more on recurrent memory
@@ -1546,24 +1550,10 @@ class TrisynapticHippocampus(NeuralRegion):
         # Membrane potentials are guaranteed to exist after forward() call
         ca3_spikes = self._apply_wta_sparsity(
             ca3_spikes,
-            self.tri_config.ca3_sparsity,
+            self.config.ca3_sparsity,
             self.ca3_neurons.membrane,
         )
         self.state.ca3_spikes = ca3_spikes
-
-        # DEBUG: Track CA3 spike patterns for learning investigation
-        if hasattr(self, '_debug_hippo') and self._debug_hippo:
-            # Cast needed because PyTorch's tolist() returns Any
-            ca3_active_indices = cast(List[int], ca3_spikes.squeeze().nonzero(as_tuple=True)[0].tolist())
-            dg_active_count = dg_spikes.sum().item()
-            input_sum = input_spikes.sum().item()
-            print(f"      [HIPPO FWD] input_sum={input_sum:.0f}, "
-                  f"dg_active={dg_active_count:.0f}, ca3_active={len(ca3_active_indices)}, "
-                  f"dg_gate={dg_ca3_gate:.3f}, ec_gate={ec_ca3_gate:.3f}, rec_gate={rec_gate:.3f}")
-            if len(ca3_active_indices) <= 10:
-                print(f"        CA3 indices: {ca3_active_indices}")
-            else:
-                print(f"        CA3 indices (first 10): {ca3_active_indices[:10]}...")
 
         # Inter-stage shape check: CA3 output → CA1 input
         assert ca3_spikes.shape == (self.ca3_size,), (
@@ -1577,7 +1567,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # Using a direct accumulation: trace += spike - decay*trace
         # This ensures spikes have strong immediate effect but decay slowly
         dt = self.config.dt_ms
-        decay_rate = dt / self.tri_config.ca3_persistent_tau
+        decay_rate = dt / self.config.ca3_persistent_tau
 
         # Update persistent activity: stronger during encoding, decay otherwise
         # Encoding_mod determines how much new spikes contribute vs decay
@@ -1617,11 +1607,11 @@ class TrisynapticHippocampus(NeuralRegion):
             # is strong (theta trough, encoding phase). This implements
             # the biological finding that synaptic plasticity is enhanced
             # during periods of strong gamma oscillations.
-            base_lr = self.tri_config.learning_rate * encoding_mod
+            base_lr = self.config.learning_rate * encoding_mod
 
             # Apply automatic gamma amplitude modulation
             # Gamma is modulated by ALL slower oscillators (emergent multi-order coupling)
-            if self.tri_config.theta_gamma_enabled:
+            if self.config.theta_gamma_enabled:
                 gamma_mod = self._gamma_amplitude_effective
                 effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
             else:
@@ -1638,17 +1628,17 @@ class TrisynapticHippocampus(NeuralRegion):
             #
             # Implementation: For each active presynaptic neuron, weaken
             # its connections to inactive postsynaptic neurons.
-            if self.tri_config.heterosynaptic_ratio > 0:
+            if self.config.heterosynaptic_ratio > 0:
                 inactive_post = (ca3_activity < 0.5).float()  # Inactive neurons
                 active_pre = ca3_activity  # Active neurons
                 # Weaken: pre active but post inactive
-                hetero_ltd = self.tri_config.heterosynaptic_ratio * effective_lr
+                hetero_ltd = self.config.heterosynaptic_ratio * effective_lr
                 hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
                 dW = dW + hetero_dW
 
             self.synaptic_weights["ca3_ca3"].data += dW
             self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # No self-connections
-            clamp_weights(self.synaptic_weights["ca3_ca3"].data, self.tri_config.w_min, self.tri_config.w_max)
+            clamp_weights(self.synaptic_weights["ca3_ca3"].data, self.config.w_min, self.config.w_max)
 
         # =====================================================================
         # CA2: Social Memory and Temporal Context Layer
@@ -1706,7 +1696,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # Apply sparsity
         ca2_spikes = self._apply_wta_sparsity(
             ca2_spikes,
-            self.tri_config.ca2_sparsity,
+            self.config.ca2_sparsity,
             self.ca2_neurons.membrane,
         )
         self.state.ca2_spikes = ca2_spikes
@@ -1718,9 +1708,9 @@ class TrisynapticHippocampus(NeuralRegion):
 
         if ca3_activity_for_ca2.sum() > 0 and ca2_activity.sum() > 0:
             # Very weak learning rate (stability hub)
-            base_lr = self.tri_config.ca3_ca2_learning_rate * encoding_mod
+            base_lr = self.config.ca3_ca2_learning_rate * encoding_mod
 
-            if self.tri_config.theta_gamma_enabled:
+            if self.config.theta_gamma_enabled:
                 gamma_mod = self._gamma_amplitude_effective
                 effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
             else:
@@ -1728,13 +1718,13 @@ class TrisynapticHippocampus(NeuralRegion):
 
             dW = effective_lr * torch.outer(ca2_activity, ca3_activity_for_ca2)
             self.synaptic_weights["ca3_ca2"].data += dW
-            clamp_weights(self.synaptic_weights["ca3_ca2"].data, self.tri_config.w_min, self.tri_config.w_max)
+            clamp_weights(self.synaptic_weights["ca3_ca2"].data, self.config.w_min, self.config.w_max)
 
         # EC→CA2 STRONG PLASTICITY (temporal encoding)
         if input_spikes.float().sum() > 0 and ca2_activity.sum() > 0:
-            base_lr = self.tri_config.ec_ca2_learning_rate * encoding_mod
+            base_lr = self.config.ec_ca2_learning_rate * encoding_mod
 
-            if self.tri_config.theta_gamma_enabled:
+            if self.config.theta_gamma_enabled:
                 gamma_mod = self._gamma_amplitude_effective
                 effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
             else:
@@ -1742,7 +1732,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
             dW = effective_lr * torch.outer(ca2_activity, input_spikes.float())
             self.synaptic_weights["ec_ca2"].data += dW
-            clamp_weights(self.synaptic_weights["ec_ca2"].data, self.tri_config.w_min, self.tri_config.w_max)
+            clamp_weights(self.synaptic_weights["ec_ca2"].data, self.config.w_min, self.config.w_max)
 
         # =====================================================================
         # 3. CA1: Coincidence Detection with Plastic EC→CA1 Pathway
@@ -1761,7 +1751,7 @@ class TrisynapticHippocampus(NeuralRegion):
         #   - MATCH: Same pattern → same EC→CA1 activation → coincidence!
         #   - MISMATCH: Different pattern → different activation → no coincidence
 
-        cfg = self.tri_config
+        cfg = self.config
 
         # =====================================================================
         # APPLY CA3→CA1 AXONAL DELAY
@@ -1952,7 +1942,7 @@ class TrisynapticHippocampus(NeuralRegion):
             base_lr = cfg.ec_ca1_learning_rate * encoding_mod
 
             # Apply automatic gamma amplitude modulation
-            if self.tri_config.theta_gamma_enabled:
+            if self.config.theta_gamma_enabled:
                 gamma_mod = self._gamma_amplitude_effective
                 effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
             else:
@@ -1977,7 +1967,7 @@ class TrisynapticHippocampus(NeuralRegion):
         if ca2_activity_delayed.sum() > 0 and ca1_activity.sum() > 0:
             base_lr = cfg.ca2_ca1_learning_rate * encoding_mod
 
-            if self.tri_config.theta_gamma_enabled:
+            if self.config.theta_gamma_enabled:
                 gamma_mod = self._gamma_amplitude_effective
                 effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
             else:
@@ -1993,11 +1983,11 @@ class TrisynapticHippocampus(NeuralRegion):
         # Update STDP Traces (for learning, not comparison)
         # =====================================================================
         if self.state.dg_trace is not None:
-            update_trace(self.state.dg_trace, dg_spikes, tau=self.tri_config.tau_plus_ms, dt=dt)
+            update_trace(self.state.dg_trace, dg_spikes, tau=self.config.tau_plus_ms, dt=dt)
         if self.state.ca3_trace is not None:
-            update_trace(self.state.ca3_trace, ca3_spikes, tau=self.tri_config.tau_plus_ms, dt=dt)
+            update_trace(self.state.ca3_trace, ca3_spikes, tau=self.config.tau_plus_ms, dt=dt)
         if self.state.ca2_trace is not None:
-            update_trace(self.state.ca2_trace, ca2_spikes, tau=self.tri_config.tau_plus_ms, dt=dt)
+            update_trace(self.state.ca2_trace, ca2_spikes, tau=self.config.tau_plus_ms, dt=dt)
 
         # Store spikes in base state for compatibility
         # CA1 spikes ARE the output - downstream learns from these patterns!
@@ -2013,7 +2003,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # This is biologically realistic: position in sequence is determined
         # by WHEN the item arrives during the theta cycle, not by an external
         # counter. Each input naturally advances the gamma phase.
-        if self.tri_config.theta_gamma_enabled:
+        if self.config.theta_gamma_enabled:
             self._sequence_position += 1
             # Oscillators advance centrally in Brain, so we just track position here.
             # The position is used for diagnostics and can be reset by new_trial().
@@ -2130,7 +2120,7 @@ class TrisynapticHippocampus(NeuralRegion):
         if not self.plasticity_enabled:
             return
 
-        cfg = self.tri_config
+        cfg = self.config
 
         # NOTE: All neuromodulators (DA, ACh, NE) are now managed centrally by Brain.
         # VTA updates dopamine, LC updates NE, NB updates ACh.
@@ -2534,7 +2524,7 @@ class TrisynapticHippocampus(NeuralRegion):
             compute_health_metrics,
         )
 
-        cfg = self.tri_config
+        cfg = self.config
         state = self.state
 
         # Compute activity for each layer
@@ -2545,10 +2535,10 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Compute plasticity metrics for CA3 recurrent (most important for episodic memory)
         plasticity = None
-        if self.tri_config.learning_enabled:
+        if self.config.learning_enabled:
             plasticity = compute_plasticity_metrics(
                 weights=self.synaptic_weights["ca3_ca3"].data,
-                learning_rate=self.tri_config.learning_rate,
+                learning_rate=self.config.learning_rate,
             )
             # Add pathway-specific weight statistics
             plasticity["ec_dg_mean"] = float(self.synaptic_weights["ec_dg"].data.mean().item())

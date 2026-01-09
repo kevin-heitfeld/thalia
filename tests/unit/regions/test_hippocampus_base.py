@@ -12,7 +12,6 @@ import torch
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.hippocampus import Hippocampus
 from thalia.regions.hippocampus.config import HippocampusConfig
-from thalia.config import compute_hippocampus_sizes
 
 
 class TestHippocampus(RegionTestBase):
@@ -20,17 +19,16 @@ class TestHippocampus(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create Hippocampus instance for testing."""
-        # If explicit sizes not provided, compute from n_input
-        if "dg_size" not in kwargs and "ca3_size" not in kwargs and "n_input" in kwargs:
-            sizes = compute_hippocampus_sizes(kwargs["n_input"])
-            kwargs["dg_size"] = sizes["dg_size"]
-            kwargs["ca3_size"] = sizes["ca3_size"]
-            kwargs["ca2_size"] = sizes["ca2_size"]
-            kwargs["ca1_size"] = sizes["ca1_size"]
-            # Update n_output to match computed CA1 size
-            kwargs["n_output"] = sizes["ca1_size"]
+        # If n_input provided without explicit sizes, use builder for clarity
+        if "dg_size" not in kwargs and "ca3_size" not in kwargs:
+            # Remove n_output if present (will be auto-computed from CA1 size)
+            kwargs.pop("n_output", None)
+            # Use builder to auto-compute sizes (n_input must be in kwargs)
+            config = HippocampusConfig.from_input_size(**kwargs)
+        else:
+            # Explicit sizes provided - user must ensure n_neurons, n_output are correct
+            config = HippocampusConfig(**kwargs)
 
-        config = HippocampusConfig(**kwargs)
         return Hippocampus(config)
 
     def get_default_params(self):

@@ -213,8 +213,7 @@ class PredictiveCortex(NeuralRegion):
 
     def __init__(self, config: PredictiveCortexConfig):
         """Initialize predictive cortex."""
-        self.predictive_config = config
-        self.config = config  # Alias for compatibility
+        self.config = config
 
         # All layer sizes are now required
         # Note: L5+L6 together form the "prediction neurons" (deep pyramidal layers)
@@ -447,7 +446,7 @@ class PredictiveCortex(NeuralRegion):
         # =====================================================================
         # 3. RECREATE PREDICTION LAYER with new sizes
         # =====================================================================
-        if self.predictive_config.prediction_enabled:
+        if self.config.prediction_enabled:
             # Use L5+L6 combined as prediction representation (biologically accurate)
             prediction_repr_size = self.l5_size + self.l6_size
             self.prediction_layer = PredictiveCodingLayer(
@@ -455,13 +454,13 @@ class PredictiveCortex(NeuralRegion):
                     n_input=self.l4_size,
                     n_representation=prediction_repr_size,
                     n_output=self.l4_size,
-                    prediction_tau_ms=self.predictive_config.prediction_tau_ms,
-                    error_tau_ms=self.predictive_config.error_tau_ms,
-                    learning_rate=self.predictive_config.prediction_learning_rate,
-                    initial_precision=self.predictive_config.initial_precision,
-                    precision_learning_rate=self.predictive_config.precision_learning_rate,
+                    prediction_tau_ms=self.config.prediction_tau_ms,
+                    error_tau_ms=self.config.error_tau_ms,
+                    learning_rate=self.config.prediction_learning_rate,
+                    initial_precision=self.config.initial_precision,
+                    precision_learning_rate=self.config.precision_learning_rate,
                     use_spiking=True,
-                    device=self.predictive_config.device,
+                    device=self.config.device,
                 )
             )
 
@@ -497,9 +496,9 @@ class PredictiveCortex(NeuralRegion):
         assert input_spikes.dim() == 1, (
             f"PredictiveCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
         )
-        assert input_spikes.shape[0] == self.predictive_config.n_input, (
+        assert input_spikes.shape[0] == self.config.n_input, (
             f"PredictiveCortex.forward: input_spikes has shape {input_spikes.shape} "
-            f"but n_input={self.predictive_config.n_input}."
+            f"but n_input={self.config.n_input}."
         )
         if top_down is not None:
             assert top_down.dim() == 1, (
@@ -620,7 +619,7 @@ class PredictiveCortex(NeuralRegion):
         if self.prediction_layer is not None:
             # Get dopamine-modulated learning rate from base class
             effective_lr = self.get_effective_learning_rate(
-                self.predictive_config.prediction_learning_rate
+                self.config.prediction_learning_rate
             )
             if effective_lr > 1e-8:  # Only learn if not fully suppressed
                 # Learn prediction weights based on current error
@@ -719,7 +718,7 @@ class PredictiveCortex(NeuralRegion):
         # Add config dict with PredictiveCortex-specific parameters
         if "config" not in state_dict:
             state_dict["config"] = {}
-        state_dict["config"]["prediction_enabled"] = self.predictive_config.prediction_enabled
+        state_dict["config"]["prediction_enabled"] = self.config.prediction_enabled
 
         # Add format identifier for hybrid checkpoints
         state_dict["format"] = "elastic_tensor"

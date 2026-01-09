@@ -502,7 +502,7 @@ class Cerebellum(NeuralRegion):
                 tau_minus_ms=config.tau_minus_ms,
             )
 
-        self.cerebellum_config: CerebellumConfig = config  # type: ignore
+        self.config: CerebellumConfig = config  # type: ignore
 
         # Initialize NeuralRegion (Phase 2 pattern)
         super().__init__(
@@ -510,9 +510,6 @@ class Cerebellum(NeuralRegion):
             device=config.device,
             dt_ms=config.dt_ms,
         )
-
-        # Store full config for cerebellum-specific settings
-        self.config = config
 
         # Initialize state for NeuromodulatorMixin
         self.state = NeuralComponentState()
@@ -525,14 +522,14 @@ class Cerebellum(NeuralRegion):
         # =====================================================================
         # ENHANCED MICROCIRCUIT (optional)
         # =====================================================================
-        self.use_enhanced = self.cerebellum_config.use_enhanced_microcircuit
+        self.use_enhanced = self.config.use_enhanced_microcircuit
 
         if self.use_enhanced:
             # Granule cell layer (sparse expansion)
             self.granule_layer = GranuleCellLayer(
                 n_mossy_fibers=config.n_input,
-                expansion_factor=self.cerebellum_config.granule_size / config.n_input,
-                sparsity=self.cerebellum_config.granule_sparsity,
+                expansion_factor=self.config.granule_size / config.n_input,
+                sparsity=self.config.granule_sparsity,
                 device=config.device,
                 dt_ms=config.dt_ms,
             )
@@ -540,7 +537,7 @@ class Cerebellum(NeuralRegion):
             # Enhanced Purkinje cells (one per output neuron)
             self.purkinje_cells = torch.nn.ModuleList([
                 EnhancedPurkinjeCell(
-                    n_dendrites=self.cerebellum_config.purkinje_n_dendrites,
+                    n_dendrites=self.config.purkinje_n_dendrites,
                     device=config.device,
                     dt_ms=config.dt_ms,
                 )
@@ -568,14 +565,14 @@ class Cerebellum(NeuralRegion):
         # ELIGIBILITY TRACE MANAGER for STDP
         # =====================================================================
         stdp_config = STDPConfig(
-            stdp_tau_ms=self.cerebellum_config.tau_plus_ms,  # Use tau_plus_ms as STDP tau
-            eligibility_tau_ms=self.cerebellum_config.eligibility_tau_ms,
-            stdp_lr=self.cerebellum_config.stdp_lr,
+            stdp_tau_ms=self.config.tau_plus_ms,  # Use tau_plus_ms as STDP tau
+            eligibility_tau_ms=self.config.eligibility_tau_ms,
+            stdp_lr=self.config.stdp_lr,
             a_plus=1.0,
-            a_minus=self.cerebellum_config.heterosynaptic_ratio,
+            a_minus=self.config.heterosynaptic_ratio,
             w_min=config.w_min,
             w_max=config.w_max,
-            heterosynaptic_ratio=self.cerebellum_config.heterosynaptic_ratio,
+            heterosynaptic_ratio=self.config.heterosynaptic_ratio,
         )
         self._trace_manager = EligibilityTraceManager(
             n_input=expanded_input,  # Use expanded size if granule layer enabled
@@ -619,7 +616,7 @@ class Cerebellum(NeuralRegion):
         # Initialize STP modules for cerebellar pathways if enabled
         device = torch.device(config.device)
 
-        if self.cerebellum_config.stp_enabled:
+        if self.config.stp_enabled:
             # Parallel Fibers→Purkinje: DEPRESSING (CRITICAL for timing)
             # This implements the temporal high-pass filter that makes the
             # cerebellum respond to CHANGES rather than sustained input.
@@ -628,7 +625,7 @@ class Cerebellum(NeuralRegion):
                 n_pre=expanded_input,
                 n_post=config.n_output,
                 config=STPConfig.from_type(
-                    self.cerebellum_config.stp_pf_purkinje_type,
+                    self.config.stp_pf_purkinje_type,
                     dt=config.dt_ms
                 ),
                 per_synapse=True,  # Per-synapse dynamics for maximum precision
@@ -642,7 +639,7 @@ class Cerebellum(NeuralRegion):
                     n_pre=config.n_input,
                     n_post=self.granule_layer.n_granule,
                     config=STPConfig.from_type(
-                        self.cerebellum_config.stp_mf_granule_type,
+                        self.config.stp_mf_granule_type,
                         dt=config.dt_ms
                     ),
                     per_synapse=True,
@@ -671,14 +668,14 @@ class Cerebellum(NeuralRegion):
         # GapJunctionCoupling expects afferent weights [n_neurons, n_input] and
         # internally computes functional connectivity neighborhoods.
         self.gap_junctions_io: Optional[GapJunctionCoupling] = None
-        if self.cerebellum_config.gap_junctions_enabled:
+        if self.config.gap_junctions_enabled:
             from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
 
             gap_config = GapJunctionConfig(
                 enabled=True,
-                coupling_strength=self.cerebellum_config.gap_junction_strength,
-                connectivity_threshold=self.cerebellum_config.gap_junction_threshold,
-                max_neighbors=self.cerebellum_config.gap_junction_max_neighbors,
+                coupling_strength=self.config.gap_junction_strength,
+                connectivity_threshold=self.config.gap_junction_threshold,
+                max_neighbors=self.config.gap_junction_max_neighbors,
                 interneuron_only=False,  # IO neurons are not interneurons (glutamatergic)
             )
 
@@ -847,14 +844,14 @@ class Cerebellum(NeuralRegion):
                 n_output=new_n_output,
                 purkinje_size=new_n_output,  # Purkinje size = output size
             )
-            self.cerebellum_config = replace(
-                self.cerebellum_config,
+            self.config = replace(
+                self.config,
                 n_output=new_n_output,
                 purkinje_size=new_n_output,
             )
         else:
             self.config = replace(self.config, n_output=new_n_output)
-            self.cerebellum_config = replace(self.cerebellum_config, n_output=new_n_output)
+            self.config = replace(self.config, n_output=new_n_output)
 
         # =====================================================================
         # 3. EXPAND NEURON POPULATION (classic pathway only)
@@ -867,7 +864,7 @@ class Cerebellum(NeuralRegion):
             for _ in range(n_new):
                 self.purkinje_cells.append(
                     EnhancedPurkinjeCell(
-                        n_dendrites=self.cerebellum_config.purkinje_n_dendrites,
+                        n_dendrites=self.config.purkinje_n_dendrites,
                         device=self.device,
                         dt_ms=self.config.dt_ms,
                     )
@@ -939,7 +936,7 @@ class Cerebellum(NeuralRegion):
         if self.neurons.membrane is None:
             self.neurons.reset_state()
 
-        cfg = self.cerebellum_config
+        cfg = self.config
 
         # ======================================================================
         # COMPUTE THETA MODULATION (from oscillator phase set by Brain)
@@ -1095,7 +1092,7 @@ class Cerebellum(NeuralRegion):
             f"got shape {target.shape}"
         )
 
-        cfg = self.cerebellum_config
+        cfg = self.config
 
         # ======================================================================
         # Compute error via climbing fiber system
@@ -1345,14 +1342,14 @@ class Cerebellum(NeuralRegion):
 
         # Update trace manager for new input size
         stdp_config = STDPConfig(
-            stdp_tau_ms=self.cerebellum_config.tau_plus_ms,
-            eligibility_tau_ms=self.cerebellum_config.eligibility_tau_ms,
-            stdp_lr=self.cerebellum_config.stdp_lr,
+            stdp_tau_ms=self.config.tau_plus_ms,
+            eligibility_tau_ms=self.config.eligibility_tau_ms,
+            stdp_lr=self.config.stdp_lr,
             a_plus=1.0,
-            a_minus=self.cerebellum_config.heterosynaptic_ratio,
+            a_minus=self.config.heterosynaptic_ratio,
             w_min=self.config.w_min,
             w_max=self.config.w_max,
-            heterosynaptic_ratio=self.cerebellum_config.heterosynaptic_ratio,
+            heterosynaptic_ratio=self.config.heterosynaptic_ratio,
         )
         self._trace_manager = EligibilityTraceManager(
             n_input=trace_input_size,
@@ -1372,7 +1369,7 @@ class Cerebellum(NeuralRegion):
 
         # Update config (for both classic and enhanced modes)
         self.config = replace(self.config, n_input=new_n_input)
-        self.cerebellum_config = replace(self.cerebellum_config, n_input=new_n_input)
+        self.config = replace(self.config, n_input=new_n_input)
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
@@ -1395,7 +1392,7 @@ class Cerebellum(NeuralRegion):
             compute_health_metrics,
         )
 
-        cfg = self.cerebellum_config
+        cfg = self.config
 
         # Compute activity metrics from output spikes
         activity = compute_activity_metrics(

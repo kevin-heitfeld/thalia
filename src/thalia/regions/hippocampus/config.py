@@ -61,11 +61,16 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     - use_symmetric: Whether to use symmetric STDP
 
     The hippocampus has ~5x expansion from EC to DG, then compression back.
+
+    **Size Specification**:
+    - Simple: Just specify n_input, layer sizes auto-compute from biological ratios
+    - Explicit: Use from_input_size() builder for clarity
+    - Full control: Specify all layer sizes manually (dg_size, ca3_size, ca2_size, ca1_size)
     """
     # Override default learning rate with CA3-specific fast learning
     learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
 
-    # Layer sizes (REQUIRED - explicit sizes for clarity, like LayeredCortex)
+    # Layer sizes (auto-computed from n_input if all are 0)
     # Use compute_hippocampus_sizes() helper to calculate from input size
     dg_size: int = field(default=0)   # Dentate Gyrus (pattern separation)
     ca3_size: int = field(default=0)  # CA3 (pattern completion)
@@ -276,6 +281,102 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     her_strategy: str = "future"  # "future", "final", "episode", or "random"
     her_goal_tolerance: float = 0.1  # Distance threshold for goal achievement
     her_buffer_size: int = 1000  # Maximum episodes to store
+
+    def __post_init__(self) -> None:
+        """Auto-compute layer sizes from n_input if all are 0, then validate."""
+        # Auto-compute if all layer sizes are 0
+        if all(s == 0 for s in [self.dg_size, self.ca3_size, self.ca2_size, self.ca1_size]):
+            from thalia.config.region_sizes import compute_hippocampus_sizes
+            sizes = compute_hippocampus_sizes(self.n_input)
+            # Use object.__setattr__ to modify frozen dataclass fields
+            object.__setattr__(self, "dg_size", sizes["dg_size"])
+            object.__setattr__(self, "ca3_size", sizes["ca3_size"])
+            object.__setattr__(self, "ca2_size", sizes["ca2_size"])
+            object.__setattr__(self, "ca1_size", sizes["ca1_size"])
+            # Update n_output to match CA1 (output layer)
+            object.__setattr__(self, "n_output", sizes["ca1_size"])
+            # Update n_neurons to total size
+            total_neurons = sizes["dg_size"] + sizes["ca3_size"] + sizes["ca2_size"] + sizes["ca1_size"]
+            object.__setattr__(self, "n_neurons", total_neurons)
+
+        # Validate after computation
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate size constraints and biological ratios.
+
+        Raises:
+            ValueError: If any layer size is 0 or ratios are unrealistic
+        """
+        # Check that no layer sizes are 0
+        if any(s == 0 for s in [self.dg_size, self.ca3_size, self.ca2_size, self.ca1_size]):
+            raise ValueError(
+                f"All layer sizes must be > 0. Got dg={self.dg_size}, "
+                f"ca3={self.ca3_size}, ca2={self.ca2_size}, ca1={self.ca1_size}. "
+                "Either specify all sizes explicitly or let them auto-compute from n_input."
+            )
+
+        # Check n_output matches ca1_size (CA1 is output layer)
+        if self.n_output != self.ca1_size:
+            raise ValueError(
+                f"n_output ({self.n_output}) must equal ca1_size ({self.ca1_size}). "
+                "CA1 is the output layer of the hippocampus."
+            )
+
+        # Check n_neurons matches total
+        total = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
+        if self.n_neurons != total:
+            raise ValueError(
+                f"n_neurons ({self.n_neurons}) must equal sum of layer sizes ({total})"
+            )
+
+        # Warn if ratios are far from biological norms (but don't fail)
+        dg_to_input = self.dg_size / max(self.n_input, 1)
+        if not (2.0 <= dg_to_input <= 6.0):
+            import warnings
+            warnings.warn(
+                f"DG expansion ratio ({dg_to_input:.1f}x) is outside biological range (2-6x). "
+                f"Using dg_size={self.dg_size} for n_input={self.n_input}."
+            )
+
+    @classmethod
+    def from_input_size(
+        cls,
+        n_input: int,
+        **kwargs
+    ) -> "HippocampusConfig":
+        """Create config with layer sizes computed from input size.
+
+        Uses biological ratios:
+        - DG: 4x expansion from EC (pattern separation)
+        - CA3: 0.5x compression from DG (pattern completion)
+        - CA2: 0.25x of DG (social memory, temporal context)
+        - CA1: 1x of CA3 (output, match/mismatch)
+
+        Args:
+            n_input: Input size (from entorhinal cortex)
+            **kwargs: Additional config parameters
+
+        Returns:
+            HippocampusConfig with computed layer sizes
+
+        Example:
+            >>> config = HippocampusConfig.from_input_size(n_input=40, device="cpu")
+            >>> config.dg_size  # 160
+            >>> config.ca1_size  # 80
+        """
+        from thalia.config.region_sizes import compute_hippocampus_sizes
+        sizes = compute_hippocampus_sizes(n_input)
+        return cls(
+            n_input=n_input,
+            n_output=sizes["ca1_size"],
+            n_neurons=sizes["dg_size"] + sizes["ca3_size"] + sizes["ca2_size"] + sizes["ca1_size"],
+            dg_size=sizes["dg_size"],
+            ca3_size=sizes["ca3_size"],
+            ca2_size=sizes["ca2_size"],
+            ca1_size=sizes["ca1_size"],
+            **kwargs
+        )
 
 
 @dataclass

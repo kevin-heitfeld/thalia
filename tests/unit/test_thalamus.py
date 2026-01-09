@@ -58,10 +58,9 @@ def test_thalamus_initialization(thalamus_config):
         "Relay neurons should match configured output size"
     assert thal.n_relay > 0, "Should have positive relay neurons"
 
-    # Contract: TRN is fraction of relay
-    expected_trn = int(thal.n_relay * thalamus_config.trn_ratio)
-    assert thal.n_trn == expected_trn, \
-        "TRN size should respect configured ratio"
+    # Contract: TRN size matches configuration
+    assert thal.n_trn == thalamus_config.trn_size, \
+        "TRN size should match configured trn_size"
     assert thal.n_trn < thal.n_relay, "TRN should be subset of relay"
 
     # Contract: parameters have correct shapes

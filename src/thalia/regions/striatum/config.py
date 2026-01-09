@@ -149,6 +149,97 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     # =========================================================================
     # FSI (FAST-SPIKING INTERNEURONS) - Parvalbumin+ Interneurons
     # =========================================================================
+
+    def __post_init__(self) -> None:
+        """Auto-compute pathway sizes from n_actions if both d1_size and d2_size are 0, then validate."""
+        # Auto-compute if both pathway sizes are 0
+        if self.d1_size == 0 and self.d2_size == 0:
+            from thalia.config.region_sizes import compute_striatum_sizes
+            # Use n_output as n_actions if n_actions not set
+            n_actions = self.n_actions if self.n_actions > 0 else self.n_output
+            sizes = compute_striatum_sizes(n_actions, self.neurons_per_action)
+            object.__setattr__(self, "d1_size", sizes["d1_size"])
+            object.__setattr__(self, "d2_size", sizes["d2_size"])
+            object.__setattr__(self, "n_actions", n_actions)
+            # Update n_output and n_neurons
+            if self.population_coding:
+                object.__setattr__(self, "n_output", n_actions)  # Actions, not neurons
+            else:
+                object.__setattr__(self, "n_output", sizes["total_size"])  # Total neurons
+            object.__setattr__(self, "n_neurons", sizes["total_size"])
+
+        # Validate after computation
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate size constraints and population coding consistency.
+
+        Raises:
+            ValueError: If sizes are 0, inconsistent, or population coding is misconfigured
+        """
+        if self.d1_size == 0 or self.d2_size == 0:
+            raise ValueError(
+                f"Pathway sizes must be > 0. Got d1={self.d1_size}, d2={self.d2_size}. "
+                "Either specify both explicitly or let them auto-compute from n_actions."
+            )
+
+        total = self.d1_size + self.d2_size
+        if self.n_neurons != total:
+            raise ValueError(
+                f"n_neurons ({self.n_neurons}) must equal sum of pathway sizes ({total})"
+            )
+
+        if self.population_coding:
+            # Total = n_actions * neurons_per_action (split between D1 and D2)
+            expected_total = self.n_actions * self.neurons_per_action
+            if total != expected_total:
+                raise ValueError(
+                    f"With population_coding=True, total neurons ({total}) should equal "
+                    f"n_actions ({self.n_actions}) × neurons_per_action ({self.neurons_per_action}) = {expected_total}"
+                )
+
+    @classmethod
+    def from_n_actions(
+        cls,
+        n_actions: int,
+        neurons_per_action: int = 10,
+        population_coding: bool = True,
+        **kwargs
+    ) -> "StriatumConfig":
+        """Create config with pathway sizes computed from number of actions.
+
+        Uses biological ratio: D1 and D2 are equal in size (50/50 split)
+
+        Args:
+            n_actions: Number of discrete actions
+            neurons_per_action: Neurons per action in population coding
+            population_coding: Whether to use population coding
+            **kwargs: Additional config parameters
+
+        Returns:
+            StriatumConfig with computed D1/D2 pathway sizes
+
+        Example:
+            >>> config = StriatumConfig.from_n_actions(n_actions=4, device="cpu")
+            >>> config.d1_size  # 40
+            >>> config.d2_size  # 40
+        """
+        from thalia.config.region_sizes import compute_striatum_sizes
+        sizes = compute_striatum_sizes(n_actions, neurons_per_action)
+        return cls(
+            n_output=sizes["total_size"],  # Always use total neurons (d1+d2)
+            n_neurons=sizes["total_size"],
+            d1_size=sizes["d1_size"],
+            d2_size=sizes["d2_size"],
+            n_actions=n_actions,
+            neurons_per_action=neurons_per_action,
+            population_coding=population_coding,
+            **kwargs
+        )
+
+    # =========================================================================
+    # FSI (FAST-SPIKING INTERNEURONS) - Parvalbumin+ Interneurons
+    # =========================================================================
     # FSI are ~2% of striatal neurons (vs 95% MSNs) but critical for timing:
     # - Feedforward inhibition sharpens action selection
     # - Gap junction networks enable ultra-fast synchronization (<0.1ms)

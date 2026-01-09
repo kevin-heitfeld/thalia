@@ -244,39 +244,29 @@ class LayeredCortex(NeuralRegion):
 
     def __init__(self, config: LayeredCortexConfig):
         """Initialize layered cortex."""
-        self.layer_config = config
+        # Store config (already validated and computed by config.__post_init__)
+        self.config = config
+        self.device = torch.device(config.device)
 
-        # All layer sizes are now required
+        # Read layer sizes from config (already validated)
         self.l4_size = config.l4_size
         self.l23_size = config.l23_size
         self.l5_size = config.l5_size
         self.l6a_size = config.l6a_size  # L6a → TRN pathway
         self.l6b_size = config.l6b_size  # L6b → relay pathway
 
-        # Validate n_output matches total (output is both L2/3 and L5)
-        actual_output = self.l23_size + self.l5_size
-        if config.n_output != actual_output:
-            raise ValueError(
-                f"LayeredCortex: n_output ({config.n_output}) must equal "
-                f"l23_size + l5_size ({self.l23_size} + {self.l5_size} = {actual_output})"
-            )
+        # Total neurons across all 5 layers
+        total_neurons = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
 
-        # Initialize NeuralRegion with total output neurons (L2/3 + L5)
+        # Initialize NeuralRegion with all cortical neurons
         super().__init__(
-            n_neurons=actual_output,
+            n_neurons=total_neurons,
             device=config.device,
             dt_ms=config.dt_ms,
         )
 
-        # Store config for compatibility (device is already set by parent NeuralRegion)
-        self.config = NeuralComponentConfig(
-            n_input=config.n_input,
-            n_output=actual_output,
-            dt_ms=config.dt_ms,
-            axonal_delay_ms=config.axonal_delay_ms,
-            device=config.device,
-        )
-        # Note: self.device is already set by NeuralRegion.__init__() as torch.device
+        # n_output is L2/3 + L5 (dual output pathways)
+        actual_output = self.l23_size + self.l5_size
 
         # Initialize layers
         self._init_layers()
@@ -365,7 +355,7 @@ class LayeredCortex(NeuralRegion):
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights in _init_weights."""
         return nn.Parameter(
-            torch.zeros(self._actual_output, self.layer_config.n_input)
+            torch.zeros(self._actual_output, self.config.n_input)
         )
 
     def _create_neurons(self):
@@ -381,7 +371,7 @@ class LayeredCortex(NeuralRegion):
         - Natural saturation at reversal potentials
         - No need for artificial divisive normalization
         """
-        cfg = self.layer_config
+        cfg = self.config
 
         # Create layer-specific neurons using factory functions
         self.l4_neurons = create_cortical_layer_neurons(self.l4_size, "L4", self.device)
@@ -470,7 +460,7 @@ class LayeredCortex(NeuralRegion):
         ConductanceLIF neurons provide natural gain control via shunting inhibition,
         so divisive normalization is not needed.
         """
-        cfg = self.layer_config
+        cfg = self.config
         rob = cfg.robustness
         device = torch.device(cfg.device)
 
@@ -497,7 +487,7 @@ class LayeredCortex(NeuralRegion):
         Regions don't create their own oscillators - they receive phases from Brain.
         Always enabled for spike-native attention.
         """
-        cfg = self.layer_config
+        cfg = self.config
         device = torch.device(cfg.device)
 
         # Learnable phase preferences for each L2/3 neuron
@@ -517,8 +507,8 @@ class LayeredCortex(NeuralRegion):
 
         Using uniform [0, max] with max scaled by fan-in and expected sparsity.
         """
-        device = torch.device(self.layer_config.device)
-        cfg = self.layer_config
+        device = torch.device(self.config.device)
+        cfg = self.config
 
         # Expected number of active inputs given sparsity
         expected_active_l4 = max(1, int(self.l4_size * cfg.l4_sparsity))
@@ -942,8 +932,8 @@ class LayeredCortex(NeuralRegion):
             self.l23_size,
             "L2/3",
             self.device,
-            adapt_increment=self.layer_config.adapt_increment,
-            tau_adapt=self.layer_config.adapt_tau,
+            adapt_increment=self.config.adapt_increment,
+            tau_adapt=self.config.adapt_tau,
         )
 
         self.l5_size = new_l5_size
@@ -975,23 +965,37 @@ class LayeredCortex(NeuralRegion):
                 n_neurons=new_l23_size,
                 afferent_weights=self.synaptic_weights["l23_inhib"],  # Use updated weights
                 config=GapJunctionConfig(
-                    coupling_strength=self.layer_config.gap_junction_strength,
+                    coupling_strength=self.config.gap_junction_strength,
                 ),
                 interneuron_mask=None,
                 device=self.device,
             )
 
-        # 7. Update configs
+        # 7. Update config (must update all layer sizes for validation)
         new_total_output = new_l23_size + new_l5_size
-
-        self.config = replace(self.config, n_output=new_total_output)
-        self.layer_config = replace(self.layer_config, n_output=new_total_output)
-
-        # 8. Validate growth completed correctly
-        # Note: Layered cortex has multi-layer architecture, skip neuron check
-        # (L2/3 + L5 neurons = n_output, but L4/L6 neurons scale differently)
+        new_total_neurons = new_l4_size + new_l23_size + new_l5_size + new_l6a_size + new_l6b_size
         old_total_output = old_l23_size + old_l5_size
-        self._validate_output_growth(old_total_output, n_new, check_neurons=False)
+
+        # Update config with all new sizes
+        self.config = replace(
+            self.config,
+            n_output=new_total_output,
+            n_neurons=new_total_neurons,
+            l4_size=new_l4_size,
+            l23_size=new_l23_size,
+            l5_size=new_l5_size,
+            l6a_size=new_l6a_size,
+            l6b_size=new_l6b_size,
+        )
+
+        # 8. Validate growth manually (standard validation doesn't apply to multi-layer growth)
+        # Cortex grows L2/3 + L5 by exactly n_new, but L4/L6 grow proportionally
+        # Verify: actual output growth matches expected
+        actual_growth = new_total_output - old_total_output
+        assert actual_growth == n_new, (
+            f"Cortex growth mismatch: expected {n_new} output neurons, "
+            f"but grew by {actual_growth} (old={old_total_output}, new={new_total_output})"
+        )
 
     def grow_input(
         self,
@@ -1025,7 +1029,7 @@ class LayeredCortex(NeuralRegion):
             - Preserves existing learned weights in left columns
             - Initializes new input weights small to avoid disruption
         """
-        old_n_input = self.layer_config.n_input
+        old_n_input = self.config.n_input
         new_n_input = old_n_input + n_new
 
         # Expand input→L4 weights [l4, input] → [l4, input+n_new]
@@ -1040,7 +1044,7 @@ class LayeredCortex(NeuralRegion):
         )
 
         # Update config
-        self.layer_config = replace(self.layer_config, n_input=new_n_input)
+        self.config = replace(self.config, n_input=new_n_input)
         self.config = replace(self.config, n_input=new_n_input)
 
         # Validate growth completed correctly
@@ -1079,7 +1083,7 @@ class LayeredCortex(NeuralRegion):
         input_spikes = InputRouter.concatenate_sources(
             inputs,
             component_name="LayeredCortex",
-            n_input=self.layer_config.n_input,
+            n_input=self.config.n_input,
             device=self.device,
         )
 
@@ -1096,9 +1100,9 @@ class LayeredCortex(NeuralRegion):
             f"LayeredCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}. "
             f"Thalia uses single-brain architecture with no batch dimension."
         )
-        assert input_spikes.shape[0] == self.layer_config.n_input, (
+        assert input_spikes.shape[0] == self.config.n_input, (
             f"LayeredCortex.forward: input_spikes has shape {input_spikes.shape} "
-            f"but n_input={self.layer_config.n_input}. Check that input matches cortex config."
+            f"but n_input={self.config.n_input}. Check that input matches cortex config."
         )
 
         if top_down is not None:
@@ -1113,7 +1117,7 @@ class LayeredCortex(NeuralRegion):
         if self.state.l4_spikes is None:
             self.reset_state()
 
-        cfg = self.layer_config
+        cfg = self.config
 
         # =====================================================================
         # ALPHA-BASED ATTENTION GATING
@@ -1288,7 +1292,7 @@ class LayeredCortex(NeuralRegion):
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset (UnifiedHomeostasis)
         # Neurons that fire too much have higher thresholds (less excitable)
-        cfg = self.layer_config
+        cfg = self.config
         if (cfg.homeostasis_enabled and
             self._l23_threshold_offset is not None):
             l23_input = l23_input - self._l23_threshold_offset
@@ -1586,27 +1590,6 @@ class LayeredCortex(NeuralRegion):
                 f"Valid ports: {valid_ports}"
             )
 
-    # =========================================================================
-    # TEST COMPATIBILITY PROPERTIES
-    # =========================================================================
-    # Config property
-
-    @property
-    def config(self) -> LayeredCortexConfig:
-        """Get full LayeredCortexConfig (overrides base LearnableComponent.config)."""
-        return self.layer_config
-
-    @config.setter
-    def config(self, value: LayeredCortexConfig) -> None:
-        """Set config (used by parent __init__).
-
-        Parent passes a base NeuralComponentConfig, but we need to keep
-        the full LayeredCortexConfig in layer_config. Just ignore parent's
-        assignment - layer_config is already set before super().__init__.
-        """
-        # Don't overwrite layer_config - it's already set correctly
-        pass
-
     def _apply_sparsity_1d(
         self,
         spikes: torch.Tensor,
@@ -1645,7 +1628,7 @@ class LayeredCortex(NeuralRegion):
         if self.state.l4_spikes is None or self.state.input_spikes is None:
             return
 
-        cfg = self.layer_config
+        cfg = self.config
 
         # =====================================================================
         # LAYER-SPECIFIC DOPAMINE MODULATION (Enhancement #1)
@@ -1882,7 +1865,7 @@ class LayeredCortex(NeuralRegion):
             compute_health_metrics,
         )
 
-        cfg = self.layer_config
+        cfg = self.config
 
         # Compute activity metrics from L2/3 (primary cortical output)
         activity = compute_activity_metrics(

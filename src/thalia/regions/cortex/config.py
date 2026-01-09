@@ -99,6 +99,98 @@ class LayeredCortexConfig(NeuralComponentConfig):
     gap_junctions_enabled: bool = True
     """Enable gap junction coupling in L2/3 interneurons."""
 
+    def __post_init__(self) -> None:
+        """Auto-compute layer sizes from n_input if all are 0, then validate."""
+        # Auto-compute if all layer sizes are 0
+        if all(s == 0 for s in [self.l4_size, self.l23_size, self.l5_size, self.l6a_size, self.l6b_size]):
+            from thalia.config.region_sizes import compute_cortex_layer_sizes
+            sizes = compute_cortex_layer_sizes(self.n_input)
+            object.__setattr__(self, "l4_size", sizes["l4_size"])
+            object.__setattr__(self, "l23_size", sizes["l23_size"])
+            object.__setattr__(self, "l5_size", sizes["l5_size"])
+            # L6 split: L6a and L6b are each half of L5 size
+            l6a_size = sizes["l5_size"] // 2
+            l6b_size = sizes["l5_size"] - l6a_size  # Handle odd sizes
+            object.__setattr__(self, "l6a_size", l6a_size)
+            object.__setattr__(self, "l6b_size", l6b_size)
+            # Update n_output and n_neurons
+            output_size = sizes["l23_size"] + sizes["l5_size"]  # L2/3 + L5 output
+            object.__setattr__(self, "n_output", output_size)
+            total_neurons = sizes["l4_size"] + sizes["l23_size"] + sizes["l5_size"] + l6a_size + l6b_size
+            object.__setattr__(self, "n_neurons", total_neurons)
+
+        # Validate after computation
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate size constraints and layer relationships.
+
+        Raises:
+            ValueError: If any layer size is 0 or relationships are inconsistent
+        """
+        if any(s == 0 for s in [self.l4_size, self.l23_size, self.l5_size, self.l6a_size, self.l6b_size]):
+            raise ValueError(
+                f"All layer sizes must be > 0. Got l4={self.l4_size}, l23={self.l23_size}, "
+                f"l5={self.l5_size}, l6a={self.l6a_size}, l6b={self.l6b_size}. "
+                "Either specify all sizes explicitly or let them auto-compute from n_input."
+            )
+
+        total = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
+        if self.n_neurons != total:
+            raise ValueError(
+                f"n_neurons ({self.n_neurons}) must equal sum of layer sizes ({total})"
+            )
+
+        # n_output should be L2/3 + L5 (cortico-cortical + subcortical output)
+        expected_output = self.l23_size + self.l5_size
+        if self.n_output != expected_output:
+            raise ValueError(
+                f"n_output ({self.n_output}) must equal l23_size + l5_size ({expected_output}). "
+                "Cortex outputs through both L2/3 (cortico-cortical) and L5 (subcortical) pathways."
+            )
+
+    @classmethod
+    def from_input_size(
+        cls,
+        n_input: int,
+        **kwargs
+    ) -> "LayeredCortexConfig":
+        """Create config with layer sizes computed from input size.
+
+        Uses typical cortical ratios:
+        - L4: 1.5x input (expansion)
+        - L2/3: 2x L4 (association)
+        - L5: 0.5x L2/3 (subcortical output)
+        - L6a/L6b: Split L5 size (feedback to thalamus)
+
+        Args:
+            n_input: Input size (from thalamus or other cortex)
+            **kwargs: Additional config parameters
+
+        Returns:
+            LayeredCortexConfig with computed layer sizes
+
+        Example:
+            >>> config = LayeredCortexConfig.from_input_size(n_input=128, device="cpu")
+            >>> config.l4_size  # 192
+            >>> config.l23_size  # 384
+        """
+        from thalia.config.region_sizes import compute_cortex_layer_sizes
+        sizes = compute_cortex_layer_sizes(n_input)
+        l6a_size = sizes["l5_size"] // 2
+        l6b_size = sizes["l5_size"] - l6a_size
+        return cls(
+            n_input=n_input,
+            n_output=sizes["l23_size"] + sizes["l5_size"],
+            n_neurons=sizes["l4_size"] + sizes["l23_size"] + sizes["l5_size"] + l6a_size + l6b_size,
+            l4_size=sizes["l4_size"],
+            l23_size=sizes["l23_size"],
+            l5_size=sizes["l5_size"],
+            l6a_size=l6a_size,
+            l6b_size=l6b_size,
+            **kwargs
+        )
+
     gap_junction_strength: float = 0.12
     """Gap junction conductance for L2/3 interneurons (biological: 0.05-0.2)."""
 

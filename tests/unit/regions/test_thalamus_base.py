@@ -18,37 +18,61 @@ class TestThalamus(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create ThalamicRelay instance for testing."""
-        # If using old-style trn_ratio param, compute explicit sizes
-        if "trn_ratio" in kwargs:
-            from thalia.config import compute_thalamus_sizes
+        # Use builder pattern - compute relay_size from n_output if using old-style params
+        if "n_output" in kwargs and ("relay_size" not in kwargs):
+            # Pop parameters that builder handles
             relay_size = kwargs.pop("n_output")
-            trn_ratio = kwargs.pop("trn_ratio")
-            sizes = compute_thalamus_sizes(relay_size, trn_ratio)
-            kwargs["relay_size"] = sizes["relay_size"]
-            kwargs["trn_size"] = sizes["trn_size"]
-            kwargs["n_output"] = relay_size
+            n_input = kwargs.pop("n_input", 100)
+            kwargs.pop("trn_ratio", None)  # Ignore, builder uses default ratio
 
-        config = ThalamicRelayConfig(**kwargs)
+            config = ThalamicRelayConfig.from_relay_size(
+                relay_size=relay_size,
+                n_input=n_input,
+                **kwargs
+            )
+        else:
+            config = ThalamicRelayConfig(**kwargs)
+
         return ThalamicRelay(config)
 
     def get_default_params(self):
         """Return default thalamus parameters."""
+        # Use builder to pre-compute all sizes
+        config = ThalamicRelayConfig.from_relay_size(
+            relay_size=80,
+            n_input=100,
+            device="cpu",
+            dt_ms=1.0,
+        )
+        # Return as dict for compatibility with test base class
         return {
-            "n_input": 100,
-            "n_output": 80,  # Typically fewer neurons than cortex
-            "trn_ratio": 0.3,  # Thalamic reticular nucleus as fraction of relay neurons
-            "device": "cpu",
-            "dt_ms": 1.0,
+            "n_input": config.n_input,
+            "n_output": config.n_output,
+            "relay_size": config.relay_size,
+            "trn_size": config.trn_size,
+            "n_neurons": config.n_neurons,
+            "device": config.device,
+            "dt_ms": config.dt_ms,
         }
 
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
+        # Use builder to pre-compute all sizes
+        config = ThalamicRelayConfig.from_relay_size(
+            relay_size=15,
+            n_input=20,
+            device="cpu",
+            dt_ms=1.0,
+        )
+        # Return as dict for compatibility with test base class
         return {
-            "n_input": 20,
-            "n_output": 15,
-            "trn_ratio": 0.3,
-            "device": "cpu",
-            "dt_ms": 1.0,
+            "n_input": config.n_input,
+            "n_output": config.n_output,
+            "relay_size": config.relay_size,
+            "trn_size": config.trn_size,
+            "n_neurons": config.n_neurons,
+            "device": config.device,
+            "dt_ms": config.dt_ms,
         }
 
     def get_input_dict(self, n_input, device="cpu"):
