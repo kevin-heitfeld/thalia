@@ -236,7 +236,7 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
         cls,
         n_actions: int,
         neurons_per_action: int = 10,
-        population_coding: bool = True,
+        input_sources: Optional[Dict[str, int]] = None,
         **kwargs
     ) -> "StriatumConfig":
         """Create config with pathway sizes computed from number of actions.
@@ -246,27 +246,33 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
         Args:
             n_actions: Number of discrete actions
             neurons_per_action: Neurons per action in population coding
-            population_coding: Whether to use population coding
-            **kwargs: Additional config parameters
+            input_sources: Multi-source inputs dict (required)
+            **kwargs: Additional config parameters (d1_d2_ratio, learning_rate, etc.)
 
         Returns:
             StriatumConfig with computed D1/D2 pathway sizes
 
         Example:
-            >>> config = StriatumConfig.from_n_actions(n_actions=4, device="cpu")
-            >>> config.d1_size  # 40
-            >>> config.d2_size  # 40
+            >>> config = StriatumConfig.from_n_actions(
+            ...     n_actions=4,
+            ...     input_sources={"cortex": 256, "thalamus": 128},
+            ...     device="cpu"
+            ... )
+            >>> config.d1_size  # 20 (with default neurons_per_action=10, d1_d2_ratio=0.5)
+            >>> config.d2_size  # 20
+            >>> config.n_actions  # 4
         """
-        from thalia.config.region_sizes import compute_striatum_sizes
-        sizes = compute_striatum_sizes(n_actions, neurons_per_action)
+        if input_sources is None:
+            raise ValueError(
+                "input_sources is required for StriatumConfig. "
+                "Example: input_sources={'cortex': 256, 'thalamus': 128}"
+            )
+        
+        # Pass semantic parameters - __post_init__ will compute d1_size, d2_size, total_neurons
         return cls(
-            n_output=sizes["total_size"],  # Always use total neurons (d1+d2)
-            n_neurons=sizes["total_size"],
-            d1_size=sizes["d1_size"],
-            d2_size=sizes["d2_size"],
             n_actions=n_actions,
             neurons_per_action=neurons_per_action,
-            population_coding=population_coding,
+            input_sources=input_sources,
             **kwargs
         )
 
