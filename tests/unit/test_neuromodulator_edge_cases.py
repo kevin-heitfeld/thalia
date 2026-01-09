@@ -59,8 +59,8 @@ def test_striatum_handles_valid_dopamine_range(dopamine, device):
     assert not torch.isnan(output).any(), f"NaN output with dopamine={dopamine}"
     assert not torch.isinf(output.float()).any(), f"Inf output with dopamine={dopamine}"
 
-    # Output shape should be valid
-    expected_size = config.n_output * config.neurons_per_action
+    # Output shape should be valid (striatum outputs D1 MSN spikes)
+    expected_size = config.d1_size  # D1 pathway MSN neurons
     assert output.shape[0] == expected_size, \
         f"Expected output size {expected_size}, got {output.shape[0]}"
 

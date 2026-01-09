@@ -512,15 +512,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             )
 
             # Create TD(λ) learner for D1 and D2 pathways
-            # Note: Use total_neurons (actual neuron count) not n_actions
-            # because with population coding, total_neurons = n_actions * neurons_per_action
+            # Each pathway has its own separate TD(λ) learner
+            # D1 learner: sized for d1_size neurons
+            # D2 learner: sized for d2_size neurons
             self.td_lambda_d1 = TDLambdaLearner(
-                n_actions=self.config.total_neurons,  # Total neurons, not actions
+                n_actions=self.config.d1_size,  # D1 pathway neurons only
                 n_input=self.config.total_input,
                 config=td_config,
             )
             self.td_lambda_d2 = TDLambdaLearner(
-                n_actions=self.config.total_neurons,  # Total neurons, not actions
+                n_actions=self.config.d2_size,  # D2 pathway neurons only
                 n_input=self.config.total_input,
                 config=td_config,
             )
@@ -1879,7 +1880,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes)
 
         # Update recent spikes and trial activity via state_tracker
-        self.state_tracker.update_recent_spikes(d1_spikes, decay=0.9)
+        self.state_tracker.update_recent_spikes(d1_spikes, d2_spikes, decay=0.9)
         self.state_tracker.update_trial_activity(d1_spikes, d2_spikes)
 
         # Store D1 and D2 spikes for learning manager

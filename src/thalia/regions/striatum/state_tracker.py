@@ -146,14 +146,17 @@ class StriatumStateTracker:
         """
         return self._d1_votes_accumulated.clone(), self._d2_votes_accumulated.clone()
 
-    def update_recent_spikes(self, d1_spikes: torch.Tensor, decay: float = 0.9) -> None:
-        """Update recent spike history with decay.
+    def update_recent_spikes(self, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor, decay: float = 0.9) -> None:
+        """Update recent spike history with decay for both D1 and D2 pathways.
 
         Args:
-            d1_spikes: Current D1 spikes [n_output]
+            d1_spikes: Current D1 spikes [d1_size]
+            d2_spikes: Current D2 spikes [d2_size]
             decay: Decay factor for exponential averaging
         """
-        self.recent_spikes = self.recent_spikes.float() * decay + d1_spikes.float()
+        # Concatenate D1 and D2 spikes to form full MSN spike vector
+        combined_spikes = torch.cat([d1_spikes, d2_spikes], dim=0)
+        self.recent_spikes = self.recent_spikes.float() * decay + combined_spikes.float()
 
     def update_trial_activity(self, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor) -> None:
         """Update trial activity statistics.
