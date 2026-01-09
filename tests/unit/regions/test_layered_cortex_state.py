@@ -55,7 +55,7 @@ class TestLayeredCortexStateEdgeCases:
 
         # Create state on CPU
         config = LayeredCortexConfig(
-            n_input=10, n_output=8,
+            input_size=10,
             l4_size=10, l23_size=5, l5_size=3, l6a_size=2, l6b_size=2,
             device="cpu", dt_ms=1.0,
         )
@@ -146,3 +146,4 @@ class TestLayeredCortexStateEdgeCases:
         assert torch.equal(state2.stp_l23_recurrent_state["u"], stp_state["u"])
         assert torch.equal(state2.stp_l23_recurrent_state["x"], stp_state["x"])
         assert state2.stp_l23_recurrent_state["u"].shape == (4, 4)
+

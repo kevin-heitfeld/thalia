@@ -40,13 +40,13 @@ class TestThalamus(RegionTestBase):
         # Use builder to pre-compute all sizes
         config = ThalamicRelayConfig.from_relay_size(
             relay_size=80,
-            n_input=100,
+            input_size=100,
             device="cpu",
             dt_ms=1.0,
         )
         # Return as dict for compatibility with test base class
         return {
-            "n_input": config.n_input,
+            "n_input": config.input_size,
             "n_output": config.n_output,
             "relay_size": config.relay_size,
             "trn_size": config.trn_size,
@@ -60,13 +60,13 @@ class TestThalamus(RegionTestBase):
         # Use builder to pre-compute all sizes
         config = ThalamicRelayConfig.from_relay_size(
             relay_size=15,
-            n_input=20,
+            input_size=20,
             device="cpu",
             dt_ms=1.0,
         )
         # Return as dict for compatibility with test base class
         return {
-            "n_input": config.n_input,
+            "n_input": config.input_size,
             "n_output": config.n_output,
             "relay_size": config.relay_size,
             "trn_size": config.trn_size,
@@ -265,3 +265,4 @@ class TestThalamus(RegionTestBase):
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
 # inherited from RegionTestBase - eliminates ~100 lines of boilerplate
+

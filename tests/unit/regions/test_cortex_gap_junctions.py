@@ -16,8 +16,7 @@ from thalia.regions.cortex.config import LayeredCortexConfig
 def test_gap_junctions_can_be_disabled():
     """Gap junctions can be disabled via configuration."""
     cfg = LayeredCortexConfig(
-        n_input=16,
-        n_output=96,  # l23 + l5 = 64 + 32
+        input_size=16,  # l23 + l5 = 64 + 32
         l4_size=32,
         l23_size=64,
         l5_size=32,
@@ -34,8 +33,7 @@ def test_gap_junctions_can_be_disabled():
 def test_gap_junctions_enabled_by_default():
     """Gap junctions are enabled by default."""
     cfg = LayeredCortexConfig(
-        n_input=16,
-        n_output=96,  # l23 + l5 = 64 + 32
+        input_size=16,  # l23 + l5 = 64 + 32
         l4_size=32,
         l23_size=64,
         l5_size=32,
@@ -60,8 +58,7 @@ def test_gap_junction_improves_synchrony():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     cfg = LayeredCortexConfig(
-        n_input=64,
-        n_output=384,  # l23 + l5 = 256 + 128
+        input_size=64,  # l23 + l5 = 256 + 128
         l4_size=128,
         l23_size=256,
         l5_size=128,
@@ -76,7 +73,7 @@ def test_gap_junction_improves_synchrony():
 
     # Stimulate with input pattern
     torch.manual_seed(42)
-    input_pattern = torch.rand(cfg.n_input, device=device) > 0.7
+    input_pattern = torch.rand(cfg.input_size, device=device) > 0.7
 
     gap_currents = []
     membrane_voltages = []
@@ -125,8 +122,7 @@ def test_gap_junction_improves_synchrony():
 def test_gap_junction_state_management():
     """Gap junction state (l23_membrane) is properly managed."""
     cfg = LayeredCortexConfig(
-        n_input=16,
-        n_output=96,  # l23 + l5 = 64 + 32
+        input_size=16,  # l23 + l5 = 64 + 32
         l4_size=32,
         l23_size=64,
         l5_size=32,
@@ -140,7 +136,7 @@ def test_gap_junction_state_management():
     assert cortex.state.l23_membrane is None
 
     # After forward pass, l23_membrane should be initialized and updated
-    input_spikes = torch.ones(cfg.n_input, device=cortex.device)
+    input_spikes = torch.ones(cfg.input_size, device=cortex.device)
     cortex.forward(input_spikes)
 
     assert cortex.state.l23_membrane is not None
@@ -152,8 +148,7 @@ def test_gap_junction_state_management():
 def test_gap_junction_state_serialization():
     """Gap junction state (l23_membrane) is included in state save/load."""
     cfg = LayeredCortexConfig(
-        n_input=16,
-        n_output=96,  # l23 + l5 = 64 + 32
+        input_size=16,  # l23 + l5 = 64 + 32
         l4_size=32,
         l23_size=64,
         l5_size=32,
@@ -164,7 +159,7 @@ def test_gap_junction_state_serialization():
     cortex = LayeredCortex(cfg)
 
     # Run forward to populate l23_membrane
-    input_spikes = torch.ones(cfg.n_input, device=cortex.device)
+    input_spikes = torch.ones(cfg.input_size, device=cortex.device)
     cortex.forward(input_spikes)
 
     # Get state
@@ -213,8 +208,7 @@ def test_gap_junction_backward_compatibility():
 def test_gap_junction_uses_l23_inhib_weights():
     """Gap junctions use l23_inhib weights to infer neighborhoods."""
     cfg = LayeredCortexConfig(
-        n_input=16,
-        n_output=96,  # l23 + l5 = 64 + 32
+        input_size=16,  # l23 + l5 = 64 + 32
         l4_size=32,
         l23_size=64,
         l5_size=32,
@@ -236,3 +230,5 @@ def test_gap_junction_uses_l23_inhib_weights():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

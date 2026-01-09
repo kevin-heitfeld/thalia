@@ -147,3 +147,4 @@ class TestHippocampusStateEdgeCases:
         # Verify values match
         assert torch.equal(state2.ca3_spikes, state1.ca3_spikes.cpu())
         assert torch.allclose(state2.ca3_persistent, state1.ca3_persistent.cpu())
+

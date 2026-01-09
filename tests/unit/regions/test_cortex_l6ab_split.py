@@ -27,8 +27,7 @@ def device():
 def cortex_config_l6ab(device):
     """Cortex configuration with L6a/L6b split."""
     return LayeredCortexConfig(
-        n_input=128,
-        n_output=320,  # Must equal l23_size + l5_size
+        input_size=128,  # Must equal l23_size + l5_size
         # Specify all layer sizes
         l4_size=128,
         l23_size=192,
@@ -252,3 +251,4 @@ class TestL6abSplit:
         # (If delays weren't cleared, old spikes would contaminate output)
         firing_rate = output_after_reset.float().mean().item()
         assert 0.0 <= firing_rate <= 1.0, f"Valid firing rate after reset: {firing_rate:.2%}"
+
