@@ -267,13 +267,16 @@ class ThalamicRelayConfig(NeuralComponentConfig):
         """Validate size constraints.
 
         Raises:
-            ValueError: If any size is 0 or total_neurons doesn't match total
+            ValueError: If relay_size is 0 or total_neurons doesn't match total
         """
-        if self.relay_size == 0 or self.trn_size == 0:
+        if self.relay_size == 0:
             raise ValueError(
-                f"Layer sizes must be > 0. Got relay={self.relay_size}, "
-                f"trn={self.trn_size}. Either specify both explicitly or let them auto-compute."
+                f"relay_size must be > 0. Got relay={self.relay_size}. "
+                f"Specify relay_size explicitly or let it auto-compute from input_size."
             )
+
+        # trn_size can be 0 (relay-only mode), but if specified must be > 0
+        # No validation needed for trn_size
 
         total = self.relay_size + self.trn_size
         if self.total_neurons != total:

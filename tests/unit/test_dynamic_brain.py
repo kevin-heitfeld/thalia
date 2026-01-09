@@ -32,8 +32,8 @@ def test_dynamic_brain_creation():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region1": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64)),
-        "region2": ThalamicRelay(ThalamicRelayConfig(n_input=64, n_output=128)),
+        "region1": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
+        "region2": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=128, trn_size=0)),
     }
 
     connections = {
@@ -57,9 +57,9 @@ def test_dynamic_brain_topology_graph():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "a": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64)),
-        "b": ThalamicRelay(ThalamicRelayConfig(n_input=64, n_output=64)),
-        "c": ThalamicRelay(ThalamicRelayConfig(n_input=64, n_output=64)),
+        "a": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
+        "b": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=64, trn_size=0)),
+        "c": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=64, trn_size=0)),
     }
 
     connections = {
@@ -91,7 +91,7 @@ def test_dynamic_brain_get_component():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region1": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64)),
+        "region1": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
     }
 
     brain = DynamicBrain(components, {}, global_config)
@@ -108,13 +108,13 @@ def test_dynamic_brain_add_component():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region1": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64)),
+        "region1": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
     }
 
     brain = DynamicBrain(components, {}, global_config)
 
     # Add new component
-    new_region = ThalamicRelay(ThalamicRelayConfig(n_input=64, n_output=128))
+    new_region = ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=128, trn_size=0))
     brain.add_component("region2", new_region)
 
     assert "region2" in brain.components
@@ -126,8 +126,8 @@ def test_dynamic_brain_add_connection():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "a": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64)),
-        "b": ThalamicRelay(ThalamicRelayConfig(n_input=64, n_output=64)),
+        "a": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
+        "b": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=64, trn_size=0)),
     }
 
     brain = DynamicBrain(components, {}, global_config)
@@ -149,7 +149,7 @@ def test_dynamic_brain_reset_state():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64)),
+        "region": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
     }
 
     brain = DynamicBrain(components, {}, global_config)
@@ -298,8 +298,8 @@ def test_brain_handles_connection_validation_failure():
 
     # Create components with incompatible sizes
     components = {
-        "source": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64, device="cpu")),
-        "target": ThalamicRelay(ThalamicRelayConfig(n_input=128, n_output=64, device="cpu")),
+        "source": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0, device="cpu")),
+        "target": ThalamicRelay(ThalamicRelayConfig(input_size=128, relay_size=64, trn_size=0, device="cpu")),
     }
     brain = DynamicBrain(components, {}, global_config)
 
@@ -332,8 +332,8 @@ def test_brain_forward_with_missing_inputs():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region_a": ThalamicRelay(ThalamicRelayConfig(n_input=32, n_output=64, device="cpu")),
-        "region_b": ThalamicRelay(ThalamicRelayConfig(n_input=64, n_output=32, device="cpu")),
+        "region_a": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0, device="cpu")),
+        "region_b": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=32, trn_size=0, device="cpu")),
     }
     brain = DynamicBrain(components, {}, global_config)
 
