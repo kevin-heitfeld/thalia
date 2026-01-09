@@ -370,6 +370,16 @@ class ForwardPassCoordinator:
         d1_msn_activation = torch.matmul(d1_weights_effective, input_float)
         d2_msn_activation = torch.matmul(d2_weights_effective, input_float)
 
+        # Apply gain modulation (tonic DA, beta, NE) at MSN level
+        d1_gain, d2_gain = self.compute_gain_modulation()
+
+        # Apply homeostatic excitability modulation at MSN level
+        d1_gain, d2_gain = self.compute_homeostatic_modulation(d1_gain, d2_gain)
+
+        # Apply gains to MSN activations (biological: gains modulate individual neurons)
+        d1_msn_activation = d1_msn_activation * d1_gain
+        d2_msn_activation = d2_msn_activation * d2_gain
+
         # Pool MSN activations to action level
         # When neurons_per_action > 1: average over neurons_per_action to get action strength
         # When neurons_per_action == 1: MSN level = action level (1:1 mapping)
@@ -390,19 +400,13 @@ class ForwardPassCoordinator:
         # Apply theta modulation
         _theta_baseline_mod, theta_contrast_mod, baseline_exc = self.compute_theta_modulation()
 
-        # Apply gain modulation (tonic DA, beta, NE)
-        d1_gain, d2_gain = self.compute_gain_modulation()
-
         # Apply goal modulation (PFC gating)
         d1_activation, d2_activation, pfc_goal_context = self.compute_goal_modulation(
             d1_activation, d2_activation, pfc_goal_context
         )
 
-        # Apply homeostatic excitability modulation
-        d1_gain, d2_gain = self.compute_homeostatic_modulation(d1_gain, d2_gain)
-
-        # Compute D1 conductances (action-level)
-        d1_g_exc_action = (d1_activation * theta_contrast_mod * d1_gain + baseline_exc).clamp(min=0)
+        # Compute D1 conductances (action-level, gains already applied)
+        d1_g_exc_action = (d1_activation * theta_contrast_mod + baseline_exc).clamp(min=0)
 
         # Expand action-level conductances to MSN-level
         # Each action has neurons_per_pathway MSNs in D1 pathway
@@ -429,8 +433,8 @@ class ForwardPassCoordinator:
         # Run D1 neurons
         d1_spikes, _ = self.d1_neurons(d1_g_exc, d1_g_inh)
 
-        # Compute D2 conductances (action-level)
-        d2_g_exc_action = (d2_activation * theta_contrast_mod * d2_gain + baseline_exc).clamp(min=0)
+        # Compute D2 conductances (action-level, gains already applied)
+        d2_g_exc_action = (d2_activation * theta_contrast_mod + baseline_exc).clamp(min=0)
 
         # Expand action-level conductances to MSN-level
         # Each action has neurons_per_pathway MSNs in D2 pathway

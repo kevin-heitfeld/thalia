@@ -109,7 +109,7 @@ def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
         f"NaN output with acetylcholine={acetylcholine}"
     assert not torch.isinf(output.float()).any(), \
         f"Inf output with acetylcholine={acetylcholine}"
-    assert output.shape[0] == hippocampus.config.n_output
+    assert output.shape[0] == hippocampus.config.output_size
 
 
 @pytest.mark.parametrize("acetylcholine", [-5.0, -1.0, 3.0, 5.0, 50.0])
@@ -152,7 +152,7 @@ def test_prefrontal_handles_valid_norepinephrine_range(norepinephrine, device):
         f"NaN output with norepinephrine={norepinephrine}"
     assert not torch.isinf(output.float()).any(), \
         f"Inf output with norepinephrine={norepinephrine}"
-    assert output.shape[0] == prefrontal.config.n_output
+    assert output.shape[0] == prefrontal.config.n_neurons
 
 
 @pytest.mark.parametrize("norepinephrine", [-3.0, -1.0, 3.0, 5.0, 20.0])
