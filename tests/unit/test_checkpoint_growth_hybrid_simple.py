@@ -22,10 +22,10 @@ def device():
 def small_striatum(device):
     """Small striatum (should use neuromorphic format, no population coding)."""
     config = StriatumConfig(
-        n_output=5,  # Small: 5 actions
-        n_input=100,
+        n_actions=5,  # Small: 5 actions
+        neurons_per_action=1,
+        input_sources={'default': 100},
         growth_enabled=True,
-        population_coding=False,
         device=device,
     )
     striatum = Striatum(config)
@@ -37,11 +37,10 @@ def small_striatum(device):
 def small_striatum_population(device):
     """Small striatum WITH population coding (should use neuromorphic format)."""
     config = StriatumConfig(
-        n_output=5,  # 5 actions × 10 neurons/action = 50 neurons total
-        n_input=100,
-        growth_enabled=True,
-        population_coding=True,
+        n_actions=5,  # 5 actions × 10 neurons/action = 50 neurons total
         neurons_per_action=10,
+        input_sources={'default': 100},
+        growth_enabled=True,
         device=device,
     )
     striatum = Striatum(config)
@@ -53,10 +52,10 @@ def small_striatum_population(device):
 def large_striatum(device):
     """Large striatum (should use elastic tensor format, no population coding)."""
     config = StriatumConfig(
-        n_output=150,  # Large: 150 actions
-        n_input=100,
+        n_actions=150,  # Large: 150 actions
+        neurons_per_action=1,
+        input_sources={'default': 100},
         growth_enabled=False,
-        population_coding=False,
         device=device,
     )
     striatum = Striatum(config)
@@ -68,11 +67,10 @@ def large_striatum(device):
 def large_striatum_population(device):
     """Large striatum WITH population coding (should use elastic tensor format)."""
     config = StriatumConfig(
-        n_output=150,  # 150 actions × 10 neurons/action = 1500 neurons total
-        n_input=100,
-        growth_enabled=False,
-        population_coding=True,
+        n_actions=150,  # 150 actions × 10 neurons/action = 1500 neurons total
         neurons_per_action=10,
+        input_sources={'default': 100},
+        growth_enabled=False,
         device=device,
     )
     striatum = Striatum(config)
@@ -179,7 +177,7 @@ class TestFormatAutoSelection:
         import torch
 
         # Just under threshold (100) - should use neuromorphic
-        config_99 = StriatumConfig(n_output=99, n_input=100, device=device, population_coding=False)
+        config_99 = StriatumConfig(n_actions=99, neurons_per_action=1, input_sources={'default': 100}, device=device)
         striatum_99 = Striatum(config_99)
 
         checkpoint_99 = tmp_path / "threshold_99.pt"
@@ -189,7 +187,7 @@ class TestFormatAutoSelection:
             "99 neurons should use neuromorphic"
 
         # Just over threshold - should use elastic
-        config_101 = StriatumConfig(n_output=101, n_input=100, device=device, growth_enabled=False, population_coding=False)
+        config_101 = StriatumConfig(n_actions=101, neurons_per_action=1, input_sources={'default': 100}, device=device, growth_enabled=False)
         striatum_101 = Striatum(config_101)
 
         checkpoint_101 = tmp_path / "threshold_101.pt"
@@ -303,7 +301,7 @@ class TestHybridSaveLoad:
         checkpoint_path = tmp_path / "state_preserve.ckpt"
 
         # Create small striatum (neuromorphic)
-        small_config = StriatumConfig(n_output=5, n_input=100, device=device, population_coding=False)
+        small_config = StriatumConfig(n_actions=5, neurons_per_action=1, input_sources={'default': 100}, device=device)
         small = Striatum(small_config)
         small.reset_state()
 

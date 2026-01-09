@@ -206,7 +206,7 @@ class TestGrowthIntegrationWithRegions:
 
         initial_n = 64
         growth_amount = 32
-        pfc_config = PrefrontalConfig(n_output=initial_n, n_input=128)
+        pfc_config = PrefrontalConfig(n_neurons=initial_n, input_size=128)
         pfc = Prefrontal(pfc_config)
         assert pfc.neurons.n_neurons == initial_n
 
@@ -216,7 +216,7 @@ class TestGrowthIntegrationWithRegions:
         # Neurons should be grown, not recreated
         total_n = initial_n + growth_amount
         assert pfc.neurons.n_neurons == total_n
-        assert pfc.config.n_output == total_n
+        assert pfc.config.n_neurons == total_n
 
 
 if __name__ == "__main__":

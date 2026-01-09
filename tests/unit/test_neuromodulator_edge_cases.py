@@ -183,7 +183,7 @@ def test_striatum_rejects_nan_dopamine(device):
     NaN should never be a valid neuromodulator value and should be caught
     early with a descriptive error message.
     """
-    config = StriatumConfig(n_input=50, n_output=3, device=str(device))
+    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
     striatum = Striatum(config)
 
     # Should raise clear error for NaN
@@ -196,7 +196,7 @@ def test_striatum_rejects_nan_dopamine(device):
 
 def test_striatum_rejects_inf_dopamine(device):
     """Test striatum rejects Inf dopamine with clear error."""
-    config = StriatumConfig(n_input=50, n_output=3, device=str(device))
+    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
     striatum = Striatum(config)
 
     with pytest.raises(
@@ -301,7 +301,7 @@ def test_striatum_stable_with_fluctuating_dopamine(device):
     errors in reinforcement learning. System should handle temporal
     variability without instability.
     """
-    config = StriatumConfig(n_input=50, n_output=3, device=str(device))
+    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
     striatum = Striatum(config)
 
     input_spikes = torch.rand(50, device=device) > 0.8
@@ -356,7 +356,7 @@ def test_striatum_learning_stable_with_valid_dopamine(modulator_value, device):
     Critical for biological plausibility: Learning should remain stable
     across the full valid dopamine range [-2, 2].
     """
-    config = StriatumConfig(n_input=50, n_output=3, device=str(device))
+    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
     striatum = Striatum(config)
 
     # Get initial weights if accessible
@@ -429,7 +429,7 @@ def test_striatum_extended_run_with_valid_dopamine(device):
     Longer test (100 steps) to catch delayed instabilities that might
     not appear in short tests. Uses maximum valid dopamine (2.0).
     """
-    config = StriatumConfig(n_input=50, n_output=3, device=str(device))
+    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
     striatum = Striatum(config)
 
     # Use maximum valid dopamine (e.g., large RPE)
@@ -465,7 +465,7 @@ def test_multi_region_neuromodulator_stability(device):
     Uses maximum valid values for each neuromodulator.
     """
     # Create multiple regions
-    striatum = Striatum(StriatumConfig(n_input=50, n_output=3, device=str(device)))
+    striatum = Striatum(StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device)))
     hippocampus = Hippocampus(HippocampusConfig(input_size=40, ca1_size=20, device=str(device)
     ))
     pfc = Prefrontal(PrefrontalConfig(input_size=50, n_neurons=30, device=str(device)))
