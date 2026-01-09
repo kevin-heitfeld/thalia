@@ -1070,17 +1070,13 @@ class TrisynapticHippocampus(NeuralRegion):
             # EC→CA2: Only post (CA2) grows, pre (EC input) is fixed
             self.stp_ec_ca2.grow(ca2_growth, target='post')
 
-        # 8. Update config
-        # Must update all layer sizes plus n_neurons to satisfy validation
-        new_total_neurons = new_dg_size + new_ca3_size + new_ca2_size + new_ca1_size
+        # 8. Update config (output_size/total_neurons are computed properties)
         self.config = replace(
             self.config,
-            n_output=new_ca1_size,
             ca1_size=new_ca1_size,
             ca2_size=new_ca2_size,
             ca3_size=new_ca3_size,
             dg_size=new_dg_size,
-            n_neurons=new_total_neurons,
         )
 
         # 9. Validate growth completed correctly
@@ -1191,7 +1187,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_ec_ca2.grow(n_new, target='pre')
 
         # Update config
-        self.config = replace(self.config, n_input=new_n_input)
+        self.config = replace(self.config, input_size=new_n_input)
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)

@@ -83,10 +83,6 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     ca2_size: int = field(default=0)  # CA2 (social memory, temporal context)
     ca1_size: int = field(default=0)  # CA1 (output, match/mismatch)
 
-    # Computed dimensions (set in __post_init__)
-    output_size: int = field(init=False, default=0)    # CA1 size (output layer)
-    total_neurons: int = field(init=False, default=0)  # Sum of all layers
-
     # DG sparsity (VERY sparse for pattern separation)
     dg_sparsity: float = HIPPOCAMPUS_SPARSITY_TARGET
     dg_inhibition: float = 5.0     # Strong lateral inhibition
@@ -305,9 +301,7 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
             object.__setattr__(self, "ca1_size", sizes["ca1_size"])
 
         # Always compute output_size and total_neurons from layer sizes
-        object.__setattr__(self, "output_size", self.ca1_size)
-        total_neurons = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
-        object.__setattr__(self, "total_neurons", total_neurons)
+        # (Now properties - no need to set)
 
         # Validate after computation
         self.validate()
@@ -349,6 +343,26 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
                     f"DG expansion ratio ({dg_to_input:.1f}x) is outside biological range (2-6x). "
                     f"Using dg_size={self.dg_size} for input_size={self.input_size}."
                 )
+
+    @property
+    def output_size(self) -> int:
+        """CA1 size (output layer)."""
+        return self.ca1_size
+
+    @property
+    def total_neurons(self) -> int:
+        """Sum of all hippocampal layers."""
+        return self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
+
+    @property
+    def n_input(self) -> int:
+        """Backward compatibility: input dimension."""
+        return self.input_size
+
+    @property
+    def n_output(self) -> int:
+        """Backward compatibility: output dimension."""
+        return self.output_size
 
     @classmethod
     def from_input_size(

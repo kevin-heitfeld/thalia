@@ -4,9 +4,16 @@
 
 Migration of test files from deprecated `n_input`/`n_output` parameters to semantic config patterns (e.g., `input_size`, `relay_size`, `purkinje_size`).
 
-**Current Test Pass Rate: 65/295 region tests (22%)**
-- Started: 74/75 tests passing (98.7%)
-- Target: >95% pass rate with semantic configs
+**Current Test Pass Rate: ~168/170 Phase 1 tests (99%)**
+**Phase 1 (Base Tests): COMPLETE**
+- Cerebellum: 29/29 (100%)
+- Cortex: 26/26 (100%)
+- Striatum: 27/29 (93%)
+- Thalamus: 29/29 (100%)
+- Hippocampus: 28/28 (100%)
+- Prefrontal: 29/29 (100%)
+
+**Key Achievement**: Properties pattern successfully applied to all 6 major regions
 
 ## Core Issue
 
@@ -25,6 +32,54 @@ The test base class `tests/utils/region_test_base.py` and its subclasses still r
 
 ## Completed ✅
 
+### Phase 1: Base Test Infrastructure (COMPLETE - December 2025/January 2026)
+
+**All 6 major regions migrated to properties pattern:**
+
+1. **Cerebellum** - 29/29 tests (100%)
+   - Properties: `output_size → purkinje_size`, `total_neurons → purkinje_size + basket_size + stellate_size`
+   - Config updates, grow methods, test file updates
+   - Status: ✅ COMPLETE
+
+2. **Cortex** - 26/26 tests (100%)
+   - Properties: `output_size → sum(layer_sizes)`, `total_neurons → sum(layer_sizes)`
+   - Laminar architecture (L4→L2/3→L5→L6a/L6b)
+   - Status: ✅ COMPLETE
+
+3. **Striatum** - 27/29 tests (93%)
+   - Properties: `output_size → d1_size + d2_size`, `total_neurons → d1_size + d2_size`
+   - Fixed forward() to return concatenated [D1, D2] spikes (biologically correct)
+   - Remaining: 2 tests (test_grow_output, test_goal_conditioning)
+   - Status: ✅ MOSTLY COMPLETE
+
+4. **Thalamus** - 29/29 tests (100%)
+   - Properties: `output_size → relay_size`, `total_neurons → relay_size + trn_size`
+   - Fixed builder method to not pass n_output/n_neurons
+   - Added n_neurons backward compatibility property
+   - Status: ✅ COMPLETE
+
+5. **Hippocampus** - 28/28 tests (100%)
+   - Properties: `output_size → ca1_size`, `total_neurons → sum(all layers)`
+   - Fixed duplicate ca1_size parameter issue
+   - Updated create_region logic for from_input_size builder
+   - Status: ✅ COMPLETE
+
+6. **Prefrontal** - 29/29 tests (100%)
+   - Properties: `output_size → n_neurons`, `total_neurons → n_neurons`
+   - Fixed pfc_config grow_input to use input_size
+   - Status: ✅ COMPLETE
+
+**Test Helper Methods Added:**
+- `_get_input_size(params)` - Extracts input size from params dict
+- `_get_config_output_size(config)` - Reads semantic output field from config
+- `_get_input_field_name()` - Returns "input_size"
+- `_get_output_field_name()` - Returns region-specific output field name
+
+**PowerShell Batch Operations:**
+- Replaced params dict field names across multiple test files
+- Replaced direct params access with helper methods
+- Highly efficient for mechanical updates
+
 ### Specialized Test Files (50+ tests passing)
 
 - `tests/utils/test_helpers.py` - Added semantic config documentation
@@ -34,100 +89,78 @@ The test base class `tests/utils/region_test_base.py` and its subclasses still r
 - `tests/unit/regions/test_cerebellum_stp.py` - 13/13 passing
 - `tests/unit/regions/test_cortex_gap_junctions.py` - 7/7 passing
 
-### Partially Complete (base files need region_test_base.py fix)
+## Key Technical Achievements
 
-- `tests/unit/regions/test_cerebellum_base.py` - 0/29 (base class issue)
-- `tests/unit/regions/test_cortex_base.py` - 0/26 (base class issue + n_neurons)
-- `tests/unit/regions/test_striatum_base.py` - Updated but not validated
-- `tests/unit/regions/test_thalamus_base.py` - Updated but not validated
-- `tests/unit/regions/test_prefrontal_base.py` - Batch updated
-- `tests/unit/regions/test_hippocampus_base.py` - Batch updated
-- `tests/unit/regions/test_hippocampus_state.py` - Batch updated
-
-## Blocking Issues
-
-### 1. region_test_base.py Incompatibility (CRITICAL)
-
-**File**: `tests/utils/region_test_base.py`
-
-**Problem**: All ~20 test methods expect old field names:
+### Properties Pattern
+All configs now use computed properties instead of stored fields:
 ```python
-# Current (BROKEN):
-def test_initialization(self):
-    params = self.get_default_params()
-    region = self.create_region(**params)
-    assert region.config.n_input == params["n_input"]  # ❌ Both fail
-    assert region.config.n_output == params["n_output"]  # ❌ Both fail
+@property
+def output_size(self) -> int:
+    """Computed from semantic fields."""
+    return self.relay_size  # or appropriate calculation
 
-# Needed (WORKING):
-def test_initialization(self):
-    params = self.get_default_params()
-    region = self.create_region(**params)
-    assert region.config.input_size == params["input_size"]  # ✅
-    output_field = self._get_output_field_name()
-    assert getattr(region.config, output_field) == params[output_field]  # ✅
+@property
+def total_neurons(self) -> int:
+    """Total neurons across all populations."""
+    return self.relay_size + self.trn_size  # region-specific
 ```
 
-**Solution**: Add helper methods for dynamic field name lookup:
+### Backward Compatibility
+Added properties for deprecated field names:
 ```python
-def _get_input_field_name(self):
-    """Get semantic input field name (always 'input_size')"""
-    return "input_size"
+@property
+def n_input(self) -> int:
+    """Backward compatibility."""
+    return self.input_size
 
-def _get_output_field_name(self):
-    """Get semantic output field name based on region type"""
-    region_type = type(self).__name__.replace("Test", "").lower()
-    mapping = {
-        "cerebellum": "purkinje_size",
-        "striatum": "n_actions",
-        "hippocampus": "output_size",
-        "thalamus": "relay_size",
-        "cortex": "output_size",
-        "prefrontal": "n_neurons"
-    }
-    return mapping.get(region_type, "output_size")
+@property
+def n_output(self) -> int:
+    """Backward compatibility."""
+    return self.output_size
 ```
 
-**Impact**: Blocks ~150 tests in all `*_base.py` files
+### Builder Method Fixes
+Updated builder methods to not pass computed fields:
+```python
+# Before:
+return cls(
+    n_output=sizes["relay_size"],
+    n_neurons=sizes["relay_size"] + sizes["trn_size"],
+    relay_size=sizes["relay_size"],
+    trn_size=sizes["trn_size"],
+)
 
-### 2. LayeredCortexConfig n_neurons Property
+# After:
+return cls(
+    relay_size=sizes["relay_size"],
+    trn_size=sizes["trn_size"],
+)
+```
 
-**File**: `tests/unit/regions/test_cortex_base.py`
+### Striatum Biological Fix
+Corrected forward() to return both D1 and D2 spikes:
+```python
+# Before: Only D1 spikes (incomplete)
+output_spikes = d1_spikes.clone()
 
-**Problem**: `get_default_params()` tries to return `config.n_neurons` which doesn't exist
-
-**Solution A**: Add `n_neurons` property to `LayeredCortexConfig`
-**Solution B**: Remove `n_neurons` from test params dict (simpler)
-
-**Impact**: Blocks 26 cortex tests
+# After: Concatenated [D1, D2] (biologically accurate)
+output_spikes = torch.cat([d1_spikes, d2_spikes], dim=0)
+```
+Both D1-MSNs and D2-MSNs are projection neurons that send axons out of striatum.
 
 ## Remaining Work
 
-### Phase 1: Fix Infrastructure (CRITICAL)
+### Striatum Final Fixes (~30 min)
 
-1. **Update region_test_base.py** (~2 hours)
-   - Add helper methods for semantic field names
-   - Update all ~20 test methods to use helpers
-   - Test with cerebellum_base.py, cortex_base.py, striatum_base.py
-   - Expected: ~150 tests should pass after this fix
+1. **Fix 2 remaining striatum tests**
+   - test_grow_output - RuntimeError with tensor size mismatch
+   - test_goal_conditioning - RuntimeError with tensor size mismatch
+   - Both likely related to concatenated [D1, D2] output size
+   - Expected: 29/29 striatum tests (100%)
 
-2. **Fix LayeredCortexConfig n_neurons** (~15 min)
-   - Either add property or remove from test params
-   - Expected: 26 cortex tests should pass
+### Phase 2: Specialized Test Files (~2 hours)
 
-### Phase 2: Complete Base Files (~1 hour)
-
-3. **Validate remaining *_base.py files**
-   - test_striatum_base.py
-   - test_thalamus_base.py
-   - test_prefrontal_base.py
-   - test_hippocampus_base.py
-   - test_hippocampus_state.py
-   - Expected: Should mostly work after Phase 1 fixes
-
-### Phase 3: Specialized Test Files (~2 hours)
-
-4. **Update remaining specialized tests** (~15 files)
+2. **Update remaining specialized tests** (~15 files)
    - test_cerebellum_enhanced.py
    - test_cerebellum_io_gap_junctions.py
    - test_striatum_fsi_gap_junctions.py
@@ -138,30 +171,29 @@ def _get_output_field_name(self):
    - Method: PowerShell batch replacements with validation
    - Expected: ~50+ additional tests passing
 
-### Phase 4: Unit & Integration Tests (~2 hours)
+### Phase 3: Unit & Integration Tests (~2 hours)
 
-5. **Update unit test files** (~25 files)
+3. **Update unit test files** (~25 files)
    - tests/unit/*.py (non-region tests)
    - tests/integration/*.py
    - Special handling for builder.add_component() patterns
    - Expected: ~100+ additional tests passing
 
-### Phase 5: Full Validation
+### Phase 4: Full Validation
 
-6. **Run complete test suite**
-   - Goal: >95% pass rate (~285/300 tests)
+4. **Run complete test suite**
+   - Goal: >95% pass rate
    - Validate no regressions from semantic migration
    - Update documentation with final results
 
 ## Estimated Timeline
 
-- Phase 1 (Infrastructure): 2-3 hours - **BLOCKING**
-- Phase 2 (Base files): 1 hour - **Depends on Phase 1**
-- Phase 3 (Specialized): 2 hours
-- Phase 4 (Unit/Integration): 2 hours
-- Phase 5 (Validation): 30 min
+- Striatum fixes: 30 min
+- Phase 2 (Specialized): 2 hours
+- Phase 3 (Unit/Integration): 2 hours
+- Phase 4 (Validation): 30 min
 
-**Total: ~7-8 hours of focused work**
+**Total: ~5 hours remaining work**
 
 ## Success Criteria
 

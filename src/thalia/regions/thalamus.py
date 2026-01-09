@@ -261,7 +261,7 @@ class ThalamicRelayConfig(NeuralComponentConfig):
         """Validate size constraints.
 
         Raises:
-            ValueError: If relay_size is 0 or total_neurons doesn't match total
+            ValueError: If relay_size is 0
         """
         if self.relay_size == 0:
             raise ValueError(
@@ -272,17 +272,30 @@ class ThalamicRelayConfig(NeuralComponentConfig):
         # trn_size can be 0 (relay-only mode), but if specified must be > 0
         # No validation needed for trn_size
 
-        total = self.relay_size + self.trn_size
-        if self.total_neurons != total:
-            raise ValueError(
-                f"total_neurons ({self.total_neurons}) must equal sum of layer sizes ({total})"
-            )
+    @property
+    def output_size(self) -> int:
+        """Relay neurons output to cortex."""
+        return self.relay_size
 
-        if self.output_size != self.relay_size:
-            raise ValueError(
-                f"output_size ({self.output_size}) must equal relay_size ({self.relay_size}). "
-                "Relay neurons are the output of thalamus."
-            )
+    @property
+    def total_neurons(self) -> int:
+        """Total neurons (relay + TRN)."""
+        return self.relay_size + self.trn_size
+
+    @property
+    def n_neurons(self) -> int:
+        """Backward compatibility: total neurons."""
+        return self.total_neurons
+
+    @property
+    def n_input(self) -> int:
+        """Backward compatibility: input dimension."""
+        return self.input_size
+
+    @property
+    def n_output(self) -> int:
+        """Backward compatibility: output dimension."""
+        return self.output_size
 
     @classmethod
     def from_relay_size(
@@ -308,8 +321,6 @@ class ThalamicRelayConfig(NeuralComponentConfig):
         from thalia.config.region_sizes import compute_thalamus_sizes
         sizes = compute_thalamus_sizes(relay_size)
         return cls(
-            n_output=sizes["relay_size"],
-            n_neurons=sizes["relay_size"] + sizes["trn_size"],
             relay_size=sizes["relay_size"],
             trn_size=sizes["trn_size"],
             **kwargs
@@ -1360,11 +1371,8 @@ class ThalamicRelay(NeuralRegion):
         self._auto_grow_registered_components('input', n_new)
 
         # Rebuild center-surround filter with new input size
-        self.config = replace(self.config, n_input=new_n_input)
+        self.config = replace(self.config, input_size=new_n_input)
         self._build_center_surround_filter()
-
-        # Update config
-        self.config = replace(self.config, n_input=new_n_input)
 
     def grow_output(
         self,
@@ -1481,11 +1489,9 @@ class ThalamicRelay(NeuralRegion):
         # 7. Rebuild center-surround filter with new output size
         self._build_center_surround_filter()
 
-        # 8. Update config
+        # 8. Update config (output_size/total_neurons are computed properties)
         self.config = replace(
             self.config,
-            n_output=new_n_relay,
-            n_neurons=new_n_relay + new_n_trn,
             relay_size=new_n_relay,
             trn_size=new_n_trn,
         )

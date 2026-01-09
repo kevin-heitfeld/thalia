@@ -118,10 +118,6 @@ class PrefrontalConfig(NeuralComponentConfig):
     input_size: int = 0       # Input from sensory/cortical areas
     n_neurons: int = 100      # PFC population size
 
-    # Computed dimensions (set in __post_init__)
-    output_size: int = field(init=False, default=0)    # PFC output (working memory)
-    total_neurons: int = field(init=False, default=0)  # Same as n_neurons
-
     # Working memory parameters
     wm_decay_tau_ms: float = 500.0  # How fast WM decays (slow!)
     wm_noise_std: float = 0.01  # Noise in WM maintenance
@@ -194,8 +190,28 @@ class PrefrontalConfig(NeuralComponentConfig):
 
     def __post_init__(self) -> None:
         """Auto-compute output_size and total_neurons from n_neurons."""
-        object.__setattr__(self, "output_size", self.n_neurons)
-        object.__setattr__(self, "total_neurons", self.n_neurons)
+        # Properties handle this now - no manual assignment needed
+        pass
+
+    @property
+    def output_size(self) -> int:
+        """PFC output (working memory)."""
+        return self.n_neurons
+
+    @property
+    def total_neurons(self) -> int:
+        """Total neurons (same as n_neurons for PFC)."""
+        return self.n_neurons
+
+    @property
+    def n_input(self) -> int:
+        """Backward compatibility: input dimension."""
+        return self.input_size
+
+    @property
+    def n_output(self) -> int:
+        """Backward compatibility: output dimension."""
+        return self.output_size
 
 
 @dataclass
@@ -852,8 +868,8 @@ class Prefrontal(NeuralRegion):
         # which tracks n_output (not n_input) and is grown in grow_output() only
 
         # Update config
-        self.config = replace(self.config, n_input=self.config.n_input + n_new)
-        self.pfc_config = replace(self.pfc_config, n_input=self.pfc_config.n_input + n_new)
+        self.config = replace(self.config, input_size=self.config.input_size + n_new)
+        self.pfc_config = replace(self.pfc_config, input_size=self.pfc_config.input_size + n_new)
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)

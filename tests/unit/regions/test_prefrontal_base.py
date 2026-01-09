@@ -24,8 +24,8 @@ class TestPrefrontal(RegionTestBase):
     def get_default_params(self):
         """Return default prefrontal parameters."""
         return {
-            "n_input": 100,
-            "n_output": 50,
+            "input_size": 100,
+            "n_neurons": 50,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -33,8 +33,8 @@ class TestPrefrontal(RegionTestBase):
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
         return {
-            "n_input": 20,
-            "n_output": 10,
+            "input_size": 20,
+            "n_neurons": 10,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -55,17 +55,17 @@ class TestPrefrontal(RegionTestBase):
         region = self.create_region(**params)
 
         # Strong input to encode in working memory
-        strong_input = torch.ones(params["n_input"], device=region.device)
+        strong_input = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(strong_input)
 
         # Check working memory state initialized
         state = region.get_state()
         if hasattr(state, "working_memory"):
             assert state.working_memory is not None
-            assert state.working_memory.shape[0] == params["n_output"]
+            assert state.working_memory.shape[0] == self._get_config_output_size(region.config)
 
             # Run with no input (maintenance)
-            zero_input = torch.zeros(params["n_input"], device=region.device)
+            zero_input = torch.zeros(self._get_input_size(params), device=region.device)
             for _ in range(10):
                 region.forward(zero_input)
 
@@ -80,7 +80,7 @@ class TestPrefrontal(RegionTestBase):
         region = self.create_region(**params)
 
         # Low dopamine (gate closed)
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes, dopamine_signal=-1.0)
 
         state = region.get_state()
@@ -96,11 +96,11 @@ class TestPrefrontal(RegionTestBase):
         region = self.create_region(**params)
 
         # Forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Verify PFC has output neurons
-        assert region.config.n_output == params["n_output"]
+        assert region.config.n_output == self._get_config_output_size(region.config)
 
     def test_recurrent_connections(self):
         """Test PFC has recurrent connections for maintenance."""
@@ -111,7 +111,7 @@ class TestPrefrontal(RegionTestBase):
         if hasattr(region, "rec_weights"):
             assert region.rec_weights is not None
             # Recurrent weights should be [n_output, n_output]
-            assert region.rec_weights.shape == (params["n_output"], params["n_output"])
+            assert region.rec_weights.shape == (self._get_config_output_size(region.config), self._get_config_output_size(region.config))
 
     def test_inhibitory_connections(self):
         """Test PFC has lateral inhibition for selection."""
@@ -122,7 +122,7 @@ class TestPrefrontal(RegionTestBase):
         if hasattr(region, "inhib_weights"):
             assert region.inhib_weights is not None
             # Inhibition should be [n_output, n_output]
-            assert region.inhib_weights.shape == (params["n_output"], params["n_output"])
+            assert region.inhib_weights.shape == (self._get_config_output_size(region.config), self._get_config_output_size(region.config))
 
     def test_dopamine_gating(self):
         """Test dopamine modulates WM gating."""
@@ -130,7 +130,7 @@ class TestPrefrontal(RegionTestBase):
         region = self.create_region(**params)
 
         # High dopamine signal (open gate)
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes, dopamine_signal=1.0)
 
         # Check dopamine system state
@@ -147,7 +147,7 @@ class TestPrefrontal(RegionTestBase):
         region = self.create_region(**params)
 
         # Forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Check active rule state
@@ -167,7 +167,7 @@ class TestPrefrontal(RegionTestBase):
             initial_weights = region.synaptic_weights["default"].clone()
 
             # Multiple forward passes with correlated activity
-            input_spikes = torch.ones(params["n_input"], device=region.device)
+            input_spikes = torch.ones(self._get_input_size(params), device=region.device)
             for _ in range(100):
                 region.forward(input_spikes, dopamine_signal=0.5)
 
@@ -182,7 +182,7 @@ class TestPrefrontal(RegionTestBase):
         region = self.create_region(**params)
 
         # Multiple forward passes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(20):
             region.forward(input_spikes)
 
@@ -199,8 +199,8 @@ class TestPrefrontal(RegionTestBase):
         region = self.create_region(**params)
 
         # Context 1: Strong input on first half
-        context1 = torch.zeros(params["n_input"], device=region.device)
-        context1[:params["n_input"]//2] = 1.0
+        context1 = torch.zeros(self._get_input_size(params), device=region.device)
+        context1[:self._get_input_size(params)//2] = 1.0
         region.forward(context1)
         state1 = region.get_state()
 
@@ -208,8 +208,8 @@ class TestPrefrontal(RegionTestBase):
         region.reset_state()
 
         # Context 2: Strong input on second half
-        context2 = torch.zeros(params["n_input"], device=region.device)
-        context2[params["n_input"]//2:] = 1.0
+        context2 = torch.zeros(self._get_input_size(params), device=region.device)
+        context2[self._get_input_size(params)//2:] = 1.0
         region.forward(context2)
         state2 = region.get_state()
 

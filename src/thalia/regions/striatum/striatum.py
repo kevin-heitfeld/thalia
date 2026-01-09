@@ -1825,12 +1825,19 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.state_tracker.accumulate_votes(d1_votes, d2_votes)
 
         # =====================================================================
-        # OUTPUT SPIKES: Return D1 activity (action selection happens in finalize_action)
+        # OUTPUT SPIKES: Return BOTH D1 and D2 (concatenated)
         # =====================================================================
-        # During the trial, we output D1 spikes for all neurons.
-        # The final action selection (UCB + softmax + exploration) is handled by
-        # finalize_action() at the end of the trial, not per-timestep.
-        output_spikes = d1_spikes.clone()
+        # Biologically: Both D1-MSNs and D2-MSNs are PROJECTION neurons that send
+        # axons out of the striatum to different targets:
+        # - D1 neurons → GPi/SNr (direct pathway, facilitates movement)
+        # - D2 neurons → GPe (indirect pathway, suppresses movement)
+        #
+        # Output format: [D1_neuron_0, ..., D1_neuron_N, D2_neuron_0, ..., D2_neuron_M]
+        # Total size: d1_size + d2_size (matches config.output_size property)
+        #
+        # Action selection (which action to take) happens in finalize_action() at
+        # trial end, but both pathways' activity is visible to downstream regions.
+        output_spikes = torch.cat([d1_spikes, d2_spikes], dim=0)
 
         # =====================================================================
         # STORE GOAL CONTEXT AND SPIKES FOR LEARNING

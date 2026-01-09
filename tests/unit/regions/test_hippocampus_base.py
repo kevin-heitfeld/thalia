@@ -19,14 +19,12 @@ class TestHippocampus(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create Hippocampus instance for testing."""
-        # If n_input provided without explicit sizes, use builder for clarity
-        if "dg_size" not in kwargs and "ca3_size" not in kwargs:
-            # Remove n_output if present (will be auto-computed from CA1 size)
-            kwargs.pop("n_output", None)
-            # Use builder to auto-compute sizes (n_input must be in kwargs)
+        # If explicit layer sizes not provided, use builder
+        if "dg_size" not in kwargs and "ca3_size" not in kwargs and "ca1_size" not in kwargs:
+            # Use builder to auto-compute sizes
             config = HippocampusConfig.from_input_size(**kwargs)
         else:
-            # Explicit sizes provided - user must ensure n_neurons, n_output are correct
+            # Explicit sizes provided
             config = HippocampusConfig(**kwargs)
 
         return Hippocampus(config)
@@ -34,8 +32,7 @@ class TestHippocampus(RegionTestBase):
     def get_default_params(self):
         """Return default hippocampus parameters."""
         return {
-            "n_input": 100,
-            "n_output": 200,  # Must match computed ca1_size from compute_hippocampus_sizes(100)
+            "input_size": 100,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -43,8 +40,7 @@ class TestHippocampus(RegionTestBase):
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
         return {
-            "n_input": 20,
-            "n_output": 40,  # Must match computed ca1_size from compute_hippocampus_sizes(20)
+            "input_size": 20,
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -65,13 +61,13 @@ class TestHippocampus(RegionTestBase):
         region = self.create_region(**params)
 
         # Provide entorhinal cortex input
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
 
         # Forward pass
         output = region.forward(input_spikes)
 
-        # Verify output is CA1 activity (should match n_output)
-        assert output.shape[0] == params["n_output"]
+        # Verify output is CA1 activity
+        assert output.shape[0] == self._get_config_output_size(region.config)
 
         # Verify state has all three layers
         state = region.get_state()
@@ -89,7 +85,7 @@ class TestHippocampus(RegionTestBase):
         region = self.create_region(**params)
 
         # Dense input pattern
-        input_spikes = torch.ones(params["n_input"], device=region.device) * 0.8
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device) * 0.8
 
         # Forward pass
         region.forward(input_spikes)
@@ -107,7 +103,7 @@ class TestHippocampus(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward passes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -124,7 +120,7 @@ class TestHippocampus(RegionTestBase):
         region = self.create_region(**params)
 
         # Strong input to trigger persistent activity
-        strong_input = torch.ones(params["n_input"], device=region.device)
+        strong_input = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(strong_input)
 
         # Check for persistent activity state
@@ -142,7 +138,7 @@ class TestHippocampus(RegionTestBase):
         if hasattr(region, "_theta_phase"):
             region._theta_phase = 3.14159  # π radians (trough)
 
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Should encode (DG→CA3 strong)
@@ -155,7 +151,7 @@ class TestHippocampus(RegionTestBase):
         region = self.create_region(**params)
 
         # Run multiple forward passes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -173,9 +169,9 @@ class TestHippocampus(RegionTestBase):
         region = self.create_region(**params)
 
         # Provide both EC layer II (via DG) and layer III (direct to CA1)
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         # ec_direct_input should match n_input size (ec_l3_input_size defaults to n_input)
-        ec_l3_input = torch.ones(params["n_input"], device=region.device)
+        ec_l3_input = torch.ones(self._get_input_size(params), device=region.device)
 
         # Forward with direct EC→CA1
         output = region.forward(input_spikes, ec_direct_input=ec_l3_input)
@@ -194,7 +190,7 @@ class TestHippocampus(RegionTestBase):
 
             # Store episode (if region supports it)
             if hasattr(region, "store_episode"):
-                sample = torch.ones(params["n_input"], device=region.device)
+                sample = torch.ones(self._get_input_size(params), device=region.device)
                 # Note: store_episode signature may vary by implementation
                 # This is just checking the method exists
                 assert callable(region.store_episode)
@@ -208,7 +204,7 @@ class TestHippocampus(RegionTestBase):
         if hasattr(region, "set_neuromodulators"):
             region.set_neuromodulators(acetylcholine=0.9)
 
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Verify ACh stored in state
@@ -219,4 +215,3 @@ class TestHippocampus(RegionTestBase):
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
 # inherited from RegionTestBase - eliminates ~100 lines of boilerplate
-
