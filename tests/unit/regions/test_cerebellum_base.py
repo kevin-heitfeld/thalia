@@ -21,12 +21,11 @@ class TestCerebellum(RegionTestBase):
         """Create Cerebellum instance for testing."""
         # If using old-style params, compute explicit sizes
         if "granule_expansion_factor" in kwargs:
-            purkinje_size = kwargs.pop("n_output")
+            purkinje_size = kwargs.pop("purkinje_size")  # Changed from n_output
             expansion = kwargs.pop("granule_expansion_factor")
             sizes = compute_cerebellum_sizes(purkinje_size, expansion)
             kwargs["granule_size"] = sizes["granule_size"]
             kwargs["purkinje_size"] = sizes["purkinje_size"]
-            kwargs["n_output"] = purkinje_size
             kwargs["use_enhanced_microcircuit"] = True
 
         config = CerebellumConfig(**kwargs)
@@ -35,8 +34,8 @@ class TestCerebellum(RegionTestBase):
     def get_default_params(self):
         """Return default cerebellum parameters."""
         return {
-            "n_input": 100,
-            "n_output": 50,
+            "input_size": 100,
+            "purkinje_size": 50,
             "granule_expansion_factor": 2.0,  # Mossy fiber expansion
             "device": "cpu",
             "dt_ms": 1.0,
@@ -45,8 +44,8 @@ class TestCerebellum(RegionTestBase):
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
         return {
-            "n_input": 20,
-            "n_output": 10,
+            "input_size": 20,
+            "purkinje_size": 10,
             "granule_expansion_factor": 2.0,
             "device": "cpu",
             "dt_ms": 1.0,
@@ -257,3 +256,4 @@ class TestCerebellum(RegionTestBase):
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
 # inherited from RegionTestBase - eliminates ~100 lines of boilerplate
+

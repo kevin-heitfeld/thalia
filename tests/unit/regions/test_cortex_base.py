@@ -32,10 +32,10 @@ class TestLayeredCortex(RegionTestBase):
     def get_default_params(self):
         """Return default cortex parameters (will use builder)."""
         # Create config via builder to get computed sizes
-        config = LayeredCortexConfig.from_input_size(n_input=100, device="cpu", dt_ms=1.0)
+        config = LayeredCortexConfig.from_input_size(input_size=100, device="cpu", dt_ms=1.0)
         return {
-            "n_input": config.n_input,
-            "n_output": config.n_output,
+            "input_size": config.input_size,
+            "output_size": config.output_size,
             "n_neurons": config.n_neurons,
             "l4_size": config.l4_size,
             "l23_size": config.l23_size,
@@ -49,10 +49,10 @@ class TestLayeredCortex(RegionTestBase):
     def get_min_params(self):
         """Return minimal valid parameters for quick tests (will use builder)."""
         # Create config via builder to get computed sizes
-        config = LayeredCortexConfig.from_input_size(n_input=20, device="cpu", dt_ms=1.0)
+        config = LayeredCortexConfig.from_input_size(input_size=20, device="cpu", dt_ms=1.0)
         return {
-            "n_input": config.n_input,
-            "n_output": config.n_output,
+            "input_size": config.input_size,
+            "output_size": config.output_size,
             "n_neurons": config.n_neurons,
             "l4_size": config.l4_size,
             "l23_size": config.l23_size,
@@ -210,3 +210,4 @@ class TestLayeredCortex(RegionTestBase):
             # With continuous active input, weights should change
             # (unless learning rate is zero, which is not default)
             assert weights_changed, "Expected weight changes from continuous plasticity"
+

@@ -22,11 +22,14 @@ class TestStriatum(RegionTestBase):
         """Create Striatum instance for testing."""
         # Use builder pattern if no explicit sizes provided
         if "d1_size" not in kwargs and "d2_size" not in kwargs:
-            n_actions = kwargs.pop("n_output", 4)  # Remove n_output, will be set by builder
-            neurons_per_action = kwargs.pop("neurons_per_action", 10)  # Remove to avoid conflict
+            n_actions = kwargs.pop("n_actions", 4)  # Changed from n_output
+            neurons_per_action = kwargs.pop("neurons_per_action", 10)
+            # Striatum requires input_sources dict
+            input_sources = kwargs.pop("input_sources", {"default": 100})
             config = StriatumConfig.from_n_actions(
                 n_actions=n_actions,
                 neurons_per_action=neurons_per_action,
+                input_sources=input_sources,
                 **kwargs
             )
         else:
@@ -37,8 +40,8 @@ class TestStriatum(RegionTestBase):
     def get_default_params(self):
         """Return default striatum parameters."""
         return {
-            "n_input": 100,
-            "n_output": 5,  # Number of actions
+            "input_sources": {"default": 100},
+            "n_actions": 5,  # Number of actions
             "population_coding": True,
             "neurons_per_action": 4,  # 20 total neurons (5 actions × 4)
             "rpe_enabled": True,
@@ -50,8 +53,8 @@ class TestStriatum(RegionTestBase):
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
         return {
-            "n_input": 20,
-            "n_output": 3,  # 3 actions
+            "input_sources": {"default": 20},
+            "n_actions": 3,  # 3 actions
             "population_coding": True,
             "neurons_per_action": 2,  # 6 total neurons
             "device": "cpu",
@@ -376,3 +379,4 @@ class TestStriatum(RegionTestBase):
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
 # inherited from RegionTestBase - eliminates ~100 lines of boilerplate
+

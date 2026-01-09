@@ -46,8 +46,8 @@ class TestThalamus(RegionTestBase):
         )
         # Return as dict for compatibility with test base class
         return {
-            "n_input": config.input_size,
-            "n_output": config.n_output,
+            "input_size": config.input_size,
+            
             "relay_size": config.relay_size,
             "trn_size": config.trn_size,
             "n_neurons": config.n_neurons,
@@ -66,8 +66,8 @@ class TestThalamus(RegionTestBase):
         )
         # Return as dict for compatibility with test base class
         return {
-            "n_input": config.input_size,
-            "n_output": config.n_output,
+            "input_size": config.input_size,
+            
             "relay_size": config.relay_size,
             "trn_size": config.trn_size,
             "n_neurons": config.n_neurons,
@@ -265,4 +265,5 @@ class TestThalamus(RegionTestBase):
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
 # inherited from RegionTestBase - eliminates ~100 lines of boilerplate
+
 
