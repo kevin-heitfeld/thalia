@@ -163,6 +163,22 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
         total_neurons = self.granule_size + self.purkinje_size if self.use_enhanced_microcircuit else self.purkinje_size
         object.__setattr__(self, "total_neurons", total_neurons)
 
+    @property
+    def n_input(self) -> int:
+        """Backward compatibility property for growth validation.
+
+        Maps to semantic field: input_size
+        """
+        return self.input_size
+
+    @property
+    def n_output(self) -> int:
+        """Backward compatibility property for growth validation.
+
+        Maps to semantic field: purkinje_size
+        """
+        return self.purkinje_size
+
     # =========================================================================
     # SHORT-TERM PLASTICITY (STP) - CRITICAL FOR CEREBELLAR TIMING
     # =========================================================================
@@ -859,17 +875,10 @@ class Cerebellum(NeuralRegion):
             # (it's determined by input size and expansion factor)
             self.config = replace(
                 self.config,
-                n_output=new_n_output,
                 purkinje_size=new_n_output,  # Purkinje size = output size
             )
-            self.config = replace(
-                self.config,
-                n_output=new_n_output,
-                purkinje_size=new_n_output,
-            )
         else:
-            self.config = replace(self.config, n_output=new_n_output)
-            self.config = replace(self.config, n_output=new_n_output)
+            self.config = replace(self.config, purkinje_size=new_n_output)
 
         # =====================================================================
         # 3. EXPAND NEURON POPULATION (classic pathway only)
@@ -1413,8 +1422,7 @@ class Cerebellum(NeuralRegion):
             self.deep_nuclei.grow_input(n_new, source='mossy')
 
         # Update config (for both classic and enhanced modes)
-        self.config = replace(self.config, n_input=new_n_input)
-        self.config = replace(self.config, n_input=new_n_input)
+        self.config = replace(self.config, input_size=new_n_input)
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
@@ -1441,8 +1449,8 @@ class Cerebellum(NeuralRegion):
 
         # Compute activity metrics from output spikes
         activity = compute_activity_metrics(
-            output_spikes=self.output_spikes if self.output_spikes is not None else torch.zeros(cfg.n_output, device=self.device),
-            total_neurons=cfg.n_output,
+            output_spikes=self.output_spikes if self.output_spikes is not None else torch.zeros(cfg.purkinje_size, device=self.device),
+            total_neurons=cfg.purkinje_size,
         )
 
         # Compute plasticity metrics from parallel fiber weights
@@ -1477,8 +1485,8 @@ class Cerebellum(NeuralRegion):
         # Region-specific custom metrics
         region_specific = {
             "architecture": {
-                "n_input": cfg.n_input,
-                "n_output": cfg.n_output,
+                "n_input": cfg.input_size,
+                "n_output": cfg.purkinje_size,
                 "use_enhanced_microcircuit": cfg.use_enhanced_microcircuit,
             },
             "error_signaling": {

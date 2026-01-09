@@ -28,7 +28,7 @@ class TestMyRegion(RegionTestBase):
 
     def get_default_params(self):
         '''Return default region parameters.'''
-        return {"n_input": 100, "n_output": 50}
+        return {"input_size": 100, "output_size": 50}  # Use semantic names
 
     def test_region_specific_feature(self):
         '''Test region-specific behavior (custom test).'''
@@ -98,13 +98,15 @@ class RegionTestBase(ABC):
         """Return default region parameters for testing.
 
         Returns:
-            Dict with standard parameters (must include n_input, n_output)
+            Dict with standard parameters using semantic field names.
+            Must include input field (e.g., 'input_size') and output field
+            (e.g., 'output_size', 'purkinje_size', 'n_actions', 'relay_size').
 
         Example:
             def get_default_params(self):
                 return {
-                    "n_input": 100,
-                    "n_output": 50,
+                    "input_size": 100,  # Semantic input field
+                    "output_size": 50,  # Semantic output field (region-specific)
                     "device": "cpu",
                     "dt_ms": 1.0,
                 }
@@ -144,6 +146,87 @@ class RegionTestBase(ABC):
         return False
 
     # =========================================================================
+    # SEMANTIC FIELD NAME HELPERS
+    # =========================================================================
+
+    def _get_input_field_name(self) -> str:
+        """Get semantic input field name (always 'input_size').
+
+        Returns:
+            'input_size' for all regions
+        """
+        return "input_size"
+
+    def _get_output_field_name(self) -> str:
+        """Get semantic output field name based on region type.
+
+        Returns:
+            Region-specific output field name:
+            - Cerebellum: 'purkinje_size'
+            - Striatum: 'n_actions'
+            - Thalamus: 'relay_size'
+            - Hippocampus/Cortex/Prefrontal: 'output_size'
+        """
+        # Extract region name from test class name (e.g., TestCerebellum → cerebellum)
+        class_name = type(self).__name__.lower()
+
+        if "cerebellum" in class_name:
+            return "purkinje_size"
+        elif "striatum" in class_name:
+            return "n_actions"
+        elif "thalamus" in class_name or "thalamic" in class_name:
+            return "relay_size"
+        else:
+            # Default for hippocampus, cortex, prefrontal
+            return "output_size"
+
+    def _get_input_size(self, params: Dict[str, Any]) -> int:
+        """Get input size from params dict using semantic field name.
+
+        Args:
+            params: Parameter dictionary from get_default_params()
+
+        Returns:
+            Input size value
+        """
+        field = self._get_input_field_name()
+        return params[field]
+
+    def _get_output_size(self, params: Dict[str, Any]) -> int:
+        """Get output size from params dict using semantic field name.
+
+        Args:
+            params: Parameter dictionary from get_default_params()
+
+        Returns:
+            Output size value
+        """
+        field = self._get_output_field_name()
+        return params[field]
+
+    def _get_config_input_size(self, config) -> int:
+        """Get input size from config using semantic field name.
+
+        Args:
+            config: Region configuration object
+
+        Returns:
+            Input size value from config
+        """
+        return getattr(config, self._get_input_field_name())
+
+    def _get_config_output_size(self, config) -> int:
+        """Get output size from config using semantic field name.
+
+        Args:
+            config: Region configuration object
+
+        Returns:
+            Output size value from config
+        """
+        return getattr(config, self._get_output_field_name())
+
+    # =========================================================================
     # COMMON TEST PATTERNS
     # =========================================================================
 
@@ -152,9 +235,9 @@ class RegionTestBase(ABC):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # Verify configuration stored
-        assert region.config.n_input == params["n_input"]
-        assert region.config.n_output == params["n_output"]
+        # Verify configuration stored (using semantic field names)
+        assert self._get_config_input_size(region.config) == self._get_input_size(params)
+        assert self._get_config_output_size(region.config) == self._get_output_size(params)
 
         # Verify device set correctly
         expected_device = params.get("device", "cpu")
@@ -171,9 +254,9 @@ class RegionTestBase(ABC):
         params = self.get_min_params()
         region = self.create_region(**params)
 
-        # Verify basic functionality
-        assert region.config.n_input == params["n_input"]
-        assert region.config.n_output == params["n_output"]
+        # Verify basic functionality (using semantic field names)
+        assert self._get_config_input_size(region.config) == self._get_input_size(params)
+        assert self._get_config_output_size(region.config) == self._get_output_size(params)
 
     def test_forward_pass_tensor_input(self):
         """Test forward pass with single tensor input returns correct shape."""
@@ -181,14 +264,16 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Create input spikes (1D, no batch dimension per ADR-005)
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.zeros(input_size, device=region.device)
 
         # Forward pass
         output = region.forward(input_spikes)
 
         # Verify output shape (1D per ADR-005)
+        output_size = self._get_output_size(params)
         assert output.dim() == 1, f"Expected 1D output (ADR-005), got {output.dim()}D"
-        assert output.shape[0] == params["n_output"]
+        assert output.shape[0] == output_size
 
         # Verify output is boolean or float
         assert output.dtype in [torch.bool, torch.float32, torch.float64]
@@ -199,14 +284,16 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Create dict input
-        input_dict = self.get_input_dict(params["n_input"], device=region.device.type)
+        input_size = self._get_input_size(params)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
 
         # Forward pass
         output = region.forward(input_dict)
 
         # Verify output shape
+        output_size = self._get_output_size(params)
         assert output.dim() == 1
-        assert output.shape[0] == params["n_output"]
+        assert output.shape[0] == output_size
 
     def test_forward_pass_zero_input(self):
         """Test forward pass handles zero input (clock-driven execution)."""
@@ -214,23 +301,27 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Zero input (no spikes)
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.zeros(input_size, device=region.device)
 
         # Should not raise error
         output = region.forward(input_spikes)
-        assert output.shape[0] == params["n_output"]
+        output_size = self._get_output_size(params)
+        assert output.shape[0] == output_size
 
     def test_forward_pass_multiple_calls(self):
         """Test region handles multiple forward passes (temporal dynamics)."""
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        output_size = self._get_output_size(params)
+        input_spikes = torch.zeros(input_size, device=region.device)
 
         # Multiple forward passes should not error
         for _ in range(10):
             output = region.forward(input_spikes)
-            assert output.shape[0] == params["n_output"]
+            assert output.shape[0] == output_size
 
     def test_grow_output(self):
         """Test region can grow output dimension (add neurons)."""
@@ -240,17 +331,18 @@ class RegionTestBase(ABC):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        original_output = params["n_output"]
+        original_output = self._get_output_size(params)
         n_new = 10
 
         # Grow output
         region.grow_output(n_new)
 
         # Verify config updated
-        assert region.config.n_output == original_output + n_new
+        assert self._get_config_output_size(region.config) == original_output + n_new
 
         # Verify forward pass still works with new size
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.zeros(input_size, device=region.device)
         output = region.forward(input_spikes)
         assert output.shape[0] == original_output + n_new
 
@@ -262,19 +354,20 @@ class RegionTestBase(ABC):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        original_input = params["n_input"]
+        original_input = self._get_input_size(params)
         n_new = 20
 
         # Grow input
         region.grow_input(n_new)
 
         # Verify config updated
-        assert region.config.n_input == original_input + n_new
+        assert self._get_config_input_size(region.config) == original_input + n_new
 
         # Verify forward pass works with new input size
         input_spikes = torch.zeros(original_input + n_new, device=region.device)
         output = region.forward(input_spikes)
-        assert output.shape[0] == params["n_output"]
+        output_size = self._get_output_size(params)
+        assert output.shape[0] == output_size
 
     def test_growth_preserves_state(self):
         """Test growth preserves existing neuron state."""
@@ -285,7 +378,8 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Run forward pass to initialize state
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.ones(input_size, device=region.device)
         region.forward(input_spikes)
 
         # Get state before growth
@@ -299,7 +393,7 @@ class RegionTestBase(ABC):
 
         # Verify original neurons preserved (first N values should match)
         if state_before.membrane is not None and state_after.membrane is not None:
-            n_original = params["n_output"]
+            n_original = self._get_output_size(params)
             original_membrane = state_before.membrane[:n_original]
             preserved_membrane = state_after.membrane[:n_original]
             assert torch.allclose(original_membrane, preserved_membrane, atol=1e-5)
@@ -310,7 +404,8 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Run forward pass to generate non-trivial state
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.ones(input_size, device=region.device)
         region.forward(input_spikes)
 
         # Get state
@@ -346,7 +441,8 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Run forward pass to generate non-trivial state
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.ones(input_size, device=region.device)
         region.forward(input_spikes)
 
         # Reset state
@@ -370,7 +466,8 @@ class RegionTestBase(ABC):
         assert region.device.type == "cpu"
 
         # Verify forward pass works
-        input_spikes = torch.zeros(params["n_input"], device="cpu")
+        input_size = self._get_input_size(params)
+        input_spikes = torch.zeros(input_size, device="cpu")
         output = region.forward(input_spikes)
         assert output.device.type == "cpu"
 
@@ -384,7 +481,8 @@ class RegionTestBase(ABC):
         assert region.device.type == "cuda"
 
         # Verify forward pass works
-        input_spikes = torch.zeros(params["n_input"], device="cuda")
+        input_size = self._get_input_size(params)
+        input_spikes = torch.zeros(input_size, device="cuda")
         output = region.forward(input_spikes)
         assert output.device.type == "cuda"
 
@@ -414,7 +512,8 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Run forward pass
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.zeros(input_size, device=region.device)
         region.forward(input_spikes)
 
         # Collect diagnostics (from DiagnosticsMixin)
@@ -439,7 +538,8 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Run forward to generate non-trivial state
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.ones(input_size, device=region.device)
         for _ in range(3):
             region.forward(input_spikes)
 
@@ -475,7 +575,8 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Run forward to activate STP
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.ones(input_size, device=region.device)
         for _ in range(5):
             region.forward(input_spikes)
 
@@ -514,7 +615,8 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Run forward to generate non-trivial state
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_size = self._get_input_size(params)
+        input_spikes = torch.ones(input_size, device=region.device)
         for _ in range(5):
             region.forward(input_spikes)
 
