@@ -112,7 +112,12 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
         # Extract dimensions from context
         self.n_actions = context.n_output if context.n_output else 1
         self.neurons_per_action = context.metadata.get("neurons_per_action", 1) if context.metadata else 1
-        self.n_neurons = self.n_actions * self.neurons_per_action
+
+        # Get D1/D2 sizes from metadata (computed in striatum.__init__)
+        # These are the actual pathway sizes, NOT n_actions * neurons_per_action
+        self.d1_size = context.metadata.get("d1_size", self.n_actions)
+        self.d2_size = context.metadata.get("d2_size", self.n_actions)
+        self.n_neurons = self.d1_size + self.d2_size  # Total neurons across both pathways
         self.activity_decay = config.activity_decay
 
         # Create unified homeostasis controller
@@ -125,9 +130,15 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
                 device=self.context.device,
             )
 
+            # StriatumHomeostasis needs neurons per pathway (d1 or d2), not total
+            # When neurons_per_action=4 with d1_d2_ratio=0.5, each pathway gets 2 neurons/action
+            d1_neurons_per_action = self.d1_size // self.n_actions if self.n_actions > 0 else 1
+            d2_neurons_per_action = self.d2_size // self.n_actions if self.n_actions > 0 else 1
+
             self.unified_homeostasis = StriatumHomeostasis(
                 n_actions=self.n_actions,
-                neurons_per_action=self.neurons_per_action,
+                neurons_per_action=d1_neurons_per_action,  # D1 pathway size per action
+                d2_neurons_per_action=d2_neurons_per_action,  # D2 pathway size per action
                 config=homeostasis_config,
                 target_rate=config.target_firing_rate_hz,
                 excitability_tau=100.0,

@@ -384,11 +384,17 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         config: Optional[UnifiedHomeostasisConfig] = None,
         target_rate: float = 0.05,  # Target firing rate (fraction of timesteps)
         excitability_tau: float = 100.0,  # Time constant for excitability modulation
+        d2_neurons_per_action: Optional[int] = None,  # If different from D1
     ):
         super().__init__(config)
         self.n_actions = n_actions
-        self.neurons_per_action = neurons_per_action
-        self.n_neurons = n_actions * neurons_per_action
+        self.neurons_per_action = neurons_per_action  # D1 pathway
+        self.d1_neurons_per_action = neurons_per_action
+        self.d2_neurons_per_action = d2_neurons_per_action if d2_neurons_per_action is not None else neurons_per_action
+
+        self.d1_size = n_actions * self.d1_neurons_per_action
+        self.d2_size = n_actions * self.d2_neurons_per_action
+        self.n_neurons = self.d1_size  # For backward compatibility (used in some methods)
         self.target_rate = target_rate
         self.excitability_tau = excitability_tau
 
@@ -403,13 +409,13 @@ class StriatumHomeostasis(UnifiedHomeostasis):
 
         # Activity tracking for excitability modulation
         # Running average of firing rate per neuron (D1 and D2 separately)
-        self.register_buffer('d1_activity_avg', torch.zeros(self.n_neurons, device=device))
-        self.register_buffer('d2_activity_avg', torch.zeros(self.n_neurons, device=device))
+        self.register_buffer('d1_activity_avg', torch.zeros(self.d1_size, device=device))
+        self.register_buffer('d2_activity_avg', torch.zeros(self.d2_size, device=device))
 
         # Excitability modulation factors (multiply g_E by this)
         # > 1.0 means more excitable, < 1.0 means less excitable
-        self.register_buffer('d1_excitability', torch.ones(self.n_neurons, device=device))
-        self.register_buffer('d2_excitability', torch.ones(self.n_neurons, device=device))
+        self.register_buffer('d1_excitability', torch.ones(self.d1_size, device=device))
+        self.register_buffer('d2_excitability', torch.ones(self.d2_size, device=device))
 
     def update_activity(
         self,

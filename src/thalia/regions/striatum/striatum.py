@@ -279,7 +279,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Consolidates all temporal state: votes, spikes, trials, actions
         self.state_tracker = StriatumStateTracker(
             n_actions=self.n_actions,
-            n_output=config.n_actions,
+            n_output=config.d1_size + config.d2_size,  # Total MSN neurons (D1 + D2)
             device=self.device,
         )
 
@@ -482,7 +482,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 device=self.device,
                 n_output=self.n_actions,
                 dt_ms=config.dt_ms,
-                metadata={"neurons_per_action": self.neurons_per_action},
+                metadata={
+                    "neurons_per_action": self.neurons_per_action,
+                    "d1_size": config.d1_size,
+                    "d2_size": config.d2_size,
+                },
             )
             self.homeostasis = StriatumHomeostasisComponent(
                 config=homeostasis_config,

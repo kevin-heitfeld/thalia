@@ -948,8 +948,8 @@ class Prefrontal(NeuralRegion):
         self.config = replace(self.config, n_neurons=new_n_output)
         self.pfc_config = replace(self.pfc_config, n_neurons=new_n_output)
 
-        # 7. Validate growth completed correctly
-        self._validate_output_growth(old_n_output, n_new)
+        # 7. Validate growth completed correctly (skip config check - using n_neurons not n_output)
+        self._validate_output_growth(old_n_output, n_new, check_config=False)
 
     def grow_neurons(
         self,
