@@ -159,9 +159,13 @@ class TestRegionInitialization:
         ec_size = 100
         sizes = compute_hippocampus_sizes(ec_size)
 
+        # Calculate total neurons
+        n_neurons = sizes["dg_size"] + sizes["ca3_size"] + sizes["ca2_size"] + sizes["ca1_size"]
+
         config = HippocampusConfig(
             n_input=ec_size,
             n_output=sizes["ca1_size"],
+            n_neurons=n_neurons,
             dg_size=sizes["dg_size"],
             ca3_size=sizes["ca3_size"],
             ca2_size=sizes["ca2_size"],
@@ -182,15 +186,23 @@ class TestRegionInitialization:
         input_size = 100
         sizes = compute_cortex_layer_sizes(input_size)
 
+        # L6 split: L6a and L6b are each half of L5 size
+        l6a_size = sizes["l5_size"] // 2
+        l6b_size = sizes["l5_size"] - l6a_size  # Handle odd sizes
+
         # LayeredCortex expects n_output = l23_size + l5_size (L4 is input layer)
         n_output = sizes["l23_size"] + sizes["l5_size"]
+        n_neurons = sizes["l4_size"] + sizes["l23_size"] + sizes["l5_size"] + l6a_size + l6b_size
 
         config = LayeredCortexConfig(
             n_input=input_size,
             n_output=n_output,
+            n_neurons=n_neurons,
             l4_size=sizes["l4_size"],
             l23_size=sizes["l23_size"],
             l5_size=sizes["l5_size"],
+            l6a_size=l6a_size,
+            l6b_size=l6b_size,
             device="cpu",
         )
 
@@ -205,10 +217,12 @@ class TestRegionInitialization:
         """Test thalamus uses explicit sizes from config."""
         relay_size = 100
         sizes = compute_thalamus_sizes(relay_size)
+        n_neurons = sizes["relay_size"] + sizes["trn_size"]
 
         config = ThalamicRelayConfig(
             n_input=50,
             n_output=relay_size,
+            n_neurons=n_neurons,
             relay_size=sizes["relay_size"],
             trn_size=sizes["trn_size"],
             device="cpu",
@@ -228,6 +242,7 @@ class TestRegionInitialization:
         config = MultimodalIntegrationConfig(
             n_input=300,
             n_output=total_size,
+            n_neurons=total_size,
             visual_pool_size=sizes["visual_size"],
             auditory_pool_size=sizes["auditory_size"],
             language_pool_size=sizes["language_size"],
@@ -250,10 +265,12 @@ class TestRegionInitialization:
         """Test cerebellum uses explicit sizes from config."""
         purkinje_size = 100
         sizes = compute_cerebellum_sizes(purkinje_size)
+        n_neurons = sizes["granule_size"] + sizes["purkinje_size"]
 
         config = CerebellumConfig(
             n_input=50,
             n_output=purkinje_size,
+            n_neurons=n_neurons,
             granule_size=sizes["granule_size"],
             purkinje_size=sizes["purkinje_size"],
             use_enhanced_microcircuit=True,
@@ -275,6 +292,7 @@ class TestRegionInitialization:
         config = StriatumConfig(
             n_input=100,
             n_output=sizes["total_size"],
+            n_neurons=sizes["total_size"],
             d1_size=sizes["d1_size"],
             d2_size=sizes["d2_size"],
             n_actions=sizes["n_actions"],
