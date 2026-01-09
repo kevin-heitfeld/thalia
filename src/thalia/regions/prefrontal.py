@@ -421,6 +421,9 @@ class Prefrontal(NeuralRegion):
         # Override neurons to add STP (NeuralRegion creates basic neurons)
         self.neurons = self._create_neurons()
 
+        # Learning control (specific to prefrontal cortex)
+        self.plasticity_enabled: bool = True
+
         # Register feedforward input source and initialize weights
         self.add_input_source("default", n_input=config.n_input)
         # Initialize with Xavier (better than NeuralRegion's default)

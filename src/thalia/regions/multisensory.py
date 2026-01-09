@@ -214,6 +214,9 @@ class MultimodalIntegration(NeuralRegion):
             device=config.device,
         )
 
+        # Learning control (specific to multisensory integration)
+        self.plasticity_enabled: bool = True
+
         # =====================================================================
         # INPUT WEIGHTS (sensory → modality pools)
         # =====================================================================

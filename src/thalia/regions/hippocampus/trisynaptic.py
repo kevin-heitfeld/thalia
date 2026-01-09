@@ -232,6 +232,9 @@ class TrisynapticHippocampus(NeuralRegion):
         # Override n_output: Only CA1 neurons output (not DG/CA3)
         self.n_output = self.ca1_size
 
+        # Learning control (specific to hippocampus)
+        self.plasticity_enabled: bool = True
+
         # Oscillator phases and amplitudes managed by mixin properties
 
         # =====================================================================

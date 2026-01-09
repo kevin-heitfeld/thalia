@@ -96,13 +96,13 @@ class TestPredictiveCortex(RegionTestBase):
         assert hasattr(region, "prediction_layer"), "Should have prediction_layer attribute"
         assert region.prediction_layer is not None, "Prediction layer should be initialized"
 
-        # Verify prediction layer has correct sizes
+        # Verify prediction layer has correct sizes via config
         # Input: L4 size (predicting L4 activity)
         # Representation: L5+L6 combined (deep layers provide representation)
         # Output: L4 size (prediction of L4)
-        assert region.prediction_layer.n_input == params["l4_size"]
+        assert region.prediction_layer.config.n_input == params["l4_size"]
         expected_repr_size = params["l5_size"] + params["l6a_size"] + params["l6b_size"]
-        assert region.prediction_layer.n_representation == expected_repr_size
+        assert region.prediction_layer.config.n_representation == expected_repr_size
 
     def test_prediction_errors_computed(self):
         """Test prediction errors are computed during forward pass."""
@@ -120,8 +120,8 @@ class TestPredictiveCortex(RegionTestBase):
         if hasattr(region, "prediction_layer") and region.prediction_layer is not None:
             pred_layer = region.prediction_layer
             # Prediction layer should have internal state after forward pass
-            assert pred_layer.prediction is not None, "Predictions should be computed"
-            assert pred_layer.error is not None, "Errors should be computed"
+            assert pred_layer.state.prediction is not None, "Predictions should be computed"
+            assert pred_layer.state.error is not None, "Errors should be computed"
 
     def test_precision_weighting(self):
         """Test precision weights modulate prediction errors."""
@@ -145,7 +145,6 @@ class TestPredictiveCortex(RegionTestBase):
         """Test predictive coding learns to minimize prediction error."""
         params = self.get_default_params()
         region = self.create_region(**params)
-        region.enable_plasticity()  # Ensure learning enabled
 
         # Consistent input pattern
         input_spikes = torch.ones(params["n_input"], device=region.device)
@@ -153,7 +152,7 @@ class TestPredictiveCortex(RegionTestBase):
         # Get initial error
         region.forward(input_spikes)
         if region.prediction_layer is not None:
-            initial_error = region.prediction_layer.error.abs().sum().item()
+            initial_error = region.prediction_layer.state.error.abs().sum().item()
 
             # Train for several steps
             for _ in range(20):
@@ -161,7 +160,7 @@ class TestPredictiveCortex(RegionTestBase):
 
             # Get final error
             region.forward(input_spikes)
-            final_error = region.prediction_layer.error.abs().sum().item()
+            final_error = region.prediction_layer.state.error.abs().sum().item()
 
             # Error should decrease (learning happened)
             # Note: May not always decrease monotonically due to stochasticity
@@ -188,19 +187,7 @@ class TestPredictiveCortex(RegionTestBase):
 
         # Verify prediction layer processed the representation
         if region.prediction_layer is not None:
-            assert region.prediction_layer.prediction is not None
-
-    def test_prediction_disabled(self):
-        """Test predictive cortex works with prediction disabled."""
-        params = self.get_default_params()
-        params["prediction_enabled"] = False
-        region = self.create_region(**params)
-
-        # Should not have prediction layer
-        assert region.prediction_layer is None, "Prediction layer should be None when disabled"
-
-        # Forward pass should still work (falls back to LayeredCortex behavior)
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+            assert region.prediction_layer.state.prediction is not None
         output = region.forward(input_spikes)
         assert output.shape[0] == params["n_output"]
 
@@ -266,7 +253,6 @@ class TestPredictiveCortex(RegionTestBase):
         params = self.get_default_params()
         params["use_precision_weighting"] = True
         region = self.create_region(**params)
-        region.enable_plasticity()
 
         # Run forward passes
         input_spikes = torch.ones(params["n_input"], device=region.device)

@@ -170,9 +170,6 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
         # Track which sources have been added
         self.input_sources: Dict[str, int] = {}  # {source_name: n_input}
 
-        # Learning control
-        self.plasticity_enabled: bool = True
-
         # State
         self.output_spikes: Optional[torch.Tensor] = None
 
@@ -427,7 +424,6 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
                 name: weights.detach().cpu()
                 for name, weights in self.synaptic_weights.items()
             },
-            'plasticity_enabled': self.plasticity_enabled,
         }
         return state
 
@@ -453,9 +449,6 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
                 n_input = weights_cpu.shape[1]
                 self.add_input_source(name, n_input=n_input, learning_rule=None)
                 self.synaptic_weights[name].data = weights_cpu.to(self.device)
-
-        # Restore flags
-        self.plasticity_enabled = state.get('plasticity_enabled', True)
 
     def set_oscillator_phases(
         self,

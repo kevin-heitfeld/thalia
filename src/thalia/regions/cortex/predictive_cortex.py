@@ -80,8 +80,8 @@ import torch
 import torch.nn as nn
 
 from thalia.core.neural_region import NeuralRegion
+from thalia.core.region_state import BaseRegionState
 from thalia.managers.component_registry import register_region
-from thalia.regions.base import NeuralComponentState
 from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_coding import (
     PredictiveCodingLayer,
@@ -112,17 +112,24 @@ class PredictiveCortexConfig(LayeredCortexConfig):
 
 
 @dataclass
-class PredictiveCortexState(NeuralComponentState):
-    """State for predictive cortex.
+class PredictiveCortexState(BaseRegionState):
+    """State for predictive cortex with RegionState protocol compliance.
 
-    Extends NeuralComponentState with cortex-specific fields for layer spikes,
-    predictive coding, and attention.
+    Extends BaseRegionState with predictive cortex-specific fields:
+    - Layer-specific spike states (L4, L2/3, L5, L6a, L6b)
+    - Predictive coding state (prediction, error, precision, free energy)
+    - Attention weights
+    - Oscillator signals (for alpha suppression, theta modulation, etc.)
+
+    Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
+    inherited from BaseRegionState.
     """
     # Layer-specific spikes (cortex has L4→L2/3→L5+L6 microcircuit)
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
     l5_spikes: Optional[torch.Tensor] = None
-    l6_spikes: Optional[torch.Tensor] = None  # L6 is part of prediction neurons
+    l6a_spikes: Optional[torch.Tensor] = None
+    l6b_spikes: Optional[torch.Tensor] = None
 
     # Store original input for learning
     input_spikes: Optional[torch.Tensor] = None
@@ -140,6 +147,109 @@ class PredictiveCortexState(NeuralComponentState):
     # Note: Actual alpha gating happens in inner LayeredCortex
     _oscillator_phases: Optional[Dict[str, float]] = None
     _oscillator_signals: Optional[Dict[str, float]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize state to dictionary.
+
+        Returns:
+            Dictionary with all state fields
+        """
+        # Start with base fields (spikes, membrane, neuromodulators)
+        data = super().to_dict()
+
+        # Add predictive cortex-specific fields
+        data.update({
+            # Layer spikes
+            "l4_spikes": self.l4_spikes,
+            "l23_spikes": self.l23_spikes,
+            "l5_spikes": self.l5_spikes,
+            "l6a_spikes": self.l6a_spikes,
+            "l6b_spikes": self.l6b_spikes,
+            # Input
+            "input_spikes": self.input_spikes,
+            # Predictive coding
+            "prediction": self.prediction,
+            "error": self.error,
+            "precision": self.precision,
+            "free_energy": self.free_energy,
+            # Attention
+            "attention_weights": self.attention_weights,
+            # Oscillators (can be None)
+            "_oscillator_phases": self._oscillator_phases,
+            "_oscillator_signals": self._oscillator_signals,
+        })
+
+        return data
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+        device: str = "cpu",
+    ) -> "PredictiveCortexState":
+        """Deserialize state from dictionary.
+
+        Args:
+            data: Dictionary with state fields
+            device: Target device string (e.g., 'cpu', 'cuda', 'cuda:0')
+
+        Returns:
+            PredictiveCortexState instance with restored state
+        """
+        def transfer_tensor(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+            if t is None:
+                return None
+            return t.to(device)
+
+        return cls(
+            # Base region state
+            spikes=transfer_tensor(data.get("spikes")),
+            membrane=transfer_tensor(data.get("membrane")),
+            dopamine=data.get("dopamine", 0.2),
+            acetylcholine=data.get("acetylcholine", 0.0),
+            norepinephrine=data.get("norepinephrine", 0.0),
+            # Layer spikes
+            l4_spikes=transfer_tensor(data.get("l4_spikes")),
+            l23_spikes=transfer_tensor(data.get("l23_spikes")),
+            l5_spikes=transfer_tensor(data.get("l5_spikes")),
+            l6a_spikes=transfer_tensor(data.get("l6a_spikes")),
+            l6b_spikes=transfer_tensor(data.get("l6b_spikes")),
+            # Input
+            input_spikes=transfer_tensor(data.get("input_spikes")),
+            # Predictive coding
+            prediction=transfer_tensor(data.get("prediction")),
+            error=transfer_tensor(data.get("error")),
+            precision=transfer_tensor(data.get("precision")),
+            free_energy=data.get("free_energy", 0.0),
+            # Attention
+            attention_weights=transfer_tensor(data.get("attention_weights")),
+            # Oscillators
+            _oscillator_phases=data.get("_oscillator_phases"),
+            _oscillator_signals=data.get("_oscillator_signals"),
+        )
+
+    def reset(self) -> None:
+        """Reset state to initial conditions.
+
+        Clears all tensors and restores baseline neuromodulator levels.
+        """
+        # Reset base fields
+        super().reset()
+
+        # Reset predictive cortex-specific fields
+        self.l4_spikes = None
+        self.l23_spikes = None
+        self.l5_spikes = None
+        self.l6a_spikes = None
+        self.l6b_spikes = None
+        self.input_spikes = None
+        self.prediction = None
+        self.error = None
+        self.precision = None
+        self.free_energy = 0.0
+        self.attention_weights = None
+        self._oscillator_phases = None
+        self._oscillator_signals = None
 
 
 @register_region(
@@ -291,6 +401,8 @@ class PredictiveCortex(NeuralRegion):
                     device=config.device,
                 )
             )
+            # Ensure prediction layer is on correct device
+            self.prediction_layer.to(torch.device(config.device))
         else:
             self.prediction_layer = None
 
@@ -343,6 +455,8 @@ class PredictiveCortex(NeuralRegion):
             l4_spikes=self.cortex.state.l4_spikes,
             l23_spikes=self.cortex.state.l23_spikes,
             l5_spikes=self.cortex.state.l5_spikes,
+            l6a_spikes=self.cortex.state.l6a_spikes,
+            l6b_spikes=self.cortex.state.l6b_spikes,
         )
         self._total_free_energy = 0.0
         self._timesteps = 0
@@ -353,6 +467,60 @@ class PredictiveCortex(NeuralRegion):
         self._cumulative_l23_spikes = 0
         self._cumulative_l5_spikes = 0
         self._cumulative_l6_spikes = 0
+
+    def get_state(self) -> PredictiveCortexState:
+        """Get current predictive cortex state.
+
+        Returns state with all layer spikes synchronized from inner cortex.
+
+        Returns:
+            PredictiveCortexState with current layer activities
+        """
+        # Sync from inner cortex to ensure we have latest state
+        return PredictiveCortexState(
+            # Base neuromodulator levels (from inner cortex)
+            dopamine=self.cortex.state.dopamine,
+            acetylcholine=self.cortex.state.acetylcholine,
+            norepinephrine=self.cortex.state.norepinephrine,
+            # Layer spikes
+            l4_spikes=self.cortex.state.l4_spikes,
+            l23_spikes=self.cortex.state.l23_spikes,
+            l5_spikes=self.cortex.state.l5_spikes,
+            l6a_spikes=self.cortex.state.l6a_spikes,
+            l6b_spikes=self.cortex.state.l6b_spikes,
+            # Input and predictive coding state
+            input_spikes=self.state.input_spikes if hasattr(self.state, 'input_spikes') else None,
+        )
+
+    def set_neuromodulators(
+        self,
+        dopamine: Optional[float] = None,
+        norepinephrine: Optional[float] = None,
+        acetylcholine: Optional[float] = None,
+    ) -> None:
+        """Set neuromodulator levels.
+
+        Propagates to both PredictiveCortex state and inner cortex state
+        to ensure consistency.
+
+        Args:
+            dopamine: Dopamine level (reward signal)
+            norepinephrine: Norepinephrine level (arousal)
+            acetylcholine: Acetylcholine level (attention)
+        """
+        # Update own state via parent mixin
+        super().set_neuromodulators(
+            dopamine=dopamine,
+            norepinephrine=norepinephrine,
+            acetylcholine=acetylcholine,
+        )
+
+        # Propagate to inner cortex
+        self.cortex.set_neuromodulators(
+            dopamine=dopamine,
+            norepinephrine=norepinephrine,
+            acetylcholine=acetylcholine,
+        )
 
     def set_oscillator_phases(
         self,
@@ -432,15 +600,25 @@ class PredictiveCortex(NeuralRegion):
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
-        self.l6_size = self.cortex.l6a_size + self.cortex.l6b_size
+        self.l6a_size = self.cortex.l6a_size
+        self.l6b_size = self.cortex.l6b_size
+        self.l6_size = self.l6a_size + self.l6b_size
 
         # Update output size (note: _output_size initialized in __init__)
         self._output_size = self.l23_size + self.l5_size
+        # Total neurons across all layers
+        total_neurons = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
 
-        # Update parent config
+        # Update config with ALL size fields (required for validation)
         self.config = replace(
             self.config,
-            n_output=self._output_size
+            n_output=self._output_size,
+            n_neurons=total_neurons,
+            l4_size=self.l4_size,
+            l23_size=self.l23_size,
+            l5_size=self.l5_size,
+            l6a_size=self.l6a_size,
+            l6b_size=self.l6b_size,
         )
 
         # =====================================================================
@@ -527,13 +705,18 @@ class PredictiveCortex(NeuralRegion):
         l4_output = self.cortex.state.l4_spikes
         l23_output = self.cortex.state.l23_spikes
         l5_output = self.cortex.state.l5_spikes
-        l6_output = self.cortex.state.l6_spikes  # L6 is part of prediction neurons
+        # L6 is split into L6a and L6b - combine for prediction representation
+        l6a_output = self.cortex.state.l6a_spikes
+        l6b_output = self.cortex.state.l6b_spikes
+        l6_output = self.cortex.get_l6_spikes()  # Combined L6a + L6b
 
         # Store in state (including original input for learning)
         self.state.input_spikes = input_spikes
         self.state.l4_spikes = l4_output
         self.state.l23_spikes = l23_output
         self.state.l5_spikes = l5_output
+        self.state.l6a_spikes = l6a_output
+        self.state.l6b_spikes = l6b_output
 
         # Update cumulative spike counters (for diagnostics)
         if l4_output is not None:
