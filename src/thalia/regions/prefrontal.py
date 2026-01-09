@@ -951,6 +951,24 @@ class Prefrontal(NeuralRegion):
         # 7. Validate growth completed correctly
         self._validate_output_growth(old_n_output, n_new)
 
+    def grow_neurons(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow PFC neuron population (SEMANTIC API).
+
+        Args:
+            n_new: Number of PFC neurons to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity
+
+        Note:
+            Expands working memory capacity and cognitive control population.
+        """
+        self.grow_output(n_new, initialization, sparsity)
+
     def set_training_step(self, step: int) -> None:
         """Update the current training step for neurogenesis tracking.
 

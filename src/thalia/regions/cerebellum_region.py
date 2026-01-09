@@ -913,6 +913,33 @@ class Cerebellum(NeuralRegion):
         # instead of self.neurons, and classic mode already grew neurons
         self._validate_output_growth(old_n_output, n_new, check_neurons=not self.use_enhanced)
 
+    def grow_layer(
+        self,
+        layer_name: str,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow specific cerebellar layer (SEMANTIC API).
+
+        Args:
+            layer_name: Layer to grow ('purkinje', 'granule')
+            n_new: Number of neurons to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity
+
+        Note:
+            Currently only Purkinje cell growth supported (output layer).
+            Granule layer growth would require mossy fiber expansion.
+        """
+        if layer_name.lower() in ['purkinje', 'output']:
+            self.grow_output(n_new, initialization, sparsity)
+        else:
+            raise NotImplementedError(
+                f"Direct growth of {layer_name} not yet supported. "
+                f"Use grow_layer('purkinje', n) to grow Purkinje output."
+            )
+
     def forward(
         self,
         inputs: Union[Dict[str, torch.Tensor], torch.Tensor],

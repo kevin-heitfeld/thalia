@@ -1317,6 +1317,27 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         total_new_neurons = n_new_d1 + n_new_d2
         self._validate_output_growth(old_total_neurons, total_new_neurons, check_neurons=False)
 
+    def grow_actions(
+        self,
+        n_new: int,
+        initialization: str = 'xavier',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow action space by adding new actions (SEMANTIC API).
+
+        This is the semantic interface for striatum growth. Adds complete action
+        populations (n_new × neurons_per_action neurons total).
+
+        Args:
+            n_new: Number of new actions to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity for new neurons
+
+        Example:
+            >>> striatum.grow_actions(n_new=2)  # Add 2 actions
+        """
+        self.grow_output(n_new, initialization, sparsity)
+
     def grow_input(
         self,
         n_new: int,

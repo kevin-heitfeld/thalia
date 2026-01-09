@@ -997,6 +997,33 @@ class LayeredCortex(NeuralRegion):
             f"but grew by {actual_growth} (old={old_total_output}, new={new_total_output})"
         )
 
+    def grow_layer(
+        self,
+        layer_name: str,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow specific cortical layer (SEMANTIC API).
+
+        Args:
+            layer_name: Layer to grow ('L4', 'L23', 'L5', 'L6A', 'L6B', or 'output')
+            n_new: Number of neurons to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity
+
+        Note:
+            Use layer_name='output' to grow L2/3 and L5 proportionally (recommended).
+            Direct growth of individual layers not yet supported.
+        """
+        if layer_name.lower() in ['output', 'l23+l5']:
+            self.grow_output(n_new, initialization, sparsity)
+        else:
+            raise NotImplementedError(
+                f"Direct growth of {layer_name} not yet supported. "
+                f"Use grow_layer('output', n) to grow L2/3 + L5 proportionally."
+            )
+
     def grow_input(
         self,
         n_new: int,

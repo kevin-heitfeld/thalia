@@ -1496,6 +1496,24 @@ class ThalamicRelay(NeuralRegion):
             trn_size=new_n_trn,
         )
 
+    def grow_relay(
+        self,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow relay neuron population (SEMANTIC API).
+
+        Args:
+            n_new: Number of relay neurons to add
+            initialization: Weight init strategy
+            sparsity: Connection sparsity
+
+        Note:
+            Also grows TRN neurons proportionally to maintain current ratio.
+        """
+        self.grow_output(n_new, initialization, sparsity)
+
     def learn(
         self,
         input_spikes: torch.Tensor,

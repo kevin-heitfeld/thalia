@@ -1088,6 +1088,34 @@ class TrisynapticHippocampus(NeuralRegion):
         # (CA1 neurons are n_output, but DG/CA3/CA2 neurons scale differently)
         self._validate_output_growth(old_ca1_size, n_new, check_neurons=False)
 
+    def grow_layer(
+        self,
+        layer_name: str,
+        n_new: int,
+        initialization: str = 'sparse_random',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow specific hippocampal layer (SEMANTIC API).
+
+        Args:
+            layer_name: Layer to grow ('CA1', 'CA3', 'CA2', 'DG')
+            n_new: Number of neurons to add to the layer
+            initialization: Weight init strategy
+            sparsity: Connection sparsity
+
+        Note:
+            Currently only CA1 growth is supported (which triggers proportional
+            growth of all layers). Direct growth of individual layers would require
+            more complex weight matrix manipulation to maintain circuit topology.
+        """
+        if layer_name.upper() == 'CA1':
+            self.grow_output(n_new, initialization, sparsity)
+        else:
+            raise NotImplementedError(
+                f"Direct growth of {layer_name} not yet supported. "
+                f"Use grow_layer('CA1', n) to grow all layers proportionally."
+            )
+
     def grow_input(
         self,
         n_new: int,
