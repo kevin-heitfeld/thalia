@@ -81,7 +81,7 @@ class TestLayeredCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Provide input to L4
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
 
         # Forward pass
         output = region.forward(input_spikes)
@@ -104,14 +104,14 @@ class TestLayeredCortex(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
         top_down = torch.ones(params["l23_size"], device=region.device)
 
         # Forward with top-down modulation
         output = region.forward(input_spikes, top_down=top_down)
 
-        # Should not error
-        assert output.shape[0] == params["n_output"]
+        # Should not error - get output size from region config
+        assert output.shape[0] == self._get_config_output_size(region.config)
 
     def test_l6_feedback_to_thalamus(self):
         """Test L6 generates feedback for thalamus."""
@@ -119,7 +119,7 @@ class TestLayeredCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Verify L6 state exists
@@ -134,7 +134,7 @@ class TestLayeredCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run multiple forward passes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(5):
             region.forward(input_spikes)
 
@@ -151,7 +151,7 @@ class TestLayeredCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward passes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -169,7 +169,7 @@ class TestLayeredCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Verify gamma attention state exists
@@ -196,7 +196,7 @@ class TestLayeredCortex(RegionTestBase):
                 initial_weights[source] = weights.clone()
 
             # Run multiple forward passes with active input
-            input_spikes = torch.ones(params["n_input"], device=region.device)
+            input_spikes = torch.ones(self._get_input_size(params), device=region.device)
             for _ in range(100):
                 region.forward(input_spikes)
 
@@ -210,4 +210,3 @@ class TestLayeredCortex(RegionTestBase):
             # With continuous active input, weights should change
             # (unless learning rate is zero, which is not default)
             assert weights_changed, "Expected weight changes from continuous plasticity"
-

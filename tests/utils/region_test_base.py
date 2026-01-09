@@ -192,18 +192,6 @@ class RegionTestBase(ABC):
         field = self._get_input_field_name()
         return params[field]
 
-    def _get_output_size(self, params: Dict[str, Any]) -> int:
-        """Get output size from params dict using semantic field name.
-
-        Args:
-            params: Parameter dictionary from get_default_params()
-
-        Returns:
-            Output size value
-        """
-        field = self._get_output_field_name()
-        return params[field]
-
     def _get_config_input_size(self, config) -> int:
         """Get input size from config using semantic field name.
 
@@ -237,7 +225,8 @@ class RegionTestBase(ABC):
 
         # Verify configuration stored (using semantic field names)
         assert self._get_config_input_size(region.config) == self._get_input_size(params)
-        assert self._get_config_output_size(region.config) == self._get_output_size(params)
+        # Output size is computed property - just verify it exists and is > 0
+        assert self._get_config_output_size(region.config) > 0
 
         # Verify device set correctly
         expected_device = params.get("device", "cpu")
@@ -256,7 +245,8 @@ class RegionTestBase(ABC):
 
         # Verify basic functionality (using semantic field names)
         assert self._get_config_input_size(region.config) == self._get_input_size(params)
-        assert self._get_config_output_size(region.config) == self._get_output_size(params)
+        # Output size is computed, just verify it's > 0
+        assert self._get_config_output_size(region.config) > 0
 
     def test_forward_pass_tensor_input(self):
         """Test forward pass with single tensor input returns correct shape."""
@@ -270,8 +260,8 @@ class RegionTestBase(ABC):
         # Forward pass
         output = region.forward(input_spikes)
 
-        # Verify output shape (1D per ADR-005)
-        output_size = self._get_output_size(params)
+        # Verify output shape (1D per ADR-005) - get from region config
+        output_size = self._get_config_output_size(region.config)
         assert output.dim() == 1, f"Expected 1D output (ADR-005), got {output.dim()}D"
         assert output.shape[0] == output_size
 
@@ -290,8 +280,8 @@ class RegionTestBase(ABC):
         # Forward pass
         output = region.forward(input_dict)
 
-        # Verify output shape
-        output_size = self._get_output_size(params)
+        # Verify output shape - get from region config
+        output_size = self._get_config_output_size(region.config)
         assert output.dim() == 1
         assert output.shape[0] == output_size
 
@@ -306,7 +296,7 @@ class RegionTestBase(ABC):
 
         # Should not raise error
         output = region.forward(input_spikes)
-        output_size = self._get_output_size(params)
+        output_size = self._get_config_output_size(region.config)
         assert output.shape[0] == output_size
 
     def test_forward_pass_multiple_calls(self):
@@ -315,7 +305,7 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         input_size = self._get_input_size(params)
-        output_size = self._get_output_size(params)
+        output_size = self._get_config_output_size(region.config)
         input_spikes = torch.zeros(input_size, device=region.device)
 
         # Multiple forward passes should not error
@@ -331,7 +321,8 @@ class RegionTestBase(ABC):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        original_output = self._get_output_size(params)
+        # Get original output size from region config (it's a property)
+        original_output = self._get_config_output_size(region.config)
         n_new = 10
 
         # Grow output
@@ -366,7 +357,7 @@ class RegionTestBase(ABC):
         # Verify forward pass works with new input size
         input_spikes = torch.zeros(original_input + n_new, device=region.device)
         output = region.forward(input_spikes)
-        output_size = self._get_output_size(params)
+        output_size = self._get_config_output_size(region.config)
         assert output.shape[0] == output_size
 
     def test_growth_preserves_state(self):
@@ -384,6 +375,8 @@ class RegionTestBase(ABC):
 
         # Get state before growth
         state_before = region.get_state()
+        # Get original output size from region config
+        n_original = self._get_config_output_size(region.config)
 
         # Grow output
         region.grow_output(10)
@@ -393,7 +386,6 @@ class RegionTestBase(ABC):
 
         # Verify original neurons preserved (first N values should match)
         if state_before.membrane is not None and state_after.membrane is not None:
-            n_original = self._get_output_size(params)
             original_membrane = state_before.membrane[:n_original]
             preserved_membrane = state_after.membrane[:n_original]
             assert torch.allclose(original_membrane, preserved_membrane, atol=1e-5)

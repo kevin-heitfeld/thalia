@@ -976,11 +976,9 @@ class LayeredCortex(NeuralRegion):
         new_total_neurons = new_l4_size + new_l23_size + new_l5_size + new_l6a_size + new_l6b_size
         old_total_output = old_l23_size + old_l5_size
 
-        # Update config with all new sizes
+        # Update config with all new layer sizes (output_size/total_neurons are computed properties)
         self.config = replace(
             self.config,
-            n_output=new_total_output,
-            n_neurons=new_total_neurons,
             l4_size=new_l4_size,
             l23_size=new_l23_size,
             l5_size=new_l5_size,
@@ -1071,8 +1069,7 @@ class LayeredCortex(NeuralRegion):
         )
 
         # Update config
-        self.config = replace(self.config, n_input=new_n_input)
-        self.config = replace(self.config, n_input=new_n_input)
+        self.config = replace(self.config, input_size=new_n_input)
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)

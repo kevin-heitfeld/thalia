@@ -92,13 +92,13 @@ class TestCerebellum(RegionTestBase):
         output = region.forward(input_spikes)
 
         # Output should match Purkinje cell count
-        assert output.shape[0] == self._get_output_size(params)
+        assert output.shape[0] == self._get_config_output_size(region.config)
 
         # Check Purkinje activity in state
         state = region.get_state()
         if hasattr(state, "purkinje_spikes"):
             if state.purkinje_spikes is not None:
-                assert state.purkinje_spikes.shape[0] == self._get_output_size(params)
+                assert state.purkinje_spikes.shape[0] == self._get_config_output_size(region.config)
 
     def test_climbing_fiber_error_signal(self):
         """Test climbing fiber provides error signal for learning."""
@@ -110,13 +110,13 @@ class TestCerebellum(RegionTestBase):
 
         # Check if region accepts error signal
         if "error_signal" in region.forward.__code__.co_varnames:
-            error = torch.ones(self._get_output_size(params), device=region.device) * 0.5
+            error = torch.ones(self._get_config_output_size(region.config), device=region.device) * 0.5
             output = region.forward(input_spikes, error_signal=error)
-            assert output.shape[0] == self._get_output_size(params)
+            assert output.shape[0] == self._get_config_output_size(region.config)
         else:
             # Just verify forward works without error
             output = region.forward(input_spikes)
-            assert output.shape[0] == self._get_output_size(params)
+            assert output.shape[0] == self._get_config_output_size(region.config)
 
     def test_parallel_fiber_plasticity(self):
         """Test LTD/LTP at parallel fiber → Purkinje synapses."""
@@ -194,7 +194,7 @@ class TestCerebellum(RegionTestBase):
                 input_spikes = torch.ones(self._get_input_size(params), device=region.device)
 
             output = region.forward(input_spikes)
-            assert output.shape[0] == self._get_output_size(params)
+            assert output.shape[0] == self._get_config_output_size(region.config)
 
         # Cerebellum should have processed temporal pattern
         # (Detailed timing tests would require monitoring predictions)
@@ -251,7 +251,7 @@ class TestCerebellum(RegionTestBase):
         if hasattr(state, "complex_spikes"):
             # Complex spikes should be tracked
             if state.complex_spikes is not None:
-                assert state.complex_spikes.shape[0] == self._get_output_size(params)
+                assert state.complex_spikes.shape[0] == self._get_config_output_size(region.config)
 
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
