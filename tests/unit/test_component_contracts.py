@@ -22,7 +22,7 @@ from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 # Component factories - only using simple components that share contracts
 def create_thalamus():
     """Create thalamic relay with minimal config."""
-    config = ThalamicRelayConfig(n_input=100, n_output=80, device="cpu")
+    config = ThalamicRelayConfig(input_size=100, relay_size=80, trn_size=20, device="cpu")
     return ThalamicRelay(config)
 
 
