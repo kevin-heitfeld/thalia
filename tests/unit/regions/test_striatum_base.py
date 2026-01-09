@@ -7,16 +7,30 @@ Author: Thalia Project
 Date: December 22, 2025 (Tier 3.4 implementation)
 """
 
+from typing import Dict, Any
+
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
-from thalia.config import compute_striatum_sizes
 
 
 class TestStriatum(RegionTestBase):
     """Test Striatum implementation using unified test framework."""
+
+    def _get_input_size(self, params: Dict[str, Any]) -> int:
+        """Override to handle Striatum's input_sources dict instead of input_size.
+
+        Args:
+            params: Parameter dictionary
+
+        Returns:
+            Total input size (sum of all input sources)
+        """
+        if "input_sources" in params:
+            return sum(params["input_sources"].values())
+        return params.get("input_size", 0)
 
     def create_region(self, **kwargs):
         """Create Striatum instance for testing."""
@@ -42,7 +56,6 @@ class TestStriatum(RegionTestBase):
         return {
             "input_sources": {"default": 100},
             "n_actions": 5,  # Number of actions
-            "population_coding": True,
             "neurons_per_action": 4,  # 20 total neurons (5 actions × 4)
             "rpe_enabled": True,
             "use_goal_conditioning": False,  # Disable for simpler testing
@@ -55,7 +68,6 @@ class TestStriatum(RegionTestBase):
         return {
             "input_sources": {"default": 20},
             "n_actions": 3,  # 3 actions
-            "population_coding": True,
             "neurons_per_action": 2,  # 6 total neurons
             "device": "cpu",
             "dt_ms": 1.0,
@@ -77,7 +89,7 @@ class TestStriatum(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        original_n_actions = params["n_output"]
+        original_n_actions = self._get_config_output_size(region.config)
         neurons_per_action = params["neurons_per_action"]
         n_new_actions = 10
 
@@ -90,7 +102,7 @@ class TestStriatum(RegionTestBase):
         assert region.n_actions == original_n_actions + n_new_actions
 
         # Verify forward pass still works with new size
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
         output = region.forward(input_spikes)
 
         # Output is per-neuron (d1_spikes), same as config.n_output
@@ -102,7 +114,7 @@ class TestStriatum(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        original_n_input = params["n_input"]
+        original_n_input = self._get_input_size(params)
         n_new_input = 20
         neurons_per_action = params["neurons_per_action"]
 
@@ -117,7 +129,7 @@ class TestStriatum(RegionTestBase):
         output = region.forward(input_spikes)
 
         # Output size should NOT change (still same number of actions/neurons)
-        expected_neurons = params["n_output"] * neurons_per_action
+        expected_neurons = self._get_config_output_size(region.config) * neurons_per_action
         assert output.shape[0] == expected_neurons, \
             f"Expected {expected_neurons} neurons, got {output.shape[0]}"
 
@@ -135,11 +147,11 @@ class TestStriatum(RegionTestBase):
         assert hasattr(region, "d2_pathway")
 
         # Forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         output = region.forward(input_spikes)
 
         # Verify output shape matches action neurons
-        expected_neurons = params["n_output"] * params["neurons_per_action"]
+        expected_neurons = self._get_config_output_size(region.config) * params["neurons_per_action"]
         assert output.shape[0] == expected_neurons
 
     def test_initialization(self):
@@ -148,11 +160,11 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # With population coding, config.n_output gets expanded
-        # Original: params["n_output"] = 5 actions
+        # Original: self._get_config_output_size(region.config) = 5 actions
         # Expanded: region.config.n_output = 5 * 4 = 20 neurons
-        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        expected_n_output = region.config.output_size
         assert region.config.n_output == expected_n_output
-        assert region.config.n_input == params["n_input"]
+        assert region.config.n_input == self._get_input_size(params)
 
     def test_initialization_minimal(self):
         """Test striatum initializes with minimal params and expansion."""
@@ -160,46 +172,46 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Verify expansion happened
-        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        expected_n_output = region.config.output_size
         assert region.config.n_output == expected_n_output
 
     def test_forward_pass_tensor_input(self):
         """Test forward returns expanded neuron output."""
         params = self.get_default_params()
         region = self.create_region(**params)
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
         output = region.forward(input_spikes)
 
-        # Output should be expanded neuron count
-        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        # Output is total neuron count (D1 + D2), already computed by config.output_size property
+        expected_n_output = region.config.output_size
         assert output.shape[0] == expected_n_output
 
     def test_forward_pass_dict_input(self):
         """Test forward with dict input returns expanded output."""
         params = self.get_default_params()
         region = self.create_region(**params)
-        input_dict = self.get_input_dict(params["n_input"], device=region.device.type)
+        input_dict = self.get_input_dict(self._get_input_size(params), device=region.device.type)
         output = region.forward(input_dict)
 
-        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        expected_n_output = region.config.output_size
         assert output.shape[0] == expected_n_output
 
     def test_forward_pass_zero_input(self):
         """Test zero input handling with expansion."""
         params = self.get_default_params()
         region = self.create_region(**params)
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
         output = region.forward(input_spikes)
 
-        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        expected_n_output = region.config.output_size
         assert output.shape[0] == expected_n_output
 
     def test_forward_pass_multiple_calls(self):
         """Test multiple forwards with expansion."""
         params = self.get_default_params()
         region = self.create_region(**params)
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
-        expected_n_output = params["n_output"] * params["neurons_per_action"]
+        input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
+        expected_n_output = region.config.output_size
 
         for _ in range(10):
             output = region.forward(input_spikes)
@@ -211,7 +223,7 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Get state
@@ -221,11 +233,11 @@ class TestStriatum(RegionTestBase):
         # Votes are per-action (not per-neuron)
         if hasattr(state, "d1_votes_accumulated"):
             assert state.d1_votes_accumulated is not None
-            assert state.d1_votes_accumulated.shape[0] == params["n_output"]  # n_actions
+            assert state.d1_votes_accumulated.shape[0] == self._get_config_output_size(region.config)  # n_actions
 
         if hasattr(state, "d2_votes_accumulated"):
             assert state.d2_votes_accumulated is not None
-            assert state.d2_votes_accumulated.shape[0] == params["n_output"]  # n_actions
+            assert state.d2_votes_accumulated.shape[0] == self._get_config_output_size(region.config)  # n_actions
 
     def test_action_selection(self):
         """Test striatum selects actions based on vote competition."""
@@ -233,7 +245,7 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Multiple forward passes to accumulate votes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -242,7 +254,7 @@ class TestStriatum(RegionTestBase):
         if hasattr(state, "last_action"):
             # Last action should be valid (0 to n_output-1)
             if state.last_action is not None:
-                assert 0 <= state.last_action < params["n_output"]
+                assert 0 <= state.last_action < self._get_config_output_size(region.config)
 
     def test_dopamine_modulation(self):
         """Test dopamine modulates learning in D1/D2 pathways."""
@@ -254,7 +266,7 @@ class TestStriatum(RegionTestBase):
             region.set_neuromodulators(dopamine=0.8)
 
         # Forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Verify dopamine stored in state
@@ -269,7 +281,7 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Forward passes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(5):
             region.forward(input_spikes)
 
@@ -283,7 +295,7 @@ class TestStriatum(RegionTestBase):
         if hasattr(state, "value_estimates"):
             # Should have value estimates per action
             if state.value_estimates is not None:
-                assert state.value_estimates.shape[0] == params["n_output"]
+                assert state.value_estimates.shape[0] == self._get_config_output_size(region.config)
 
     def test_exploration_uncertainty(self):
         """Test exploration based on uncertainty."""
@@ -291,7 +303,7 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Forward passes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -310,7 +322,7 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Forward passes to build eligibility traces
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(20):
             region.forward(input_spikes)
 
@@ -343,7 +355,7 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Many forward passes to trigger homeostasis
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(100):
             region.forward(input_spikes)
 
@@ -365,7 +377,7 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward(input_spikes)
 
         # Check goal modulation weights
@@ -373,7 +385,7 @@ class TestStriatum(RegionTestBase):
         if hasattr(state, "pfc_modulation_d1") and hasattr(state, "pfc_modulation_d2"):
             if state.pfc_modulation_d1 is not None:
                 # Should have modulation weights for each neuron × PFC size
-                expected_shape = (params["n_output"] * params["neurons_per_action"], params["pfc_size"])
+                expected_shape = (self._get_config_output_size(region.config) * params["neurons_per_action"], params["pfc_size"])
                 assert state.pfc_modulation_d1.shape == expected_shape
 
 

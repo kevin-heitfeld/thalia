@@ -101,7 +101,6 @@ See: docs/decisions/adr-011-large-file-justification.md
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Optional, Dict, Any, List, Union
 import weakref
 
@@ -1154,24 +1153,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.n_actions += n_new
         new_d1_size = self.config.d1_size + n_new_d1
         new_d2_size = self.config.d2_size + n_new_d2
-        new_total_neurons = new_d1_size + new_d2_size
 
-        self.config = replace(
-            self.config,
-            n_output=new_total_neurons,  # Total neurons (d1+d2)
-            n_neurons=new_total_neurons,  # Must match for validation
-            d1_size=new_d1_size,
-            d2_size=new_d2_size,
-            n_actions=self.n_actions,
-        )
-        self.config = replace(
-            self.config,
-            n_output=new_total_neurons,  # Total neurons (d1+d2)
-            n_neurons=new_total_neurons,  # Must match for validation
-            d1_size=new_d1_size,
-            d2_size=new_d2_size,
-            n_actions=self.n_actions,
-        )
+        # Update config with new pathway sizes (output_size/total_neurons are computed properties)
+        # Note: d1_size/d2_size are init=False fields, must use object.__setattr__()
+        object.__setattr__(self.config, "n_actions", self.n_actions)
+        object.__setattr__(self.config, "d1_size", new_d1_size)
+        object.__setattr__(self.config, "d2_size", new_d2_size)
 
         # Update elastic tensor capacity tracking (Phase 1)
         self.n_neurons_active = new_n_neurons
@@ -1383,8 +1370,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if self.td_lambda_d2 is not None:
             self.td_lambda_d2.grow_input(n_new)
 
-        # Update striatum config
-        self.config = replace(self.config, n_input=new_n_input)
+        # Update striatum config - note: striatum uses input_sources dict, not simple input_size
+        # total_input is computed from input_sources in __post_init__
+        # We need to update input_sources to reflect the new size
+        # For now, update the total_input field directly (striatum is special case)
+        object.__setattr__(self.config, "total_input", new_n_input)
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)

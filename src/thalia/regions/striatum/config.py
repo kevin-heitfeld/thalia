@@ -77,9 +77,6 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     d2_size: int = field(init=False)
     """Total D2 MSN neurons (computed from n_actions × d2_neurons_per_action)."""
 
-    total_neurons: int = field(init=False)
-    """Total neurons (d1_size + d2_size)."""
-
     total_input: int = field(init=False)
     """Total input dimension (sum of all input sources)."""
 
@@ -195,7 +192,6 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
         # Set computed dimensions
         object.__setattr__(self, "d1_size", sizes["d1_size"])
         object.__setattr__(self, "d2_size", sizes["d2_size"])
-        object.__setattr__(self, "total_neurons", sizes["total_size"])
 
         # Compute total input from sources
         if not self.input_sources:
@@ -222,14 +218,29 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
         if self.n_actions == 0:
             raise ValueError("n_actions must be > 0")
 
-        if self.total_neurons != self.d1_size + self.d2_size:
-            raise ValueError(
-                f"total_neurons ({self.total_neurons}) must equal d1_size + d2_size ({self.d1_size + self.d2_size})"
-            )
-
         # Note: neurons_per_action is the TOTAL per action, but D1 and D2 pathways
         # each need at least 1 neuron. So actual total is max(neurons_per_action, 2) per action.
         # This is enforced by compute_striatum_sizes().
+
+    @property
+    def output_size(self) -> int:
+        """Total output neurons (D1 + D2 pathway neurons)."""
+        return self.d1_size + self.d2_size
+
+    @property
+    def total_neurons(self) -> int:
+        """Total neurons in striatum (D1 + D2)."""
+        return self.d1_size + self.d2_size
+
+    @property
+    def n_input(self) -> int:
+        """Backward compatibility: total input dimension."""
+        return self.total_input
+
+    @property
+    def n_output(self) -> int:
+        """Backward compatibility: total output neurons."""
+        return self.output_size
 
     @classmethod
     def from_n_actions(
