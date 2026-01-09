@@ -304,8 +304,8 @@ class TestRegionInitialization:
         striatum = Striatum(config)
 
         # Check sizes stored in config
-        assert striatum.striatum_config.d1_size == sizes["d1_size"]
-        assert striatum.striatum_config.d2_size == sizes["d2_size"]
+        assert striatum.config.d1_size == sizes["d1_size"]
+        assert striatum.config.d2_size == sizes["d2_size"]
         assert striatum.n_actions == sizes["n_actions"]
         assert striatum.neurons_per_action == sizes["neurons_per_action"]
 
@@ -437,8 +437,8 @@ class TestGrowthMethods:
         )
 
         striatum = Striatum(config)
-        initial_d1 = striatum.striatum_config.d1_size
-        initial_d2 = striatum.striatum_config.d2_size
+        initial_d1 = striatum.config.d1_size
+        initial_d2 = striatum.config.d2_size
         initial_total = initial_d1 + initial_d2
 
         # Grow output (add 1 action = 10 neurons)
@@ -448,8 +448,8 @@ class TestGrowthMethods:
         # Check config fields updated
         # New total = initial + (neurons_per_action * n_new)
         new_total = initial_total + (neurons_per_action * n_new)
-        new_d1 = striatum.striatum_config.d1_size
-        new_d2 = striatum.striatum_config.d2_size
+        new_d1 = striatum.config.d1_size
+        new_d2 = striatum.config.d2_size
 
         # Verify growth happened
         assert new_d1 > initial_d1
@@ -459,9 +459,6 @@ class TestGrowthMethods:
         # Verify configs match
         assert striatum.config.d1_size == new_d1
         assert striatum.config.d2_size == new_d2
-        assert striatum.striatum_config.d1_size == new_d1
-        assert striatum.striatum_config.d2_size == new_d2
-        assert striatum.striatum_config.d2_size == new_d2
 
 
 class TestEdgeCases:

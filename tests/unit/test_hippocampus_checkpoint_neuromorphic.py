@@ -25,9 +25,11 @@ def small_hippocampus(device):
     """Small hippocampus for testing."""
     config = HippocampusConfig(
         n_input=4,  # Small input
-        n_output=8,  # 8 CA1 neurons
-        dg_expansion=3.75,  # 4 * 3.75 = 15 DG neurons
-        ca3_size_ratio=0.667,  # 15 * 0.667 ≈ 10 CA3 neurons
+        n_output=8,  # 8 CA1 neurons (explicit)
+        dg_size=15,  # Explicit DG size
+        ca3_size=10,  # Explicit CA3 size
+        ca2_size=9,  # Explicit CA2 size (between CA3 and CA1)
+        ca1_size=8,  # Explicit CA1 size (matches n_output)
         device=device,
     )
     hippo = TrisynapticHippocampus(config)

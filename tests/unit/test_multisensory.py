@@ -25,10 +25,10 @@ def multimodal_config(device):
         visual_input_size=30,
         auditory_input_size=30,
         language_input_size=40,
-        visual_pool_ratio=0.3,
-        auditory_pool_ratio=0.3,
-        language_pool_ratio=0.2,
-        integration_pool_ratio=0.2,
+        visual_pool_size=25,  # Must sum to n_output
+        auditory_pool_size=25,
+        language_pool_size=25,
+        integration_pool_size=25,  # 25+25+25+25 = 100
         device=str(device),
         dt_ms=1.0,
     )
@@ -43,7 +43,7 @@ def multimodal_region(multimodal_config):
 
 
 def test_multimodal_config_validation():
-    """Test config validation for pool ratios."""
+    """Test config validation for pool sizes."""
     # Should work
     config = MultimodalIntegrationConfig(
         n_input=100,
@@ -51,47 +51,40 @@ def test_multimodal_config_validation():
         visual_input_size=30,
         auditory_input_size=30,
         language_input_size=40,
-        visual_pool_ratio=0.25,
-        auditory_pool_ratio=0.25,
-        language_pool_ratio=0.25,
-        integration_pool_ratio=0.25,
+        visual_pool_size=25,
+        auditory_pool_size=25,
+        language_pool_size=25,
+        integration_pool_size=25,
         device="cpu",
     )
     region = MultimodalIntegration(config)
     # Contract: should successfully create region with valid config
 
-    # Should fail (ratios don't sum to 1)
+    # Should fail (sizes don't sum to n_output)
     bad_config = MultimodalIntegrationConfig(
         n_input=100,
         n_output=100,
         visual_input_size=30,
         auditory_input_size=30,
         language_input_size=40,
-        visual_pool_ratio=0.5,
-        auditory_pool_ratio=0.5,
-        language_pool_ratio=0.5,
-        integration_pool_ratio=0.5,
+        visual_pool_size=50,
+        auditory_pool_size=50,
+        language_pool_size=50,
+        integration_pool_size=50,
         device="cpu",
     )
 
-    with pytest.raises(ValueError, match="Pool ratios must sum"):
+    with pytest.raises(ValueError, match="Pool sizes must sum"):
         MultimodalIntegration(bad_config)
 
 
 def test_multimodal_pool_sizes(multimodal_region, multimodal_config):
-    """Test pool size calculations match configured ratios."""
-    # Contract: pool sizes should match configured ratios of n_output
-    expected_visual = int(multimodal_config.n_output * multimodal_config.visual_pool_ratio)
-    expected_auditory = int(multimodal_config.n_output * multimodal_config.auditory_pool_ratio)
-    expected_language = int(multimodal_config.n_output * multimodal_config.language_pool_ratio)
-    expected_integration = (
-        multimodal_config.n_output - expected_visual - expected_auditory - expected_language
-    )
-
-    assert multimodal_region.visual_pool_size == expected_visual
-    assert multimodal_region.auditory_pool_size == expected_auditory
-    assert multimodal_region.language_pool_size == expected_language
-    assert multimodal_region.integration_pool_size == expected_integration
+    """Test pool sizes match configuration."""
+    # Contract: pool sizes should match configured values
+    assert multimodal_region.visual_pool_size == multimodal_config.visual_pool_size
+    assert multimodal_region.auditory_pool_size == multimodal_config.auditory_pool_size
+    assert multimodal_region.language_pool_size == multimodal_config.language_pool_size
+    assert multimodal_region.integration_pool_size == multimodal_config.integration_pool_size
 
     # Contract: pools should sum to total output
     total_pool = (

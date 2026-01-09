@@ -300,10 +300,24 @@ def compute_striatum_sizes(
 
     Returns:
         Dict with d1_size, d2_size, total_size, n_actions, neurons_per_action
+
+    Note:
+        With neurons_per_action=1, each action still gets 1 neuron in D1 and 1 in D2
+        (total 2 neurons per action). The d1_d2_ratio is applied when neurons_per_action >= 2.
     """
-    total_size = n_actions * neurons_per_action
-    d1_size = int(total_size * d1_d2_ratio)
-    d2_size = total_size - d1_size  # Ensure they sum exactly
+    if neurons_per_action == 1:
+        # Special case: minimum 1 neuron per pathway per action
+        d1_neurons_per_action = 1
+        d2_neurons_per_action = 1
+    else:
+        # Split neurons per action between D1 and D2
+        d1_neurons_per_action = max(1, int(neurons_per_action * d1_d2_ratio))
+        d2_neurons_per_action = max(1, neurons_per_action - d1_neurons_per_action)
+
+    # Total neurons in each pathway
+    d1_size = n_actions * d1_neurons_per_action
+    d2_size = n_actions * d2_neurons_per_action
+    total_size = d1_size + d2_size
 
     return {
         "d1_size": d1_size,

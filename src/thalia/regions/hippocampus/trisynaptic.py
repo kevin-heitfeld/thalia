@@ -229,9 +229,6 @@ class TrisynapticHippocampus(NeuralRegion):
             dt_ms=config.dt_ms,
         )
 
-        # Override n_output: Only CA1 neurons output (not DG/CA3)
-        self.n_output = self.ca1_size
-
         # Learning control (specific to hippocampus)
         self.plasticity_enabled: bool = True
 
@@ -315,8 +312,8 @@ class TrisynapticHippocampus(NeuralRegion):
             # Initial input is strongest - matched comparison happens on first
             # presentation before adaptation kicks in
             # Use ec_l3_input_size if set (for separate raw sensory input),
-            # otherwise fall back to n_input
-            ec_ca1_input_size = config.ec_l3_input_size if config.ec_l3_input_size > 0 else config.n_input
+            # otherwise fall back to input_size
+            ec_ca1_input_size = config.ec_l3_input_size if config.ec_l3_input_size > 0 else config.input_size
             self.stp_ec_ca1 = ShortTermPlasticity(
                 n_pre=ec_ca1_input_size,
                 n_post=self.ca1_size,
@@ -366,7 +363,7 @@ class TrisynapticHippocampus(NeuralRegion):
             # EC→CA2 Direct: DEPRESSION - similar to EC→CA1
             # Direct cortical input to CA2 for temporal encoding
             self.stp_ec_ca2 = ShortTermPlasticity(
-                n_pre=config.n_input,
+                n_pre=config.input_size,
                 n_post=self.ca2_size,
                 config=get_stp_config("ec_ca1", dt=1.0),  # Use EC→CA1 preset (depressing)
                 per_synapse=True,
@@ -499,7 +496,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 strategy=HERStrategy[config.her_strategy.upper()],
                 k_hindsight=config.her_k_hindsight,
                 replay_ratio=config.her_replay_ratio,
-                goal_dim=config.n_output,  # Use output size as goal dimension
+                goal_dim=config.output_size,  # Use output size as goal dimension
                 goal_tolerance=config.her_goal_tolerance,
                 buffer_size=config.her_buffer_size,
                 device=config.device,
@@ -524,7 +521,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights created in _init_circuit_weights."""
-        return nn.Parameter(torch.zeros(self.config.n_output, self.config.n_input))
+        return nn.Parameter(torch.zeros(self.config.output_size, self.config.input_size))
 
     def _create_neurons(self):
         """Placeholder - neurons created in __init__."""
@@ -538,13 +535,13 @@ class TrisynapticHippocampus(NeuralRegion):
         # EXTERNAL WEIGHTS: Move to synaptic_weights dict (NeuralRegion pattern)
         # =====================================================================
         # Register external input source and create synaptic weights
-        self.add_input_source("ec", n_input=self.config.n_input)
+        self.add_input_source("ec", n_input=self.config.input_size)
 
         # EC → DG: Random sparse projections (pattern separation)
         self.synaptic_weights["ec_dg"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.dg_size,
-                n_input=self.config.n_input,
+                n_input=self.config.input_size,
                 sparsity=0.3,  # 30% connectivity
                 weight_scale=0.5,  # Strong weights for propagation
                 normalize_rows=True,  # Normalize for reliable propagation
@@ -556,7 +553,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca3"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca3_size,
-                n_input=self.config.n_input,
+                n_input=self.config.input_size,
                 sparsity=0.4,  # Less sparse than DG path
                 weight_scale=0.3,  # Weaker than DG→CA3
                 normalize_rows=True,
@@ -568,7 +565,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca1"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca1_size,
-                n_input=self.config.n_input,
+                n_input=self.config.input_size,
                 sparsity=0.20,  # Each CA1 sees only 20% of EC
                 weight_scale=0.3,  # Strong individual weights
                 normalize_rows=False,  # NO normalization - pattern-specific!
@@ -656,7 +653,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca2"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca2_size,
-                n_input=self.config.n_input,
+                n_input=self.config.input_size,
                 sparsity=0.3,  # Similar to EC→CA3
                 weight_scale=0.4,  # Strong direct encoding
                 normalize_rows=True,
@@ -1112,7 +1109,7 @@ class TrisynapticHippocampus(NeuralRegion):
             >>> cortex_to_hippocampus.grow_output(20)
             >>> hippocampus.grow_input(20)  # Expand EC input weights
         """
-        old_n_input = self.config.n_input
+        old_n_input = self.config.input_size
         new_n_input = old_n_input + n_new
 
         # Expand EC→DG weights [dg, input] → [dg, input+n_new]
@@ -1158,7 +1155,7 @@ class TrisynapticHippocampus(NeuralRegion):
             )
 
         # Grow STP modules that receive EC input (n_pre must expand)
-        # Note: stp_ec_ca1 uses ec_l3_input_size if set, otherwise config.n_input
+        # Note: stp_ec_ca1 uses ec_l3_input_size if set, otherwise config.input_size
         if self.stp_ec_ca1 is not None and self.config.ec_l3_input_size == 0:
             self.stp_ec_ca1.grow(n_new, target='pre')
 
@@ -1211,7 +1208,7 @@ class TrisynapticHippocampus(NeuralRegion):
             port_mapping={
                 "ec": ["ec", "cortex", "input", "default"],
             },
-            defaults={"ec": torch.zeros(self.config.n_input, device=self.device)},
+            defaults={"ec": torch.zeros(self.config.input_size, device=self.device)},
             component_name="TrisynapticHippocampus",
         )
         input_spikes = routed["ec"]
@@ -1229,9 +1226,9 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        assert input_spikes.shape[0] == self.config.n_input, (
+        assert input_spikes.shape[0] == self.config.input_size, (
             f"TrisynapticHippocampus.forward: input_spikes has shape {input_spikes.shape} "
-            f"but n_input={self.config.n_input}. Check that cortex output matches hippocampus input."
+            f"but input_size={self.config.input_size}. Check that cortex output matches hippocampus input."
         )
         if ec_direct_input is not None:
             ec_direct_input = ec_direct_input.squeeze()
@@ -1239,7 +1236,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 f"TrisynapticHippocampus.forward: ec_direct_input must be 1D, "
                 f"got shape {ec_direct_input.shape}"
             )
-            expected_ec_size = self._ec_l3_input_size if self._ec_l3_input_size > 0 else self.config.n_input
+            expected_ec_size = self._ec_l3_input_size if self._ec_l3_input_size > 0 else self.config.input_size
             assert ec_direct_input.shape[0] == expected_ec_size, (
                 f"TrisynapticHippocampus.forward: ec_direct_input has shape {ec_direct_input.shape} "
                 f"but expected size={expected_ec_size} (ec_l3_input_size={self._ec_l3_input_size}). "

@@ -312,7 +312,7 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         """
         Expand input dimension when upstream regions grow.
 
-        NOTE: Does NOT update self.config.n_input - that's handled by the parent
+        NOTE: Does NOT update self.config.total_input - that's handled by the parent
         region (Striatum). Internal pathways just expand their weight matrices.
 
         Weight initialization uses Xavier uniform (region default for striatum pathways).

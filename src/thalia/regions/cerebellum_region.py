@@ -120,7 +120,14 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
     - error_threshold: Minimum error (default 0.01)
     - use_eligibility_traces: Enable traces (default True)
     - eligibility_tau_ms: Trace decay (default 20.0)
+
+    **Size Specification** (Semantic-First):
+    - Semantic: input_size (mossy fiber input), granule_size, purkinje_size
+    - Computed: output_size (purkinje_size outputs), total_neurons (granule + purkinje)
     """
+
+    # Semantic specification
+    input_size: int = 0       # Mossy fiber input
 
     # Temporal processing
     temporal_window_ms: float = 10.0  # Window for coincidence detection
@@ -141,9 +148,20 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
     # - DCN integration (Purkinje sculpts tonic output)
     use_enhanced_microcircuit: bool = True
     granule_size: int = field(default=0)  # Explicit granule cell count
-    purkinje_size: int = field(default=0)  # Explicit Purkinje cell count (typically = n_output)
+    purkinje_size: int = field(default=0)  # Explicit Purkinje cell count (typically = output)
+
+    # Computed dimensions (set in __post_init__)
+    output_size: int = field(init=False, default=0)    # Purkinje cell output
+    total_neurons: int = field(init=False, default=0)  # Granule + Purkinje
+
     granule_sparsity: float = 0.03  # Fraction of granule cells active (3%)
     purkinje_n_dendrites: int = 100  # Simplified dendritic compartments
+
+    def __post_init__(self) -> None:
+        """Auto-compute output_size and total_neurons from layer sizes."""
+        object.__setattr__(self, "output_size", self.purkinje_size)
+        total_neurons = self.granule_size + self.purkinje_size if self.use_enhanced_microcircuit else self.purkinje_size
+        object.__setattr__(self, "total_neurons", total_neurons)
 
     # =========================================================================
     # SHORT-TERM PLASTICITY (STP) - CRITICAL FOR CEREBELLAR TIMING
@@ -408,10 +426,10 @@ class ClimbingFiberSystem:
     - Negative: Fired but shouldn't have → weaken inputs
     """
 
-    def __init__(self, n_output: int, device: str = "cpu"):
-        self.n_output = n_output
+    def __init__(self, purkinje_size: int, device: str = "cpu"):
+        self.purkinje_size = purkinje_size
         self.device = torch.device(device)
-        self.error = torch.zeros(n_output, device=self.device)
+        self.error = torch.zeros(purkinje_size, device=self.device)
 
     def compute_error(
         self,
@@ -421,11 +439,11 @@ class ClimbingFiberSystem:
         """Compute error signal (climbing fiber activity).
 
         Args:
-            actual: Actual output [n_output] (1D)
-            target: Target output [n_output] (1D)
+            actual: Actual output [purkinje_size] (1D)
+            target: Target output [purkinje_size] (1D)
 
         Returns:
-            Error signal [n_output] (1D)
+            Error signal [purkinje_size] (1D)
         """
         # Ensure 1D
         if actual.dim() != 1:
@@ -437,7 +455,7 @@ class ClimbingFiberSystem:
         return self.error
 
     def reset_state(self) -> None:
-        self.error = torch.zeros(self.n_output, device=self.device)
+        self.error = torch.zeros(self.purkinje_size, device=self.device)
 
     def get_state(self) -> Dict[str, Any]:
         """Get state for checkpointing."""
@@ -487,8 +505,8 @@ class Cerebellum(NeuralRegion):
     def __init__(self, config: NeuralComponentConfig):
         if not isinstance(config, CerebellumConfig):
             config = CerebellumConfig(
-                n_input=config.n_input,
-                n_output=config.n_output,
+                input_size=config.input_size,
+                purkinje_size=config.output_size,
                 neuron_type=config.neuron_type,
                 learning_rate=config.learning_rate,
                 w_max=config.w_max,
@@ -506,7 +524,7 @@ class Cerebellum(NeuralRegion):
 
         # Initialize NeuralRegion (Phase 2 pattern)
         super().__init__(
-            n_neurons=config.n_output,
+            n_neurons=config.purkinje_size,
             device=config.device,
             dt_ms=config.dt_ms,
         )
@@ -515,7 +533,7 @@ class Cerebellum(NeuralRegion):
         self.state = NeuralComponentState()
 
         self.climbing_fiber = ClimbingFiberSystem(
-            n_output=config.n_output,
+            purkinje_size=config.purkinje_size,
             device=config.device,
         )
 
@@ -527,8 +545,8 @@ class Cerebellum(NeuralRegion):
         if self.use_enhanced:
             # Granule cell layer (sparse expansion)
             self.granule_layer = GranuleCellLayer(
-                n_mossy_fibers=config.n_input,
-                expansion_factor=self.config.granule_size / config.n_input,
+                n_mossy_fibers=config.input_size,
+                expansion_factor=self.config.granule_size / config.input_size,
                 sparsity=self.config.granule_sparsity,
                 device=config.device,
                 dt_ms=config.dt_ms,
@@ -541,14 +559,14 @@ class Cerebellum(NeuralRegion):
                     device=config.device,
                     dt_ms=config.dt_ms,
                 )
-                for _ in range(config.n_output)
+                for _ in range(config.purkinje_size)
             ])
 
             # Deep cerebellar nuclei (final output)
             self.deep_nuclei = DeepCerebellarNuclei(
-                n_output=config.n_output,
-                n_purkinje=config.n_output,
-                n_mossy=config.n_input,
+                n_output=config.purkinje_size,
+                n_purkinje=config.purkinje_size,
+                n_mossy=config.input_size,
                 device=config.device,
                 dt_ms=config.dt_ms,
             )
@@ -559,7 +577,7 @@ class Cerebellum(NeuralRegion):
             self.granule_layer = None
             self.purkinje_cells = None
             self.deep_nuclei = None
-            expanded_input = config.n_input
+            expanded_input = config.input_size
 
         # =====================================================================
         # ELIGIBILITY TRACE MANAGER for STDP
@@ -576,7 +594,7 @@ class Cerebellum(NeuralRegion):
         )
         self._trace_manager = EligibilityTraceManager(
             n_input=expanded_input,  # Use expanded size if granule layer enabled
-            n_output=config.n_output,
+            n_output=config.purkinje_size,
             config=stdp_config,
             device=self.device,
         )
@@ -591,7 +609,7 @@ class Cerebellum(NeuralRegion):
 
         # Homeostasis for synaptic scaling
         homeostasis_config = UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget * config.n_input,  # Total budget per neuron
+            weight_budget=config.weight_budget * config.input_size,  # Total budget per neuron
             w_min=config.w_min,
             w_max=config.w_max,
             soft_normalization=config.soft_normalization,
@@ -604,9 +622,9 @@ class Cerebellum(NeuralRegion):
         # INITIALIZE SYNAPTIC WEIGHTS (Phase 2 pattern)
         # =====================================================================
         # Parallel fiber (mossy fiber→Purkinje) weights stored in synaptic_weights
-        # Use expanded_input if granule layer enabled, otherwise n_input
+        # Use expanded_input if granule layer enabled, otherwise input_size
         self.synaptic_weights["default"] = self._initialize_weights_tensor(
-            n_output=config.n_output,
+            n_output=config.purkinje_size,
             n_input=expanded_input,
         )
 
@@ -623,7 +641,7 @@ class Cerebellum(NeuralRegion):
             # Without this, cerebellar timing precision is severely impaired.
             self.stp_pf_purkinje = ShortTermPlasticity(
                 n_pre=expanded_input,
-                n_post=config.n_output,
+                n_post=config.purkinje_size,
                 config=STPConfig.from_type(
                     self.config.stp_pf_purkinje_type,
                     dt=config.dt_ms
@@ -636,7 +654,7 @@ class Cerebellum(NeuralRegion):
             # Amplifies repeated mossy fiber activity for sparse coding
             if self.use_enhanced:
                 self.stp_mf_granule = ShortTermPlasticity(
-                    n_pre=config.n_input,
+                    n_pre=config.input_size,
                     n_post=self.granule_layer.n_granule,
                     config=STPConfig.from_type(
                         self.config.stp_mf_granule_type,
@@ -682,9 +700,9 @@ class Cerebellum(NeuralRegion):
             # Pass actual parallel fiber weights to infer IO neuron neighborhoods
             # IO neurons projecting to Purkinje cells with similar input patterns
             # are anatomically close and thus coupled via gap junctions
-            # weights shape: [n_output, n_input] → each row is a Purkinje cell's input pattern
+            # weights shape: [purkinje_size, n_input] → each row is a Purkinje cell's input pattern
             self.gap_junctions_io = GapJunctionCoupling(
-                n_neurons=config.n_output,
+                n_neurons=config.purkinje_size,
                 afferent_weights=self.synaptic_weights["default"].detach(),  # Use actual weights, not similarity
                 config=gap_config,
                 interneuron_mask=None,  # All IO neurons participate
@@ -797,7 +815,7 @@ class Cerebellum(NeuralRegion):
             tau_E=3.0,  # Faster excitatory for precise timing
             tau_I=8.0,  # Faster inhibitory for precise timing
         )
-        neurons = ConductanceLIF(n_neurons=self.config.n_output, config=neuron_config)
+        neurons = ConductanceLIF(n_neurons=self.config.purkinje_size, config=neuron_config)
         neurons.to(self.device)
         return neurons
 
@@ -816,7 +834,7 @@ class Cerebellum(NeuralRegion):
             initialization: Weight initialization strategy
             sparsity: Sparsity for new connections
         """
-        old_n_output = self.config.n_output
+        old_n_output = self.config.purkinje_size
         new_n_output = old_n_output + n_new
 
         # =====================================================================
@@ -919,7 +937,7 @@ class Cerebellum(NeuralRegion):
         input_spikes = InputRouter.concatenate_sources(
             inputs,
             component_name="Cerebellum",
-            n_input=self.config.n_input,
+            n_input=self.config.input_size,
             device=self.device,
         )
 
@@ -928,9 +946,9 @@ class Cerebellum(NeuralRegion):
             f"Cerebellum.forward: input_spikes must be 1D [n_input], "
             f"got shape {input_spikes.shape}. See ADR-005: No Batch Dimension."
         )
-        assert input_spikes.shape[0] == self.config.n_input, (
+        assert input_spikes.shape[0] == self.config.input_size, (
             f"Cerebellum.forward: input_spikes has {input_spikes.shape[0]} neurons "
-            f"but expected {self.config.n_input}."
+            f"but expected {self.config.input_size}."
         )
 
         if self.neurons.membrane is None:
@@ -1270,7 +1288,7 @@ class Cerebellum(NeuralRegion):
         """
         # Handle target_neuron convenience parameter
         if target_neuron is not None:
-            target = torch.zeros(1, self.config.n_output, device=self.device)
+            target = torch.zeros(1, self.config.purkinje_size, device=self.device)
             target[0, target_neuron] = 1.0
 
         if output_spikes is None:
@@ -1290,7 +1308,7 @@ class Cerebellum(NeuralRegion):
 
         # Initialize IO membrane for gap junctions
         if self.gap_junctions_io is not None:
-            self._io_membrane = torch.zeros(self.config.n_output, device=self.device)
+            self._io_membrane = torch.zeros(self.config.purkinje_size, device=self.device)
 
     def set_training_step(self, step: int) -> None:
         """Update the current training step for neurogenesis tracking.
@@ -1320,7 +1338,7 @@ class Cerebellum(NeuralRegion):
             initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
             sparsity: Connection sparsity for new input neurons (if sparse_random)
         """
-        old_n_input = self.config.n_input
+        old_n_input = self.config.input_size
         new_n_input = old_n_input + n_new
 
         # Expand self.weights [n_output, input] → [n_output, input+n_new]
@@ -1353,7 +1371,7 @@ class Cerebellum(NeuralRegion):
         )
         self._trace_manager = EligibilityTraceManager(
             n_input=trace_input_size,
-            n_output=self.config.n_output,
+            n_output=self.config.purkinje_size,
             config=stdp_config,
             device=self.device,
         )
@@ -1532,7 +1550,7 @@ class Cerebellum(NeuralRegion):
 
         # Get climbing fiber error
         cf_state = self.climbing_fiber.get_state()
-        climbing_error = cf_state.get("error", torch.zeros(self.config.n_output, device=self.device))
+        climbing_error = cf_state.get("error", torch.zeros(self.config.purkinje_size, device=self.device))
 
         # Get IO membrane (gap junction coupling state)
         # If gap junctions are disabled, io_membrane will be None
@@ -1603,7 +1621,7 @@ class Cerebellum(NeuralRegion):
             self._io_membrane = state.io_membrane.to(self.device)
         elif self.gap_junctions_io is not None:
             # Initialize for new gap junction module if not in checkpoint
-            self._io_membrane = torch.zeros(self.config.n_output, device=self.device)
+            self._io_membrane = torch.zeros(self.config.purkinje_size, device=self.device)
 
         # Restore classic neuron state (if not using enhanced microcircuit)
         if not self.use_enhanced and self.neurons is not None:

@@ -139,7 +139,15 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     - Mode switching (burst vs tonic)
     - Gain modulation (norepinephrine)
     - Spatial filtering
+
+    **Size Specification** (Semantic-First):
+    - Semantic: input_size (sensory input), relay_size, trn_size (explicit sizes)
+    - Computed: output_size (relay_size, relay neurons output to cortex)
+                total_neurons (relay + TRN)
     """
+
+    # Semantic specification: input from sensory periphery
+    input_size: int = 0  # Sensory input dimension
 
     # Relay parameters
     relay_strength: float = THALAMUS_RELAY_STRENGTH
@@ -169,6 +177,10 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     # Use compute_thalamus_sizes() helper to calculate from relay size
     relay_size: int = field(default=0)  # Relay neuron population
     trn_size: int = field(default=0)    # TRN neuron population
+
+    # Computed dimensions (set in __post_init__)
+    output_size: int = field(init=False, default=0)    # Relay neurons output to cortex
+    total_neurons: int = field(init=False, default=0)  # Relay + TRN
 
     trn_inhibition_strength: float = THALAMUS_TRN_INHIBITION
     """Strength of TRN → relay inhibition."""
@@ -233,23 +245,20 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     """
 
     def __post_init__(self) -> None:
-        """Auto-compute layer sizes from n_output if both are 0, then validate."""
+        """Auto-compute layer sizes from relay_size if both are 0, then validate."""
         # Auto-compute if both relay_size and trn_size are 0
         if self.relay_size == 0 and self.trn_size == 0:
             from thalia.config.region_sizes import compute_thalamus_sizes
-            # Use n_output as relay_size if specified, else default to 80
-            relay_size = self.n_output if self.n_output > 0 else 80
+            # Use default relay_size of 80 if not specified
+            relay_size = 80
             sizes = compute_thalamus_sizes(relay_size)
             object.__setattr__(self, "relay_size", sizes["relay_size"])
             object.__setattr__(self, "trn_size", sizes["trn_size"])
-            # Update n_output and n_neurons
-            object.__setattr__(self, "n_output", sizes["relay_size"])
-            total_neurons = sizes["relay_size"] + sizes["trn_size"]
-            object.__setattr__(self, "n_neurons", total_neurons)
-        # Auto-compute n_neurons from layer sizes if not provided (or if default 100)
-        elif self.n_neurons == 100:  # Default value
-            total_neurons = self.relay_size + self.trn_size
-            object.__setattr__(self, "n_neurons", total_neurons)
+
+        # Always compute output_size and total_neurons from layer sizes
+        object.__setattr__(self, "output_size", self.relay_size)
+        total_neurons = self.relay_size + self.trn_size
+        object.__setattr__(self, "total_neurons", total_neurons)
 
         # Validate after computation
         self.validate()
@@ -258,7 +267,7 @@ class ThalamicRelayConfig(NeuralComponentConfig):
         """Validate size constraints.
 
         Raises:
-            ValueError: If any size is 0 or n_neurons doesn't match total
+            ValueError: If any size is 0 or total_neurons doesn't match total
         """
         if self.relay_size == 0 or self.trn_size == 0:
             raise ValueError(
@@ -267,14 +276,14 @@ class ThalamicRelayConfig(NeuralComponentConfig):
             )
 
         total = self.relay_size + self.trn_size
-        if self.n_neurons != total:
+        if self.total_neurons != total:
             raise ValueError(
-                f"n_neurons ({self.n_neurons}) must equal sum of layer sizes ({total})"
+                f"total_neurons ({self.total_neurons}) must equal sum of layer sizes ({total})"
             )
 
-        if self.n_output != self.relay_size:
+        if self.output_size != self.relay_size:
             raise ValueError(
-                f"n_output ({self.n_output}) must equal relay_size ({self.relay_size}). "
+                f"output_size ({self.output_size}) must equal relay_size ({self.relay_size}). "
                 "Relay neurons are the output of thalamus."
             )
 
@@ -493,9 +502,6 @@ class ThalamicRelay(NeuralRegion):
         # Store config for backward compatibility
         self.config = config
 
-        # Set n_input for compatibility (NeuralRegion doesn't track this by default)
-        self.n_input = config.n_input
-
         # =====================================================================
         # RELAY NEURONS (Excitatory, glutamatergic)
         # =====================================================================
@@ -521,7 +527,7 @@ class ThalamicRelay(NeuralRegion):
         self.input_to_trn = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.n_trn,
-                n_input=config.n_input,
+                n_input=config.input_size,
                 sparsity=THALAMUS_RELAY_SPARSITY,
                 scale=THALAMUS_RELAY_SCALE,
                 device=self.device,
@@ -614,7 +620,7 @@ class ThalamicRelay(NeuralRegion):
             # Filters repetitive stimuli, responds to novelty
             # CRITICAL for attention capture and change detection
             self.stp_sensory_relay = ShortTermPlasticity(
-                n_pre=config.n_input,
+                n_pre=config.input_size,
                 n_post=self.n_relay,
                 config=STPConfig.from_type(config.stp_sensory_relay_type, dt=config.dt_ms),
                 per_synapse=True,  # Per-synapse dynamics for maximum precision
@@ -735,11 +741,11 @@ class ThalamicRelay(NeuralRegion):
 
         # Create distance matrix (neuron i to input j)
         relay_idx = torch.arange(self.n_relay, device=self.device).float()
-        input_idx = torch.arange(self.config.n_input, device=self.device).float()
+        input_idx = torch.arange(self.config.input_size, device=self.device).float()
 
         # Scale to [0, 1]
         relay_norm = relay_idx / max(1, self.n_relay - 1)
-        input_norm = input_idx / max(1, self.config.n_input - 1)
+        input_norm = input_idx / max(1, self.config.input_size - 1)
 
         # Distance matrix [n_relay, n_input]
         distances = torch.abs(
@@ -891,14 +897,14 @@ class ThalamicRelay(NeuralRegion):
         # If no sensory input, relay neurons have nothing to relay
         # (This should not happen due to required=["sensory"], but handle gracefully)
         if input_spikes is None:
-            return torch.zeros(self.config.n_output, dtype=torch.bool, device=self.device)
+            return torch.zeros(self.config.output_size, dtype=torch.bool, device=self.device)
 
         # ADR-005: Expect 1D input
         assert input_spikes.dim() == 1, (
             f"Thalamus.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
         )
-        assert input_spikes.shape[0] == self.config.n_input, (
-            f"Thalamus.forward: input has {input_spikes.shape[0]} neurons, expected {self.config.n_input}"
+        assert input_spikes.shape[0] == self.config.input_size, (
+            f"Thalamus.forward: input has {input_spikes.shape[0]} neurons, expected {self.config.input_size}"
         )
 
         # =====================================================================
@@ -1341,7 +1347,7 @@ class ThalamicRelay(NeuralRegion):
             >>> # Thalamus must expand input dimension
             >>> thalamus.grow_input(20)
         """
-        old_n_input = self.config.n_input
+        old_n_input = self.config.input_size
         new_n_input = old_n_input + n_new
 
         # Use GrowthMixin helper (Architecture Review 2025-12-24, Tier 2.5)

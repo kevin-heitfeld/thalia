@@ -66,7 +66,7 @@ class ActionSelectionMixin:
     and vote accumulation across timesteps.
 
     Expects the following attributes on the mixed-in class:
-    - striatum_config: StriatumConfig
+    - config: StriatumConfig
     - n_actions: int
     - neurons_per_action: int
     - device: torch.device
@@ -77,7 +77,7 @@ class ActionSelectionMixin:
     """
 
     # Type hints for mixin - these are provided by Striatum
-    striatum_config: "StriatumConfig"
+    config: "StriatumConfig"
     n_actions: int
     neurons_per_action: int
     # device: provided by LearnableComponent base class as @property
@@ -109,7 +109,7 @@ class ActionSelectionMixin:
         if spikes.dim() != 1:
             spikes = spikes.squeeze()
 
-        if not self.striatum_config.population_coding:
+        if not self.config.population_coding:
             # Simple argmax for single-neuron coding
             if spikes.sum() == 0:
                 return 0  # Default action
@@ -225,9 +225,9 @@ class ActionSelectionMixin:
         ucb_bonus = torch.zeros_like(net_votes)
         if hasattr(self, 'exploration'):
             ucb_bonus = self.exploration.compute_ucb_bonus()
-        elif self.striatum_config.ucb_exploration and self._total_trials > 0:
+        elif self.config.ucb_exploration and self._total_trials > 0:
             # Fallback: compute UCB locally if exploration not available
-            c = self.striatum_config.ucb_coefficient
+            c = self.config.ucb_coefficient
             log_t = math.log(self._total_trials + 1)
             for a in range(self.n_actions):
                 n_a = max(1, int(self._action_counts[a].item()))
@@ -241,15 +241,15 @@ class ActionSelectionMixin:
             action_nets = selection_values.tolist()
             if len(action_nets) > 1:
                 net_range = max(action_nets) - min(action_nets)
-                temperature = self.striatum_config.uncertainty_temperature
+                temperature = self.config.uncertainty_temperature
                 bias_factor = net_range / (temperature + net_range) if (temperature + net_range) > 0 else 0.0
-                min_boost = self.striatum_config.min_exploration_boost
+                min_boost = self.config.min_exploration_boost
                 max_boost = 0.5
                 exploration_prob = min_boost + bias_factor * (max_boost - min_boost)
 
             # tonic modulation
-            if self.striatum_config.tonic_modulates_exploration:
-                tonic_boost = self.tonic_dopamine * self.striatum_config.tonic_exploration_scale
+            if self.config.tonic_modulates_exploration:
+                tonic_boost = self.tonic_dopamine * self.config.tonic_exploration_scale
                 exploration_prob = min(0.6, exploration_prob + tonic_boost)
 
         self.state_tracker.exploring = False
@@ -261,10 +261,10 @@ class ActionSelectionMixin:
             self.state_tracker.exploring = True
             selected_action = int(torch.randint(0, self.n_actions, (1,)).item())
         else:
-            if self.striatum_config.softmax_action_selection:
+            if self.config.softmax_action_selection:
                 # Use configured temperature, or fall back to default constant
                 temperature = getattr(
-                    self.striatum_config,
+                    self.config,
                     'softmax_temperature',
                     SOFTMAX_TEMPERATURE_DEFAULT
                 )

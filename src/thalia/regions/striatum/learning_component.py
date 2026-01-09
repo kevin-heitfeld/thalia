@@ -60,11 +60,11 @@ class StriatumLearningComponent(LearningComponent):
 
         # Goal modulation weights (if enabled)
         if config.use_goal_conditioning:
-            # PFC→D1/D2 modulation matrices [n_output, pfc_size]
+            # PFC→D1/D2 modulation matrices [n_actions, pfc_size]
             # These learn which striatal neurons participate in which goals
             self.pfc_modulation_d1 = nn.Parameter(
                 WeightInitializer.gaussian(
-                    n_output=config.n_output,
+                    n_output=config.n_actions,
                     n_input=config.pfc_size,
                     mean=0.0,
                     std=WEIGHT_INIT_SCALE_SMALL,
@@ -74,7 +74,7 @@ class StriatumLearningComponent(LearningComponent):
             )
             self.pfc_modulation_d2 = nn.Parameter(
                 WeightInitializer.gaussian(
-                    n_output=config.n_output,
+                    n_output=config.n_actions,
                     n_input=config.pfc_size,
                     mean=0.0,
                     std=WEIGHT_INIT_SCALE_SMALL,

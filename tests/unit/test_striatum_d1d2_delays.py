@@ -156,7 +156,7 @@ def test_delays_work_from_first_forward(striatum_with_delays):
     assert d2_votes.sum() == 0, "D2 votes should be zero before delay passes"
 
     # Run enough steps for D1 delay to pass
-    config = striatum_with_delays.striatum_config
+    config = striatum_with_delays.config
     d1_delay_steps = int(config.d1_to_output_delay_ms / config.dt_ms)
 
     for _ in range(d1_delay_steps):
@@ -177,7 +177,7 @@ def test_d1_arrives_before_d2(striatum_config_with_delays):
 
     # Calculate delay steps from PUBLIC config (not internal state)
     # This is the behavioral contract: delays configured via public API
-    config = striatum.striatum_config
+    config = striatum.config
     d1_delay_steps = int(config.d1_to_output_delay_ms / config.dt_ms)  # 15
     d2_delay_steps = int(config.d2_to_output_delay_ms / config.dt_ms)  # 25
 
@@ -237,7 +237,7 @@ def test_circular_buffer_wrapping(striatum_with_delays):
     input_spikes = generate_sparse_spikes(50, firing_rate=0.2)
 
     # Calculate buffer size from PUBLIC config
-    config = striatum_with_delays.striatum_config
+    config = striatum_with_delays.config
     d1_delay_steps = int(config.d1_to_output_delay_ms / config.dt_ms)
     d2_delay_steps = int(config.d2_to_output_delay_ms / config.dt_ms)
     buffer_size = max(d1_delay_steps * 2 + 1, d2_delay_steps * 2 + 1)
@@ -282,7 +282,7 @@ def test_checkpoint_preserves_delay_behavior(striatum_with_delays):
     d1_votes_future, d2_votes_future = striatum_with_delays.state_tracker.get_accumulated_votes()
 
     # Create new striatum and restore checkpoint (back to 30-step state)
-    striatum_restored = Striatum(striatum_with_delays.striatum_config)
+    striatum_restored = Striatum(striatum_with_delays.config)
     striatum_restored.reset_state()
     striatum_restored.checkpoint_manager.load_full_state(checkpoint)
 

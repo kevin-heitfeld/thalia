@@ -23,6 +23,20 @@ from thalia.regulation.learning_constants import EMA_DECAY_FAST, LEARNING_RATE_H
 class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     """Configuration specific to striatal regions.
 
+    **Semantic Specification** (January 2026 Refactoring):
+    Striatum is configured by what it DOES (selects actions), not neuron counts.
+
+    Primary parameters:
+    - n_actions: Number of discrete actions (semantic dimension)
+    - neurons_per_action: Population coding size (default 10)
+    - input_sources: Multi-source inputs Dict[str, int] e.g., {"cortex": 256, "thalamus": 128}
+
+    Computed dimensions (auto-computed in __post_init__):
+    - d1_size: Total D1 MSN neurons
+    - d2_size: Total D2 MSN neurons
+    - total_neurons: d1_size + d2_size
+    - total_input: sum(input_sources.values())
+
     Inherits dopamine-gated learning parameters from ModulatedLearningConfig:
     - learning_rate: Base learning rate for synaptic updates
     - learning_enabled: Global learning enable/disable
@@ -42,6 +56,37 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     (Brain acts as VTA). Striatum receives dopamine via set_dopamine().
     """
 
+    # =========================================================================
+    # SEMANTIC SPECIFICATION (what region does)
+    # =========================================================================
+    n_actions: int = 0
+    """Number of discrete actions (REQUIRED semantic dimension, must be > 0)."""
+
+    neurons_per_action: int = 10
+    """Neurons per action (population coding size)."""
+
+    input_sources: Dict[str, int] = field(default_factory=dict)
+    """Multi-source inputs: {"cortex": 256, "thalamus": 128}"""
+
+    # =========================================================================
+    # COMPUTED DIMENSIONS (auto-computed in __post_init__)
+    # =========================================================================
+    d1_size: int = field(init=False)
+    """Total D1 MSN neurons (computed from n_actions × d1_neurons_per_action)."""
+
+    d2_size: int = field(init=False)
+    """Total D2 MSN neurons (computed from n_actions × d2_neurons_per_action)."""
+
+    total_neurons: int = field(init=False)
+    """Total neurons (d1_size + d2_size)."""
+
+    total_input: int = field(init=False)
+    """Total input dimension (sum of all input sources)."""
+
+    # D1/D2 split ratio
+    d1_d2_ratio: float = 0.5
+    """Fraction of neurons allocated to D1 pathway (0.5 = equal split)."""
+
     # Override default learning rate (5x base for faster RL updates)
     learning_rate: float = 0.005
     # Note: stdp_lr and tau_plus_ms/tau_minus_ms inherited from NeuralComponentConfig
@@ -49,16 +94,6 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     # Action selection
     lateral_inhibition: bool = True
     inhibition_strength: float = 2.0
-
-    # =========================================================================
-    # POPULATION CODING
-    # =========================================================================
-    population_coding: bool = True
-    # Explicit pathway sizes (computed via helper from n_actions and neurons_per_action)
-    d1_size: int = field(default=0)  # Total D1 MSN neurons
-    d2_size: int = field(default=0)  # Total D2 MSN neurons
-    n_actions: int = field(default=0)  # Number of discrete actions
-    neurons_per_action: int = field(default=10)  # Neurons per action (population coding)
 
     # =========================================================================
     # D1/D2 OPPONENT PATHWAYS
@@ -146,57 +181,59 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     # Low beta → action flexibility (D2 effective, D1 reduced)
     beta_modulation_strength: float = 0.3  # [0, 1] - strength of beta influence
 
-    # =========================================================================
-    # FSI (FAST-SPIKING INTERNEURONS) - Parvalbumin+ Interneurons
-    # =========================================================================
-
     def __post_init__(self) -> None:
-        """Auto-compute pathway sizes from n_actions if both d1_size and d2_size are 0, then validate."""
-        # Auto-compute if both pathway sizes are 0
-        if self.d1_size == 0 and self.d2_size == 0:
-            from thalia.config.region_sizes import compute_striatum_sizes
-            # Use n_output as n_actions if n_actions not set
-            n_actions = self.n_actions if self.n_actions > 0 else self.n_output
-            sizes = compute_striatum_sizes(n_actions, self.neurons_per_action)
-            object.__setattr__(self, "d1_size", sizes["d1_size"])
-            object.__setattr__(self, "d2_size", sizes["d2_size"])
-            object.__setattr__(self, "n_actions", n_actions)
-            # Update n_output and n_neurons
-            if self.population_coding:
-                object.__setattr__(self, "n_output", n_actions)  # Actions, not neurons
-            else:
-                object.__setattr__(self, "n_output", sizes["total_size"])  # Total neurons
-            object.__setattr__(self, "n_neurons", sizes["total_size"])
+        """Compute physical dimensions from semantic specs, then validate."""
+        from thalia.config.region_sizes import compute_striatum_sizes
+
+        # Compute D1/D2 sizes from n_actions
+        sizes = compute_striatum_sizes(
+            n_actions=self.n_actions,
+            neurons_per_action=self.neurons_per_action,
+            d1_d2_ratio=self.d1_d2_ratio
+        )
+
+        # Set computed dimensions
+        object.__setattr__(self, "d1_size", sizes["d1_size"])
+        object.__setattr__(self, "d2_size", sizes["d2_size"])
+        object.__setattr__(self, "total_neurons", sizes["total_size"])
+
+        # Compute total input from sources
+        if not self.input_sources:
+            raise ValueError(
+                "StriatumConfig requires explicit input_sources. "
+                "Example: input_sources={'cortex': 256, 'thalamus': 128}"
+            )
+        object.__setattr__(self, "total_input", sum(self.input_sources.values()))
 
         # Validate after computation
         self.validate()
 
     def validate(self) -> None:
-        """Validate size constraints and population coding consistency.
+        """Validate size constraints and consistency.
 
         Raises:
-            ValueError: If sizes are 0, inconsistent, or population coding is misconfigured
+            ValueError: If sizes are 0, inconsistent, or inputs not specified
         """
         if self.d1_size == 0 or self.d2_size == 0:
             raise ValueError(
-                f"Pathway sizes must be > 0. Got d1={self.d1_size}, d2={self.d2_size}. "
-                "Either specify both explicitly or let them auto-compute from n_actions."
+                f"Pathway sizes must be > 0. Got d1={self.d1_size}, d2={self.d2_size}"
             )
 
-        total = self.d1_size + self.d2_size
-        if self.n_neurons != total:
+        if self.n_actions == 0:
+            raise ValueError("n_actions must be > 0")
+
+        if self.total_neurons != self.d1_size + self.d2_size:
             raise ValueError(
-                f"n_neurons ({self.n_neurons}) must equal sum of pathway sizes ({total})"
+                f"total_neurons ({self.total_neurons}) must equal d1_size + d2_size ({self.d1_size + self.d2_size})"
             )
 
-        if self.population_coding:
-            # Total = n_actions * neurons_per_action (split between D1 and D2)
-            expected_total = self.n_actions * self.neurons_per_action
-            if total != expected_total:
-                raise ValueError(
-                    f"With population_coding=True, total neurons ({total}) should equal "
-                    f"n_actions ({self.n_actions}) × neurons_per_action ({self.neurons_per_action}) = {expected_total}"
-                )
+        # Validate population coding consistency
+        expected_total = self.n_actions * self.neurons_per_action
+        if self.total_neurons != expected_total:
+            raise ValueError(
+                f"total_neurons ({self.total_neurons}) should equal "
+                f"n_actions ({self.n_actions}) × neurons_per_action ({self.neurons_per_action}) = {expected_total}"
+            )
 
     @classmethod
     def from_n_actions(

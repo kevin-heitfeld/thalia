@@ -348,20 +348,41 @@ class ForwardPassCoordinator:
         # - Prevents saturation from sustained cortical input
         # - Enables novelty detection (fresh inputs get stronger transmission)
         if self.stp_module is not None:
-            # Get STP efficacy [n_pre, n_post]
+            # Get STP efficacy [n_input, n_total_msns] where n_total_msns = d1_size + d2_size
             stp_efficacy = self.stp_module(input_float)
-            # Apply STP to weights: (n_post, n_pre) * (n_pre, n_post).T
-            # This modulates the effective weight matrix per-synapse
-            d1_weights_effective = self.d1_pathway.weights * stp_efficacy.T
-            d2_weights_effective = self.d2_pathway.weights * stp_efficacy.T
+
+            # Split efficacy for D1 and D2 pathways at MSN neuron level
+            n_d1 = self.config.d1_size  # Total D1 MSN neurons
+            n_d2 = self.config.d2_size  # Total D2 MSN neurons
+            stp_efficacy_d1 = stp_efficacy[:, :n_d1]  # [n_input, d1_size]
+            stp_efficacy_d2 = stp_efficacy[:, n_d1:n_d1+n_d2]  # [n_input, d2_size]
+
+            # Apply MSN-level STP to MSN-level weights: [d1_size, n_input] * [d1_size, n_input]
+            # Transpose STP to match weight dimensions: [n_input, d1_size] -> [d1_size, n_input]
+            d1_weights_effective = self.d1_pathway.weights * stp_efficacy_d1.T
+            d2_weights_effective = self.d2_pathway.weights * stp_efficacy_d2.T
         else:
             # No STP - use raw weights
             d1_weights_effective = self.d1_pathway.weights
             d2_weights_effective = self.d2_pathway.weights
 
-        # Compute base activations from (STP-modulated) weights
-        d1_activation = torch.matmul(d1_weights_effective, input_float)
-        d2_activation = torch.matmul(d2_weights_effective, input_float)
+        # Compute MSN-level activations: [d1_size] and [d2_size]
+        d1_msn_activation = torch.matmul(d1_weights_effective, input_float)
+        d2_msn_activation = torch.matmul(d2_weights_effective, input_float)
+
+        # Pool MSN activations to action level
+        # When population_coding: average over neurons_per_action to get action strength
+        # When not: MSN level = action level (1:1 mapping)
+        if self.config.population_coding and self.config.neurons_per_action > 1:
+            # Reshape to [n_actions, neurons_per_action/2] and average
+            # Note: d1_size = n_actions * neurons_per_action / 2 (D1 and D2 split the pool)
+            neurons_per_pathway = self.config.neurons_per_action // 2
+            d1_activation = d1_msn_activation.view(self.config.n_actions, neurons_per_pathway).mean(dim=1)
+            d2_activation = d2_msn_activation.view(self.config.n_actions, neurons_per_pathway).mean(dim=1)
+        else:
+            # No pooling needed
+            d1_activation = d1_msn_activation
+            d2_activation = d2_msn_activation
 
         # Extract PFC goal context if enabled
         pfc_goal_context = self.extract_pfc_context(input_spikes)
@@ -380,13 +401,19 @@ class ForwardPassCoordinator:
         # Apply homeostatic excitability modulation
         d1_gain, d2_gain = self.compute_homeostatic_modulation(d1_gain, d2_gain)
 
-        # Compute D1 conductances
-        d1_g_exc = (d1_activation * theta_contrast_mod * d1_gain + baseline_exc).clamp(min=0)
+        # Compute D1 conductances (action-level)
+        d1_g_exc_action = (d1_activation * theta_contrast_mod * d1_gain + baseline_exc).clamp(min=0)
+
+        # Expand action-level conductances to MSN-level
+        # Each action has neurons_per_pathway MSNs in D1 pathway
+        neurons_per_pathway = self.config.d1_size // self.config.n_actions
+        d1_g_exc = d1_g_exc_action.repeat_interleave(neurons_per_pathway)  # [d1_size]
         d1_g_inh = torch.zeros_like(d1_g_exc)
 
-        # Add lateral inhibition if enabled
+        # Add lateral inhibition if enabled (use D1 portion of recent_spikes)
         if self.config.lateral_inhibition:
-            d1_g_inh = d1_g_inh + recent_spikes * self.config.inhibition_strength * 0.5
+            d1_recent_spikes = recent_spikes[:self.config.d1_size]
+            d1_g_inh = d1_g_inh + d1_recent_spikes * self.config.inhibition_strength * 0.5
 
         # Add FSI feedforward inhibition (sharpens action selection timing)
         if fsi_inhibition is not None:
@@ -402,17 +429,22 @@ class ForwardPassCoordinator:
         # Run D1 neurons
         d1_spikes, _ = self.d1_neurons(d1_g_exc, d1_g_inh)
 
-        # Compute D2 conductances
-        d2_g_exc = (d2_activation * theta_contrast_mod * d2_gain + baseline_exc).clamp(min=0)
+        # Compute D2 conductances (action-level)
+        d2_g_exc_action = (d2_activation * theta_contrast_mod * d2_gain + baseline_exc).clamp(min=0)
+
+        # Expand action-level conductances to MSN-level
+        # Each action has neurons_per_pathway MSNs in D2 pathway
+        neurons_per_pathway = self.config.d2_size // self.config.n_actions
+        d2_g_exc = d2_g_exc_action.repeat_interleave(neurons_per_pathway)  # [d2_size]
         d2_g_inh = torch.zeros_like(d2_g_exc)
 
-        # Add lateral inhibition if enabled
+        # Add lateral inhibition if enabled (use D2 portion of recent_spikes)
         if self.config.lateral_inhibition:
-            d2_g_inh = d2_g_inh + recent_spikes * self.config.inhibition_strength * 0.5
+            d2_recent_spikes = recent_spikes[self.config.d1_size:]
+            d2_g_inh = d2_g_inh + d2_recent_spikes * self.config.inhibition_strength * 0.5
 
-        # Add FSI feedforward inhibition (sharpens action selection timing)
+        # Add FSI feedforward inhibition to D2 (same as D1)
         if fsi_inhibition is not None:
-            # FSI inhibition is broadcast to all MSNs (scalar or tensor)
             if isinstance(fsi_inhibition, torch.Tensor):
                 if fsi_inhibition.numel() == 1:
                     d2_g_inh = d2_g_inh + fsi_inhibition.item()

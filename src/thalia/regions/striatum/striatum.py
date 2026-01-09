@@ -207,28 +207,21 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         Population Coding:
             When enabled, each action is represented by multiple neurons:
-            - config.n_output = number of actions
+            - config.n_actions = number of distinct actions
             - actual neurons = n_actions × neurons_per_action
             - More robust to noise, biological plausibility
         """
         if not isinstance(config, StriatumConfig):
-            config = StriatumConfig(
-                n_input=config.n_input,
-                n_output=config.n_output,
-                neuron_type=config.neuron_type,
-                learning_rate=config.learning_rate,
-                w_max=config.w_max,
-                w_min=config.w_min,
-                target_firing_rate_hz=config.target_firing_rate_hz,
-                dt_ms=config.dt_ms,
-                device=config.device,
+            raise TypeError(
+                "Striatum requires StriatumConfig with semantic specification. "
+                "Use: StriatumConfig(n_actions=4, neurons_per_action=10, input_sources={'cortex': 256})"
             )
 
         self.config: StriatumConfig = config  # type: ignore
 
         # Validate configuration
-        if config.n_output <= 0:
-            raise ValueError(f"n_output must be positive, got {config.n_output}")
+        if config.n_actions <= 0:
+            raise ValueError(f"n_actions must be positive, got {config.n_actions}")
 
         # =====================================================================
         # POPULATION CODING SETUP
@@ -262,14 +255,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Track active vs total capacity for elastic tensor checkpoint format
         # n_neurons_active: Number of neurons currently in use
         # n_neurons_capacity: Total allocated memory (includes reserved space)
-        self.n_neurons_active = config.n_output
+        self.n_neurons_active = config.n_actions
         if self.config.growth_enabled:
             # Pre-allocate extra capacity for fast growth
             reserve_multiplier = 1.0 + self.config.reserve_capacity
-            self.n_neurons_capacity = int(config.n_output * reserve_multiplier)
+            self.n_neurons_capacity = int(config.n_actions * reserve_multiplier)
         else:
             # No reserved capacity
-            self.n_neurons_capacity = config.n_output
+            self.n_neurons_capacity = config.n_actions
 
         # =====================================================================
         # NEUROMORPHIC ID TRACKING (Phase 2 - Neuron-Centric Format)
@@ -286,7 +279,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Consolidates all temporal state: votes, spikes, trials, actions
         self.state_tracker = StriatumStateTracker(
             n_actions=self.n_actions,
-            n_output=config.n_output,
+            n_output=config.n_actions,
             device=self.device,
         )
 
@@ -338,9 +331,19 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # D1/D2 PATHWAYS - Separate MSN Populations
         # =====================================================================
         # Create pathway-specific configuration
-        pathway_config = StriatumPathwayConfig(
-            n_input=config.n_input,
-            n_output=config.n_output,
+        # Pathways operate at MSN level (d1_size/d2_size), not action level
+        d1_pathway_config = StriatumPathwayConfig(
+            n_input=config.total_input,
+            n_output=config.d1_size,  # MSN neurons, not actions
+            w_min=config.w_min,
+            w_max=config.w_max,
+            eligibility_tau_ms=self.config.eligibility_tau_ms,
+            stdp_lr=self.config.stdp_lr,
+            device=self.device,
+        )
+        d2_pathway_config = StriatumPathwayConfig(
+            n_input=config.total_input,
+            n_output=config.d2_size,  # MSN neurons, not actions
             w_min=config.w_min,
             w_max=config.w_max,
             eligibility_tau_ms=self.config.eligibility_tau_ms,
@@ -349,8 +352,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
 
         # Create D1 and D2 pathways (neurons only, weights stored in parent)
-        self.d1_pathway = D1Pathway(pathway_config)
-        self.d2_pathway = D2Pathway(pathway_config)
+        self.d1_pathway = D1Pathway(d1_pathway_config)
+        self.d2_pathway = D2Pathway(d2_pathway_config)
 
         # =====================================================================
         # FSI (FAST-SPIKING INTERNEURONS) - Parvalbumin+ Interneurons
@@ -359,7 +362,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Critical for action selection timing (Koós & Tepper 1999)
         # Gap junction networks enable ultra-fast synchronization (<0.1ms)
         if self.config.fsi_enabled:
-            self.fsi_size = int(config.n_output * self.config.fsi_ratio)
+            self.fsi_size = int(config.total_neurons * self.config.fsi_ratio)
             # FSI have fast kinetics (tau_mem ~5ms vs ~20ms for MSNs)
             from thalia.components.neurons import create_fast_spiking_neurons
             self.fsi_neurons = create_fast_spiking_neurons(
@@ -403,7 +406,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         #
         # Part 3 will update all code to use accessor methods (get_d1_weights, etc.)
         # Part 4 will remove D1/D2 pathway weights entirely.
-        self._initialize_default_synaptic_weights(config.n_input)
+        self._initialize_default_synaptic_weights(config.total_input)
 
         # Link D1/D2 pathway weights to parent's combined matrix (temporary bridge)
         self._link_pathway_weights_to_parent()
@@ -411,8 +414,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Create manager context for learning
         learning_context = ManagerContext(
             device=self.device,
-            n_input=config.n_input,
-            n_output=config.n_output,
+            n_input=config.total_input,
+            n_output=config.n_actions,
             dt_ms=config.dt_ms,
         )
 
@@ -505,16 +508,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             )
 
             # Create TD(λ) learner for D1 and D2 pathways
-            # Note: Use config.n_output (actual neuron count) not n_actions
-            # because with population coding, n_output = n_actions * neurons_per_action
+            # Note: Use total_neurons (actual neuron count) not n_actions
+            # because with population coding, total_neurons = n_actions * neurons_per_action
             self.td_lambda_d1 = TDLambdaLearner(
-                n_actions=self.config.n_output,  # Total neurons, not actions
-                n_input=self.config.n_input,
+                n_actions=self.config.total_neurons,  # Total neurons, not actions
+                n_input=self.config.total_input,
                 config=td_config,
             )
             self.td_lambda_d2 = TDLambdaLearner(
-                n_actions=self.config.n_output,  # Total neurons, not actions
-                n_input=self.config.n_input,
+                n_actions=self.config.total_neurons,  # Total neurons, not actions
+                n_input=self.config.total_input,
                 config=td_config,
             )
         else:
@@ -543,10 +546,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # Corticostriatal STP: DEPRESSING (U=0.4)
             # Applied to D1 and D2 MSN populations
             # Context-dependent filtering prevents saturation from sustained cortical input
-            # Use explicit d1_size + d2_size for n_post (config.n_output may be ambiguous)
+            # Use explicit d1_size + d2_size for n_post
             n_total_msns = config.d1_size + config.d2_size
             self.stp_corticostriatal = ShortTermPlasticity(
-                n_pre=config.n_input,
+                n_pre=config.total_input,
                 n_post=n_total_msns,  # Total MSNs (D1 + D2 populations)
                 config=get_stp_config("corticostriatal", dt=config.dt_ms),
                 per_synapse=True,
@@ -558,7 +561,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # For now, we initialize but don't use it in forward pass
             # (keeping for future multi-source routing enhancement)
             self.stp_thalamostriatal = ShortTermPlasticity(
-                n_pre=config.n_input,
+                n_pre=config.total_input,
                 n_post=n_total_msns,
                 config=get_stp_config("thalamostriatal", dt=config.dt_ms),
                 per_synapse=True,
@@ -579,7 +582,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # Initialize PFC → D1 modulation weights
             self.pfc_modulation_d1 = nn.Parameter(
                 WeightInitializer.sparse_random(
-                    n_output=self.config.n_output,  # D1 neurons
+                    n_output=self.config.total_neurons,  # D1 neurons
                     n_input=self.config.pfc_size,
                     sparsity=0.3,
                     device=torch.device(self.config.device),
@@ -589,7 +592,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # Initialize PFC → D2 modulation weights
             self.pfc_modulation_d2 = nn.Parameter(
                 WeightInitializer.sparse_random(
-                    n_output=self.config.n_output,  # D2 neurons
+                    n_output=self.config.total_neurons,  # D2 neurons
                     n_input=self.config.pfc_size,
                     sparsity=0.3,
                     device=torch.device(self.config.device),
@@ -623,7 +626,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self._last_pfc_goal_context = None  # For goal-conditioned learning
 
         # Initialize recent_spikes tensor for trial activity tracking
-        self.recent_spikes = torch.zeros(config.n_output, device=self.device)
+        self.recent_spikes = torch.zeros(config.total_neurons, device=self.device)
 
         # Initialize rpe_trace if RPE is enabled
         self.rpe_trace = (
@@ -843,7 +846,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             assert actual_pfc_size == expected_pfc_size, \
                 f"PFC goal context size mismatch: got {actual_pfc_size}, expected {expected_pfc_size}. " \
                 f"pfc_modulation_d1 shape: {self.pfc_modulation_d1.shape}, pfc_goal_context shape: {pfc_goal_context.shape}. " \
-                f"Check that striatum_config.pfc_size matches actual PFC output size in brain config."
+                f"Check that config.pfc_size matches actual PFC output size in brain config."
 
             # Compute goal modulation for D1 (Go pathway)
             goal_mod_d1 = torch.sigmoid(
@@ -879,8 +882,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         learn differently (opposite dopamine responses). Both receive the same inputs.
 
         Structure:
-        - synaptic_weights["default_d1"] = [n_d1, n_input]  # D1 MSN weights
-        - synaptic_weights["default_d2"] = [n_d2, n_input]  # D2 MSN weights
+        - synaptic_weights["default_d1"] = [d1_size, n_input]  # D1 MSN weights
+        - synaptic_weights["default_d2"] = [d2_size, n_input]  # D2 MSN weights
 
         This is biologically accurate: each MSN has unique synaptic weights,
         and D1/D2 differ in their dopamine receptors (and thus learning rules).
@@ -888,11 +891,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         Args:
             n_input: Input dimension size
         """
-        n_total = self.config.n_output  # Neurons per pathway
-        # D1 and D2 are SEPARATE full-size populations, not split
-        # Both pathways have n_output neurons (opponent/parallel processing)
-        n_d1 = n_total
-        n_d2 = n_total
+        # Use explicit MSN counts, not action counts
+        # When population_coding: d1_size = n_actions * neurons_per_action / 2
+        # When not: d1_size = n_actions / 2
+        n_d1 = self.config.d1_size
+        n_d2 = self.config.d2_size
 
         # Initialize D1 weights using Xavier initialization
         d1_weights = WeightInitializer.xavier(
@@ -1030,7 +1033,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         IDs follow format: "striatum_{d1|d2}_neuron_{index}_step{step}"
         """
         self.neuron_ids = []
-        n_neurons = self.config.n_output
+        n_neurons = self.config.total_neurons
 
         # Half D1, half D2 (for ID purposes, even if pathways are separate)
         n_d1 = n_neurons // 2
@@ -1336,7 +1339,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             >>> cortex_to_striatum.grow_source('cortex', new_size)
             >>> striatum.grow_input(20)  # Expand D1/D2 input weights
         """
-        old_n_input = self.config.n_input
+        old_n_input = self.config.total_input
         new_n_input = old_n_input + n_new
 
         # Delegate to internal pathway grow_input() methods
@@ -1378,8 +1381,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Use Xavier initialization with reduced gain for minimal variance
         # Gain of 0.2 provides similar variance to old system (0.01)
         weights = WeightInitializer.xavier(
-            n_output=self.config.n_output,
-            n_input=self.config.n_input,
+            n_output=self.config.n_actions,
+            n_input=self.config.total_input,
             gain=0.2,  # Reduced gain for near-symmetric start
             device=self.device
         )
@@ -1564,7 +1567,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             tau_adapt=100.0,        # Adaptation time constant
             adapt_increment=0.1,    # Enable spike-frequency adaptation
         )
-        neurons = ConductanceLIF(n_neurons=self.config.n_output, config=neuron_config)
+        neurons = ConductanceLIF(n_neurons=self.config.total_neurons, config=neuron_config)
         neurons.to(self.device)
         return neurons
 
@@ -1598,7 +1601,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             tau_adapt=100.0,        # Adaptation time constant
             adapt_increment=0.1,    # Enable spike-frequency adaptation
         )
-        neurons = ConductanceLIF(n_neurons=self.config.n_output, config=neuron_config)
+        neurons = ConductanceLIF(n_neurons=self.config.total_neurons, config=neuron_config)
         neurons.to(self.device)
         return neurons
 
@@ -1673,7 +1676,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         input_spikes = InputRouter.concatenate_sources(
             inputs,
             component_name="Striatum",
-            n_input=self.config.n_input,
+            n_input=self.config.total_input,
             device=self.device,
         )
 
@@ -1697,7 +1700,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if self.fsi_size > 0 and "fsi" in self.synaptic_weights:
             # Compute FSI synaptic current (weights applied at dendrites)
             fsi_weights = self.synaptic_weights["fsi"]
-            fsi_synaptic_current = fsi_weights @ input_spikes  # [n_fsi]
+            # Convert boolean spikes to float for matrix multiplication
+            input_spikes_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
+            fsi_synaptic_current = fsi_weights @ input_spikes_float  # [n_fsi]
 
             # Apply gap junction coupling (if enabled and state available)
             if self.gap_junctions_fsi is not None and self.state.fsi_membrane is not None:

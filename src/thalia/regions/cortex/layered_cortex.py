@@ -336,7 +336,7 @@ class LayeredCortex(NeuralRegion):
 
         # Homeostasis for synaptic scaling and intrinsic plasticity
         homeostasis_config = UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget * config.n_input,
+            weight_budget=config.weight_budget * config.input_size,
             w_min=config.w_min,
             w_max=config.w_max,
             soft_normalization=config.soft_normalization,
@@ -355,7 +355,7 @@ class LayeredCortex(NeuralRegion):
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights in _init_weights."""
         return nn.Parameter(
-            torch.zeros(self._actual_output, self.config.n_input)
+            torch.zeros(self._actual_output, self.config.input_size)
         )
 
     def _create_neurons(self):
@@ -520,18 +520,18 @@ class LayeredCortex(NeuralRegion):
         # We initialize to mean ≈ target, with some variance for diversity
 
         # Input → L4: positive excitatory weights (EXTERNAL - moved to synaptic_weights)
-        w_scale_input = 1.0 / max(1, int(cfg.n_input * 0.15))  # Assume 15% input sparsity
+        w_scale_input = 1.0 / max(1, int(cfg.input_size * 0.15))  # Assume 15% input sparsity
         input_weights = torch.abs(
             WeightInitializer.gaussian(
                 n_output=self.l4_size,
-                n_input=cfg.n_input,
+                n_input=cfg.input_size,
                 mean=0.0,
                 std=w_scale_input,
                 device=device
             )
         )
         # Register external input source (NeuralRegion pattern)
-        self.add_input_source("input", n_input=cfg.n_input, learning_rule=None)
+        self.add_input_source("input", n_input=cfg.input_size, learning_rule=None)
         self.synaptic_weights["input"] = nn.Parameter(input_weights)
 
         # L4 → L2/3: positive excitatory weights (AT L2/3 DENDRITES)
@@ -1029,7 +1029,7 @@ class LayeredCortex(NeuralRegion):
             - Preserves existing learned weights in left columns
             - Initializes new input weights small to avoid disruption
         """
-        old_n_input = self.config.n_input
+        old_n_input = self.config.input_size
         new_n_input = old_n_input + n_new
 
         # Expand input→L4 weights [l4, input] → [l4, input+n_new]
@@ -1083,7 +1083,7 @@ class LayeredCortex(NeuralRegion):
         input_spikes = InputRouter.concatenate_sources(
             inputs,
             component_name="LayeredCortex",
-            n_input=self.config.n_input,
+            n_input=self.config.input_size,
             device=self.device,
         )
 
@@ -1100,9 +1100,9 @@ class LayeredCortex(NeuralRegion):
             f"LayeredCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}. "
             f"Thalia uses single-brain architecture with no batch dimension."
         )
-        assert input_spikes.shape[0] == self.config.n_input, (
+        assert input_spikes.shape[0] == self.config.input_size, (
             f"LayeredCortex.forward: input_spikes has shape {input_spikes.shape} "
-            f"but n_input={self.config.n_input}. Check that input matches cortex config."
+            f"but input_size={self.config.input_size}. Check that input matches cortex config."
         )
 
         if top_down is not None:

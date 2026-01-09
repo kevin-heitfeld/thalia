@@ -102,9 +102,11 @@ class TestHippocampusNeurogenesisTracking:
         config = HippocampusConfig(
             n_input=64,
             n_output=32,
-            dg_expansion=4.0,
-            ca3_size_ratio=0.5,
-            ca1_size_ratio=1.0,
+            # Explicitly specify layer sizes
+            dg_size=256,  # DG expansion from input
+            ca3_size=128,  # CA3 size
+            ca2_size=96,   # CA2 size
+            ca1_size=32,   # CA1 size (matches n_output)
             device="cpu"
         )
         hippo = TrisynapticHippocampus(config)
@@ -134,9 +136,11 @@ class TestHippocampusNeurogenesisTracking:
         config = HippocampusConfig(
             n_input=64,
             n_output=32,
-            dg_expansion=4.0,
-            ca3_size_ratio=0.5,
-            ca1_size_ratio=1.0,
+            # Explicitly specify layer sizes
+            dg_size=256,  # DG expansion from input
+            ca3_size=128,  # CA3 size
+            ca2_size=96,   # CA2 size
+            ca1_size=32,   # CA1 size (matches n_output)
             device="cpu"
         )
         hippo = TrisynapticHippocampus(config)

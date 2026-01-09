@@ -27,7 +27,8 @@ def thalamus_config(device):
     return ThalamicRelayConfig(
         n_input=128,
         n_output=128,  # Relay size
-        trn_ratio=0.5,  # TRN will be 64 neurons (50% of relay)
+        relay_size=128,  # Explicitly specify relay neurons
+        trn_size=64,  # TRN neurons (50% of relay, similar to old trn_ratio=0.5)
         trn_inhibition_strength=0.8,
         device=str(device),
         dt_ms=1.0,

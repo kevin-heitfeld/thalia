@@ -354,10 +354,11 @@ class TestCA3PersistentActivity:
             n_output=20,  # CA1 size matches output
             device="cpu",
             dt_ms=1.0,
-            # Layer sizes computed from expansion ratios
-            dg_expansion=1.5,  # DG_size = n_input * dg_expansion = 30
-            ca3_size_ratio=0.83,  # ca3_size = dg_size * ratio = 25
-            ca1_size_ratio=1.0,  # ca1_size = n_output * ratio = 20
+            # Explicitly specify layer sizes instead of using old expansion ratio API
+            dg_size=30,  # DG_size expansion from input
+            ca3_size=25,  # CA3 size
+            ca2_size=22,  # CA2 size
+            ca1_size=20,  # CA1 size (matches n_output)
         )
 
     def test_ca3_persistent_activity_preserved(self, hippocampus_config):
