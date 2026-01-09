@@ -298,6 +298,10 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
             # Update n_neurons to total size
             total_neurons = sizes["dg_size"] + sizes["ca3_size"] + sizes["ca2_size"] + sizes["ca1_size"]
             object.__setattr__(self, "n_neurons", total_neurons)
+        # Auto-compute n_neurons from layer sizes if not provided (or if default 100)
+        elif self.n_neurons == 100:  # Default value
+            total_neurons = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
+            object.__setattr__(self, "n_neurons", total_neurons)
 
         # Validate after computation
         self.validate()

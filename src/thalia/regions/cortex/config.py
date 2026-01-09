@@ -118,6 +118,10 @@ class LayeredCortexConfig(NeuralComponentConfig):
             object.__setattr__(self, "n_output", output_size)
             total_neurons = sizes["l4_size"] + sizes["l23_size"] + sizes["l5_size"] + l6a_size + l6b_size
             object.__setattr__(self, "n_neurons", total_neurons)
+        # Auto-compute n_neurons from layer sizes if not provided (or if default 100)
+        elif self.n_neurons == 100:  # Default value
+            total_neurons = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
+            object.__setattr__(self, "n_neurons", total_neurons)
 
         # Validate after computation
         self.validate()

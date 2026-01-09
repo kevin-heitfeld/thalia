@@ -246,6 +246,10 @@ class ThalamicRelayConfig(NeuralComponentConfig):
             object.__setattr__(self, "n_output", sizes["relay_size"])
             total_neurons = sizes["relay_size"] + sizes["trn_size"]
             object.__setattr__(self, "n_neurons", total_neurons)
+        # Auto-compute n_neurons from layer sizes if not provided (or if default 100)
+        elif self.n_neurons == 100:  # Default value
+            total_neurons = self.relay_size + self.trn_size
+            object.__setattr__(self, "n_neurons", total_neurons)
 
         # Validate after computation
         self.validate()
