@@ -218,12 +218,8 @@ class TestMultiRegionIndependence:
         torch.manual_seed(seed)
 
         # Use hippocampus (no exploration randomness like striatum)
-        config = HippocampusConfig(
-            n_input=20,
-            n_output=20,
-            device="cpu",
-            dt_ms=1.0,
-        )
+        config = HippocampusConfig(input_size=20, ca1_size=20, device="cpu",
+            dt_ms=1.0)
         hippocampus = TrisynapticHippocampus(config)
 
         # Build up some state
@@ -335,13 +331,8 @@ class TestStateConsistency:
         """Property: Multiple save/load cycles preserve state correctly."""
         torch.manual_seed(seed)
 
-        config = StriatumConfig(
-            n_input=40,
-            n_output=8,
-            population_coding=False,
-            device="cpu",
-            dt_ms=1.0,
-        )
+        config = StriatumConfig(n_actions=8, neurons_per_action=1, input_sources={'default': 40}, device="cpu",
+            dt_ms=1.0)
         striatum = Striatum(config)
 
         # Initial state
@@ -378,12 +369,8 @@ class TestStateConsistency:
         """Property: Hippocampus state remains consistent through checkpoints."""
         torch.manual_seed(seed)
 
-        config = HippocampusConfig(
-            n_input=20,
-            n_output=20,
-            device="cpu",
-            dt_ms=1.0,
-        )
+        config = HippocampusConfig(input_size=20, ca1_size=20, device="cpu",
+            dt_ms=1.0)
         hippocampus = TrisynapticHippocampus(config)
 
         # Build up some patterns

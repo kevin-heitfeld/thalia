@@ -51,13 +51,8 @@ def default_config(device):
 def test_gap_junctions_can_be_disabled(device):
     """Test that FSI and gap junctions can be disabled via configuration."""
     # Disable FSI entirely
-    config_no_fsi = StriatumConfig(
-        n_input=64,
-        n_output=50,
-        population_coding=False,
-        fsi_enabled=False,
-        device=device,
-    )
+    config_no_fsi = StriatumConfig(n_actions=50, neurons_per_action=1, input_sources={'default': 64}, fsi_enabled=False,
+        device=device)
     striatum = Striatum(config_no_fsi)
 
     assert striatum.fsi_size == 0
@@ -65,15 +60,10 @@ def test_gap_junctions_can_be_disabled(device):
     assert striatum.gap_junctions_fsi is None
 
     # Enable FSI but disable gap junctions
-    config_no_gaps = StriatumConfig(
-        n_input=64,
-        n_output=50,
-        population_coding=False,
-        fsi_enabled=True,
+    config_no_gaps = StriatumConfig(n_actions=50, neurons_per_action=1, input_sources={'default': 64}, fsi_enabled=True,
         fsi_ratio=0.02,
         gap_junctions_enabled=False,
-        device=device,
-    )
+        device=device)
     striatum2 = Striatum(config_no_gaps)
 
     # FSI should exist but gap junctions should be None
@@ -188,13 +178,8 @@ def test_gap_junction_state_serialization(default_config, device):
 
 def test_gap_junction_backward_compatibility(device):
     """Test that old states without FSI fields can be loaded."""
-    config = StriatumConfig(
-        n_input=64,
-        n_output=50,
-        population_coding=False,
-        fsi_enabled=True,
-        device=device,
-    )
+    config = StriatumConfig(n_actions=50, neurons_per_action=1, input_sources={'default': 64}, fsi_enabled=True,
+        device=device)
     striatum = Striatum(config)
 
     # Create old state dict WITHOUT fsi_membrane

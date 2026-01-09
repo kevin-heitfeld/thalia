@@ -344,12 +344,8 @@ class TestSTPStateManagement:
 
     def test_stp_modules_in_reset(self):
         """Test that STP modules are included in reset_state call."""
-        config = ThalamicRelayConfig(
-            n_input=10,
-            n_output=5,
-            device="cpu",
-            stp_enabled=True,
-        )
+        config = ThalamicRelayConfig(input_size=10, relay_size=5, trn_size=0, device="cpu",
+            stp_enabled=True)
         thalamus = ThalamicRelay(config)
 
         # STP modules should have reset_state method

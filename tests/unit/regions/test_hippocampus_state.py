@@ -73,11 +73,8 @@ class TestHippocampusStateEdgeCases:
 
     def test_load_state_with_missing_stp_modules(self):
         """Test load_state() with missing STP modules (hippocampus-specific)."""
-        config = HippocampusConfig(
-            n_input=10, n_output=8,
-            stp_enabled=False,  # STP disabled
-            device="cpu", dt_ms=1.0,
-        )
+        config = HippocampusConfig(input_size=10, ca1_size=8, stp_enabled=False,  # STP disabled
+            device="cpu", dt_ms=1.0)
         hippocampus = Hippocampus(config)
 
         # State with STP, but region has no STP modules

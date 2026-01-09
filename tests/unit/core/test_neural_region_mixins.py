@@ -11,11 +11,7 @@ from thalia.learning.strategy_mixin import LearningStrategyMixin
 def test_neural_region_has_both_mixins():
     """Verify NeuralRegion provides both StateLoadingMixin and LearningStrategyMixin."""
     # Create a simple Prefrontal region
-    config = PrefrontalConfig(
-        n_input=64,
-        n_output=128,
-        device="cpu",
-    )
+    config = PrefrontalConfig(input_size=64, n_neurons=128, device="cpu")
     pfc = Prefrontal(config)
 
     # Verify it has StateLoadingMixin methods
@@ -56,11 +52,7 @@ def test_cerebellum_inherits_mixins_from_base():
 
 def test_state_loading_works_with_base_inheritance():
     """Verify state loading still works with base class inheritance."""
-    config = PrefrontalConfig(
-        n_input=32,
-        n_output=64,
-        device="cpu",
-    )
+    config = PrefrontalConfig(input_size=32, n_neurons=64, device="cpu")
     pfc = Prefrontal(config)
     pfc.reset_state()
 

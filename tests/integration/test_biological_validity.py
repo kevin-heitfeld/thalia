@@ -238,12 +238,9 @@ class TestNoNegativeSpikes:
     @pytest.fixture
     def thalamus_config(self) -> ThalamicRelayConfig:
         """Create thalamus config."""
-        return ThalamicRelayConfig(
-            n_input=30,
-            n_output=30,  # Relay size
+        return ThalamicRelayConfig(input_size=30, relay_size=30, trn_size=0, # Relay size
             device="cpu",
-            dt_ms=1.0,
-        )
+            dt_ms=1.0)
 
     def test_no_negative_spikes_before_checkpoint(self, thalamus_config):
         """Verify no negative spikes during normal operation."""
@@ -349,9 +346,7 @@ class TestCA3PersistentActivity:
     @pytest.fixture
     def hippocampus_config(self) -> HippocampusConfig:
         """Create hippocampus config."""
-        return HippocampusConfig(
-            n_input=20,
-            n_output=20,  # CA1 size matches output
+        return HippocampusConfig(input_size=20, ca1_size=20, # CA1 size matches output
             device="cpu",
             dt_ms=1.0,
             # Explicitly specify layer sizes instead of using old expansion ratio API

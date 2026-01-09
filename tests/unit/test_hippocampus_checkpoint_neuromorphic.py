@@ -23,9 +23,8 @@ def device():
 @pytest.fixture
 def small_hippocampus(device):
     """Small hippocampus for testing."""
-    config = HippocampusConfig(
-        n_input=4,  # Small input
-        n_output=8,  # 8 CA1 neurons (explicit)
+    config = HippocampusConfig(input_size=4, ca1_size=8, # Small input
+        # 8 CA1 neurons (explicit)
         dg_size=15,  # Explicit DG size
         ca3_size=10,  # Explicit CA3 size
         ca2_size=9,  # Explicit CA2 size (between CA3 and CA1)

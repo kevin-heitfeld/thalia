@@ -211,7 +211,7 @@ class TestGrowthIntegrationWithRegions:
         assert pfc.neurons.n_neurons == initial_n
 
         # Grow region
-        pfc.grow_output(n_new=growth_amount)
+        pfc.grow_neurons(n_new=growth_amount)
 
         # Neurons should be grown, not recreated
         total_n = initial_n + growth_amount

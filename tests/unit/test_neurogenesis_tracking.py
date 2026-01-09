@@ -99,10 +99,7 @@ class TestHippocampusNeurogenesisTracking:
 
     def test_initial_birth_steps_all_zero(self):
         """All initial neurons should have birth_step=0."""
-        config = HippocampusConfig(
-            n_input=64,
-            n_output=32,
-            # Explicitly specify layer sizes
+        config = HippocampusConfig(input_size=64, ca1_size=32, # Explicitly specify layer sizes
             dg_size=256,  # DG expansion from input
             ca3_size=128,  # CA3 size
             ca2_size=96,   # CA2 size
@@ -121,11 +118,7 @@ class TestHippocampusNeurogenesisTracking:
 
     def test_training_step_update(self):
         """Training step should be updateable."""
-        config = HippocampusConfig(
-            n_input=64,
-            n_output=32,
-            device="cpu"
-        )
+        config = HippocampusConfig(input_size=64, ca1_size=32, device="cpu")
         hippo = TrisynapticHippocampus(config)
 
         hippo.set_training_step(2000)

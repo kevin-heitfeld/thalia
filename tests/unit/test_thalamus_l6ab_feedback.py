@@ -24,9 +24,7 @@ def device():
 @pytest.fixture
 def thalamus_config(device):
     """Thalamus configuration for testing."""
-    return ThalamicRelayConfig(
-        n_input=128,
-        n_output=128,  # Relay size
+    return ThalamicRelayConfig(input_size=128, relay_size=128, trn_size=0, # Relay size
         relay_size=128,  # Explicitly specify relay neurons
         trn_size=64,  # TRN neurons (50% of relay, similar to old trn_ratio=0.5)
         trn_inhibition_strength=0.8,

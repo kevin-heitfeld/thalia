@@ -157,7 +157,7 @@ class TestNeuronIDPersistence:
         ids1 = set(n["id"] for n in state1["neurons"])
 
         # Grow (adds 3 actions = 3 neurons with no population coding)
-        striatum_neuromorphic.grow_output(n_new=3)
+        striatum_neuromorphic.grow_actions(n_new=3)
 
         # Get new IDs
         state2 = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
@@ -185,7 +185,7 @@ class TestNeuronIDPersistence:
         # Grow by 2 actions (= 20 neurons with population coding)
         n_new_actions = 2
         neurons_per_action = 10
-        striatum_neuromorphic_population.grow_output(n_new=n_new_actions)
+        striatum_neuromorphic_population.grow_actions(n_new=n_new_actions)
 
         # Get new IDs
         state2 = striatum_neuromorphic_population.checkpoint_manager.get_neuromorphic_state()
@@ -221,7 +221,7 @@ class TestNeuronIDPersistence:
             striatum_neuromorphic.forward(silent_input)
 
         # Add neurons after time advancement
-        striatum_neuromorphic.grow_output(n_new=2)
+        striatum_neuromorphic.grow_actions(n_new=2)
 
         state2 = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
 
@@ -252,7 +252,7 @@ class TestLoadingWithMissingNeurons:
         checkpoint_path = tmp_path / "extra_neurons.ckpt"
 
         # Create checkpoint with 8 neurons
-        striatum_neuromorphic.grow_output(n_new=3)
+        striatum_neuromorphic.grow_actions(n_new=3)
         state = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
         torch.save(state, checkpoint_path)
 
@@ -272,7 +272,7 @@ class TestLoadingWithMissingNeurons:
         checkpoint_path = tmp_path / "partial.ckpt"
 
         # Set state in 8-neuron brain
-        striatum_neuromorphic.grow_output(n_new=3)
+        striatum_neuromorphic.grow_actions(n_new=3)
 
         state = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
         torch.save(state, checkpoint_path)
@@ -297,7 +297,7 @@ class TestLoadingWithMissingNeurons:
         checkpoint_path = tmp_path / "logged.ckpt"
 
         # Create and save 8-neuron brain
-        striatum_neuromorphic.grow_output(n_new=3)
+        striatum_neuromorphic.grow_actions(n_new=3)
         state = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
         torch.save(state, checkpoint_path)
 
@@ -417,7 +417,7 @@ class TestSynapseRestoration:
         checkpoint_path = tmp_path / "orphaned.ckpt"
 
         # Create checkpoint with 8 neurons
-        striatum_neuromorphic.grow_output(n_new=3)
+        striatum_neuromorphic.grow_actions(n_new=3)
         state = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
         torch.save(state, checkpoint_path)
 
@@ -477,7 +477,7 @@ class TestPartialCheckpointLoading:
             striatum_neuromorphic.forward(silent_input)
 
         # Add neurons after time advancement
-        striatum_neuromorphic.grow_output(n_new=3)
+        striatum_neuromorphic.grow_actions(n_new=3)
 
         state = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
         torch.save(state, checkpoint_path)
@@ -538,7 +538,7 @@ class TestNeuronMetadata:
             striatum_neuromorphic.forward(silent_input)
 
         # Add new neurons after time advancement
-        striatum_neuromorphic.grow_output(n_new=2)
+        striatum_neuromorphic.grow_actions(n_new=2)
 
         state2 = striatum_neuromorphic.checkpoint_manager.get_neuromorphic_state()
 

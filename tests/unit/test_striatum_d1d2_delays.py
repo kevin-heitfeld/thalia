@@ -400,16 +400,11 @@ def test_population_coding_with_delays(striatum_config_with_delays):
 
 def test_reset_clears_delay_state():
     """Test that state reset clears accumulated delay effects."""
-    config = StriatumConfig(
-        n_input=50,
-        n_output=4,
-        dt_ms=1.0,
+    config = StriatumConfig(n_actions=4, neurons_per_action=1, input_sources={'default': 50}, dt_ms=1.0,
         device="cpu",
         d1_to_output_delay_ms=15.0,
         d2_to_output_delay_ms=25.0,
-        population_coding=False,
-        homeostasis_enabled=False,
-    )
+        homeostasis_enabled=False)
     striatum = Striatum(config)
 
     # Run forward passes to accumulate votes
@@ -433,15 +428,10 @@ def test_reset_clears_delay_state():
 
 def test_striatum_silent_input():
     """Test striatum handles completely silent input (edge case)."""
-    config = StriatumConfig(
-        n_input=50,
-        n_output=4,
-        dt_ms=1.0,
+    config = StriatumConfig(n_actions=4, neurons_per_action=1, input_sources={'default': 50}, dt_ms=1.0,
         device="cpu",
         d1_to_output_delay_ms=15.0,
-        d2_to_output_delay_ms=25.0,
-        population_coding=False,
-    )
+        d2_to_output_delay_ms=25.0)
     striatum = Striatum(config)
 
     # All-zero input
@@ -463,15 +453,10 @@ def test_striatum_silent_input():
 
 def test_striatum_saturated_input():
     """Test striatum handles saturated input without corruption (edge case)."""
-    config = StriatumConfig(
-        n_input=50,
-        n_output=4,
-        dt_ms=1.0,
+    config = StriatumConfig(n_actions=4, neurons_per_action=1, input_sources={'default': 50}, dt_ms=1.0,
         device="cpu",
         d1_to_output_delay_ms=15.0,
-        d2_to_output_delay_ms=25.0,
-        population_coding=False,
-    )
+        d2_to_output_delay_ms=25.0)
     striatum = Striatum(config)
 
     # All neurons firing
@@ -493,15 +478,10 @@ def test_striatum_saturated_input():
 
 def test_striatum_extreme_dopamine():
     """Test striatum handles extreme dopamine without NaN/Inf (edge case)."""
-    config = StriatumConfig(
-        n_input=50,
-        n_output=4,
-        dt_ms=1.0,
+    config = StriatumConfig(n_actions=4, neurons_per_action=1, input_sources={'default': 50}, dt_ms=1.0,
         device="cpu",
         d1_to_output_delay_ms=15.0,
-        d2_to_output_delay_ms=25.0,
-        population_coding=False,
-    )
+        d2_to_output_delay_ms=25.0)
     striatum = Striatum(config)
 
     input_spikes = generate_sparse_spikes(50, firing_rate=0.5)
@@ -521,15 +501,10 @@ def test_striatum_extreme_dopamine():
 
 def test_striatum_repeated_forward_numerical_stability():
     """Test that repeated forward passes maintain numerical stability."""
-    config = StriatumConfig(
-        n_input=50,
-        n_output=4,
-        dt_ms=1.0,
+    config = StriatumConfig(n_actions=4, neurons_per_action=1, input_sources={'default': 50}, dt_ms=1.0,
         device="cpu",
         d1_to_output_delay_ms=15.0,
-        d2_to_output_delay_ms=25.0,
-        population_coding=False,
-    )
+        d2_to_output_delay_ms=25.0)
     striatum = Striatum(config)
 
     input_spikes = generate_sparse_spikes(50, firing_rate=0.5)

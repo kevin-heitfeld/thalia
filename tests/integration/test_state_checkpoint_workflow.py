@@ -330,7 +330,7 @@ def test_partial_state_load(device, temp_checkpoint_dir):
     by using defaults.
     """
     # Create region with full state
-    config = PrefrontalConfig(n_input=32, n_output=16, device=device)
+    config = PrefrontalConfig(input_size=32, n_neurons=16, device=device)
     pfc = Prefrontal(config)
 
     # Run to populate state

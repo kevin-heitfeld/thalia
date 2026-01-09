@@ -22,10 +22,7 @@ def device():
 @pytest.fixture
 def thalamus_config(device):
     """Minimal thalamus configuration for testing GrowthMixin."""
-    return ThalamicRelayConfig(
-        n_input=50,
-        n_output=100,
-        w_min=0.0,
+    return ThalamicRelayConfig(input_size=50, relay_size=100, trn_size=0, w_min=0.0,
         w_max=1.0,
         device=str(device),
     )
@@ -193,11 +190,7 @@ class TestGrowthMixinCreateNewWeights:
     def test_different_devices(self):
         """Test weight creation on different devices."""
         # CPU region
-        cpu_config = ThalamicRelayConfig(
-            n_input=50,
-            n_output=100,
-            device="cpu",
-        )
+        cpu_config = ThalamicRelayConfig(input_size=50, relay_size=100, trn_size=0, device="cpu")
         cpu_region = ThalamicRelay(cpu_config)
 
         cpu_weights = cpu_region._create_new_weights(
@@ -209,11 +202,7 @@ class TestGrowthMixinCreateNewWeights:
 
         # CUDA region (if available)
         if torch.cuda.is_available():
-            cuda_config = ThalamicRelayConfig(
-                n_input=50,
-                n_output=100,
-                device="cuda",
-            )
+            cuda_config = ThalamicRelayConfig(input_size=50, relay_size=100, trn_size=0, device="cuda")
             cuda_region = ThalamicRelay(cuda_config)
 
             cuda_weights = cuda_region._create_new_weights(

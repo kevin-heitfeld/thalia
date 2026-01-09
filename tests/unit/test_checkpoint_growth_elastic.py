@@ -381,7 +381,7 @@ class TestReservedSpaceUtilization:
         initial_active = striatum_small.n_neurons_active
 
         # Grow by specified amount
-        striatum_small.grow_output(n_new=growth_amount)
+        striatum_small.grow_actions(n_new=growth_amount)
 
         # Active neurons should always increase by growth amount
         expected_active = initial_active + growth_amount
@@ -411,7 +411,7 @@ class TestReservedSpaceUtilization:
         checkpoint_path = tmp_path / "after_growth.ckpt"
 
         # Grow
-        striatum_small.grow_output(n_new=3)
+        striatum_small.grow_actions(n_new=3)
 
         # Save
         state = striatum_small.get_full_state()

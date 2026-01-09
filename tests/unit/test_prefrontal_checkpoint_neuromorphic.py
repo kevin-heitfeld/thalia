@@ -16,9 +16,7 @@ def device():
 @pytest.fixture
 def small_prefrontal(device):
     """Create small prefrontal for testing neuromorphic format."""
-    config = PrefrontalConfig(
-        n_input=8,
-        n_output=50,  # Small enough to trigger neuromorphic (<200 threshold)
+    config = PrefrontalConfig(input_size=8, n_neurons=50, # Small enough to trigger neuromorphic (<200 threshold)
         device=device,
         dt_ms=1.0,
     )
@@ -171,12 +169,9 @@ class TestPrefrontalHybrid:
         """
         import torch
 
-        config = PrefrontalConfig(
-            n_input=8,
-            n_output=300,  # Large, but has growth capability
+        config = PrefrontalConfig(input_size=8, n_neurons=300, # Large, but has growth capability
             device=device,
-            dt_ms=1.0,
-        )
+            dt_ms=1.0)
         prefrontal = Prefrontal(config)
         manager = PrefrontalCheckpointManager(prefrontal)
 

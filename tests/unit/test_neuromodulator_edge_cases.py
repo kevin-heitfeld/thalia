@@ -98,10 +98,7 @@ def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
     Biological context: ACh modulates encoding vs retrieval in hippocampus.
     Values within [0, 2] range should work without issues.
     """
-    config = HippocampusConfig(
-        n_input=40,
-        n_output=20,
-        device=str(device),
+    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
     )
     hippocampus = Hippocampus(config)
     hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
@@ -124,10 +121,7 @@ def test_hippocampus_rejects_extreme_acetylcholine(acetylcholine, device):
     Biological context: ACh should be in [0, 2] range for biological plausibility.
     Values outside this range should be rejected early.
     """
-    config = HippocampusConfig(
-        n_input=40,
-        n_output=20,
-        device=str(device),
+    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
     )
     hippocampus = Hippocampus(config)
 
@@ -147,10 +141,7 @@ def test_prefrontal_handles_valid_norepinephrine_range(norepinephrine, device):
     Biological context: NE modulates arousal and working memory gating in PFC.
     Values within [0, 2] range should work without issues.
     """
-    config = PrefrontalConfig(
-        n_input=30,
-        n_output=15,
-        device=str(device),
+    config = PrefrontalConfig(input_size=30, n_neurons=15, device=str(device),
     )
     prefrontal = Prefrontal(config)
     prefrontal.set_neuromodulators(norepinephrine=norepinephrine)
@@ -173,10 +164,7 @@ def test_prefrontal_rejects_extreme_norepinephrine(norepinephrine, device):
     Biological context: NE should be in [0, 2] range for biological plausibility.
     Values outside this range should be rejected early.
     """
-    config = PrefrontalConfig(
-        n_input=30,
-        n_output=15,
-        device=str(device),
+    config = PrefrontalConfig(input_size=30, n_neurons=15, device=str(device),
     )
     prefrontal = Prefrontal(config)
 
@@ -220,10 +208,7 @@ def test_striatum_rejects_inf_dopamine(device):
 
 def test_hippocampus_rejects_nan_acetylcholine(device):
     """Test hippocampus rejects NaN acetylcholine with clear error."""
-    config = HippocampusConfig(
-        n_input=40,
-        n_output=20,
-        device=str(device),
+    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
     )
     hippocampus = Hippocampus(config)
 
@@ -236,7 +221,7 @@ def test_hippocampus_rejects_nan_acetylcholine(device):
 
 def test_prefrontal_rejects_nan_norepinephrine(device):
     """Test PFC rejects NaN norepinephrine with clear error."""
-    config = PrefrontalConfig(n_input=50, n_output=30, device=str(device))
+    config = PrefrontalConfig(input_size=50, n_neurons=30, device=str(device))
     pfc = Prefrontal(config)
 
     with pytest.raises(
@@ -265,7 +250,7 @@ def test_prefrontal_handles_valid_combined_modulators(dopamine, norepinephrine, 
     Biological context: DA and NE interact in PFC for working memory
     and cognitive control. System should handle all valid combinations.
     """
-    config = PrefrontalConfig(n_input=50, n_output=30, device=str(device))
+    config = PrefrontalConfig(input_size=50, n_neurons=30, device=str(device))
     pfc = Prefrontal(config)
 
     pfc.set_neuromodulators(
@@ -294,7 +279,7 @@ def test_prefrontal_rejects_invalid_combined_modulators(dopamine, norepinephrine
 
     Should reject any combination where at least one modulator is out of range.
     """
-    config = PrefrontalConfig(n_input=50, n_output=30, device=str(device))
+    config = PrefrontalConfig(input_size=50, n_neurons=30, device=str(device))
     pfc = Prefrontal(config)
 
     # Should raise ValueError for any out-of-range value
@@ -341,10 +326,7 @@ def test_hippocampus_stable_with_fluctuating_acetylcholine(device):
     Biological context: ACh levels change during encoding vs retrieval
     phases. System should handle mode switching without instability.
     """
-    config = HippocampusConfig(
-        n_input=40,
-        n_output=20,
-        device=str(device),
+    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
     )
     hippocampus = Hippocampus(config)
 
@@ -412,10 +394,7 @@ def test_hippocampus_learning_stable_with_valid_acetylcholine(acetylcholine, dev
     ACh modulates learning rate in hippocampus. Extreme values should
     saturate learning, not cause divergence.
     """
-    config = HippocampusConfig(
-        n_input=40,
-        n_output=20,
-        device=str(device),
+    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
     )
     hippocampus = Hippocampus(config)
 
@@ -487,10 +466,9 @@ def test_multi_region_neuromodulator_stability(device):
     """
     # Create multiple regions
     striatum = Striatum(StriatumConfig(n_input=50, n_output=3, device=str(device)))
-    hippocampus = Hippocampus(HippocampusConfig(
-        n_input=40, n_output=20, device=str(device)
+    hippocampus = Hippocampus(HippocampusConfig(input_size=40, ca1_size=20, device=str(device)
     ))
-    pfc = Prefrontal(PrefrontalConfig(n_input=50, n_output=30, device=str(device)))
+    pfc = Prefrontal(PrefrontalConfig(input_size=50, n_neurons=30, device=str(device)))
 
     # Set different modulators for each (all within valid ranges)
     striatum.set_neuromodulators(dopamine=2.0)

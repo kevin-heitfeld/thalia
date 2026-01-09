@@ -443,7 +443,7 @@ class TestGrowthMethods:
 
         # Grow output (add 1 action = 10 neurons)
         n_new = 1
-        striatum.grow_output(n_new)
+        striatum.grow_actions(n_new)
 
         # Check config fields updated
         # New total = initial + (neurons_per_action * n_new)
@@ -498,13 +498,9 @@ class TestEdgeCases:
 
     def test_minimal_sizes(self):
         """Test that minimal sizes (1 neuron) work."""
-        config = ThalamicRelayConfig(
-            n_input=1,
-            n_output=1,
-            relay_size=1,
+        config = ThalamicRelayConfig(input_size=1, relay_size=1, trn_size=0, relay_size=1,
             trn_size=1,
-            device="cpu",
-        )
+            device="cpu")
 
         thalamus = ThalamicRelay(config)
 

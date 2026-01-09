@@ -33,10 +33,7 @@ def device():
 @pytest.fixture
 def thalamus_config(device):
     """Standard thalamus configuration."""
-    return ThalamicRelayConfig(
-        n_input=100,
-        n_output=80,
-        dt_ms=1.0,
+    return ThalamicRelayConfig(input_size=100, relay_size=80, trn_size=0, dt_ms=1.0,
         device=str(device),
     )
 
