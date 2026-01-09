@@ -178,10 +178,6 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     relay_size: int = field(default=0)  # Relay neuron population
     trn_size: int = field(default=0)    # TRN neuron population
 
-    # Computed dimensions (set in __post_init__)
-    output_size: int = field(init=False, default=0)    # Relay neurons output to cortex
-    total_neurons: int = field(init=False, default=0)  # Relay + TRN
-
     trn_inhibition_strength: float = THALAMUS_TRN_INHIBITION
     """Strength of TRN → relay inhibition."""
 
@@ -256,9 +252,7 @@ class ThalamicRelayConfig(NeuralComponentConfig):
             object.__setattr__(self, "trn_size", sizes["trn_size"])
 
         # Always compute output_size and total_neurons from layer sizes
-        object.__setattr__(self, "output_size", self.relay_size)
-        total_neurons = self.relay_size + self.trn_size
-        object.__setattr__(self, "total_neurons", total_neurons)
+        # (Now properties - no need to set)
 
         # Validate after computation
         self.validate()
