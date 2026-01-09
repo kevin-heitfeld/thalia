@@ -35,8 +35,8 @@ class TestLayeredCortex(RegionTestBase):
         config = LayeredCortexConfig.from_input_size(input_size=100, device="cpu", dt_ms=1.0)
         return {
             "input_size": config.input_size,
-            "output_size": config.output_size,
-            "n_neurons": config.n_neurons,
+
+
             "l4_size": config.l4_size,
             "l23_size": config.l23_size,
             "l5_size": config.l5_size,
@@ -52,8 +52,8 @@ class TestLayeredCortex(RegionTestBase):
         config = LayeredCortexConfig.from_input_size(input_size=20, device="cpu", dt_ms=1.0)
         return {
             "input_size": config.input_size,
-            "output_size": config.output_size,
-            "n_neurons": config.n_neurons,
+
+
             "l4_size": config.l4_size,
             "l23_size": config.l23_size,
             "l5_size": config.l5_size,

@@ -56,10 +56,6 @@ class LayeredCortexConfig(NeuralComponentConfig):
     l6a_size: int = field(default=0)         # L6a → TRN pathway
     l6b_size: int = field(default=0)         # L6b → relay pathway
 
-    # Computed dimensions (set in __post_init__)
-    output_size: int = field(init=False, default=0)    # L2/3 + L5 (dual output pathways)
-    total_neurons: int = field(init=False, default=0)  # Sum of all layers
-
     # Layer sparsity (fraction of neurons active)
     l4_sparsity: float = 0.15  # Moderate sparsity
     l23_sparsity: float = 0.10  # Sparser (more selective)
@@ -105,6 +101,33 @@ class LayeredCortexConfig(NeuralComponentConfig):
     gap_junctions_enabled: bool = True
     """Enable gap junction coupling in L2/3 interneurons."""
 
+    # Computed dimensions as properties (always up-to-date after growth)
+    @property
+    def output_size(self) -> int:
+        """L2/3 + L5 (dual output pathways: cortico-cortical + subcortical)."""
+        return self.l23_size + self.l5_size
+
+    @property
+    def total_neurons(self) -> int:
+        """Sum of all layers."""
+        return self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
+
+    @property
+    def n_input(self) -> int:
+        """Backward compatibility property for growth validation.
+
+        Maps to semantic field: input_size
+        """
+        return self.input_size
+
+    @property
+    def n_output(self) -> int:
+        """Backward compatibility property for growth validation.
+
+        Maps to semantic field: output_size (L2/3 + L5)
+        """
+        return self.output_size
+
     def __post_init__(self) -> None:
         """Auto-compute layer sizes from input_size if all are 0, then validate."""
         # Auto-compute if all layer sizes are 0
@@ -119,12 +142,6 @@ class LayeredCortexConfig(NeuralComponentConfig):
             l6b_size = sizes["l5_size"] - l6a_size  # Handle odd sizes
             object.__setattr__(self, "l6a_size", l6a_size)
             object.__setattr__(self, "l6b_size", l6b_size)
-
-        # Always compute output_size and total_neurons from layer sizes
-        output_size = self.l23_size + self.l5_size  # L2/3 + L5 output
-        object.__setattr__(self, "output_size", output_size)
-        total_neurons = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
-        object.__setattr__(self, "total_neurons", total_neurons)
 
         # Validate after computation
         self.validate()
@@ -146,20 +163,6 @@ class LayeredCortexConfig(NeuralComponentConfig):
                 f"Core layer sizes (l4, l23, l5) must be > 0. Got l4={self.l4_size}, "
                 f"l23={self.l23_size}, l5={self.l5_size}. "
                 "Either specify all sizes explicitly or let them auto-compute from input_size."
-            )
-
-        total = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
-        if self.total_neurons != total:
-            raise ValueError(
-                f"total_neurons ({self.total_neurons}) must equal sum of layer sizes ({total})"
-            )
-
-        # output_size should be L2/3 + L5 (cortico-cortical + subcortical output)
-        expected_output = self.l23_size + self.l5_size
-        if self.output_size != expected_output:
-            raise ValueError(
-                f"output_size ({self.output_size}) must equal l23_size + l5_size ({expected_output}). "
-                "Cortex outputs through both L2/3 (cortico-cortical) and L5 (subcortical) pathways."
             )
 
     @classmethod

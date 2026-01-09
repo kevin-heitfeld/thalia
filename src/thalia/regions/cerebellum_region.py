@@ -150,18 +150,19 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
     granule_size: int = field(default=0)  # Explicit granule cell count
     purkinje_size: int = field(default=0)  # Explicit Purkinje cell count (typically = output)
 
-    # Computed dimensions (set in __post_init__)
-    output_size: int = field(init=False, default=0)    # Purkinje cell output
-    total_neurons: int = field(init=False, default=0)  # Granule + Purkinje
-
     granule_sparsity: float = 0.03  # Fraction of granule cells active (3%)
     purkinje_n_dendrites: int = 100  # Simplified dendritic compartments
 
-    def __post_init__(self) -> None:
-        """Auto-compute output_size and total_neurons from layer sizes."""
-        object.__setattr__(self, "output_size", self.purkinje_size)
-        total_neurons = self.granule_size + self.purkinje_size if self.use_enhanced_microcircuit else self.purkinje_size
-        object.__setattr__(self, "total_neurons", total_neurons)
+    # Computed dimensions as properties (always up-to-date after growth)
+    @property
+    def output_size(self) -> int:
+        """Purkinje cell output (always equals purkinje_size)."""
+        return self.purkinje_size
+
+    @property
+    def total_neurons(self) -> int:
+        """Total neurons: Granule + Purkinje (or just Purkinje if not enhanced)."""
+        return self.granule_size + self.purkinje_size if self.use_enhanced_microcircuit else self.purkinje_size
 
     @property
     def n_input(self) -> int:
