@@ -40,14 +40,14 @@ def device():
 def striatum_config_with_delays(device):
     """Striatum configuration with explicit D1/D2 pathway delays."""
     return StriatumConfig(
-        n_input=50,
-        n_output=4,  # 4 actions
+        n_actions=4,  # 4 actions
+        neurons_per_action=1,  # No population coding
+        input_sources={'default': 50},  # Single source with 50 inputs
         dt_ms=1.0,  # 1ms timesteps
         device=str(device),
         # Configure different delays for D1 and D2
         d1_to_output_delay_ms=15.0,  # D1 direct pathway: 15ms
         d2_to_output_delay_ms=25.0,  # D2 indirect pathway: 25ms (slower!)
-        population_coding=False,  # Simplify for testing
         homeostasis_enabled=False,  # Disable for isolated delay testing
     )
 
@@ -56,13 +56,13 @@ def striatum_config_with_delays(device):
 def striatum_config_no_delays(device):
     """Striatum configuration with zero delays."""
     return StriatumConfig(
-        n_input=50,
-        n_output=4,
+        n_actions=4,
+        neurons_per_action=1,
+        input_sources={'default': 50},
         dt_ms=1.0,
         device=str(device),
         d1_to_output_delay_ms=0.0,  # No delay
         d2_to_output_delay_ms=0.0,  # No delay
-        population_coding=False,
         homeostasis_enabled=False,
     )
 
@@ -144,7 +144,7 @@ def test_delays_work_from_first_forward(striatum_with_delays):
 
     # Behavioral contract: output should be valid even on first pass
     assert output is not None
-    assert output.shape == (striatum_with_delays.config.n_output,)
+    assert output.shape == (striatum_with_delays.config.n_actions,)
     assert output.dtype == torch.bool
     assert not torch.isnan(output).any(), "No NaN in output"
 
@@ -306,26 +306,26 @@ def test_different_delay_values(striatum_config_with_delays):
     """Test that different delay values produce different temporal dynamics."""
     # Test with small delay difference
     config_small_diff = StriatumConfig(
-        n_input=50,
-        n_output=4,
+        n_actions=4,
+        neurons_per_action=1,
+        input_sources={'default': 50},
         dt_ms=1.0,
         device="cpu",
         d1_to_output_delay_ms=10.0,  # 10ms
         d2_to_output_delay_ms=12.0,  # 12ms (only 2ms difference)
-        population_coding=False,
         homeostasis_enabled=False,
     )
     striatum_small = Striatum(config_small_diff)
 
     # Test with large delay difference
     config_large_diff = StriatumConfig(
-        n_input=50,
-        n_output=4,
+        n_actions=4,
+        neurons_per_action=1,
+        input_sources={'default': 50},
         dt_ms=1.0,
         device="cpu",
         d1_to_output_delay_ms=10.0,  # 10ms
         d2_to_output_delay_ms=30.0,  # 30ms (20ms difference!)
-        population_coding=False,
         homeostasis_enabled=False,
     )
     striatum_large = Striatum(config_large_diff)
@@ -372,14 +372,13 @@ def test_different_delay_values(striatum_config_with_delays):
 def test_population_coding_with_delays(striatum_config_with_delays):
     """Test that delays work correctly with population coding enabled."""
     config_pop = StriatumConfig(
-        n_input=50,
-        n_output=4,  # 4 actions
+        n_actions=4,  # 4 actions
+        neurons_per_action=10,  # 10 neurons per action (enables population coding)
+        input_sources={'default': 50},
         dt_ms=1.0,
         device="cpu",
         d1_to_output_delay_ms=15.0,
         d2_to_output_delay_ms=25.0,
-        population_coding=True,
-        neurons_per_action=10,  # 10 neurons per action
         homeostasis_enabled=False,
     )
     striatum_pop = Striatum(config_pop)

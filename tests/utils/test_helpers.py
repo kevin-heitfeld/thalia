@@ -136,6 +136,15 @@ def create_test_region_config(**overrides):
     Provides sensible defaults for testing, with ability to override
     specific parameters.
 
+    NOTE: This helper maintains backward compatibility with n_input/n_output,
+    but new tests should use semantic config patterns directly:
+    - Thalamus: ThaliamusConfig(input_size=X, relay_size=Y)
+    - Cortex: CortexConfig(input_size=X, layer_sizes=[L4, L23, L5])
+    - Hippocampus: HippocampusConfig(input_size=X, ca3_size=Y, ca1_size=Z)
+    - Prefrontal: PrefrontalConfig(input_size=X, n_neurons=Y)
+    - Striatum: StriatumConfig(n_actions=X, neurons_per_action=Y, input_sources={...})
+    - Cerebellum: CerebellumConfig(input_size=X, purkinje_size=Y)
+
     Args:
         **overrides: Configuration parameters to override
 

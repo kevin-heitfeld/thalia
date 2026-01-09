@@ -17,8 +17,8 @@ class TestPurkinjePerDendriteLearning:
     def test_enhanced_mode_updates_purkinje_weights(self):
         """Enhanced mode should update individual Purkinje cell weights."""
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=0.1,  # Higher LR for visible changes
             error_threshold=0.001,  # Lower threshold to allow learning
@@ -54,8 +54,8 @@ class TestPurkinjePerDendriteLearning:
         Note: We manually set output spikes to ensure negative error condition.
         """
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=0.1,
             error_threshold=0.001,
@@ -87,8 +87,8 @@ class TestPurkinjePerDendriteLearning:
     def test_ltp_with_positive_error(self):
         """LTP should occur when target > output (positive error)."""
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=0.1,
             error_threshold=0.001,
@@ -117,8 +117,8 @@ class TestPurkinjePerDendriteLearning:
     def test_weight_bounds_respected(self):
         """Purkinje cell weights should stay within configured bounds."""
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=1.0,  # Very high LR to test bounds
             w_min=0.0,
@@ -146,8 +146,8 @@ class TestPurkinjePerDendriteLearning:
     def test_each_purkinje_cell_learns_independently(self):
         """Each Purkinje cell should have independent weight updates."""
         config = CerebellumConfig(
-            n_input=64,
-            n_output=10,
+            input_size=64,
+            purkinje_size=10,
             use_enhanced_microcircuit=True,
             learning_rate=0.01,
             gap_junctions_enabled=False,
@@ -182,8 +182,8 @@ class TestCerebellumNeurogenesisTracking:
     def test_cerebellum_has_training_step_method(self):
         """Cerebellum should have set_training_step method."""
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             device="cpu"
         )
         cerebellum = Cerebellum(config)

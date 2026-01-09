@@ -267,7 +267,7 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
                 "input_sources is required for StriatumConfig. "
                 "Example: input_sources={'cortex': 256, 'thalamus': 128}"
             )
-        
+
         # Pass semantic parameters - __post_init__ will compute d1_size, d2_size, total_neurons
         return cls(
             n_actions=n_actions,
