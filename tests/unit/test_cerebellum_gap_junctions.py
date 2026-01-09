@@ -17,8 +17,8 @@ class TestCerebellumGapJunctions:
     def test_gap_junctions_initialized_properly(self):
         """Gap junctions should be initialized without errors."""
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             use_enhanced_microcircuit=True,
             gap_junctions_enabled=True,  # Enable gap junctions
             device="cpu"
@@ -39,8 +39,8 @@ class TestCerebellumGapJunctions:
     def test_gap_junctions_dont_zero_error_signal(self):
         """Gap junctions should NOT zero out error signals during learning."""
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=0.1,
             error_threshold=0.001,
@@ -76,8 +76,8 @@ class TestCerebellumGapJunctions:
     def test_gap_junctions_can_be_disabled(self):
         """Should be able to disable gap junctions via config."""
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             gap_junctions_enabled=False,  # Explicitly disable
             device="cpu"
         )
@@ -93,8 +93,8 @@ class TestCerebellumGapJunctions:
         should have synchronized complex spikes via gap junction coupling.
         """
         config = CerebellumConfig(
-            n_input=64,
-            n_output=32,
+            input_size=64,
+            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=0.1,
             error_threshold=0.001,
@@ -133,8 +133,8 @@ class TestCerebellumGapJunctions:
         have their corresponding IO neurons coupled via gap junctions.
         """
         config = CerebellumConfig(
-            n_input=64,
-            n_output=10,  # Smaller for easier inspection
+            input_size=64,
+            purkinje_size=10,  # Smaller for easier inspection
             gap_junctions_enabled=True,
             gap_junction_threshold=0.1,  # Lower threshold for more coupling
             device="cpu"

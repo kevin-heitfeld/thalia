@@ -32,8 +32,8 @@ def device():
 def cerebellum_classic_config(device):
     """Classic cerebellum configuration (no enhanced microcircuit)."""
     return CerebellumConfig(
-        n_input=128,
-        n_output=64,
+        input_size=128,
+        purkinje_size=64,
         use_enhanced_microcircuit=False,  # Classic pathway
         dt_ms=1.0,
         device=str(device),
@@ -50,8 +50,7 @@ def cerebellum_enhanced_config(device):
     sizes = compute_cerebellum_sizes(purkinje_size, granule_expansion)
 
     return CerebellumConfig(
-        n_input=128,
-        n_output=purkinje_size,
+        input_size=128,
         use_enhanced_microcircuit=True,  # Enhanced pathway
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
@@ -640,8 +639,8 @@ class TestBackwardCompatibility:
         """Test use_enhanced_microcircuit flag correctly enables/disables enhanced pathway."""
         # Classic config
         classic_cfg = CerebellumConfig(
-            n_input=128,
-            n_output=64,
+            input_size=128,
+            purkinje_size=64,
             use_enhanced_microcircuit=False,
             dt_ms=1.0,
             device=str(device),
@@ -650,8 +649,8 @@ class TestBackwardCompatibility:
 
         # Enhanced config
         enhanced_cfg = CerebellumConfig(
-            n_input=128,
-            n_output=64,
+            input_size=128,
+            purkinje_size=64,
             use_enhanced_microcircuit=True,
             dt_ms=1.0,
             device=str(device),

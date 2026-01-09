@@ -22,8 +22,7 @@ def test_io_gap_junction_initialization():
     """Test gap junction module is properly initialized in cerebellum."""
     sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",
@@ -35,16 +34,15 @@ def test_io_gap_junction_initialization():
     cerebellum = Cerebellum(config)
 
     assert cerebellum.gap_junctions_io is not None, "Gap junction module not initialized"
-    assert cerebellum.cerebellum_config.gap_junctions_enabled
-    assert cerebellum.cerebellum_config.gap_junction_strength == 0.18
+    assert cerebellum.config.gap_junctions_enabled
+    assert cerebellum.config.gap_junction_strength == 0.18
 
 
 def test_io_gap_junction_disabled():
     """Test gap junctions can be disabled via config."""
     sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",
@@ -60,8 +58,7 @@ def test_io_membrane_synchronization():
     """Test that gap junctions synchronize IO neuron membrane potentials."""
     sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",
@@ -110,8 +107,7 @@ def test_error_sign_preservation():
     """
     sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",
@@ -147,8 +143,7 @@ def test_io_gap_junction_state_serialization():
     """Test that io_membrane state is properly saved and loaded."""
     sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",
@@ -195,8 +190,8 @@ def test_io_gap_junction_backward_compatibility():
     gracefully by initializing io_membrane to zeros.
     """
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
     )
@@ -231,8 +226,7 @@ def test_io_gap_junction_reset_state():
     """Test that reset_state properly initializes io_membrane."""
     sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",
@@ -273,8 +267,7 @@ def test_io_coupling_strength_scaling():
     sizes = compute_cerebellum_sizes(purkinje_size=50)
     # Weak coupling
     config_weak = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",
@@ -284,8 +277,7 @@ def test_io_coupling_strength_scaling():
 
     # Strong coupling
     config_strong = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",
@@ -340,8 +332,7 @@ def test_io_gap_junctions_with_enhanced_microcircuit():
     """Test gap junctions work correctly with enhanced cerebellar microcircuit."""
     sizes = compute_cerebellum_sizes(purkinje_size=50)
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
         granule_size=sizes["granule_size"],
         purkinje_size=sizes["purkinje_size"],
         device="cpu",

@@ -569,7 +569,7 @@ class PredictiveCortex(NeuralRegion):
         # Update our config to match
         self.config = replace(
             self.config,
-            n_input=self.cortex.config.n_input
+            input_size=self.cortex.config.input_size
         )
 
     def grow_output(
@@ -609,11 +609,9 @@ class PredictiveCortex(NeuralRegion):
         # Total neurons across all layers
         total_neurons = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
 
-        # Update config with ALL size fields (required for validation)
+        # Update config with layer sizes (output_size and total_neurons are computed properties)
         self.config = replace(
             self.config,
-            n_output=self._output_size,
-            n_neurons=total_neurons,
             l4_size=self.l4_size,
             l23_size=self.l23_size,
             l5_size=self.l5_size,

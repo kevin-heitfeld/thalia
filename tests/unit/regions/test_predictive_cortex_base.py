@@ -31,16 +31,14 @@ class TestPredictiveCortex(RegionTestBase):
         """Return default predictive cortex parameters."""
         # Create config via builder to get computed sizes
         config = PredictiveCortexConfig.from_input_size(
-            n_input=100,
+            input_size=100,
             device="cpu",
             dt_ms=1.0,
             prediction_enabled=True,  # Enable predictive coding
             use_precision_weighting=True,
         )
         return {
-            "n_input": config.n_input,
-            "n_output": config.n_output,
-            "n_neurons": config.n_neurons,
+            "input_size": config.input_size,
             "l4_size": config.l4_size,
             "l23_size": config.l23_size,
             "l5_size": config.l5_size,
@@ -56,15 +54,13 @@ class TestPredictiveCortex(RegionTestBase):
         """Return minimal valid parameters for quick tests."""
         # Create config via builder to get computed sizes
         config = PredictiveCortexConfig.from_input_size(
-            n_input=20,
+            input_size=20,
             device="cpu",
             dt_ms=1.0,
             prediction_enabled=True,
         )
         return {
-            "n_input": config.n_input,
-            "n_output": config.n_output,
-            "n_neurons": config.n_neurons,
+            "input_size": config.input_size,
             "l4_size": config.l4_size,
             "l23_size": config.l23_size,
             "l5_size": config.l5_size,
@@ -110,11 +106,12 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward pass
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(params["input_size"], device=region.device)
         output = region.forward(input_spikes)
 
-        # Verify output shape
-        assert output.shape[0] == params["n_output"]
+        # Verify output shape (L2/3 + L5 dual output pathways)
+        expected_output = params["l23_size"] + params["l5_size"]
+        assert output.shape[0] == expected_output
 
         # Verify prediction layer has been used (state should exist)
         if hasattr(region, "prediction_layer") and region.prediction_layer is not None:
@@ -130,7 +127,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run multiple forward passes to allow precision to adapt
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(params["input_size"], device=region.device)
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -147,7 +144,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Consistent input pattern
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(params["input_size"], device=region.device)
 
         # Get initial error
         region.forward(input_spikes)
@@ -174,7 +171,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Bottom-up input
-        input_spikes = torch.zeros(params["n_input"], device=region.device)
+        input_spikes = torch.zeros(params["input_size"], device=region.device)
 
         # Top-down modulation (PFC attention)
         top_down = torch.ones(params["l23_size"], device=region.device)
@@ -183,13 +180,15 @@ class TestPredictiveCortex(RegionTestBase):
         output = region.forward(input_spikes, top_down=top_down)
 
         # Should not error
-        assert output.shape[0] == params["n_output"]
+        expected_output = params["l23_size"] + params["l5_size"]
+        assert output.shape[0] == expected_output
 
         # Verify prediction layer processed the representation
         if region.prediction_layer is not None:
             assert region.prediction_layer.state.prediction is not None
         output = region.forward(input_spikes)
-        assert output.shape[0] == params["n_output"]
+        expected_output = params["l23_size"] + params["l5_size"]
+        assert output.shape[0] == expected_output
 
     def test_prediction_state_in_checkpoint(self):
         """Test prediction state is saved in checkpoints."""
@@ -197,7 +196,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward to generate state
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(params["input_size"], device=region.device)
         region.forward(input_spikes)
 
         # Get full state
@@ -219,7 +218,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Strong input (should create large errors initially)
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(params["input_size"], device=region.device)
         region.forward(input_spikes)
 
         # Verify L2/3 (error neurons) are active
@@ -236,7 +235,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(params["input_size"], device=region.device)
         region.forward(input_spikes)
 
         # Verify L5 and L6 (prediction neurons) exist
@@ -255,7 +254,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward passes
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(params["input_size"], device=region.device)
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -279,11 +278,12 @@ class TestPredictiveCortex(RegionTestBase):
         )
 
         # Run forward
-        input_spikes = torch.ones(params["n_input"], device=region.device)
+        input_spikes = torch.ones(params["input_size"], device=region.device)
         output = region.forward(input_spikes)
 
         # Should work without errors
-        assert output.shape[0] == params["n_output"]
+        expected_output = params["l23_size"] + params["l5_size"]
+        assert output.shape[0] == expected_output
 
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)

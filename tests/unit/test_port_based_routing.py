@@ -89,9 +89,9 @@ class TestBrainBuilderPortBasedConnections:
         """Test connecting with source port specification."""
         builder = BrainBuilder(global_config)
 
-        # Add components (cortex needs all layer sizes and n_input specified)
-        builder.add_component("cortex", "cortex", n_input=64, n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", n_output=64)
+        # Add components (cortex needs all layer sizes and input_size specified)
+        builder.add_component("cortex", "cortex", input_size=64, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component("hippocampus", "hippocampus", input_size=64, dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
 
         # Connect using L2/3 output specifically
         builder.connect(
@@ -113,8 +113,8 @@ class TestBrainBuilderPortBasedConnections:
         """Test connecting with target port specification."""
         builder = BrainBuilder(global_config)
 
-        builder.add_component("pfc", "prefrontal", n_input=64, n_output=32)
-        builder.add_component("cortex", "cortex", n_input=64, n_output=128)
+        builder.add_component("pfc", "prefrontal", input_size=64, wm_size=32)
+        builder.add_component("cortex", "cortex", input_size=64, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
 
         # Connect to top_down input specifically
         builder.connect(
@@ -130,8 +130,8 @@ class TestBrainBuilderPortBasedConnections:
         """Test connecting with both source and target ports."""
         builder = BrainBuilder(global_config)
 
-        builder.add_component("cortex", "cortex", n_input=64, n_output=128)
-        builder.add_component("striatum", "striatum", n_output=4)
+        builder.add_component("cortex", "cortex", input_size=64, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"default": 32})
 
         builder.connect(
             "cortex", "striatum",
@@ -211,16 +211,16 @@ class TestLayerSpecificCorticalRouting:
 
         # Verify hippocampus receives only L2/3 size
         hippo = brain.components["hippocampus"]
-        # Should infer n_input from cortex L2/3 output, not full output
-        assert hippo.config.n_input == cortex.l23_size
+        # Should infer input_size from cortex L2/3 output, not full output
+        assert hippo.config.input_size == cortex.l23_size
 
     def test_cortex_l5_to_striatum(self, global_config):
         """Test that cortex L5 output routes to striatum."""
         builder = BrainBuilder(global_config)
 
-        builder.add_component("thalamus", "thalamus", n_input=64, n_output=64)
-        builder.add_component("cortex", "cortex", n_output=128, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("striatum", "striatum", n_output=4)
+        builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=0)
+        builder.add_component("cortex", "cortex", input_size=64, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"default": 32})
 
         builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
         builder.connect("cortex", "striatum", source_port="l5", pathway_type="axonal_projection")
@@ -231,7 +231,7 @@ class TestLayerSpecificCorticalRouting:
         striatum = brain.components["striatum"]
 
         # Striatum should receive only L5 size
-        assert striatum.config.n_input == cortex.l5_size
+        assert striatum.config.total_input == cortex.l5_size
 
     def test_cortex_outputs_to_multiple_targets_with_different_layers(self, global_config):
         """Test cortex routing L2/3 to one target and L5 to another."""
@@ -253,8 +253,8 @@ class TestLayerSpecificCorticalRouting:
         striatum = brain.components["striatum"]
 
         # Each target receives appropriate layer size
-        assert hippo.config.n_input == cortex.l23_size
-        assert striatum.config.n_input == cortex.l5_size
+        assert hippo.config.input_size == cortex.l23_size
+        assert striatum.config.total_input == cortex.l5_size
 
 
 class TestMultipleInputPorts:
@@ -279,9 +279,9 @@ class TestMultipleInputPorts:
         cortex = brain.components["cortex"]
         thalamus = brain.components["thalamus"]
 
-        # Cortex n_input should only count feedforward, not top_down
+        # Cortex input_size should only count feedforward, not top_down
         # (top_down is separate parameter in forward())
-        assert cortex.config.n_input == thalamus.n_output  # Dimension compatibility
+        assert cortex.config.input_size == thalamus.relay_size  # Dimension compatibility
 
     def test_hippocampus_cortical_and_entorhinal_inputs(self, global_config):
         """Test hippocampus receiving both cortical and direct entorhinal inputs."""

@@ -30,11 +30,11 @@ def device():
 def base_config(device):
     """Create base striatum config with growth enabled (no population coding)."""
     return StriatumConfig(
-        n_output=5,  # Number of actions
-        n_input=100,
+        n_actions=5,  # Number of actions
+        neurons_per_action=1,  # 1 neuron per action for simpler tests
+        input_sources={"default": 100},
         growth_enabled=True,  # Feature to implement
         reserve_capacity=0.5,  # 50% headroom - feature to implement
-        population_coding=False,  # 1 neuron per action for simpler tests
         device=device,
     )
 
@@ -43,12 +43,11 @@ def base_config(device):
 def base_config_population(device):
     """Create base striatum config with growth enabled AND population coding."""
     return StriatumConfig(
-        n_output=5,  # Number of actions
-        n_input=100,
+        n_actions=5,  # Number of actions
+        neurons_per_action=10,  # 10 neurons per action (population coding)
+        input_sources={"default": 100},
         growth_enabled=True,
         reserve_capacity=0.5,
-        population_coding=True,  # 10 neurons per action (default)
-        neurons_per_action=10,
         device=device,
     )
 
@@ -57,7 +56,7 @@ def base_config_population(device):
 def striatum_small(base_config):
     """Create small striatum (5 actions)."""
     from dataclasses import replace
-    config = replace(base_config, n_output=5)
+    config = replace(base_config, n_actions=5)
     region = Striatum(config)
     region.reset_state()
     return region
@@ -67,7 +66,7 @@ def striatum_small(base_config):
 def striatum_large(base_config):
     """Create large striatum (10 actions)."""
     from dataclasses import replace
-    config = replace(base_config, n_output=10)
+    config = replace(base_config, n_actions=10)
     region = Striatum(config)
     region.reset_state()
     return region
@@ -222,7 +221,7 @@ class TestElasticTensorMetadata:
     def test_zero_capacity_raises_error(self, base_config):
         """Creating region with zero capacity should raise error."""
         from dataclasses import replace
-        bad_config = replace(base_config, n_output=0, reserve_capacity=0.0)
+        bad_config = replace(base_config, n_actions=0, reserve_capacity=0.0)
 
         with pytest.raises(ValueError, match="n_output must be positive|n_actions must be positive"):
             Striatum(bad_config)
@@ -333,7 +332,7 @@ class TestLoadingLargerCheckpoint:
 
         # Create large striatum (20 actions) and save it
         from dataclasses import replace
-        large_config = replace(base_config, n_output=20)
+        large_config = replace(base_config, n_actions=20)
         large_striatum = Striatum(large_config)
         large_striatum.reset_state()
 
@@ -341,7 +340,7 @@ class TestLoadingLargerCheckpoint:
         torch.save(large_state, checkpoint_path)
 
         # Create small striatum (5 actions)
-        small_config = replace(base_config, n_output=5)
+        small_config = replace(base_config, n_actions=5)
         small_striatum = Striatum(small_config)
         small_striatum.reset_state()
 
@@ -501,7 +500,7 @@ class TestPerformance:
 
         # Create checkpoint with large capacity but few active
         from dataclasses import replace
-        config = replace(base_config, n_output=10)
+        config = replace(base_config, n_actions=10)
         region = Striatum(config)
         region.reset_state()
 
@@ -525,7 +524,7 @@ class TestPerformance:
         """Memory usage should scale with capacity, not active neurons."""
         # Small active, large capacity
         from dataclasses import replace
-        config = replace(base_config, n_output=5, reserve_capacity=3.0)  # 4x headroom
+        config = replace(base_config, n_actions=5, reserve_capacity=3.0)  # 4x headroom
 
         region = Striatum(config)
         region.reset_state()

@@ -31,10 +31,10 @@ def device():
 def base_config(device):
     """Create base striatum config without population coding."""
     return StriatumConfig(
-        n_output=5,  # 5 actions
-        n_input=100,
+        n_actions=5,  # 5 actions
+        neurons_per_action=1,  # 1 neuron per action
+        input_sources={"default": 100},
         growth_enabled=True,
-        population_coding=False,  # 1 neuron per action
         device=device,
     )
 
@@ -43,11 +43,10 @@ def base_config(device):
 def base_config_population(device):
     """Create base striatum config WITH population coding."""
     return StriatumConfig(
-        n_output=5,  # 5 actions
-        n_input=100,
+        n_actions=5,  # 5 actions
+        neurons_per_action=10,  # 10 neurons per action = 50 total
+        input_sources={"default": 100},
         growth_enabled=True,
-        population_coding=True,  # 10 neurons per action = 50 total
-        neurons_per_action=10,
         device=device,
     )
 
@@ -558,10 +557,10 @@ class TestNeuromorphicPerformance:
 
         # Create region with many neurons (not testing sparsity here)
         config = StriatumConfig(
-            n_output=100,
-            n_input=base_config.n_input,
+            n_actions=100,
+            neurons_per_action=1,
+            input_sources={"default": 100},
             growth_enabled=True,
-            population_coding=False,
             device=base_config.device,
         )
 
@@ -585,10 +584,10 @@ class TestNeuromorphicPerformance:
         """Checkpoint size should scale with actual connections, not capacity."""
         # Create two regions with same neuron count
         config = StriatumConfig(
-            n_output=50,
-            n_input=base_config.n_input,
+            n_actions=50,
+            neurons_per_action=1,
+            input_sources={"default": 100},
             growth_enabled=True,
-            population_coding=False,
             device=base_config.device,
         )
 

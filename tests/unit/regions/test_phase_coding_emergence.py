@@ -29,7 +29,8 @@ def device():
 def hippocampus_config(device):
     """Hippocampus config with phase diversity enabled."""
     sizes = compute_hippocampus_sizes(64)
-    return HippocampusConfig(input_size=64, ca1_size=128, # CA1
+    return HippocampusConfig(
+        input_size=64,
         dg_size=sizes["dg_size"],
         ca3_size=sizes["ca3_size"],
         ca2_size=sizes["ca2_size"],

@@ -34,9 +34,9 @@ def device():
 def default_config(device):
     """Standard striatum config with FSI enabled."""
     return StriatumConfig(
-        n_input=64,
-        n_output=50,  # 50 MSNs total (no population coding)
-        population_coding=False,  # Disable population coding for simpler FSI calculation
+        n_actions=50,  # 50 actions
+        neurons_per_action=1,  # Single neuron per action
+        input_sources={'default': 64},  # Single input source
         fsi_enabled=True,
         fsi_ratio=0.02,  # 2% FSI = 1 FSI neuron
         gap_junctions_enabled=True,
@@ -67,7 +67,9 @@ def test_gap_junctions_can_be_disabled(device):
     striatum2 = Striatum(config_no_gaps)
 
     # FSI should exist but gap junctions should be None
-    expected_fsi = int(50 * 0.02)
+    # With 50 actions, neurons_per_action=1: 50 D1 + 50 D2 = 100 MSNs
+    # FSI = 2% of 100 = 2
+    expected_fsi = int(100 * 0.02)  # 2 FSI neurons
     assert striatum2.fsi_size == expected_fsi
     assert striatum2.fsi_neurons is not None
     assert striatum2.gap_junctions_fsi is None
@@ -77,8 +79,10 @@ def test_gap_junctions_enabled_by_default(default_config):
     """Test that FSI and gap junctions are enabled by default."""
     striatum = Striatum(default_config)
 
-    # FSI should be 2% of MSN population (int(50*0.02)=1)
-    expected_fsi = int(50 * 0.02)
+    # FSI should be 2% of MSN population
+    # With 50 actions × 1 neuron/action × 2 pathways = 100 MSNs
+    # FSI = int(100*0.02) = 2
+    expected_fsi = int(100 * 0.02)  # 2 FSI neurons
     assert striatum.fsi_size == expected_fsi
     assert striatum.fsi_neurons is not None
     assert striatum.gap_junctions_fsi is not None
