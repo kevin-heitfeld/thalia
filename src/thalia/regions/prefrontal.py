@@ -760,9 +760,9 @@ class Prefrontal(NeuralRegion):
         self.state.spikes = output_spikes
 
         # Output shape check
-        assert output_spikes.shape == (self.pfc_config.n_output,), (
+        assert output_spikes.shape == (self.pfc_config.n_neurons,), (
             f"PrefrontalCortex.forward: output_spikes has shape {output_spikes.shape} "
-            f"but expected ({self.pfc_config.n_output},). "
+            f"but expected ({self.pfc_config.n_neurons},). "
             f"Check PFC neuron or weight configuration."
         )
         assert output_spikes.dtype == torch.bool, (
@@ -873,7 +873,7 @@ class Prefrontal(NeuralRegion):
             initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
             sparsity: Connection sparsity for new neurons (if sparse_random)
         """
-        old_n_output = self.config.n_output
+        old_n_output = self.config.n_neurons
         new_n_output = old_n_output + n_new
 
         # Use GrowthMixin helpers (Architecture Review 2025-12-24, Tier 2.5)
@@ -945,8 +945,8 @@ class Prefrontal(NeuralRegion):
         self._auto_grow_registered_components('output', n_new)
 
         # 6. Update configs
-        self.config = replace(self.config, n_output=new_n_output)
-        self.pfc_config = replace(self.pfc_config, n_output=new_n_output)
+        self.config = replace(self.config, n_neurons=new_n_output)
+        self.pfc_config = replace(self.pfc_config, n_neurons=new_n_output)
 
         # 7. Validate growth completed correctly
         self._validate_output_growth(old_n_output, n_new)

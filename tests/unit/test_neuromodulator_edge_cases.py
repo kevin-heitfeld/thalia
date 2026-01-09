@@ -42,10 +42,9 @@ def test_striatum_handles_valid_dopamine_range(dopamine, device):
     plausibility. Values within this range should work without issues.
     """
     config = StriatumConfig(
-        n_input=50,
-        n_output=3,
-        population_coding=True,
+        n_actions=3,
         neurons_per_action=4,
+        input_sources={'default': 50},
         device=str(device),
     )
     striatum = Striatum(config)
@@ -74,10 +73,9 @@ def test_striatum_rejects_extreme_dopamine(dopamine, device):
     errors and should be caught early with validation.
     """
     config = StriatumConfig(
-        n_input=50,
-        n_output=3,
-        population_coding=True,
+        n_actions=3,
         neurons_per_action=4,
+        input_sources={'default': 50},
         device=str(device),
     )
     striatum = Striatum(config)
@@ -98,7 +96,7 @@ def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
     Biological context: ACh modulates encoding vs retrieval in hippocampus.
     Values within [0, 2] range should work without issues.
     """
-    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
+    config = HippocampusConfig(input_size=40, device=str(device),
     )
     hippocampus = Hippocampus(config)
     hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
@@ -121,7 +119,7 @@ def test_hippocampus_rejects_extreme_acetylcholine(acetylcholine, device):
     Biological context: ACh should be in [0, 2] range for biological plausibility.
     Values outside this range should be rejected early.
     """
-    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
+    config = HippocampusConfig(input_size=40, device=str(device),
     )
     hippocampus = Hippocampus(config)
 
@@ -208,7 +206,7 @@ def test_striatum_rejects_inf_dopamine(device):
 
 def test_hippocampus_rejects_nan_acetylcholine(device):
     """Test hippocampus rejects NaN acetylcholine with clear error."""
-    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
+    config = HippocampusConfig(input_size=40, device=str(device),
     )
     hippocampus = Hippocampus(config)
 
@@ -326,7 +324,7 @@ def test_hippocampus_stable_with_fluctuating_acetylcholine(device):
     Biological context: ACh levels change during encoding vs retrieval
     phases. System should handle mode switching without instability.
     """
-    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
+    config = HippocampusConfig(input_size=40, device=str(device),
     )
     hippocampus = Hippocampus(config)
 
@@ -394,7 +392,7 @@ def test_hippocampus_learning_stable_with_valid_acetylcholine(acetylcholine, dev
     ACh modulates learning rate in hippocampus. Extreme values should
     saturate learning, not cause divergence.
     """
-    config = HippocampusConfig(input_size=40, ca1_size=20, device=str(device),
+    config = HippocampusConfig(input_size=40, device=str(device),
     )
     hippocampus = Hippocampus(config)
 
@@ -466,7 +464,7 @@ def test_multi_region_neuromodulator_stability(device):
     """
     # Create multiple regions
     striatum = Striatum(StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device)))
-    hippocampus = Hippocampus(HippocampusConfig(input_size=40, ca1_size=20, device=str(device)
+    hippocampus = Hippocampus(HippocampusConfig(input_size=40, device=str(device)
     ))
     pfc = Prefrontal(PrefrontalConfig(input_size=50, n_neurons=30, device=str(device)))
 

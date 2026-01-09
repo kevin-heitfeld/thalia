@@ -154,10 +154,10 @@ class TestFormatAutoSelection:
         import torch
 
         config = StriatumConfig(
-            n_output=80,
-            n_input=100,
+            n_actions=80,
+            neurons_per_action=1,
+            input_sources={'default': 100},
             growth_enabled=True,
-            population_coding=False,
             device=device,
         )
         striatum = Striatum(config)
@@ -327,11 +327,10 @@ class TestHybridSaveLoad:
 
         # Create small striatum with population coding (neuromorphic)
         config = StriatumConfig(
-            n_output=5,
-            n_input=100,
+            n_actions=5,
+            neurons_per_action=10,
+            input_sources={'default': 100},
             device=device,
-            population_coding=True,
-            neurons_per_action=10
         )
         striatum = Striatum(config)
         striatum.reset_state()

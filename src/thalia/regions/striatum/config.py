@@ -227,13 +227,9 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
                 f"total_neurons ({self.total_neurons}) must equal d1_size + d2_size ({self.d1_size + self.d2_size})"
             )
 
-        # Validate population coding consistency
-        expected_total = self.n_actions * self.neurons_per_action
-        if self.total_neurons != expected_total:
-            raise ValueError(
-                f"total_neurons ({self.total_neurons}) should equal "
-                f"n_actions ({self.n_actions}) × neurons_per_action ({self.neurons_per_action}) = {expected_total}"
-            )
+        # Note: neurons_per_action is the TOTAL per action, but D1 and D2 pathways
+        # each need at least 1 neuron. So actual total is max(neurons_per_action, 2) per action.
+        # This is enforced by compute_striatum_sizes().
 
     @classmethod
     def from_n_actions(

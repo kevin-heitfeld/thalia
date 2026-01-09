@@ -371,9 +371,9 @@ class ForwardPassCoordinator:
         d2_msn_activation = torch.matmul(d2_weights_effective, input_float)
 
         # Pool MSN activations to action level
-        # When population_coding: average over neurons_per_action to get action strength
-        # When not: MSN level = action level (1:1 mapping)
-        if self.config.population_coding and self.config.neurons_per_action > 1:
+        # When neurons_per_action > 1: average over neurons_per_action to get action strength
+        # When neurons_per_action == 1: MSN level = action level (1:1 mapping)
+        if self.config.neurons_per_action > 1:
             # Reshape to [n_actions, neurons_per_action/2] and average
             # Note: d1_size = n_actions * neurons_per_action / 2 (D1 and D2 split the pool)
             neurons_per_pathway = self.config.neurons_per_action // 2
