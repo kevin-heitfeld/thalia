@@ -21,16 +21,16 @@ class TestLayeredCortexStrategyMigration:
 
     def test_layered_cortex_has_bcm_strategies(self):
         """Test LayeredCortex instantiates CompositeStrategy (STDP+BCM) for each layer."""
-        config = LayeredCortexConfig(
-            n_input=32,
-            n_output=16,
-            l4_size=8,
-            l23_size=10,
-            l5_size=6,
-            l6a_size=2, l6b_size=2,
-            bcm_enabled=True,
-        )
-        cortex = LayeredCortex(config)
+        sizes = {
+            "input_size": 32,
+            "l4_size": 8,
+            "l23_size": 10,
+            "l5_size": 6,
+            "l6a_size": 2,
+            "l6b_size": 2,
+        }
+        config = LayeredCortexConfig(bcm_enabled=True)
+        cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
 
         # Verify strategies exist
         assert hasattr(cortex, 'bcm_l4')
@@ -53,16 +53,16 @@ class TestLayeredCortexStrategyMigration:
 
     def test_layered_cortex_bcm_disabled_works(self):
         """Test LayeredCortex works when BCM is disabled."""
-        config = LayeredCortexConfig(
-            n_input=32,
-            n_output=16,
-            l4_size=8,
-            l23_size=10,
-            l5_size=6,
-            l6a_size=2, l6b_size=2,
-            bcm_enabled=False,
-        )
-        cortex = LayeredCortex(config)
+        sizes = {
+            "input_size": 32,
+            "l4_size": 8,
+            "l23_size": 10,
+            "l5_size": 6,
+            "l6a_size": 2,
+            "l6b_size": 2,
+        }
+        config = LayeredCortexConfig(bcm_enabled=False)
+        cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
 
         # Verify strategies are None
         assert cortex.bcm_l4 is None
@@ -78,16 +78,16 @@ class TestLayeredCortexStrategyMigration:
 
     def test_layered_cortex_bcm_compute_phi_works(self):
         """Test BCMStrategy compute_phi() method works via CompositeStrategy."""
-        config = LayeredCortexConfig(
-            n_input=32,
-            n_output=16,
-            l4_size=8,
-            l23_size=10,
-            l5_size=6,
-            l6a_size=2, l6b_size=2,
-            bcm_enabled=True,
-        )
-        cortex = LayeredCortex(config)
+        sizes = {
+            "input_size": 32,
+            "l4_size": 8,
+            "l23_size": 10,
+            "l5_size": 6,
+            "l6a_size": 2,
+            "l6b_size": 2,
+        }
+        config = LayeredCortexConfig(bcm_enabled=True)
+        cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
 
         # Get BCM strategy from composite (second strategy)
         bcm_l4 = cortex.bcm_l4.strategies[1]
@@ -101,16 +101,16 @@ class TestLayeredCortexStrategyMigration:
 
     def test_layered_cortex_bcm_update_threshold_works(self):
         """Test BCMStrategy update_threshold() method works via CompositeStrategy."""
-        config = LayeredCortexConfig(
-            n_input=32,
-            n_output=16,
-            l4_size=8,
-            l23_size=10,
-            l5_size=6,
-            l6a_size=2, l6b_size=2,
-            bcm_enabled=True,
-        )
-        cortex = LayeredCortex(config)
+        sizes = {
+            "input_size": 32,
+            "l4_size": 8,
+            "l23_size": 10,
+            "l5_size": 6,
+            "l6a_size": 2,
+            "l6b_size": 2,
+        }
+        config = LayeredCortexConfig(bcm_enabled=True)
+        cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
 
         # Get BCM strategy from composite (second strategy)
         bcm_l4 = cortex.bcm_l4.strategies[1]
@@ -129,16 +129,16 @@ class TestLayeredCortexStrategyMigration:
 
     def test_layered_cortex_forward_backward_compatible(self):
         """Test LayeredCortex forward pass works with BCMStrategy."""
-        config = LayeredCortexConfig(
-            n_input=32,
-            n_output=16,
-            l4_size=8,
-            l23_size=10,
-            l5_size=6,
-            l6a_size=2, l6b_size=2,
-            bcm_enabled=True,
-        )
-        cortex = LayeredCortex(config)
+        sizes = {
+            "input_size": 32,
+            "l4_size": 8,
+            "l23_size": 10,
+            "l5_size": 6,
+            "l6a_size": 2,
+            "l6b_size": 2,
+        }
+        config = LayeredCortexConfig(bcm_enabled=True)
+        cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
 
         # Multiple forward passes
         for _ in range(5):
@@ -152,16 +152,16 @@ class TestLayeredCortexStrategyMigration:
 
     def test_layered_cortex_theta_adapts_with_activity(self):
         """Test BCM thresholds adapt to layer activity."""
-        config = LayeredCortexConfig(
-            n_input=32,
-            n_output=16,
-            l4_size=8,
-            l23_size=10,
-            l5_size=6,
-            l6a_size=2, l6b_size=2,
-            bcm_enabled=True,
-        )
-        cortex = LayeredCortex(config)
+        sizes = {
+            "input_size": 32,
+            "l4_size": 8,
+            "l23_size": 10,
+            "l5_size": 6,
+            "l6a_size": 2,
+            "l6b_size": 2,
+        }
+        config = LayeredCortexConfig(bcm_enabled=True)
+        cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
 
         # Run forward passes to build activity
         for _ in range(20):
@@ -193,16 +193,16 @@ class TestStrategyStateManagement:
 
     def test_layered_cortex_reset_state(self):
         """Test LayeredCortex reset_state() resets BCM thresholds."""
-        config = LayeredCortexConfig(
-            n_input=32,
-            n_output=16,
-            l4_size=8,
-            l23_size=10,
-            l5_size=6,
-            l6a_size=2, l6b_size=2,
-            bcm_enabled=True,
-        )
-        cortex = LayeredCortex(config)
+        sizes = {
+            "input_size": 32,
+            "l4_size": 8,
+            "l23_size": 10,
+            "l5_size": 6,
+            "l6a_size": 2,
+            "l6b_size": 2,
+        }
+        config = LayeredCortexConfig(bcm_enabled=True)
+        cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
 
         # Build up state
         for _ in range(10):

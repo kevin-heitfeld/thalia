@@ -106,23 +106,25 @@ class TestMembranePotentialBounds:
     """Test membrane potentials stay in biologically valid range."""
 
     @pytest.fixture
+    def cortex_sizes(self):
+        """Create cortex sizes."""
+        return {
+            "input_size": 20,
+            "l4_size": 30,
+            "l23_size": 40,
+            "l5_size": 24,
+            "l6a_size": 15,
+            "l6b_size": 15,
+        }
+
+    @pytest.fixture
     def cortex_config(self) -> LayeredCortexConfig:
         """Create cortex config."""
-        return LayeredCortexConfig(
-            n_input=20,
-            n_output=64,  # Must equal l23_size + l5_size
-            l4_size=30,
-            l23_size=40,
-            l5_size=24,   # 40 + 24 = 64
-            l6a_size=15,
-            l6b_size=15,
-            device="cpu",
-            dt_ms=1.0,
-        )
+        return LayeredCortexConfig(dt_ms=1.0)
 
-    def test_membrane_stays_in_valid_range(self, cortex_config):
+    def test_membrane_stays_in_valid_range(self, cortex_config, cortex_sizes):
         """Verify membrane potentials stay in [-80mV, +50mV] range."""
-        cortex = LayeredCortex(cortex_config)
+        cortex = LayeredCortex(config=cortex_config, sizes=cortex_sizes, device="cpu")
 
         # Run simulation with checkpoints
         for _ in range(5):
@@ -154,9 +156,9 @@ class TestMembranePotentialBounds:
                 assert (v_l5 >= -85).all(), f"L5 hyperpolarization below K+ reversal: {v_l5.min():.1f}mV"
                 assert (v_l5 <= 60).all(), f"L5 depolarization above Na+ reversal: {v_l5.max():.1f}mV"
 
-    def test_membrane_no_nan_or_inf(self, cortex_config):
+    def test_membrane_no_nan_or_inf(self, cortex_config, cortex_sizes):
         """Verify no NaN or Inf values in membrane potentials."""
-        cortex = LayeredCortex(cortex_config)
+        cortex = LayeredCortex(config=cortex_config, sizes=cortex_sizes, device="cpu")
 
         # Run with high activity
         for _ in range(50):
@@ -277,23 +279,25 @@ class TestSTDPTraceContinuity:
     """Test STDP traces continue smoothly after checkpoint load."""
 
     @pytest.fixture
+    def cortex_sizes(self):
+        """Create cortex sizes."""
+        return {
+            "input_size": 20,
+            "l4_size": 30,
+            "l23_size": 40,
+            "l5_size": 24,
+            "l6a_size": 15,
+            "l6b_size": 15,
+        }
+
+    @pytest.fixture
     def cortex_config(self) -> LayeredCortexConfig:
         """Create cortex config."""
-        return LayeredCortexConfig(
-            n_input=20,
-            n_output=64,  # Must equal l23_size + l5_size
-            l4_size=30,
-            l23_size=40,
-            l5_size=24,   # 40 + 24 = 64
-            l6a_size=15,
-            l6b_size=15,
-            device="cpu",
-            dt_ms=1.0,
-        )
+        return LayeredCortexConfig(dt_ms=1.0)
 
-    def test_stdp_trace_no_discontinuity(self, cortex_config):
+    def test_stdp_trace_no_discontinuity(self, cortex_config, cortex_sizes):
         """Verify STDP traces have no jumps at checkpoint boundary."""
-        cortex = LayeredCortex(cortex_config)
+        cortex = LayeredCortex(config=cortex_config, sizes=cortex_sizes, device="cpu")
 
         # Build up STDP traces
         for _ in range(20):
@@ -313,9 +317,9 @@ class TestSTDPTraceContinuity:
         if l23_trace_before is not None:
             assert torch.allclose(cortex.state.l23_trace, l23_trace_before, atol=1e-6), "L2/3 trace jumped at checkpoint"
 
-    def test_stdp_trace_decay_continues(self, cortex_config):
+    def test_stdp_trace_decay_continues(self, cortex_config, cortex_sizes):
         """Verify STDP traces decay naturally after checkpoint."""
-        cortex = LayeredCortex(cortex_config)
+        cortex = LayeredCortex(config=cortex_config, sizes=cortex_sizes, device="cpu")
 
         # Build traces
         for _ in range(20):
@@ -323,7 +327,7 @@ class TestSTDPTraceContinuity:
 
         # Checkpoint
         state = cortex.get_state()
-        cortex2 = LayeredCortex(cortex_config)
+        cortex2 = LayeredCortex(config=cortex_config, sizes=cortex_sizes, device="cpu")
         cortex2.load_state(state)
 
         initial_trace = cortex2.state.l4_trace.clone() if cortex2.state.l4_trace is not None else None
@@ -346,14 +350,14 @@ class TestCA3PersistentActivity:
     @pytest.fixture
     def hippocampus_config(self) -> HippocampusConfig:
         """Create hippocampus config."""
-        return HippocampusConfig(input_size=20, ca1_size=20, # CA1 size matches output
+        return HippocampusConfig(
+            input_size=20,
+            dg_size=30,
+            ca3_size=25,
+            ca2_size=22,
+            ca1_size=20,
             device="cpu",
             dt_ms=1.0,
-            # Explicitly specify layer sizes instead of using old expansion ratio API
-            dg_size=30,  # DG_size expansion from input
-            ca3_size=25,  # CA3 size
-            ca2_size=22,  # CA2 size
-            ca1_size=20,  # CA1 size (matches n_output)
         )
 
     def test_ca3_persistent_activity_preserved(self, hippocampus_config):

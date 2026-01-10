@@ -124,17 +124,16 @@ class TestDynamicBrainIntegration:
         from thalia.regions.cortex import LayeredCortex
         from thalia.regions.cortex.config import LayeredCortexConfig
 
-        cortex_config = LayeredCortexConfig(
-            n_input=32,  # Match input source size
-            n_output=10,  # Must equal l23_size + l5_size
-            l4_size=4,
-            l23_size=6,
-            l5_size=4,
-            l6a_size=1, l6b_size=1,
-            device=device,
-            dt_ms=1.0,
-        )
-        cortex = LayeredCortex(cortex_config).to(device)
+        cortex_sizes = {
+            "input_size": 32,
+            "l4_size": 4,
+            "l23_size": 6,
+            "l5_size": 4,
+            "l6a_size": 1,
+            "l6b_size": 1,
+        }
+        cortex_config = LayeredCortexConfig(dt_ms=1.0)
+        cortex = LayeredCortex(config=cortex_config, sizes=cortex_sizes, device=device).to(device)
 
         brain.add_component("cortex", cortex)
 
