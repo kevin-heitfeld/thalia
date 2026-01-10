@@ -252,16 +252,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # ELASTIC TENSOR CAPACITY TRACKING (Phase 1 - Growth Support)
         # =====================================================================
         # Track active vs total capacity for elastic tensor checkpoint format
-        # n_neurons_active: Number of neurons currently in use
+        # n_neurons_active: Number of neurons currently in use (total projection neurons)
         # n_neurons_capacity: Total allocated memory (includes reserved space)
-        self.n_neurons_active = config.n_actions
+        self.n_neurons_active = config.d1_size + config.d2_size
         if self.config.growth_enabled:
             # Pre-allocate extra capacity for fast growth
             reserve_multiplier = 1.0 + self.config.reserve_capacity
-            self.n_neurons_capacity = int(config.n_actions * reserve_multiplier)
+            self.n_neurons_capacity = int(self.n_neurons_active * reserve_multiplier)
         else:
             # No reserved capacity
-            self.n_neurons_capacity = config.n_actions
+            self.n_neurons_capacity = self.n_neurons_active
 
         # =====================================================================
         # NEUROMORPHIC ID TRACKING (Phase 2 - Neuron-Centric Format)

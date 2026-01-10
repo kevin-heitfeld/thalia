@@ -557,7 +557,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         d1_weights = s.d1_pathway.weights
         d1_eligibility = s.d1_pathway.eligibility if s.d1_pathway.eligibility is not None else torch.zeros_like(d1_weights)
 
-        n_d1 = d1_weights.shape[0] // 2  # Half are D1
+        n_d1 = d1_weights.shape[0]  # D1 pathway weight matrix rows = D1 neuron count
 
         for i in range(n_d1):
             neuron_id = s.neuron_ids[i] if i < len(s.neuron_ids) else f"striatum_d1_neuron_{i}_step0"
@@ -581,7 +581,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         d2_weights = s.d2_pathway.weights
         d2_eligibility = s.d2_pathway.eligibility if s.d2_pathway.eligibility is not None else torch.zeros_like(d2_weights)
 
-        n_d2 = d2_weights.shape[0] - n_d1  # Remaining are D2
+        n_d2 = d2_weights.shape[0]  # D2 pathway weight matrix rows = D2 neuron count
 
         for i in range(n_d2):
             neuron_idx = n_d1 + i

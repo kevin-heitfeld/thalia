@@ -84,13 +84,14 @@ from pathlib import Path
 import json
 
 from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
-from thalia.managers.component_registry import ComponentRegistry
 from thalia.core.protocols.component import LearnableComponent
+from thalia.managers.component_registry import ComponentRegistry
+from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions.cortex import calculate_layer_sizes
+from thalia.config.region_sizes import compute_thalamus_sizes, compute_hippocampus_sizes
 
 if TYPE_CHECKING:
     from thalia.config import GlobalConfig
-    from thalia.pathways.axonal_projection import AxonalProjection
 
 
 class BrainBuilder:
@@ -151,17 +152,21 @@ class BrainBuilder:
         """Add a component (region, pathway, module) to the brain.
 
         Size Inference:
-            - Only `n_output` (neuron count) is required for most components
-            - `n_input` is automatically inferred from incoming connections
-            - Components without incoming connections (input interfaces) must specify `n_input`
+            - Semantic size fields are required (e.g., relay_size, layer_sizes)
+            - input_size is automatically inferred from incoming connections
+            - Components without incoming connections (input interfaces) must specify input_size
             - This prevents size mismatches between components and pathways
 
         Args:
             name: Instance name (e.g., "my_cortex", "visual_input")
             registry_name: Component type in registry (e.g., "layered_cortex")
-            **config_params: Configuration parameters. Required:
-                - n_output: Number of output neurons (always required)
-                - n_input: Number of input neurons (only for input interfaces)
+            **config_params: Configuration parameters. Required fields depend on region:
+                - Thalamus: input_size, relay_size
+                - Cortex: layer sizes (l4_size, l23_size, l5_size, l6a_size, l6b_size)
+                - Hippocampus: ca1_size (or dg_size, ca3_size, ca2_size, ca1_size)
+                - Prefrontal: wm_size
+                - Striatum: n_actions, neurons_per_action
+                - Cerebellum: purkinje_size
 
         Returns:
             Self for method chaining
@@ -171,19 +176,19 @@ class BrainBuilder:
             KeyError: If registry_name not found in ComponentRegistry
 
         Example:
-            # Input interface (no incoming connections) - needs n_input
+            # Input interface (no incoming connections) - needs input_size
             builder.add_component(
                 name="sensory_input",
                 registry_name="thalamic_relay",
-                n_input=128,
-                n_output=128,
+                input_size=128,
+                relay_size=128,
             )
 
-            # Processing component - n_input inferred from connection
+            # Processing component - input_size inferred from connection
             builder.add_component(
                 name="cortex",
                 registry_name="layered_cortex",
-                n_output=512,  # Only n_output needed!
+                l4_size=64, l23_size=96, l5_size=32, l6a_size=16, l6b_size=16,
             )
 
             builder.connect("sensory_input", "cortex")
@@ -315,14 +320,14 @@ class BrainBuilder:
         return issues
 
     def _infer_component_sizes(self) -> None:
-        """Infer n_input for components based on incoming connections.
+        """Infer input_size for components based on incoming connections.
 
         Supports port-based routing:
         - source_port: Routes specific layer outputs (e.g., 'l23', 'l5')
         - target_port: Differentiates input types (e.g., 'feedforward', 'top_down')
 
-        For components without n_input specified:
-        - Feedforward ports (None, 'feedforward', 'cortical', 'hippocampal'): Counted in n_input
+        For components without input_size specified:
+        - Feedforward ports (None, 'feedforward', 'cortical', 'hippocampal'): Counted in input_size
         - Top-down/modulation ports ('top_down', 'pfc_modulation'): Set as separate config params
         - Sensory ports ('ec_l3'): Set as ec_l3_input_size
         """
@@ -337,10 +342,10 @@ class BrainBuilder:
 
             if not sources:
                 # No incoming connections - this is an input interface
-                if "n_input" not in spec.config_params:
+                if "input_size" not in spec.config_params:
                     raise ValueError(
-                        f"Component '{name}' has no incoming connections and no n_input specified. "
-                        f"Input interfaces must specify n_input explicitly."
+                        f"Component '{name}' has no incoming connections and no input_size specified. "
+                        f"Input interfaces must specify 'input_size' explicitly."
                     )
                 continue
 
@@ -374,14 +379,15 @@ class BrainBuilder:
                     print(f"Warning: Unknown target_port '{target_port}' on connection to '{name}', treating as feedforward")
                     feedforward_sources.append((source_name, conn))
 
-            # Infer n_input from feedforward connections
-            if "n_input" not in spec.config_params and feedforward_sources:
+            # Infer input_size from feedforward connections
+            # Skip for striatum (uses input_sources dict instead)
+            if "input_size" not in spec.config_params and feedforward_sources and spec.registry_name != "striatum":
                 feedforward_sizes = []
                 for source_name, conn in feedforward_sources:
                     output_size = self._get_source_output_size(source_name, conn.source_port)
                     feedforward_sizes.append(output_size)
 
-                spec.config_params["n_input"] = sum(feedforward_sizes)
+                spec.config_params["input_size"] = sum(feedforward_sizes)
 
             # Set port-specific sizes
             if sensory_sources:
@@ -399,6 +405,52 @@ class BrainBuilder:
             if feedback_sources:
                 spec.config_params["_has_feedback"] = True
 
+    def _get_output_size_from_params(self, spec: ComponentSpec) -> Optional[int]:
+        """Get output size from config params, checking both legacy and semantic fields.
+
+        Args:
+            spec: Component specification
+
+        Returns:
+            Output size if determinable, None otherwise
+        """
+        params = spec.config_params
+        registry_name = spec.registry_name
+
+        # Region-specific semantic output size computation
+        if registry_name in ("cortex", "layered_cortex", "predictive_cortex"):
+            # Cortex: output_size = l23_size + l5_size
+            if "l23_size" in params and "l5_size" in params:
+                return params["l23_size"] + params["l5_size"]
+
+        elif registry_name in ("thalamus", "thalamic_relay"):
+            # Thalamus: output_size = relay_size
+            if "relay_size" in params:
+                return params["relay_size"]
+
+        elif registry_name == "hippocampus":
+            # Hippocampus: output_size = ca1_size
+            if "ca1_size" in params:
+                return params["ca1_size"]
+
+        elif registry_name == "prefrontal":
+            # Prefrontal: output_size = n_neurons (working memory neurons)
+            if "n_neurons" in params:
+                return params["n_neurons"]
+
+        elif registry_name == "striatum":
+            # Striatum: output_size = d1_size + d2_size = 2 * n_actions * neurons_per_action
+            if "n_actions" in params and "neurons_per_action" in params:
+                return 2 * params["n_actions"] * params["neurons_per_action"]
+
+        elif registry_name == "cerebellum":
+            # Cerebellum: output_size = purkinje_size
+            if "purkinje_size" in params:
+                return params["purkinje_size"]
+
+        # Could not determine output size
+        return None
+
     def _get_source_output_size(self, source_name: str, source_port: Optional[str]) -> int:
         """Get output size from source component, optionally from specific port.
 
@@ -411,14 +463,18 @@ class BrainBuilder:
         """
         source_spec = self._components[source_name]
 
-        if "n_output" not in source_spec.config_params:
+        # Check for output size in either legacy or semantic form
+        output_size = self._get_output_size_from_params(source_spec)
+        if output_size is None:
             raise ValueError(
-                f"Component '{source_name}' must specify n_output before connecting"
+                f"Component '{source_name}' must specify output size before connecting. "
+                f"For cortex: specify layer_sizes; for thalamus: relay_size; "
+                f"for striatum: n_actions + neurons_per_action; etc."
             )
 
         # If no port specified, use full output
         if source_port is None:
-            return source_spec.config_params["n_output"]
+            return output_size
 
         # For layered cortex (including predictive_cortex), get layer sizes
         if source_spec.registry_name in ("cortex", "layered_cortex", "predictive_cortex"):
@@ -457,7 +513,11 @@ class BrainBuilder:
                 f"Component '{source_spec.registry_name}' does not support port '{source_port}'"
             )
 
-        return source_spec.config_params["n_output"]
+        # Should never reach here - output_size should have been determined above
+        raise ValueError(
+            f"Could not determine output size for '{source_name}'. "
+            f"Registry: {source_spec.registry_name}, Params: {list(source_spec.config_params.keys())}"
+        )
 
     def _get_pathway_source_size(self, source_comp: LearnableComponent, source_port: Optional[str]) -> int:
         """Get output size for pathway from source component and port.
@@ -515,8 +575,6 @@ class BrainBuilder:
         Returns:
             AxonalProjection instance with target-specific delays
         """
-        from thalia.pathways.axonal_projection import AxonalProjection
-
         # Build sources list: [(region_name, port, size, delay_ms[, target_delays]), ...]
         sources = []
         for spec in target_specs:
@@ -1026,18 +1084,22 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     **Pathway Types**:
     - Input stage uses "thalamic_relay" region (has relay neurons)
     - Connections use AXONAL projections (v2.0 architecture)
+
+    **Semantic Configs**:
+    - Thalamus: input_size, relay_size
+    - Cortex: layer_sizes (computed from size parameter)
     """
-    n_input = overrides.get("n_input", 64)
-    n_process = overrides.get("n_process", 128)
-    n_output = overrides.get("n_output", 64)
+    input_size = overrides.get("input_size", 64)
+    process_size = overrides.get("process_size", 128)
+    output_size = overrides.get("output_size", 64)
 
-    # Input interface - must specify both n_input and n_output
-    # Uses thalamic relay (which has real neurons for sensory filtering)
-    builder.add_component("input", "thalamic_relay", n_input=n_input, n_output=n_input)
+    # Input interface - uses thalamic relay (which has real neurons for sensory filtering)
+    # Must specify input_size and relay_size explicitly (no incoming connections)
+    builder.add_component("input", "thalamic_relay", input_size=input_size, relay_size=input_size)
 
-    # Processing components - only n_output needed, n_input inferred from connections
-    builder.add_component("process", "layered_cortex", **calculate_layer_sizes(n_process))
-    builder.add_component("output", "layered_cortex", **calculate_layer_sizes(n_output))
+    # Processing components - input_size inferred from connections
+    builder.add_component("process", "layered_cortex", **calculate_layer_sizes(process_size))
+    builder.add_component("output", "layered_cortex", **calculate_layer_sizes(output_size))
 
     # Connections use axonal projections (pure spike routing)
     builder.connect("input", "process", pathway_type="axonal")
@@ -1067,28 +1129,40 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     - Synapses are owned by target regions (biologically accurate)
     """
     # Default sizes (can be overridden)
-    n_thalamus = overrides.get("n_thalamus", 128)
-    n_cortex = overrides.get("n_cortex", 500)
-    n_hippocampus = overrides.get("n_hippocampus", 200)
-    n_pfc = overrides.get("n_pfc", 300)
-    n_striatum = overrides.get("n_striatum", 150)
-    n_cerebellum = overrides.get("n_cerebellum", 100)
+    thalamus_relay_size = overrides.get("thalamus_relay_size", 128)
+    cortex_size = overrides.get("cortex_size", 500)
+    hippocampus_ca1_size = overrides.get("hippocampus_ca1_size", 200)
+    pfc_n_neurons = overrides.get("pfc_n_neurons", 300)
+    striatum_actions = overrides.get("striatum_actions", 10)
+    striatum_neurons_per_action = overrides.get("striatum_neurons_per_action", 15)
+    cerebellum_purkinje_size = overrides.get("cerebellum_purkinje_size", 100)
 
     # Calculate cortex layer sizes
     # BIOLOGICAL CONSTRAINTS for corticothalamic feedback:
     # - L6b must match thalamus relay size (one-to-one direct modulation)
     # - L6a must match TRN size (which is trn_ratio * relay size, typically 20%)
-    cortex_sizes = calculate_layer_sizes(n_cortex)
-    cortex_sizes["l6b_size"] = n_thalamus  # Override to match relay neurons
-    cortex_sizes["l6a_size"] = int(n_thalamus * 0.2)  # Match TRN size (20% of relay)
+    cortex_sizes = calculate_layer_sizes(cortex_size)
+    cortex_sizes["l6b_size"] = thalamus_relay_size  # Override to match relay neurons
+    cortex_sizes["l6a_size"] = int(thalamus_relay_size * 0.2)  # Match TRN size (20% of relay)
 
-    # Add regions (only thalamus needs n_input as it's the input interface)
-    builder.add_component("thalamus", "thalamus", n_input=n_thalamus, n_output=n_thalamus)
+    # Add regions (only thalamus needs input_size as it's the input interface)
+    thalamus_sizes = compute_thalamus_sizes(thalamus_relay_size)
+    builder.add_component("thalamus", "thalamus", input_size=thalamus_relay_size, **thalamus_sizes)
     builder.add_component("cortex", "cortex", **cortex_sizes)
-    builder.add_component("hippocampus", "hippocampus", n_output=n_hippocampus)
-    builder.add_component("pfc", "prefrontal", n_output=n_pfc)
-    builder.add_component("striatum", "striatum", n_output=n_striatum)
-    builder.add_component("cerebellum", "cerebellum", n_output=n_cerebellum)
+
+    # Hippocampus: specify ca1_size (output), other layers auto-compute
+    hippocampus_sizes = compute_hippocampus_sizes(hippocampus_ca1_size)
+    builder.add_component("hippocampus", "hippocampus", **hippocampus_sizes)
+
+    # Prefrontal: specify n_neurons (working memory neurons)
+    builder.add_component("pfc", "prefrontal", n_neurons=pfc_n_neurons)
+
+    # Striatum: specify n_actions and neurons_per_action
+    builder.add_component("striatum", "striatum", n_actions=striatum_actions,
+                         neurons_per_action=striatum_neurons_per_action, input_sources={})
+
+    # Cerebellum: specify purkinje_size
+    builder.add_component("cerebellum", "cerebellum", purkinje_size=cerebellum_purkinje_size)
 
     # Add connections using AXONAL projections (v2.0 architecture)
     # Why axonal? These are long-range projections with NO intermediate computation.
