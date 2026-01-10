@@ -312,6 +312,10 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
         Raises:
             ValueError: If any layer size is 0 or ratios are unrealistic
         """
+        # Skip validation if input_size is 0 (placeholder/default config)
+        if self.input_size == 0:
+            return
+
         # Check that no layer sizes are 0
         if any(s == 0 for s in [self.dg_size, self.ca3_size, self.ca2_size, self.ca1_size]):
             raise ValueError(

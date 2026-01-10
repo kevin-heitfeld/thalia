@@ -541,12 +541,15 @@ class DynamicBrain(nn.Module):
             brain = DynamicBrain.from_thalia_config(config)
 
         Note:
-            This manually builds the sensorimotor topology with sizes
-            from config.brain.sizes to ensure exact compatibility.
+            Uses LayerSizeCalculator for biologically-accurate size computation.
+            Builder infers input_size from connection graph.
         """
         from thalia.core.brain_builder import BrainBuilder
+        from thalia.config import LayerSizeCalculator
+        from thalia.config.region_sizes import compute_hippocampus_sizes
 
         sizes = config.brain.sizes
+        calc = LayerSizeCalculator()
 
         builder = BrainBuilder(config.global_)
 
@@ -554,32 +557,48 @@ class DynamicBrain(nn.Module):
         # Thalamus is input interface
         builder.add_component(
             "thalamus", "thalamus",
-            n_input=sizes.input_size,
-            n_output=sizes.thalamus_size
+            input_size=sizes.input_size,
+            relay_size=sizes.thalamus_size
         )
 
         # Cortex - use cortex_type from config (PREDICTIVE or LAYERED)
         # Both types expose l23_size/l5_size for port-based routing
         cortex_registry_name = "predictive_cortex" if config.brain.cortex_type.value == "predictive" else "cortex"
 
-        # Use explicit layer sizes if available, otherwise calculate from n_output
+        # Use explicit layer sizes if available, otherwise compute from cortex_size
         if sizes._cortex_l4_size is not None and sizes._cortex_l23_size is not None and sizes._cortex_l5_size is not None:
             cortex_config = {
-                "n_output": sizes.cortex_size,
                 "l4_size": sizes.cortex_l4_size,
                 "l23_size": sizes.cortex_l23_size,
                 "l5_size": sizes.cortex_l5_size,
             }
         else:
-            # Calculate layer sizes using standard ratios
-            cortex_config = calculate_layer_sizes(sizes.cortex_size)
+            # Use LayerSizeCalculator with cortex_size as scale parameter
+            # This ensures biologically-accurate layer ratios
+            # Note: input_size is omitted - will be inferred by builder from connections
+            cortex_layer_sizes = calc.cortex_from_scale(sizes.cortex_size)
+            cortex_config = {
+                "l4_size": cortex_layer_sizes["l4_size"],
+                "l23_size": cortex_layer_sizes["l23_size"],
+                "l5_size": cortex_layer_sizes["l5_size"],
+                "l6a_size": cortex_layer_sizes["l6a_size"],
+                "l6b_size": cortex_layer_sizes["l6b_size"],
+            }
 
         builder.add_component("cortex", cortex_registry_name, **cortex_config)
-        builder.add_component("hippocampus", "hippocampus", n_output=sizes.hippocampus_size)
-        builder.add_component("pfc", "prefrontal", n_output=sizes.pfc_size)
-        builder.add_component("striatum", "striatum", n_output=sizes.n_actions)
-        # Cerebellum outputs n_actions (motor commands)
-        builder.add_component("cerebellum", "cerebellum", n_output=sizes.n_actions)
+
+        # Hippocampus - compute all layer sizes to enable output size validation
+        hipp_sizes = compute_hippocampus_sizes(sizes.hippocampus_size)
+        builder.add_component("hippocampus", "hippocampus",
+            input_size=sizes.hippocampus_size,
+            dg_size=hipp_sizes["dg_size"],
+            ca3_size=hipp_sizes["ca3_size"],
+            ca2_size=hipp_sizes["ca2_size"],
+            ca1_size=hipp_sizes["ca1_size"])
+
+        builder.add_component("pfc", "prefrontal", n_neurons=sizes.pfc_size)
+        builder.add_component("striatum", "striatum", n_actions=sizes.n_actions, neurons_per_action=10, input_sources={})
+        builder.add_component("cerebellum", "cerebellum", purkinje_size=sizes.n_actions)
 
         # Add connections (standard sensorimotor topology)
         # Thalamus → Cortex → Hippocampus/PFC → Striatum → Cerebellum

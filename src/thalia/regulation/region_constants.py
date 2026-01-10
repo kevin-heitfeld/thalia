@@ -158,13 +158,6 @@ THALAMUS_ALPHA_GATE_THRESHOLD = 0.0
 # THALAMUS - TRN (THALAMIC RETICULAR NUCLEUS)
 # =============================================================================
 
-THALAMUS_TRN_RATIO = 0.2
-"""TRN neurons as fraction of relay neurons.
-
-TRN forms an inhibitory shell around thalamus.
-Approximately 20% the size of relay population.
-"""
-
 THALAMUS_TRN_INHIBITION = 0.3
 """Strength of TRN → relay inhibition.
 

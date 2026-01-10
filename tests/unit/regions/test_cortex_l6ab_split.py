@@ -24,16 +24,22 @@ def device():
 
 
 @pytest.fixture
-def cortex_config_l6ab(device):
-    """Cortex configuration with L6a/L6b split."""
-    return LayeredCortexConfig(
-        input_size=128,  # Must equal l23_size + l5_size
-        # Specify all layer sizes
-        l4_size=128,
-        l23_size=192,
-        l5_size=128,
-        l6a_size=150,  # Type I corticothalamic (→TRN)
-        l6b_size=100,  # Type II corticothalamic (→relay)
+def cortex_sizes():
+    """Sizes dictionary for cortex L6a/L6b tests."""
+    return {
+        "input_size": 128,
+        "l4_size": 128,
+        "l23_size": 192,
+        "l5_size": 128,
+        "l6a_size": 150,  # Type I corticothalamic (→TRN)
+        "l6b_size": 100,  # Type II corticothalamic (→relay)
+    }
+
+
+@pytest.fixture
+def cortex_config_l6ab(device, cortex_sizes):
+    """Cortex configuration with L6a/L6b split (behavioral params only)."""
+    config = LayeredCortexConfig(
         l6a_sparsity=0.12,
         l6b_sparsity=0.15,
         l23_to_l6a_strength=1.0,
@@ -45,16 +51,21 @@ def cortex_config_l6ab(device):
         l6a_to_trn_delay_ms=10.0,  # Slow pathway
         l6b_to_relay_delay_ms=5.0,  # Fast pathway
         dt_ms=1.0,
-        device=str(device),
     )
+    # Add size properties to config for backward compatibility with tests
+    for key, value in cortex_sizes.items():
+        setattr(config, key, value)
+    # Add n_input alias for tests that use it
+    config.n_input = cortex_sizes["input_size"]
+    return config
 
 
 class TestL6abSplit:
     """Test L6a/L6b dual pathway split."""
 
-    def test_l6ab_initialization(self, cortex_config_l6ab, device):
+    def test_l6ab_initialization(self, cortex_config_l6ab, cortex_sizes, device):
         """Test that L6a and L6b are initialized as separate neuron populations."""
-        cortex = LayeredCortex(cortex_config_l6ab)
+        cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
 
         # Extract expected sizes from config
         expected_l6a = cortex_config_l6ab.l6a_size
@@ -75,9 +86,9 @@ class TestL6abSplit:
         # Verify separate populations (not shared)
         assert cortex.l6a_neurons is not cortex.l6b_neurons
 
-    def test_l6ab_weights(self, cortex_config_l6ab, device):
+    def test_l6ab_weights(self, cortex_config_l6ab, cortex_sizes, device):
         """Test that L6a and L6b have separate weight matrices."""
-        cortex = LayeredCortex(cortex_config_l6ab)
+        cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
 
         # Extract expected dimensions from config
         l6a_size = cortex_config_l6ab.l6a_size
@@ -107,9 +118,9 @@ class TestL6abSplit:
             cortex.synaptic_weights["l23_l6b"][:min_size, :]  # Matching rows of L6b
         )
 
-    def test_l6ab_forward_pass(self, cortex_config_l6ab, device):
+    def test_l6ab_forward_pass(self, cortex_config_l6ab, cortex_sizes, device):
         """Test that forward pass generates separate L6a and L6b spikes."""
-        cortex = LayeredCortex(cortex_config_l6ab)
+        cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
 
         # Extract dimensions from config
         n_input = cortex_config_l6ab.n_input
@@ -147,9 +158,9 @@ class TestL6abSplit:
         assert l6a_size != l6b_size
         assert cortex.state.l6a_spikes.shape != cortex.state.l6b_spikes.shape
 
-    def test_l6ab_port_routing(self, cortex_config_l6ab, device):
+    def test_l6ab_port_routing(self, cortex_config_l6ab, cortex_sizes, device):
         """Test that get_output() correctly routes L6a and L6b ports."""
-        cortex = LayeredCortex(cortex_config_l6ab)
+        cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
 
         # Extract dimensions from config
         n_input = cortex_config_l6ab.n_input
@@ -187,9 +198,9 @@ class TestL6abSplit:
         # Verify outputs are different tensors
         assert l6a_output.shape != l6b_output.shape
 
-    def test_l6ab_delay_configuration(self, cortex_config_l6ab, device):
+    def test_l6ab_delay_configuration(self, cortex_config_l6ab, cortex_sizes, device):
         """Test that L6a and L6b have correct axonal delay configuration."""
-        cortex = LayeredCortex(cortex_config_l6ab)
+        cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
 
         # Check internal delays (L2/3 → L6a/L6b)
         assert cortex.config.l23_to_l6a_delay_ms == 0.0
@@ -202,9 +213,9 @@ class TestL6abSplit:
         # Verify L6a is slower (type I inhibitory modulation)
         assert cortex.config.l6a_to_trn_delay_ms > cortex.config.l6b_to_relay_delay_ms
 
-    def test_l6ab_no_legacy_ports(self, cortex_config_l6ab, device):
+    def test_l6ab_no_legacy_ports(self, cortex_config_l6ab, cortex_sizes, device):
         """Test that legacy 'l6' and 'l6_feedback' ports raise ValueError."""
-        cortex = LayeredCortex(cortex_config_l6ab)
+        cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
 
         n_input = cortex_config_l6ab.n_input
         sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
@@ -218,9 +229,9 @@ class TestL6abSplit:
         with pytest.raises(ValueError, match="Invalid port 'l6_feedback'"):
             _ = cortex.get_output("l6_feedback")
 
-    def test_l6ab_state_reset(self, cortex_config_l6ab, device):
+    def test_l6ab_state_reset(self, cortex_config_l6ab, cortex_sizes, device):
         """Test that reset_state() properly clears L6a and L6b state."""
-        cortex = LayeredCortex(cortex_config_l6ab)
+        cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
 
         n_input = cortex_config_l6ab.n_input
         sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
@@ -251,4 +262,3 @@ class TestL6abSplit:
         # (If delays weren't cleared, old spikes would contaminate output)
         firing_rate = output_after_reset.float().mean().item()
         assert 0.0 <= firing_rate <= 1.0, f"Valid firing rate after reset: {firing_rate:.2%}"
-

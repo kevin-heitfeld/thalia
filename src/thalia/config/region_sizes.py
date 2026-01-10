@@ -155,10 +155,6 @@ Provides feedback to thalamus and local modulation.
 Note: Currently not modeled explicitly in Thalia (future work).
 """
 
-# Computed total cortex ratios
-L23_TO_INPUT_RATIO = L4_TO_INPUT_RATIO * L23_TO_L4_RATIO  # 3.0
-L5_TO_INPUT_RATIO = L23_TO_INPUT_RATIO * L5_TO_L23_RATIO  # 1.5
-
 # =============================================================================
 # STRIATUM RATIOS
 # =============================================================================
@@ -240,11 +236,18 @@ For modeling, we use modest size focused on error correction.
 """
 
 # =============================================================================
-# CONVENIENCE FUNCTIONS
+# CONVENIENCE FUNCTIONS (DEPRECATED - Use LayerSizeCalculator instead)
 # =============================================================================
+
+import warnings
+
 
 def compute_hippocampus_sizes(ec_input_size: int) -> dict:
     """Compute hippocampus layer sizes from EC input size.
+
+    .. deprecated:: 0.3.0
+        Use :class:`LayerSizeCalculator.hippocampus_from_input()` instead.
+        This function will be removed in v0.4.0.
 
     Args:
         ec_input_size: Size of entorhinal cortex input
@@ -252,37 +255,64 @@ def compute_hippocampus_sizes(ec_input_size: int) -> dict:
     Returns:
         Dict with dg_size, ca3_size, ca2_size, ca1_size
     """
-    dg_size = int(ec_input_size * DG_TO_EC_EXPANSION)
-    ca3_size = int(dg_size * CA3_TO_DG_RATIO)
-    ca2_size = int(dg_size * CA2_TO_DG_RATIO)
-    ca1_size = int(ca3_size * CA1_TO_CA3_RATIO)
+    warnings.warn(
+        "compute_hippocampus_sizes() is deprecated. "
+        "Use LayerSizeCalculator().hippocampus_from_input() instead. "
+        "This function will be removed in v0.4.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
+    # Import here to avoid circular dependency
+    from thalia.config.size_calculator import LayerSizeCalculator
+    calc = LayerSizeCalculator()
+    result = calc.hippocampus_from_input(ec_input_size)
+
+    # Return only the keys that old function returned (backward compatibility)
     return {
-        "dg_size": dg_size,
-        "ca3_size": ca3_size,
-        "ca2_size": ca2_size,
-        "ca1_size": ca1_size,
+        "dg_size": result["dg_size"],
+        "ca3_size": result["ca3_size"],
+        "ca2_size": result["ca2_size"],
+        "ca1_size": result["ca1_size"],
     }
 
 
 def compute_cortex_layer_sizes(input_size: int) -> dict:
     """Compute cortex layer sizes from input size.
 
+    .. deprecated:: 0.3.0
+        Use :class:`LayerSizeCalculator.cortex_from_input()` instead.
+        This function will be removed in v0.4.0.
+
     Args:
         input_size: Size of thalamic/sensory input
 
     Returns:
         Dict with l4_size, l23_size, l5_size
-    """
-    l4_size = int(input_size * L4_TO_INPUT_RATIO)
-    l23_size = int(l4_size * L23_TO_L4_RATIO)
-    l5_size = int(l23_size * L5_TO_L23_RATIO)
 
+    Warning:
+        This function does NOT compute L6a/L6b sizes. Use LayerSizeCalculator
+        for complete layer size computation.
+    """
+    warnings.warn(
+        "compute_cortex_layer_sizes() is deprecated. "
+        "Use LayerSizeCalculator().cortex_from_input() instead. "
+        "This function will be removed in v0.4.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    # Import here to avoid circular dependency
+    from thalia.config.size_calculator import LayerSizeCalculator
+    calc = LayerSizeCalculator()
+    result = calc.cortex_from_input(input_size)
+
+    # Return only the keys that old function returned (backward compatibility)
     return {
-        "l4_size": l4_size,
-        "l23_size": l23_size,
-        "l5_size": l5_size,
-        "total_size": l4_size + l23_size + l5_size,
+        "l4_size": result["l4_size"],
+        "l23_size": result["l23_size"],
+        "l5_size": result["l5_size"],
+        "total_size": result["total_neurons"] - result["l6a_size"] - result["l6b_size"],
     }
 
 
@@ -292,6 +322,10 @@ def compute_striatum_sizes(
     d1_d2_ratio: float = 0.5,
 ) -> dict:
     """Compute explicit striatum pathway sizes.
+
+    .. deprecated:: 0.3.0
+        Use :class:`LayerSizeCalculator.striatum_from_actions()` instead.
+        This function will be removed in v0.4.0.
 
     Args:
         n_actions: Number of discrete actions
@@ -305,31 +339,35 @@ def compute_striatum_sizes(
         With neurons_per_action=1, each action still gets 1 neuron in D1 and 1 in D2
         (total 2 neurons per action). The d1_d2_ratio is applied when neurons_per_action >= 2.
     """
-    if neurons_per_action == 1:
-        # Special case: minimum 1 neuron per pathway per action
-        d1_neurons_per_action = 1
-        d2_neurons_per_action = 1
-    else:
-        # Split neurons per action between D1 and D2
-        d1_neurons_per_action = max(1, int(neurons_per_action * d1_d2_ratio))
-        d2_neurons_per_action = max(1, neurons_per_action - d1_neurons_per_action)
+    warnings.warn(
+        "compute_striatum_sizes() is deprecated. "
+        "Use LayerSizeCalculator().striatum_from_actions() instead. "
+        "This function will be removed in v0.4.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
-    # Total neurons in each pathway
-    d1_size = n_actions * d1_neurons_per_action
-    d2_size = n_actions * d2_neurons_per_action
-    total_size = d1_size + d2_size
+    # Import here to avoid circular dependency
+    from thalia.config.size_calculator import LayerSizeCalculator
+    calc = LayerSizeCalculator()
+    result = calc.striatum_from_actions(n_actions, neurons_per_action)
 
+    # Return only the keys that old function returned (backward compatibility)
     return {
-        "d1_size": d1_size,
-        "d2_size": d2_size,
-        "total_size": total_size,
-        "n_actions": n_actions,
-        "neurons_per_action": neurons_per_action,
+        "d1_size": result["d1_size"],
+        "d2_size": result["d2_size"],
+        "total_size": result["total_neurons"],
+        "n_actions": result["n_actions"],
+        "neurons_per_action": result["neurons_per_action"],
     }
 
 
 def compute_thalamus_sizes(relay_size: int, trn_ratio: float = 0.3) -> dict:
     """Compute thalamus layer sizes.
+
+    .. deprecated:: 0.3.0
+        Use :class:`LayerSizeCalculator.thalamus_from_relay()` instead.
+        This function will be removed in v0.4.0.
 
     Args:
         relay_size: Size of relay neuron population (output size)
@@ -338,11 +376,23 @@ def compute_thalamus_sizes(relay_size: int, trn_ratio: float = 0.3) -> dict:
     Returns:
         Dict with relay_size, trn_size
     """
-    trn_size = int(relay_size * trn_ratio)
+    warnings.warn(
+        "compute_thalamus_sizes() is deprecated. "
+        "Use LayerSizeCalculator().thalamus_from_relay() instead. "
+        "This function will be removed in v0.4.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
+    # Import here to avoid circular dependency
+    from thalia.config.size_calculator import LayerSizeCalculator
+    calc = LayerSizeCalculator()
+    result = calc.thalamus_from_relay(relay_size)
+
+    # Return only the keys that old function returned (backward compatibility)
     return {
-        "relay_size": relay_size,
-        "trn_size": trn_size,
+        "relay_size": result["relay_size"],
+        "trn_size": result["trn_size"],
     }
 
 
@@ -383,6 +433,10 @@ def compute_cerebellum_sizes(
 ) -> dict:
     """Compute cerebellum layer sizes.
 
+    .. deprecated:: 0.3.0
+        Use :class:`LayerSizeCalculator.cerebellum_from_output()` instead.
+        This function will be removed in v0.4.0.
+
     Args:
         purkinje_size: Number of Purkinje cells (= output size)
         granule_expansion: Granule cell expansion factor (default 4.0)
@@ -390,11 +444,21 @@ def compute_cerebellum_sizes(
     Returns:
         Dict with granule_size, purkinje_size
     """
-    # Granule layer expands from mossy fiber input
-    # For simplicity, assume purkinje_size determines the scale
-    granule_size = int(purkinje_size * granule_expansion)
+    warnings.warn(
+        "compute_cerebellum_sizes() is deprecated. "
+        "Use LayerSizeCalculator().cerebellum_from_output() instead. "
+        "This function will be removed in v0.4.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
+    # Import here to avoid circular dependency
+    from thalia.config.size_calculator import LayerSizeCalculator
+    calc = LayerSizeCalculator()
+    result = calc.cerebellum_from_output(purkinje_size)
+
+    # Return only the keys that old function returned (backward compatibility)
     return {
-        "granule_size": granule_size,
-        "purkinje_size": purkinje_size,
+        "granule_size": result["granule_size"],
+        "purkinje_size": result["purkinje_size"],
     }

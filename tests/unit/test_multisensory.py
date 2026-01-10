@@ -20,12 +20,10 @@ def device():
 def multimodal_config(device):
     """Create test configuration."""
     return MultimodalIntegrationConfig(
-        n_input=100,  # Not used (separate inputs)
-        n_output=100,
         visual_input_size=30,
         auditory_input_size=30,
         language_input_size=40,
-        visual_pool_size=25,  # Must sum to n_output
+        visual_pool_size=25,  # Pool sizes must sum to total
         auditory_pool_size=25,
         language_pool_size=25,
         integration_pool_size=25,  # 25+25+25+25 = 100
@@ -46,8 +44,6 @@ def test_multimodal_config_validation():
     """Test config validation for pool sizes."""
     # Should work
     config = MultimodalIntegrationConfig(
-        n_input=100,
-        n_output=100,
         visual_input_size=30,
         auditory_input_size=30,
         language_input_size=40,
@@ -60,10 +56,11 @@ def test_multimodal_config_validation():
     region = MultimodalIntegration(config)
     # Contract: should successfully create region with valid config
 
-    # Should fail (sizes don't sum to n_output)
-    bad_config = MultimodalIntegrationConfig(
-        n_input=100,
-        n_output=100,
+    # Should fail (sizes don't sum correctly)
+    # Since n_neurons is computed from pool sizes, they always match
+    # The validation is automatic - pool sizes define total neurons
+    # This test verifies that the config accepts any valid pool sizes
+    config = MultimodalIntegrationConfig(
         visual_input_size=30,
         auditory_input_size=30,
         language_input_size=40,
@@ -74,8 +71,9 @@ def test_multimodal_config_validation():
         device="cpu",
     )
 
-    with pytest.raises(ValueError, match="Pool sizes must sum"):
-        MultimodalIntegration(bad_config)
+    # Should successfully create region with total neurons = sum of pools
+    region = MultimodalIntegration(config)
+    assert region.n_neurons == 200  # 50+50+50+50
 
 
 def test_multimodal_pool_sizes(multimodal_region, multimodal_config):
@@ -93,7 +91,13 @@ def test_multimodal_pool_sizes(multimodal_region, multimodal_config):
         multimodal_region.language_pool_size +
         multimodal_region.integration_pool_size
     )
-    assert total_pool == multimodal_config.n_output
+    expected_total = (
+        multimodal_config.visual_pool_size +
+        multimodal_config.auditory_pool_size +
+        multimodal_config.language_pool_size +
+        multimodal_config.integration_pool_size
+    )
+    assert total_pool == expected_total
 
 
 @pytest.mark.parametrize("modality,input_size,pool_attr", [
@@ -257,7 +261,13 @@ def test_multimodal_integration_output_size(multimodal_region):
     )
 
     # Output should include all pools + integration
-    assert output.shape[0] == multimodal_region.config.n_output
+    expected_size = (
+        multimodal_region.visual_pool_size +
+        multimodal_region.auditory_pool_size +
+        multimodal_region.language_pool_size +
+        multimodal_region.integration_pool_size
+    )
+    assert output.shape[0] == expected_size
     assert multimodal_region.integration_spikes.shape[0] == multimodal_region.integration_pool_size
 
 

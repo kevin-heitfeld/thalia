@@ -27,34 +27,33 @@ from .robustness_config import RobustnessConfig
 class LayeredCortexConfig(NeuralComponentConfig):
     """Configuration for layered cortical microcircuit.
 
-    Layer Sizes (REQUIRED):
-        All layer sizes must be explicitly specified. This ensures clarity,
-        debuggability, and eliminates ambiguity in cortical architecture.
+    **BEHAVIORAL CONFIGURATION ONLY**
 
-        The output_size is computed as l23_size + l5_size, as cortex outputs
-        through both cortico-cortical (L2/3) and subcortical (L5) pathways.
+    This config contains ONLY behavioral parameters (learning rates, sparsity, etc.).
+    Layer sizes are provided separately during instantiation via LayerSizeCalculator.
 
-        Typical ratios (for reference, not enforced):
-        - l4_size: Same as base (1.0x)
-        - l23_size: 1.5x base (processing/association)
-        - l5_size: Same as base (1.0x)
-        - l6_size: 0.5x base (feedback)
+    Usage with BrainBuilder:
+        >>> from thalia.config import LayerSizeCalculator
+        >>> from thalia.core.brain_builder import BrainBuilder
+        >>>
+        >>> calc = LayerSizeCalculator()
+        >>> cortex_sizes = calc.cortex_from_scale(scale_factor=128)
+        >>>
+        >>> builder = BrainBuilder(global_config)
+        >>> builder.add_component("cortex", "cortex", **cortex_sizes)
+        >>> brain = builder.build()
+
+    Direct region instantiation (internal use by builder):
+        >>> config = LayeredCortexConfig(stdp_lr=0.001, sparsity=0.1)
+        >>> sizes = calc.cortex_from_scale(128)
+        >>> cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
+
+    OUTPUT COMPUTATION:
+        output_size is computed as l23_size + l5_size (dual pathways:
+        cortico-cortical via L2/3 and subcortical via L5).
     """
 
-    # Semantic specification: input from thalamus or other cortex
-    input_size: int = 0  # Required if layer sizes are 0 (triggers auto-compute)
-
-    # Explicit layer sizes (REQUIRED in practice - defaults provided for dataclass)
-    # Note: field() with no default_factory means these MUST be specified at creation
-    l4_size: int = field(default=0)          # Input layer
-    l23_size: int = field(default=0)         # Processing layer (cortico-cortical output)
-    l5_size: int = field(default=0)          # Subcortical output layer
-
-    # L6 split into two subtypes (Sherman & Guillery 2002):
-    # - L6a (corticothalamic type I): Projects to TRN (inhibitory modulation, low gamma 25-35 Hz)
-    # - L6b (corticothalamic type II): Projects to relay (excitatory modulation, high gamma 60-80 Hz)
-    l6a_size: int = field(default=0)         # L6a → TRN pathway
-    l6b_size: int = field(default=0)         # L6b → relay pathway
+    # NO SIZE FIELDS - sizes passed separately to __init__
 
     # Layer sparsity (fraction of neurons active)
     l4_sparsity: float = 0.15  # Moderate sparsity
@@ -100,110 +99,6 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # ~70-80% of cortical gap junctions are interneuron-interneuron (Bennett 2004)
     gap_junctions_enabled: bool = True
     """Enable gap junction coupling in L2/3 interneurons."""
-
-    # Computed dimensions as properties (always up-to-date after growth)
-    @property
-    def output_size(self) -> int:
-        """L2/3 + L5 (dual output pathways: cortico-cortical + subcortical)."""
-        return self.l23_size + self.l5_size
-
-    @property
-    def total_neurons(self) -> int:
-        """Sum of all layers."""
-        return self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
-
-    @property
-    def n_input(self) -> int:
-        """Backward compatibility property for growth validation.
-
-        Maps to semantic field: input_size
-        """
-        return self.input_size
-
-    @property
-    def n_output(self) -> int:
-        """Backward compatibility property for growth validation.
-
-        Maps to semantic field: output_size (L2/3 + L5)
-        """
-        return self.output_size
-
-    def __post_init__(self) -> None:
-        """Auto-compute layer sizes from input_size if all are 0, then validate."""
-        # Auto-compute if all layer sizes are 0
-        if all(s == 0 for s in [self.l4_size, self.l23_size, self.l5_size, self.l6a_size, self.l6b_size]):
-            from thalia.config.region_sizes import compute_cortex_layer_sizes
-            sizes = compute_cortex_layer_sizes(self.input_size)
-            object.__setattr__(self, "l4_size", sizes["l4_size"])
-            object.__setattr__(self, "l23_size", sizes["l23_size"])
-            object.__setattr__(self, "l5_size", sizes["l5_size"])
-            # L6 split: L6a and L6b are each half of L5 size
-            l6a_size = sizes["l5_size"] // 2
-            l6b_size = sizes["l5_size"] - l6a_size  # Handle odd sizes
-            object.__setattr__(self, "l6a_size", l6a_size)
-            object.__setattr__(self, "l6b_size", l6b_size)
-
-        # Validate after computation
-        self.validate()
-
-    def validate(self) -> None:
-        """Validate size constraints and layer relationships.
-
-        Raises:
-            ValueError: If any layer size is 0 or relationships are inconsistent
-        """
-        # Skip validation if input_size is 0 (placeholder/default config)
-        if self.input_size == 0:
-            return
-
-        # Check core layers (L4, L2/3, L5) are non-zero
-        # L6a/L6b are optional layers (can be 0 if not used)
-        if any(s == 0 for s in [self.l4_size, self.l23_size, self.l5_size]):
-            raise ValueError(
-                f"Core layer sizes (l4, l23, l5) must be > 0. Got l4={self.l4_size}, "
-                f"l23={self.l23_size}, l5={self.l5_size}. "
-                "Either specify all sizes explicitly or let them auto-compute from input_size."
-            )
-
-    @classmethod
-    def from_input_size(
-        cls,
-        input_size: int,
-        **kwargs
-    ) -> "LayeredCortexConfig":
-        """Create config with layer sizes computed from input size.
-
-        Uses typical cortical ratios:
-        - L4: 1.5x input (expansion)
-        - L2/3: 2x L4 (association)
-        - L5: 0.5x L2/3 (subcortical output)
-        - L6a/L6b: Split L5 size (feedback to thalamus)
-
-        Args:
-            input_size: Input size (from thalamus or other cortex)
-            **kwargs: Additional config parameters
-
-        Returns:
-            LayeredCortexConfig with computed layer sizes
-
-        Example:
-            >>> config = LayeredCortexConfig.from_input_size(input_size=128, device="cpu")
-            >>> config.l4_size  # 192
-            >>> config.l23_size  # 384
-        """
-        from thalia.config.region_sizes import compute_cortex_layer_sizes
-        sizes = compute_cortex_layer_sizes(input_size)
-        l6a_size = sizes["l5_size"] // 2
-        l6b_size = sizes["l5_size"] - l6a_size
-        return cls(
-            input_size=input_size,
-            l4_size=sizes["l4_size"],
-            l23_size=sizes["l23_size"],
-            l5_size=sizes["l5_size"],
-            l6a_size=l6a_size,
-            l6b_size=l6b_size,
-            **kwargs
-        )
 
     gap_junction_strength: float = 0.12
     """Gap junction conductance for L2/3 interneurons (biological: 0.05-0.2)."""
@@ -548,8 +443,20 @@ def calculate_layer_sizes(
 ) -> dict[str, int]:
     """Calculate layer sizes from n_output using standard ratios.
 
-    This utility provides convenient layer size calculation for tests and examples.
-    The returned sizes should be passed explicitly to LayeredCortexConfig.
+    .. deprecated:: 0.3.0
+        Use :class:`LayerSizeCalculator` instead. This function will be removed in v0.4.0.
+
+        Replacement:
+            from thalia.config import LayerSizeCalculator
+            calc = LayerSizeCalculator()
+
+            # This function calculates from output size:
+            sizes = calc.cortex_from_output(target_output_size=n_output)
+
+            # Or use custom ratios:
+            from thalia.config import BiologicalRatios
+            custom = BiologicalRatios(l4_to_input=l4_ratio, l23_to_l4=l23_ratio, ...)
+            calc = LayerSizeCalculator(ratios=custom)
 
     Args:
         n_output: Desired output size (used as base for calculations)
@@ -560,24 +467,22 @@ def calculate_layer_sizes(
         l6b_ratio: L6b size as multiple of n_output (default: 0.2, 40% of old L6)
 
     Returns:
-        Dictionary with keys: l4_size, l23_size, l5_size, l6a_size, l6b_size, n_output
-        Note: Returned n_output will equal l23_size + l5_size (cortex output convention)
-        Note: l6a_size + l6b_size = 0.5 * n_output (maintains total L6 size)
-
-    Example:
-        >>> sizes = calculate_layer_sizes(n_output=32)
-        >>> brain = BrainBuilder(config).add_component(
-        ...     "cortex", "layered_cortex", **sizes
-        ... ).build()
+        Dictionary with keys: l4_size, l23_size, l5_size, l6a_size, l6b_size
     """
+    import warnings
+    warnings.warn(
+        "calculate_layer_sizes() is deprecated. "
+        "Use LayerSizeCalculator().cortex_from_output() or cortex_from_scale() instead. "
+        "This function will be removed in v0.4.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     l4_size = int(n_output * l4_ratio)
     l23_size = int(n_output * l23_ratio)
     l5_size = int(n_output * l5_ratio)
     l6a_size = int(n_output * l6a_ratio)
     l6b_size = int(n_output * l6b_ratio)
-
-    # Cortex output is L2/3 + L5 (cortico-cortical + subcortical)
-    actual_output = l23_size + l5_size
 
     return {
         "l4_size": l4_size,
@@ -585,5 +490,4 @@ def calculate_layer_sizes(
         "l5_size": l5_size,
         "l6a_size": l6a_size,
         "l6b_size": l6b_size,
-        "n_output": actual_output,
     }

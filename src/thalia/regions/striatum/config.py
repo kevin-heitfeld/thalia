@@ -182,6 +182,13 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
         """Compute physical dimensions from semantic specs, then validate."""
         from thalia.config.region_sizes import compute_striatum_sizes
 
+        # Skip if placeholder config (n_actions == 0)
+        if self.n_actions == 0:
+            object.__setattr__(self, "d1_size", 0)
+            object.__setattr__(self, "d2_size", 0)
+            object.__setattr__(self, "total_input", 0)
+            return
+
         # Compute D1/D2 sizes from n_actions
         sizes = compute_striatum_sizes(
             n_actions=self.n_actions,
@@ -193,13 +200,13 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
         object.__setattr__(self, "d1_size", sizes["d1_size"])
         object.__setattr__(self, "d2_size", sizes["d2_size"])
 
-        # Compute total input from sources
-        if not self.input_sources:
-            raise ValueError(
-                "StriatumConfig requires explicit input_sources. "
-                "Example: input_sources={'cortex': 256, 'thalamus': 128}"
-            )
-        object.__setattr__(self, "total_input", sum(self.input_sources.values()))
+        # Compute total input from sources (allow empty during brain building)
+        if self.input_sources:
+            object.__setattr__(self, "total_input", sum(self.input_sources.values()))
+        else:
+            # Empty input_sources is allowed during BrainBuilder setup
+            # Will be filled in by BrainBuilder._infer_component_sizes
+            object.__setattr__(self, "total_input", 0)
 
         # Validate after computation
         self.validate()

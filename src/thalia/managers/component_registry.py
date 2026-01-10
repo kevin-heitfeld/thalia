@@ -12,6 +12,7 @@ Design Philosophy:
 - Supports plugin system for external components
 - Foundation for save/load of arbitrary component graphs
 - Backward compatible with existing RegionFactory
+- Separates behavioral config from structural sizes
 
 Architecture:
 =============
@@ -259,8 +260,8 @@ class ComponentRegistry:
         Args:
             component_type: Type of component ("region", "pathway", "module")
             name: Component name or alias
-            config: Configuration for the component
-            **kwargs: Additional arguments passed to constructor
+            config: Configuration for the component (behavioral params only)
+            **kwargs: Additional arguments (may include 'sizes' dict and 'device')
 
         Returns:
             Instantiated component
@@ -270,14 +271,19 @@ class ComponentRegistry:
             TypeError: If config type doesn't match component requirements
 
         Example:
+            # New pattern (sizes separate):
             cortex = ComponentRegistry.create(
                 "region", "cortex",
-                LayeredCortexConfig(n_input=256, n_output=128, l4_size=128, l23_size=192, l5_size=128, l6_size=64)
+                LayeredCortexConfig(stdp_lr=0.001),
+                sizes={"l4_size": 128, "l23_size": 192, "l5_size": 128, ...},
+                device="cpu"
             )
 
+            # Pathways (no sizes needed):
             pathway = ComponentRegistry.create(
                 "pathway", "spiking_stdp",
-                PathwayConfig(n_input=256, n_output=128)
+                PathwayConfig(learning_rate=0.001),
+                n_input=256, n_output=128
             )
         """
         component_class = cls.get(component_type, name)
@@ -290,11 +296,29 @@ class ComponentRegistry:
             )
 
         # Create instance
+        # Check if component expects (config, sizes, device) signature (new pattern)
+        # by inspecting __init__ parameters
+        import inspect
+        sig = inspect.signature(component_class.__init__)
+        params = list(sig.parameters.keys())
+
         try:
-            return component_class(config, **kwargs)
+            # New pattern: (config, sizes, device) for regions like LayeredCortex
+            if 'sizes' in params and 'device' in params:
+                sizes = kwargs.pop('sizes', {})
+                device = kwargs.pop('device', None)
+                if device is None:
+                    device = getattr(config, 'device', 'cpu')
+                return component_class(config=config, sizes=sizes, device=device, **kwargs)
+
+            # Old pattern: (config) or (config, **kwargs)
+            else:
+                return component_class(config, **kwargs)
+
         except TypeError as e:
             raise TypeError(
                 f"Failed to create {component_type} '{name}': {e}\n"
+                f"Component signature: {sig}\n"
                 f"Expected config type for {component_class.__name__}"
             ) from e
 

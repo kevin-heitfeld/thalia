@@ -321,26 +321,36 @@ class PredictiveCortex(NeuralRegion):
         metrics = cortex.learn(input_spikes, output_spikes)
     """
 
-    def __init__(self, config: PredictiveCortexConfig):
-        """Initialize predictive cortex."""
+    def __init__(
+        self,
+        config: PredictiveCortexConfig,
+        sizes: Optional[Dict[str, int]] = None,
+        device: str = "cpu",
+    ):
+        """Initialize predictive cortex.
+
+        Args:
+            config: Behavioral configuration (learning rates, sparsity, etc.) - NO sizes
+            sizes: Structural sizes dict with keys: l4_size, l23_size, l5_size, l6a_size, l6b_size, input_size
+            device: Device for tensors ("cpu", "cuda", etc.)
+        """
         self.config = config
 
-        # All layer sizes are now required
-        # Note: L5+L6 together form the "prediction neurons" (deep pyramidal layers)
-        l4_size = config.l4_size
-        l23_size = config.l23_size
-        l5_size = config.l5_size
-        l6a_size = config.l6a_size  # L6a → TRN pathway
-        l6b_size = config.l6b_size  # L6b → thalamic relay
+        # Extract sizes from dict (required)
+        if sizes is None:
+            raise ValueError("PredictiveCortex requires sizes dict (l4_size, l23_size, l5_size, l6a_size, l6b_size, input_size)")
+
+        l4_size = sizes["l4_size"]
+        l23_size = sizes["l23_size"]
+        l5_size = sizes["l5_size"]
+        l6a_size = sizes["l6a_size"]
+        l6b_size = sizes["l6b_size"]
+        input_size = sizes.get("input_size", 0)
+
         l6_total = l6a_size + l6b_size  # Total L6 size
 
-        # Validate n_output matches total
+        # Compute output size
         _output_size = l23_size + l5_size
-        if config.n_output != _output_size:
-            raise ValueError(
-                f"PredictiveCortex: n_output ({config.n_output}) must equal "
-                f"l23_size + l5_size ({l23_size} + {l5_size} = {_output_size})"
-            )
 
         # Call NeuralRegion init (v3.0 architecture)
         # PredictiveCortex uses composition - actual neurons managed by inner LayeredCortex
@@ -348,14 +358,14 @@ class PredictiveCortex(NeuralRegion):
             n_neurons=_output_size,
             neuron_config=None,  # Managed by inner cortex
             default_learning_rule=None,  # Managed by inner cortex
-            device=config.device,
+            device=device,
             dt_ms=config.dt_ms,
         )
 
         # =====================================================================
         # BASE LAYERED CORTEX (creates the L4→L2/3→L5 microcircuit)
         # =====================================================================
-        self.cortex = LayeredCortex(config)
+        self.cortex = LayeredCortex(config=config, sizes=sizes, device=device)
 
         # Set our weights to delegate to cortex
         # Note: LayeredCortex manages its own neurons internally (l4_neurons, l23_neurons, l5_neurons)
@@ -363,6 +373,7 @@ class PredictiveCortex(NeuralRegion):
         self.weights = self.cortex.weights
 
         # Get layer sizes from cortex (verify our calculations)
+        self.input_size = self.cortex.input_size
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
@@ -566,11 +577,8 @@ class PredictiveCortex(NeuralRegion):
         # Delegate to base LayeredCortex
         self.cortex.grow_input(n_new, initialization, sparsity)
 
-        # Update our config to match
-        self.config = replace(
-            self.config,
-            input_size=self.cortex.config.input_size
-        )
+        # Update our cached input_size to match
+        self.input_size = self.cortex.input_size
 
     def grow_output(
         self,
@@ -606,18 +614,8 @@ class PredictiveCortex(NeuralRegion):
 
         # Update output size (note: _output_size initialized in __init__)
         self._output_size = self.l23_size + self.l5_size
-        # Total neurons across all layers
-        total_neurons = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
 
-        # Update config with layer sizes (output_size and total_neurons are computed properties)
-        self.config = replace(
-            self.config,
-            l4_size=self.l4_size,
-            l23_size=self.l23_size,
-            l5_size=self.l5_size,
-            l6a_size=self.l6a_size,
-            l6b_size=self.l6b_size,
-        )
+        # Note: Config no longer stores sizes - they're instance variables only
 
         # =====================================================================
         # 3. RECREATE PREDICTION LAYER with new sizes
@@ -636,7 +634,7 @@ class PredictiveCortex(NeuralRegion):
                     initial_precision=self.config.initial_precision,
                     precision_learning_rate=self.config.precision_learning_rate,
                     use_spiking=True,
-                    device=self.config.device,
+                    device=str(self.device),
                 )
             )
 
@@ -672,9 +670,9 @@ class PredictiveCortex(NeuralRegion):
         assert input_spikes.dim() == 1, (
             f"PredictiveCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
         )
-        assert input_spikes.shape[0] == self.config.n_input, (
+        assert input_spikes.shape[0] == self.cortex.input_size, (
             f"PredictiveCortex.forward: input_spikes has shape {input_spikes.shape} "
-            f"but n_input={self.config.n_input}."
+            f"but input_size={self.cortex.input_size}."
         )
         if top_down is not None:
             assert top_down.dim() == 1, (
@@ -1013,16 +1011,14 @@ class PredictiveHierarchy(nn.Module):
         n_areas = len(area_sizes) - 1
 
         if base_config is None:
-            base_config = PredictiveCortexConfig(n_input=area_sizes[0], n_output=area_sizes[1])
+            base_config = PredictiveCortexConfig(input_size=area_sizes[0])
 
         self.areas = nn.ModuleList()
 
         for i in range(n_areas):
             area_config = PredictiveCortexConfig(
-                n_input=area_sizes[i],
-                n_output=area_sizes[i + 1],
+                input_size=area_sizes[i],
                 prediction_enabled=True,
-                # Gamma attention always enabled (inherited from LayeredCortexConfig)
                 device=base_config.device,
             )
             self.areas.append(PredictiveCortex(area_config))

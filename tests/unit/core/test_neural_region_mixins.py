@@ -33,8 +33,8 @@ def test_neural_region_has_both_mixins():
 def test_cerebellum_inherits_mixins_from_base():
     """Verify Cerebellum gets mixins from NeuralRegion, not direct inheritance."""
     config = CerebellumConfig(
-        n_input=100,
-        n_output=50,
+        input_size=100,
+        purkinje_size=50,
         device="cpu",
         use_enhanced_microcircuit=False,  # Simpler test
     )

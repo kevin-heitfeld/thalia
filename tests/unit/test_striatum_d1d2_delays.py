@@ -144,7 +144,9 @@ def test_delays_work_from_first_forward(striatum_with_delays):
 
     # Behavioral contract: output should be valid even on first pass
     assert output is not None
-    assert output.shape == (striatum_with_delays.config.n_actions,)
+    # Striatum outputs D1+D2 spikes concatenated (not just n_actions)
+    expected_shape = striatum_with_delays.config.n_output  # d1_size + d2_size
+    assert output.shape == (expected_shape,), f"Expected shape ({expected_shape},), got {output.shape}"
     assert output.dtype == torch.bool
     assert not torch.isnan(output).any(), "No NaN in output"
 
@@ -440,8 +442,8 @@ def test_striatum_silent_input():
     for _ in range(50):
         output = striatum(input_spikes)
 
-    # Contract: should not crash, produce valid output
-    assert output.shape == (4,)
+    # Contract: should not crash, produce valid output (D1+D2 neurons = 8)
+    assert output.shape == (8,), f"Expected (8,), got {output.shape}"
     assert output.dtype == torch.bool
 
     # Contract: votes remain valid (no NaN/Inf)
@@ -465,8 +467,8 @@ def test_striatum_saturated_input():
     for _ in range(50):
         output = striatum(input_spikes)
 
-    # Contract: should produce valid output without saturation
-    assert output.shape == (4,)
+    # Contract: should produce valid output without saturation (D1+D2 neurons = 8)
+    assert output.shape == (8,), f"Expected (8,), got {output.shape}"
     assert output.dtype == torch.bool
 
     # Contract: votes remain valid

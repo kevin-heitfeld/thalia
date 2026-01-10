@@ -179,9 +179,17 @@ class MultimodalIntegration(NeuralRegion):
         Args:
             config: Configuration for region
         """
+        # Compute total neurons from pool sizes
+        n_neurons = (
+            config.visual_pool_size +
+            config.auditory_pool_size +
+            config.language_pool_size +
+            config.integration_pool_size
+        )
+
         # Call NeuralRegion init
         super().__init__(
-            n_neurons=config.n_output,
+            n_neurons=n_neurons,
             neuron_config=None,  # Created manually below
             default_learning_rule="hebbian",
             device=config.device,
@@ -196,21 +204,9 @@ class MultimodalIntegration(NeuralRegion):
         self.language_pool_size = config.language_pool_size
         self.integration_pool_size = config.integration_pool_size
 
-        # Validate pool sizes sum to n_output
-        total_size = (
-            self.visual_pool_size +
-            self.auditory_pool_size +
-            self.language_pool_size +
-            self.integration_pool_size
-        )
-        if total_size != config.n_output:
-            raise ValueError(
-                f"Pool sizes must sum to n_output ({config.n_output}), got {total_size}"
-            )
-
         # Create neurons for each pool
         self.neurons = create_pyramidal_neurons(
-            n_neurons=config.n_output,
+            n_neurons=n_neurons,
             device=config.device,
         )
 
@@ -685,18 +681,15 @@ class MultimodalIntegration(NeuralRegion):
         new_visual_size = self.config.visual_input_size + visual_growth
         new_auditory_size = self.config.auditory_input_size + auditory_growth
         new_language_size = self.config.language_input_size + language_growth
-        new_total_input = self.config.n_input + n_new  # Add to existing total, not replace
 
         self.config = replace(
             self.config,
-            n_input=new_total_input,
             visual_input_size=new_visual_size,
             auditory_input_size=new_auditory_size,
             language_input_size=new_language_size,
         )
         self.multisensory_config = replace(
             self.multisensory_config,
-            n_input=new_total_input,
             visual_input_size=new_visual_size,
             auditory_input_size=new_auditory_size,
             language_input_size=new_language_size,
@@ -720,7 +713,13 @@ class MultimodalIntegration(NeuralRegion):
         Note:
             Growth is distributed across modality pools based on configured ratios.
         """
-        old_n_output = self.config.n_output
+        # Compute old total from pool sizes
+        old_n_output = (
+            self.visual_pool_size +
+            self.auditory_pool_size +
+            self.language_pool_size +
+            self.integration_pool_size
+        )
         new_n_output = old_n_output + n_new
 
         # Calculate growth per pool based on current size ratios (dynamic)
@@ -820,7 +819,6 @@ class MultimodalIntegration(NeuralRegion):
         # Update configs (including explicit pool sizes)
         self.config = replace(
             self.config,
-            n_output=new_n_output,
             visual_pool_size=self.visual_pool_size,
             auditory_pool_size=self.auditory_pool_size,
             language_pool_size=self.language_pool_size,
@@ -828,7 +826,6 @@ class MultimodalIntegration(NeuralRegion):
         )
         self.multisensory_config = replace(
             self.multisensory_config,
-            n_output=new_n_output,
             visual_pool_size=self.visual_pool_size,
             auditory_pool_size=self.auditory_pool_size,
             language_pool_size=self.language_pool_size,
@@ -866,12 +863,13 @@ class MultimodalIntegration(NeuralRegion):
         )
 
         # Overall activity (weighted average across pools)
+        total_neurons = self.visual_pool_size + self.auditory_pool_size + self.language_pool_size + self.integration_pool_size
         total_firing_rate = (
             visual_activity.get("firing_rate", 0.0) * self.visual_pool_size +
             auditory_activity.get("firing_rate", 0.0) * self.auditory_pool_size +
             language_activity.get("firing_rate", 0.0) * self.language_pool_size +
             integration_activity.get("firing_rate", 0.0) * self.integration_pool_size
-        ) / self.config.n_output
+        ) / total_neurons
 
         # Compute plasticity metrics for cross-modal weights
         plasticity = None

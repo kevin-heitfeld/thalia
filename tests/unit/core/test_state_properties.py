@@ -218,8 +218,7 @@ class TestMultiRegionIndependence:
         torch.manual_seed(seed)
 
         # Use hippocampus (no exploration randomness like striatum)
-        config = HippocampusConfig(input_size=20, ca1_size=20, device="cpu",
-            dt_ms=1.0)
+        config = HippocampusConfig(input_size=20, device="cpu", dt_ms=1.0)
         hippocampus = TrisynapticHippocampus(config)
 
         # Build up some state
@@ -369,7 +368,7 @@ class TestStateConsistency:
         """Property: Hippocampus state remains consistent through checkpoints."""
         torch.manual_seed(seed)
 
-        config = HippocampusConfig(input_size=20, ca1_size=20, device="cpu",
+        config = HippocampusConfig(input_size=20, device="cpu",
             dt_ms=1.0)
         hippocampus = TrisynapticHippocampus(config)
 

@@ -222,19 +222,6 @@ class RegionSizes:
 # consistency between config definitions and actual usage.
 
 
-def _default_cortex_config() -> PredictiveCortexConfig:
-    """Create default cortex config with placeholder sizes.
-
-    Note: n_input and n_output are set to 0 here because the brain
-    will override them based on RegionSizes. The actual layer sizes are
-    computed from RegionSizes.input_size and RegionSizes.cortex_size.
-
-    Uses PredictiveCortexConfig by default (enables local error-based learning).
-    For simpler feedforward processing, use LayeredCortexConfig explicitly.
-    """
-    return PredictiveCortexConfig(n_input=0, n_output=0)
-
-
 @dataclass
 class BrainConfig:
     """Complete brain configuration.
@@ -250,10 +237,9 @@ class BrainConfig:
     # Region sizes
     sizes: RegionSizes = field(default_factory=RegionSizes)
 
-    # Region-specific configs
-    # Cortex: uses PredictiveCortexConfig by default (local error-based learning)
-    # n_input/n_output are placeholders - actual sizes come from RegionSizes
-    cortex: PredictiveCortexConfig = field(default_factory=_default_cortex_config)
+    # Region-specific configs (BEHAVIORAL PARAMS ONLY - no sizes)
+    # Sizes come from RegionSizes and are passed separately during construction
+    cortex: PredictiveCortexConfig = field(default_factory=PredictiveCortexConfig)
     hippocampus: HippocampusConfig = field(default_factory=HippocampusConfig)
     striatum: StriatumConfig = field(default_factory=StriatumConfig)
     pfc: PrefrontalConfig = field(default_factory=PrefrontalConfig)

@@ -70,7 +70,6 @@ from thalia.regulation.region_constants import (
     THALAMUS_ALPHA_SUPPRESSION,
     THALAMUS_ALPHA_GATE_THRESHOLD,
     # Thalamus - TRN
-    THALAMUS_TRN_RATIO,
     THALAMUS_TRN_INHIBITION,
     THALAMUS_TRN_RECURRENT,
     # Thalamus - Spatial Filtering
@@ -89,17 +88,7 @@ from thalia.regulation.region_constants import (
 from thalia.regulation.region_architecture_constants import (
     # Hippocampus
     HIPPOCAMPUS_DG_EXPANSION_FACTOR,
-    HIPPOCAMPUS_CA3_SIZE_RATIO,
-    HIPPOCAMPUS_CA1_SIZE_RATIO,
     HIPPOCAMPUS_SPARSITY_TARGET,
-    # Cortex
-    CORTEX_L4_RATIO,
-    CORTEX_L23_RATIO,
-    CORTEX_L5_RATIO,
-    CORTEX_L6_RATIO,
-    # Striatum
-    STRIATUM_NEURONS_PER_ACTION,
-    STRIATUM_D1_D2_RATIO,
     # Prefrontal
     PFC_WM_CAPACITY_RATIO,
     # Cerebellum
@@ -226,7 +215,6 @@ __all__ = [
     "THALAMUS_ALPHA_SUPPRESSION",
     "THALAMUS_ALPHA_GATE_THRESHOLD",
     # Region Constants - Thalamus TRN
-    "THALAMUS_TRN_RATIO",
     "THALAMUS_TRN_INHIBITION",
     "THALAMUS_TRN_RECURRENT",
     # Region Constants - Thalamus Spatial Filtering
@@ -243,17 +231,7 @@ __all__ = [
     "STRIATUM_TD_ACCUMULATING",
     # Region Architecture - Hippocampus
     "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
-    "HIPPOCAMPUS_CA3_SIZE_RATIO",
-    "HIPPOCAMPUS_CA1_SIZE_RATIO",
     "HIPPOCAMPUS_SPARSITY_TARGET",
-    # Region Architecture - Cortex
-    "CORTEX_L4_RATIO",
-    "CORTEX_L23_RATIO",
-    "CORTEX_L5_RATIO",
-    "CORTEX_L6_RATIO",
-    # Region Architecture - Striatum
-    "STRIATUM_NEURONS_PER_ACTION",
-    "STRIATUM_D1_D2_RATIO",
     # Region Architecture - Prefrontal
     "PFC_WM_CAPACITY_RATIO",
     # Region Architecture - Cerebellum

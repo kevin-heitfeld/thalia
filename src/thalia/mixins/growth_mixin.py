@@ -859,12 +859,18 @@ class GrowthMixin:
         """
         expected_n_input = old_n_input + n_new
 
-        # Check config updated
+        # Check instance variable updated (size is structural, not in config)
         if check_config:
-            assert self.config.n_input == expected_n_input, (
-                f"Input growth validation failed: config.n_input not updated correctly. "
-                f"Expected {expected_n_input}, got {self.config.n_input}"
-            )
+            actual_n_input = getattr(self, 'input_size', None)
+            if actual_n_input is None:
+                # Fallback: try config.n_input for regions that haven't migrated
+                actual_n_input = getattr(self.config, 'n_input', None)
+
+            if actual_n_input is not None:
+                assert actual_n_input == expected_n_input, (
+                    f"Input growth validation failed: input size not updated correctly. "
+                    f"Expected {expected_n_input}, got {actual_n_input}"
+                )
 
         # Validate STP sizes (if STP modules exist)
         self._validate_stp_sizes()

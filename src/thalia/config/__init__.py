@@ -47,17 +47,7 @@ from thalia.core.base.component_config import (
 # Re-export region architecture constants from regulation module
 from thalia.regulation.region_architecture_constants import (
     HIPPOCAMPUS_DG_EXPANSION_FACTOR,
-    HIPPOCAMPUS_CA3_SIZE_RATIO,
-    HIPPOCAMPUS_CA2_SIZE_RATIO,
-    HIPPOCAMPUS_CA1_SIZE_RATIO,
     HIPPOCAMPUS_SPARSITY_TARGET,
-    CORTEX_L4_RATIO,
-    CORTEX_L23_RATIO,
-    CORTEX_L5_RATIO,
-    CORTEX_L6_RATIO,
-    STRIATUM_NEURONS_PER_ACTION,
-    STRIATUM_D1_D2_RATIO,
-    THALAMUS_TRN_RATIO,
     MULTISENSORY_VISUAL_RATIO,
     MULTISENSORY_AUDITORY_RATIO,
     MULTISENSORY_LANGUAGE_RATIO,
@@ -107,21 +97,12 @@ from .validation import (
     ValidatorRegistry,
 )
 from .region_sizes import (
-    # Hippocampus ratios
-    DG_TO_EC_EXPANSION,
-    CA3_TO_DG_RATIO,
-    CA2_TO_DG_RATIO,
-    CA1_TO_CA3_RATIO,
-    # Cortex ratios
-    L4_TO_INPUT_RATIO,
-    L23_TO_L4_RATIO,
-    L5_TO_L23_RATIO,
     # Default sizes
     DEFAULT_CORTEX_SIZE,
     DEFAULT_HIPPOCAMPUS_SIZE,
     DEFAULT_PFC_SIZE,
     DEFAULT_N_ACTIONS,
-    # Utility functions
+    # Utility functions (DEPRECATED - use LayerSizeCalculator instead)
     compute_hippocampus_sizes,
     compute_cortex_layer_sizes,
     compute_striatum_sizes,
@@ -129,6 +110,7 @@ from .region_sizes import (
     compute_multisensory_sizes,
     compute_cerebellum_sizes,
 )
+from .size_calculator import LayerSizeCalculator, BiologicalRatios
 
 __all__ = [
     # Main config
@@ -175,18 +157,15 @@ __all__ = [
     "DecodingConfig",
     "PositionConfig",
     "SequenceMemoryConfig",
+    # Size calculator (NEW - preferred)
+    "LayerSizeCalculator",
+    "BiologicalRatios",
     # Region size constants
-    "DG_TO_EC_EXPANSION",
-    "CA3_TO_DG_RATIO",
-    "CA2_TO_DG_RATIO",
-    "CA1_TO_CA3_RATIO",
-    "L4_TO_INPUT_RATIO",
-    "L23_TO_L4_RATIO",
-    "L5_TO_L23_RATIO",
     "DEFAULT_CORTEX_SIZE",
     "DEFAULT_HIPPOCAMPUS_SIZE",
     "DEFAULT_PFC_SIZE",
     "DEFAULT_N_ACTIONS",
+    # DEPRECATED size functions (use LayerSizeCalculator instead)
     "compute_hippocampus_sizes",
     "compute_cortex_layer_sizes",
     "compute_striatum_sizes",
@@ -195,17 +174,7 @@ __all__ = [
     "compute_cerebellum_sizes",
     # Region architecture constants
     "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
-    "HIPPOCAMPUS_CA3_SIZE_RATIO",
-    "HIPPOCAMPUS_CA2_SIZE_RATIO",
-    "HIPPOCAMPUS_CA1_SIZE_RATIO",
     "HIPPOCAMPUS_SPARSITY_TARGET",
-    "CORTEX_L4_RATIO",
-    "CORTEX_L23_RATIO",
-    "CORTEX_L5_RATIO",
-    "CORTEX_L6_RATIO",
-    "STRIATUM_NEURONS_PER_ACTION",
-    "STRIATUM_D1_D2_RATIO",
-    "THALAMUS_TRN_RATIO",
     "MULTISENSORY_VISUAL_RATIO",
     "MULTISENSORY_AUDITORY_RATIO",
     "MULTISENSORY_LANGUAGE_RATIO",

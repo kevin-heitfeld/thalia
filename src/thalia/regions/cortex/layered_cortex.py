@@ -113,7 +113,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.typing import LayeredCortexDiagnostics
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.neuromodulation import compute_ne_gain
 from thalia.components.neurons import create_cortical_layer_neurons
@@ -121,20 +120,32 @@ from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, 
 from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
 from thalia.components.coding import compute_firing_rate, compute_spike_count
 from thalia.managers.component_registry import register_region
-from thalia.utils.core_utils import ensure_1d, clamp_weights
+from thalia.utils.core_utils import ensure_1d, clamp_weights, initialize_phase_preferences
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
     compute_theta_encoding_retrieval,
     compute_ach_recurrent_suppression,
 )
+from thalia.regulation.learning_constants import EMA_DECAY_FAST
 from thalia.regulation.oscillator_constants import (
     L4_INPUT_ENCODING_SCALE,
     L23_RECURRENT_RETRIEVAL_SCALE,
+)
+from thalia.regulation.region_architecture_constants import (
+    CORTEX_L4_DA_FRACTION,
+    CORTEX_L23_DA_FRACTION,
+    CORTEX_L5_DA_FRACTION,
+    CORTEX_L6_DA_FRACTION,
 )
 from thalia.regions.stimulus_gating import StimulusGating
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.core.diagnostics_schema import (
+    compute_activity_metrics,
+    compute_plasticity_metrics,
+    compute_health_metrics,
+)
 
 from .config import LayeredCortexConfig, LayeredCortexState
 
@@ -242,18 +253,30 @@ class LayeredCortex(NeuralRegion):
     - docs/patterns/state-management.md - LayeredCortexState usage
     """
 
-    def __init__(self, config: LayeredCortexConfig):
-        """Initialize layered cortex."""
-        # Store config (already validated and computed by config.__post_init__)
-        self.config = config
-        self.device = torch.device(config.device)
+    def __init__(
+        self,
+        config: LayeredCortexConfig,
+        sizes: Dict[str, int],
+        device: str,
+    ):
+        """Initialize layered cortex.
 
-        # Read layer sizes from config (already validated)
-        self.l4_size = config.l4_size
-        self.l23_size = config.l23_size
-        self.l5_size = config.l5_size
-        self.l6a_size = config.l6a_size  # L6a → TRN pathway
-        self.l6b_size = config.l6b_size  # L6b → relay pathway
+        Args:
+            config: Behavioral configuration (learning rates, sparsity, etc.)
+            sizes: Layer sizes from LayerSizeCalculator (l4_size, l23_size, l5_size, l6a_size, l6b_size, input_size)
+            device: Device for tensors ("cpu" or "cuda")
+        """
+        # Store config and device
+        self.config = config
+        self.device = torch.device(device)
+
+        # Read layer sizes from sizes dict (computed by LayerSizeCalculator)
+        self.l4_size = sizes["l4_size"]
+        self.l23_size = sizes["l23_size"]
+        self.l5_size = sizes["l5_size"]
+        self.l6a_size = sizes["l6a_size"]  # L6a → TRN pathway
+        self.l6b_size = sizes["l6b_size"]  # L6b → relay pathway
+        self.input_size = sizes.get("input_size", 0)  # May be 0 (inferred by builder)
 
         # Total neurons across all 5 layers
         total_neurons = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
@@ -261,12 +284,9 @@ class LayeredCortex(NeuralRegion):
         # Initialize NeuralRegion with all cortical neurons
         super().__init__(
             n_neurons=total_neurons,
-            device=config.device,
+            device=device,
             dt_ms=config.dt_ms,
         )
-
-        # n_output is L2/3 + L5 (dual output pathways)
-        actual_output = self.l23_size + self.l5_size
 
         # Initialize layers
         self._init_layers()
@@ -336,13 +356,13 @@ class LayeredCortex(NeuralRegion):
 
         # Homeostasis for synaptic scaling and intrinsic plasticity
         homeostasis_config = UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget * config.input_size,
+            weight_budget=config.weight_budget * self.input_size,
             w_min=config.w_min,
             w_max=config.w_max,
             soft_normalization=config.soft_normalization,
             normalization_rate=config.normalization_rate,
             activity_target=config.activity_target,
-            device=config.device,
+            device=str(self.device),
         )
         self.homeostasis = UnifiedHomeostasis(homeostasis_config)
 
@@ -355,7 +375,7 @@ class LayeredCortex(NeuralRegion):
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights in _init_weights."""
         return nn.Parameter(
-            torch.zeros(self._actual_output, self.config.input_size)
+            torch.zeros(self._actual_output, self.input_size)
         )
 
     def _create_neurons(self):
@@ -396,14 +416,13 @@ class LayeredCortex(NeuralRegion):
         # L2/3 recurrent connections show SHORT-TERM DEPRESSION, preventing
         # frozen attractors. Without STD, the same neurons fire every timestep.
         # Always enabled (critical for preventing frozen attractors)
-        device = torch.device(cfg.device)
         self.stp_l23_recurrent = ShortTermPlasticity(
             n_pre=self.l23_size,
             n_post=self.l23_size,
             config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt_ms),
             per_synapse=True,
         )
-        self.stp_l23_recurrent.to(device)
+        self.stp_l23_recurrent.to(self.device)
 
         # =====================================================================
         # GAP JUNCTIONS for L2/3 interneuron synchronization
@@ -491,7 +510,6 @@ class LayeredCortex(NeuralRegion):
         device = torch.device(cfg.device)
 
         # Learnable phase preferences for each L2/3 neuron
-        from thalia.utils.core_utils import initialize_phase_preferences
         self.l23_phase_prefs = nn.Parameter(
             initialize_phase_preferences(self.l23_size, device=device)
         )
@@ -520,18 +538,18 @@ class LayeredCortex(NeuralRegion):
         # We initialize to mean ≈ target, with some variance for diversity
 
         # Input → L4: positive excitatory weights (EXTERNAL - moved to synaptic_weights)
-        w_scale_input = 1.0 / max(1, int(cfg.input_size * 0.15))  # Assume 15% input sparsity
+        w_scale_input = 1.0 / max(1, int(self.input_size * 0.15))  # Assume 15% input sparsity
         input_weights = torch.abs(
             WeightInitializer.gaussian(
                 n_output=self.l4_size,
-                n_input=cfg.input_size,
+                n_input=self.input_size,
                 mean=0.0,
                 std=w_scale_input,
                 device=device
             )
         )
         # Register external input source (NeuralRegion pattern)
-        self.add_input_source("input", n_input=cfg.input_size, learning_rule=None)
+        self.add_input_source("input", n_input=self.input_size, learning_rule=None)
         self.synaptic_weights["input"] = nn.Parameter(input_weights)
 
         # L4 → L2/3: positive excitatory weights (AT L2/3 DENDRITES)
@@ -786,7 +804,6 @@ class LayeredCortex(NeuralRegion):
 
         # Grow internal layers (L4, L6) proportionally to L2/3 growth
         # (they support the output layers)
-        internal_total = self.l4_size + self.l6a_size + self.l6b_size
         growth_ratio = l23_growth / self.l23_size if self.l23_size > 0 else 0
         l4_growth = int(self.l4_size * growth_ratio)
         l6a_growth = int(self.l6a_size * growth_ratio)
@@ -955,7 +972,6 @@ class LayeredCortex(NeuralRegion):
         self.stp_l23_recurrent.to(self.device)
 
         # 6b. Expand L2/3 phase preferences for gamma attention
-        from thalia.utils.core_utils import initialize_phase_preferences
         new_phase_prefs = initialize_phase_preferences(l23_growth, device=self.device)
         self.l23_phase_prefs.data = torch.cat([self.l23_phase_prefs.data, new_phase_prefs])
 
@@ -971,20 +987,12 @@ class LayeredCortex(NeuralRegion):
                 device=self.device,
             )
 
-        # 7. Update config (must update all layer sizes for validation)
+        # 7. Update output size (structural parameters - no longer in config)
         new_total_output = new_l23_size + new_l5_size
-        new_total_neurons = new_l4_size + new_l23_size + new_l5_size + new_l6a_size + new_l6b_size
         old_total_output = old_l23_size + old_l5_size
 
-        # Update config with all new layer sizes (output_size/total_neurons are computed properties)
-        self.config = replace(
-            self.config,
-            l4_size=new_l4_size,
-            l23_size=new_l23_size,
-            l5_size=new_l5_size,
-            l6a_size=new_l6a_size,
-            l6b_size=new_l6b_size,
-        )
+        # Instance variables already updated above (l4_size, l23_size, etc.)
+        # No config update needed - config contains only behavioral params
 
         # 8. Validate growth manually (standard validation doesn't apply to multi-layer growth)
         # Cortex grows L2/3 + L5 by exactly n_new, but L4/L6 grow proportionally
@@ -1054,7 +1062,7 @@ class LayeredCortex(NeuralRegion):
             - Preserves existing learned weights in left columns
             - Initializes new input weights small to avoid disruption
         """
-        old_n_input = self.config.input_size
+        old_n_input = self.input_size
         new_n_input = old_n_input + n_new
 
         # Expand input→L4 weights [l4, input] → [l4, input+n_new]
@@ -1068,8 +1076,8 @@ class LayeredCortex(NeuralRegion):
             )
         )
 
-        # Update config
-        self.config = replace(self.config, input_size=new_n_input)
+        # Update input size (structural parameter - no longer in config)
+        self.input_size = new_n_input
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
@@ -1107,7 +1115,7 @@ class LayeredCortex(NeuralRegion):
         input_spikes = InputRouter.concatenate_sources(
             inputs,
             component_name="LayeredCortex",
-            n_input=self.config.input_size,
+            n_input=self.input_size,
             device=self.device,
         )
 
@@ -1124,9 +1132,9 @@ class LayeredCortex(NeuralRegion):
             f"LayeredCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}. "
             f"Thalia uses single-brain architecture with no batch dimension."
         )
-        assert input_spikes.shape[0] == self.config.input_size, (
+        assert input_spikes.shape[0] == self.input_size, (
             f"LayeredCortex.forward: input_spikes has shape {input_spikes.shape} "
-            f"but input_size={self.config.input_size}. Check that input matches cortex config."
+            f"but input_size={self.input_size}. Check that input matches cortex config."
         )
 
         if top_down is not None:
@@ -1659,14 +1667,6 @@ class LayeredCortex(NeuralRegion):
         # =====================================================================
         # Apply layer-specific dopamine scaling to learning rates.
         # Different layers have different DA receptor densities (relative sensitivity).
-        # Import constants from regulation module (Architecture Review 2025-12-21, Tier 1.3)
-        from thalia.regulation.region_architecture_constants import (
-            CORTEX_L4_DA_FRACTION,
-            CORTEX_L23_DA_FRACTION,
-            CORTEX_L5_DA_FRACTION,
-            CORTEX_L6_DA_FRACTION,
-        )
-
         base_dopamine = self.state.dopamine
         l4_dopamine = base_dopamine * CORTEX_L4_DA_FRACTION
         l23_dopamine = base_dopamine * CORTEX_L23_DA_FRACTION
@@ -1767,7 +1767,6 @@ class LayeredCortex(NeuralRegion):
                     self._l23_threshold_offset = torch.zeros(self.l23_size, device=l23_spikes_1d.device)
 
                 # Update activity history (exponential moving average)
-                from thalia.regulation.learning_constants import EMA_DECAY_FAST
                 self._l23_activity_history = (
                     EMA_DECAY_FAST * self._l23_activity_history + (1 - EMA_DECAY_FAST) * l23_spikes_1d
                 )
@@ -1883,12 +1882,6 @@ class LayeredCortex(NeuralRegion):
 
         This is the primary diagnostic interface for the Cortex.
         """
-        from thalia.core.diagnostics_schema import (
-            compute_activity_metrics,
-            compute_plasticity_metrics,
-            compute_health_metrics,
-        )
-
         cfg = self.config
 
         # Compute activity metrics from L2/3 (primary cortical output)
@@ -2027,7 +2020,6 @@ class LayeredCortex(NeuralRegion):
         Args:
             state: State dictionary from get_full_state()
         """
-        from .config import LayeredCortexState
         state_obj = LayeredCortexState.from_dict(state, device=str(self.device))
         self.load_state(state_obj)
 

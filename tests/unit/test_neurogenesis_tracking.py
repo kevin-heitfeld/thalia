@@ -99,7 +99,8 @@ class TestHippocampusNeurogenesisTracking:
 
     def test_initial_birth_steps_all_zero(self):
         """All initial neurons should have birth_step=0."""
-        config = HippocampusConfig(input_size=64, ca1_size=32, # Explicitly specify layer sizes
+        config = HippocampusConfig(
+            input_size=64,  # Explicitly specify layer sizes
             dg_size=256,  # DG expansion from input
             ca3_size=128,  # CA3 size
             ca2_size=96,   # CA2 size
@@ -118,7 +119,8 @@ class TestHippocampusNeurogenesisTracking:
 
     def test_training_step_update(self):
         """Training step should be updateable."""
-        config = HippocampusConfig(input_size=64, ca1_size=32, device="cpu")
+        # Use input_size alone - layer sizes auto-compute
+        config = HippocampusConfig(input_size=64, device="cpu")
         hippo = TrisynapticHippocampus(config)
 
         hippo.set_training_step(2000)
@@ -166,9 +168,9 @@ class TestHippocampusNeurogenesisTracking:
 
     def test_checkpoint_uses_birth_steps(self):
         """Checkpoint neuromorphic format should include birth steps for all layers."""
+        # Use input_size alone - layer sizes auto-compute
         config = HippocampusConfig(
             input_size=64,
-            ca1_size=32,  # Output layer size
             device="cpu"
         )
         hippo = TrisynapticHippocampus(config)

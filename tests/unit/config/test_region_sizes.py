@@ -21,7 +21,6 @@ from thalia.config import (
     compute_multisensory_sizes,
     compute_cerebellum_sizes,
     compute_striatum_sizes,
-    THALAMUS_TRN_RATIO,
     CEREBELLUM_GRANULE_EXPANSION,
 )
 from thalia.regions.hippocampus import HippocampusConfig, Hippocampus
@@ -159,13 +158,8 @@ class TestRegionInitialization:
         ec_size = 100
         sizes = compute_hippocampus_sizes(ec_size)
 
-        # Calculate total neurons
-        n_neurons = sizes["dg_size"] + sizes["ca3_size"] + sizes["ca2_size"] + sizes["ca1_size"]
-
         config = HippocampusConfig(
-            n_input=ec_size,
-            n_output=sizes["ca1_size"],
-            n_neurons=n_neurons,
+            input_size=ec_size,
             dg_size=sizes["dg_size"],
             ca3_size=sizes["ca3_size"],
             ca2_size=sizes["ca2_size"],
@@ -190,14 +184,8 @@ class TestRegionInitialization:
         l6a_size = sizes["l5_size"] // 2
         l6b_size = sizes["l5_size"] - l6a_size  # Handle odd sizes
 
-        # LayeredCortex expects n_output = l23_size + l5_size (L4 is input layer)
-        n_output = sizes["l23_size"] + sizes["l5_size"]
-        n_neurons = sizes["l4_size"] + sizes["l23_size"] + sizes["l5_size"] + l6a_size + l6b_size
-
         config = LayeredCortexConfig(
-            n_input=input_size,
-            n_output=n_output,
-            n_neurons=n_neurons,
+            input_size=input_size,
             l4_size=sizes["l4_size"],
             l23_size=sizes["l23_size"],
             l5_size=sizes["l5_size"],
@@ -217,12 +205,9 @@ class TestRegionInitialization:
         """Test thalamus uses explicit sizes from config."""
         relay_size = 100
         sizes = compute_thalamus_sizes(relay_size)
-        n_neurons = sizes["relay_size"] + sizes["trn_size"]
 
         config = ThalamicRelayConfig(
-            n_input=50,
-            n_output=relay_size,
-            n_neurons=n_neurons,
+            input_size=50,
             relay_size=sizes["relay_size"],
             trn_size=sizes["trn_size"],
             device="cpu",
@@ -240,9 +225,6 @@ class TestRegionInitialization:
         sizes = compute_multisensory_sizes(total_size)
 
         config = MultimodalIntegrationConfig(
-            n_input=300,
-            n_output=total_size,
-            n_neurons=total_size,
             visual_pool_size=sizes["visual_size"],
             auditory_pool_size=sizes["auditory_size"],
             language_pool_size=sizes["language_size"],
@@ -265,12 +247,9 @@ class TestRegionInitialization:
         """Test cerebellum uses explicit sizes from config."""
         purkinje_size = 100
         sizes = compute_cerebellum_sizes(purkinje_size)
-        n_neurons = sizes["granule_size"] + sizes["purkinje_size"]
 
         config = CerebellumConfig(
-            n_input=50,
-            n_output=purkinje_size,
-            n_neurons=n_neurons,
+            input_size=50,
             granule_size=sizes["granule_size"],
             purkinje_size=sizes["purkinje_size"],
             use_enhanced_microcircuit=True,
@@ -280,8 +259,8 @@ class TestRegionInitialization:
         cerebellum = Cerebellum(config)
 
         # Check sizes match config (when enhanced)
-        assert cerebellum.cerebellum_config.purkinje_size == sizes["purkinje_size"]
-        assert cerebellum.cerebellum_config.granule_size == sizes["granule_size"]
+        assert cerebellum.config.purkinje_size == sizes["purkinje_size"]
+        assert cerebellum.config.granule_size == sizes["granule_size"]
 
     def test_striatum_explicit_sizes(self):
         """Test striatum uses explicit sizes from config."""
@@ -290,14 +269,9 @@ class TestRegionInitialization:
         sizes = compute_striatum_sizes(n_actions, neurons_per_action)
 
         config = StriatumConfig(
-            n_input=100,
-            n_output=sizes["total_size"],
-            n_neurons=sizes["total_size"],
-            d1_size=sizes["d1_size"],
-            d2_size=sizes["d2_size"],
+            input_sources={"cortex": 100},
             n_actions=sizes["n_actions"],
             neurons_per_action=sizes["neurons_per_action"],
-            population_coding=True,
             device="cpu",
         )
 
@@ -319,8 +293,7 @@ class TestGrowthMethods:
         sizes = compute_thalamus_sizes(relay_size)
 
         config = ThalamicRelayConfig(
-            n_input=50,
-            n_output=relay_size,
+            input_size=50,
             relay_size=sizes["relay_size"],
             trn_size=sizes["trn_size"],
             device="cpu",
@@ -343,8 +316,6 @@ class TestGrowthMethods:
         # Check config fields updated
         assert thalamus.config.relay_size == thalamus.n_relay
         assert thalamus.config.trn_size == thalamus.n_trn
-        assert thalamus.thalamus_config.relay_size == thalamus.n_relay
-        assert thalamus.thalamus_config.trn_size == thalamus.n_trn
 
     def test_multisensory_grow_output_updates_pool_sizes(self):
         """Test multisensory grow_output updates pool size fields."""
@@ -352,8 +323,6 @@ class TestGrowthMethods:
         sizes = compute_multisensory_sizes(total_size)
 
         config = MultimodalIntegrationConfig(
-            n_input=300,
-            n_output=total_size,
             visual_pool_size=sizes["visual_size"],
             auditory_pool_size=sizes["auditory_size"],
             language_pool_size=sizes["language_size"],
@@ -401,8 +370,7 @@ class TestGrowthMethods:
         sizes = compute_cerebellum_sizes(purkinje_size)
 
         config = CerebellumConfig(
-            n_input=50,
-            n_output=purkinje_size,
+            input_size=50,
             granule_size=sizes["granule_size"],
             purkinje_size=sizes["purkinje_size"],
             use_enhanced_microcircuit=True,
@@ -417,7 +385,6 @@ class TestGrowthMethods:
 
         # Check config field updated
         assert cerebellum.config.purkinje_size == purkinje_size + n_new
-        assert cerebellum.cerebellum_config.purkinje_size == purkinje_size + n_new
 
     def test_striatum_grow_output_updates_d1_d2_sizes(self):
         """Test striatum grow_output updates d1_size and d2_size."""
@@ -426,13 +393,9 @@ class TestGrowthMethods:
         sizes = compute_striatum_sizes(n_actions, neurons_per_action)
 
         config = StriatumConfig(
-            n_input=100,
-            n_output=sizes["total_size"],
-            d1_size=sizes["d1_size"],
-            d2_size=sizes["d2_size"],
+            input_sources={"cortex": 100},
             n_actions=sizes["n_actions"],
             neurons_per_action=sizes["neurons_per_action"],
-            population_coding=True,
             device="cpu",
         )
 
@@ -479,8 +442,7 @@ class TestEdgeCases:
         sizes = compute_thalamus_sizes(relay_size)
 
         config = ThalamicRelayConfig(
-            n_input=50,
-            n_output=relay_size,
+            input_size=50,
             relay_size=sizes["relay_size"],
             trn_size=sizes["trn_size"],
             device="cpu",
@@ -498,9 +460,12 @@ class TestEdgeCases:
 
     def test_minimal_sizes(self):
         """Test that minimal sizes (1 neuron) work."""
-        config = ThalamicRelayConfig(input_size=1, relay_size=1, trn_size=0, relay_size=1,
+        config = ThalamicRelayConfig(
+            input_size=1,
+            relay_size=1,
             trn_size=1,
-            device="cpu")
+            device="cpu"
+        )
 
         thalamus = ThalamicRelay(config)
 
@@ -517,8 +482,6 @@ class TestEdgeCases:
         """Test multisensory handles zero input sizes correctly."""
         # Create with zero inputs
         config = MultimodalIntegrationConfig(
-            n_input=0,
-            n_output=1000,
             visual_pool_size=300,
             auditory_pool_size=300,
             language_pool_size=200,

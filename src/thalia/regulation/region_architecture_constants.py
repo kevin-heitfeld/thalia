@@ -14,14 +14,12 @@ there is strong biological evidence or architectural reasoning.
 
     from thalia.regulation.region_architecture_constants import (
         HIPPOCAMPUS_DG_EXPANSION_FACTOR,
-        CORTEX_L23_RATIO,
     )
 
     # In config dataclass
     @dataclass
     class HippocampusConfig:
         dg_expansion: float = HIPPOCAMPUS_DG_EXPANSION_FACTOR
-        ca3_size_ratio: float = HIPPOCAMPUS_CA3_SIZE_RATIO
 
 **Design Rationale**:
 
@@ -45,26 +43,6 @@ separation through sparse coding. This ratio is critical for the
 orthogonalization function of the hippocampus.
 
 Reference: Amaral et al. (1990) - Hippocampal formation anatomy
-"""
-
-HIPPOCAMPUS_CA3_SIZE_RATIO = 0.5
-"""CA3 size as fraction of DG size.
-
-CA3 has fewer neurons than DG but with extensive recurrent connections
-for auto-associative memory formation. Ratio reflects anatomical measurements.
-
-Reference: Amaral et al. (1990) - Hippocampal formation anatomy
-"""
-
-HIPPOCAMPUS_CA2_SIZE_RATIO = 0.25
-"""CA2 size as fraction of DG size.
-
-CA2 is a small but crucial region between CA3 and CA1, approximately 50% of CA3
-size. Provides social memory processing and temporal context encoding. Weak
-CA3→CA2 plasticity creates a stability hub resistant to catastrophic interference.
-
-Reference: Hitti & Siegelbaum (2014) - CA2 essential for social memory
-Reference: Chevaleyre & Siegelbaum (2010) - CA2 plasticity properties
 """
 
 # =============================================================================
@@ -157,16 +135,6 @@ Reference: Intrinsic plasticity implementations (Architecture Review 2025-12-21)
 # HIPPOCAMPUS ARCHITECTURE (continued)
 # =============================================================================
 
-HIPPOCAMPUS_CA1_SIZE_RATIO = 0.5
-"""CA1 size as ratio of CA3 size.
-
-CA1 acts as output/comparison layer, typically similar size to CA3
-or slightly smaller. Default 0.5 provides adequate capacity for
-match/mismatch detection.
-
-Reference: Colgin (2013) - Theta-gamma coupling
-"""
-
 HIPPOCAMPUS_SPARSITY_TARGET = 0.03
 """Target sparsity for dentate gyrus (3% active neurons).
 
@@ -175,86 +143,6 @@ effective pattern separation. This is a key architectural feature,
 not a tunable hyperparameter.
 
 Reference: Jung & McNaughton (1993) - Spatial selectivity in DG
-"""
-
-# =============================================================================
-# CORTEX LAYER RATIOS (based on mammalian neocortex)
-# =============================================================================
-
-CORTEX_L4_RATIO = 1.0
-"""Layer 4 size ratio (input layer, baseline).
-
-L4 receives thalamic input and is the reference layer for computing
-other layer sizes. Ratio of 1.0 means L4 size is directly determined
-by the desired cortical column size.
-
-Reference: Douglas & Martin (2004) - Canonical microcircuit
-"""
-
-CORTEX_L23_RATIO = 1.5
-"""Layer 2/3 size ratio (processing layer, 1.5x L4).
-
-L2/3 is larger than L4 in most cortical areas, with extensive
-lateral connections. The 1.5x ratio reflects typical anatomical
-measurements in visual and prefrontal cortex.
-
-Reference: DeFelipe et al. (2002) - Microanatomy of cerebral cortex
-"""
-
-CORTEX_L5_RATIO = 1.0
-"""Layer 5 size ratio (output layer, same as L4).
-
-L5 contains large pyramidal neurons projecting to subcortical targets.
-Similar size to L4 but with different projection patterns.
-
-Reference: Douglas & Martin (2004) - Canonical microcircuit
-"""
-
-CORTEX_L6_RATIO = 0.5
-"""Layer 6 size ratio (feedback layer, 0.5x L4).
-
-L6 provides corticothalamic feedback and is typically smaller than
-other layers. The 0.5x ratio is conservative, allowing sufficient
-feedback capacity without overcomplicating the model.
-
-Reference: Sherman & Guillery (2013) - Functional organization of thalamus
-"""
-
-# =============================================================================
-# STRIATUM ARCHITECTURE
-# =============================================================================
-
-STRIATUM_NEURONS_PER_ACTION = 10
-"""Number of neurons per action in population coding.
-
-Population coding provides robustness through redundancy. 10 neurons
-per action is a reasonable balance between computational efficiency
-and noise resistance.
-
-Reference: Computational modeling convention
-"""
-
-STRIATUM_D1_D2_RATIO = 0.5
-"""D1/D2 pathway size ratio (equal populations).
-
-Biological striatum has roughly equal numbers of D1-MSNs (direct pathway)
-and D2-MSNs (indirect pathway), each ~50% of MSN population. The 0.5
-ratio creates balanced opponent processing.
-
-Reference: Gerfen & Surmeier (2011) - Modulation of striatal projection systems
-"""
-
-# =============================================================================
-# THALAMUS ARCHITECTURE
-# =============================================================================
-
-THALAMUS_TRN_RATIO = 0.3
-"""Thalamic reticular nucleus size as fraction of relay neurons.
-
-TRN provides inhibitory modulation of relay neurons. Smaller than relay
-population but sufficient for attentional gating and oscillatory dynamics.
-
-Reference: Sherman & Guillery (2013) - Functional organization of thalamus
 """
 
 # =============================================================================
@@ -379,20 +267,7 @@ Reference: Metacognitive learning - standard practice
 __all__ = [
     # Hippocampus
     "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
-    "HIPPOCAMPUS_CA3_SIZE_RATIO",
-    "HIPPOCAMPUS_CA2_SIZE_RATIO",
-    "HIPPOCAMPUS_CA1_SIZE_RATIO",
     "HIPPOCAMPUS_SPARSITY_TARGET",
-    # Cortex
-    "CORTEX_L4_RATIO",
-    "CORTEX_L23_RATIO",
-    "CORTEX_L5_RATIO",
-    "CORTEX_L6_RATIO",
-    # Striatum
-    "STRIATUM_NEURONS_PER_ACTION",
-    "STRIATUM_D1_D2_RATIO",
-    # Thalamus
-    "THALAMUS_TRN_RATIO",
     # Multisensory
     "MULTISENSORY_VISUAL_RATIO",
     "MULTISENSORY_AUDITORY_RATIO",

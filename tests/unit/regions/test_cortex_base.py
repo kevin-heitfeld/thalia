@@ -18,50 +18,121 @@ import torch
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.cortex.layered_cortex import LayeredCortex
 from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.config import LayerSizeCalculator
 
 
 class TestLayeredCortex(RegionTestBase):
     """Test LayeredCortex implementation using unified test framework."""
 
     def create_region(self, **kwargs):
-        """Create LayeredCortex instance for testing."""
-        # Always use direct config creation (params dict already has all sizes computed)
-        config = LayeredCortexConfig(**kwargs)
-        return LayeredCortex(config)
+        """Create LayeredCortex instance for testing.
+
+        NEW PATTERN: Separates behavioral config from structural sizes.
+        - Config contains only behavioral parameters (learning rates, etc.)
+        - Sizes passed separately via sizes dict
+        - Device passed as explicit parameter
+        """
+        # Extract device for explicit parameter
+        device = kwargs.pop("device", "cpu")
+
+        # Known size parameters (structural)
+        size_params = {'l4_size', 'l23_size', 'l5_size', 'l6a_size', 'l6b_size', 'input_size'}
+
+        # Separate sizes from behavioral config params
+        sizes = {k: v for k, v in kwargs.items() if k in size_params}
+        config_params = {k: v for k, v in kwargs.items() if k not in size_params}
+
+        # Behavioral config with any passed params
+        config = LayeredCortexConfig(**config_params)
+
+        return LayeredCortex(config=config, sizes=sizes, device=device)
 
     def get_default_params(self):
-        """Return default cortex parameters (will use builder)."""
-        # Create config via builder to get computed sizes
-        config = LayeredCortexConfig.from_input_size(input_size=100, device="cpu", dt_ms=1.0)
+        """Return default cortex parameters using LayerSizeCalculator."""
+        calc = LayerSizeCalculator()
+        sizes = calc.cortex_from_scale(100)
         return {
-            "input_size": config.input_size,
-
-
-            "l4_size": config.l4_size,
-            "l23_size": config.l23_size,
-            "l5_size": config.l5_size,
-            "l6a_size": config.l6a_size,
-            "l6b_size": config.l6b_size,
+            "input_size": sizes["input_size"],
+            "l4_size": sizes["l4_size"],
+            "l23_size": sizes["l23_size"],
+            "l5_size": sizes["l5_size"],
+            "l6a_size": sizes["l6a_size"],
+            "l6b_size": sizes["l6b_size"],
             "device": "cpu",
             "dt_ms": 1.0,
         }
 
     def get_min_params(self):
-        """Return minimal valid parameters for quick tests (will use builder)."""
-        # Create config via builder to get computed sizes
-        config = LayeredCortexConfig.from_input_size(input_size=20, device="cpu", dt_ms=1.0)
+        """Return minimal valid parameters for quick tests."""
+        calc = LayerSizeCalculator()
+        sizes = calc.cortex_from_scale(20)
         return {
-            "input_size": config.input_size,
-
-
-            "l4_size": config.l4_size,
-            "l23_size": config.l23_size,
-            "l5_size": config.l5_size,
-            "l6a_size": config.l6a_size,
-            "l6b_size": config.l6b_size,
+            "input_size": sizes["input_size"],
+            "l4_size": sizes["l4_size"],
+            "l23_size": sizes["l23_size"],
+            "l5_size": sizes["l5_size"],
+            "l6a_size": sizes["l6a_size"],
+            "l6b_size": sizes["l6b_size"],
             "device": "cpu",
             "dt_ms": 1.0,
         }
+
+    def _get_config_input_size(self, config) -> int:
+        """Override base class - LayeredCortex stores input_size on instance, not config.
+
+        Since config no longer has size fields, we access the region's instance variable.
+        We use a more robust approach: search the call stack for the region variable.
+        """
+        import inspect
+        import sys
+
+        # Walk up the call stack to find the 'region' variable
+        for frame_info in inspect.stack():
+            frame_locals = frame_info.frame.f_locals
+
+            # Check for 'region' variable
+            if 'region' in frame_locals:
+                region = frame_locals['region']
+                if hasattr(region, 'input_size'):
+                    return region.input_size
+
+            # Also check 'self' for any stored region reference
+            if 'self' in frame_locals:
+                obj = frame_locals['self']
+                if hasattr(obj, '_test_region') and hasattr(obj._test_region, 'input_size'):
+                    return obj._test_region.input_size
+
+        # Ultimate fallback: if we still can't find it, raise a clear error
+        raise RuntimeError(
+            "Cannot determine input_size - config no longer contains size fields. "
+            "LayeredCortex stores sizes as instance variables (self.input_size)."
+        )
+
+    def _get_config_output_size(self, config) -> int:
+        """Override base class - LayeredCortex stores output_size on instance, not config."""
+        import inspect
+
+        # Walk up the call stack to find the 'region' variable
+        for frame_info in inspect.stack():
+            frame_locals = frame_info.frame.f_locals
+
+            # Check for 'region' variable
+            if 'region' in frame_locals:
+                region = frame_locals['region']
+                if hasattr(region, 'output_size'):
+                    return region.output_size
+
+            # Also check 'self' for stored region reference
+            if 'self' in frame_locals:
+                obj = frame_locals['self']
+                if hasattr(obj, '_test_region') and hasattr(obj._test_region, 'output_size'):
+                    return obj._test_region.output_size
+
+        # Ultimate fallback
+        raise RuntimeError(
+            "Cannot determine output_size - config no longer contains size fields. "
+            "LayeredCortex stores sizes as instance variables (self.output_size)."
+        )
 
     def get_input_dict(self, n_input, device="cpu"):
         """Return dict input for cortex (supports multi-source)."""
@@ -70,6 +141,151 @@ class TestLayeredCortex(RegionTestBase):
             "thalamus": torch.zeros(n_input // 2, device=device),
             "hippocampus": torch.zeros(n_input // 2, device=device),
         }
+
+    # =========================================================================
+    # OVERRIDE BASE CLASS TESTS (config no longer has size fields)
+    # =========================================================================
+
+    def test_initialization(self):
+        """Test region initializes correctly - OVERRIDE for LayeredCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Verify size stored on instance (not config)
+        assert region.input_size == self._get_input_size(params)
+        # LayeredCortex output is L2/3 + L5
+        assert region.l23_size + region.l5_size > 0
+
+    def test_initialization_minimal(self):
+        """Test minimal initialization - OVERRIDE for LayeredCortex."""
+        params = self.get_min_params()
+        region = self.create_region(**params)
+
+        # Verify size stored on instance
+        assert region.input_size == self._get_input_size(params)
+        # LayeredCortex output is L2/3 + L5
+        assert region.l23_size + region.l5_size > 0
+
+    def test_forward_pass_tensor_input(self):
+        """Test forward pass with tensor input - OVERRIDE for LayeredCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        input_size = self._get_input_size(params)
+        input_spikes = torch.rand(input_size, device=region.device)
+
+        output = region.forward(input_spikes)
+
+        # Verify output shape (L2/3 + L5)
+        expected_output_size = region.l23_size + region.l5_size
+        assert output.shape[0] == expected_output_size
+        assert output.dtype == torch.bool  # Spikes are binary
+
+    def test_forward_pass_dict_input(self):
+        """Test forward pass with dict input - OVERRIDE for LayeredCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        input_size = self._get_input_size(params)
+        input_dict = self.get_input_dict(input_size, region.device)
+
+        output = region.forward(input_dict)
+
+        # Verify output shape (L2/3 + L5)
+        expected_output_size = region.l23_size + region.l5_size
+        assert output.shape[0] == expected_output_size
+        assert output.dtype == torch.bool  # Spikes are binary
+
+    def test_forward_pass_zero_input(self):
+        """Test forward pass with zero input - OVERRIDE for LayeredCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        input_size = self._get_input_size(params)
+        input_spikes = torch.zeros(input_size, device=region.device)
+
+        output = region.forward(input_spikes)
+
+        # Verify output shape (L2/3 + L5)
+        expected_output_size = region.l23_size + region.l5_size
+        assert output.shape[0] == expected_output_size
+        assert output.dtype == torch.bool  # Spikes are binary
+
+    def test_forward_pass_multiple_calls(self):
+        """Test multiple forward passes - OVERRIDE for LayeredCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        input_size = self._get_input_size(params)
+        expected_output_size = region.l23_size + region.l5_size
+
+        for _ in range(5):
+            input_spikes = torch.rand(input_size, device=region.device)
+            output = region.forward(input_spikes)
+
+            # Verify consistent output shape
+            assert output.shape[0] == expected_output_size
+
+    def test_grow_output(self):
+        """Test output growth - OVERRIDE for LayeredCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        original_output = region.l23_size + region.l5_size
+        n_new = 10
+
+        region.grow_output(n_new)
+
+        # Verify output grew
+        new_output = region.l23_size + region.l5_size
+        assert new_output == original_output + n_new
+
+    def test_grow_input(self):
+        """Test input growth - OVERRIDE for LayeredCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        original_input = region.input_size
+        original_output = region.l23_size + region.l5_size
+        n_new = 10
+
+        region.grow_input(n_new)
+
+        # Verify input grew, output unchanged
+        assert region.input_size == original_input + n_new
+        new_output = region.l23_size + region.l5_size
+        assert new_output == original_output
+
+        # Test forward pass with new input size
+        new_input_size = region.input_size
+        input_spikes = torch.zeros(new_input_size, device=region.device)
+        output = region.forward(input_spikes)
+
+        # Verify output shape unchanged
+        assert output.shape[0] == original_output
+
+    def test_growth_preserves_state(self):
+        """Test growth preserves state - OVERRIDE for LayeredCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Run forward pass to establish state
+        input_size = self._get_input_size(params)
+        input_spikes = torch.ones(input_size, device=region.device)
+        region.forward(input_spikes)
+
+        n_original = region.l23_size + region.l5_size
+
+        # Grow output
+        region.grow_output(10)
+
+        # Verify state still loadable
+        state = region.get_state()
+        region.load_state(state)
+
+        # Verify output size changed correctly
+        n_new = region.l23_size + region.l5_size
+        assert n_new == n_original + 10
 
     # =========================================================================
     # CORTEX-SPECIFIC TESTS (not provided by base class)
@@ -110,8 +326,9 @@ class TestLayeredCortex(RegionTestBase):
         # Forward with top-down modulation
         output = region.forward(input_spikes, top_down=top_down)
 
-        # Should not error - get output size from region config
-        assert output.shape[0] == self._get_config_output_size(region.config)
+        # Verify output shape (L2/3 + L5)
+        expected_output_size = region.l23_size + region.l5_size
+        assert output.shape[0] == expected_output_size
 
     def test_l6_feedback_to_thalamus(self):
         """Test L6 generates feedback for thalamus."""

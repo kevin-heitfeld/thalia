@@ -94,6 +94,38 @@ if TYPE_CHECKING:
     from thalia.config import GlobalConfig
 
 
+# Size parameter names that should be separated from behavioral config
+SIZE_PARAMS = {
+    'l4_size', 'l23_size', 'l5_size', 'l6a_size', 'l6b_size',
+    'input_size', 'output_size', 'n_input', 'n_output',
+    'dg_size', 'ca3_size', 'ca2_size', 'ca1_size',  # Hippocampus
+    'relay_size', 'trn_size',  # Thalamus
+    'purkinje_size', 'granule_size',  # Cerebellum
+    'n_neurons', 'n_actions',  # Generic
+}
+
+
+def _separate_size_params(params: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Separate size parameters from behavioral parameters.
+
+    Args:
+        params: Combined parameters dict
+
+    Returns:
+        Tuple of (behavioral_params, size_params)
+    """
+    behavioral = {}
+    sizes = {}
+
+    for key, value in params.items():
+        if key in SIZE_PARAMS:
+            sizes[key] = value
+        else:
+            behavioral[key] = value
+
+    return behavioral, sizes
+
+
 class BrainBuilder:
     """Fluent API for progressive brain construction.
 
@@ -689,21 +721,29 @@ class BrainBuilder:
 
             # Create config instance with device and dt_ms
             # Filter out internal flags (starting with _)
-            config_params_with_globals = {
+            config_params_filtered = {
                 k: v for k, v in spec.config_params.items()
                 if not k.startswith("_")  # Remove internal flags like _has_topdown
             }
-            config_params_with_globals.update({
+
+            # Separate size parameters from behavioral parameters
+            behavioral_params, size_params = _separate_size_params(config_params_filtered)
+
+            # Add global params to behavioral config
+            behavioral_params.update({
                 "device": self.global_config.device,
                 "dt_ms": self.global_config.dt_ms,
             })
-            config = config_class(**config_params_with_globals)
+            config = config_class(**behavioral_params)
 
             # Create component from registry
+            # Pass sizes separately if component needs them (e.g., LayeredCortex)
             component = self._registry.create(
                 spec.component_type,
                 spec.registry_name,
                 config=config,
+                sizes=size_params if size_params else {},
+                device=self.global_config.device,
             )
 
             # Move component to correct device (config device string might not be applied)
