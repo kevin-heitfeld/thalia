@@ -173,7 +173,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         checkpoint_neurons = {n["id"]: n for n in state["neurons"]}
 
         # Count neurons
-        n_neurons = pfc.config.n_output
+        n_neurons = pfc.n_output
 
         # Restore weights
         ff_weights_restored = torch.zeros_like(pfc.synaptic_weights["default"])
@@ -268,7 +268,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         """Get region-specific criteria used for format selection."""
         pfc = self.prefrontal
         return {
-            "n_neurons": pfc.config.n_output,
+            "n_neurons": pfc.n_output,
             "has_growth": hasattr(pfc, 'grow_output'),
         }
 
@@ -286,7 +286,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         pfc = self.prefrontal
 
         # Count neurons
-        n_neurons = pfc.config.n_output
+        n_neurons = pfc.n_output
 
         # Threshold: small regions benefit from neuromorphic format
         SIZE_THRESHOLD = 200

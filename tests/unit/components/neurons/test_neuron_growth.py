@@ -206,8 +206,17 @@ class TestGrowthIntegrationWithRegions:
 
         initial_n = 64
         growth_amount = 32
-        pfc_config = PrefrontalConfig(n_neurons=initial_n, input_size=128)
-        pfc = Prefrontal(pfc_config)
+        device = "cpu"
+
+        # Create sizes dict (Phase 2 pattern)
+        sizes = {
+            'input_size': 128,
+            'n_neurons': initial_n,
+        }
+
+        # Create config with behavioral parameters only
+        pfc_config = PrefrontalConfig()
+        pfc = Prefrontal(config=pfc_config, sizes=sizes, device=device)
         assert pfc.neurons.n_neurons == initial_n
 
         # Grow region
@@ -216,7 +225,7 @@ class TestGrowthIntegrationWithRegions:
         # Neurons should be grown, not recreated
         total_n = initial_n + growth_amount
         assert pfc.neurons.n_neurons == total_n
-        assert pfc.config.n_neurons == total_n
+        assert pfc.n_neurons == total_n  # Use instance attribute, not config
 
 
 if __name__ == "__main__":

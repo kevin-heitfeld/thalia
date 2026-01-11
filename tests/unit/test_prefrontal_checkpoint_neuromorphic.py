@@ -7,6 +7,26 @@ from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
 
 
+def create_test_prefrontal(input_size: int, n_neurons: int, device: str, **kwargs) -> Prefrontal:
+    """Create Prefrontal instance for testing with Phase 2 pattern.
+
+    Args:
+        input_size: Size of input
+        n_neurons: Number of neurons
+        device: Device for computation
+        **kwargs: Additional config parameters (behavioral only)
+
+    Returns:
+        Prefrontal instance
+    """
+    sizes = {
+        'input_size': input_size,
+        'n_neurons': n_neurons,
+    }
+    config = PrefrontalConfig(**kwargs)
+    return Prefrontal(config=config, sizes=sizes, device=device)
+
+
 @pytest.fixture
 def device():
     """Device for testing."""
@@ -16,11 +36,12 @@ def device():
 @pytest.fixture
 def small_prefrontal(device):
     """Create small prefrontal for testing neuromorphic format."""
-    config = PrefrontalConfig(input_size=8, n_neurons=50, # Small enough to trigger neuromorphic (<200 threshold)
+    return create_test_prefrontal(
+        input_size=8,
+        n_neurons=50,  # Small enough to trigger neuromorphic (<200 threshold)
         device=device,
         dt_ms=1.0,
     )
-    return Prefrontal(config)
 
 
 class TestPrefrontalNeuromorphic:
@@ -41,7 +62,7 @@ class TestPrefrontalNeuromorphic:
         # Check neurons structure
         neurons = state["neurons"]
         assert isinstance(neurons, list)
-        expected_n = small_prefrontal.config.n_output
+        expected_n = small_prefrontal.n_output
         assert len(neurons) == expected_n  # n_output
 
         # Each neuron should have required fields
@@ -169,10 +190,11 @@ class TestPrefrontalHybrid:
         """
         import torch
 
-        config = PrefrontalConfig(input_size=8, n_neurons=300, # Large, but has growth capability
+        prefrontal = create_test_prefrontal(
+            input_size=8,
+            n_neurons=300,  # Large, but has growth capability
             device=device,
             dt_ms=1.0)
-        prefrontal = Prefrontal(config)
         manager = PrefrontalCheckpointManager(prefrontal)
 
         # Test actual format selection
