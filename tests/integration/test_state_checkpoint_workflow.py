@@ -330,8 +330,9 @@ def test_partial_state_load(device, temp_checkpoint_dir):
     by using defaults.
     """
     # Create region with full state
-    config = PrefrontalConfig(input_size=32, n_neurons=16, device=device)
-    pfc = Prefrontal(config)
+    config = PrefrontalConfig()
+    sizes = {"input_size": 32, "n_neurons": 16}
+    pfc = Prefrontal(config, sizes, device)
 
     # Run to populate state
     test_input = torch.rand(32, device=device) > 0.8
@@ -351,7 +352,7 @@ def test_partial_state_load(device, temp_checkpoint_dir):
     torch.save(state_dict, checkpoint_path)
 
     # Create new region and load
-    pfc2 = Prefrontal(config)
+    pfc2 = Prefrontal(config, sizes, device)
     loaded_dict = torch.load(checkpoint_path, weights_only=False)
     from thalia.regions.prefrontal import PrefrontalState
     loaded_state = PrefrontalState.from_dict(loaded_dict, device=device)

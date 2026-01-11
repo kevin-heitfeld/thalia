@@ -644,11 +644,29 @@ builder.add_component("cortex", cortex_registry_name, **cortex_sizes)
 - ✅ Prefrontal: 29/29 tests (100%)
 - ✅ Cerebellum: 29/29 tests (100%)
 
-**Total: 276/284 tests passing (97.2%)**
+**Total: 276/284 tests (97.2%)**
 
 All regions now follow the unified (config, sizes, device) architecture with behavioral configuration separated from size specification.
 
-### 🚀 Phase 2: Integration Tests & Documentation (NEXT)
+### ✅ Phase 2: Integration Tests Updated (COMPLETE - January 11, 2026)
+
+**Updated integration tests to use new (config, sizes, device) pattern:**
+- ✅ test_state_checkpoint_workflow.py (Prefrontal instantiation)
+- ✅ test_pathway_delay_preservation.py (Striatum instantiation with LayerSizeCalculator)
+- ✅ test_learning_strategy_pattern.py (Prefrontal instantiation)
+
+**Key Changes:**
+- Removed size fields from region config creation in tests
+- Used LayerSizeCalculator for Striatum size computation (d1_size, d2_size)
+- Passed sizes as separate dict to region constructors
+- All 8 affected integration tests passing
+
+**Integration Tests Verified:**
+- 3 Striatum D1/D2 delay preservation tests ✅
+- 4 Prefrontal learning strategy tests ✅
+- 1 Partial state load test ✅
+
+### 🚀 Phase 3: Documentation & Brain Builder Updates (NEXT)
 - [ ] Check integration tests for region creation patterns
 - [ ] Update BrainBuilder to use new pattern
 - [ ] Update all documentation with new API

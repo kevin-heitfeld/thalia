@@ -373,9 +373,9 @@ class TestRegionIntegration:
     @pytest.mark.parametrize("device", ["cpu", "cuda"])
     def test_prefrontal_uses_stdp_strategy(self, device):
         """Test Prefrontal region uses STDPStrategy correctly."""
-        config = PrefrontalConfig(input_size=20, n_neurons=10, learning_rate=0.001,  # Uses learning_rate from base config
-            device=device)
-        pfc = Prefrontal(config)
+        config = PrefrontalConfig(learning_rate=0.001)  # Uses learning_rate from base config
+        sizes = {"input_size": 20, "n_neurons": 10}
+        pfc = Prefrontal(config, sizes, device)
 
         # Verify strategy exists
         assert hasattr(pfc, 'learning_strategy')
@@ -391,8 +391,9 @@ class TestRegionIntegration:
 
     def test_strategy_state_persists_across_forward_calls(self):
         """Test strategy state (traces) persists across forward calls."""
-        config = PrefrontalConfig(input_size=20, n_neurons=10, learning_rate=0.001)
-        pfc = Prefrontal(config)
+        config = PrefrontalConfig(learning_rate=0.001)
+        sizes = {"input_size": 20, "n_neurons": 10}
+        pfc = Prefrontal(config, sizes, "cpu")
 
         # Multiple forward passes
         for _ in range(5):
@@ -409,8 +410,9 @@ class TestRegionIntegration:
 
     def test_strategy_reset_state(self):
         """Test strategy state resets correctly."""
-        config = PrefrontalConfig(input_size=20, n_neurons=10, learning_rate=0.001)
-        pfc = Prefrontal(config)
+        config = PrefrontalConfig(learning_rate=0.001)
+        sizes = {"input_size": 20, "n_neurons": 10}
+        pfc = Prefrontal(config, sizes, "cpu")
 
         # Build up state
         for _ in range(5):

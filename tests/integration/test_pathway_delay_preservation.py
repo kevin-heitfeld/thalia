@@ -290,23 +290,22 @@ class TestStriatumD1D2DelayCompetition:
     def striatum_config(self) -> StriatumConfig:
         """Create striatum config with D1/D2 delays enabled."""
         return StriatumConfig(
-            n_input=50,
-            n_output=10,  # 10 actions
-            population_coding=True,
-            neurons_per_action=2,  # 20 total neurons
             learning_rate=0.001,
             d1_to_output_delay_ms=15.0,  # D1 direct pathway delay
             d2_to_output_delay_ms=25.0,  # D2 indirect pathway delay
             # Disable exploration for deterministic outputs
             ucb_exploration=False,
             adaptive_exploration=False,
-            device="cpu",
-            dt_ms=1.0,
         )
 
     def test_d1_arrives_before_d2_after_load(self, striatum_config):
         """Test D1 spikes arrive before D2 spikes after checkpoint load."""
-        striatum = Striatum(striatum_config)
+        from thalia.config.size_calculator import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=2)
+        sizes["input_size"] = 50
+        device = "cpu"
+        striatum = Striatum(striatum_config, sizes, device)
 
         # Send strong input to trigger both D1 and D2
         strong_input = torch.rand(50) > 0.3  # 70% active
@@ -329,7 +328,7 @@ class TestStriatumD1D2DelayCompetition:
         assert state.d2_delay_buffer.shape[0] == 51  # 25*2+1
 
         # Load into new striatum
-        striatum2 = Striatum(striatum_config)
+        striatum2 = Striatum(striatum_config, sizes, device)
         striatum2.load_state(state)
 
         # Continue simulation for 30ms - observe D1/D2 arrival times
@@ -366,7 +365,12 @@ class TestStriatumD1D2DelayCompetition:
 
     def test_action_selection_consistent_after_checkpoint(self, striatum_config):
         """Test action selection dynamics preserved after checkpoint during delay window."""
-        striatum = Striatum(striatum_config)
+        from thalia.config.size_calculator import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=2)
+        sizes["input_size"] = 50
+        device = "cpu"
+        striatum = Striatum(striatum_config, sizes, device)
 
         # Send input that strongly favors action 3
         input_spikes = torch.zeros(50)
@@ -379,7 +383,7 @@ class TestStriatumD1D2DelayCompetition:
         state = striatum.get_state()
 
         # Load into new striatum
-        striatum2 = Striatum(striatum_config)
+        striatum2 = Striatum(striatum_config, sizes, device)
         striatum2.load_state(state)
 
         # Continue both striata with same input
@@ -400,8 +404,13 @@ class TestStriatumD1D2DelayCompetition:
         """Test circular buffer pointers preserved correctly."""
         # Set seed for deterministic behavior
         torch.manual_seed(42)
+        from thalia.config.size_calculator import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=2)
+        sizes["input_size"] = 50
+        device = "cpu"
 
-        striatum = Striatum(striatum_config)
+        striatum = Striatum(striatum_config, sizes, device)
 
         # Run for 20 timesteps to wrap pointers
         for _ in range(20):
@@ -419,7 +428,7 @@ class TestStriatumD1D2DelayCompetition:
         assert 0 <= state.d2_delay_ptr < 51  # 25*2+1
 
         # Load into new striatum
-        striatum2 = Striatum(striatum_config)
+        striatum2 = Striatum(striatum_config, sizes, device)
         striatum2.load_state(state)
 
         # Verify delay buffer state matches exactly after load
