@@ -313,7 +313,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         pfc = self.prefrontal
         neurons = []
 
-        n_neurons = pfc.config.n_output
+        n_neurons = pfc.n_neurons  # Use instance variable, not config
         membrane = pfc.state.membrane if pfc.state.membrane is not None else torch.zeros(n_neurons, device=pfc.device)
         wm = pfc.state.working_memory if pfc.state.working_memory is not None else torch.zeros(n_neurons, device=pfc.device)
         update_gate = pfc.state.update_gate if pfc.state.update_gate is not None else torch.zeros(n_neurons, device=pfc.device)

@@ -10,7 +10,16 @@ Architecture Review 2025-12-21, Tier 1.1 Implementation
 import pytest
 import torch
 
+from thalia.config.region_sizes import compute_thalamus_sizes
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+
+
+def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu", **kwargs) -> ThalamicRelay:
+    """Create a ThalamicRelay for testing with new (config, sizes, device) pattern."""
+    config = ThalamicRelayConfig(device=device, **kwargs)
+    sizes = compute_thalamus_sizes(relay_size, trn_ratio=0.0)  # trn_size=0 for tests
+    sizes["input_size"] = input_size
+    return ThalamicRelay(config, sizes, device)
 
 
 @pytest.fixture
@@ -22,16 +31,14 @@ def device():
 @pytest.fixture
 def thalamus_config(device):
     """Minimal thalamus configuration for testing GrowthMixin."""
-    return ThalamicRelayConfig(input_size=50, relay_size=100, trn_size=0, w_min=0.0,
-        w_max=1.0,
-        device=str(device),
-    )
+    # Return the region directly (tests use region fixture anyway)
+    return None
 
 
 @pytest.fixture
-def region(thalamus_config):
+def region(device):
     """Create a test region with GrowthMixin (using Thalamus as representative)."""
-    return ThalamicRelay(thalamus_config)
+    return create_test_thalamus(input_size=50, relay_size=100, device=str(device), w_min=0.0, w_max=1.0)
 
 
 class TestGrowthMixinCreateNewWeights:
@@ -190,8 +197,7 @@ class TestGrowthMixinCreateNewWeights:
     def test_different_devices(self):
         """Test weight creation on different devices."""
         # CPU region
-        cpu_config = ThalamicRelayConfig(input_size=50, relay_size=100, trn_size=0, device="cpu")
-        cpu_region = ThalamicRelay(cpu_config)
+        cpu_region = create_test_thalamus(input_size=50, relay_size=100, device="cpu")
 
         cpu_weights = cpu_region._create_new_weights(
             n_output=30,
@@ -202,8 +208,7 @@ class TestGrowthMixinCreateNewWeights:
 
         # CUDA region (if available)
         if torch.cuda.is_available():
-            cuda_config = ThalamicRelayConfig(input_size=50, relay_size=100, trn_size=0, device="cuda")
-            cuda_region = ThalamicRelay(cuda_config)
+            cuda_region = create_test_thalamus(input_size=50, relay_size=100, device="cuda")
 
             cuda_weights = cuda_region._create_new_weights(
                 n_output=30,
@@ -218,13 +223,13 @@ class TestGrowthMixinCreateNewWeights:
 
         # Create new weight columns (typical grow_input pattern)
         new_cols = region._create_new_weights(
-            n_output=region.config.n_output,
+            n_output=region.n_output,
             n_input=n_new,
             initialization='xavier',
         )
 
         # Verify dimensions are correct for concatenation
-        assert new_cols.shape == (region.config.n_output, n_new)
+        assert new_cols.shape == (region.n_output, n_new)
         # Verify it would concatenate correctly with existing weights
         # (testing pattern, not actual region state)
 
@@ -235,13 +240,13 @@ class TestGrowthMixinCreateNewWeights:
         # Create new weight rows (typical grow_output pattern)
         new_rows = region._create_new_weights(
             n_output=n_new,
-            n_input=region.config.n_input,
+            n_input=region.input_size,
             initialization='sparse_random',
             sparsity=0.15,
         )
 
         # Verify dimensions are correct for concatenation
-        assert new_rows.shape == (n_new, region.config.n_input)
+        assert new_rows.shape == (n_new, region.input_size)
         # Verify it would concatenate correctly with existing weights
         # (testing pattern, not actual region state)
 

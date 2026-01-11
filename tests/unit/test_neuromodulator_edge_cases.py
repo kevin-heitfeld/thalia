@@ -22,12 +22,62 @@ import torch
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 
 
 @pytest.fixture
 def device():
     """Device for testing."""
     return torch.device("cpu")
+
+
+# =============================================================================
+# Helper Functions - Region Creation
+# =============================================================================
+
+def create_test_striatum(
+    n_actions: int = 3,
+    neurons_per_action: int = 4,
+    input_size: int = 50,
+    device: str = "cpu",
+    **kwargs
+) -> Striatum:
+    """Create Striatum for testing with new (config, sizes, device) pattern."""
+    calc = LayerSizeCalculator()
+    sizes = calc.striatum_from_actions(n_actions, neurons_per_action)
+    sizes["input_size"] = input_size
+    config = StriatumConfig(device=device, **kwargs)
+    return Striatum(config, sizes, device)
+
+
+def create_test_hippocampus(
+    input_size: int = 40,
+    output_size: int = 30,
+    device: str = "cpu",
+    **kwargs
+) -> Hippocampus:
+    """Create Hippocampus for testing with new (config, sizes, device) pattern."""
+    sizes = {
+        "input_size": input_size,
+        "dg_size": int(output_size * 0.4),
+        "ca3_size": int(output_size * 0.3),
+        "ca2_size": int(output_size * 0.1),
+        "ca1_size": int(output_size * 0.2),
+    }
+    config = HippocampusConfig(device=device, **kwargs)
+    return Hippocampus(config, sizes, device)
+
+
+def create_test_prefrontal(
+    input_size: int = 30,
+    n_neurons: int = 15,
+    device: str = "cpu",
+    **kwargs
+) -> Prefrontal:
+    """Create Prefrontal for testing with new (config, sizes, device) pattern."""
+    sizes = {"input_size": input_size, "n_neurons": n_neurons}
+    config = PrefrontalConfig(device=device, **kwargs)
+    return Prefrontal(config, sizes, device)
 
 
 # =============================================================================
@@ -41,13 +91,7 @@ def test_striatum_handles_valid_dopamine_range(dopamine, device):
     Biological context: Dopamine should be in [-2, 2] range for biological
     plausibility. Values within this range should work without issues.
     """
-    config = StriatumConfig(
-        n_actions=3,
-        neurons_per_action=4,
-        input_sources={'default': 50},
-        device=str(device),
-    )
-    striatum = Striatum(config)
+    striatum = create_test_striatum(n_actions=3, neurons_per_action=4, input_size=50, device=str(device))
     striatum.set_neuromodulators(dopamine=dopamine)
 
     input_spikes = torch.rand(50, device=device) > 0.8
@@ -60,7 +104,7 @@ def test_striatum_handles_valid_dopamine_range(dopamine, device):
     assert not torch.isinf(output.float()).any(), f"Inf output with dopamine={dopamine}"
 
     # Output shape should be valid (striatum outputs BOTH D1 and D2 MSN spikes concatenated)
-    expected_size = config.n_output  # D1 + D2 pathway MSN neurons
+    expected_size = striatum.n_output  # D1 + D2 pathway MSN neurons
     assert output.shape[0] == expected_size, \
         f"Expected output size {expected_size}, got {output.shape[0]}"
 
@@ -72,13 +116,7 @@ def test_striatum_rejects_extreme_dopamine(dopamine, device):
     Extreme values outside [-2, 2] indicate upstream bugs or configuration
     errors and should be caught early with validation.
     """
-    config = StriatumConfig(
-        n_actions=3,
-        neurons_per_action=4,
-        input_sources={'default': 50},
-        device=str(device),
-    )
-    striatum = Striatum(config)
+    striatum = create_test_striatum(n_actions=3, neurons_per_action=4, input_size=50, device=str(device))
 
     # Should raise ValueError for out-of-range values
     with pytest.raises(ValueError, match="(?i)(invalid|dopamine|range)"):
@@ -96,9 +134,7 @@ def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
     Biological context: ACh modulates encoding vs retrieval in hippocampus.
     Values within [0, 2] range should work without issues.
     """
-    config = HippocampusConfig(input_size=40, device=str(device),
-    )
-    hippocampus = Hippocampus(config)
+    hippocampus = create_test_hippocampus(input_size=40, output_size=30, device=str(device))
     hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
 
     input_spikes = torch.rand(40, device=device) > 0.8
@@ -109,7 +145,7 @@ def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
         f"NaN output with acetylcholine={acetylcholine}"
     assert not torch.isinf(output.float()).any(), \
         f"Inf output with acetylcholine={acetylcholine}"
-    assert output.shape[0] == hippocampus.config.output_size
+    assert output.shape[0] == hippocampus.n_output
 
 
 @pytest.mark.parametrize("acetylcholine", [-5.0, -1.0, 3.0, 5.0, 50.0])
@@ -119,9 +155,7 @@ def test_hippocampus_rejects_extreme_acetylcholine(acetylcholine, device):
     Biological context: ACh should be in [0, 2] range for biological plausibility.
     Values outside this range should be rejected early.
     """
-    config = HippocampusConfig(input_size=40, device=str(device),
-    )
-    hippocampus = Hippocampus(config)
+    hippocampus = create_test_hippocampus(input_size=40, output_size=30, device=str(device))
 
     # Should raise ValueError for out-of-range values
     with pytest.raises(ValueError, match="(?i)(invalid|acetylcholine|range)"):
@@ -139,9 +173,7 @@ def test_prefrontal_handles_valid_norepinephrine_range(norepinephrine, device):
     Biological context: NE modulates arousal and working memory gating in PFC.
     Values within [0, 2] range should work without issues.
     """
-    config = PrefrontalConfig(input_size=30, n_neurons=15, device=str(device),
-    )
-    prefrontal = Prefrontal(config)
+    prefrontal = create_test_prefrontal(input_size=30, n_neurons=15, device=str(device))
     prefrontal.set_neuromodulators(norepinephrine=norepinephrine)
 
     input_spikes = torch.rand(30, device=device) > 0.8
@@ -152,7 +184,7 @@ def test_prefrontal_handles_valid_norepinephrine_range(norepinephrine, device):
         f"NaN output with norepinephrine={norepinephrine}"
     assert not torch.isinf(output.float()).any(), \
         f"Inf output with norepinephrine={norepinephrine}"
-    assert output.shape[0] == prefrontal.config.n_neurons
+    assert output.shape[0] == prefrontal.n_neurons
 
 
 @pytest.mark.parametrize("norepinephrine", [-3.0, -1.0, 3.0, 5.0, 20.0])
@@ -162,9 +194,7 @@ def test_prefrontal_rejects_extreme_norepinephrine(norepinephrine, device):
     Biological context: NE should be in [0, 2] range for biological plausibility.
     Values outside this range should be rejected early.
     """
-    config = PrefrontalConfig(input_size=30, n_neurons=15, device=str(device),
-    )
-    prefrontal = Prefrontal(config)
+    prefrontal = create_test_prefrontal(input_size=30, n_neurons=15, device=str(device))
 
     # Should raise ValueError for out-of-range values
     with pytest.raises(ValueError, match="(?i)(invalid|norepinephrine|range)"):
@@ -181,8 +211,7 @@ def test_striatum_rejects_nan_dopamine(device):
     NaN should never be a valid neuromodulator value and should be caught
     early with a descriptive error message.
     """
-    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
-    striatum = Striatum(config)
+    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
 
     # Should raise clear error for NaN
     with pytest.raises(
@@ -194,8 +223,7 @@ def test_striatum_rejects_nan_dopamine(device):
 
 def test_striatum_rejects_inf_dopamine(device):
     """Test striatum rejects Inf dopamine with clear error."""
-    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
-    striatum = Striatum(config)
+    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
 
     with pytest.raises(
         ValueError,
@@ -206,9 +234,7 @@ def test_striatum_rejects_inf_dopamine(device):
 
 def test_hippocampus_rejects_nan_acetylcholine(device):
     """Test hippocampus rejects NaN acetylcholine with clear error."""
-    config = HippocampusConfig(input_size=40, device=str(device),
-    )
-    hippocampus = Hippocampus(config)
+    hippocampus = create_test_hippocampus(input_size=40, output_size=30, device=str(device))
 
     with pytest.raises(
         ValueError,
@@ -219,8 +245,7 @@ def test_hippocampus_rejects_nan_acetylcholine(device):
 
 def test_prefrontal_rejects_nan_norepinephrine(device):
     """Test PFC rejects NaN norepinephrine with clear error."""
-    config = PrefrontalConfig(input_size=50, n_neurons=30, device=str(device))
-    pfc = Prefrontal(config)
+    pfc = create_test_prefrontal(input_size=50, n_neurons=30, device=str(device))
 
     with pytest.raises(
         ValueError,
@@ -248,8 +273,7 @@ def test_prefrontal_handles_valid_combined_modulators(dopamine, norepinephrine, 
     Biological context: DA and NE interact in PFC for working memory
     and cognitive control. System should handle all valid combinations.
     """
-    config = PrefrontalConfig(input_size=50, n_neurons=30, device=str(device))
-    pfc = Prefrontal(config)
+    pfc = create_test_prefrontal(input_size=50, n_neurons=30, device=str(device))
 
     pfc.set_neuromodulators(
         dopamine=dopamine,
@@ -277,8 +301,7 @@ def test_prefrontal_rejects_invalid_combined_modulators(dopamine, norepinephrine
 
     Should reject any combination where at least one modulator is out of range.
     """
-    config = PrefrontalConfig(input_size=50, n_neurons=30, device=str(device))
-    pfc = Prefrontal(config)
+    pfc = create_test_prefrontal(input_size=50, n_neurons=30, device=str(device))
 
     # Should raise ValueError for any out-of-range value
     with pytest.raises(ValueError, match="(?i)(invalid|dopamine|norepinephrine|range)"):
@@ -299,8 +322,7 @@ def test_striatum_stable_with_fluctuating_dopamine(device):
     errors in reinforcement learning. System should handle temporal
     variability without instability.
     """
-    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
-    striatum = Striatum(config)
+    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
 
     input_spikes = torch.rand(50, device=device) > 0.8
 
@@ -324,9 +346,7 @@ def test_hippocampus_stable_with_fluctuating_acetylcholine(device):
     Biological context: ACh levels change during encoding vs retrieval
     phases. System should handle mode switching without instability.
     """
-    config = HippocampusConfig(input_size=40, device=str(device),
-    )
-    hippocampus = Hippocampus(config)
+    hippocampus = create_test_hippocampus(input_size=40, output_size=30, device=str(device))
 
     input_spikes = torch.rand(40, device=device) > 0.8
 
@@ -354,8 +374,7 @@ def test_striatum_learning_stable_with_valid_dopamine(modulator_value, device):
     Critical for biological plausibility: Learning should remain stable
     across the full valid dopamine range [-2, 2].
     """
-    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
-    striatum = Striatum(config)
+    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
 
     # Get initial weights if accessible
     initial_weights = {}
@@ -392,9 +411,7 @@ def test_hippocampus_learning_stable_with_valid_acetylcholine(acetylcholine, dev
     ACh modulates learning rate in hippocampus. Extreme values should
     saturate learning, not cause divergence.
     """
-    config = HippocampusConfig(input_size=40, device=str(device),
-    )
-    hippocampus = Hippocampus(config)
+    hippocampus = create_test_hippocampus(input_size=40, output_size=30, device=str(device))
 
     # Set extreme ACh
     hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
@@ -427,8 +444,7 @@ def test_striatum_extended_run_with_valid_dopamine(device):
     Longer test (100 steps) to catch delayed instabilities that might
     not appear in short tests. Uses maximum valid dopamine (2.0).
     """
-    config = StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device))
-    striatum = Striatum(config)
+    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
 
     # Use maximum valid dopamine (e.g., large RPE)
     striatum.set_neuromodulators(dopamine=2.0)
@@ -463,10 +479,9 @@ def test_multi_region_neuromodulator_stability(device):
     Uses maximum valid values for each neuromodulator.
     """
     # Create multiple regions
-    striatum = Striatum(StriatumConfig(n_actions=3, neurons_per_action=10, input_sources={'default': 50}, device=str(device)))
-    hippocampus = Hippocampus(HippocampusConfig(input_size=40, device=str(device)
-    ))
-    pfc = Prefrontal(PrefrontalConfig(input_size=50, n_neurons=30, device=str(device)))
+    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
+    hippocampus = create_test_hippocampus(input_size=40, output_size=30, device=str(device))
+    pfc = create_test_prefrontal(input_size=50, n_neurons=30, device=str(device))
 
     # Set different modulators for each (all within valid ranges)
     striatum.set_neuromodulators(dopamine=2.0)

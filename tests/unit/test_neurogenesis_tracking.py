@@ -12,13 +12,32 @@ from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
 from thalia.regions.hippocampus.config import HippocampusConfig
 
 
+def create_test_prefrontal(input_size: int = 64, n_neurons: int = 50, device: str = "cpu") -> Prefrontal:
+    """Create Prefrontal for testing with new (config, sizes, device) pattern."""
+    sizes = {"input_size": input_size, "n_neurons": n_neurons}
+    config = PrefrontalConfig(device=device)
+    return Prefrontal(config, sizes, device)
+
+
+def create_test_hippocampus(input_size: int = 100, total_neurons: int = 200, device: str = "cpu") -> TrisynapticHippocampus:
+    """Create Hippocampus for testing with new (config, sizes, device) pattern."""
+    sizes = {
+        "input_size": input_size,
+        "dg_size": int(total_neurons * 0.4),
+        "ca3_size": int(total_neurons * 0.3),
+        "ca2_size": int(total_neurons * 0.1),
+        "ca1_size": int(total_neurons * 0.2),
+    }
+    config = HippocampusConfig(device=device)
+    return TrisynapticHippocampus(config, sizes, device)
+
+
 class TestPrefrontalNeurogenesisTracking:
     """Test neurogenesis history tracking for Prefrontal cortex."""
 
     def test_initial_birth_steps_all_zero(self):
         """All initial neurons should have birth_step=0."""
-        config = PrefrontalConfig(input_size=64, n_neurons=50, device="cpu")
-        pfc = Prefrontal(config)
+        pfc = create_test_prefrontal(input_size=64, n_neurons=50, device="cpu")
 
         assert hasattr(pfc, '_neuron_birth_steps')
         assert pfc._neuron_birth_steps.shape == (50,)
@@ -26,16 +45,14 @@ class TestPrefrontalNeurogenesisTracking:
 
     def test_training_step_update(self):
         """Training step should be updateable."""
-        config = PrefrontalConfig(input_size=64, n_neurons=50, device="cpu")
-        pfc = Prefrontal(config)
+        pfc = create_test_prefrontal(input_size=64, n_neurons=50, device="cpu")
 
         pfc.set_training_step(1000)
         assert pfc._current_training_step == 1000
 
     def test_grow_output_tracks_birth_steps(self):
         """New neurons should record their birth timestep."""
-        config = PrefrontalConfig(input_size=64, n_neurons=50, device="cpu")
-        pfc = Prefrontal(config)
+        pfc = create_test_prefrontal(input_size=64, n_neurons=50, device="cpu")
 
         # Set training step
         pfc.set_training_step(5000)
@@ -50,8 +67,7 @@ class TestPrefrontalNeurogenesisTracking:
 
     def test_multiple_growth_events(self):
         """Multiple growth events should track different timesteps."""
-        config = PrefrontalConfig(input_size=64, n_neurons=50, device="cpu")
-        pfc = Prefrontal(config)
+        pfc = create_test_prefrontal(input_size=64, n_neurons=50, device="cpu")
 
         # First growth at step 1000
         pfc.set_training_step(1000)
@@ -70,8 +86,7 @@ class TestPrefrontalNeurogenesisTracking:
 
     def test_checkpoint_uses_birth_steps(self):
         """Checkpoint neuromorphic format should include birth steps."""
-        config = PrefrontalConfig(input_size=64, n_neurons=50, device="cpu")
-        pfc = Prefrontal(config)
+        pfc = create_test_prefrontal(input_size=64, n_neurons=50, device="cpu")
 
         # Grow at different timesteps
         pfc.set_training_step(1000)
@@ -99,15 +114,7 @@ class TestHippocampusNeurogenesisTracking:
 
     def test_initial_birth_steps_all_zero(self):
         """All initial neurons should have birth_step=0."""
-        config = HippocampusConfig(
-            input_size=64,  # Explicitly specify layer sizes
-            dg_size=256,  # DG expansion from input
-            ca3_size=128,  # CA3 size
-            ca2_size=96,   # CA2 size
-            ca1_size=32,   # CA1 size (matches n_output)
-            device="cpu"
-        )
-        hippo = TrisynapticHippocampus(config)
+        hippo = create_test_hippocampus(input_size=64, total_neurons=512, device="cpu")
 
         assert hasattr(hippo, '_neuron_birth_steps_dg')
         assert hasattr(hippo, '_neuron_birth_steps_ca3')
@@ -119,25 +126,14 @@ class TestHippocampusNeurogenesisTracking:
 
     def test_training_step_update(self):
         """Training step should be updateable."""
-        # Use input_size alone - layer sizes auto-compute
-        config = HippocampusConfig(input_size=64, device="cpu")
-        hippo = TrisynapticHippocampus(config)
+        hippo = create_test_hippocampus(input_size=64, total_neurons=200, device="cpu")
 
         hippo.set_training_step(2000)
         assert hippo._current_training_step == 2000
 
     def test_grow_output_tracks_all_layers(self):
         """New neurons in all layers should record their birth timestep."""
-        config = HippocampusConfig(
-            input_size=64,
-            # Explicitly specify layer sizes
-            dg_size=256,  # DG expansion from input
-            ca3_size=128,  # CA3 size
-            ca2_size=96,   # CA2 size
-            ca1_size=32,   # CA1 size (output layer)
-            device="cpu"
-        )
-        hippo = TrisynapticHippocampus(config)
+        hippo = create_test_hippocampus(input_size=64, total_neurons=512, device="cpu")
 
         initial_dg = hippo.dg_size
         initial_ca3 = hippo.ca3_size
@@ -168,12 +164,7 @@ class TestHippocampusNeurogenesisTracking:
 
     def test_checkpoint_uses_birth_steps(self):
         """Checkpoint neuromorphic format should include birth steps for all layers."""
-        # Use input_size alone - layer sizes auto-compute
-        config = HippocampusConfig(
-            input_size=64,
-            device="cpu"
-        )
-        hippo = TrisynapticHippocampus(config)
+        hippo = create_test_hippocampus(input_size=64, total_neurons=200, device="cpu")
 
         # Grow at specific timestep
         hippo.set_training_step(4500)
