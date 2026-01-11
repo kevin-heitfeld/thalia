@@ -18,14 +18,26 @@ class TestPrefrontal(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create Prefrontal instance for testing."""
+        # Extract sizes from kwargs
+        input_size = kwargs.pop('input_size', 100)
+        n_neurons = kwargs.pop('n_neurons', 50)
+        device = kwargs.pop('device', 'cpu')
+
+        # Create sizes dict
+        sizes = {
+            'input_size': input_size,
+            'n_neurons': n_neurons,
+        }
+
+        # Create config with behavioral parameters only
         config = PrefrontalConfig(**kwargs)
-        return Prefrontal(config)
+        return Prefrontal(config=config, sizes=sizes, device=device)
 
     def get_default_params(self):
         """Return default prefrontal parameters."""
         return {
-            "input_size": 100,
-            "n_neurons": 50,
+            "input_size": 100,  # Size parameter (passed via sizes dict)
+            "n_neurons": 50,    # Size parameter (passed via sizes dict)
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -33,8 +45,8 @@ class TestPrefrontal(RegionTestBase):
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
         return {
-            "input_size": 20,
-            "n_neurons": 10,
+            "input_size": 20,   # Size parameter (passed via sizes dict)
+            "n_neurons": 10,    # Size parameter (passed via sizes dict)
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -44,6 +56,19 @@ class TestPrefrontal(RegionTestBase):
         return {
             "default": torch.zeros(n_input, device=device),
         }
+
+    def _get_region_input_size(self, region):
+        """Get actual input size from region instance."""
+        return region.input_size
+
+    def _get_region_output_size(self, region):
+        """Get actual output size from region instance."""
+        return region.n_output
+
+    def _get_config_output_size(self, config):
+        """Get output size - but config no longer has it, use region.n_output instead."""
+        # Note: Tests should use region.n_output directly, not config
+        raise NotImplementedError("Use region.n_output instead of _get_config_output_size")
 
     # =========================================================================
     # PREFRONTAL-SPECIFIC TESTS
@@ -62,7 +87,7 @@ class TestPrefrontal(RegionTestBase):
         state = region.get_state()
         if hasattr(state, "working_memory"):
             assert state.working_memory is not None
-            assert state.working_memory.shape[0] == self._get_config_output_size(region.config)
+            assert state.working_memory.shape[0] == region.n_output
 
             # Run with no input (maintenance)
             zero_input = torch.zeros(self._get_input_size(params), device=region.device)
@@ -100,7 +125,7 @@ class TestPrefrontal(RegionTestBase):
         region.forward(input_spikes)
 
         # Verify PFC has output neurons
-        assert region.config.n_output == self._get_config_output_size(region.config)
+        assert region.n_output > 0
 
     def test_recurrent_connections(self):
         """Test PFC has recurrent connections for maintenance."""
@@ -111,7 +136,7 @@ class TestPrefrontal(RegionTestBase):
         if hasattr(region, "rec_weights"):
             assert region.rec_weights is not None
             # Recurrent weights should be [n_output, n_output]
-            assert region.rec_weights.shape == (self._get_config_output_size(region.config), self._get_config_output_size(region.config))
+            assert region.rec_weights.shape == (region.n_output, region.n_output)
 
     def test_inhibitory_connections(self):
         """Test PFC has lateral inhibition for selection."""
@@ -122,7 +147,7 @@ class TestPrefrontal(RegionTestBase):
         if hasattr(region, "inhib_weights"):
             assert region.inhib_weights is not None
             # Inhibition should be [n_output, n_output]
-            assert region.inhib_weights.shape == (self._get_config_output_size(region.config), self._get_config_output_size(region.config))
+            assert region.inhib_weights.shape == (region.n_output, region.n_output)
 
     def test_dopamine_gating(self):
         """Test dopamine modulates WM gating."""
@@ -222,4 +247,3 @@ class TestPrefrontal(RegionTestBase):
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
 # inherited from RegionTestBase - eliminates ~100 lines of boilerplate
-

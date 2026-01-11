@@ -74,8 +74,6 @@ def test_state_loading_works_with_base_inheritance():
 def test_no_duplicate_mixin_inheritance():
     """Ensure regions don't inherit mixins twice (once from base, once directly)."""
     # Check Prefrontal class definition doesn't mention mixins
-    from thalia.regions.prefrontal import Prefrontal
-    import inspect
 
     # Get Prefrontal's direct base classes (should only be NeuralRegion)
     bases = Prefrontal.__bases__
@@ -83,7 +81,6 @@ def test_no_duplicate_mixin_inheritance():
     assert bases[0].__name__ == "NeuralRegion"
 
     # Similarly for Cerebellum
-    from thalia.regions.cerebellum_region import Cerebellum
     bases = Cerebellum.__bases__
     assert len(bases) == 1, f"Cerebellum should only inherit from NeuralRegion, got: {bases}"
     assert bases[0].__name__ == "NeuralRegion"

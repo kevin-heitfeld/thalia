@@ -5,6 +5,7 @@ the striatum (D1/D2 opponent pathways for action selection).
 
 Author: Thalia Project
 Date: December 22, 2025 (Tier 3.4 implementation)
+Updated: December 2025 (Phase 1 migration to (config, sizes, device) pattern)
 """
 
 from typing import Dict, Any
@@ -14,47 +15,49 @@ import torch
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 
 
 class TestStriatum(RegionTestBase):
     """Test Striatum implementation using unified test framework."""
 
-    def _get_input_size(self, params: Dict[str, Any]) -> int:
-        """Override to handle Striatum's input_sources dict instead of input_size.
-
-        Args:
-            params: Parameter dictionary
-
-        Returns:
-            Total input size (sum of all input sources)
-        """
-        if "input_sources" in params:
-            return sum(params["input_sources"].values())
-        return params.get("input_size", 0)
-
     def create_region(self, **kwargs):
-        """Create Striatum instance for testing."""
-        # Use builder pattern if no explicit sizes provided
-        if "d1_size" not in kwargs and "d2_size" not in kwargs:
-            n_actions = kwargs.pop("n_actions", 4)  # Changed from n_output
-            neurons_per_action = kwargs.pop("neurons_per_action", 10)
-            # Striatum requires input_sources dict
-            input_sources = kwargs.pop("input_sources", {"default": 100})
-            config = StriatumConfig.from_n_actions(
-                n_actions=n_actions,
-                neurons_per_action=neurons_per_action,
-                input_sources=input_sources,
-                **kwargs
-            )
-        else:
-            config = StriatumConfig(**kwargs)
+        """Create Striatum instance for testing.
 
-        return Striatum(config)
+        Uses new (config, sizes, device) pattern:
+        - Config contains only behavioral parameters
+        - Sizes computed via LayerSizeCalculator
+        - Device passed explicitly
+        """
+        # Extract size-related parameters
+        n_actions = kwargs.pop("n_actions", 4)
+        neurons_per_action = kwargs.pop("neurons_per_action", 10)
+        device = kwargs.pop("device", "cpu")
+
+        # Remove input_sources if present (no longer needed for config)
+        kwargs.pop("input_sources", None)
+
+        # Compute sizes using calculator
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(
+            n_actions=n_actions,
+            neurons_per_action=neurons_per_action
+        )
+
+        # Add input_size to sizes dict (striatum needs this)
+        # Use default of 100 for testing (can be overridden)
+        sizes["input_size"] = kwargs.pop("input_size", 100)
+
+        # Create config with behavioral parameters only
+        config = StriatumConfig(**kwargs)
+
+        # Create striatum with new pattern
+        return Striatum(config=config, sizes=sizes, device=device)
 
     def get_default_params(self):
         """Return default striatum parameters."""
         return {
-            "input_sources": {"default": 100},
+            "input_size": 100,  # Total input size
             "n_actions": 5,  # Number of actions
             "neurons_per_action": 4,  # 20 total neurons (5 actions × 4)
             "rpe_enabled": True,
@@ -66,7 +69,7 @@ class TestStriatum(RegionTestBase):
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
         return {
-            "input_sources": {"default": 20},
+            "input_size": 20,  # Total input size
             "n_actions": 3,  # 3 actions
             "neurons_per_action": 2,  # 6 total neurons
             "device": "cpu",
@@ -89,23 +92,24 @@ class TestStriatum(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        original_n_actions = self._get_config_output_size(region.config)
+        original_n_actions = region.n_actions
         neurons_per_action = params["neurons_per_action"]
         n_new_actions = 10
 
         # Grow output (adds actions, which adds neurons_per_action neurons per action)
         region.grow_output(n_new_actions)
 
-        # Verify config updated (n_output is total neurons, not actions)
+        # Verify instance variables updated (n_output is total neurons, not actions)
         expected_total_neurons = (original_n_actions + n_new_actions) * neurons_per_action
-        assert region.config.n_output == expected_total_neurons
+        assert region.n_output == expected_total_neurons
         assert region.n_actions == original_n_actions + n_new_actions
 
         # Verify forward pass still works with new size
-        input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
+        input_size = params["input_size"]
+        input_spikes = torch.zeros(input_size, device=region.device)
         output = region.forward(input_spikes)
 
-        # Output is per-neuron (d1_spikes), same as config.n_output
+        # Output is per-neuron (d1_spikes), same as n_output
         assert output.shape[0] == expected_total_neurons, \
             f"Expected {expected_total_neurons} neurons, got {output.shape[0]}"
 
@@ -114,22 +118,21 @@ class TestStriatum(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        original_n_input = self._get_input_size(params)
+        original_n_input = params["input_size"]
         n_new_input = 20
-        neurons_per_action = params["neurons_per_action"]
 
         # Grow input
         region.grow_input(n_new_input)
 
-        # Verify config updated
-        assert region.config.n_input == original_n_input + n_new_input
+        # Verify instance variables updated
+        assert region.input_size == original_n_input + n_new_input
 
         # Verify forward pass still works with larger input
         input_spikes = torch.zeros(original_n_input + n_new_input, device=region.device)
         output = region.forward(input_spikes)
 
         # Output size should NOT change (still same number of actions/neurons)
-        expected_neurons = self._get_config_output_size(region.config) * neurons_per_action
+        expected_neurons = region.n_output
         assert output.shape[0] == expected_neurons, \
             f"Expected {expected_neurons} neurons, got {output.shape[0]}"
 
@@ -151,7 +154,7 @@ class TestStriatum(RegionTestBase):
         output = region.forward(input_spikes)
 
         # Verify output shape matches action neurons
-        expected_neurons = self._get_config_output_size(region.config) * params["neurons_per_action"]
+        expected_neurons = region.n_output
         assert output.shape[0] == expected_neurons
 
     def test_initialization(self):
@@ -159,21 +162,21 @@ class TestStriatum(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # With population coding, config.n_output gets expanded
-        # Original: self._get_config_output_size(region.config) = 5 actions
-        # Expanded: region.config.n_output = 5 * 4 = 20 neurons
-        expected_n_output = region.config.output_size
-        assert region.config.n_output == expected_n_output
-        assert region.config.n_input == self._get_input_size(params)
+        # With population coding, n_output gets expanded
+        # Original: n_actions = 5 actions
+        # Expanded: n_output = (d1_size + d2_size) = 5 * 4 = 20 neurons
+        expected_n_output = params["n_actions"] * params["neurons_per_action"]
+        assert region.n_output == expected_n_output
+        assert region.input_size == self._get_input_size(params)
 
     def test_initialization_minimal(self):
         """Test striatum initializes with minimal params and expansion."""
         params = self.get_min_params()
         region = self.create_region(**params)
 
-        # Verify expansion happened
-        expected_n_output = region.config.output_size
-        assert region.config.n_output == expected_n_output
+        # Verify dimensions are correct
+        expected_n_output = params["n_actions"] * params["neurons_per_action"]
+        assert region.n_output == expected_n_output
 
     def test_forward_pass_tensor_input(self):
         """Test forward returns expanded neuron output."""
@@ -182,8 +185,8 @@ class TestStriatum(RegionTestBase):
         input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
         output = region.forward(input_spikes)
 
-        # Output is total neuron count (D1 + D2), already computed by config.output_size property
-        expected_n_output = region.config.output_size
+        # Output is total neuron count (D1 + D2)
+        expected_n_output = region.n_output
         assert output.shape[0] == expected_n_output
 
     def test_forward_pass_dict_input(self):
@@ -193,7 +196,7 @@ class TestStriatum(RegionTestBase):
         input_dict = self.get_input_dict(self._get_input_size(params), device=region.device.type)
         output = region.forward(input_dict)
 
-        expected_n_output = region.config.output_size
+        expected_n_output = region.n_output
         assert output.shape[0] == expected_n_output
 
     def test_forward_pass_zero_input(self):
@@ -203,7 +206,7 @@ class TestStriatum(RegionTestBase):
         input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
         output = region.forward(input_spikes)
 
-        expected_n_output = region.config.output_size
+        expected_n_output = region.n_output
         assert output.shape[0] == expected_n_output
 
     def test_forward_pass_multiple_calls(self):
@@ -211,7 +214,7 @@ class TestStriatum(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
         input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
-        expected_n_output = region.config.output_size
+        expected_n_output = region.n_output
 
         for _ in range(10):
             output = region.forward(input_spikes)
@@ -233,11 +236,11 @@ class TestStriatum(RegionTestBase):
         # Votes are per-action (not per-neuron)
         if hasattr(state, "d1_votes_accumulated"):
             assert state.d1_votes_accumulated is not None
-            assert state.d1_votes_accumulated.shape[0] == self._get_config_output_size(region.config)  # n_actions
+            assert state.d1_votes_accumulated.shape[0] == region.n_actions  # n_actions
 
         if hasattr(state, "d2_votes_accumulated"):
             assert state.d2_votes_accumulated is not None
-            assert state.d2_votes_accumulated.shape[0] == self._get_config_output_size(region.config)  # n_actions
+            assert state.d2_votes_accumulated.shape[0] == region.n_actions  # n_actions
 
     def test_action_selection(self):
         """Test striatum selects actions based on vote competition."""
@@ -252,9 +255,9 @@ class TestStriatum(RegionTestBase):
         # Check if action was selected
         state = region.get_state()
         if hasattr(state, "last_action"):
-            # Last action should be valid (0 to n_output-1)
+            # Last action should be valid (0 to n_actions-1)
             if state.last_action is not None:
-                assert 0 <= state.last_action < self._get_config_output_size(region.config)
+                assert 0 <= state.last_action < region.n_actions
 
     def test_dopamine_modulation(self):
         """Test dopamine modulates learning in D1/D2 pathways."""
@@ -295,7 +298,7 @@ class TestStriatum(RegionTestBase):
         if hasattr(state, "value_estimates"):
             # Should have value estimates per action
             if state.value_estimates is not None:
-                assert state.value_estimates.shape[0] == self._get_config_output_size(region.config)
+                assert state.value_estimates.shape[0] == region.n_actions
 
     def test_exploration_uncertainty(self):
         """Test exploration based on uncertainty."""
@@ -385,11 +388,8 @@ class TestStriatum(RegionTestBase):
         if hasattr(state, "pfc_modulation_d1") and hasattr(state, "pfc_modulation_d2"):
             if state.pfc_modulation_d1 is not None:
                 # Should have modulation weights for D1 neurons × PFC size
-                # D1 and D2 each have (n_actions * neurons_per_action / 2) neurons
-                n_actions = self._get_config_output_size(region.config)
-                neurons_per_pathway = (params["neurons_per_action"] // 2)
-                expected_d1_size = n_actions * neurons_per_pathway
-                expected_shape = (expected_d1_size, params["pfc_size"])
+                # D1 has d1_size neurons
+                expected_shape = (region.d1_size, params["pfc_size"])
                 assert state.pfc_modulation_d1.shape == expected_shape
 
 

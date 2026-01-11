@@ -91,9 +91,9 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                 if s.d1_pathway.neurons is not None and s.d1_pathway.neurons.membrane is not None
                 else None
             ),
-            "n_actions": s.config.n_actions,
-            "total_input": s.config.total_input,
-            "total_neurons": s.config.total_neurons,
+            "n_actions": s.n_actions,
+            "total_input": s.input_size,
+            "total_neurons": s.d1_size + s.d2_size,
             # Elastic tensor capacity tracking (Phase 1)
             "n_neurons_active": s.n_neurons_active,
             "n_neurons_capacity": s.n_neurons_capacity,
@@ -503,7 +503,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
     def _get_selection_criteria(self) -> Dict[str, Any]:
         """Get region-specific criteria used for format selection."""
         return {
-            "n_neurons": self.striatum.config.total_neurons,
+            "n_neurons": self.striatum.d1_size + self.striatum.d2_size,
             "growth_enabled": self.striatum.config.growth_enabled,
         }
 
@@ -522,7 +522,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         s = self.striatum
 
         # Count total neurons (D1 + D2)
-        n_neurons = s.config.total_neurons
+        n_neurons = s.d1_size + s.d2_size
 
         # Threshold: small regions benefit from neuromorphic format
         SIZE_THRESHOLD = 100

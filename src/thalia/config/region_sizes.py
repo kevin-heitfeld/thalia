@@ -64,6 +64,11 @@ Author: Thalia Project
 Date: December 11, 2025
 """
 
+import warnings
+
+from thalia.config.size_calculator import LayerSizeCalculator
+
+
 # =============================================================================
 # HIPPOCAMPUS SIZE RATIOS
 # =============================================================================
@@ -239,9 +244,6 @@ For modeling, we use modest size focused on error correction.
 # CONVENIENCE FUNCTIONS (DEPRECATED - Use LayerSizeCalculator instead)
 # =============================================================================
 
-import warnings
-
-
 def compute_hippocampus_sizes(ec_input_size: int) -> dict:
     """Compute hippocampus layer sizes from EC input size.
 
@@ -264,12 +266,13 @@ def compute_hippocampus_sizes(ec_input_size: int) -> dict:
     )
 
     # Import here to avoid circular dependency
-    from thalia.config.size_calculator import LayerSizeCalculator
     calc = LayerSizeCalculator()
     result = calc.hippocampus_from_input(ec_input_size)
 
     # Return only the keys that old function returned (backward compatibility)
+    # NOTE: Also including input_size for new (config, sizes, device) pattern
     return {
+        "input_size": result["input_size"],
         "dg_size": result["dg_size"],
         "ca3_size": result["ca3_size"],
         "ca2_size": result["ca2_size"],
@@ -303,7 +306,6 @@ def compute_cortex_layer_sizes(input_size: int) -> dict:
     )
 
     # Import here to avoid circular dependency
-    from thalia.config.size_calculator import LayerSizeCalculator
     calc = LayerSizeCalculator()
     result = calc.cortex_from_input(input_size)
 
@@ -348,7 +350,6 @@ def compute_striatum_sizes(
     )
 
     # Import here to avoid circular dependency
-    from thalia.config.size_calculator import LayerSizeCalculator
     calc = LayerSizeCalculator()
     result = calc.striatum_from_actions(n_actions, neurons_per_action)
 
@@ -385,7 +386,6 @@ def compute_thalamus_sizes(relay_size: int, trn_ratio: float = 0.3) -> dict:
     )
 
     # Import here to avoid circular dependency
-    from thalia.config.size_calculator import LayerSizeCalculator
     calc = LayerSizeCalculator()
     result = calc.thalamus_from_relay(relay_size)
 
@@ -453,7 +453,6 @@ def compute_cerebellum_sizes(
     )
 
     # Import here to avoid circular dependency
-    from thalia.config.size_calculator import LayerSizeCalculator
     calc = LayerSizeCalculator()
     result = calc.cerebellum_from_output(purkinje_size)
 

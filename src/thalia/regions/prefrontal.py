@@ -62,7 +62,7 @@ When to Use:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Union
 
 import torch
@@ -109,14 +109,10 @@ class PrefrontalConfig(NeuralComponentConfig):
     - Low DA → maintain WM and protect existing patterns
 
     **Size Specification** (Semantic-First):
-    - Semantic: input_size (sensory/cortical input), n_neurons (PFC population)
-    - Computed: output_size (same as n_neurons, PFC outputs working memory)
-                total_neurons (same as n_neurons)
+    - Sizes passed via sizes dict: input_size, n_neurons
+    - Computed at instantiation: output_size (= n_neurons), total_neurons (= n_neurons)
+    - Config contains only behavioral parameters (learning rates, time constants, etc.)
     """
-
-    # Semantic specification
-    input_size: int = 0       # Input from sensory/cortical areas
-    n_neurons: int = 100      # PFC population size
 
     # Working memory parameters
     wm_decay_tau_ms: float = 500.0  # How fast WM decays (slow!)
@@ -192,26 +188,6 @@ class PrefrontalConfig(NeuralComponentConfig):
         """Auto-compute output_size and total_neurons from n_neurons."""
         # Properties handle this now - no manual assignment needed
         pass
-
-    @property
-    def output_size(self) -> int:
-        """PFC output (working memory)."""
-        return self.n_neurons
-
-    @property
-    def total_neurons(self) -> int:
-        """Total neurons (same as n_neurons for PFC)."""
-        return self.n_neurons
-
-    @property
-    def n_input(self) -> int:
-        """Backward compatibility: input dimension."""
-        return self.input_size
-
-    @property
-    def n_output(self) -> int:
-        """Backward compatibility: output dimension."""
-        return self.output_size
 
 
 @dataclass
@@ -425,21 +401,29 @@ class Prefrontal(NeuralRegion):
         docs/patterns/state-management.md for PrefrontalState
     """
 
-    def __init__(self, config: PrefrontalConfig):
+    def __init__(self, config: PrefrontalConfig, sizes: Dict[str, int], device: str):
         """
         Initialize prefrontal cortex.
 
         Args:
-            config: PFC configuration
+            config: PFC configuration (behavioral parameters only)
+            sizes: Size specification {'input_size': int, 'n_neurons': int}
+            device: Device ('cpu' or 'cuda')
         """
         # Store config
         self.pfc_config = config
         self.config = config  # For backward compatibility
-        self.device = torch.device(config.device)
+        self.device = torch.device(device)
+
+        # Extract sizes
+        self.input_size = sizes['input_size']
+        self.n_neurons = sizes['n_neurons']
+        self.n_output = self.n_neurons  # PFC output = neuron count
+        self.total_neurons = self.n_neurons
 
         # Initialize NeuralRegion with total neurons
         super().__init__(
-            n_neurons=config.n_neurons,
+            n_neurons=self.n_neurons,
             neuron_config=ConductanceLIFConfig(
                 g_L=0.02,  # Slower leak (τ_m ≈ 50ms)
                 tau_E=10.0,  # Slower excitatory (for integration)
@@ -448,7 +432,7 @@ class Prefrontal(NeuralRegion):
                 tau_adapt=config.adapt_tau,
             ),
             default_learning_rule="stdp",
-            device=config.device,
+            device=device,
             dt_ms=config.dt_ms,
         )
 
@@ -459,11 +443,11 @@ class Prefrontal(NeuralRegion):
         self.plasticity_enabled: bool = True
 
         # Register feedforward input source and initialize weights
-        self.add_input_source("default", n_input=config.input_size)
+        self.add_input_source("default", n_input=self.input_size)
         # Initialize with Xavier (better than NeuralRegion's default)
         self.synaptic_weights["default"].data = WeightInitializer.xavier(
-            n_output=config.n_neurons,
-            n_input=config.input_size,
+            n_output=self.n_neurons,
+            n_input=self.input_size,
             gain=1.0,
             device=self.device
         )
@@ -471,8 +455,8 @@ class Prefrontal(NeuralRegion):
         # Recurrent weights for WM maintenance
         self.rec_weights = nn.Parameter(
             WeightInitializer.gaussian(
-                n_output=config.n_neurons,
-                n_input=config.n_neurons,
+                n_output=self.n_neurons,
+                n_input=self.n_neurons,
                 mean=0.0,
                 std=0.1,
                 device=self.device
@@ -481,19 +465,19 @@ class Prefrontal(NeuralRegion):
         )
         # Initialize with some self-excitation
         self.rec_weights.data += torch.eye(
-            config.n_neurons, device=self.device
+            self.n_neurons, device=self.device
         ) * config.recurrent_strength
 
         # Lateral inhibition weights
         self.inhib_weights = nn.Parameter(
-            torch.ones(config.n_neurons, config.n_neurons, device=self.device)
+            torch.ones(self.n_neurons, self.n_neurons, device=self.device)
             * config.recurrent_inhibition
         )
         self.inhib_weights.data.fill_diagonal_(0.0)
 
         # Dopamine gating system
         self.dopamine_system = DopamineGatingSystem(
-            n_neurons=config.n_neurons,
+            n_neurons=self.n_neurons,
             tau_ms=config.dopamine_tau_ms,
             baseline=config.dopamine_baseline,
             threshold=config.gate_threshold,
@@ -521,29 +505,32 @@ class Prefrontal(NeuralRegion):
 
         # Homeostasis for synaptic scaling
         homeostasis_config = UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget * config.input_size,  # Total budget per neuron
+            weight_budget=config.weight_budget * self.input_size,  # Total budget per neuron
             w_min=config.w_min,
             w_max=config.w_max,
             soft_normalization=config.soft_normalization,
             normalization_rate=config.normalization_rate,
-            device=config.device,
+            device=device,
         )
         self.homeostasis = UnifiedHomeostasis(homeostasis_config)
 
         # Initialize neurogenesis history tracking
         # Tracks the creation timestep for each neuron (for checkpoint analysis)
-        self._neuron_birth_steps = torch.zeros(config.n_neurons, dtype=torch.long, device=self.device)
+        self._neuron_birth_steps = torch.zeros(self.n_neurons, dtype=torch.long, device=self.device)
         self._current_training_step = 0  # Updated externally by training loop
 
         # Initialize working memory state (1D tensors, ADR-005)
         self.state = PrefrontalState(
-            working_memory=torch.zeros(config.n_neurons, device=self.device),
-            update_gate=torch.zeros(config.n_neurons, device=self.device),
+            working_memory=torch.zeros(self.n_neurons, device=self.device),
+            update_gate=torch.zeros(self.n_neurons, device=self.device),
             dopamine=config.dopamine_baseline,
         )
 
         # Initialize theta phase for modulation
         self._theta_phase: float = 0.0
+
+        # Move all components to target device
+        self.to(self.device)
 
         # =====================================================================
         # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
@@ -578,8 +565,8 @@ class Prefrontal(NeuralRegion):
             adapt_increment=cfg.adapt_increment,  # SFA enabled!
             tau_adapt=cfg.adapt_tau,
         )
-        neurons = ConductanceLIF(cfg.n_neurons, neuron_config)
-        neurons.to(torch.device(cfg.device))
+        neurons = ConductanceLIF(self.n_neurons, neuron_config)
+        neurons.to(self.device)
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for recurrent connections
@@ -587,14 +574,13 @@ class Prefrontal(NeuralRegion):
         # PFC recurrent connections show SHORT-TERM DEPRESSION, preventing
         # frozen attractors. This allows working memory to be updated.
         if cfg.stp_recurrent_enabled:
-            device = torch.device(cfg.device)
             self.stp_recurrent = ShortTermPlasticity(
-                n_pre=cfg.n_neurons,
-                n_post=cfg.n_neurons,
+                n_pre=self.n_neurons,
+                n_post=self.n_neurons,
                 config=STPConfig.from_type(STPType.DEPRESSING, dt=cfg.dt_ms),
                 per_synapse=True,
             )
-            self.stp_recurrent.to(device)
+            self.stp_recurrent.to(self.device)
         else:
             self.stp_recurrent = None
 
@@ -622,8 +608,8 @@ class Prefrontal(NeuralRegion):
         # Don't call super().reset_state() because it creates NeuralComponentState
         # Instead, create PrefrontalState directly with proper tensor shapes
         self.state = PrefrontalState(
-            working_memory=torch.zeros(self.config.n_neurons, device=self.device),
-            update_gate=torch.zeros(self.config.n_neurons, device=self.device),
+            working_memory=torch.zeros(self.n_neurons, device=self.device),
+            update_gate=torch.zeros(self.n_neurons, device=self.device),
             active_rule=None,  # Optional, can be None
             dopamine=DA_BASELINE_STANDARD,
         )
@@ -656,7 +642,7 @@ class Prefrontal(NeuralRegion):
         routed = InputRouter.route(
             inputs,
             port_mapping={"default": ["default", "input"]},
-            defaults={"default": torch.zeros(self.pfc_config.input_size, device=self.device)},
+            defaults={"default": torch.zeros(self.input_size, device=self.device)},
             component_name="PrefrontalCortex",
         )
         input_spikes = routed["default"]
@@ -671,9 +657,9 @@ class Prefrontal(NeuralRegion):
             f"PrefrontalCortex.forward: input_spikes must be 1D [n_input], "
             f"got shape {input_spikes.shape}. See ADR-005: No Batch Dimension."
         )
-        assert input_spikes.shape[0] == self.pfc_config.input_size, (
+        assert input_spikes.shape[0] == self.input_size, (
             f"PrefrontalCortex.forward: input_spikes has shape {input_spikes.shape} "
-            f"but input_size={self.pfc_config.input_size}. Check that input matches PFC config."
+            f"but input_size={self.input_size}. Check that input matches PFC config."
         )
 
         # Ensure state is initialized
@@ -738,11 +724,11 @@ class Prefrontal(NeuralRegion):
         else:
             # Recurrent input from working memory - modulated by retrieval phase
             # rec_weights[n_output, n_output] @ wm[n_output] → [n_output]
-            wm = self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(self.pfc_config.n_neurons, device=input_spikes.device)
+            wm = self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(self.n_neurons, device=input_spikes.device)
             rec_input = (self.rec_weights @ wm) * rec_gain
 
         # Lateral inhibition: inhib_weights[n_output, n_output] @ wm[n_output] → [n_output]
-        wm = self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(self.pfc_config.n_neurons, device=input_spikes.device)
+        wm = self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(self.n_neurons, device=input_spikes.device)
         inhib = self.inhib_weights @ wm
 
         # Total excitation and inhibition
@@ -776,9 +762,9 @@ class Prefrontal(NeuralRegion):
         self.state.spikes = output_spikes
 
         # Output shape check
-        assert output_spikes.shape == (self.pfc_config.n_neurons,), (
+        assert output_spikes.shape == (self.n_neurons,), (
             f"PrefrontalCortex.forward: output_spikes has shape {output_spikes.shape} "
-            f"but expected ({self.pfc_config.n_neurons},). "
+            f"but expected ({self.n_neurons},). "
             f"Check PFC neuron or weight configuration."
         )
         assert output_spikes.dtype == torch.bool, (
@@ -854,7 +840,7 @@ class Prefrontal(NeuralRegion):
             initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
             sparsity: Connection sparsity for new input neurons (if sparse_random)
         """
-        old_n_input = self.config.n_input
+        old_n_input = self.input_size
 
         # Use GrowthMixin helper (Architecture Review 2025-12-24, Tier 2.5)
         self.synaptic_weights["default"].data = self._grow_weight_matrix_cols(
@@ -867,9 +853,8 @@ class Prefrontal(NeuralRegion):
         # NOTE: Do NOT grow STP here - Prefrontal only has recurrent STP,
         # which tracks n_output (not n_input) and is grown in grow_output() only
 
-        # Update config
-        self.config = replace(self.config, input_size=self.config.input_size + n_new)
-        self.pfc_config = replace(self.pfc_config, input_size=self.pfc_config.input_size + n_new)
+        # Update instance variable
+        self.input_size += n_new
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
@@ -889,7 +874,7 @@ class Prefrontal(NeuralRegion):
             initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
             sparsity: Connection sparsity for new neurons (if sparse_random)
         """
-        old_n_output = self.config.n_neurons
+        old_n_output = self.n_neurons
         new_n_output = old_n_output + n_new
 
         # Use GrowthMixin helpers (Architecture Review 2025-12-24, Tier 2.5)
@@ -960,9 +945,10 @@ class Prefrontal(NeuralRegion):
         # 5.6. Phase 2: Auto-grow registered STP modules
         self._auto_grow_registered_components('output', n_new)
 
-        # 6. Update configs
-        self.config = replace(self.config, n_neurons=new_n_output)
-        self.pfc_config = replace(self.pfc_config, n_neurons=new_n_output)
+        # 6. Update instance variables
+        self.n_neurons = new_n_output
+        self.n_output = new_n_output
+        self.total_neurons = new_n_output
 
         # 7. Validate growth completed correctly (skip config check - using n_neurons not n_output)
         self._validate_output_growth(old_n_output, n_new, check_config=False)
@@ -1005,7 +991,7 @@ class Prefrontal(NeuralRegion):
 
         # Custom metrics specific to PFC
         custom = {
-            "n_output": cfg.n_neurons,
+            "n_output": self.n_neurons,
             "gate_mean": self.state.update_gate.mean().item() if self.state.update_gate is not None else 0.0,
             "gate_std": self.state.update_gate.std().item() if self.state.update_gate is not None else 0.0,
             "wm_mean": self.state.working_memory.mean().item() if self.state.working_memory is not None else 0.0,

@@ -21,6 +21,7 @@ import pytest
 import torch
 
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 from tests.utils.test_helpers import generate_sparse_spikes
 
 
@@ -33,37 +34,41 @@ def device():
 @pytest.fixture
 def thalamus_config(device):
     """Standard thalamus configuration."""
-    return ThalamicRelayConfig(input_size=100, relay_size=80, trn_size=0, dt_ms=1.0,
-        device=str(device),
-    )
+    relay_size = 80
+    calc = LayerSizeCalculator()
+    sizes = calc.thalamus_from_relay(relay_size)
+    config = ThalamicRelayConfig(dt_ms=1.0, device=str(device))
+    return config, sizes, str(device)
 
 
 @pytest.fixture
 def thalamus(thalamus_config):
     """Create thalamus instance."""
-    thal = ThalamicRelay(thalamus_config)
+    config, sizes, device = thalamus_config
+    thal = ThalamicRelay(config=config, sizes=sizes, device=device)
     thal.reset_state()
     return thal
 
 
 def test_thalamus_initialization(thalamus_config):
     """Test thalamus initializes with valid architecture."""
-    thal = ThalamicRelay(thalamus_config)
+    config, sizes, device = thalamus_config
+    thal = ThalamicRelay(config=config, sizes=sizes, device=device)
 
     # Contract: relay neurons match configuration
-    assert thal.n_relay == thalamus_config.n_output, \
+    assert thal.n_relay == thal.n_output, \
         "Relay neurons should match configured output size"
     assert thal.n_relay > 0, "Should have positive relay neurons"
 
     # Contract: TRN size matches configuration
-    assert thal.n_trn == thalamus_config.trn_size, \
+    assert thal.n_trn == thal.trn_size, \
         "TRN size should match configured trn_size"
     assert thal.n_trn < thal.n_relay, "TRN should be subset of relay"
 
     # Contract: parameters have correct shapes
     assert thal.relay_gain.shape == (thal.n_relay,), \
         "Relay gain should be per-neuron 1D parameter"
-    assert thal.center_surround_filter.shape == (thal.n_relay, thalamus_config.n_input), \
+    assert thal.center_surround_filter.shape == (thal.n_relay, thal.input_size), \
         "Filter should connect input to relay"
 
     # Contract: parameters are valid (no NaN, positive gains)
@@ -74,7 +79,7 @@ def test_thalamus_initialization(thalamus_config):
 def test_thalamus_forward(thalamus, device):
     """Test forward pass produces biologically plausible output."""
     # Create input spikes (ADR-004: bool, ADR-005: 1D)
-    input_spikes = generate_sparse_spikes(100, firing_rate=0.2, device=str(device))  # 20% firing rate, [100], bool
+    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.2, device=str(device))  # 20% firing rate, [n_input], bool
 
     # Forward pass
     output = thalamus(input_spikes)
@@ -100,7 +105,7 @@ def test_thalamus_forward(thalamus, device):
 def test_thalamus_alpha_gating(thalamus, device):
     """Test alpha oscillation attentional gating."""
     # ADR-004/005: 1D bool input
-    input_spikes = generate_sparse_spikes(100, firing_rate=0.5, device=str(device))  # 50% firing rate
+    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.5, device=str(device))  # 50% firing rate
 
     # Test at alpha trough (phase=0) - weak suppression
     thalamus.set_oscillator_phases(
@@ -129,7 +134,7 @@ def test_thalamus_alpha_gating(thalamus, device):
 def test_thalamus_burst_vs_tonic(thalamus):
     """Test burst vs tonic mode switching."""
     # Weak input should lead to hyperpolarization → burst mode (ADR-004/005)
-    weak_input = generate_sparse_spikes(100, firing_rate=0.05)  # Very sparse, [100], bool
+    weak_input = generate_sparse_spikes(thalamus.input_size, firing_rate=0.05)  # Very sparse, [n_input], bool
 
     # Run for several timesteps to build up mode state
     for _ in range(10):
@@ -137,7 +142,7 @@ def test_thalamus_burst_vs_tonic(thalamus):
 
     # Strong input should lead to depolarization → tonic mode (ADR-004/005)
     # Create dense input
-    strong_input = generate_sparse_spikes(100, firing_rate=0.5)  # Dense, [100], bool
+    strong_input = generate_sparse_spikes(thalamus.input_size, firing_rate=0.5)  # Dense, [n_input], bool
 
     thalamus.reset_state()
     for _ in range(10):
@@ -147,7 +152,7 @@ def test_thalamus_burst_vs_tonic(thalamus):
 def test_thalamus_trn_inhibition(thalamus):
     """Test TRN provides inhibitory feedback."""
     # Strong input (ADR-004/005: 1D bool)
-    input_spikes = generate_sparse_spikes(100, firing_rate=0.5)  # [100], bool
+    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.5)  # [n_input], bool
 
     # First pass - no TRN activity yet
     output1 = thalamus(input_spikes)
@@ -166,7 +171,7 @@ def test_thalamus_trn_inhibition(thalamus):
 def test_thalamus_norepinephrine_modulation(thalamus):
     """Test norepinephrine gain modulation."""
     # Create input
-    input_spikes = generate_sparse_spikes(100, firing_rate=0.3)  # [100], bool (ADR-004/005)
+    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.3)  # [n_input], bool (ADR-004/005)
 
     # Low arousal (low NE)
     thalamus.set_neuromodulators(norepinephrine=0.0)
@@ -183,7 +188,7 @@ def test_thalamus_norepinephrine_modulation(thalamus):
 
 def test_thalamus_reset(thalamus):
     """Test reset clears state properly."""
-    input_spikes = generate_sparse_spikes(100, firing_rate=0.2)  # [100], bool (ADR-004/005)
+    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.2)  # [n_input], bool (ADR-004/005)
 
     # Run forward
     thalamus(input_spikes)
@@ -200,7 +205,7 @@ def test_thalamus_reset(thalamus):
 
 def test_thalamus_diagnostics(thalamus):
     """Test diagnostics report correct information."""
-    input_spikes = generate_sparse_spikes(100, firing_rate=0.2)  # [100], bool (ADR-004/005)
+    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.2)  # [n_input], bool (ADR-004/005)
 
     thalamus(input_spikes)
 
@@ -219,7 +224,7 @@ def test_thalamus_diagnostics(thalamus):
 # Edge case tests
 def test_thalamus_silent_input(thalamus, device):
     """Test thalamus handles completely silent input (edge case)."""
-    input_spikes = torch.zeros(100, device=device, dtype=torch.bool)
+    input_spikes = torch.zeros(thalamus.input_size, device=device, dtype=torch.bool)
     output = thalamus(input_spikes)
 
     # Contract: valid output
@@ -238,7 +243,7 @@ def test_thalamus_silent_input(thalamus, device):
 
 def test_thalamus_saturated_input(thalamus, device):
     """Test thalamus handles saturated input (edge case)."""
-    input_spikes = torch.ones(100, device=device, dtype=torch.bool)
+    input_spikes = torch.ones(thalamus.input_size, device=device, dtype=torch.bool)
     output = thalamus(input_spikes)
 
     # Contract: TRN is recruited with high input
@@ -252,7 +257,7 @@ def test_thalamus_saturated_input(thalamus, device):
 
 def test_thalamus_repeated_forward_maintains_valid_state(thalamus, device):
     """Test that repeated forward passes don't corrupt state."""
-    input_spikes = generate_sparse_spikes(100, firing_rate=0.5, device=str(device))
+    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.5, device=str(device))
 
     for _ in range(100):
         output = thalamus(input_spikes)
@@ -271,7 +276,7 @@ def test_thalamus_center_surround_filter(thalamus):
     assert hasattr(thalamus, 'center_surround_filter')
 
     # Shape should be [n_relay, n_input]
-    assert thalamus.center_surround_filter.shape == (80, 100)
+    assert thalamus.center_surround_filter.shape == (thalamus.relay_size, thalamus.input_size)
 
     # Filter should have positive (excitatory) and negative (inhibitory) values
     has_positive = (thalamus.center_surround_filter > 0).any()
@@ -286,7 +291,7 @@ def test_thalamus_extreme_norepinephrine(thalamus, norepinephrine):
 
     Phase 2 improvement: Tests edge cases at boundaries of valid [0, 2] range.
     """
-    input_spikes = generate_sparse_spikes(100, firing_rate=0.3)
+    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.3)
 
     # Set NE value (within valid biological range)
     thalamus.set_neuromodulators(norepinephrine=norepinephrine)

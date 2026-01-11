@@ -192,27 +192,57 @@ class RegionTestBase(ABC):
         field = self._get_input_field_name()
         return params[field]
 
+    def _get_region_input_size(self, region) -> int:
+        """Get input size from region (new pattern).
+
+        Args:
+            region: Region instance
+
+        Returns:
+            Input size value from region.input_size
+        """
+        return getattr(region, 'input_size', None)
+
+    def _get_region_output_size(self, region) -> int:
+        """Get output size from region (new pattern).
+
+        Args:
+            region: Region instance
+
+        Returns:
+            Output size value from region.n_output
+        """
+        return getattr(region, 'n_output', None)
+
     def _get_config_input_size(self, config) -> int:
         """Get input size from config using semantic field name.
+
+        DEPRECATED: Use _get_region_input_size() instead (new size-free config pattern).
+        This method is kept for backward compatibility.
 
         Args:
             config: Region configuration object
 
         Returns:
-            Input size value from config
+            Input size value from config (or None if not present)
         """
-        return getattr(config, self._get_input_field_name())
+        field = self._get_input_field_name()
+        return getattr(config, field, None)
 
     def _get_config_output_size(self, config) -> int:
         """Get output size from config using semantic field name.
 
+        DEPRECATED: Use _get_region_output_size() instead (new size-free config pattern).
+        This method is kept for backward compatibility.
+
         Args:
             config: Region configuration object
 
         Returns:
-            Output size value from config
+            Output size value from config (or None if not present)
         """
-        return getattr(config, self._get_output_field_name())
+        field = self._get_output_field_name()
+        return getattr(config, field, None)
 
     # =========================================================================
     # COMMON TEST PATTERNS
@@ -223,10 +253,10 @@ class RegionTestBase(ABC):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # Verify configuration stored (using semantic field names)
-        assert self._get_config_input_size(region.config) == self._get_input_size(params)
+        # Verify sizes stored in region (new pattern: sizes separate from config)
+        assert self._get_region_input_size(region) == self._get_input_size(params)
         # Output size is computed property - just verify it exists and is > 0
-        assert self._get_config_output_size(region.config) > 0
+        assert self._get_region_output_size(region) > 0
 
         # Verify device set correctly
         expected_device = params.get("device", "cpu")
@@ -244,9 +274,9 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Verify basic functionality (using semantic field names)
-        assert self._get_config_input_size(region.config) == self._get_input_size(params)
+        assert self._get_region_input_size(region) == self._get_input_size(params)
         # Output size is computed, just verify it's > 0
-        assert self._get_config_output_size(region.config) > 0
+        assert self._get_region_output_size(region) > 0
 
     def test_forward_pass_tensor_input(self):
         """Test forward pass with single tensor input returns correct shape."""
@@ -261,7 +291,7 @@ class RegionTestBase(ABC):
         output = region.forward(input_spikes)
 
         # Verify output shape (1D per ADR-005) - get from region config
-        output_size = self._get_config_output_size(region.config)
+        output_size = self._get_region_output_size(region)
         assert output.dim() == 1, f"Expected 1D output (ADR-005), got {output.dim()}D"
         assert output.shape[0] == output_size
 
@@ -281,7 +311,7 @@ class RegionTestBase(ABC):
         output = region.forward(input_dict)
 
         # Verify output shape - get from region config
-        output_size = self._get_config_output_size(region.config)
+        output_size = self._get_region_output_size(region)
         assert output.dim() == 1
         assert output.shape[0] == output_size
 
@@ -296,7 +326,7 @@ class RegionTestBase(ABC):
 
         # Should not raise error
         output = region.forward(input_spikes)
-        output_size = self._get_config_output_size(region.config)
+        output_size = self._get_region_output_size(region)
         assert output.shape[0] == output_size
 
     def test_forward_pass_multiple_calls(self):
@@ -305,7 +335,7 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         input_size = self._get_input_size(params)
-        output_size = self._get_config_output_size(region.config)
+        output_size = self._get_region_output_size(region)
         input_spikes = torch.zeros(input_size, device=region.device)
 
         # Multiple forward passes should not error
@@ -322,14 +352,14 @@ class RegionTestBase(ABC):
         region = self.create_region(**params)
 
         # Get original output size from region config (it's a property)
-        original_output = self._get_config_output_size(region.config)
+        original_output = self._get_region_output_size(region)
         n_new = 10
 
         # Grow output
         region.grow_output(n_new)
 
         # Verify config updated
-        assert self._get_config_output_size(region.config) == original_output + n_new
+        assert self._get_region_output_size(region) == original_output + n_new
 
         # Verify forward pass still works with new size
         input_size = self._get_input_size(params)
@@ -352,12 +382,12 @@ class RegionTestBase(ABC):
         region.grow_input(n_new)
 
         # Verify config updated
-        assert self._get_config_input_size(region.config) == original_input + n_new
+        assert self._get_region_input_size(region) == original_input + n_new
 
         # Verify forward pass works with new input size
         input_spikes = torch.zeros(original_input + n_new, device=region.device)
         output = region.forward(input_spikes)
-        output_size = self._get_config_output_size(region.config)
+        output_size = self._get_region_output_size(region)
         assert output.shape[0] == output_size
 
     def test_growth_preserves_state(self):
@@ -376,7 +406,7 @@ class RegionTestBase(ABC):
         # Get state before growth
         state_before = region.get_state()
         # Get original output size from region config
-        n_original = self._get_config_output_size(region.config)
+        n_original = self._get_region_output_size(region)
 
         # Grow output
         region.grow_output(10)

@@ -802,11 +802,11 @@ class GrowthMixin:
         """
         expected_n_output = old_n_output + n_new
 
-        # Check config updated
+        # Check n_output updated (instance variable, not config - new pattern)
         if check_config:
-            assert self.config.n_output == expected_n_output, (
-                f"Growth validation failed: config.n_output not updated correctly. "
-                f"Expected {expected_n_output}, got {self.config.n_output}"
+            assert self.n_output == expected_n_output, (
+                f"Growth validation failed: n_output not updated correctly. "
+                f"Expected {expected_n_output}, got {self.n_output}"
             )
 
         # Check neurons grown (if applicable)

@@ -11,69 +11,60 @@ import torch
 
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 
 
 class TestThalamus(RegionTestBase):
     """Test Thalamus implementation using unified test framework."""
 
     def create_region(self, **kwargs):
-        """Create ThalamicRelay instance for testing."""
-        # Use builder pattern - compute relay_size from n_output if using old-style params
-        if "n_output" in kwargs and ("relay_size" not in kwargs):
-            # Pop parameters that builder handles
-            relay_size = kwargs.pop("n_output")
-            n_input = kwargs.pop("n_input", 100)
-            kwargs.pop("trn_ratio", None)  # Ignore, builder uses default ratio
+        """Create ThalamicRelay instance for testing.
 
-            config = ThalamicRelayConfig.from_relay_size(
-                relay_size=relay_size,
-                n_input=n_input,
-                **kwargs
-            )
-        else:
-            config = ThalamicRelayConfig(**kwargs)
+        Uses new (config, sizes, device) pattern:
+        - Config contains only behavioral parameters
+        - Sizes computed via LayerSizeCalculator
+        - Device passed explicitly
+        """
+        # Extract size-related parameters
+        relay_size = kwargs.pop("relay_size", 80)
+        device = kwargs.pop("device", "cpu")
 
-        return ThalamicRelay(config)
+        # Compute sizes using calculator
+        calc = LayerSizeCalculator()
+        sizes = calc.thalamus_from_relay(relay_size=relay_size)
+
+        # Create config with behavioral parameters only
+        config = ThalamicRelayConfig(**kwargs)
+
+        # Create region with new pattern
+        return ThalamicRelay(config=config, sizes=sizes, device=device)
 
     def get_default_params(self):
         """Return default thalamus parameters."""
-        # Use builder to pre-compute all sizes
-        config = ThalamicRelayConfig.from_relay_size(
-            relay_size=80,
-            input_size=100,
-            device="cpu",
-            dt_ms=1.0,
-        )
-        # Return as dict for compatibility with test base class
         return {
-            "input_size": config.input_size,
-            
-            "relay_size": config.relay_size,
-            "trn_size": config.trn_size,
-            
-            "device": config.device,
-            "dt_ms": config.dt_ms,
+            "relay_size": 80,
+            "device": "cpu",
+            "dt_ms": 1.0,
         }
 
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
-        # Use builder to pre-compute all sizes
-        config = ThalamicRelayConfig.from_relay_size(
-            relay_size=15,
-            input_size=20,
-            device="cpu",
-            dt_ms=1.0,
-        )
-        # Return as dict for compatibility with test base class
         return {
-            "input_size": config.input_size,
-            
-            "relay_size": config.relay_size,
-            "trn_size": config.trn_size,
-            
-            "device": config.device,
-            "dt_ms": config.dt_ms,
+            "relay_size": 15,
+            "device": "cpu",
+            "dt_ms": 1.0,
         }
+
+    def _get_input_size(self, params):
+        """Get input size for the region."""
+        # For thalamus, input_size equals relay_size (1:1 relay)
+        relay_size = params.get("relay_size", 80)
+        return relay_size
+
+    def _get_config_output_size(self, config):
+        """Get output size from config (for backward compatibility with tests)."""
+        # Config no longer has size fields, return None to force using region instance
+        return None
 
     def get_input_dict(self, n_input, device="cpu"):
         """Return dict input for thalamus (sensory + optional feedback).
@@ -99,8 +90,8 @@ class TestThalamus(RegionTestBase):
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         output = region.forward(input_spikes)
 
-        # Should relay to cortex
-        assert output.shape[0] == self._get_config_output_size(region.config)
+        # Should relay to cortex (output size = relay_size)
+        assert output.shape[0] == region.relay_size
 
         # With strong sensory input, should produce some output
         assert output.sum() > 0, "Expected relay activity with sensory input"
@@ -132,11 +123,11 @@ class TestThalamus(RegionTestBase):
         if "l6_feedback" in region.forward.__code__.co_varnames:
             l6_feedback = torch.ones(params["n_trn"], device=region.device) * 0.5
             output = region.forward(input_spikes, l6_feedback=l6_feedback)
-            assert output.shape[0] == self._get_config_output_size(region.config)
+            assert output.shape[0] == region.n_output
         else:
             # Just verify forward works
             output = region.forward(input_spikes)
-            assert output.shape[0] == self._get_config_output_size(region.config)
+            assert output.shape[0] == region.n_output
 
     def test_burst_firing_mode(self):
         """Test thalamus can switch between tonic and burst modes."""
@@ -245,7 +236,7 @@ class TestThalamus(RegionTestBase):
 
         # Spindles would be visible as oscillatory bursts
         # (Detailed spindle detection would require spectral analysis)
-        assert output.shape[0] == self._get_config_output_size(region.config)
+        assert output.shape[0] == region.n_output
 
     def test_multimodal_integration(self):
         """Test thalamus integrates multiple sensory modalities."""
@@ -260,10 +251,8 @@ class TestThalamus(RegionTestBase):
         output = region.forward(sensory_input)
 
         # Should relay sensory input
-        assert output.shape[0] == self._get_config_output_size(region.config)
+        assert output.shape[0] == region.n_output
 
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
 # inherited from RegionTestBase - eliminates ~100 lines of boilerplate
-
-

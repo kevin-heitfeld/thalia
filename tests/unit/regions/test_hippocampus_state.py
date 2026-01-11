@@ -76,16 +76,10 @@ class TestHippocampusStateEdgeCases:
         """Test load_state() with missing STP modules (hippocampus-specific)."""
         sizes = compute_hippocampus_sizes(10)
         config = HippocampusConfig(
-            input_size=10,
-            dg_size=sizes["dg_size"],
-            ca3_size=sizes["ca3_size"],
-            ca2_size=sizes["ca2_size"],
-            ca1_size=sizes["ca1_size"],
             stp_enabled=False,  # STP disabled
-            device="cpu",
             dt_ms=1.0
         )
-        hippocampus = Hippocampus(config)
+        hippocampus = Hippocampus(config=config, sizes=sizes, device="cpu")
 
         # State with STP, but region has no STP modules
         state = HippocampusState(

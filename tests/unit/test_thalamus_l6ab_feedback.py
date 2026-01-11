@@ -13,6 +13,7 @@ import pytest
 import torch
 
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 
 
 @pytest.fixture
@@ -24,14 +25,15 @@ def device():
 @pytest.fixture
 def thalamus_config(device):
     """Thalamus configuration for testing."""
-    return ThalamicRelayConfig(
-        input_size=128,
-        relay_size=128,  # Explicitly specify relay neurons
-        trn_size=64,  # TRN neurons (50% of relay, similar to old trn_ratio=0.5)
+    relay_size = 128
+    calc = LayerSizeCalculator()
+    sizes = calc.thalamus_from_relay(relay_size)
+    config = ThalamicRelayConfig(
         trn_inhibition_strength=0.8,
         device=str(device),
         dt_ms=1.0,
     )
+    return config, sizes, str(device)
 
 
 class TestThalamusL6abFeedback:
@@ -39,9 +41,10 @@ class TestThalamusL6abFeedback:
 
     def test_dual_l6ab_feedback_ports(self, thalamus_config, device):
         """Test that thalamus accepts both l6a_feedback and l6b_feedback."""
-        thalamus = ThalamicRelay(thalamus_config)
+        config, sizes, dev = thalamus_config
+        thalamus = ThalamicRelay(config=config, sizes=sizes, device=dev)
 
-        sensory = torch.zeros(128, dtype=torch.bool, device=device)
+        sensory = torch.zeros(thalamus.input_size, dtype=torch.bool, device=device)
         sensory[0:20] = True
 
         # Create L6a and L6b feedback
@@ -71,9 +74,10 @@ class TestThalamusL6abFeedback:
 
     def test_only_l6a_feedback(self, thalamus_config, device):
         """Test thalamus with only L6a feedback (TRN pathway)."""
-        thalamus = ThalamicRelay(thalamus_config)
+        config, sizes, dev = thalamus_config
+        thalamus = ThalamicRelay(config=config, sizes=sizes, device=dev)
 
-        sensory = torch.zeros(128, dtype=torch.bool, device=device)
+        sensory = torch.zeros(thalamus.input_size, dtype=torch.bool, device=device)
         sensory[0:20] = True
 
         l6a_feedback = torch.zeros(150, dtype=torch.bool, device=device)
@@ -93,9 +97,10 @@ class TestThalamusL6abFeedback:
 
     def test_only_l6b_feedback(self, thalamus_config, device):
         """Test thalamus with only L6b feedback (relay pathway)."""
-        thalamus = ThalamicRelay(thalamus_config)
+        config, sizes, dev = thalamus_config
+        thalamus = ThalamicRelay(config=config, sizes=sizes, device=dev)
 
-        sensory = torch.zeros(128, dtype=torch.bool, device=device)
+        sensory = torch.zeros(thalamus.input_size, dtype=torch.bool, device=device)
         sensory[0:20] = True
 
         l6b_feedback = torch.zeros(100, dtype=torch.bool, device=device)
@@ -115,9 +120,10 @@ class TestThalamusL6abFeedback:
 
     def test_no_l6_feedback(self, thalamus_config, device):
         """Test thalamus operates without L6 feedback."""
-        thalamus = ThalamicRelay(thalamus_config)
+        config, sizes, dev = thalamus_config
+        thalamus = ThalamicRelay(config=config, sizes=sizes, device=dev)
 
-        sensory = torch.zeros(128, dtype=torch.bool, device=device)
+        sensory = torch.zeros(thalamus.input_size, dtype=torch.bool, device=device)
         sensory[0:20] = True
 
         thalamus.reset_state()
@@ -136,9 +142,10 @@ class TestThalamusL6abFeedback:
 
     def test_l6ab_feedback_dynamics(self, thalamus_config, device):
         """Test that L6a and L6b feedback affect thalamic dynamics."""
-        thalamus = ThalamicRelay(thalamus_config)
+        config, sizes, dev = thalamus_config
+        thalamus = ThalamicRelay(config=config, sizes=sizes, device=dev)
 
-        sensory = torch.zeros(128, dtype=torch.bool, device=device)
+        sensory = torch.zeros(thalamus.input_size, dtype=torch.bool, device=device)
         sensory[0:30] = True  # Strong input
 
         # Baseline: no feedback
@@ -191,9 +198,10 @@ class TestThalamusL6abFeedback:
 
     def test_no_legacy_l6_feedback_port(self, thalamus_config, device):
         """Test that legacy 'l6_feedback' port is not supported."""
-        thalamus = ThalamicRelay(thalamus_config)
+        config, sizes, dev = thalamus_config
+        thalamus = ThalamicRelay(config=config, sizes=sizes, device=dev)
 
-        sensory = torch.zeros(128, dtype=torch.bool, device=device)
+        sensory = torch.zeros(thalamus.input_size, dtype=torch.bool, device=device)
         sensory[0:20] = True
 
         # Legacy l6_feedback should not be accepted
@@ -214,9 +222,10 @@ class TestThalamusL6abFeedback:
 
     def test_generic_feedback_port(self, thalamus_config, device):
         """Test that generic 'feedback' port still works as alias."""
-        thalamus = ThalamicRelay(thalamus_config)
+        config, sizes, dev = thalamus_config
+        thalamus = ThalamicRelay(config=config, sizes=sizes, device=dev)
 
-        sensory = torch.zeros(128, dtype=torch.bool, device=device)
+        sensory = torch.zeros(thalamus.input_size, dtype=torch.bool, device=device)
         sensory[0:20] = True
 
         # Generic feedback (may map to l6a_feedback as default)

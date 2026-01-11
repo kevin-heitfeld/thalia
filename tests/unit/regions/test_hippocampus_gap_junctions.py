@@ -18,13 +18,8 @@ from thalia.config import compute_hippocampus_sizes
 def test_gap_junctions_can_be_disabled():
     """Gap junctions can be disabled via configuration."""
     sizes = compute_hippocampus_sizes(32)
-    cfg = HippocampusConfig(input_size=32,
-        dg_size=sizes["dg_size"],
-        ca3_size=sizes["ca3_size"],
-        ca2_size=sizes["ca2_size"],
-        ca1_size=sizes["ca1_size"],
-        gap_junctions_enabled=False)
-    hippo = TrisynapticHippocampus(cfg)
+    cfg = HippocampusConfig(gap_junctions_enabled=False)
+    hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device="cpu")
 
     # Should have no gap junction module
     assert hippo.gap_junctions_ca1 is None
@@ -33,12 +28,8 @@ def test_gap_junctions_can_be_disabled():
 def test_gap_junctions_enabled_by_default():
     """Gap junctions are enabled by default."""
     sizes = compute_hippocampus_sizes(32)
-    cfg = HippocampusConfig(input_size=32,
-        dg_size=sizes["dg_size"],
-        ca3_size=sizes["ca3_size"],
-        ca2_size=sizes["ca2_size"],
-        ca1_size=sizes["ca1_size"])
-    hippo = TrisynapticHippocampus(cfg)
+    cfg = HippocampusConfig()
+    hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device="cpu")
 
     # Should have gap junction module
     assert hippo.gap_junctions_ca1 is not None
@@ -56,20 +47,15 @@ def test_gap_junction_creates_coupling():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     sizes = compute_hippocampus_sizes(32)
-    cfg = HippocampusConfig(input_size=32,
-        dg_size=sizes["dg_size"],
-        ca3_size=sizes["ca3_size"],
-        ca2_size=sizes["ca2_size"],
-        ca1_size=sizes["ca1_size"],
+    cfg = HippocampusConfig(
         gap_junction_strength=0.15,  # Strong coupling for clear effect
         gap_junction_max_neighbors=8,
-        gap_junctions_enabled=True,
-        device=device)
-    hippo = TrisynapticHippocampus(cfg)
+        gap_junctions_enabled=True)
+    hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device=device)
 
     # Stimulate with input pattern
     torch.manual_seed(42)
-    input_pattern = torch.rand(cfg.n_input, device=device) > 0.7
+    input_pattern = torch.rand(sizes["input_size"], device=device) > 0.7
 
     gap_currents = []
     membrane_voltages = []
@@ -111,23 +97,18 @@ def test_gap_junction_creates_coupling():
 def test_gap_junction_state_management():
     """Gap junction state (ca1_membrane) is properly managed."""
     sizes = compute_hippocampus_sizes(32)
-    cfg = HippocampusConfig(input_size=32,
-        dg_size=sizes["dg_size"],
-        ca3_size=sizes["ca3_size"],
-        ca2_size=sizes["ca2_size"],
-        ca1_size=sizes["ca1_size"],
-        gap_junctions_enabled=True)
-    hippo = TrisynapticHippocampus(cfg)
+    cfg = HippocampusConfig(gap_junctions_enabled=True)
+    hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device="cpu")
 
     # Before first forward, state is None (lazy initialization)
     assert hippo.state.ca1_membrane is None
 
     # After forward pass, ca1_membrane should be initialized and updated
-    input_spikes = torch.ones(cfg.n_input, device=hippo.device)
+    input_spikes = torch.ones(sizes["input_size"], device=hippo.device)
     hippo.forward(input_spikes)
 
     assert hippo.state.ca1_membrane is not None
-    assert hippo.state.ca1_membrane.shape == (cfg.n_output,)  # CA1 size
+    assert hippo.state.ca1_membrane.shape == (sizes["ca1_size"],)  # CA1 size
     # Should have non-zero values (neurons responded)
     assert hippo.state.ca1_membrane.abs().sum() > 0
 
@@ -135,16 +116,11 @@ def test_gap_junction_state_management():
 def test_gap_junction_state_serialization():
     """Gap junction state (ca1_membrane) is included in state save/load."""
     sizes = compute_hippocampus_sizes(32)
-    cfg = HippocampusConfig(input_size=32,
-        dg_size=sizes["dg_size"],
-        ca3_size=sizes["ca3_size"],
-        ca2_size=sizes["ca2_size"],
-        ca1_size=sizes["ca1_size"],
-        gap_junctions_enabled=True)
-    hippo = TrisynapticHippocampus(cfg)
+    cfg = HippocampusConfig(gap_junctions_enabled=True)
+    hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device="cpu")
 
     # Run forward to populate ca1_membrane
-    input_spikes = torch.ones(cfg.n_input, device=hippo.device)
+    input_spikes = torch.ones(sizes["input_size"], device=hippo.device)
     hippo.forward(input_spikes)
 
     # Get state
@@ -190,13 +166,8 @@ def test_gap_junction_backward_compatibility():
 def test_gap_junction_uses_ca1_inhib_weights():
     """Gap junctions use ca1_inhib weights to infer neighborhoods."""
     sizes = compute_hippocampus_sizes(32)
-    cfg = HippocampusConfig(input_size=32,
-        dg_size=sizes["dg_size"],
-        ca3_size=sizes["ca3_size"],
-        ca2_size=sizes["ca2_size"],
-        ca1_size=sizes["ca1_size"],
-        gap_junctions_enabled=True)
-    hippo = TrisynapticHippocampus(cfg)
+    cfg = HippocampusConfig(gap_junctions_enabled=True)
+    hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device="cpu")
 
     # Gap junctions should be built from ca1_inhib weights
     assert hippo.gap_junctions_ca1 is not None
@@ -213,15 +184,10 @@ def test_gap_junction_integration_with_theta():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     sizes = compute_hippocampus_sizes(32)
-    cfg = HippocampusConfig(input_size=32,
-        dg_size=sizes["dg_size"],
-        ca3_size=sizes["ca3_size"],
-        ca2_size=sizes["ca2_size"],
-        ca1_size=sizes["ca1_size"],
+    cfg = HippocampusConfig(
         gap_junctions_enabled=True,
-        theta_gamma_enabled=True,  # Enable theta-gamma coupling
-        device=device)
-    hippo = TrisynapticHippocampus(cfg)
+        theta_gamma_enabled=True)  # Enable theta-gamma coupling
+    hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device=device)
 
     # Set oscillator phases (simulate theta cycle)
     hippo.set_oscillator_phases(
@@ -231,7 +197,7 @@ def test_gap_junction_integration_with_theta():
     )
 
     # Run forward passes
-    input_pattern = torch.rand(cfg.n_input, device=device) > 0.7
+    input_pattern = torch.rand(sizes["input_size"], device=device) > 0.7
 
     gap_currents_recorded = False
     for _ in range(20):

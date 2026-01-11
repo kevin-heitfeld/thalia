@@ -100,6 +100,10 @@ class ForwardPassCoordinator:
         pfc_modulation_d2: Optional[nn.Parameter],
         stp_module: Optional[ShortTermPlasticity],
         device: torch.device,
+        n_actions: int,
+        d1_size: int,
+        d2_size: int,
+        neurons_per_action: int,
     ):
         """Initialize forward pass coordinator.
 
@@ -125,6 +129,12 @@ class ForwardPassCoordinator:
         self.pfc_modulation_d2 = pfc_modulation_d2
         self.stp_module = stp_module
         self.device = device
+
+        # Size parameters (no longer in config)
+        self.n_actions = n_actions
+        self.d1_size = d1_size
+        self.d2_size = d2_size
+        self.neurons_per_action = neurons_per_action
 
         # Oscillator state (set by set_oscillator_phases)
         self._theta_phase: float = 0.0
@@ -275,10 +285,10 @@ class ForwardPassCoordinator:
         # Pool per-neuron modulation to per-action level
         # Each action has neurons_per_pathway MSNs in each pathway
         # d1_size = n_actions * neurons_per_pathway
-        if self.config.neurons_per_action > 1:
-            neurons_per_pathway = self.config.neurons_per_action // 2
-            goal_mod_d1 = goal_mod_d1_neurons.view(self.config.n_actions, neurons_per_pathway).mean(dim=1)
-            goal_mod_d2 = goal_mod_d2_neurons.view(self.config.n_actions, neurons_per_pathway).mean(dim=1)
+        if self.neurons_per_action > 1:
+            neurons_per_pathway = self.neurons_per_action // 2
+            goal_mod_d1 = goal_mod_d1_neurons.view(self.n_actions, neurons_per_pathway).mean(dim=1)
+            goal_mod_d2 = goal_mod_d2_neurons.view(self.n_actions, neurons_per_pathway).mean(dim=1)
         else:
             # neurons_per_action == 1: MSN level = action level (1:1)
             goal_mod_d1 = goal_mod_d1_neurons
@@ -367,8 +377,8 @@ class ForwardPassCoordinator:
             stp_efficacy = self.stp_module(input_float)
 
             # Split efficacy for D1 and D2 pathways at MSN neuron level
-            n_d1 = self.config.d1_size  # Total D1 MSN neurons
-            n_d2 = self.config.d2_size  # Total D2 MSN neurons
+            n_d1 = self.d1_size  # Total D1 MSN neurons
+            n_d2 = self.d2_size  # Total D2 MSN neurons
             stp_efficacy_d1 = stp_efficacy[:, :n_d1]  # [n_input, d1_size]
             stp_efficacy_d2 = stp_efficacy[:, n_d1:n_d1+n_d2]  # [n_input, d2_size]
 
@@ -398,12 +408,12 @@ class ForwardPassCoordinator:
         # Pool MSN activations to action level
         # When neurons_per_action > 1: average over neurons_per_action to get action strength
         # When neurons_per_action == 1: MSN level = action level (1:1 mapping)
-        if self.config.neurons_per_action > 1:
+        if self.neurons_per_action > 1:
             # Reshape to [n_actions, neurons_per_action/2] and average
             # Note: d1_size = n_actions * neurons_per_action / 2 (D1 and D2 split the pool)
-            neurons_per_pathway = self.config.neurons_per_action // 2
-            d1_activation = d1_msn_activation.view(self.config.n_actions, neurons_per_pathway).mean(dim=1)
-            d2_activation = d2_msn_activation.view(self.config.n_actions, neurons_per_pathway).mean(dim=1)
+            neurons_per_pathway = self.neurons_per_action // 2
+            d1_activation = d1_msn_activation.view(self.n_actions, neurons_per_pathway).mean(dim=1)
+            d2_activation = d2_msn_activation.view(self.n_actions, neurons_per_pathway).mean(dim=1)
         else:
             # No pooling needed
             d1_activation = d1_msn_activation
@@ -425,13 +435,13 @@ class ForwardPassCoordinator:
 
         # Expand action-level conductances to MSN-level
         # Each action has neurons_per_pathway MSNs in D1 pathway
-        neurons_per_pathway = self.config.d1_size // self.config.n_actions
+        neurons_per_pathway = self.d1_size // self.n_actions
         d1_g_exc = d1_g_exc_action.repeat_interleave(neurons_per_pathway)  # [d1_size]
         d1_g_inh = torch.zeros_like(d1_g_exc)
 
         # Add lateral inhibition if enabled (use D1 portion of recent_spikes)
         if self.config.lateral_inhibition:
-            d1_recent_spikes = recent_spikes[:self.config.d1_size]
+            d1_recent_spikes = recent_spikes[:self.d1_size]
             d1_g_inh = d1_g_inh + d1_recent_spikes * self.config.inhibition_strength * 0.5
 
         # Add FSI feedforward inhibition (sharpens action selection timing)
@@ -453,13 +463,13 @@ class ForwardPassCoordinator:
 
         # Expand action-level conductances to MSN-level
         # Each action has neurons_per_pathway MSNs in D2 pathway
-        neurons_per_pathway = self.config.d2_size // self.config.n_actions
+        neurons_per_pathway = self.d2_size // self.n_actions
         d2_g_exc = d2_g_exc_action.repeat_interleave(neurons_per_pathway)  # [d2_size]
         d2_g_inh = torch.zeros_like(d2_g_exc)
 
         # Add lateral inhibition if enabled (use D2 portion of recent_spikes)
         if self.config.lateral_inhibition:
-            d2_recent_spikes = recent_spikes[self.config.d1_size:]
+            d2_recent_spikes = recent_spikes[self.d1_size:]
             d2_g_inh = d2_g_inh + d2_recent_spikes * self.config.inhibition_strength * 0.5
 
         # Add FSI feedforward inhibition to D2 (same as D1)

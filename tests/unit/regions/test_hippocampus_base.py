@@ -12,6 +12,7 @@ import torch
 from tests.utils.region_test_base import RegionTestBase
 from thalia.regions.hippocampus import Hippocampus
 from thalia.regions.hippocampus.config import HippocampusConfig
+from thalia.config.region_sizes import compute_hippocampus_sizes
 
 
 class TestHippocampus(RegionTestBase):
@@ -19,15 +20,30 @@ class TestHippocampus(RegionTestBase):
 
     def create_region(self, **kwargs):
         """Create Hippocampus instance for testing."""
-        # If explicit layer sizes not provided, use builder
-        if "dg_size" not in kwargs and "ca3_size" not in kwargs and "ca1_size" not in kwargs:
-            # Use builder to auto-compute sizes
-            config = HippocampusConfig.from_input_size(**kwargs)
-        else:
-            # Explicit sizes provided
-            config = HippocampusConfig(**kwargs)
+        # Separate size params from config params
+        device = kwargs.pop("device", "cpu")
 
-        return Hippocampus(config)
+        # Extract size-related kwargs
+        size_params = {}
+        if "input_size" in kwargs:
+            input_size = kwargs.pop("input_size")
+            # Compute all sizes from input_size
+            sizes = compute_hippocampus_sizes(input_size)
+            size_params.update(sizes)
+            # Add input_size to size_params (compute_hippocampus_sizes returns it)
+            # but double check it's there
+            if "input_size" not in size_params:
+                size_params["input_size"] = input_size
+
+        # Override with explicit sizes if provided
+        for key in ["dg_size", "ca3_size", "ca2_size", "ca1_size"]:
+            if key in kwargs:
+                size_params[key] = kwargs.pop(key)
+
+        # Remaining kwargs are behavioral config
+        config = HippocampusConfig(**kwargs)
+
+        return Hippocampus(config=config, sizes=size_params, device=device)
 
     def get_default_params(self):
         """Return default hippocampus parameters."""
@@ -67,7 +83,7 @@ class TestHippocampus(RegionTestBase):
         output = region.forward(input_spikes)
 
         # Verify output is CA1 activity
-        assert output.shape[0] == self._get_config_output_size(region.config)
+        assert output.shape[0] == self._get_region_output_size(region)
 
         # Verify state has all three layers
         state = region.get_state()

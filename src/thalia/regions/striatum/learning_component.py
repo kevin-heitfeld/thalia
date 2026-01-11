@@ -64,7 +64,7 @@ class StriatumLearningComponent(LearningComponent):
             # These learn which striatal neurons participate in which goals
             self.pfc_modulation_d1 = nn.Parameter(
                 WeightInitializer.gaussian(
-                    n_output=config.n_actions,
+                    n_output=context.n_output,  # n_actions passed via context
                     n_input=config.pfc_size,
                     mean=0.0,
                     std=WEIGHT_INIT_SCALE_SMALL,
@@ -74,7 +74,7 @@ class StriatumLearningComponent(LearningComponent):
             )
             self.pfc_modulation_d2 = nn.Parameter(
                 WeightInitializer.gaussian(
-                    n_output=config.n_actions,
+                    n_output=context.n_output,  # n_actions passed via context
                     n_input=config.pfc_size,
                     mean=0.0,
                     std=WEIGHT_INIT_SCALE_SMALL,

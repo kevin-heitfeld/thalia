@@ -84,8 +84,7 @@ References:
 - Colgin (2013): Theta-gamma coupling in hippocampus
 """
 
-from dataclasses import replace
-from typing import Optional, Dict, Any, List, Union, cast
+from typing import Optional, Dict, Any, List, Union
 
 import torch
 import torch.nn as nn
@@ -97,6 +96,7 @@ from thalia.core.neural_region import NeuralRegion
 from thalia.neuromodulation import compute_ne_gain
 from thalia.components.neurons import create_pyramidal_neurons
 from thalia.components.synapses import ShortTermPlasticity, get_stp_config, update_trace, WeightInitializer
+from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
@@ -116,10 +116,25 @@ from thalia.regulation.oscillator_constants import (
     CA1_SPARSITY_RETRIEVAL_BOOST,
     GAMMA_LEARNING_MODULATION_SCALE,
 )
+from thalia.regulation.region_architecture_constants import (
+    ACTIVITY_HISTORY_DECAY,
+    ACTIVITY_HISTORY_INCREMENT,
+)
+from thalia.regions.hippocampus.hindsight_relabeling import (
+    HippocampalHERIntegration,
+    HERConfig,
+    HERStrategy,
+)
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.regions.stimulus_gating import StimulusGating
+from thalia.core.diagnostics_schema import (
+    compute_activity_metrics,
+    compute_plasticity_metrics,
+    compute_health_metrics,
+)
+
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 from .config import Episode, HippocampusConfig, HippocampusState
 from .memory_component import HippocampusMemoryComponent
@@ -208,26 +223,41 @@ class TrisynapticHippocampus(NeuralRegion):
         docs/patterns/component-parity.md for component design patterns
     """
 
-    def __init__(self, config: HippocampusConfig):
-        """Initialize trisynaptic hippocampus."""
-        # Store config (already validated and sized by config.__post_init__)
-        self.config = config
-        self.device = torch.device(config.device)
+    def __init__(self, config: HippocampusConfig, sizes: Dict[str, int], device: str):
+        """Initialize trisynaptic hippocampus.
 
-        # Layer sizes from config (auto-computed or explicit)
-        self.dg_size = config.dg_size
-        self.ca3_size = config.ca3_size
-        self.ca2_size = config.ca2_size
-        self.ca1_size = config.ca1_size
+        Args:
+            config: Behavioral configuration (pure behavioral, no sizes)
+            sizes: Size parameters dict with keys:
+                - input_size: Entorhinal cortex input dimension
+                - dg_size: Dentate Gyrus neurons
+                - ca3_size: CA3 neurons
+                - ca2_size: CA2 neurons
+                - ca1_size: CA1 neurons (output layer)
+            device: Device to place tensors on ("cpu" or "cuda")
+        """
+        # Store config
+        self.config = config
+        self.device = torch.device(device)
+
+        # Extract layer sizes from sizes dict
+        self.input_size = sizes["input_size"]
+        self.dg_size = sizes["dg_size"]
+        self.ca3_size = sizes["ca3_size"]
+        self.ca2_size = sizes["ca2_size"]
+        self.ca1_size = sizes["ca1_size"]
 
         # Initialize NeuralRegion with total neurons across all layers
         super().__init__(
             n_neurons=self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size,
             neuron_config=None,  # We create custom neurons for each layer
             default_learning_rule="hebbian",  # Hippocampus uses Hebbian learning
-            device=config.device,
+            device=device,
             dt_ms=config.dt_ms,
         )
+
+        # Override n_output: hippocampus outputs only CA1 activity
+        self.n_output = self.ca1_size
 
         # Learning control (specific to hippocampus)
         self.plasticity_enabled: bool = True
@@ -240,8 +270,6 @@ class TrisynapticHippocampus(NeuralRegion):
         # Store gap junction config BEFORE weight initialization so it can be
         # used during _init_circuit_weights() to create gap junction module.
         if config.gap_junctions_enabled:
-            from thalia.components.gap_junctions import GapJunctionConfig
-
             self._gap_config_ca1 = GapJunctionConfig(
                 enabled=True,
                 coupling_strength=config.gap_junction_strength,
@@ -283,7 +311,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # Initialize STP modules for each pathway if enabled
         if config.stp_enabled:
-            device = torch.device(config.device)
+            device_obj = self.device
 
             # Mossy Fibers (DG→CA3): Strong facilitation
             # Biological U~0.03 means first spikes barely transmit, but repeated
@@ -295,7 +323,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 config=get_stp_config("mossy_fiber", dt=1.0),
                 per_synapse=True,
             )
-            self.stp_mossy.to(device)
+            self.stp_mossy.to(device_obj)
 
             # Schaffer Collaterals (CA3→CA1): Depression
             # High-frequency CA3 activity depresses CA1 input - allows novelty
@@ -306,21 +334,21 @@ class TrisynapticHippocampus(NeuralRegion):
                 config=get_stp_config("schaffer_collateral", dt=1.0),
                 per_synapse=True,
             )
-            self.stp_schaffer.to(device)
+            self.stp_schaffer.to(device_obj)
 
             # EC→CA1 Direct (Temporoammonic): Depression
             # Initial input is strongest - matched comparison happens on first
             # presentation before adaptation kicks in
             # Use ec_l3_input_size if set (for separate raw sensory input),
             # otherwise fall back to input_size
-            ec_ca1_input_size = config.ec_l3_input_size if config.ec_l3_input_size > 0 else config.input_size
+            ec_ca1_input_size = config.ec_l3_input_size if config.ec_l3_input_size > 0 else self.input_size
             self.stp_ec_ca1 = ShortTermPlasticity(
                 n_pre=ec_ca1_input_size,
                 n_post=self.ca1_size,
                 config=get_stp_config("ec_ca1", dt=1.0),
                 per_synapse=True,
             )
-            self.stp_ec_ca1.to(device)
+            self.stp_ec_ca1.to(device_obj)
 
             # CA3→CA3 Recurrent: FAST DEPRESSION - prevents frozen attractors
             # This is CRITICAL: without STD on recurrent connections, the same
@@ -333,7 +361,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 config=get_stp_config("ca3_recurrent", dt=1.0),
                 per_synapse=True,
             )
-            self.stp_ca3_recurrent.to(device)
+            self.stp_ca3_recurrent.to(device_obj)
 
             # =========================================================================
             # CA2 PATHWAYS: Social memory and temporal context
@@ -347,7 +375,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 config=get_stp_config("schaffer_collateral", dt=1.0),  # Use Schaffer preset (depressing)
                 per_synapse=True,
             )
-            self.stp_ca3_ca2.to(device)
+            self.stp_ca3_ca2.to(device_obj)
 
             # CA2→CA1: FACILITATING - temporal sequences
             # Repeated CA2 activity facilitates transmission to CA1,
@@ -358,17 +386,17 @@ class TrisynapticHippocampus(NeuralRegion):
                 config=get_stp_config("mossy_fiber", dt=1.0),  # Use mossy fiber preset (facilitating)
                 per_synapse=True,
             )
-            self.stp_ca2_ca1.to(device)
+            self.stp_ca2_ca1.to(device_obj)
 
             # EC→CA2 Direct: DEPRESSION - similar to EC→CA1
             # Direct cortical input to CA2 for temporal encoding
             self.stp_ec_ca2 = ShortTermPlasticity(
-                n_pre=config.input_size,
+                n_pre=self.input_size,
                 n_post=self.ca2_size,
                 config=get_stp_config("ec_ca1", dt=1.0),  # Use EC→CA1 preset (depressing)
                 per_synapse=True,
             )
-            self.stp_ec_ca2.to(device)
+            self.stp_ec_ca2.to(device_obj)
         else:
             self.stp_mossy = None
             self.stp_schaffer = None
@@ -410,7 +438,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # Create manager context for plasticity and episode management
         manager_context = ManagerContext(
-            device=torch.device(config.device),
+            device=self.device,
             n_output=self.ca3_size,
             dt_ms=config.dt_ms,
             metadata={"ca3_size": self.ca3_size},
@@ -423,7 +451,7 @@ class TrisynapticHippocampus(NeuralRegion):
             w_max=config.w_max,
             soft_normalization=config.soft_normalization,
             normalization_rate=config.normalization_rate,
-            device=torch.device(config.device),
+            device=self.device,
         )
         self.homeostasis = UnifiedHomeostasis(homeostasis_config)
 
@@ -487,16 +515,11 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # Goal relabeling for multi-goal learning
         if config.use_her:
-            from thalia.regions.hippocampus.hindsight_relabeling import (
-                HippocampalHERIntegration,
-                HERConfig,
-                HERStrategy,
-            )
             her_config = HERConfig(
                 strategy=HERStrategy[config.her_strategy.upper()],
                 k_hindsight=config.her_k_hindsight,
                 replay_ratio=config.her_replay_ratio,
-                goal_dim=config.output_size,  # Use output size as goal dimension
+                goal_dim=self.ca1_size,  # Use CA1 size (output layer) as goal dimension
                 goal_tolerance=config.her_goal_tolerance,
                 buffer_size=config.her_buffer_size,
                 device=config.device,
@@ -521,7 +544,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights created in _init_circuit_weights."""
-        return nn.Parameter(torch.zeros(self.config.output_size, self.config.input_size))
+        return nn.Parameter(torch.zeros(self.ca1_size, self.input_size))
 
     def _create_neurons(self):
         """Placeholder - neurons created in __init__."""
@@ -529,19 +552,19 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def _init_circuit_weights(self) -> None:
         """Initialize all circuit weights."""
-        device = torch.device(self.config.device)
+        device = self.device
 
         # =====================================================================
         # EXTERNAL WEIGHTS: Move to synaptic_weights dict (NeuralRegion pattern)
         # =====================================================================
         # Register external input source and create synaptic weights
-        self.add_input_source("ec", n_input=self.config.input_size)
+        self.add_input_source("ec", n_input=self.input_size)
 
         # EC → DG: Random sparse projections (pattern separation)
         self.synaptic_weights["ec_dg"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.dg_size,
-                n_input=self.config.input_size,
+                n_input=self.input_size,
                 sparsity=0.3,  # 30% connectivity
                 weight_scale=0.5,  # Strong weights for propagation
                 normalize_rows=True,  # Normalize for reliable propagation
@@ -553,7 +576,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca3"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca3_size,
-                n_input=self.config.input_size,
+                n_input=self.input_size,
                 sparsity=0.4,  # Less sparse than DG path
                 weight_scale=0.3,  # Weaker than DG→CA3
                 normalize_rows=True,
@@ -565,7 +588,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca1"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca1_size,
-                n_input=self.config.input_size,
+                n_input=self.input_size,
                 sparsity=0.20,  # Each CA1 sees only 20% of EC
                 weight_scale=0.3,  # Strong individual weights
                 normalize_rows=False,  # NO normalization - pattern-specific!
@@ -616,10 +639,6 @@ class TrisynapticHippocampus(NeuralRegion):
         )
 
         if self.config.phase_diversity_init:
-            # Add phase-dependent weight modulation
-            # Simulate effect of different synaptic delays: some neurons receive
-            # input earlier/later, creating initial phase preference diversity
-            phase_offsets = torch.randn(self.ca3_size, device=device) * self.config.phase_jitter_std_ms
             # Convert timing jitter to weight modulation (earlier arrival = stronger weight)
             # Scale: ±5ms jitter → ±15% weight variation
             jitter_scale = 0.03 * (self.config.phase_jitter_std_ms / 5.0)
@@ -653,7 +672,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.synaptic_weights["ec_ca2"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca2_size,
-                n_input=self.config.input_size,
+                n_input=self.input_size,
                 sparsity=0.3,  # Similar to EC→CA3
                 weight_scale=0.4,  # Strong direct encoding
                 normalize_rows=True,
@@ -695,14 +714,15 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Create gap junction network for CA1 interneurons (if enabled)
         if hasattr(self, '_gap_config_ca1'):
-            from thalia.components.gap_junctions import GapJunctionCoupling
-
             self.gap_junctions_ca1 = GapJunctionCoupling(
                 n_neurons=self.ca1_size,
                 afferent_weights=self.synaptic_weights["ca1_inhib"],
                 config=self._gap_config_ca1,
                 device=device,
             )
+
+        # Ensure all parameters are on the correct device
+        self.to(device)
 
     def _reset_subsystems(self, *names: str) -> None:
         """Reset state of named subsystems that have reset_state() method."""
@@ -830,7 +850,6 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Maintain current circuit ratios (compute from current sizes, not config)
         # This preserves whatever architecture the hippocampus currently has
-        total_current = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
         dg_growth = int(n_new * self.dg_size / self.ca1_size)
         ca3_growth = int(n_new * self.ca3_size / self.ca1_size)
         ca2_growth = int(n_new * self.ca2_size / self.ca1_size)
@@ -1027,7 +1046,6 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Recreate gap junctions with new CA1 size
         if hasattr(self, 'gap_junctions_ca1') and self.gap_junctions_ca1 is not None:
-            from thalia.components.gap_junctions import GapJunctionCoupling
             self.gap_junctions_ca1 = GapJunctionCoupling(
                 n_neurons=self.ca1_size,
                 afferent_weights=self.synaptic_weights["ca1_inhib"],
@@ -1070,14 +1088,10 @@ class TrisynapticHippocampus(NeuralRegion):
             # EC→CA2: Only post (CA2) grows, pre (EC input) is fixed
             self.stp_ec_ca2.grow(ca2_growth, target='post')
 
-        # 8. Update config (output_size/total_neurons are computed properties)
-        self.config = replace(
-            self.config,
-            ca1_size=new_ca1_size,
-            ca2_size=new_ca2_size,
-            ca3_size=new_ca3_size,
-            dg_size=new_dg_size,
-        )
+        # 8. Update instance variables (sizes no longer in config)
+        # self.ca1_size, self.ca2_size, etc. already updated above
+        # Update n_output to match new CA1 size
+        self.n_output = new_ca1_size
 
         # 9. Validate growth completed correctly
         # Note: Hippocampus has multi-layer architecture, so skip neuron check
@@ -1133,7 +1147,7 @@ class TrisynapticHippocampus(NeuralRegion):
             >>> cortex_to_hippocampus.grow_output(20)
             >>> hippocampus.grow_input(20)  # Expand EC input weights
         """
-        old_n_input = self.config.input_size
+        old_n_input = self.input_size
         new_n_input = old_n_input + n_new
 
         # Expand EC→DG weights [dg, input] → [dg, input+n_new]
@@ -1186,8 +1200,8 @@ class TrisynapticHippocampus(NeuralRegion):
         if self.stp_ec_ca2 is not None:
             self.stp_ec_ca2.grow(n_new, target='pre')
 
-        # Update config
-        self.config = replace(self.config, input_size=new_n_input)
+        # Update instance variable (not config - config is now size-free)
+        self.input_size = new_n_input
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
@@ -1232,7 +1246,7 @@ class TrisynapticHippocampus(NeuralRegion):
             port_mapping={
                 "ec": ["ec", "cortex", "input", "default"],
             },
-            defaults={"ec": torch.zeros(self.config.input_size, device=self.device)},
+            defaults={"ec": torch.zeros(self.input_size, device=self.device)},
             component_name="TrisynapticHippocampus",
         )
         input_spikes = routed["ec"]
@@ -1250,9 +1264,9 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        assert input_spikes.shape[0] == self.config.input_size, (
+        assert input_spikes.shape[0] == self.input_size, (
             f"TrisynapticHippocampus.forward: input_spikes has shape {input_spikes.shape} "
-            f"but input_size={self.config.input_size}. Check that cortex output matches hippocampus input."
+            f"but input_size={self.input_size}. Check that cortex output matches hippocampus input."
         )
         if ec_direct_input is not None:
             ec_direct_input = ec_direct_input.squeeze()
@@ -1260,7 +1274,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 f"TrisynapticHippocampus.forward: ec_direct_input must be 1D, "
                 f"got shape {ec_direct_input.shape}"
             )
-            expected_ec_size = self._ec_l3_input_size if self._ec_l3_input_size > 0 else self.config.input_size
+            expected_ec_size = self._ec_l3_input_size if self._ec_l3_input_size > 0 else self.input_size
             assert ec_direct_input.shape[0] == expected_ec_size, (
                 f"TrisynapticHippocampus.forward: ec_direct_input has shape {ec_direct_input.shape} "
                 f"but expected size={expected_ec_size} (ec_l3_input_size={self._ec_l3_input_size}). "
@@ -2172,11 +2186,6 @@ class TrisynapticHippocampus(NeuralRegion):
                 self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=self.device)
 
             # Update activity history (exponential moving average)
-            # Use constants from regulation module (Architecture Review 2025-12-21, Tier 1.3)
-            from thalia.regulation.region_architecture_constants import (
-                ACTIVITY_HISTORY_DECAY,
-                ACTIVITY_HISTORY_INCREMENT,
-            )
             self._ca3_activity_history.mul_(ACTIVITY_HISTORY_DECAY).add_(
                 ca3_spikes_1d.float(), alpha=ACTIVITY_HISTORY_INCREMENT
             )
@@ -2542,12 +2551,6 @@ class TrisynapticHippocampus(NeuralRegion):
 
         This is the primary diagnostic interface for the Hippocampus.
         """
-        from thalia.core.diagnostics_schema import (
-            compute_activity_metrics,
-            compute_plasticity_metrics,
-            compute_health_metrics,
-        )
-
         cfg = self.config
         state = self.state
 
@@ -2692,7 +2695,6 @@ class TrisynapticHippocampus(NeuralRegion):
         Args:
             state: Dictionary returned by get_full_state()
         """
-        from .config import HippocampusState
         state_obj = HippocampusState.from_dict(state, device=str(self.device))
         self.load_state(state_obj)
 

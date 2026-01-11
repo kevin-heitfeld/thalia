@@ -21,21 +21,21 @@ from thalia.regulation.learning_constants import EMA_DECAY_FAST, LEARNING_RATE_H
 
 @dataclass
 class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
-    """Configuration specific to striatal regions.
+    """Configuration specific to striatal regions (behavior only, no sizes).
 
-    **Semantic Specification** (January 2026 Refactoring):
-    Striatum is configured by what it DOES (selects actions), not neuron counts.
+    **Size-Free Config Pattern** (January 2026 Refactoring):
+    Config contains ONLY behavioral parameters. Sizes passed separately to __init__.
 
-    Primary parameters:
-    - n_actions: Number of discrete actions (semantic dimension)
-    - neurons_per_action: Population coding size (default 10)
-    - input_sources: Multi-source inputs Dict[str, int] e.g., {"cortex": 256, "thalamus": 128}
+    Size computation handled by:
+    - LayerSizeCalculator.striatum_from_actions() for size dicts
+    - Striatum.__init__(config, sizes, device) receives computed sizes
 
-    Computed dimensions (auto-computed in __post_init__):
-    - d1_size: Total D1 MSN neurons
-    - d2_size: Total D2 MSN neurons
-    - total_neurons: d1_size + d2_size
-    - total_input: sum(input_sources.values())
+    Behavioral parameters:
+    - Learning rates (learning_rate, d1_lr_scale, d2_lr_scale)
+    - Action selection (lateral_inhibition, softmax_temperature)
+    - TD(λ) parameters (td_lambda, td_gamma)
+    - Exploration (ucb_coefficient, adaptive_exploration)
+    - Neuromodulation sensitivity (d1_da_sensitivity, d2_da_sensitivity)
 
     Inherits dopamine-gated learning parameters from ModulatedLearningConfig:
     - learning_rate: Base learning rate for synaptic updates
@@ -57,30 +57,9 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     """
 
     # =========================================================================
-    # SEMANTIC SPECIFICATION (what region does)
+    # D1/D2 PATHWAY CONFIGURATION
     # =========================================================================
-    n_actions: int = 0
-    """Number of discrete actions (REQUIRED semantic dimension, must be > 0)."""
-
-    neurons_per_action: int = 10
-    """Neurons per action (population coding size)."""
-
-    input_sources: Dict[str, int] = field(default_factory=dict)
-    """Multi-source inputs: {"cortex": 256, "thalamus": 128}"""
-
-    # =========================================================================
-    # COMPUTED DIMENSIONS (auto-computed in __post_init__)
-    # =========================================================================
-    d1_size: int = field(init=False)
-    """Total D1 MSN neurons (computed from n_actions × d1_neurons_per_action)."""
-
-    d2_size: int = field(init=False)
-    """Total D2 MSN neurons (computed from n_actions × d2_neurons_per_action)."""
-
-    total_input: int = field(init=False)
-    """Total input dimension (sum of all input sources)."""
-
-    # D1/D2 split ratio
+    # D1/D2 split ratio (behavioral parameter, not a size)
     d1_d2_ratio: float = 0.5
     """Fraction of neurons allocated to D1 pathway (0.5 = equal split)."""
 
@@ -178,76 +157,8 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     # Low beta → action flexibility (D2 effective, D1 reduced)
     beta_modulation_strength: float = 0.3  # [0, 1] - strength of beta influence
 
-    def __post_init__(self) -> None:
-        """Compute physical dimensions from semantic specs, then validate."""
-        from thalia.config.region_sizes import compute_striatum_sizes
-
-        # Skip if placeholder config (n_actions == 0)
-        if self.n_actions == 0:
-            object.__setattr__(self, "d1_size", 0)
-            object.__setattr__(self, "d2_size", 0)
-            object.__setattr__(self, "total_input", 0)
-            return
-
-        # Compute D1/D2 sizes from n_actions
-        sizes = compute_striatum_sizes(
-            n_actions=self.n_actions,
-            neurons_per_action=self.neurons_per_action,
-            d1_d2_ratio=self.d1_d2_ratio
-        )
-
-        # Set computed dimensions
-        object.__setattr__(self, "d1_size", sizes["d1_size"])
-        object.__setattr__(self, "d2_size", sizes["d2_size"])
-
-        # Compute total input from sources (allow empty during brain building)
-        if self.input_sources:
-            object.__setattr__(self, "total_input", sum(self.input_sources.values()))
-        else:
-            # Empty input_sources is allowed during BrainBuilder setup
-            # Will be filled in by BrainBuilder._infer_component_sizes
-            object.__setattr__(self, "total_input", 0)
-
-        # Validate after computation
-        self.validate()
-
-    def validate(self) -> None:
-        """Validate size constraints and consistency.
-
-        Raises:
-            ValueError: If sizes are 0, inconsistent, or inputs not specified
-        """
-        if self.d1_size == 0 or self.d2_size == 0:
-            raise ValueError(
-                f"Pathway sizes must be > 0. Got d1={self.d1_size}, d2={self.d2_size}"
-            )
-
-        if self.n_actions == 0:
-            raise ValueError("n_actions must be > 0")
-
-        # Note: neurons_per_action is the TOTAL per action, but D1 and D2 pathways
-        # each need at least 1 neuron. So actual total is max(neurons_per_action, 2) per action.
-        # This is enforced by compute_striatum_sizes().
-
-    @property
-    def output_size(self) -> int:
-        """Total output neurons (D1 + D2 pathway neurons)."""
-        return self.d1_size + self.d2_size
-
-    @property
-    def total_neurons(self) -> int:
-        """Total neurons in striatum (D1 + D2)."""
-        return self.d1_size + self.d2_size
-
-    @property
-    def n_input(self) -> int:
-        """Backward compatibility: total input dimension."""
-        return self.total_input
-
-    @property
-    def n_output(self) -> int:
-        """Backward compatibility: total output neurons."""
-        return self.output_size
+    # Size-free config - no __post_init__, no validation of sizes
+    # Sizes are now passed separately to Striatum.__init__(config, sizes, device)
 
     @classmethod
     def from_n_actions(

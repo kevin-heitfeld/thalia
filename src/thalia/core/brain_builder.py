@@ -79,11 +79,10 @@ Date: December 15, 2025
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
+from typing import Callable, Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from pathlib import Path
 import json
 
-from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
 from thalia.core.protocols.component import LearnableComponent
 from thalia.managers.component_registry import ComponentRegistry
 from thalia.pathways.axonal_projection import AxonalProjection
@@ -91,6 +90,7 @@ from thalia.regions.cortex import calculate_layer_sizes
 from thalia.config.region_sizes import compute_thalamus_sizes, compute_hippocampus_sizes
 
 if TYPE_CHECKING:
+    from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
     from thalia.config import GlobalConfig
 
 
@@ -1093,7 +1093,6 @@ class BrainBuilder:
 
 
 # Type alias for preset builder functions
-from typing import Callable
 PresetBuilderFn = Callable[["BrainBuilder", Any], None]
 
 

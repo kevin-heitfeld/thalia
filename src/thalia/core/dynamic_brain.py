@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union, Set, TYPE_CHECKING
+from types import SimpleNamespace
 
 import torch
 import torch.nn as nn
@@ -41,16 +42,30 @@ from thalia.typing import (
     CheckpointMetadata,
     DiagnosticsDict,
 )
-
 from thalia.core.protocols.component import LearnableComponent
-from thalia.regions.cortex import calculate_layer_sizes
 from thalia.core.diagnostics import (
     StriatumDiagnostics,
     HippocampusDiagnostics,
     BrainSystemDiagnostics,
 )
-from thalia.stimuli.base import StimulusPattern
+from thalia.core.brain_builder import BrainBuilder
+from thalia.config import LayerSizeCalculator
+from thalia.config.region_sizes import compute_hippocampus_sizes
+from thalia.coordination.oscillator import OscillatorManager, OSCILLATOR_DEFAULTS
+from thalia.coordination.growth import GrowthEvent, GrowthManager
 from thalia.components.coding import compute_firing_rate
+from thalia.diagnostics import HealthMonitor, CriticalityMonitor
+from thalia.io.checkpoint_manager import CheckpointManager
+from thalia.memory.consolidation.manager import ConsolidationManager
+from thalia.neuromodulation.manager import NeuromodulatorManager
+from thalia.pathways.dynamic_pathway_manager import DynamicPathwayManager
+from thalia.planning import (
+    MentalSimulationCoordinator,
+    SimulationConfig,
+    DynaPlanner,
+    DynaConfig,
+)
+from thalia.stimuli.base import StimulusPattern
 
 if TYPE_CHECKING:
     from thalia.config import GlobalConfig, ThaliaConfig
@@ -185,7 +200,6 @@ class DynamicBrain(nn.Module):
 
         # Minimal config for checkpoint compatibility
         # Note: Sizes will be added after components are known
-        from types import SimpleNamespace
         self.config = SimpleNamespace(device=global_config.device)
 
         # Store components as nn.ModuleDict for proper parameter tracking
@@ -216,7 +230,6 @@ class DynamicBrain(nn.Module):
         # PATHWAY MANAGER (Phase 1.7.1)
         # =================================================================
         # Centralized pathway management for diagnostics and growth coordination
-        from thalia.pathways.dynamic_pathway_manager import DynamicPathwayManager
 
         self.pathway_manager = DynamicPathwayManager(
             connections=self.connections,
@@ -230,7 +243,6 @@ class DynamicBrain(nn.Module):
         # =================================================================
         # Rhythmic coordination via all brain oscillations (delta, theta, alpha, beta, gamma, ripple)
         # Provides theta-driven encoding/retrieval, gamma feature binding, cross-frequency coupling
-        from thalia.coordination.oscillator import OscillatorManager, OSCILLATOR_DEFAULTS
 
         # Get frequencies from config if available, otherwise use defaults
         delta_freq = getattr(global_config, 'delta_frequency_hz', OSCILLATOR_DEFAULTS['delta'])
@@ -257,8 +269,6 @@ class DynamicBrain(nn.Module):
         # =================================================================
         # VTA (dopamine), LC (norepinephrine), NB (acetylcholine)
         # Provides centralized neuromodulation
-        from thalia.neuromodulation.manager import NeuromodulatorManager
-
         self.neuromodulator_manager = NeuromodulatorManager()
 
         # =================================================================
@@ -314,8 +324,6 @@ class DynamicBrain(nn.Module):
         self.consolidation_manager = None
 
         if all(comp in self.components for comp in ['hippocampus', 'striatum', 'cortex', 'pfc']):
-            from thalia.memory.consolidation.manager import ConsolidationManager
-
             self.consolidation_manager = ConsolidationManager(
                 hippocampus=self.components['hippocampus'],
                 striatum=self.components['striatum'],
@@ -339,8 +347,6 @@ class DynamicBrain(nn.Module):
         # CHECKPOINT MANAGER (Phase 1.7.4)
         # =================================================================
         # Centralized checkpoint save/load with compression and validation
-        from thalia.io.checkpoint_manager import CheckpointManager
-
         self.checkpoint_manager = CheckpointManager(
             brain=self,
             default_compression='zstd',  # Default compression format
@@ -350,10 +356,6 @@ class DynamicBrain(nn.Module):
         # PLANNING SYSTEMS (Phase 1.7.5)
         # =================================================================
         # Mental simulation and Dyna planning for model-based RL
-        # Only initialize if use_model_based_planning enabled in global_config
-        if TYPE_CHECKING:
-            from thalia.planning import MentalSimulationCoordinator, DynaPlanner
-
         self.mental_simulation: Optional["MentalSimulationCoordinator"] = None
         self.dyna_planner: Optional["DynaPlanner"] = None
 
@@ -364,14 +366,6 @@ class DynamicBrain(nn.Module):
         )
 
         if planning_enabled:
-            # Only import if enabled (optional dependency)
-            from thalia.planning import (
-                MentalSimulationCoordinator,
-                SimulationConfig,
-                DynaPlanner,
-                DynaConfig,
-            )
-
             # Check that required components exist
             if all(name in self.components for name in ['pfc', 'hippocampus', 'striatum', 'cortex']):
                 # Create mental simulation coordinator
@@ -397,9 +391,6 @@ class DynamicBrain(nn.Module):
         # =================================================================
         # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)
         # =================================================================
-        # Monitor network health and criticality for training diagnostics
-        from thalia.diagnostics import HealthMonitor, CriticalityMonitor
-
         # Initialize health monitor (always enabled)
         self.health_monitor = HealthMonitor(
             enable_oscillator_monitoring=True  # We have oscillators
@@ -544,10 +535,6 @@ class DynamicBrain(nn.Module):
             Uses LayerSizeCalculator for biologically-accurate size computation.
             Builder infers input_size from connection graph.
         """
-        from thalia.core.brain_builder import BrainBuilder
-        from thalia.config import LayerSizeCalculator
-        from thalia.config.region_sizes import compute_hippocampus_sizes
-
         sizes = config.brain.sizes
         calc = LayerSizeCalculator()
 
@@ -1660,8 +1647,6 @@ class DynamicBrain(nn.Module):
             Requires components to implement capacity metrics. If a component
             doesn't support metrics, it will be skipped.
         """
-        from thalia.coordination.growth import GrowthManager
-
         growth_report = {}
 
         # Check each component
@@ -1749,9 +1734,6 @@ class DynamicBrain(nn.Module):
                 component_name=component_name,
                 growth_amount=growth_amount,
             )
-
-            # Record growth event in history
-            from thalia.coordination.growth import GrowthEvent
 
             # Get metrics after growth (simplified - component should re-compute)
             new_size = getattr(component.config, "n_output", None)
@@ -2413,7 +2395,6 @@ class DynamicBrain(nn.Module):
 
         # Load growth history (if present)
         if "growth_history" in state:
-            from thalia.coordination.growth import GrowthEvent
             self._growth_history = [
                 GrowthEvent.from_dict(event_dict)
                 for event_dict in state["growth_history"]
