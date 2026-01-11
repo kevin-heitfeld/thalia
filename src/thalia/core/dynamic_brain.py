@@ -26,7 +26,6 @@ Date: December 15, 2025
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union, Set, TYPE_CHECKING
 from types import SimpleNamespace
@@ -43,6 +42,7 @@ from thalia.typing import (
     DiagnosticsDict,
 )
 from thalia.core.protocols.component import LearnableComponent
+from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.diagnostics import (
     StriatumDiagnostics,
     HippocampusDiagnostics,
@@ -71,59 +71,6 @@ if TYPE_CHECKING:
     from thalia.config import GlobalConfig, ThaliaConfig
     from thalia.managers.component_registry import ComponentRegistry
     from thalia.diagnostics.health_monitor import HealthReport
-
-
-@dataclass
-class ComponentSpec:
-    """Specification for a brain component.
-
-    Used by BrainBuilder to define components before instantiation.
-    """
-    name: str
-    """Instance name (e.g., 'cortex', 'my_visual_cortex')"""
-
-    component_type: str
-    """Registry type: 'region', 'pathway', or 'module'"""
-
-    registry_name: str
-    """Registry key (e.g., 'layered_cortex', 'spiking_stdp')"""
-
-    config_params: CheckpointMetadata = field(default_factory=dict)
-    """Configuration parameters for the component"""
-
-    instance: Optional[LearnableComponent] = None
-    """Instantiated component (set during build)"""
-
-
-@dataclass
-class ConnectionSpec:
-    """Specification for a connection between components.
-
-    Represents an edge in the component graph.
-
-    Supports port-based routing for layer-specific outputs and
-    multiple input types (feedforward, top-down, sensory, etc.).
-    """
-    source: str
-    """Source component name"""
-
-    target: str
-    """Target component name"""
-
-    pathway_type: str
-    """Pathway registry name (e.g., 'spiking_stdp', 'attention')"""
-
-    source_port: Optional[str] = None
-    """Source output port (e.g., 'l23', 'l5', 'default')"""
-
-    target_port: Optional[str] = None
-    """Target input port (e.g., 'feedforward', 'top_down', 'ec_l3')"""
-
-    config_params: CheckpointMetadata = field(default_factory=dict)
-    """Pathway configuration parameters"""
-
-    instance: Optional[LearnableComponent] = None
-    """Instantiated pathway (set during build)"""
 
 
 class DynamicBrain(nn.Module):

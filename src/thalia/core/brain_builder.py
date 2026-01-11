@@ -88,9 +88,10 @@ from thalia.managers.component_registry import ComponentRegistry
 from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions.cortex import calculate_layer_sizes
 from thalia.config.region_sizes import compute_thalamus_sizes, compute_hippocampus_sizes
+from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 
 if TYPE_CHECKING:
-    from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
+    from thalia.core.dynamic_brain import DynamicBrain
     from thalia.config import GlobalConfig
 
 

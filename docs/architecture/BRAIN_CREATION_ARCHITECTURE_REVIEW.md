@@ -666,9 +666,39 @@ All regions now follow the unified (config, sizes, device) architecture with beh
 - 4 Prefrontal learning strategy tests ✅
 - 1 Partial state load test ✅
 
-### 🚀 Phase 3: Documentation & Brain Builder Updates (NEXT)
-- [ ] Check integration tests for region creation patterns
-- [ ] Update BrainBuilder to use new pattern
+### ✅ Phase 3: BrainBuilder & Integration Test Fixes (COMPLETE - January 11, 2026)
+
+**Completed Infrastructure Updates:**
+- ✅ Created component_spec.py module to resolve circular imports
+- ✅ Moved ComponentSpec and ConnectionSpec from dynamic_brain.py to component_spec.py
+- ✅ Updated BrainBuilder to import from component_spec (already uses (config, sizes, device) pattern)
+- ✅ Updated ComponentRegistry.create() to handle both old and new patterns via signature inspection
+
+**Fixed Integration Test Fixtures:**
+- ✅ test_biological_validity.py: Fixed all region config fixtures
+  - StriatumConfig: Removed n_input, n_output, population_coding, neurons_per_action
+  - ThalamicRelayConfig: Removed input_size, relay_size, trn_size
+  - HippocampusConfig: Removed input_size, dg_size, ca3_size, ca2_size, ca1_size
+  - Added LayerSizeCalculator usage for all direct region instantiations
+- ✅ LayerSizeCalculator.striatum_from_actions(): Ensure symmetric D1/D2 splits (even neurons_per_action)
+
+**Integration Test Results:**
+- ✅ 62/62 tests passing in core integration test suite:
+  - test_biological_validity.py (12 tests) ✅
+  - test_region_strategy_migrations.py (7 tests) ✅
+  - test_pathway_delay_preservation.py (10 tests) ✅
+  - test_learning_strategy_pattern.py (30 tests) ✅
+  - test_state_checkpoint_workflow.py (3 selected tests) ✅
+
+**Key Fixes:**
+- ComponentSpec import issue resolved via new module
+- All config fixtures now behavior-only (no size fields)
+- LayerSizeCalculator produces symmetric D1/D2 splits
+- All direct region instantiations use (config, sizes, device) pattern
+
+### 🚀 Phase 4: Remaining Integration Tests (NEXT)
+- [ ] Fix remaining BrainBuilder-dependent integration tests
+- [ ] Verify all preset architectures work with new pattern
 - [ ] Update all documentation with new API
 - [ ] Verify checkpoint compatibility
 

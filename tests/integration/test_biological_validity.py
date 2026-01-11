@@ -29,10 +29,6 @@ class TestEligibilityTraceDecay:
     def striatum_config(self) -> StriatumConfig:
         """Create striatum config with eligibility traces enabled."""
         return StriatumConfig(
-            n_input=50,
-            n_output=10,
-            population_coding=True,
-            neurons_per_action=5,
             learning_rate=0.001,
             eligibility_tau_ms=100.0,  # 100ms decay constant
             device="cpu",
@@ -41,7 +37,11 @@ class TestEligibilityTraceDecay:
 
     def test_eligibility_decays_exponentially(self, striatum_config):
         """Verify eligibility traces decay with e^(-t/tau) after checkpoint load."""
-        striatum = Striatum(striatum_config)
+        from thalia.config import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
+        sizes["input_size"] = 50
+        striatum = Striatum(striatum_config, sizes, "cpu")
 
         # Build eligibility by running with active input
         for _ in range(20):
@@ -57,7 +57,7 @@ class TestEligibilityTraceDecay:
 
         # Save and load state
         state = striatum.get_state()
-        striatum2 = Striatum(striatum_config)
+        striatum2 = Striatum(striatum_config, sizes, "cpu")
         striatum2.load_state(state)
 
         # Verify eligibility preserved exactly
@@ -84,7 +84,11 @@ class TestEligibilityTraceDecay:
 
     def test_eligibility_no_sudden_jumps(self, striatum_config):
         """Verify no discontinuities in eligibility at checkpoint boundary."""
-        striatum = Striatum(striatum_config)
+        from thalia.config import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
+        sizes["input_size"] = 50
+        striatum = Striatum(striatum_config, sizes, "cpu")
 
         # Build eligibility
         for _ in range(20):
@@ -189,17 +193,17 @@ class TestNeuromodulatorBounds:
     def striatum_config(self) -> StriatumConfig:
         """Create striatum config."""
         return StriatumConfig(
-            n_input=50,
-            n_output=10,
-            population_coding=True,
-            neurons_per_action=5,
             device="cpu",
             dt_ms=1.0,
         )
 
     def test_dopamine_stays_in_valid_range(self, striatum_config):
         """Verify dopamine levels stay in [0, 1.5] range."""
-        striatum = Striatum(striatum_config)
+        from thalia.config import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
+        sizes["input_size"] = 50
+        striatum = Striatum(striatum_config, sizes, "cpu")
 
         # Multiple learning cycles with rewards
         for _ in range(50):
@@ -210,7 +214,7 @@ class TestNeuromodulatorBounds:
 
         # Save and load
         state = striatum.get_state()
-        striatum2 = Striatum(striatum_config)
+        striatum2 = Striatum(striatum_config, sizes, "cpu")
         striatum2.load_state(state)
 
         # Check dopamine in valid range (access from forward_coordinator)
@@ -219,14 +223,18 @@ class TestNeuromodulatorBounds:
 
     def test_neuromodulators_preserved_in_checkpoint(self, striatum_config):
         """Verify all neuromodulator levels preserved across checkpoint."""
-        striatum = Striatum(striatum_config)
+        from thalia.config import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
+        sizes["input_size"] = 50
+        striatum = Striatum(striatum_config, sizes, "cpu")
 
         # Set specific neuromodulator levels
         striatum.set_neuromodulators(dopamine=0.8, norepinephrine=0.5)
 
         # Save and load
         state = striatum.get_state()
-        striatum2 = Striatum(striatum_config)
+        striatum2 = Striatum(striatum_config, sizes, "cpu")
         striatum2.load_state(state)
 
         # Verify levels preserved
@@ -240,13 +248,14 @@ class TestNoNegativeSpikes:
     @pytest.fixture
     def thalamus_config(self) -> ThalamicRelayConfig:
         """Create thalamus config."""
-        return ThalamicRelayConfig(input_size=30, relay_size=30, trn_size=0, # Relay size
+        return ThalamicRelayConfig(
             device="cpu",
             dt_ms=1.0)
 
     def test_no_negative_spikes_before_checkpoint(self, thalamus_config):
         """Verify no negative spikes during normal operation."""
-        thalamus = ThalamicRelay(thalamus_config)
+        sizes = {"input_size": 30, "relay_size": 30, "trn_size": 0}
+        thalamus = ThalamicRelay(thalamus_config, sizes, "cpu")
 
         for _ in range(100):
             sensory_input = torch.rand(30) > 0.8
@@ -257,7 +266,8 @@ class TestNoNegativeSpikes:
 
     def test_no_negative_spikes_after_checkpoint(self, thalamus_config):
         """Verify no negative spikes after checkpoint load."""
-        thalamus = ThalamicRelay(thalamus_config)
+        sizes = {"input_size": 30, "relay_size": 30, "trn_size": 0}
+        thalamus = ThalamicRelay(thalamus_config, sizes, "cpu")
 
         # Run simulation
         for _ in range(50):
@@ -265,7 +275,7 @@ class TestNoNegativeSpikes:
 
         # Save and load
         state = thalamus.get_state()
-        thalamus2 = ThalamicRelay(thalamus_config)
+        thalamus2 = ThalamicRelay(thalamus_config, sizes, "cpu")
         thalamus2.load_state(state)
 
         # Continue - still no negative spikes
@@ -351,18 +361,17 @@ class TestCA3PersistentActivity:
     def hippocampus_config(self) -> HippocampusConfig:
         """Create hippocampus config."""
         return HippocampusConfig(
-            input_size=20,
-            dg_size=30,
-            ca3_size=25,
-            ca2_size=22,
-            ca1_size=20,
             device="cpu",
             dt_ms=1.0,
         )
 
     def test_ca3_persistent_activity_preserved(self, hippocampus_config):
         """Verify CA3 attractor state preserved across checkpoint."""
-        hippocampus = TrisynapticHippocampus(hippocampus_config)
+        from thalia.config import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.hippocampus_from_input(ec_input_size=20)
+        sizes["input_size"] = 20
+        hippocampus = TrisynapticHippocampus(hippocampus_config, sizes, "cpu")
 
         # Activate CA3 pattern via strong input
         for _ in range(10):
@@ -375,7 +384,7 @@ class TestCA3PersistentActivity:
 
             # Save and load
             state = hippocampus.get_state()
-            hippocampus2 = TrisynapticHippocampus(hippocampus_config)
+            hippocampus2 = TrisynapticHippocampus(hippocampus_config, sizes, "cpu")
             hippocampus2.load_state(state)
 
             # Verify persistent activity preserved
@@ -394,7 +403,11 @@ class TestCA3PersistentActivity:
 
     def test_ca3_pattern_not_reset(self, hippocampus_config):
         """Verify CA3 pattern doesn't reset to zero at checkpoint."""
-        hippocampus = TrisynapticHippocampus(hippocampus_config)
+        from thalia.config import LayerSizeCalculator
+        calc = LayerSizeCalculator()
+        sizes = calc.hippocampus_from_input(ec_input_size=20)
+        sizes["input_size"] = 20
+        hippocampus = TrisynapticHippocampus(hippocampus_config, sizes, "cpu")
 
         # Build CA3 pattern
         for _ in range(15):
@@ -411,3 +424,4 @@ class TestCA3PersistentActivity:
         if ca3_spikes_before is not None:
             ca3_spikes_after = hippocampus.state.ca3_spikes
             assert torch.equal(ca3_spikes_before, ca3_spikes_after), "CA3 spikes should be preserved exactly"
+
