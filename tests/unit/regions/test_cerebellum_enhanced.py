@@ -31,13 +31,19 @@ def device():
 @pytest.fixture
 def cerebellum_classic_config(device):
     """Classic cerebellum configuration (no enhanced microcircuit)."""
-    return CerebellumConfig(
-        input_size=128,
-        purkinje_size=64,
+    from thalia.config import compute_cerebellum_sizes
+
+    input_size = 128
+    purkinje_size = 64
+    sizes = compute_cerebellum_sizes(purkinje_size)
+    sizes["input_size"] = input_size
+
+    config = CerebellumConfig(
         use_enhanced_microcircuit=False,  # Classic pathway
         dt_ms=1.0,
         device=str(device),
     )
+    return (config, sizes, str(device))
 
 
 @pytest.fixture
@@ -45,26 +51,27 @@ def cerebellum_enhanced_config(device):
     """Enhanced cerebellum configuration with granule layer and DCN."""
     from thalia.config import compute_cerebellum_sizes
 
+    input_size = 128
     purkinje_size = 64
     granule_expansion = 4.0
     sizes = compute_cerebellum_sizes(purkinje_size, granule_expansion)
+    sizes["input_size"] = input_size
 
-    return CerebellumConfig(
-        input_size=128,
+    config = CerebellumConfig(
         use_enhanced_microcircuit=True,  # Enhanced pathway
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
         granule_sparsity=0.03,
         purkinje_n_dendrites=100,
         dt_ms=1.0,
         device=str(device),
     )
+    return (config, sizes, str(device))
 
 
 @pytest.fixture
 def cerebellum_classic(cerebellum_classic_config):
     """Classic cerebellum instance."""
-    cereb = Cerebellum(cerebellum_classic_config)
+    config, sizes, device = cerebellum_classic_config
+    cereb = Cerebellum(config, sizes, device)
     cereb.reset_state()
     return cereb
 
@@ -72,7 +79,8 @@ def cerebellum_classic(cerebellum_classic_config):
 @pytest.fixture
 def cerebellum_enhanced(cerebellum_enhanced_config):
     """Enhanced cerebellum instance."""
-    cereb = Cerebellum(cerebellum_enhanced_config)
+    config, sizes, device = cerebellum_enhanced_config
+    cereb = Cerebellum(config, sizes, device)
     cereb.reset_state()
     return cereb
 
@@ -435,10 +443,10 @@ class TestEnhancedCerebellumIntegration:
 
     def test_enhanced_cerebellum_initialization(self, cerebellum_enhanced):
         """Test enhanced cerebellum initializes all components."""
-        # Extract expected values from config
-        n_input = cerebellum_enhanced.config.n_input
-        n_output = cerebellum_enhanced.config.n_output
-        expected_granule_size = cerebellum_enhanced.config.granule_size
+        # Extract expected values from instance
+        n_input = cerebellum_enhanced.input_size
+        n_output = cerebellum_enhanced.purkinje_size
+        expected_granule_size = cerebellum_enhanced.granule_size
 
         # Contract: granule layer exists
         assert cerebellum_enhanced.granule_layer is not None, \
@@ -530,14 +538,14 @@ class TestEnhancedCerebellumIntegration:
 
     def test_enhanced_cerebellum_growth(self, cerebellum_enhanced):
         """Test enhanced cerebellum grows correctly."""
-        initial_output = cerebellum_enhanced.config.n_output
+        initial_output = cerebellum_enhanced.purkinje_size
         initial_purkinje_count = len(cerebellum_enhanced.purkinje_cells)
 
         # Grow output
         cerebellum_enhanced.grow_output(n_new=32)
 
         # Contract: output size increased
-        assert cerebellum_enhanced.config.n_output == initial_output + 32, \
+        assert cerebellum_enhanced.purkinje_size == initial_output + 32, \
             "Output size should increase by 32"
 
         # Contract: Purkinje cells increased
@@ -637,25 +645,30 @@ class TestBackwardCompatibility:
 
     def test_enhanced_flag_controls_pathway(self, device):
         """Test use_enhanced_microcircuit flag correctly enables/disables enhanced pathway."""
+        from thalia.config import compute_cerebellum_sizes
+
+        input_size = 128
+        purkinje_size = 64
+
         # Classic config
+        classic_sizes = compute_cerebellum_sizes(purkinje_size)
+        classic_sizes["input_size"] = input_size
         classic_cfg = CerebellumConfig(
-            input_size=128,
-            purkinje_size=64,
             use_enhanced_microcircuit=False,
             dt_ms=1.0,
             device=str(device),
         )
-        classic = Cerebellum(classic_cfg)
+        classic = Cerebellum(classic_cfg, classic_sizes, str(device))
 
         # Enhanced config
+        enhanced_sizes = compute_cerebellum_sizes(purkinje_size)
+        enhanced_sizes["input_size"] = input_size
         enhanced_cfg = CerebellumConfig(
-            input_size=128,
-            purkinje_size=64,
             use_enhanced_microcircuit=True,
             dt_ms=1.0,
             device=str(device),
         )
-        enhanced = Cerebellum(enhanced_cfg)
+        enhanced = Cerebellum(enhanced_cfg, enhanced_sizes, str(device))
 
         # Contract: flag controls component creation
         assert classic.granule_layer is None, "Classic should not have granule layer"

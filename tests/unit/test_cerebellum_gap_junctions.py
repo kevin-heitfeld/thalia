@@ -9,6 +9,23 @@ import torch
 import pytest
 
 from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
+from thalia.config import compute_cerebellum_sizes
+
+
+def create_test_cerebellum(
+    input_size: int = 64,
+    purkinje_size: int = 32,
+    device: str = "cpu",
+    **kwargs
+) -> Cerebellum:
+    """Create Cerebellum for testing with new (config, sizes, device) pattern."""
+    # Always compute granule_size (Cerebellum.__init__ requires it)
+    expansion = kwargs.pop("granule_expansion_factor", 4.0)
+    sizes = compute_cerebellum_sizes(purkinje_size, expansion)
+    sizes["input_size"] = input_size
+
+    config = CerebellumConfig(device=device, **kwargs)
+    return Cerebellum(config, sizes, device)
 
 
 class TestCerebellumGapJunctions:
@@ -16,14 +33,13 @@ class TestCerebellumGapJunctions:
 
     def test_gap_junctions_initialized_properly(self):
         """Gap junctions should be initialized without errors."""
-        config = CerebellumConfig(
+        cerebellum = create_test_cerebellum(
             input_size=64,
             purkinje_size=32,
             use_enhanced_microcircuit=True,
             gap_junctions_enabled=True,  # Enable gap junctions
             device="cpu"
         )
-        cerebellum = Cerebellum(config)
 
         # Gap junctions should be created
         assert cerebellum.gap_junctions_io is not None
@@ -38,7 +54,7 @@ class TestCerebellumGapJunctions:
 
     def test_gap_junctions_dont_zero_error_signal(self):
         """Gap junctions should NOT zero out error signals during learning."""
-        config = CerebellumConfig(
+        cerebellum = create_test_cerebellum(
             input_size=64,
             purkinje_size=32,
             use_enhanced_microcircuit=True,
@@ -47,7 +63,6 @@ class TestCerebellumGapJunctions:
             gap_junctions_enabled=True,  # Enable gap junctions
             device="cpu"
         )
-        cerebellum = Cerebellum(config)
 
         # Forward pass to initialize weights
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
@@ -75,13 +90,12 @@ class TestCerebellumGapJunctions:
 
     def test_gap_junctions_can_be_disabled(self):
         """Should be able to disable gap junctions via config."""
-        config = CerebellumConfig(
+        cerebellum = create_test_cerebellum(
             input_size=64,
             purkinje_size=32,
             gap_junctions_enabled=False,  # Explicitly disable
             device="cpu"
         )
-        cerebellum = Cerebellum(config)
 
         # Gap junctions should be None when disabled
         assert cerebellum.gap_junctions_io is None
@@ -92,7 +106,7 @@ class TestCerebellumGapJunctions:
         This tests the biological function: IO neurons with similar error patterns
         should have synchronized complex spikes via gap junction coupling.
         """
-        config = CerebellumConfig(
+        cerebellum = create_test_cerebellum(
             input_size=64,
             purkinje_size=32,
             use_enhanced_microcircuit=True,
@@ -102,7 +116,6 @@ class TestCerebellumGapJunctions:
             gap_junction_strength=0.5,  # Strong coupling for visible effect
             device="cpu"
         )
-        cerebellum = Cerebellum(config)
 
         # Forward pass
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
@@ -132,14 +145,13 @@ class TestCerebellumGapJunctions:
         Purkinje cells with similar input patterns (similar weights) should
         have their corresponding IO neurons coupled via gap junctions.
         """
-        config = CerebellumConfig(
+        cerebellum = create_test_cerebellum(
             input_size=64,
             purkinje_size=10,  # Smaller for easier inspection
             gap_junctions_enabled=True,
             gap_junction_threshold=0.1,  # Lower threshold for more coupling
             device="cpu"
         )
-        cerebellum = Cerebellum(config)
 
         # Gap junctions should exist
         assert cerebellum.gap_junctions_io is not None

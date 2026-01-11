@@ -18,20 +18,32 @@ from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
 from thalia.config import compute_cerebellum_sizes
 
 
+def create_test_cerebellum(
+    input_size: int,
+    purkinje_size: int,
+    device: str = "cpu",
+    **kwargs
+) -> Cerebellum:
+    """Create Cerebellum for testing with new (config, sizes, device) pattern."""
+    # Always compute granule_size (Cerebellum.__init__ requires it)
+    expansion = kwargs.pop("granule_expansion_factor", 4.0)
+    sizes = compute_cerebellum_sizes(purkinje_size, expansion)
+    sizes["input_size"] = input_size
+
+    config = CerebellumConfig(device=device, **kwargs)
+    return Cerebellum(config, sizes, device)
+
+
 def test_io_gap_junction_initialization():
     """Test gap junction module is properly initialized in cerebellum."""
-    sizes = compute_cerebellum_sizes(purkinje_size=50)
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
         gap_junction_max_neighbors=12,
     )
-
-    cerebellum = Cerebellum(config)
 
     assert cerebellum.gap_junctions_io is not None, "Gap junction module not initialized"
     assert cerebellum.config.gap_junctions_enabled
@@ -40,35 +52,27 @@ def test_io_gap_junction_initialization():
 
 def test_io_gap_junction_disabled():
     """Test gap junctions can be disabled via config."""
-    sizes = compute_cerebellum_sizes(purkinje_size=50)
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=False,
     )
-
-    cerebellum = Cerebellum(config)
 
     assert cerebellum.gap_junctions_io is None, "Gap junction module should not be initialized when disabled"
 
 
 def test_io_membrane_synchronization():
     """Test that gap junctions synchronize IO neuron membrane potentials."""
-    sizes = compute_cerebellum_sizes(purkinje_size=50)
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
         gap_junction_max_neighbors=12,
         gap_junction_threshold=0.20,  # Lower threshold for testing
     )
-
-    cerebellum = Cerebellum(config)
 
     # Create input pattern
     device = cerebellum.device
@@ -105,18 +109,14 @@ def test_error_sign_preservation():
     Biology: IO neurons synchronize to create simultaneous complex spikes,
     but the sign of the error (LTP vs LTD) must be preserved for each Purkinje cell.
     """
-    sizes = compute_cerebellum_sizes(purkinje_size=50)
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
         gap_junction_max_neighbors=12,
     )
-
-    cerebellum = Cerebellum(config)
 
     # Create input
     device = cerebellum.device
@@ -141,17 +141,13 @@ def test_error_sign_preservation():
 
 def test_io_gap_junction_state_serialization():
     """Test that io_membrane state is properly saved and loaded."""
-    sizes = compute_cerebellum_sizes(purkinje_size=50)
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
     )
-
-    cerebellum = Cerebellum(config)
 
     # Create some state
     device = cerebellum.device
@@ -171,7 +167,13 @@ def test_io_gap_junction_state_serialization():
     assert "io_membrane" in state_dict, "io_membrane not in state dict"
 
     # Create new cerebellum and load state
-    cerebellum2 = Cerebellum(config)
+    cerebellum2 = create_test_cerebellum(
+        input_size=100,
+        purkinje_size=50,
+        device="cpu",
+        gap_junctions_enabled=True,
+        gap_junction_strength=0.18,
+    )
     cerebellum2.load_state(state)
 
     # Verify io_membrane was restored
@@ -189,14 +191,12 @@ def test_io_gap_junction_backward_compatibility():
     Old checkpoints won't have io_membrane. The cerebellum should handle this
     gracefully by initializing io_membrane to zeros.
     """
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
         purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
     )
-
-    cerebellum = Cerebellum(config)
 
     # Create state without io_membrane (simulating old checkpoint)
     device = cerebellum.device
@@ -209,7 +209,12 @@ def test_io_gap_junction_backward_compatibility():
     old_state = CerebellumState.from_dict(old_state_dict, device=device)
 
     # Load into new cerebellum with gap junctions enabled
-    cerebellum2 = Cerebellum(config)
+    cerebellum2 = create_test_cerebellum(
+        input_size=100,
+        purkinje_size=50,
+        device="cpu",
+        gap_junctions_enabled=True,
+    )
     cerebellum2.load_state(old_state)
 
     # Should initialize io_membrane to zeros
@@ -224,16 +229,12 @@ def test_io_gap_junction_backward_compatibility():
 
 def test_io_gap_junction_reset_state():
     """Test that reset_state properly initializes io_membrane."""
-    sizes = compute_cerebellum_sizes(purkinje_size=50)
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
     )
-
-    cerebellum = Cerebellum(config)
 
     # Create some state
     device = cerebellum.device
@@ -264,29 +265,23 @@ def test_io_coupling_strength_scaling():
 
     Stronger gap junctions should produce stronger synchronization.
     """
-    sizes = compute_cerebellum_sizes(purkinje_size=50)
     # Weak coupling
-    config_weak = CerebellumConfig(
+    cerebellum_weak = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.05,  # Weak
     )
 
     # Strong coupling
-    config_strong = CerebellumConfig(
+    cerebellum_strong = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         gap_junctions_enabled=True,
         gap_junction_strength=0.25,  # Strong
     )
-
-    cerebellum_weak = Cerebellum(config_weak)
-    cerebellum_strong = Cerebellum(config_strong)
 
     # Use same random seed for consistent weights
     device = cerebellum_weak.device
@@ -330,18 +325,14 @@ def test_io_coupling_strength_scaling():
 
 def test_io_gap_junctions_with_enhanced_microcircuit():
     """Test gap junctions work correctly with enhanced cerebellar microcircuit."""
-    sizes = compute_cerebellum_sizes(purkinje_size=50)
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
-        granule_size=sizes["granule_size"],
-        purkinje_size=sizes["purkinje_size"],
+        purkinje_size=50,
         device="cpu",
         use_enhanced_microcircuit=True,
         gap_junctions_enabled=True,
         gap_junction_strength=0.18,
     )
-
-    cerebellum = Cerebellum(config)
 
     assert cerebellum.use_enhanced
     assert cerebellum.gap_junctions_io is not None
