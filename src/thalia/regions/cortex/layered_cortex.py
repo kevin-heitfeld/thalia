@@ -287,6 +287,11 @@ class LayeredCortex(NeuralRegion):
             dt_ms=config.dt_ms,
         )
 
+        # Override n_output to match actual forward() return size
+        # LayeredCortex returns concatenated L2/3 + L5 outputs
+        # (L4, L6a, L6b are internal processing layers, not external outputs)
+        self.n_output = self.l23_size + self.l5_size
+
         # Initialize layers
         self._init_layers()
 

@@ -520,6 +520,12 @@ class BrainBuilder:
             # Hippocampus: output_size = ca1_size
             if "ca1_size" in params:
                 return params["ca1_size"]
+            # If ca1_size not specified but input_size is, compute it
+            elif "input_size" in params:
+                from thalia.config.size_calculator import LayerSizeCalculator
+                calc = LayerSizeCalculator()
+                sizes = calc.hippocampus_from_input(params["input_size"])
+                return sizes["ca1_size"]
 
         elif registry_name == "prefrontal":
             # Prefrontal: output_size = n_neurons (working memory neurons)
@@ -1232,7 +1238,6 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Default sizes (can be overridden)
     thalamus_relay_size = overrides.get("thalamus_relay_size", 128)
     cortex_size = overrides.get("cortex_size", 500)
-    hippocampus_ca1_size = overrides.get("hippocampus_ca1_size", 200)
     pfc_n_neurons = overrides.get("pfc_n_neurons", 300)
     striatum_actions = overrides.get("striatum_actions", 10)
     striatum_neurons_per_action = overrides.get("striatum_neurons_per_action", 15)
@@ -1246,13 +1251,19 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     cortex_sizes["l6b_size"] = thalamus_relay_size  # Override to match relay neurons
     cortex_sizes["l6a_size"] = int(thalamus_relay_size * 0.2)  # Match TRN size (20% of relay)
 
+    # Cortex output size (L2/3 + L5) for computing downstream input sizes
+    cortex_output_size = cortex_sizes["l23_size"] + cortex_sizes["l5_size"]
+
     # Add regions (only thalamus needs input_size as it's the input interface)
     thalamus_sizes = compute_thalamus_sizes(thalamus_relay_size)
     builder.add_component("thalamus", "thalamus", input_size=thalamus_relay_size, **thalamus_sizes)
     builder.add_component("cortex", "cortex", **cortex_sizes)
 
-    # Hippocampus: specify ca1_size (output), other layers auto-compute
-    hippocampus_sizes = compute_hippocampus_sizes(hippocampus_ca1_size)
+    # Hippocampus: input from cortex (L2/3 + L5 = 1250)
+    # Compute all layer sizes from this input using biological ratios
+    # Result: DG=5000, CA3=1250, CA2=1000, CA1=2500 with default ratios
+    hippocampus_input_size = cortex_output_size  # Will be verified by _infer_component_sizes
+    hippocampus_sizes = compute_hippocampus_sizes(hippocampus_input_size)
     builder.add_component("hippocampus", "hippocampus", **hippocampus_sizes)
 
     # Prefrontal: specify n_neurons (working memory neurons)
