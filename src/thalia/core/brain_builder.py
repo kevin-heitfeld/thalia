@@ -468,8 +468,7 @@ class BrainBuilder:
                     feedforward_sources.append((source_name, conn))
 
             # Infer input_size from feedforward connections
-            # Skip for striatum (uses input_sources dict instead)
-            if "input_size" not in spec.config_params and feedforward_sources and spec.registry_name != "striatum":
+            if "input_size" not in spec.config_params and feedforward_sources:
                 feedforward_sizes = []
                 for source_name, conn in feedforward_sources:
                     output_size = self._get_source_output_size(source_name, conn.source_port)
@@ -1269,9 +1268,10 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Prefrontal: specify n_neurons (working memory neurons)
     builder.add_component("pfc", "prefrontal", n_neurons=pfc_n_neurons)
 
-    # Striatum: specify n_actions and neurons_per_action
+    # Striatum: n_actions and neurons_per_action → d1_size, d2_size via _compute_region_sizes
+    # input_size will be inferred from connections (cortex + hippocampus + pfc)
     builder.add_component("striatum", "striatum", n_actions=striatum_actions,
-                         neurons_per_action=striatum_neurons_per_action, input_sources={})
+                         neurons_per_action=striatum_neurons_per_action)
 
     # Cerebellum: specify purkinje_size
     builder.add_component("cerebellum", "cerebellum", purkinje_size=cerebellum_purkinje_size)

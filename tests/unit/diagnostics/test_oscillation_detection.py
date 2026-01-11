@@ -196,11 +196,13 @@ class TestOscillationDetectionIntegration:
     def test_ca3_shows_rhythmic_activity(self, global_config, device):
         """Test CA3 recurrence shows rhythmic dynamics (may not be 8 Hz)."""
         from thalia.core.brain_builder import BrainBuilder
+        from thalia.config.region_sizes import compute_thalamus_sizes
 
         # Build brain with hippocampus
         builder = BrainBuilder(global_config)
-        builder.add_component("thalamus", "thalamus", n_input=100, n_output=100)
-        builder.add_component("hippocampus", "hippocampus", n_output=100)
+        thalamus_sizes = compute_thalamus_sizes(relay_size=100)
+        builder.add_component("thalamus", "thalamus", input_size=100, **thalamus_sizes)
+        builder.add_component("hippocampus", "hippocampus", ca1_size=200)
         builder.connect("thalamus", "hippocampus", pathway_type="axonal")
         brain = builder.build()
 
