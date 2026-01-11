@@ -841,6 +841,7 @@ class Cerebellum(NeuralRegion):
         # Update instance variables
         self.purkinje_size = new_n_output
         self.n_output = new_n_output
+        self.n_neurons = new_n_output  # Always track Purkinje count (output neurons)
         if not self.use_enhanced:
             self.total_neurons = new_n_output
         # Note: granule_size doesn't change when adding Purkinje cells

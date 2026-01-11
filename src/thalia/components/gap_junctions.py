@@ -143,6 +143,9 @@ class GapJunctionCoupling(nn.Module):
             Coupling matrix [n_neurons, n_neurons] where entry (i,j) is the
             coupling conductance from neuron j to neuron i
         """
+        # Ensure weights are on the correct device
+        weights = weights.to(self.device)
+
         # Binarize weights to find active connections
         W_binary = (weights.abs() > 1e-6).float()
 

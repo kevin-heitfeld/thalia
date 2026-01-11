@@ -1152,6 +1152,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.n_actions += n_new
         self.d1_size = self.d1_size + n_new_d1
         self.d2_size = self.d2_size + n_new_d2
+        self.n_d1 = self.d1_size  # Keep n_d1 in sync with d1_size
+        self.n_d2 = self.d2_size  # Keep n_d2 in sync with d2_size
         self.n_output = self.d1_size + self.d2_size
 
         # Update elastic tensor capacity tracking (Phase 1)

@@ -157,17 +157,13 @@ class TestRegionInitialization:
         """Test hippocampus uses explicit sizes from config."""
         ec_size = 100
         sizes = compute_hippocampus_sizes(ec_size)
+        sizes["input_size"] = ec_size
 
         config = HippocampusConfig(
-            input_size=ec_size,
-            dg_size=sizes["dg_size"],
-            ca3_size=sizes["ca3_size"],
-            ca2_size=sizes["ca2_size"],
-            ca1_size=sizes["ca1_size"],
             device="cpu",
         )
 
-        hippocampus = Hippocampus(config)
+        hippocampus = Hippocampus(config, sizes, "cpu")
 
         # Check sizes match config
         assert hippocampus.dg_size == sizes["dg_size"]
@@ -183,18 +179,15 @@ class TestRegionInitialization:
         # L6 split: L6a and L6b are each half of L5 size
         l6a_size = sizes["l5_size"] // 2
         l6b_size = sizes["l5_size"] - l6a_size  # Handle odd sizes
+        sizes["l6a_size"] = l6a_size
+        sizes["l6b_size"] = l6b_size
+        sizes["input_size"] = input_size
 
         config = LayeredCortexConfig(
-            input_size=input_size,
-            l4_size=sizes["l4_size"],
-            l23_size=sizes["l23_size"],
-            l5_size=sizes["l5_size"],
-            l6a_size=l6a_size,
-            l6b_size=l6b_size,
             device="cpu",
         )
 
-        cortex = LayeredCortex(config)
+        cortex = LayeredCortex(config, sizes, "cpu")
 
         # Check sizes match config
         assert cortex.l4_size == sizes["l4_size"]
@@ -205,15 +198,13 @@ class TestRegionInitialization:
         """Test thalamus uses explicit sizes from config."""
         relay_size = 100
         sizes = compute_thalamus_sizes(relay_size)
+        sizes["input_size"] = 50
 
         config = ThalamicRelayConfig(
-            input_size=50,
-            relay_size=sizes["relay_size"],
-            trn_size=sizes["trn_size"],
             device="cpu",
         )
 
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(config, sizes, "cpu")
 
         # Check sizes match config
         assert thalamus.n_relay == sizes["relay_size"]
@@ -247,39 +238,34 @@ class TestRegionInitialization:
         """Test cerebellum uses explicit sizes from config."""
         purkinje_size = 100
         sizes = compute_cerebellum_sizes(purkinje_size)
+        sizes["input_size"] = 50
 
         config = CerebellumConfig(
-            input_size=50,
-            granule_size=sizes["granule_size"],
-            purkinje_size=sizes["purkinje_size"],
             use_enhanced_microcircuit=True,
             device="cpu",
         )
 
-        cerebellum = Cerebellum(config)
+        cerebellum = Cerebellum(config, sizes, "cpu")
 
-        # Check sizes match config (when enhanced)
-        assert cerebellum.config.purkinje_size == sizes["purkinje_size"]
-        assert cerebellum.config.granule_size == sizes["granule_size"]
+        # Check sizes used correctly (configs don't store sizes anymore)
+        assert cerebellum.n_neurons == sizes["purkinje_size"]
+        # Granule cells are internal to cerebellum microcircuit
 
     def test_striatum_explicit_sizes(self):
         """Test striatum uses explicit sizes from config."""
         n_actions = 4
         neurons_per_action = 10
         sizes = compute_striatum_sizes(n_actions, neurons_per_action)
+        sizes["input_sources"] = {"cortex": 100}
 
         config = StriatumConfig(
-            input_sources={"cortex": 100},
-            n_actions=sizes["n_actions"],
-            neurons_per_action=sizes["neurons_per_action"],
             device="cpu",
         )
 
-        striatum = Striatum(config)
+        striatum = Striatum(config, sizes, "cpu")
 
-        # Check sizes stored in config
-        assert striatum.config.d1_size == sizes["d1_size"]
-        assert striatum.config.d2_size == sizes["d2_size"]
+        # Check sizes used correctly (configs don't store sizes anymore)
+        assert striatum.n_neurons == sizes["d1_size"] + sizes["d2_size"]
         assert striatum.n_actions == sizes["n_actions"]
         assert striatum.neurons_per_action == sizes["neurons_per_action"]
 
@@ -291,15 +277,13 @@ class TestGrowthMethods:
         """Test thalamus grow_output updates relay_size and trn_size."""
         relay_size = 100
         sizes = compute_thalamus_sizes(relay_size)
+        sizes["input_size"] = 50
 
         config = ThalamicRelayConfig(
-            input_size=50,
-            relay_size=sizes["relay_size"],
-            trn_size=sizes["trn_size"],
             device="cpu",
         )
 
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(config, sizes, "cpu")
         initial_relay = thalamus.n_relay
         initial_trn = thalamus.n_trn
 
@@ -313,9 +297,7 @@ class TestGrowthMethods:
         expected_trn = int((initial_relay + n_new) * initial_trn / initial_relay)
         assert thalamus.n_trn == expected_trn
 
-        # Check config fields updated
-        assert thalamus.config.relay_size == thalamus.n_relay
-        assert thalamus.config.trn_size == thalamus.n_trn
+        # Configs don't store sizes anymore - only regions do
 
     def test_multisensory_grow_output_updates_pool_sizes(self):
         """Test multisensory grow_output updates pool size fields."""
@@ -368,60 +350,54 @@ class TestGrowthMethods:
         """Test cerebellum grow_output updates purkinje_size."""
         purkinje_size = 100
         sizes = compute_cerebellum_sizes(purkinje_size)
+        sizes["input_size"] = 50
 
         config = CerebellumConfig(
-            input_size=50,
-            granule_size=sizes["granule_size"],
-            purkinje_size=sizes["purkinje_size"],
             use_enhanced_microcircuit=True,
             device="cpu",
         )
 
-        cerebellum = Cerebellum(config)
+        cerebellum = Cerebellum(config, sizes, "cpu")
 
         # Grow output
         n_new = 20
         cerebellum.grow_output(n_new)
 
-        # Check config field updated
-        assert cerebellum.config.purkinje_size == purkinje_size + n_new
+        # Check instance variable updated (configs don't store sizes)
+        assert cerebellum.n_neurons == purkinje_size + n_new
 
     def test_striatum_grow_output_updates_d1_d2_sizes(self):
         """Test striatum grow_output updates d1_size and d2_size."""
         n_actions = 4
         neurons_per_action = 10
         sizes = compute_striatum_sizes(n_actions, neurons_per_action)
+        sizes["input_sources"] = {"cortex": 100}
 
         config = StriatumConfig(
-            input_sources={"cortex": 100},
-            n_actions=sizes["n_actions"],
-            neurons_per_action=sizes["neurons_per_action"],
             device="cpu",
         )
 
-        striatum = Striatum(config)
-        initial_d1 = striatum.config.d1_size
-        initial_d2 = striatum.config.d2_size
+        striatum = Striatum(config, sizes, "cpu")
+        initial_d1 = sizes["d1_size"]
+        initial_d2 = sizes["d2_size"]
         initial_total = initial_d1 + initial_d2
 
         # Grow output (add 1 action = 10 neurons)
         n_new = 1
         striatum.grow_actions(n_new)
 
-        # Check config fields updated
+        # Check instance variables updated (configs don't store sizes)
         # New total = initial + (neurons_per_action * n_new)
         new_total = initial_total + (neurons_per_action * n_new)
-        new_d1 = striatum.config.d1_size
-        new_d2 = striatum.config.d2_size
+        new_d1 = striatum.n_d1
+        new_d2 = striatum.n_d2
 
         # Verify growth happened
         assert new_d1 > initial_d1
         assert new_d2 > initial_d2
         assert new_d1 + new_d2 == new_total
 
-        # Verify configs match
-        assert striatum.config.d1_size == new_d1
-        assert striatum.config.d2_size == new_d2
+        # Verify D1/D2 split maintained
 
 
 class TestEdgeCases:
@@ -440,34 +416,29 @@ class TestEdgeCases:
         """Test that large growth operations work correctly."""
         relay_size = 50
         sizes = compute_thalamus_sizes(relay_size)
+        sizes["input_size"] = 50
 
         config = ThalamicRelayConfig(
-            input_size=50,
-            relay_size=sizes["relay_size"],
-            trn_size=sizes["trn_size"],
             device="cpu",
         )
 
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(config, sizes, "cpu")
 
         # Grow by 1000 (20x original size)
         thalamus.grow_output(1000)
 
-        # Should not crash, sizes should be reasonable
+        # Should not crash, sizes should be reasonable (configs don't store sizes)
         assert thalamus.n_relay == 1050
-        assert thalamus.config.relay_size == 1050
         assert thalamus.n_trn > 0  # Should grow proportionally
 
     def test_minimal_sizes(self):
         """Test that minimal sizes (1 neuron) work."""
+        sizes = {"input_size": 1, "relay_size": 1, "trn_size": 1}
         config = ThalamicRelayConfig(
-            input_size=1,
-            relay_size=1,
-            trn_size=1,
             device="cpu"
         )
 
-        thalamus = ThalamicRelay(config)
+        thalamus = ThalamicRelay(config, sizes, "cpu")
 
         # Should initialize without error
         assert thalamus.n_relay == 1

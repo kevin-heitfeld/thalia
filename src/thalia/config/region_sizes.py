@@ -385,6 +385,14 @@ def compute_thalamus_sizes(relay_size: int, trn_ratio: float = 0.3) -> dict:
         stacklevel=2,
     )
 
+    # If custom trn_ratio provided, compute directly
+    if trn_ratio != 0.3:
+        trn_size = int(relay_size * trn_ratio)
+        return {
+            "relay_size": relay_size,
+            "trn_size": trn_size,
+        }
+
     # Import here to avoid circular dependency
     calc = LayerSizeCalculator()
     result = calc.thalamus_from_relay(relay_size)
@@ -451,6 +459,14 @@ def compute_cerebellum_sizes(
         DeprecationWarning,
         stacklevel=2,
     )
+
+    # If custom granule_expansion provided, compute directly
+    if granule_expansion != 4.0:
+        granule_size = int(purkinje_size * granule_expansion)
+        return {
+            "granule_size": granule_size,
+            "purkinje_size": purkinje_size,
+        }
 
     # Import here to avoid circular dependency
     calc = LayerSizeCalculator()

@@ -19,8 +19,21 @@ import torch
 from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
 from thalia.core.brain_builder import BrainBuilder
 from thalia.config import GlobalConfig
+from thalia.config.region_sizes import compute_thalamus_sizes
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 from thalia.pathways.axonal_projection import AxonalProjection
+
+
+# ============================================================================
+# Test Helpers
+# ============================================================================
+
+def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu") -> ThalamicRelay:
+    """Create a ThalamicRelay for testing with new (config, sizes, device) pattern."""
+    config = ThalamicRelayConfig(device=device)
+    sizes = compute_thalamus_sizes(relay_size, trn_ratio=0.0)  # trn_size=0 for tests
+    sizes["input_size"] = input_size
+    return ThalamicRelay(config, sizes, device)
 
 
 # ============================================================================
@@ -32,8 +45,8 @@ def test_dynamic_brain_creation():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region1": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
-        "region2": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=128, trn_size=0)),
+        "region1": create_test_thalamus(input_size=32, relay_size=64),
+        "region2": create_test_thalamus(input_size=64, relay_size=128),
     }
 
     connections = {
@@ -57,9 +70,9 @@ def test_dynamic_brain_topology_graph():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "a": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
-        "b": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=64, trn_size=0)),
-        "c": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=64, trn_size=0)),
+        "a": create_test_thalamus(input_size=32, relay_size=64),
+        "b": create_test_thalamus(input_size=64, relay_size=64),
+        "c": create_test_thalamus(input_size=64, relay_size=64),
     }
 
     connections = {
@@ -91,7 +104,7 @@ def test_dynamic_brain_get_component():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region1": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
+        "region1": create_test_thalamus(input_size=32, relay_size=64),
     }
 
     brain = DynamicBrain(components, {}, global_config)
@@ -108,13 +121,13 @@ def test_dynamic_brain_add_component():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region1": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
+        "region1": create_test_thalamus(input_size=32, relay_size=64),
     }
 
     brain = DynamicBrain(components, {}, global_config)
 
     # Add new component
-    new_region = ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=128, trn_size=0))
+    new_region = create_test_thalamus(input_size=64, relay_size=128)
     brain.add_component("region2", new_region)
 
     assert "region2" in brain.components
@@ -126,8 +139,8 @@ def test_dynamic_brain_add_connection():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "a": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
-        "b": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=64, trn_size=0)),
+        "a": create_test_thalamus(input_size=32, relay_size=64),
+        "b": create_test_thalamus(input_size=64, relay_size=64),
     }
 
     brain = DynamicBrain(components, {}, global_config)
@@ -149,7 +162,7 @@ def test_dynamic_brain_reset_state():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0)),
+        "region": create_test_thalamus(input_size=32, relay_size=64),
     }
 
     brain = DynamicBrain(components, {}, global_config)
@@ -298,8 +311,8 @@ def test_brain_handles_connection_validation_failure():
 
     # Create components with incompatible sizes
     components = {
-        "source": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0, device="cpu")),
-        "target": ThalamicRelay(ThalamicRelayConfig(input_size=128, relay_size=64, trn_size=0, device="cpu")),
+        "source": create_test_thalamus(input_size=32, relay_size=64, device="cpu"),
+        "target": create_test_thalamus(input_size=128, relay_size=64, device="cpu"),
     }
     brain = DynamicBrain(components, {}, global_config)
 
@@ -332,8 +345,8 @@ def test_brain_forward_with_missing_inputs():
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
 
     components = {
-        "region_a": ThalamicRelay(ThalamicRelayConfig(input_size=32, relay_size=64, trn_size=0, device="cpu")),
-        "region_b": ThalamicRelay(ThalamicRelayConfig(input_size=64, relay_size=32, trn_size=0, device="cpu")),
+        "region_a": create_test_thalamus(input_size=32, relay_size=64, device="cpu"),
+        "region_b": create_test_thalamus(input_size=64, relay_size=32, device="cpu"),
     }
     brain = DynamicBrain(components, {}, global_config)
 

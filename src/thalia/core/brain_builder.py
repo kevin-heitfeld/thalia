@@ -861,6 +861,9 @@ class BrainBuilder:
                 for spec in target_specs:
                     spec.instance = pathway
 
+        # Import DynamicBrain locally to avoid circular import
+        from thalia.core.dynamic_brain import DynamicBrain
+
         # Create DynamicBrain
         # Build connection_specs dict with compound keys matching connections dict
         # For connections with target_port, use "target:port" key to avoid collisions
