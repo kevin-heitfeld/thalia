@@ -20,6 +20,30 @@ from thalia.core.region_state import BaseRegionState
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.hippocampus import TrisynapticHippocampus, HippocampusConfig
+from thalia.config.region_sizes import compute_hippocampus_sizes, compute_cortex_layer_sizes
+
+
+def create_test_hippocampus(input_size: int, device: str, **kwargs) -> TrisynapticHippocampus:
+    """Create TrisynapticHippocampus for testing with Phase 2 pattern."""
+    sizes = compute_hippocampus_sizes(input_size)
+    config = HippocampusConfig(**kwargs)
+    return TrisynapticHippocampus(config=config, sizes=sizes, device=device)
+
+
+def create_test_striatum(input_sources: dict, n_actions: int, device: str, **kwargs) -> Striatum:
+    """Create Striatum for testing with Phase 2 pattern."""
+    sizes = {'input_sources': input_sources, 'n_actions': n_actions}
+    if 'neurons_per_action' in kwargs:
+        sizes['neurons_per_action'] = kwargs.pop('neurons_per_action')
+    config = StriatumConfig(**kwargs)
+    return Striatum(config=config, sizes=sizes, device=device)
+
+
+def create_test_cortex(l4_size: int, l23_size: int, l5_size: int, device: str, **kwargs) -> LayeredCortex:
+    """Create LayeredCortex for testing with Phase 2 pattern."""
+    sizes = compute_cortex_layer_sizes(l4_size, l23_size, l5_size)
+    config = LayeredCortexConfig(**kwargs)
+    return LayeredCortex(config=config, sizes=sizes, device=device)
 
 
 # Custom strategies for neural network dimensions
@@ -218,8 +242,7 @@ class TestMultiRegionIndependence:
         torch.manual_seed(seed)
 
         # Use hippocampus (no exploration randomness like striatum)
-        config = HippocampusConfig(input_size=20, device="cpu", dt_ms=1.0)
-        hippocampus = TrisynapticHippocampus(config)
+        hippocampus = create_test_hippocampus(input_size=20, device="cpu", dt_ms=1.0)
 
         # Build up some state
         for _ in range(5):
@@ -230,11 +253,11 @@ class TestMultiRegionIndependence:
 
         # Create two new instances with same loaded state
         torch.manual_seed(seed + 1)  # Reset RNG for neuron noise
-        hippocampus1 = TrisynapticHippocampus(config)
+        hippocampus1 = create_test_hippocampus(input_size=20, device="cpu", dt_ms=1.0)
         hippocampus1.load_state(state)
 
         torch.manual_seed(seed + 1)  # Same RNG state
-        hippocampus2 = TrisynapticHippocampus(config)
+        hippocampus2 = create_test_hippocampus(input_size=20, device="cpu", dt_ms=1.0)
         hippocampus2.load_state(state)
 
         # Run same input with same RNG - should get same output
@@ -258,14 +281,15 @@ class TestStateSizeInvariance:
     @settings(max_examples=20, deadline=None)
     def test_striatum_state_size_invariance(self, n_input, n_output):
         """Property: State serialization works for any valid region size."""
-        config = StriatumConfig(
-            n_input=n_input,
-            n_output=n_output,
-            population_coding=False,
+        # Compute n_actions from n_output
+        n_actions = n_output // 4 if n_output >= 4 else n_output
+        striatum = create_test_striatum(
+            input_sources={'default': n_input},
+            n_actions=n_actions,
             device="cpu",
+            population_coding=False,
             dt_ms=1.0,
         )
-        striatum = Striatum(config)
 
         # Run some steps
         for _ in range(5):
@@ -273,12 +297,18 @@ class TestStateSizeInvariance:
 
         # Save and load
         state = striatum.get_state()
-        striatum2 = Striatum(config)
+        striatum2 = create_test_striatum(
+            input_sources={'default': n_input},
+            n_actions=n_actions,
+            device="cpu",
+            population_coding=False,
+            dt_ms=1.0,
+        )
         striatum2.load_state(state)
 
         # Verify dimensions preserved
-        assert striatum2.config.n_input == n_input
-        assert striatum2.config.n_output == n_output
+        assert striatum2.input_size == n_input
+        assert striatum2.n_actions == n_actions
 
     @given(
         l4_size=st.integers(min_value=20, max_value=100),
@@ -288,20 +318,14 @@ class TestStateSizeInvariance:
     def test_cortex_state_size_invariance(self, l4_size, l23_size):
         """Property: Cortex state works for various layer sizes."""
         l5_size = l23_size  # Keep output constraint satisfied
-        n_output = l23_size + l5_size
 
-        config = LayeredCortexConfig(
-            n_input=l4_size,
-            n_output=n_output,
+        cortex = create_test_cortex(
             l4_size=l4_size,
             l23_size=l23_size,
             l5_size=l5_size,
-            l6a_size=l4_size // 2,
-            l6b_size=l4_size // 2,
             device="cpu",
             dt_ms=1.0,
         )
-        cortex = LayeredCortex(config)
 
         # Run some steps
         for _ in range(5):
@@ -309,13 +333,19 @@ class TestStateSizeInvariance:
 
         # Save and load
         state = cortex.get_state()
-        cortex2 = LayeredCortex(config)
+        cortex2 = create_test_cortex(
+            l4_size=l4_size,
+            l23_size=l23_size,
+            l5_size=l5_size,
+            device="cpu",
+            dt_ms=1.0,
+        )
         cortex2.load_state(state)
 
         # Verify layer sizes preserved
-        assert cortex2.config.l4_size == l4_size
-        assert cortex2.config.l23_size == l23_size
-        assert cortex2.config.l5_size == l5_size
+        assert cortex2.l4_size == l4_size
+        assert cortex2.l23_size == l23_size
+        assert cortex2.l5_size == l5_size
 
 
 class TestStateConsistency:
@@ -330,9 +360,13 @@ class TestStateConsistency:
         """Property: Multiple save/load cycles preserve state correctly."""
         torch.manual_seed(seed)
 
-        config = StriatumConfig(n_actions=8, neurons_per_action=1, input_sources={'default': 40}, device="cpu",
-            dt_ms=1.0)
-        striatum = Striatum(config)
+        striatum = create_test_striatum(
+            input_sources={'default': 40},
+            n_actions=8,
+            neurons_per_action=1,
+            device="cpu",
+            dt_ms=1.0
+        )
 
         # Initial state
         for _ in range(10):
@@ -344,7 +378,13 @@ class TestStateConsistency:
         current_state = initial_state
         for _ in range(n_checkpoints):
             # Load state
-            striatum_temp = Striatum(config)
+            striatum_temp = create_test_striatum(
+                input_sources={'default': 40},
+                n_actions=8,
+                neurons_per_action=1,
+                device="cpu",
+                dt_ms=1.0
+            )
             striatum_temp.load_state(current_state)
 
             # Run a few steps
@@ -355,7 +395,13 @@ class TestStateConsistency:
             current_state = striatum_temp.get_state()
 
         # Final load should work without errors
-        striatum_final = Striatum(config)
+        striatum_final = create_test_striatum(
+            input_sources={'default': 40},
+            n_actions=8,
+            neurons_per_action=1,
+            device="cpu",
+            dt_ms=1.0
+        )
         striatum_final.load_state(current_state)
 
         # Basic sanity check - can still run
@@ -368,9 +414,11 @@ class TestStateConsistency:
         """Property: Hippocampus state remains consistent through checkpoints."""
         torch.manual_seed(seed)
 
-        config = HippocampusConfig(input_size=20, device="cpu",
-            dt_ms=1.0)
-        hippocampus = TrisynapticHippocampus(config)
+        hippocampus = create_test_hippocampus(
+            input_size=20,
+            device="cpu",
+            dt_ms=1.0
+        )
 
         # Build up some patterns
         for _ in range(15):
@@ -378,7 +426,11 @@ class TestStateConsistency:
 
         # Save and load
         state = hippocampus.get_state()
-        hippocampus2 = TrisynapticHippocampus(config)
+        hippocampus2 = create_test_hippocampus(
+            input_size=20,
+            device="cpu",
+            dt_ms=1.0
+        )
         hippocampus2.load_state(state)
 
         # Continue processing - should work smoothly

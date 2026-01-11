@@ -4,15 +4,31 @@ import torch
 
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
+from thalia.config.region_sizes import compute_cerebellum_sizes
 from thalia.mixins.state_loading_mixin import StateLoadingMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
+
+
+def create_test_prefrontal(input_size: int, n_neurons: int, device: str) -> Prefrontal:
+    """Create Prefrontal instance for testing with Phase 2 pattern."""
+    sizes = {'input_size': input_size, 'n_neurons': n_neurons}
+    config = PrefrontalConfig()
+    return Prefrontal(config=config, sizes=sizes, device=device)
+
+
+def create_test_cerebellum(input_size: int, purkinje_size: int, device: str, **kwargs) -> Cerebellum:
+    """Create Cerebellum instance for testing with Phase 2 pattern."""
+    expansion = kwargs.pop('granule_expansion_factor', 4.0)
+    sizes = compute_cerebellum_sizes(purkinje_size, expansion)
+    sizes['input_size'] = input_size  # Add input_size to sizes dict
+    config = CerebellumConfig(**kwargs)
+    return Cerebellum(config=config, sizes=sizes, device=device)
 
 
 def test_neural_region_has_both_mixins():
     """Verify NeuralRegion provides both StateLoadingMixin and LearningStrategyMixin."""
     # Create a simple Prefrontal region
-    config = PrefrontalConfig(input_size=64, n_neurons=128, device="cpu")
-    pfc = Prefrontal(config)
+    pfc = create_test_prefrontal(input_size=64, n_neurons=128, device="cpu")
 
     # Verify it has StateLoadingMixin methods
     assert hasattr(pfc, 'load_state')
@@ -32,13 +48,12 @@ def test_neural_region_has_both_mixins():
 
 def test_cerebellum_inherits_mixins_from_base():
     """Verify Cerebellum gets mixins from NeuralRegion, not direct inheritance."""
-    config = CerebellumConfig(
+    cerebellum = create_test_cerebellum(
         input_size=100,
         purkinje_size=50,
         device="cpu",
         use_enhanced_microcircuit=False,  # Simpler test
     )
-    cerebellum = Cerebellum(config)
 
     # Verify StateLoadingMixin methods available
     assert hasattr(cerebellum, 'load_state')
@@ -52,8 +67,7 @@ def test_cerebellum_inherits_mixins_from_base():
 
 def test_state_loading_works_with_base_inheritance():
     """Verify state loading still works with base class inheritance."""
-    config = PrefrontalConfig(input_size=32, n_neurons=64, device="cpu")
-    pfc = Prefrontal(config)
+    pfc = create_test_prefrontal(input_size=32, n_neurons=64, device="cpu")
     pfc.reset_state()
 
     # Get state
