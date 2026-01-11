@@ -102,7 +102,9 @@ SIZE_PARAMS = {
     'dg_size', 'ca3_size', 'ca2_size', 'ca1_size',  # Hippocampus
     'relay_size', 'trn_size',  # Thalamus
     'purkinje_size', 'granule_size',  # Cerebellum
-    'n_neurons', 'n_actions',  # Generic
+    'n_neurons', 'n_actions', 'neurons_per_action',  # Generic + Striatum
+    'd1_size', 'd2_size',  # Striatum pathways
+    'input_sources',  # Striatum multi-source
 }
 
 
@@ -125,6 +127,59 @@ def _separate_size_params(params: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[
             behavioral[key] = value
 
     return behavioral, sizes
+
+
+def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute concrete sizes for a region from semantic size parameters.
+
+    Some regions need size transformation:
+    - Striatum: n_actions + neurons_per_action → d1_size, d2_size
+    - Cerebellum: purkinje_size → granule_size
+    - Hippocampus: input_size → dg_size, ca3_size, ca1_size, ca2_size
+    - Cortex: l4_size, l23_size, l5_size → complete layer sizes
+
+    Args:
+        registry_name: Name of region type
+        size_params: Raw size parameters from builder
+
+    Returns:
+        Computed size parameters suitable for region constructor
+    """
+    from thalia.config.size_calculator import LayerSizeCalculator
+    from thalia.config.region_sizes import compute_hippocampus_sizes, compute_cerebellum_sizes
+
+    calc = LayerSizeCalculator()
+
+    if registry_name == "striatum":
+        # Striatum needs n_actions + neurons_per_action → d1_size, d2_size
+        if 'n_actions' in size_params:
+            n_actions = size_params['n_actions']
+            neurons_per_action = size_params.get('neurons_per_action', 10)
+
+            # Compute d1_size and d2_size
+            computed = calc.striatum_from_actions(n_actions, neurons_per_action)
+
+            # Merge computed sizes with original params
+            result = {**size_params, **computed}
+            return result
+
+    elif registry_name == "cerebellum":
+        # Cerebellum needs purkinje_size → granule_size
+        if 'purkinje_size' in size_params and 'granule_size' not in size_params:
+            purkinje_size = size_params['purkinje_size']
+            expansion = size_params.get('granule_expansion_factor', 4.0)
+            computed = compute_cerebellum_sizes(purkinje_size, expansion)
+            return {**size_params, **computed}
+
+    elif registry_name == "hippocampus":
+        # Hippocampus needs input_size → all layer sizes
+        if 'input_size' in size_params and 'dg_size' not in size_params:
+            input_size = size_params['input_size']
+            computed = compute_hippocampus_sizes(input_size)
+            return {**size_params, **computed}
+
+    # No transformation needed for this region type
+    return size_params
 
 
 class BrainBuilder:
@@ -729,6 +784,9 @@ class BrainBuilder:
 
             # Separate size parameters from behavioral parameters
             behavioral_params, size_params = _separate_size_params(config_params_filtered)
+
+            # Compute region-specific sizes (e.g., striatum n_actions → d1_size, d2_size)
+            size_params = _compute_region_sizes(spec.registry_name, size_params)
 
             # Add global params to behavioral config
             behavioral_params.update({

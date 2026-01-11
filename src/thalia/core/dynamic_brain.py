@@ -395,11 +395,11 @@ class DynamicBrain(nn.Module):
             self.config.n_actions = None
         if not hasattr(self.config, 'hippocampus_size'):
             self.config.hippocampus_size = getattr(
-                self.components.get('hippocampus'), 'n_output', 128
+                self.components['hippocampus'], 'n_output', 128
             ) if 'hippocampus' in self.components else 128
         if not hasattr(self.config, 'pfc_size'):
             self.config.pfc_size = getattr(
-                self.components.get('pfc'), 'n_output', 64
+                self.components['pfc'], 'n_output', 64
             ) if 'pfc' in self.components else 64
         if not hasattr(self.config, 'device'):
             self.config.device = str(self.device)
