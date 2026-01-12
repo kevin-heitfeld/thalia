@@ -375,7 +375,6 @@ class ForwardPassCoordinator:
         if self.stp_module is not None:
             # Get STP efficacy [n_input, n_total_msns] where n_total_msns = d1_size + d2_size
             stp_efficacy = self.stp_module(input_float)
-
             # Split efficacy for D1 and D2 pathways at MSN neuron level
             n_d1 = self.d1_size  # Total D1 MSN neurons
             n_d2 = self.d2_size  # Total D2 MSN neurons

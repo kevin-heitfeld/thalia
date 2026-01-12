@@ -108,7 +108,6 @@ import torch
 import torch.nn as nn
 
 from thalia.typing import StriatumDiagnostics
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
@@ -1156,6 +1155,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.n_d2 = self.d2_size  # Keep n_d2 in sync with d2_size
         self.n_output = self.d1_size + self.d2_size
 
+        # Update forward_coordinator's cached sizes (critical for STP slicing!)
+        self.forward_coordinator.d1_size = self.d1_size
+        self.forward_coordinator.d2_size = self.d2_size
+        self.forward_coordinator.n_actions = self.n_actions
+
         # Update elastic tensor capacity tracking (Phase 1)
         self.n_neurons_active = new_n_neurons
         # Check if we need to expand capacity
@@ -1654,6 +1658,36 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 total_current += current
 
         return total_current
+
+    def _apply(self, fn):
+        """Override _apply to handle non-parameter tensors in TD-lambda learners.
+
+        This is called by .to(), .cpu(), .cuda(), etc. to transfer all tensors.
+        We need to explicitly transfer TD-lambda traces since they're not nn.Parameters.
+
+        Args:
+            fn: Function to apply (e.g., lambda t: t.cuda())
+
+        Returns:
+            Self after applying function
+        """
+        # Apply to all nn.Module parameters and buffers
+        super()._apply(fn)
+
+        # Transfer TD-lambda learners (not nn.Modules, so need manual transfer)
+        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
+            # Extract device from function by applying to a dummy tensor
+            dummy = torch.zeros(1)
+            new_device = fn(dummy).device
+            self.td_lambda_d1.to(new_device)
+
+        if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
+            # Extract device from function by applying to a dummy tensor
+            dummy = torch.zeros(1)
+            new_device = fn(dummy).device
+            self.td_lambda_d2.to(new_device)
+
+        return self
 
     def forward(
         self,
@@ -2255,11 +2289,18 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if self.homeostasis is not None and hasattr(self.homeostasis.unified_homeostasis, 'get_state'):
             homeostasis_manager_state = self.homeostasis.unified_homeostasis.get_state()
 
-        # Get neuron membrane state (if neurons exist and have membrane)
+        # Get neuron membrane state (concatenate D1 and D2 membranes for compatibility with base tests)
         membrane = None
         if self.d1_pathway.neurons is not None and hasattr(self.d1_pathway.neurons, 'membrane'):
-            if self.d1_pathway.neurons.membrane is not None:
-                membrane = self.d1_pathway.neurons.membrane.detach().clone()
+            d1_membrane = self.d1_pathway.neurons.membrane
+            d2_membrane = self.d2_pathway.neurons.membrane if (self.d2_pathway.neurons is not None and hasattr(self.d2_pathway.neurons, 'membrane')) else None
+
+            if d1_membrane is not None and d2_membrane is not None:
+                # Concatenate D1 and D2 membranes to match n_output size
+                membrane = torch.cat([d1_membrane, d2_membrane], dim=0).detach().clone()
+            elif d1_membrane is not None:
+                # Fallback: only D1 (shouldn't happen in normal operation)
+                membrane = d1_membrane.detach().clone()
 
         # Get neuromodulator levels from forward_coordinator
         dopamine = self.forward_coordinator._tonic_dopamine if hasattr(self.forward_coordinator, '_tonic_dopamine') else 0.0

@@ -28,42 +28,43 @@ def device():
 @pytest.fixture
 def hippocampus_config(device):
     """Hippocampus config with phase diversity enabled."""
-    sizes = compute_hippocampus_sizes(64)
     return HippocampusConfig(
-        input_size=64,
-        dg_size=sizes["dg_size"],
-        ca3_size=sizes["ca3_size"],
-        ca2_size=sizes["ca2_size"],
-        ca1_size=sizes["ca1_size"],
         theta_gamma_enabled=True,
         phase_diversity_init=True,  # Enable phase diversity
         phase_jitter_std_ms=5.0,
         learning_rate=0.01,
-        device=str(device),
         dt_ms=1.0,
     )
+
+
+@pytest.fixture
+def hippocampus_sizes():
+    """Hippocampus sizes for testing."""
+    sizes = compute_hippocampus_sizes(64)
+    sizes['input_size'] = 64
+    return sizes
 
 
 class TestPhasePreferenceEmergence:
     """Test that phase preferences emerge without explicit slot assignment."""
 
-    def test_no_slot_assignment_attribute(self, hippocampus_config):
+    def test_no_slot_assignment_attribute(self, hippocampus_config, hippocampus_sizes):
         """Verify that hippocampus no longer has _ca3_slot_assignment."""
-        hippo = TrisynapticHippocampus(hippocampus_config)
+        hippo = TrisynapticHippocampus(config=hippocampus_config, sizes=hippocampus_sizes, device="cpu")
 
         # Should NOT have slot assignment
         assert not hasattr(hippo, '_ca3_slot_assignment'), \
             "Hippocampus should not have _ca3_slot_assignment (removed for emergent coding)"
 
-    def test_phase_diversity_in_weights(self, hippocampus_config, device):
+    def test_phase_diversity_in_weights(self, hippocampus_config, hippocampus_sizes, device):
         """Test that phase diversity initialization creates weight variation."""
         # Create two hippocampi with same config but different random seeds
         torch.manual_seed(42)
-        hippo1 = TrisynapticHippocampus(hippocampus_config)
+        hippo1 = TrisynapticHippocampus(config=hippocampus_config, sizes=hippocampus_sizes, device="cpu")
         w1 = hippo1.synaptic_weights["ca3_ca3"].data.clone()
 
         torch.manual_seed(43)
-        hippo2 = TrisynapticHippocampus(hippocampus_config)
+        hippo2 = TrisynapticHippocampus(config=hippocampus_config, sizes=hippocampus_sizes, device="cpu")
         w2 = hippo2.synaptic_weights["ca3_ca3"].data.clone()
 
         # Weights should be different (phase jitter is random)
@@ -75,18 +76,18 @@ class TestPhasePreferenceEmergence:
         assert weight_std > 0.01, \
             f"Weights should have non-trivial variance, got std={weight_std:.6f}"
 
-    def test_phase_diversity_disabled(self, hippocampus_config, device):
+    def test_phase_diversity_disabled(self, hippocampus_config, hippocampus_sizes, device):
         """Test that phase diversity can be disabled."""
         config_no_diversity = hippocampus_config
         config_no_diversity.phase_diversity_init = False
 
         torch.manual_seed(42)
-        hippo = TrisynapticHippocampus(config_no_diversity)
+        hippo = TrisynapticHippocampus(config=config_no_diversity, sizes=hippocampus_sizes, device="cpu")
 
         # Should still work, just without phase jitter
         assert True, "Should create hippocampus without phase diversity"
 
-    def test_emergent_phase_selectivity(self, hippocampus_config, device):
+    def test_emergent_phase_selectivity(self, hippocampus_config, hippocampus_sizes, device):
         """Test that neurons develop phase selectivity through learning.
 
         Present patterns at different gamma phases, verify that:
@@ -95,7 +96,7 @@ class TestPhasePreferenceEmergence:
         3. Phase preferences emerge without explicit slot gating
         """
         torch.manual_seed(42)
-        hippo = TrisynapticHippocampus(hippocampus_config)
+        hippo = TrisynapticHippocampus(config=hippocampus_config, sizes=hippocampus_sizes, device="cpu")
 
         # Create distinct input patterns
         pattern_a = torch.zeros(64, dtype=torch.bool, device=device)
@@ -160,14 +161,14 @@ class TestPhasePreferenceEmergence:
         assert selective_neurons > 0 or len(neuron_pattern_activity) > 0, \
             "Should observe some CA3 activity and potential phase selectivity"
 
-    def test_capacity_emerges_from_gamma_theta_ratio(self, hippocampus_config, device):
+    def test_capacity_emerges_from_gamma_theta_ratio(self, hippocampus_config, hippocampus_sizes, device):
         """Test that working memory capacity emerges from oscillator frequencies.
 
         Capacity should be ~gamma_freq / theta_freq (e.g., 40Hz / 8Hz ≈ 5 slots)
         WITHOUT any explicit slot count parameter.
         """
         torch.manual_seed(42)
-        hippo = TrisynapticHippocampus(hippocampus_config)
+        hippo = TrisynapticHippocampus(config=hippocampus_config, sizes=hippocampus_sizes, device="cpu")
 
         # Simulate one theta cycle (125ms at 8 Hz)
         theta_period_ms = 1000.0 / 8.0  # 125ms
@@ -216,10 +217,10 @@ class TestPhasePreferenceEmergence:
         # Basic sanity check: CA3 should show activity
         assert total_ca3_spikes > 0, "CA3 should be active during sequence presentation"
 
-    def test_stdp_strengthens_phase_preferences(self, hippocampus_config, device):
+    def test_stdp_strengthens_phase_preferences(self, hippocampus_config, hippocampus_sizes, device):
         """Test that STDP strengthens connections at preferred phases."""
         torch.manual_seed(42)
-        hippo = TrisynapticHippocampus(hippocampus_config)
+        hippo = TrisynapticHippocampus(config=hippocampus_config, sizes=hippocampus_sizes, device="cpu")
 
         # Get initial CA3 recurrent weights
         initial_weights = hippo.synaptic_weights["ca3_ca3"].data.clone()

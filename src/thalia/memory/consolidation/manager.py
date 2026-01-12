@@ -58,10 +58,10 @@ class ConsolidationManager:
         self.config = config
         self._deliver_reward = deliver_reward_fn
 
-        # Cache sizes for state reconstruction
-        self._cortex_output_size = None  # Full cortex output (L23+L5)
-        self._hippo_size = config.hippocampus_size
-        self._pfc_size = config.pfc_size
+        # Cache sizes for state reconstruction - fallback to component sizes if config doesn't have them
+        self._cortex_output_size = None  # Full cortex output (L23+L5), set via set_cortex_output_size()
+        self._hippo_size = getattr(config, 'hippocampus_size', None) or getattr(hippocampus, 'n_output', 128)
+        self._pfc_size = getattr(config, 'pfc_size', None) or getattr(pfc, 'n_output', 64)
 
     def set_cortex_output_size(self, size: int) -> None:
         """Set cortex output size (L23+L5 combined, needed for state reconstruction)."""

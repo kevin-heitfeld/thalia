@@ -409,11 +409,10 @@ class PredictiveCortex(NeuralRegion):
                     initial_precision=config.initial_precision,
                     precision_learning_rate=config.precision_learning_rate,
                     use_spiking=True,
-                    device=config.device,
+                    device=device,  # Use device argument, not config.device string
                 )
             )
-            # Ensure prediction layer is on correct device
-            self.prediction_layer.to(torch.device(config.device))
+            # No need to call .to() - prediction layer created on correct device
         else:
             self.prediction_layer = None
 
@@ -614,6 +613,8 @@ class PredictiveCortex(NeuralRegion):
 
         # Update output size (note: _output_size initialized in __init__)
         self._output_size = self.l23_size + self.l5_size
+        self.n_output = self._output_size  # Update NeuralRegion's n_output attribute
+        self.n_neurons = self._output_size  # Keep n_neurons in sync
 
         # Note: Config no longer stores sizes - they're instance variables only
 

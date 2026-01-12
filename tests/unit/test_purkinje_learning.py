@@ -9,6 +9,7 @@ import torch
 import pytest
 
 from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 
 
 class TestPurkinjePerDendriteLearning:
@@ -16,16 +17,18 @@ class TestPurkinjePerDendriteLearning:
 
     def test_enhanced_mode_updates_purkinje_weights(self):
         """Enhanced mode should update individual Purkinje cell weights."""
+        # Use new (config, sizes, device) pattern
+        calc = LayerSizeCalculator()
+        sizes = calc.cerebellum_from_output(purkinje_size=32)
+        sizes['input_size'] = 64  # Add input_size to sizes dict
+
         config = CerebellumConfig(
-            input_size=64,
-            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=0.1,  # Higher LR for visible changes
             error_threshold=0.001,  # Lower threshold to allow learning
             gap_junctions_enabled=False,  # Disable gap junctions (they zero out error if not initialized)
-            device="cpu"
         )
-        cerebellum = Cerebellum(config)
+        cerebellum = Cerebellum(config=config, sizes=sizes, device="cpu")
 
         # Forward pass to initialize weights
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
@@ -53,16 +56,17 @@ class TestPurkinjePerDendriteLearning:
 
         Note: We manually set output spikes to ensure negative error condition.
         """
+        calc = LayerSizeCalculator()
+        sizes = calc.cerebellum_from_output(purkinje_size=32)
+        sizes['input_size'] = 64
+
         config = CerebellumConfig(
-            input_size=64,
-            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=0.1,
             error_threshold=0.001,
             gap_junctions_enabled=False,
-            device="cpu"
         )
-        cerebellum = Cerebellum(config)
+        cerebellum = Cerebellum(config=config, sizes=sizes, device="cpu")
 
         # Create input pattern
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
@@ -86,16 +90,17 @@ class TestPurkinjePerDendriteLearning:
 
     def test_ltp_with_positive_error(self):
         """LTP should occur when target > output (positive error)."""
+        calc = LayerSizeCalculator()
+        sizes = calc.cerebellum_from_output(purkinje_size=32)
+        sizes['input_size'] = 64
+
         config = CerebellumConfig(
-            input_size=64,
-            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=0.1,
             error_threshold=0.001,
             gap_junctions_enabled=False,
-            device="cpu"
         )
-        cerebellum = Cerebellum(config)
+        cerebellum = Cerebellum(config=config, sizes=sizes, device="cpu")
 
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
         input_spikes[:20] = 1.0
@@ -116,17 +121,18 @@ class TestPurkinjePerDendriteLearning:
 
     def test_weight_bounds_respected(self):
         """Purkinje cell weights should stay within configured bounds."""
+        calc = LayerSizeCalculator()
+        sizes = calc.cerebellum_from_output(purkinje_size=32)
+        sizes['input_size'] = 64
+
         config = CerebellumConfig(
-            input_size=64,
-            purkinje_size=32,
             use_enhanced_microcircuit=True,
             learning_rate=1.0,  # Very high LR to test bounds
             w_min=0.0,
             w_max=1.0,
             gap_junctions_enabled=False,
-            device="cpu"
         )
-        cerebellum = Cerebellum(config)
+        cerebellum = Cerebellum(config=config, sizes=sizes, device="cpu")
 
         # Multiple learning iterations with large errors
         for _ in range(10):
@@ -145,15 +151,16 @@ class TestPurkinjePerDendriteLearning:
 
     def test_each_purkinje_cell_learns_independently(self):
         """Each Purkinje cell should have independent weight updates."""
+        calc = LayerSizeCalculator()
+        sizes = calc.cerebellum_from_output(purkinje_size=10)
+        sizes['input_size'] = 64
+
         config = CerebellumConfig(
-            input_size=64,
-            purkinje_size=10,
             use_enhanced_microcircuit=True,
             learning_rate=0.01,
             gap_junctions_enabled=False,
-            device="cpu"
         )
-        cerebellum = Cerebellum(config)
+        cerebellum = Cerebellum(config=config, sizes=sizes, device="cpu")
 
         # Forward pass
         input_spikes = torch.rand(64, device=torch.device("cpu"))
@@ -181,12 +188,12 @@ class TestCerebellumNeurogenesisTracking:
 
     def test_cerebellum_has_training_step_method(self):
         """Cerebellum should have set_training_step method."""
-        config = CerebellumConfig(
-            input_size=64,
-            purkinje_size=32,
-            device="cpu"
-        )
-        cerebellum = Cerebellum(config)
+        calc = LayerSizeCalculator()
+        sizes = calc.cerebellum_from_output(purkinje_size=32)
+        sizes['input_size'] = 64
+
+        config = CerebellumConfig()
+        cerebellum = Cerebellum(config=config, sizes=sizes, device="cpu")
 
         # Should not raise AttributeError
         assert hasattr(cerebellum, 'set_training_step')

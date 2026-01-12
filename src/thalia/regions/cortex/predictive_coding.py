@@ -230,7 +230,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
     def __init__(self, config: PredictiveCodingConfig):
         super().__init__()
         self.config = config
-        self.device = torch.device(config.device)
+        # Don't cache device - use property instead to track actual module device
 
         # =================================================================
         # PREDICTION PATHWAY (top-down)
@@ -241,17 +241,18 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         from thalia.components.synapses.weight_init import WeightInitializer
         from thalia.regulation.learning_constants import WEIGHT_INIT_SCALE_PREDICTIVE
 
+        device = torch.device(config.device)  # Use local variable for initialization
         self.W_pred = nn.Parameter(
             WeightInitializer.gaussian(
                 config.n_input, config.n_representation,
                 mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
-                device=self.device
+                device=device
             )
         )
 
         # Prediction bias (learned prior)
         self.b_pred = nn.Parameter(
-            torch.zeros(config.n_input, device=self.device)
+            torch.zeros(config.n_input, device=device)
         )
 
         # =================================================================
@@ -271,7 +272,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 v_threshold=0.5,  # Lower threshold for sensitive error detection
                 dt_ms=config.dt_ms,
             )
-            self.error_neurons = ConductanceLIF(config.n_input, error_config)
+            self.error_neurons = ConductanceLIF(config.n_input, error_config, device=device)
 
             # Spiking prediction neurons (slow dynamics)
             pred_config = ConductanceLIFConfig(
@@ -281,7 +282,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 v_threshold=1.0,
                 dt_ms=config.dt_ms,
             )
-            self.prediction_neurons = ConductanceLIF(config.n_input, pred_config)
+            self.prediction_neurons = ConductanceLIF(config.n_input, pred_config, device=device)
         else:
             self.error_neurons = None
             self.prediction_neurons = None
@@ -295,7 +296,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         self.log_precision = nn.Parameter(
             torch.full((config.n_input,),
                       fill_value=torch.log(torch.tensor(config.initial_precision)).item(),
-                      device=self.device)
+                      device=device)
         )
 
         # =================================================================
@@ -306,7 +307,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             WeightInitializer.gaussian(
                 config.n_representation, config.n_input,
                 mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
-                device=self.device
+                device=device
             )
         )
 
@@ -318,7 +319,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 WeightInitializer.gaussian(
                     config.n_output, config.n_input,
                     mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
-                    device=self.device
+                    device=device
                 )
             )
         else:
@@ -346,6 +347,11 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             "error_decay",
             torch.tensor(torch.exp(torch.tensor(-config.dt_ms / config.error_tau_ms)).item())
         )
+
+    @property
+    def device(self) -> torch.device:
+        """Get current device from parameters (tracks module.to() calls)."""
+        return self.W_pred.device
 
     def reset_state(self) -> None:
         """Reset layer state for new sequence."""

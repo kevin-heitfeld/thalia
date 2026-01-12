@@ -155,7 +155,7 @@ class TestV2WeightPlacement:
         initial_l4_l23 = cortex.synaptic_weights["l4_l23"].data.clone()
 
         # Run forward pass to generate activity
-        input_spikes = torch.zeros(cortex.layer_config.n_input, dtype=torch.bool)
+        input_spikes = torch.zeros(cortex.input_size, dtype=torch.bool)
         input_spikes[:10] = True  # Activate first 10 neurons
 
         cortex.forward({"input": input_spikes})
@@ -184,7 +184,7 @@ class TestEnhancements:
 
         # Set dopamine and run forward
         cortex.state.dopamine = 0.6
-        dummy_input = torch.zeros(cortex.layer_config.n_input, device="cpu")
+        dummy_input = torch.zeros(cortex.input_size, device="cpu")
         output_with_da = cortex.forward(dummy_input)
 
         # Behavioral test: Layer-specific DA should affect learning/output

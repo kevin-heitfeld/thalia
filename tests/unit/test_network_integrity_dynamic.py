@@ -245,7 +245,12 @@ class TestBrainForwardPass:
         This validates end-to-end connectivity and data flow.
         """
         # Create valid input
-        input_size = test_brain.config.input_size
+        # Get input size from thalamus (input interface)
+        thalamus = test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        if thalamus and hasattr(thalamus, "input_size"):
+            input_size = thalamus.input_size
+        else:
+            input_size = 100  # Fallback to config value
         sensory_input = torch.rand(input_size, device=device) > 0.8  # 20% sparsity
 
         # Run forward pass
@@ -300,7 +305,8 @@ class TestEdgeCases:
 
         Edge case: No sensory input.
         """
-        input_size = test_brain.config.input_size
+        thalamus = test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        input_size = thalamus.input_size if thalamus and hasattr(thalamus, "input_size") else 100
         silent_input = torch.zeros(input_size, device=device, dtype=torch.bool)
 
         # Should not crash
@@ -320,7 +326,8 @@ class TestEdgeCases:
 
         Edge case: Maximum sensory input.
         """
-        input_size = test_brain.config.input_size
+        thalamus = test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        input_size = thalamus.input_size if thalamus and hasattr(thalamus, "input_size") else 100
         saturated_input = torch.ones(input_size, device=device, dtype=torch.bool)
 
         # Should not overflow or produce NaN

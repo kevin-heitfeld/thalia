@@ -195,28 +195,33 @@ class ConductanceLIF(nn.Module):
     def __init__(
         self,
         n_neurons: int,
-        config: Optional[ConductanceLIFConfig] = None
+        config: Optional[ConductanceLIFConfig] = None,
+        device: Optional[torch.device] = None
     ):
         super().__init__()
         self.n_neurons = n_neurons
         self.config = config or ConductanceLIFConfig()
 
+        # Determine device
+        if device is None:
+            device = torch.device("cpu")
+
         # Register constants as buffers
-        self.register_buffer("C_m", torch.tensor(self.config.C_m))
-        self.register_buffer("g_L", torch.tensor(self.config.g_L))
-        self.register_buffer("E_L", torch.tensor(self.config.E_L))
-        self.register_buffer("E_E", torch.tensor(self.config.E_E))
-        self.register_buffer("E_I", torch.tensor(self.config.E_I))
-        self.register_buffer("E_adapt", torch.tensor(self.config.E_adapt))
+        self.register_buffer("C_m", torch.tensor(self.config.C_m, device=device))
+        self.register_buffer("g_L", torch.tensor(self.config.g_L, device=device))
+        self.register_buffer("E_L", torch.tensor(self.config.E_L, device=device))
+        self.register_buffer("E_E", torch.tensor(self.config.E_E, device=device))
+        self.register_buffer("E_I", torch.tensor(self.config.E_I, device=device))
+        self.register_buffer("E_adapt", torch.tensor(self.config.E_adapt, device=device))
         # Per-neuron threshold for intrinsic plasticity support
         self.register_buffer(
             "v_threshold",
-            torch.full((n_neurons,), self.config.v_threshold, dtype=torch.float32)
+            torch.full((n_neurons,), self.config.v_threshold, dtype=torch.float32, device=device)
         )
-        self.register_buffer("v_reset", torch.tensor(self.config.v_reset))
-        self.register_buffer("g_E_decay", torch.tensor(self.config.g_E_decay))
-        self.register_buffer("g_I_decay", torch.tensor(self.config.g_I_decay))
-        self.register_buffer("adapt_decay", torch.tensor(self.config.adapt_decay))
+        self.register_buffer("v_reset", torch.tensor(self.config.v_reset, device=device))
+        self.register_buffer("g_E_decay", torch.tensor(self.config.g_E_decay, device=device))
+        self.register_buffer("g_I_decay", torch.tensor(self.config.g_I_decay, device=device))
+        self.register_buffer("adapt_decay", torch.tensor(self.config.adapt_decay, device=device))
 
         # State variables
         self.membrane: Optional[torch.Tensor] = None

@@ -50,7 +50,7 @@ from thalia.core.diagnostics import (
 )
 from thalia.core.brain_builder import BrainBuilder
 from thalia.config import LayerSizeCalculator
-from thalia.config.region_sizes import compute_hippocampus_sizes
+from thalia.config.region_sizes import compute_hippocampus_sizes, compute_thalamus_sizes
 from thalia.coordination.oscillator import OscillatorManager, OSCILLATOR_DEFAULTS
 from thalia.coordination.growth import GrowthEvent, GrowthManager
 from thalia.components.coding import compute_firing_rate
@@ -281,13 +281,25 @@ class DynamicBrain(nn.Module):
             )
 
             # Set cortex output size (L23+L5) for state reconstruction
-            if hasattr(self.components['cortex'], 'config'):
-                config = self.components['cortex'].config
+            cortex = self.components['cortex']
+            output_size = None
+
+            # Try getting from config first
+            if hasattr(cortex, 'config'):
+                config = cortex.config
                 if hasattr(config, 'l23_size') and hasattr(config, 'l5_size'):
                     output_size = config.l23_size + config.l5_size
-                    self.consolidation_manager.set_cortex_output_size(output_size)
-            elif hasattr(self.components['cortex'], 'l23_size') and hasattr(self.components['cortex'], 'l5_size'):
-                output_size = self.components['cortex'].l23_size + self.components['cortex'].l5_size
+
+            # Try getting from instance attributes
+            if output_size is None and hasattr(cortex, 'l23_size') and hasattr(cortex, 'l5_size'):
+                output_size = cortex.l23_size + cortex.l5_size
+
+            # Fallback to n_output
+            if output_size is None and hasattr(cortex, 'n_output'):
+                output_size = cortex.n_output
+
+            # Apply if we found a size
+            if output_size is not None:
                 self.consolidation_manager.set_cortex_output_size(output_size)
 
         # =================================================================
@@ -489,10 +501,11 @@ class DynamicBrain(nn.Module):
 
         # Add regions with sizes from config
         # Thalamus is input interface
+        thalamus_sizes = compute_thalamus_sizes(sizes.thalamus_size)
         builder.add_component(
             "thalamus", "thalamus",
             input_size=sizes.input_size,
-            relay_size=sizes.thalamus_size
+            **thalamus_sizes
         )
 
         # Cortex - use cortex_type from config (PREDICTIVE or LAYERED)

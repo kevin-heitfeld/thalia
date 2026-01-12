@@ -183,6 +183,19 @@ class TDLambdaTraces:
         """Get current eligibility traces."""
         return self.traces
 
+    def to(self, device: torch.device) -> 'TDLambdaTraces':
+        """Move traces to specified device.
+
+        Args:
+            device: Target device
+
+        Returns:
+            Self for chaining
+        """
+        self.device = device
+        self.traces = self.traces.to(device)
+        return self
+
     def grow_input(self, n_new: int) -> None:
         """Grow input dimension by adding columns to eligibility traces.
 
@@ -289,6 +302,19 @@ class TDLambdaLearner:
         self._total_updates = 0
         self._cumulative_td_error = 0.0
         self._cumulative_trace_magnitude = 0.0
+
+    def to(self, device: torch.device) -> 'TDLambdaLearner':
+        """Move learner to specified device.
+
+        Args:
+            device: Target device
+
+        Returns:
+            Self for chaining
+        """
+        self.device = device
+        self.traces.to(device)
+        return self
 
     def grow_input(self, n_new: int) -> None:
         """Grow input dimension to accommodate upstream region growth.

@@ -212,7 +212,7 @@ class TestLayerSpecificCorticalRouting:
         # Verify hippocampus receives only L2/3 size
         hippo = brain.components["hippocampus"]
         # Should infer input_size from cortex L2/3 output, not full output
-        assert hippo.config.input_size == cortex.l23_size
+        assert hippo.input_size == cortex.l23_size
 
     def test_cortex_l5_to_striatum(self, global_config):
         """Test that cortex L5 output routes to striatum."""
@@ -230,8 +230,9 @@ class TestLayerSpecificCorticalRouting:
         cortex = brain.components["cortex"]
         striatum = brain.components["striatum"]
 
-        # Striatum should receive only L5 size
-        assert striatum.config.total_input == cortex.l5_size
+        # Striatum should receive only L5 size (check synaptic_weights)
+        assert "cortex:l5" in striatum.synaptic_weights
+        assert striatum.synaptic_weights["cortex:l5"].shape[1] == cortex.l5_size
 
     def test_cortex_outputs_to_multiple_targets_with_different_layers(self, global_config):
         """Test cortex routing L2/3 to one target and L5 to another."""
@@ -253,8 +254,10 @@ class TestLayerSpecificCorticalRouting:
         striatum = brain.components["striatum"]
 
         # Each target receives appropriate layer size
-        assert hippo.config.input_size == cortex.l23_size
-        assert striatum.config.total_input == cortex.l5_size
+        assert hippo.input_size == cortex.l23_size
+        # Check striatum synaptic weights shape
+        assert "cortex:l5" in striatum.synaptic_weights
+        assert striatum.synaptic_weights["cortex:l5"].shape[1] == cortex.l5_size
 
 
 class TestMultipleInputPorts:
@@ -281,7 +284,7 @@ class TestMultipleInputPorts:
 
         # Cortex input_size should only count feedforward, not top_down
         # (top_down is separate parameter in forward())
-        assert cortex.config.input_size == thalamus.config.relay_size  # Dimension compatibility
+        assert cortex.input_size == thalamus.relay_size  # Dimension compatibility
 
     def test_hippocampus_cortical_and_entorhinal_inputs(self, global_config):
         """Test hippocampus receiving both cortical and direct entorhinal inputs."""
@@ -303,11 +306,13 @@ class TestMultipleInputPorts:
         cortex = brain.components["cortex"]
         hippo = brain.components["hippocampus"]
 
-        # Hippocampus n_input is cortical input size
-        assert hippo.config.n_input == cortex.l23_size
+        # Hippocampus has multiple input sources (cortical + entorhinal)
+        # Total n_input is sum of all sources
+        assert hippo.n_input == cortex.l23_size + 64  # cortical (96) + ec_l3 (64) = 160
 
-        # ec_l3_input_size should be set separately
-        assert hippo.config.ec_l3_input_size == 64
+        # ec_l3 should be registered as input source
+        assert "ec_l3" in hippo.input_sources
+        assert hippo.input_sources["ec_l3"] == 64
 
     def test_striatum_multiple_input_sources(self, global_config):
         """Test striatum receiving inputs from cortex, hippocampus, and PFC."""
@@ -338,8 +343,8 @@ class TestMultipleInputPorts:
 
         # Striatum n_input should sum cortical and hippocampal
         # (pfc_modulation is separate for goal conditioning)
-        expected_input = cortex.l5_size + hippo.config.n_output
-        assert striatum.config.n_input == expected_input
+        expected_input = cortex.l5_size + hippo.n_output
+        assert striatum.n_input == expected_input
 
 
 class TestPortBasedForwardPass:
@@ -404,7 +409,7 @@ class TestBackwardCompatibility:
         # Should infer sizes correctly (dimension compatibility)
         cortex = brain.components["cortex"]
         thalamus = brain.components["thalamus"]
-        assert cortex.config.input_size == thalamus.config.relay_size
+        assert cortex.input_size == thalamus.relay_size
 
     def test_mixed_ports_and_no_ports_connections(self, global_config):
         """Test mixing port-based and traditional connections."""

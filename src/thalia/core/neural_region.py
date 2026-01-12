@@ -154,6 +154,9 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
         self.dt_ms = dt_ms
         self.default_learning_rule = default_learning_rule
 
+        # Plasticity control (for surgery/experiments)
+        self.plasticity_enabled = True
+
         # Create neuron population
         neuron_cfg = neuron_config or ConductanceLIFConfig()
         self.neurons = ConductanceLIF(n_neurons, neuron_cfg)
@@ -279,8 +282,8 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
             g_exc = torch.matmul(weights, input_spikes.float())
             g_exc_total += g_exc
 
-            # Apply plasticity if learning enabled
-            if source_name in self.plasticity_rules:
+            # Apply plasticity if learning enabled and not frozen
+            if self.plasticity_enabled and source_name in self.plasticity_rules:
                 plasticity = self.plasticity_rules[source_name]
 
                 # Compute weight update (local learning rule)

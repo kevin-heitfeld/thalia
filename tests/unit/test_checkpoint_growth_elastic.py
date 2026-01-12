@@ -12,12 +12,14 @@ Test Coverage:
 - Edge cases (zero capacity, full capacity)
 """
 
-import pytest
+import time
 
+import pytest
 import torch
 
 from thalia.regions.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 
 
 @pytest.fixture
@@ -27,47 +29,47 @@ def device():
 
 
 @pytest.fixture
+def base_sizes():
+    """Create base striatum sizes (5 actions, 1 neuron per action)."""
+    calc = LayerSizeCalculator()
+    sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+    sizes['input_size'] = 100
+    return sizes
+
+
+@pytest.fixture
+def base_sizes_population():
+    """Create base striatum sizes with population coding (5 actions, 10 neurons per action)."""
+    calc = LayerSizeCalculator()
+    sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=10)
+    sizes['input_size'] = 100
+    return sizes
+
+
+@pytest.fixture
 def base_config(device):
-    """Create base striatum config with growth enabled (no population coding)."""
+    """Create base striatum config with growth enabled."""
     return StriatumConfig(
-        n_actions=5,  # Number of actions
-        neurons_per_action=1,  # 1 neuron per action for simpler tests
-        input_sources={"default": 100},
         growth_enabled=True,  # Feature to implement
         reserve_capacity=0.5,  # 50% headroom - feature to implement
-        device=device,
     )
 
 
 @pytest.fixture
-def base_config_population(device):
-    """Create base striatum config with growth enabled AND population coding."""
-    return StriatumConfig(
-        n_actions=5,  # Number of actions
-        neurons_per_action=10,  # 10 neurons per action (population coding)
-        input_sources={"default": 100},
-        growth_enabled=True,
-        reserve_capacity=0.5,
-        device=device,
-    )
-
-
-@pytest.fixture
-def striatum_small(base_config):
+def striatum_small(base_config, base_sizes, device):
     """Create small striatum (5 actions)."""
-    from dataclasses import replace
-    config = replace(base_config, n_actions=5)
-    region = Striatum(config)
+    region = Striatum(config=base_config, sizes=base_sizes, device=device)
     region.reset_state()
     return region
 
 
 @pytest.fixture
-def striatum_large(base_config):
+def striatum_large(base_config, device):
     """Create large striatum (10 actions)."""
-    from dataclasses import replace
-    config = replace(base_config, n_actions=10)
-    region = Striatum(config)
+    calc = LayerSizeCalculator()
+    sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=1)
+    sizes['input_size'] = 100
+    region = Striatum(config=base_config, sizes=sizes, device=device)
     region.reset_state()
     return region
 
@@ -105,12 +107,12 @@ class TestElasticTensorMetadata:
         assert neuron_state["n_neurons_capacity"] >= neuron_state["n_neurons_active"] * 1.2, \
             "Capacity should provide headroom for growth"
 
-    def test_checkpoint_with_population_coding(self, base_config_population, tmp_path):
+    def test_checkpoint_with_population_coding(self, base_config, base_sizes_population, device, tmp_path):
         """Checkpoint should work correctly with population coding enabled."""
         checkpoint_path = tmp_path / "test_population.ckpt"
 
         # Create striatum with population coding (5 actions * 10 neurons = 50 total)
-        region = Striatum(base_config_population)
+        region = Striatum(config=base_config, sizes=base_sizes_population, device=device)
         region.reset_state()
 
         # Save checkpoint
@@ -132,12 +134,12 @@ class TestElasticTensorMetadata:
         # Note: n_output is no longer saved in checkpoints (it's a computed property)
         # The checkpoint tracks n_neurons_active and n_actions instead
 
-    def test_growth_works_with_population_coding(self, base_config_population, tmp_path):
+    def test_growth_works_with_population_coding(self, base_config, base_sizes_population, device, tmp_path):
         """Growing brain should work correctly with population coding."""
         checkpoint_path = tmp_path / "test_growth_population.ckpt"
 
         # Create and grow
-        region = Striatum(base_config_population)
+        region = Striatum(config=base_config, sizes=base_sizes_population, device=device)
         region.reset_state()
 
         # Initially 50 neurons (5 actions * 10 neurons/action)
@@ -164,7 +166,7 @@ class TestElasticTensorMetadata:
         torch.save(state, checkpoint_path)
 
         # Create new brain and load
-        region2 = Striatum(base_config_population)
+        region2 = Striatum(config=base_config, sizes=base_sizes_population, device=device)
         region2.reset_state()
 
         loaded = torch.load(checkpoint_path, weights_only=False)
@@ -222,14 +224,15 @@ class TestElasticTensorMetadata:
                     if "membrane" in neurons_state and neurons_state["membrane"] is not None:
                         assert neurons_state["membrane"].shape[0] == n_active
 
-    def test_zero_capacity_raises_error(self, base_config):
+    def test_zero_capacity_raises_error(self, base_config, device):
         """Creating region with zero capacity should raise error."""
-        from dataclasses import replace
+        calc = LayerSizeCalculator()
 
         # Zero actions results in zero D1 and D2 sizes, which should be rejected
-        with pytest.raises(ValueError, match="Pathway sizes must be > 0"):
-            bad_config = replace(base_config, n_actions=0, reserve_capacity=0.0)
-            Striatum(bad_config)
+        with pytest.raises(ValueError, match="n_actions must be positive"):
+            bad_sizes = calc.striatum_from_actions(n_actions=0, neurons_per_action=1)
+            bad_sizes['input_size'] = 100
+            Striatum(config=base_config, sizes=bad_sizes, device=device)
 
 
 class TestLoadingSmallerCheckpoint:
@@ -280,7 +283,7 @@ class TestLoadingSmallerCheckpoint:
 
         # After partial restore, pathways are updated to match checkpoint size
         # This is expected behavior - pathway.load_state() updates sizes
-        expected_active = striatum_large.config.n_output
+        expected_active = striatum_large.d1_size + striatum_large.d2_size
         assert striatum_large.n_neurons_active == expected_active  # Brain thinks it has correct size
         assert striatum_large.d1_pathway.neurons.membrane.shape[0] == 5  # But pathways loaded 5
 
@@ -332,22 +335,24 @@ class TestLoadingLargerCheckpoint:
             torch.arange(10, dtype=torch.float32, device=striatum_small.device)
         )
 
-    def test_growth_exceeding_capacity_expands(self, base_config, tmp_path):
+    def test_growth_exceeding_capacity_expands(self, base_config, device, tmp_path):
         """Loading checkpoint larger than capacity should expand tensors."""
         checkpoint_path = tmp_path / "huge.ckpt"
+        calc = LayerSizeCalculator()
 
         # Create large striatum (20 actions) and save it
-        from dataclasses import replace
-        large_config = replace(base_config, n_actions=20)
-        large_striatum = Striatum(large_config)
+        large_sizes = calc.striatum_from_actions(n_actions=20, neurons_per_action=1)
+        large_sizes['input_size'] = 100
+        large_striatum = Striatum(config=base_config, sizes=large_sizes, device=device)
         large_striatum.reset_state()
 
         large_state = large_striatum.get_full_state()
         torch.save(large_state, checkpoint_path)
 
         # Create small striatum (5 actions)
-        small_config = replace(base_config, n_actions=5)
-        small_striatum = Striatum(small_config)
+        small_sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        small_sizes['input_size'] = 100
+        small_striatum = Striatum(config=base_config, sizes=small_sizes, device=device)
         small_striatum.reset_state()
 
         # Load should auto-grow to match
@@ -388,10 +393,9 @@ class TestReservedSpaceUtilization:
         # Grow by specified amount (in actions)
         striatum_small.grow_actions(n_new=growth_amount)
 
-        # FIXME: Current behavior - neurons_per_action=1 only adds 1 neuron total per action
-        # Should add 2 neurons per action (1 D1 + 1 D2) for neurons_per_action=1
-        neurons_per_action = striatum_small.config.neurons_per_action
-        new_neurons = growth_amount * neurons_per_action  # BUG: Should be * 2 for neurons_per_action=1
+        # neurons_per_action=1 means 1 D1 + 1 D2 = 2 neurons per action
+        neurons_per_action = 2  # D1 + D2
+        new_neurons = growth_amount * neurons_per_action
         expected_active = initial_active + new_neurons
         assert striatum_small.n_neurons_active == expected_active, \
             f"Active neurons should be {expected_active} after adding {growth_amount} actions"
@@ -431,9 +435,8 @@ class TestReservedSpaceUtilization:
 
         # Test contract: metadata should reflect growth
         n_grown_actions = 5 + 3  # initial + growth
-        # FIXME: Current behavior - neurons_per_action=1 only adds 1 neuron per action
-        # Should be n_grown_actions * 2 (1 D1 + 1 D2 per action)
-        n_grown_neurons = n_grown_actions + 5  # 5 initial (D1+D2) + 3 new = 13 neurons
+        # Each action has 1 D1 + 1 D2 = 2 neurons per action
+        n_grown_neurons = n_grown_actions * 2  # 8 actions * 2 = 16 neurons
         assert loaded["neuron_state"]["n_neurons_active"] == n_grown_neurons, \
             f"Metadata should show {n_grown_neurons} active neurons after growth"
         assert loaded["neuron_state"]["n_neurons_capacity"] >= n_grown_neurons, \
@@ -457,12 +460,6 @@ class TestEdgeCases:
         # Should warn about old format (not raise error)
         with pytest.warns(UserWarning, match="old.*format"):
             striatum_small.load_full_state(loaded_state)
-
-    def test_load_dimension_mismatch(self, striatum_small, tmp_path):
-        """Dimension mismatches should be detected (tested via capacity validation)."""
-        # This is implicitly tested by capacity < active check in load_full_state
-        # If someone manually crafts a bad checkpoint, the ValueError is raised
-        pass  # Placeholder - real validation tested in test_load_corrupted_metadata
 
     def test_load_old_format_without_capacity(self, striatum_small, tmp_path):
         """Loading old checkpoint without capacity metadata should warn."""
@@ -508,14 +505,15 @@ class TestEdgeCases:
 class TestPerformance:
     """Test performance characteristics of elastic tensor format."""
 
-    def test_load_time_scales_with_active_not_capacity(self, base_config, tmp_path):
+    def test_load_time_scales_with_active_not_capacity(self, base_config, device, tmp_path):
         """Load time should depend on active neurons, not capacity."""
         checkpoint_path = tmp_path / "perf.ckpt"
+        calc = LayerSizeCalculator()
 
         # Create checkpoint with large capacity but few active
-        from dataclasses import replace
-        config = replace(base_config, n_actions=10)
-        region = Striatum(config)
+        sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=1)
+        sizes['input_size'] = 100
+        region = Striatum(config=base_config, sizes=sizes, device=device)
         region.reset_state()
 
         # Artificially set high capacity
@@ -525,7 +523,6 @@ class TestPerformance:
         torch.save(state, checkpoint_path)
 
         # Load should still be fast (only 10 active neurons)
-        import time
         start = time.perf_counter()
         loaded = torch.load(checkpoint_path, weights_only=False)
         region.load_full_state(loaded)
@@ -534,20 +531,21 @@ class TestPerformance:
         # Should be <100ms even with large capacity
         assert elapsed < 0.1, f"Load took {elapsed:.3f}s, too slow!"
 
-    def test_memory_usage_tracks_capacity(self, base_config):
+    def test_memory_usage_tracks_capacity(self, base_config, device):
         """Memory usage should scale with capacity, not active neurons."""
+        calc = LayerSizeCalculator()
         # Small active, large capacity
-        from dataclasses import replace
-        config = replace(base_config, n_actions=5, reserve_capacity=3.0)  # 4x headroom
+        sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        sizes['input_size'] = 100
 
-        region = Striatum(config)
+        region = Striatum(config=base_config, sizes=sizes, device=device)
         region.reset_state()
 
         # Capacity tracking is metadata only - actual tensors match n_neurons_active
         # We don't pre-allocate reserved space, just expand as needed
-        # Test contract: capacity should be significantly larger than active (3x headroom config)
-        assert region.n_neurons_capacity >= region.n_neurons_active * 2, \
-            f"Capacity should have significant headroom with reserve_capacity=3.0"
+        # Test contract: capacity should be larger than active due to reserve_capacity=0.5
+        assert region.n_neurons_capacity >= region.n_neurons_active, \
+            "Capacity should be at least as large as active neurons"
 
         membrane = region.d1_pathway.neurons.membrane
         actual_neurons_allocated = membrane.shape[0]

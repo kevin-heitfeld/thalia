@@ -19,6 +19,7 @@ import torch
 
 from thalia.regions.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 
 
 @pytest.fixture
@@ -28,41 +29,41 @@ def device():
 
 
 @pytest.fixture
-def base_config(device):
-    """Create base striatum config without population coding."""
-    return StriatumConfig(
-        n_actions=5,  # 5 actions
-        neurons_per_action=1,  # 1 neuron per action
-        input_sources={"default": 100},
-        growth_enabled=True,
-        device=device,
-    )
+def base_sizes():
+    """Create base striatum sizes (5 actions, 1 neuron per action)."""
+    calc = LayerSizeCalculator()
+    sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+    sizes['input_size'] = 100
+    return sizes
 
 
 @pytest.fixture
-def base_config_population(device):
-    """Create base striatum config WITH population coding."""
-    return StriatumConfig(
-        n_actions=5,  # 5 actions
-        neurons_per_action=10,  # 10 neurons per action = 50 total
-        input_sources={"default": 100},
-        growth_enabled=True,
-        device=device,
-    )
+def base_sizes_population():
+    """Create base striatum sizes WITH population coding (5 actions, 10 neurons per action)."""
+    calc = LayerSizeCalculator()
+    sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=10)
+    sizes['input_size'] = 100
+    return sizes
 
 
 @pytest.fixture
-def striatum_neuromorphic(base_config):
+def base_config():
+    """Create base striatum config."""
+    return StriatumConfig(growth_enabled=True)
+
+
+@pytest.fixture
+def striatum_neuromorphic(base_config, base_sizes, device):
     """Create striatum with neuromorphic checkpoint format (no population coding)."""
-    region = Striatum(base_config)
+    region = Striatum(config=base_config, sizes=base_sizes, device=device)
     region.reset_state()
     return region
 
 
 @pytest.fixture
-def striatum_neuromorphic_population(base_config_population):
+def striatum_neuromorphic_population(base_config, base_sizes_population, device):
     """Create striatum with neuromorphic checkpoint format (WITH population coding)."""
-    region = Striatum(base_config_population)
+    region = Striatum(config=base_config, sizes=base_sizes_population, device=device)
     region.reset_state()
     return region
 
@@ -137,8 +138,7 @@ class TestNeuronIDPersistence:
         ids1 = [n["id"] for n in state1["neurons"]]
 
         # Calculate expected: n_actions * neurons_per_action
-        config = striatum_neuromorphic_population.config
-        expected_count = config.n_output  # Total neurons
+        expected_count = striatum_neuromorphic_population.n_neurons  # Total neurons
         assert len(ids1) == expected_count
 
         # Reset
@@ -169,12 +169,11 @@ class TestNeuronIDPersistence:
 
         # Test contract: should have correct number of new IDs for growth
         # D1/D2: 3 new actions = 3 D1 neurons + 3 D2 neurons = 6 total
-        # KNOWN BUG: grow_output with neurons_per_action=1 only adds 3 instead of 6
         new_ids = ids2 - ids1
         n_new_actions = 3
-        expected_new = 3  # FIXME: Should be 6 (3 actions × 2 pathways) but grow_output bug
+        expected_new = n_new_actions * 2  # 3 actions × 2 pathways (D1 + D2)
         assert len(new_ids) == expected_new, \
-            f"Should have {expected_new} new neurons (BUGGY: should be {n_new_actions * 2})"
+            f"Should have {expected_new} new neurons ({n_new_actions} actions × 2 pathways)"
 
     def test_new_neurons_get_new_ids_population_coding(self, striatum_neuromorphic_population):
         """Growing with population coding should assign correct number of new IDs."""
@@ -217,7 +216,7 @@ class TestNeuronIDPersistence:
 
         # Advance time through normal forward passes (1000 timesteps)
         silent_input = torch.zeros(
-            striatum_neuromorphic.config.n_input,
+            striatum_neuromorphic.input_size,
             dtype=torch.bool,
             device=striatum_neuromorphic.device
         )
@@ -239,15 +238,14 @@ class TestNeuronIDPersistence:
 
         # Test contract: neurons should be grouped by creation step
         # D1/D2: 5 actions × 2 pathways = 10 initial, 2 actions × 2 pathways = 4 new
-        # KNOWN BUG: grow_output with neurons_per_action=1 only adds 2 instead of 4
         initial_count = 10
-        new_count = 2  # FIXME: Should be 4 (2 actions × 2 pathways) but grow_output bug
+        new_count = 4  # 2 actions × 2 pathways (D1 + D2)
         assert 0 in neurons_by_step, "Should have neurons from step 0"
         assert 1000 in neurons_by_step, "Should have neurons from step 1000"
         assert len(neurons_by_step[0]) == initial_count, \
             f"Should have {initial_count} original neurons"
         assert len(neurons_by_step[1000]) == new_count, \
-            f"Should have {new_count} new neurons (BUGGY: should be 4)"
+            f"Should have {new_count} new neurons (2 actions × 2 pathways)"
 
 
 class TestLoadingWithMissingNeurons:
@@ -263,7 +261,10 @@ class TestLoadingWithMissingNeurons:
         torch.save(state, checkpoint_path)
 
         # Create new brain with only 5 neurons
-        small_brain = Striatum(striatum_neuromorphic.config)
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        sizes['input_size'] = 100
+        small_brain = Striatum(config=striatum_neuromorphic.config, sizes=sizes, device=striatum_neuromorphic.device)
         small_brain.reset_state()
 
         # Load should handle missing neurons gracefully (may warn)
@@ -283,7 +284,10 @@ class TestLoadingWithMissingNeurons:
         torch.save(state, checkpoint_path)
 
         # Load into 5-neuron brain
-        small_brain = Striatum(striatum_neuromorphic.config)
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        sizes['input_size'] = 100
+        small_brain = Striatum(config=striatum_neuromorphic.config, sizes=sizes, device=striatum_neuromorphic.device)
         small_brain.reset_state()
 
         loaded = torch.load(checkpoint_path, weights_only=False)
@@ -291,11 +295,12 @@ class TestLoadingWithMissingNeurons:
         # Should handle partial restore gracefully (may warn about missing neurons)
         small_brain.checkpoint_manager.load_neuromorphic_state(loaded)
 
-        # After loading, brain will have all neurons from checkpoint
-        # D1/D2: 5 actions × 2 = 10 initial, + 3 grown (BUGGY grow) = 13 total
-        # (load_neuromorphic_state restores all neurons, doesn't filter by current size)
+        # After loading, brain only restores neurons that exist in current brain
+        # Checkpoint has 16 neurons (5 initial + 3 grown = 8 actions × 2 pathways)
+        # Small brain has 10 neurons (5 actions × 2 pathways)
+        # load_neuromorphic_state skips neurons not in current brain (by ID matching)
         restored_state = small_brain.checkpoint_manager.get_neuromorphic_state()
-        assert len(restored_state["neurons"]) == 13  # All checkpoint neurons loaded (10 + 3 buggy growth)
+        assert len(restored_state["neurons"]) == 10  # Only neurons in current brain (5 actions × 2)
 
     def test_missing_neurons_tracked_in_log(self, striatum_neuromorphic, tmp_path, caplog):
         """Missing neurons should be logged for debugging."""
@@ -307,7 +312,10 @@ class TestLoadingWithMissingNeurons:
         torch.save(state, checkpoint_path)
 
         # Load into 5-neuron brain
-        small_brain = Striatum(striatum_neuromorphic.config)
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        sizes['input_size'] = 100
+        small_brain = Striatum(config=striatum_neuromorphic.config, sizes=sizes, device=striatum_neuromorphic.device)
         small_brain.reset_state()
 
         loaded = torch.load(checkpoint_path, weights_only=False)
@@ -331,7 +339,10 @@ class TestLoadingWithExtraNeurons:
         torch.save(state, checkpoint_path)
 
         # Create 8-neuron brain
-        large_brain = Striatum(striatum_neuromorphic.config)
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        sizes['input_size'] = 100
+        large_brain = Striatum(config=striatum_neuromorphic.config, sizes=sizes, device=striatum_neuromorphic.device)
         large_brain.reset_state()
         large_brain.grow_output(n_new=3)
 
@@ -347,10 +358,10 @@ class TestLoadingWithExtraNeurons:
         all_ids_after = [n["id"] for n in state_after["neurons"]]
 
         # New neurons should still be present
-        # D1/D2: 5 actions × 2 = 10 initial, + 3 grown (BUGGY grow) = 13 total
-        expected_total = 13  # 10 initial + 3 grown (BUGGY: should be 10 + 6 = 16)
+        # D1/D2: 5 actions × 2 = 10 initial, + 3 actions × 2 = 6 grown, total = 16
+        expected_total = 16  # 10 initial + 6 grown (3 actions × 2 pathways)
         assert len(all_ids_after) == expected_total, \
-            f"Should have {expected_total} neurons (10 initial + 3 grown, buggy behavior)"
+            f"Should have {expected_total} neurons (10 initial + 6 grown from 3 actions)"
 
     def test_new_neurons_not_in_checkpoint_logged(self, striatum_neuromorphic, tmp_path, caplog):
         """Should log when brain has neurons not in checkpoint."""
@@ -361,7 +372,10 @@ class TestLoadingWithExtraNeurons:
         torch.save(state, checkpoint_path)
 
         # Load into large
-        large_brain = Striatum(striatum_neuromorphic.config)
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        sizes['input_size'] = 100
+        large_brain = Striatum(config=striatum_neuromorphic.config, sizes=sizes, device=striatum_neuromorphic.device)
         large_brain.reset_state()
         large_brain.grow_output(n_new=3)
 
@@ -427,7 +441,10 @@ class TestSynapseRestoration:
         torch.save(state, checkpoint_path)
 
         # Load into brain with only 5 neurons
-        small_brain = Striatum(striatum_neuromorphic.config)
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        sizes['input_size'] = 100
+        small_brain = Striatum(config=striatum_neuromorphic.config, sizes=sizes, device=striatum_neuromorphic.device)
         small_brain.reset_state()
 
         loaded = torch.load(checkpoint_path, weights_only=False)
@@ -473,7 +490,7 @@ class TestPartialCheckpointLoading:
 
         # Advance time through normal forward passes (1000 timesteps)
         silent_input = torch.zeros(
-            striatum_neuromorphic.config.n_input,
+            striatum_neuromorphic.input_size,
             dtype=torch.bool,
             device=striatum_neuromorphic.device
         )
@@ -534,7 +551,7 @@ class TestNeuronMetadata:
 
         # Advance time through normal forward passes (1000 timesteps)
         silent_input = torch.zeros(
-            striatum_neuromorphic.config.n_input,
+            striatum_neuromorphic.input_size,
             dtype=torch.bool,
             device=striatum_neuromorphic.device
         )
@@ -548,29 +565,25 @@ class TestNeuronMetadata:
 
         # Test contract: new neurons should have creation timestamp
         new_neurons = [n for n in state2["neurons"] if n["created_step"] == 1000]
-        # KNOWN BUG: grow_output with neurons_per_action=1 only adds 2 instead of 4
-        n_new = 2  # FIXME: Should be 4 (2 actions × 2 pathways) but grow_output bug
+        n_new = 4  # 2 actions × 2 pathways (D1 + D2)
         assert len(new_neurons) == n_new, \
-            f"Should have {n_new} neurons created at step 1000 (BUGGY: should be 4)"
+            f"Should have {n_new} neurons created at step 1000 (2 actions × 2 pathways)"
 
 
 class TestNeuromorphicPerformance:
     """Test performance characteristics of neuromorphic format."""
 
-    def test_load_time_scales_with_neurons_not_synapses(self, base_config, tmp_path):
+    def test_load_time_scales_with_neurons_not_synapses(self, base_config, device, tmp_path):
         """Load time should depend on neuron count, not synapse count."""
         checkpoint_path = tmp_path / "perf_neuromorphic.ckpt"
 
         # Create region with many neurons (not testing sparsity here)
-        config = StriatumConfig(
-            n_actions=100,
-            neurons_per_action=1,
-            input_sources={"default": 100},
-            growth_enabled=True,
-            device=base_config.device,
-        )
+        config = StriatumConfig(growth_enabled=True)
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=100, neurons_per_action=1)
+        sizes['input_size'] = 100
 
-        region = Striatum(config)
+        region = Striatum(config=config, sizes=sizes, device=device)
         region.reset_state()
 
         state = region.checkpoint_manager.get_neuromorphic_state()
@@ -586,21 +599,18 @@ class TestNeuromorphicPerformance:
         # Should be <1s for 100 neurons (relaxed from 0.5s due to system variance)
         assert elapsed < 1.0, f"Load took {elapsed:.3f}s, too slow!"
 
-    def test_checkpoint_size_scales_with_connectivity(self, base_config, tmp_path):
+    def test_checkpoint_size_scales_with_connectivity(self, base_config, device, tmp_path):
         """Checkpoint size should scale with actual connections, not capacity."""
         # Create two regions with same neuron count
-        config = StriatumConfig(
-            n_actions=50,
-            neurons_per_action=1,
-            input_sources={"default": 100},
-            growth_enabled=True,
-            device=base_config.device,
-        )
+        config = StriatumConfig(growth_enabled=True)
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=50, neurons_per_action=1)
+        sizes['input_size'] = 100
 
-        region1 = Striatum(config)
+        region1 = Striatum(config=config, sizes=sizes, device=device)
         region1.reset_state()
 
-        region2 = Striatum(config)
+        region2 = Striatum(config=config, sizes=sizes, device=device)
         region2.reset_state()
 
         # Make region2 more sparse by zeroing out most weights

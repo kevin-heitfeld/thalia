@@ -485,7 +485,7 @@ class LayeredCortex(NeuralRegion):
         """
         cfg = self.config
         rob = cfg.robustness
-        device = torch.device(cfg.device)
+        device = self.device  # Use self.device, not cfg.device (doesn't exist)
 
         # Default: no robustness mechanisms
         self.ei_balance: Optional[LayerEIBalance] = None
@@ -511,7 +511,7 @@ class LayeredCortex(NeuralRegion):
         Always enabled for spike-native attention.
         """
         cfg = self.config
-        device = torch.device(cfg.device)
+        device = self.device  # Use self.device, not cfg.device (doesn't exist)
 
         # Learnable phase preferences for each L2/3 neuron
         self.l23_phase_prefs = nn.Parameter(
@@ -529,7 +529,7 @@ class LayeredCortex(NeuralRegion):
 
         Using uniform [0, max] with max scaled by fan-in and expected sparsity.
         """
-        device = torch.device(self.config.device)
+        device = self.device  # Use self.device (torch.device), not self.config.device (doesn't exist)
         cfg = self.config
 
         # Expected number of active inputs given sparsity
@@ -553,8 +553,9 @@ class LayeredCortex(NeuralRegion):
             )
         )
         # Register external input source (NeuralRegion pattern)
-        self.add_input_source("input", n_input=self.input_size, learning_rule=None)
+        # Directly register in dicts without add_input_source to avoid device issues
         self.synaptic_weights["input"] = nn.Parameter(input_weights)
+        self.input_sources["input"] = self.input_size
 
         # L4 → L2/3: positive excitatory weights (AT L2/3 DENDRITES)
         w_scale_l4_l23 = 1.0 / expected_active_l4

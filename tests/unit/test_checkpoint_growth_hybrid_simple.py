@@ -5,11 +5,11 @@ Tests automatic format selection and loading for Striatum region.
 """
 
 import pytest
-
 import torch
 
 from thalia.regions.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 
 
 @pytest.fixture
@@ -21,14 +21,11 @@ def device():
 @pytest.fixture
 def small_striatum(device):
     """Small striatum (should use neuromorphic format, no population coding)."""
-    config = StriatumConfig(
-        n_actions=5,  # Small: 5 actions
-        neurons_per_action=1,
-        input_sources={'default': 100},
-        growth_enabled=True,
-        device=device,
-    )
-    striatum = Striatum(config)
+    calc = LayerSizeCalculator()
+    config = StriatumConfig(growth_enabled=True)
+    sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+    sizes['input_size'] = 100
+    striatum = Striatum(config=config, sizes=sizes, device=device)
     striatum.reset_state()
     return striatum
 
@@ -36,14 +33,11 @@ def small_striatum(device):
 @pytest.fixture
 def small_striatum_population(device):
     """Small striatum WITH population coding (should use neuromorphic format)."""
-    config = StriatumConfig(
-        n_actions=5,  # 5 actions × 10 neurons/action = 50 neurons total
-        neurons_per_action=10,
-        input_sources={'default': 100},
-        growth_enabled=True,
-        device=device,
-    )
-    striatum = Striatum(config)
+    calc = LayerSizeCalculator()
+    config = StriatumConfig(growth_enabled=True)
+    sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=10)
+    sizes['input_size'] = 100
+    striatum = Striatum(config=config, sizes=sizes, device=device)
     striatum.reset_state()
     return striatum
 
@@ -51,14 +45,11 @@ def small_striatum_population(device):
 @pytest.fixture
 def large_striatum(device):
     """Large striatum (should use elastic tensor format, no population coding)."""
-    config = StriatumConfig(
-        n_actions=150,  # Large: 150 actions
-        neurons_per_action=1,
-        input_sources={'default': 100},
-        growth_enabled=False,
-        device=device,
-    )
-    striatum = Striatum(config)
+    calc = LayerSizeCalculator()
+    config = StriatumConfig(growth_enabled=False)
+    sizes = calc.striatum_from_actions(n_actions=150, neurons_per_action=1)
+    sizes['input_size'] = 100
+    striatum = Striatum(config=config, sizes=sizes, device=device)
     striatum.reset_state()
     return striatum
 
@@ -66,14 +57,11 @@ def large_striatum(device):
 @pytest.fixture
 def large_striatum_population(device):
     """Large striatum WITH population coding (should use elastic tensor format)."""
-    config = StriatumConfig(
-        n_actions=150,  # 150 actions × 10 neurons/action = 1500 neurons total
-        neurons_per_action=10,
-        input_sources={'default': 100},
-        growth_enabled=False,
-        device=device,
-    )
-    striatum = Striatum(config)
+    calc = LayerSizeCalculator()
+    config = StriatumConfig(growth_enabled=False)
+    sizes = calc.striatum_from_actions(n_actions=150, neurons_per_action=10)
+    sizes['input_size'] = 100
+    striatum = Striatum(config=config, sizes=sizes, device=device)
     striatum.reset_state()
     return striatum
 
@@ -87,8 +75,6 @@ class TestFormatAutoSelection:
         BEHAVIORAL CONTRACT: Test by saving checkpoint and inspecting
         the selected_format in hybrid_metadata (public contract).
         """
-        import torch
-
         # Save checkpoint (format auto-selected)
         checkpoint_path = tmp_path / "small_striatum.pt"
         small_striatum.checkpoint_manager.save(checkpoint_path)
@@ -104,8 +90,6 @@ class TestFormatAutoSelection:
 
         BEHAVIORAL CONTRACT: Test actual saved format, not internal decision logic.
         """
-        import torch
-
         # 5 actions × 10 neurons = 50 neurons (still small, < 100)
         checkpoint_path = tmp_path / "small_striatum_pop.pt"
         small_striatum_population.checkpoint_manager.save(checkpoint_path)
@@ -120,8 +104,6 @@ class TestFormatAutoSelection:
 
         BEHAVIORAL CONTRACT: Validate format from saved checkpoint metadata.
         """
-        import torch
-
         checkpoint_path = tmp_path / "large_striatum.pt"
         large_striatum.checkpoint_manager.save(checkpoint_path)
 
@@ -135,8 +117,6 @@ class TestFormatAutoSelection:
 
         BEHAVIORAL CONTRACT: Test the actual format used, not decision method.
         """
-        import torch
-
         # 150 actions × 10 neurons = 1500 neurons (large, >> 100)
         checkpoint_path = tmp_path / "large_striatum_pop.pt"
         large_striatum_population.checkpoint_manager.save(checkpoint_path)
@@ -151,16 +131,12 @@ class TestFormatAutoSelection:
 
         BEHAVIORAL CONTRACT: Test actual saved format.
         """
-        import torch
+        calc = LayerSizeCalculator()
 
-        config = StriatumConfig(
-            n_actions=80,
-            neurons_per_action=1,
-            input_sources={'default': 100},
-            growth_enabled=True,
-            device=device,
-        )
-        striatum = Striatum(config)
+        config = StriatumConfig(growth_enabled=True)
+        sizes = calc.striatum_from_actions(n_actions=80, neurons_per_action=1)
+        sizes['input_size'] = 100
+        striatum = Striatum(config=config, sizes=sizes, device=device)
 
         checkpoint_path = tmp_path / "growth_enabled.pt"
         striatum.checkpoint_manager.save(checkpoint_path)
@@ -174,11 +150,13 @@ class TestFormatAutoSelection:
 
         BEHAVIORAL CONTRACT: Verify format from actual saved checkpoints.
         """
-        import torch
+        calc = LayerSizeCalculator()
 
         # Just under threshold (100) - should use neuromorphic
-        config_99 = StriatumConfig(n_actions=99, neurons_per_action=1, input_sources={'default': 100}, device=device)
-        striatum_99 = Striatum(config_99)
+        config_99 = StriatumConfig()
+        sizes_99 = calc.striatum_from_actions(n_actions=99, neurons_per_action=1)
+        sizes_99['input_size'] = 100
+        striatum_99 = Striatum(config=config_99, sizes=sizes_99, device=device)
 
         checkpoint_99 = tmp_path / "threshold_99.pt"
         striatum_99.checkpoint_manager.save(checkpoint_99)
@@ -187,8 +165,10 @@ class TestFormatAutoSelection:
             "99 neurons should use neuromorphic"
 
         # Just over threshold - should use elastic
-        config_101 = StriatumConfig(n_actions=101, neurons_per_action=1, input_sources={'default': 100}, device=device, growth_enabled=False)
-        striatum_101 = Striatum(config_101)
+        config_101 = StriatumConfig(growth_enabled=False)
+        sizes_101 = calc.striatum_from_actions(n_actions=101, neurons_per_action=1)
+        sizes_101['input_size'] = 100
+        striatum_101 = Striatum(config=config_101, sizes=sizes_101, device=device)
 
         checkpoint_101 = tmp_path / "threshold_101.pt"
         striatum_101.checkpoint_manager.save(checkpoint_101)
@@ -299,10 +279,13 @@ class TestHybridSaveLoad:
     def test_state_preserved_across_format_change(self, device, tmp_path):
         """State should be preserved when loading into different size (format)."""
         checkpoint_path = tmp_path / "state_preserve.ckpt"
+        calc = LayerSizeCalculator()
 
         # Create small striatum (neuromorphic)
-        small_config = StriatumConfig(n_actions=5, neurons_per_action=1, input_sources={'default': 100}, device=device)
-        small = Striatum(small_config)
+        small_config = StriatumConfig()
+        small_sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
+        small_sizes['input_size'] = 100
+        small = Striatum(config=small_config, sizes=small_sizes, device=device)
         small.reset_state()
 
         # Set distinctive weights
@@ -313,7 +296,7 @@ class TestHybridSaveLoad:
         small.checkpoint_manager.save(checkpoint_path)
 
         # Load into same small striatum
-        small2 = Striatum(small_config)
+        small2 = Striatum(config=small_config, sizes=small_sizes, device=device)
         small2.reset_state()
         small2.checkpoint_manager.load(checkpoint_path)
 
@@ -324,15 +307,13 @@ class TestHybridSaveLoad:
     def test_state_preserved_with_population_coding(self, device, tmp_path):
         """State should be preserved with population coding enabled."""
         checkpoint_path = tmp_path / "state_preserve_pop.ckpt"
+        calc = LayerSizeCalculator()
 
         # Create small striatum with population coding (neuromorphic)
-        config = StriatumConfig(
-            n_actions=5,
-            neurons_per_action=10,
-            input_sources={'default': 100},
-            device=device,
-        )
-        striatum = Striatum(config)
+        config = StriatumConfig()
+        sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=10)
+        sizes['input_size'] = 100
+        striatum = Striatum(config=config, sizes=sizes, device=device)
         striatum.reset_state()
 
         # Set distinctive weights in first few neurons
@@ -343,7 +324,7 @@ class TestHybridSaveLoad:
         striatum.checkpoint_manager.save(checkpoint_path)
 
         # Load into new instance
-        striatum2 = Striatum(config)
+        striatum2 = Striatum(config=config, sizes=sizes, device=device)
         striatum2.reset_state()
         striatum2.checkpoint_manager.load(checkpoint_path)
 
