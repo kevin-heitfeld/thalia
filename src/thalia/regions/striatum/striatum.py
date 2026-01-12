@@ -2392,9 +2392,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.d2_pathway.load_state(state.d2_pathway_state)
 
         # Restore neuron membrane state
-        if state.membrane is not None and self.d1_pathway.neurons is not None:
-            if hasattr(self.d1_pathway.neurons, 'membrane'):
-                self.d1_pathway.neurons.membrane.data = state.membrane.to(self.device)
+        if state.membrane is not None:
+            # Split concatenated membrane into D1 and D2 parts
+            if self.d1_pathway.neurons is not None and hasattr(self.d1_pathway.neurons, 'membrane'):
+                d1_membrane = state.membrane[:self.d1_size].to(self.device)
+                self.d1_pathway.neurons.membrane.data = d1_membrane
+
+            if self.d2_pathway.neurons is not None and hasattr(self.d2_pathway.neurons, 'membrane'):
+                d2_membrane = state.membrane[self.d1_size:self.d1_size + self.d2_size].to(self.device)
+                self.d2_pathway.neurons.membrane.data = d2_membrane
 
         # Restore vote accumulation
         if state.d1_votes_accumulated is not None:

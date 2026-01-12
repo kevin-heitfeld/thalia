@@ -453,7 +453,13 @@ class RegionTestBase(ABC):
             if state_dict1[key] is None or state_dict2.get(key) is None:
                 continue
             if isinstance(state_dict1[key], torch.Tensor):
-                assert torch.allclose(state_dict1[key], state_dict2[key], atol=1e-5)
+                try:
+                    assert torch.allclose(state_dict1[key], state_dict2[key], atol=1e-5)
+                except (RuntimeError, AssertionError) as e:
+                    # Add context about which key failed
+                    shape1 = state_dict1[key].shape if isinstance(state_dict1[key], torch.Tensor) else "N/A"
+                    shape2 = state_dict2[key].shape if isinstance(state_dict2[key], torch.Tensor) else "N/A"
+                    raise AssertionError(f"State mismatch for key '{key}': shape1={shape1}, shape2={shape2}") from e
             elif isinstance(state_dict1[key], (int, float)):
                 assert state_dict1[key] == state_dict2[key]
 
