@@ -1750,63 +1750,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Update eligibility traces PER SOURCE
         # Each source-pathway combination has its own eligibility traces
-        for source_name, source_spikes in inputs.items():
-            # Ensure 1D
-            if source_spikes.dim() != 1:
-                source_spikes = source_spikes.squeeze()
-
-            # Get float version
-            source_spikes_float = source_spikes.float()
-
-            # Update D1 eligibility for this source
-            d1_key = f"{source_name}_d1"
-            if d1_key in self.synaptic_weights:
-                # Get or create eligibility trace for this source-pathway
-                if not hasattr(self, '_eligibility_d1'):
-                    self._eligibility_d1 = {}
-                if d1_key not in self._eligibility_d1:
-                    weight_shape = self.synaptic_weights[d1_key].shape
-                    self._eligibility_d1[d1_key] = torch.zeros(
-                        weight_shape, device=self.device
-                    )
-
-                # Update using STDP-style eligibility: outer product of pre and post
-                eligibility_update = torch.outer(d1_output_1d, source_spikes_float)
-
-                # Get source-specific tau (or use default)
-                tau_ms = self._get_source_eligibility_tau(source_name)
-                decay = torch.exp(torch.tensor(-self.config.dt_ms / tau_ms))
-
-                # Decay old eligibility and add new
-                self._eligibility_d1[d1_key] = (
-                    self._eligibility_d1[d1_key] * decay +
-                    eligibility_update * self.config.stdp_lr
-                )
-
-            # Update D2 eligibility for this source
-            d2_key = f"{source_name}_d2"
-            if d2_key in self.synaptic_weights:
-                # Get or create eligibility trace for this source-pathway
-                if not hasattr(self, '_eligibility_d2'):
-                    self._eligibility_d2 = {}
-                if d2_key not in self._eligibility_d2:
-                    weight_shape = self.synaptic_weights[d2_key].shape
-                    self._eligibility_d2[d2_key] = torch.zeros(
-                        weight_shape, device=self.device
-                    )
-
-                # Update using STDP-style eligibility: outer product of pre and post
-                eligibility_update = torch.outer(d2_output_1d, source_spikes_float)
-
-                # Get source-specific tau (or use default)
-                tau_ms = self._get_source_eligibility_tau(source_name)
-                decay = torch.exp(torch.tensor(-self.config.dt_ms / tau_ms))
-
-                # Decay old eligibility and add new
-                self._eligibility_d2[d2_key] = (
-                    self._eligibility_d2[d2_key] * decay +
-                    eligibility_update * self.config.stdp_lr
-                )
+        self._update_pathway_eligibility(inputs, d1_output_1d, "_d1", "_eligibility_d1")
+        self._update_pathway_eligibility(inputs, d2_output_1d, "_d2", "_eligibility_d2")
 
     def _get_source_eligibility_tau(self, source_name: str) -> float:
         """Get source-specific eligibility trace tau.
@@ -1840,6 +1785,68 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         else:
             # Default to config value
             return self.config.eligibility_tau_ms
+
+    def _update_pathway_eligibility(
+        self,
+        inputs: Dict[str, torch.Tensor],
+        post_spikes: torch.Tensor,
+        pathway_suffix: str,
+        eligibility_attr: str,
+    ) -> None:
+        """Update eligibility traces for one pathway (D1 or D2).
+
+        This helper consolidates eligibility update logic that is identical between
+        D1 and D2 pathways. Biological separation is maintained:
+        - D1 and D2 have separate eligibility trace dictionaries
+        - D1 and D2 have different post-synaptic spike patterns
+        - Dopamine modulation (applied later) differs between pathways
+
+        Args:
+            inputs: Dict of source_name -> spike_tensor
+            post_spikes: Post-synaptic spikes for this pathway [n_neurons]
+            pathway_suffix: "_d1" or "_d2" to select pathway weights
+            eligibility_attr: "_eligibility_d1" or "_eligibility_d2"
+
+        Biological note:
+            Eligibility traces are the "synaptic tags" that mark recently active
+            synapses. When dopamine arrives (seconds later), only tagged synapses
+            undergo plasticity. This implements the three-factor learning rule.
+        """
+        # Get or initialize eligibility dict for this pathway
+        if not hasattr(self, eligibility_attr):
+            setattr(self, eligibility_attr, {})
+        eligibility_dict = getattr(self, eligibility_attr)
+
+        for source_name, source_spikes in inputs.items():
+            # Ensure 1D
+            if source_spikes.dim() != 1:
+                source_spikes = source_spikes.squeeze()
+
+            # Get float version
+            source_spikes_float = source_spikes.float()
+
+            # Get pathway-specific key (e.g., "cortex:l5_d1", "hippocampus_d2")
+            key = f"{source_name}{pathway_suffix}"
+            if key not in self.synaptic_weights:
+                continue
+
+            # Initialize eligibility trace if needed
+            if key not in eligibility_dict:
+                weight_shape = self.synaptic_weights[key].shape
+                eligibility_dict[key] = torch.zeros(weight_shape, device=self.device)
+
+            # Compute STDP-style eligibility: outer product of post and pre
+            # This marks synapses where pre-spike and post-spike co-occurred
+            eligibility_update = torch.outer(post_spikes, source_spikes_float)
+
+            # Get source-specific decay tau (cortex=1000ms, hippoc=300ms, etc.)
+            tau_ms = self._get_source_eligibility_tau(source_name)
+            decay = torch.exp(torch.tensor(-self.config.dt_ms / tau_ms))
+
+            # Decay old eligibility and add new trace
+            eligibility_dict[key] = (
+                eligibility_dict[key] * decay + eligibility_update * self.config.stdp_lr
+            )
 
     def set_source_eligibility_tau(self, source_name: str, tau_ms: float) -> None:
         """Configure custom eligibility tau for a specific source.
@@ -2051,6 +2058,66 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         return total_current
 
+    def _integrate_multi_source_inputs(
+        self,
+        inputs: Dict[str, torch.Tensor],
+        pathway_suffix: str,
+        n_neurons: int,
+    ) -> torch.Tensor:
+        """Integrate synaptic currents from multiple sources for D1 or D2 pathway.
+
+        This helper consolidates the synaptic integration logic that is identical
+        between D1 and D2 pathways, while maintaining biological separation:
+        - D1 and D2 have separate synaptic weights (independent plasticity)
+        - D1 and D2 have separate STP modules (pathway-specific dynamics)
+        - Same input creates different currents due to different weights
+
+        Args:
+            inputs: Dict mapping source names to spike tensors
+            pathway_suffix: "_d1" or "_d2" to select pathway weights
+            n_neurons: Number of neurons in this pathway (d1_size or d2_size)
+
+        Returns:
+            Total synaptic current for this pathway [n_neurons]
+
+        Biological note:
+            This consolidation is for code quality only. Biologically, D1 and D2
+            MSNs are distinct neurons with independent synaptic weights, so the
+            computation MUST remain separate per pathway.
+        """
+        current = torch.zeros(n_neurons, device=self.device)
+
+        for source_name, source_spikes in inputs.items():
+            # Ensure 1D (ADR-005)
+            if source_spikes.dim() != 1:
+                source_spikes = source_spikes.squeeze()
+
+            # Convert to float for matrix multiplication
+            source_spikes_float = (
+                source_spikes.float() if source_spikes.dtype == torch.bool else source_spikes
+            )
+
+            # Get pathway-specific weights (e.g., "cortex:l5_d1" or "hippocampus_d2")
+            key = f"{source_name}{pathway_suffix}"
+            if key not in self.synaptic_weights:
+                continue
+
+            weights = self.synaptic_weights[key]
+
+            # Apply source-specific STP if enabled
+            if self.config.stp_enabled and key in self.stp_modules:
+                # STP returns [n_input, n_neurons] efficacy matrix
+                efficacy = self.stp_modules[key](source_spikes_float)
+                # Modulate weights: effective_w = w * efficacy.T
+                # weights: [n_neurons, n_input], efficacy.T: [n_neurons, n_input]
+                effective_weights = weights * efficacy.T
+                current += effective_weights @ source_spikes_float
+            else:
+                # No STP: direct weight multiplication
+                current += weights @ source_spikes_float
+
+        return current
+
     def _apply(self, fn, recurse: bool = True):
         """Override _apply to handle non-parameter tensors in TD-lambda learners.
 
@@ -2124,43 +2191,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # Each source (cortex:l5, hippocampus, thalamus) has separate weights
         # for D1 and D2 pathways. Accumulate synaptic currents separately.
-        d1_current = torch.zeros(self.d1_size, device=self.device)
-        d2_current = torch.zeros(self.d2_size, device=self.device)
-
-        for source_name, source_spikes in inputs.items():
-            # Ensure 1D (ADR-005)
-            if source_spikes.dim() != 1:
-                source_spikes = source_spikes.squeeze()
-
-            # Convert to float for matrix multiplication
-            source_spikes_float = source_spikes.float() if source_spikes.dtype == torch.bool else source_spikes
-
-            # D1 pathway weights with per-source STP
-            d1_key = f"{source_name}_d1"
-            if d1_key in self.synaptic_weights:
-                d1_weights = self.synaptic_weights[d1_key]
-                # Apply source-specific STP if enabled (Phase 5)
-                if self.config.stp_enabled and d1_key in self.stp_modules:
-                    efficacy = self.stp_modules[d1_key](source_spikes_float)  # [n_input, d1_size]
-                    # Modulate weights element-wise: effective_w = w * efficacy.T
-                    # weights shape: [d1_size, n_input], efficacy.T shape: [d1_size, n_input]
-                    effective_weights = d1_weights * efficacy.T
-                    d1_current += effective_weights @ source_spikes_float
-                else:
-                    d1_current += d1_weights @ source_spikes_float
-
-            # D2 pathway weights with per-source STP
-            d2_key = f"{source_name}_d2"
-            if d2_key in self.synaptic_weights:
-                d2_weights = self.synaptic_weights[d2_key]
-                # Apply source-specific STP if enabled (Phase 5)
-                if self.config.stp_enabled and d2_key in self.stp_modules:
-                    efficacy = self.stp_modules[d2_key](source_spikes_float)  # [n_input, d2_size]
-                    # Modulate weights element-wise: effective_w = w * efficacy.T
-                    effective_weights = d2_weights * efficacy.T
-                    d2_current += effective_weights @ source_spikes_float
-                else:
-                    d2_current += d2_weights @ source_spikes_float
+        # Biology: D1 and D2 MSNs are distinct neurons with independent synaptic
+        # weights, so integration must remain separate per pathway.
+        d1_current = self._integrate_multi_source_inputs(inputs, "_d1", self.d1_size)
+        d2_current = self._integrate_multi_source_inputs(inputs, "_d2", self.d2_size)
 
         # =====================================================================
         # FSI (FAST-SPIKING INTERNEURONS) - Feedforward Inhibition
