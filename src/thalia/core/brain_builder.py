@@ -1200,8 +1200,8 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     output_size = overrides.get("output_size", 64)
 
     # Input interface - uses thalamic relay (which has real neurons for sensory filtering)
-    # Must specify input_size and relay_size explicitly (no incoming connections)
-    builder.add_component("input", "thalamic_relay", input_size=input_size, relay_size=input_size)
+    # Must specify input_size, relay_size, and trn_size explicitly (no incoming connections)
+    builder.add_component("input", "thalamic_relay", input_size=input_size, relay_size=input_size, trn_size=0)
 
     # Processing components - input_size inferred from connections
     builder.add_component("process", "layered_cortex", **calculate_layer_sizes(process_size))
