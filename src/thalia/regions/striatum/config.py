@@ -263,6 +263,28 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     stp_enabled: bool = True  # Enable STP by default
     # Note: STP types use presets from stp_presets.py ("corticostriatal", "thalamostriatal")
 
+    # Heterogeneous STP (Phase 1 Enhancement)
+    # Biological: Within same pathway, U varies 10-fold across synapses (Dobrunz & Stevens 1997)
+    # Enables more realistic synaptic diversity and temporal dynamics
+    heterogeneous_stp: bool = False  # Enable per-synapse STP parameter sampling
+    stp_variability: float = 0.3  # Coefficient of variation (0.2-0.5 typical)
+    stp_seed: Optional[int] = None  # Random seed for reproducibility
+
+    # =========================================================================
+    # MULTI-TIMESCALE ELIGIBILITY TRACES (Phase 1 Enhancement)
+    # =========================================================================
+    # Biological: Synaptic tags (eligibility traces) have multiple timescales:
+    # - Fast traces (~500ms): Immediate pre-post spike coincidence tagging
+    # - Slow traces (~60s): Consolidated tags from fast traces, enables credit
+    #   assignment over multiple seconds (e.g., delayed rewards in RL tasks)
+    # Combined eligibility: fast_trace + α × slow_trace enables both rapid and
+    # delayed credit assignment. Biology: Yagishita et al. (2014), Shindou et al. (2019)
+    use_multiscale_eligibility: bool = False  # Enable fast + slow eligibility traces
+    fast_eligibility_tau_ms: float = 500.0  # Fast trace decay (~500ms)
+    slow_eligibility_tau_ms: float = 60000.0  # Slow trace decay (~60s)
+    eligibility_consolidation_rate: float = 0.01  # Transfer rate from fast to slow (1% per timestep)
+    slow_trace_weight: float = 0.3  # Weight of slow trace in combined eligibility
+
     # =========================================================================
     # ELASTIC TENSOR CHECKPOINT FORMAT (Phase 1 - Growth Support)
     # =========================================================================

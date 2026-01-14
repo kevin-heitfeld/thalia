@@ -531,6 +531,45 @@ class TrisynapticHippocampus(NeuralRegion):
         # State
         self.state = HippocampusState()
 
+        # =========================================================================
+        # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
+        # =========================================================================
+        # Initialize fast and slow eligibility traces for multi-timescale learning
+        # Pattern: {pathway}_fast and {pathway}_slow for each learned connection
+        # Only initialized if use_multiscale_consolidation is enabled
+        if config.use_multiscale_consolidation:
+            # CA3 recurrent (autoassociative memory)
+            self._ca3_ca3_fast = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
+            self._ca3_ca3_slow = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
+
+            # CA3→CA2 (temporal context)
+            self._ca3_ca2_fast = torch.zeros(self.ca2_size, self.ca3_size, device=self.device)
+            self._ca3_ca2_slow = torch.zeros(self.ca2_size, self.ca3_size, device=self.device)
+
+            # EC→CA2 direct (temporal encoding)
+            self._ec_ca2_fast = torch.zeros(self.ca2_size, self.input_size, device=self.device)
+            self._ec_ca2_slow = torch.zeros(self.ca2_size, self.input_size, device=self.device)
+
+            # EC→CA1 direct (perceptual input)
+            self._ec_ca1_fast = torch.zeros(self.ca1_size, self.input_size, device=self.device)
+            self._ec_ca1_slow = torch.zeros(self.ca1_size, self.input_size, device=self.device)
+
+            # CA2→CA1 (context to output)
+            self._ca2_ca1_fast = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
+            self._ca2_ca1_slow = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
+        else:
+            # Placeholder None values when feature disabled
+            self._ca3_ca3_fast = None
+            self._ca3_ca3_slow = None
+            self._ca3_ca2_fast = None
+            self._ca3_ca2_slow = None
+            self._ec_ca2_fast = None
+            self._ec_ca2_slow = None
+            self._ec_ca1_fast = None
+            self._ec_ca1_slow = None
+            self._ca2_ca1_fast = None
+            self._ca2_ca1_slow = None
+
         # Initialize neurogenesis history tracking
         # Track creation timesteps for each neuron in each layer
         self._neuron_birth_steps_dg = torch.zeros(self.dg_size, dtype=torch.long, device=self.device)
@@ -1674,7 +1713,28 @@ class TrisynapticHippocampus(NeuralRegion):
                 hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
                 dW = dW + hetero_dW
 
-            self.synaptic_weights["ca3_ca3"].data += dW
+            # =========================================================
+            # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
+            # =========================================================
+            if self.config.use_multiscale_consolidation:
+                # Fast trace: Immediate synaptic tagging (minutes)
+                fast_decay = dt / self.config.fast_trace_tau_ms
+                self._ca3_ca3_fast = (1.0 - fast_decay) * self._ca3_ca3_fast + dW
+
+                # Slow trace: Systems consolidation (hours)
+                # Gradual transfer from fast to slow (consolidation)
+                slow_decay = dt / self.config.slow_trace_tau_ms
+                consolidation = self.config.consolidation_rate * self._ca3_ca3_fast
+                self._ca3_ca3_slow = (1.0 - slow_decay) * self._ca3_ca3_slow + consolidation
+
+                # Combined weight update: Fast (episodic) + Slow (semantic)
+                # Fast trace dominates initially, slow trace provides stability
+                combined_dW = self._ca3_ca3_fast + self.config.slow_trace_contribution * self._ca3_ca3_slow
+                self.synaptic_weights["ca3_ca3"].data += combined_dW
+            else:
+                # Standard immediate weight update (original behavior)
+                self.synaptic_weights["ca3_ca3"].data += dW
+
             self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # No self-connections
             clamp_weights(self.synaptic_weights["ca3_ca3"].data, self.config.w_min, self.config.w_max)
 
@@ -1755,7 +1815,21 @@ class TrisynapticHippocampus(NeuralRegion):
                 effective_lr = base_lr
 
             dW = effective_lr * torch.outer(ca2_activity, ca3_activity_for_ca2)
-            self.synaptic_weights["ca3_ca2"].data += dW
+
+            # Multi-timescale consolidation for CA3→CA2
+            if self.config.use_multiscale_consolidation:
+                fast_decay = dt / self.config.fast_trace_tau_ms
+                self._ca3_ca2_fast = (1.0 - fast_decay) * self._ca3_ca2_fast + dW
+
+                slow_decay = dt / self.config.slow_trace_tau_ms
+                consolidation = self.config.consolidation_rate * self._ca3_ca2_fast
+                self._ca3_ca2_slow = (1.0 - slow_decay) * self._ca3_ca2_slow + consolidation
+
+                combined_dW = self._ca3_ca2_fast + self.config.slow_trace_contribution * self._ca3_ca2_slow
+                self.synaptic_weights["ca3_ca2"].data += combined_dW
+            else:
+                self.synaptic_weights["ca3_ca2"].data += dW
+
             clamp_weights(self.synaptic_weights["ca3_ca2"].data, self.config.w_min, self.config.w_max)
 
         # EC→CA2 STRONG PLASTICITY (temporal encoding)
@@ -1769,7 +1843,21 @@ class TrisynapticHippocampus(NeuralRegion):
                 effective_lr = base_lr
 
             dW = effective_lr * torch.outer(ca2_activity, input_spikes.float())
-            self.synaptic_weights["ec_ca2"].data += dW
+
+            # Multi-timescale consolidation for EC→CA2
+            if self.config.use_multiscale_consolidation:
+                fast_decay = dt / self.config.fast_trace_tau_ms
+                self._ec_ca2_fast = (1.0 - fast_decay) * self._ec_ca2_fast + dW
+
+                slow_decay = dt / self.config.slow_trace_tau_ms
+                consolidation = self.config.consolidation_rate * self._ec_ca2_fast
+                self._ec_ca2_slow = (1.0 - slow_decay) * self._ec_ca2_slow + consolidation
+
+                combined_dW = self._ec_ca2_fast + self.config.slow_trace_contribution * self._ec_ca2_slow
+                self.synaptic_weights["ec_ca2"].data += combined_dW
+            else:
+                self.synaptic_weights["ec_ca2"].data += dW
+
             clamp_weights(self.synaptic_weights["ec_ca2"].data, self.config.w_min, self.config.w_max)
 
         # =====================================================================
@@ -1987,13 +2075,33 @@ class TrisynapticHippocampus(NeuralRegion):
                 effective_lr = base_lr
 
             dW = effective_lr * torch.outer(ca1_activity, ec_activity)
-            # Update the appropriate weight matrix
-            if ec_direct_input is not None and w_ec_l3_ca1 is not None:
-                self.synaptic_weights["ec_l3_ca1"].data += dW
-                clamp_weights(self.synaptic_weights["ec_l3_ca1"].data, cfg.w_min, cfg.w_max)
+
+            # Multi-timescale consolidation for EC→CA1
+            if self.config.use_multiscale_consolidation:
+                fast_decay = dt / self.config.fast_trace_tau_ms
+                self._ec_ca1_fast = (1.0 - fast_decay) * self._ec_ca1_fast + dW
+
+                slow_decay = dt / self.config.slow_trace_tau_ms
+                consolidation = self.config.consolidation_rate * self._ec_ca1_fast
+                self._ec_ca1_slow = (1.0 - slow_decay) * self._ec_ca1_slow + consolidation
+
+                combined_dW = self._ec_ca1_fast + self.config.slow_trace_contribution * self._ec_ca1_slow
+
+                # Update the appropriate weight matrix
+                if ec_direct_input is not None and w_ec_l3_ca1 is not None:
+                    self.synaptic_weights["ec_l3_ca1"].data += combined_dW
+                    clamp_weights(self.synaptic_weights["ec_l3_ca1"].data, cfg.w_min, cfg.w_max)
+                else:
+                    self.synaptic_weights["ec_ca1"].data += combined_dW
+                    clamp_weights(self.synaptic_weights["ec_ca1"].data, cfg.w_min, cfg.w_max)
             else:
-                self.synaptic_weights["ec_ca1"].data += dW
-                clamp_weights(self.synaptic_weights["ec_ca1"].data, cfg.w_min, cfg.w_max)
+                # Standard immediate weight update
+                if ec_direct_input is not None and w_ec_l3_ca1 is not None:
+                    self.synaptic_weights["ec_l3_ca1"].data += dW
+                    clamp_weights(self.synaptic_weights["ec_l3_ca1"].data, cfg.w_min, cfg.w_max)
+                else:
+                    self.synaptic_weights["ec_ca1"].data += dW
+                    clamp_weights(self.synaptic_weights["ec_ca1"].data, cfg.w_min, cfg.w_max)
 
         # ---------------------------------------------------------
         # HEBBIAN LEARNING: CA2→CA1 plasticity (during encoding)
@@ -2012,7 +2120,21 @@ class TrisynapticHippocampus(NeuralRegion):
                 effective_lr = base_lr
 
             dW = effective_lr * torch.outer(ca1_activity, ca2_activity_delayed)
-            self.synaptic_weights["ca2_ca1"].data += dW
+
+            # Multi-timescale consolidation for CA2→CA1
+            if self.config.use_multiscale_consolidation:
+                fast_decay = dt / self.config.fast_trace_tau_ms
+                self._ca2_ca1_fast = (1.0 - fast_decay) * self._ca2_ca1_fast + dW
+
+                slow_decay = dt / self.config.slow_trace_tau_ms
+                consolidation = self.config.consolidation_rate * self._ca2_ca1_fast
+                self._ca2_ca1_slow = (1.0 - slow_decay) * self._ca2_ca1_slow + consolidation
+
+                combined_dW = self._ca2_ca1_fast + self.config.slow_trace_contribution * self._ca2_ca1_slow
+                self.synaptic_weights["ca2_ca1"].data += combined_dW
+            else:
+                self.synaptic_weights["ca2_ca1"].data += dW
+
             clamp_weights(self.synaptic_weights["ca2_ca1"].data, cfg.w_min, cfg.w_max)
 
         self.state.ca1_spikes = ca1_spikes

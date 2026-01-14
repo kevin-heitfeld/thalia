@@ -243,12 +243,30 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.n_d2 = self.d2_size
 
         # =====================================================================
-        # MULTI-SOURCE ELIGIBILITY TRACES (Phase 3)
+        # MULTI-SOURCE ELIGIBILITY TRACES (Phase 3 + Phase 1 Enhancement)
         # =====================================================================
         # Per-source-pathway eligibility traces for multi-source learning
         # Structure: {"source_d1": tensor, "source_d2": tensor, ...}
+        #
+        # Phase 1 Enhancement: Multi-timescale eligibility traces
+        # Biology: Synaptic tags (eligibility) exist at multiple timescales:
+        # - Fast traces (~500ms): Immediate coincidence detection (STDP-like)
+        # - Slow traces (~60s): Consolidated long-term tags for delayed reward
+        # Combined eligibility = fast + α*slow enables both rapid and multi-second
+        # credit assignment. (Yagishita et al. 2014, Shindou et al. 2019)
         self._eligibility_d1: Dict[str, torch.Tensor] = {}
         self._eligibility_d2: Dict[str, torch.Tensor] = {}
+
+        # Multi-timescale eligibility (optional, enabled via config)
+        if config.use_multiscale_eligibility:
+            self._eligibility_d1_fast: Dict[str, torch.Tensor] = {}
+            self._eligibility_d2_fast: Dict[str, torch.Tensor] = {}
+            self._eligibility_d1_slow: Dict[str, torch.Tensor] = {}
+            self._eligibility_d2_slow: Dict[str, torch.Tensor] = {}
+        else:
+            # Single-timescale mode: fast traces are the regular eligibility
+            # (no separate fast/slow dicts)
+            pass
 
         # Source-specific eligibility tau configuration (optional overrides)
         # If not set, uses biological defaults in _get_source_eligibility_tau()
@@ -925,10 +943,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.learning.add_source_eligibility_traces(source_name, n_input)
 
         # =====================================================================
-        # CREATE STP MODULES FOR SOURCE-PATHWAY (Phase 5)
+        # CREATE STP MODULES FOR SOURCE-PATHWAY (Phase 5 + Phase 1 Enhancement)
         # =====================================================================
         # Each source-pathway gets its own STP module with source-specific config.
         # Biology: Different input pathways have different short-term dynamics.
+        # Phase 1 Enhancement: Heterogeneous STP enables per-synapse parameter variability.
         if self.config.stp_enabled:
             # Determine STP type based on source name
             if "cortex" in source_name or "cortical" in source_name:
@@ -940,23 +959,64 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             else:
                 stp_type = "corticostriatal"  # Default to cortical
 
-            # Create STP for D1 pathway
-            d1_stp = ShortTermPlasticity(
-                n_pre=n_input,
-                n_post=self.d1_size,
-                config=get_stp_config(stp_type, dt=self.config.dt_ms),
-                per_synapse=True,
-            )
+            # Create STP configs (heterogeneous if enabled)
+            if self.config.heterogeneous_stp:
+                # Phase 1 Enhancement: Sample per-synapse STP parameters from distributions
+                # Biology: 10-fold variability in U within same pathway (Dobrunz & Stevens 1997)
+                from thalia.components.synapses import create_heterogeneous_stp_configs
+
+                # D1 pathway: Create list of per-synapse STP configs
+                d1_configs = create_heterogeneous_stp_configs(
+                    base_preset=stp_type,
+                    n_synapses=n_input * self.d1_size,  # Total synapses
+                    variability=self.config.stp_variability,
+                    seed=self.config.stp_seed,
+                    dt=self.config.dt_ms,
+                )
+
+                # D2 pathway: Create list of per-synapse STP configs
+                d2_configs = create_heterogeneous_stp_configs(
+                    base_preset=stp_type,
+                    n_synapses=n_input * self.d2_size,  # Total synapses
+                    variability=self.config.stp_variability,
+                    seed=self.config.stp_seed,
+                    dt=self.config.dt_ms,
+                )
+
+                # Create STP modules with heterogeneous configs
+                d1_stp = ShortTermPlasticity(
+                    n_pre=n_input,
+                    n_post=self.d1_size,
+                    config=d1_configs,  # List of configs
+                    per_synapse=True,
+                )
+
+                d2_stp = ShortTermPlasticity(
+                    n_pre=n_input,
+                    n_post=self.d2_size,
+                    config=d2_configs,  # List of configs
+                    per_synapse=True,
+                )
+            else:
+                # Standard uniform STP parameters
+                d1_stp = ShortTermPlasticity(
+                    n_pre=n_input,
+                    n_post=self.d1_size,
+                    config=get_stp_config(stp_type, dt=self.config.dt_ms),
+                    per_synapse=True,
+                )
+
+                d2_stp = ShortTermPlasticity(
+                    n_pre=n_input,
+                    n_post=self.d2_size,
+                    config=get_stp_config(stp_type, dt=self.config.dt_ms),
+                    per_synapse=True,
+                )
+
+            # Register STP modules
             d1_stp.to(self.device)
             self.stp_modules[d1_key] = d1_stp
 
-            # Create STP for D2 pathway
-            d2_stp = ShortTermPlasticity(
-                n_pre=n_input,
-                n_post=self.d2_size,
-                config=get_stp_config(stp_type, dt=self.config.dt_ms),
-                per_synapse=True,
-            )
             d2_stp.to(self.device)
             self.stp_modules[d2_key] = d2_stp
 
@@ -1801,6 +1861,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - D1 and D2 have different post-synaptic spike patterns
         - Dopamine modulation (applied later) differs between pathways
 
+        Phase 1 Enhancement: Multi-timescale eligibility (optional)
+        When use_multiscale_eligibility is enabled:
+        - Fast traces (~500ms): Immediate coincidence detection
+        - Slow traces (~60s): Consolidated long-term tags
+        - Consolidation: slow ← slow*decay + fast*consolidation_rate
+        - Combined eligibility = fast + α*slow (used in deliver_reward())
+
         Args:
             inputs: Dict of source_name -> spike_tensor
             post_spikes: Post-synaptic spikes for this pathway [n_neurons]
@@ -1812,41 +1879,102 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             synapses. When dopamine arrives (seconds later), only tagged synapses
             undergo plasticity. This implements the three-factor learning rule.
         """
-        # Get or initialize eligibility dict for this pathway
-        if not hasattr(self, eligibility_attr):
-            setattr(self, eligibility_attr, {})
-        eligibility_dict = getattr(self, eligibility_attr)
+        # Multi-timescale mode
+        if self.config.use_multiscale_eligibility:
+            # Get or initialize eligibility dicts for fast and slow traces
+            fast_attr = f"{eligibility_attr}_fast"
+            slow_attr = f"{eligibility_attr}_slow"
 
-        for source_name, source_spikes in inputs.items():
-            # Ensure 1D
-            if source_spikes.dim() != 1:
-                source_spikes = source_spikes.squeeze()
+            if not hasattr(self, fast_attr):
+                setattr(self, fast_attr, {})
+            if not hasattr(self, slow_attr):
+                setattr(self, slow_attr, {})
 
-            # Get float version
-            source_spikes_float = source_spikes.float()
+            fast_dict = getattr(self, fast_attr)
+            slow_dict = getattr(self, slow_attr)
 
-            # Get pathway-specific key (e.g., "cortex:l5_d1", "hippocampus_d2")
-            key = f"{source_name}{pathway_suffix}"
-            if key not in self.synaptic_weights:
-                continue
+            # Decay constants
+            fast_decay = torch.exp(torch.tensor(-self.config.dt_ms / self.config.fast_eligibility_tau_ms))
+            slow_decay = torch.exp(torch.tensor(-self.config.dt_ms / self.config.slow_eligibility_tau_ms))
+            consolidation_rate = self.config.eligibility_consolidation_rate
 
-            # Initialize eligibility trace if needed
-            if key not in eligibility_dict:
+            for source_name, source_spikes in inputs.items():
+                # Ensure 1D
+                if source_spikes.dim() != 1:
+                    source_spikes = source_spikes.squeeze()
+                source_spikes_float = source_spikes.float()
+
+                # Get pathway-specific key
+                key = f"{source_name}{pathway_suffix}"
+                if key not in self.synaptic_weights:
+                    continue
+
+                # Initialize traces if needed
                 weight_shape = self.synaptic_weights[key].shape
-                eligibility_dict[key] = torch.zeros(weight_shape, device=self.device)
+                if key not in fast_dict:
+                    fast_dict[key] = torch.zeros(weight_shape, device=self.device)
+                if key not in slow_dict:
+                    slow_dict[key] = torch.zeros(weight_shape, device=self.device)
 
-            # Compute STDP-style eligibility: outer product of post and pre
-            # This marks synapses where pre-spike and post-spike co-occurred
-            eligibility_update = torch.outer(post_spikes, source_spikes_float)
+                # Compute STDP-style eligibility update
+                eligibility_update = torch.outer(post_spikes, source_spikes_float)
 
-            # Get source-specific decay tau (cortex=1000ms, hippoc=300ms, etc.)
-            tau_ms = self._get_source_eligibility_tau(source_name)
-            decay = torch.exp(torch.tensor(-self.config.dt_ms / tau_ms))
+                # Update fast trace: decay + immediate tagging
+                fast_dict[key] = (
+                    fast_dict[key] * fast_decay + eligibility_update * self.config.stdp_lr
+                )
 
-            # Decay old eligibility and add new trace
-            eligibility_dict[key] = (
-                eligibility_dict[key] * decay + eligibility_update * self.config.stdp_lr
-            )
+                # Update slow trace: decay + consolidation from fast trace
+                # Biology: Fast tags consolidate into persistent slow tags
+                slow_dict[key] = (
+                    slow_dict[key] * slow_decay + fast_dict[key] * consolidation_rate
+                )
+
+            # For backward compatibility: set regular eligibility to fast traces
+            # (deliver_reward will use combined eligibility when multi-timescale enabled)
+            if not hasattr(self, eligibility_attr):
+                setattr(self, eligibility_attr, {})
+            eligibility_dict = getattr(self, eligibility_attr)
+            for key in fast_dict:
+                eligibility_dict[key] = fast_dict[key].clone()
+
+        else:
+            # Single-timescale mode (original implementation)
+            # Get or initialize eligibility dict for this pathway
+            if not hasattr(self, eligibility_attr):
+                setattr(self, eligibility_attr, {})
+            eligibility_dict = getattr(self, eligibility_attr)
+
+            for source_name, source_spikes in inputs.items():
+                # Ensure 1D
+                if source_spikes.dim() != 1:
+                    source_spikes = source_spikes.squeeze()
+
+                # Get float version
+                source_spikes_float = source_spikes.float()
+
+                # Get pathway-specific key (e.g., "cortex:l5_d1", "hippocampus_d2")
+                key = f"{source_name}{pathway_suffix}"
+                if key not in self.synaptic_weights:
+                    continue
+
+                # Initialize eligibility trace if needed
+                if key not in eligibility_dict:
+                    weight_shape = self.synaptic_weights[key].shape
+                    eligibility_dict[key] = torch.zeros(weight_shape, device=self.device)
+
+                # Compute STDP-style eligibility: outer product of post and pre
+                # This marks synapses where pre-spike and post-spike co-occurred
+                eligibility_update = torch.outer(post_spikes, source_spikes_float)
+
+                # Get source-specific decay tau (cortex=1000ms, hippoc=300ms, etc.)
+                tau_ms = self._get_source_eligibility_tau(source_name)
+                decay = torch.exp(torch.tensor(-self.config.dt_ms / tau_ms))
+
+                # Decay old eligibility and add new trace
+                eligibility_dict[key] = (
+                    eligibility_dict[key] * decay + eligibility_update * self.config.stdp_lr
+                )
 
     def set_source_eligibility_tau(self, source_name: str, tau_ms: float) -> None:
         """Configure custom eligibility tau for a specific source.
@@ -2429,6 +2557,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Apply learning per source-pathway using eligibility traces
         # Three-factor rule: Δw = eligibility × dopamine × learning_rate
+        # Phase 1 Enhancement: Combined eligibility = fast + α*slow (if multi-timescale enabled)
         d1_total_ltp = 0.0
         d1_total_ltd = 0.0
         d2_total_ltp = 0.0
@@ -2438,8 +2567,19 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, '_eligibility_d1'):
             for source_key, eligibility in self._eligibility_d1.items():
                 if source_key in self.synaptic_weights:
+                    # Phase 1: Use combined eligibility if multi-timescale enabled
+                    if self.config.use_multiscale_eligibility:
+                        # Combined eligibility = fast + α*slow
+                        # Biology: Fast traces for immediate learning, slow traces for delayed reward
+                        fast_trace = self._eligibility_d1_fast.get(source_key, eligibility)
+                        slow_trace = self._eligibility_d1_slow.get(source_key, torch.zeros_like(eligibility))
+                        combined_eligibility = fast_trace + self.config.slow_trace_weight * slow_trace
+                    else:
+                        # Single-timescale mode: use standard eligibility
+                        combined_eligibility = eligibility
+
                     # Compute weight update: Δw = eligibility × dopamine × lr
-                    weight_update = eligibility * da_level * self.config.stdp_lr
+                    weight_update = combined_eligibility * da_level * self.config.stdp_lr
 
                     # Apply update with weight bounds
                     new_weights = torch.clamp(
@@ -2459,8 +2599,18 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, '_eligibility_d2'):
             for source_key, eligibility in self._eligibility_d2.items():
                 if source_key in self.synaptic_weights:
+                    # Phase 1: Use combined eligibility if multi-timescale enabled
+                    if self.config.use_multiscale_eligibility:
+                        # Combined eligibility = fast + α*slow
+                        fast_trace = self._eligibility_d2_fast.get(source_key, eligibility)
+                        slow_trace = self._eligibility_d2_slow.get(source_key, torch.zeros_like(eligibility))
+                        combined_eligibility = fast_trace + self.config.slow_trace_weight * slow_trace
+                    else:
+                        # Single-timescale mode: use standard eligibility
+                        combined_eligibility = eligibility
+
                     # Compute weight update with INVERTED dopamine
-                    weight_update = eligibility * (-da_level) * self.config.stdp_lr
+                    weight_update = combined_eligibility * (-da_level) * self.config.stdp_lr
 
                     # Apply update with weight bounds
                     new_weights = torch.clamp(

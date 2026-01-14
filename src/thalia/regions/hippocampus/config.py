@@ -274,6 +274,29 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     her_goal_tolerance: float = 0.1  # Distance threshold for goal achievement
     her_buffer_size: int = 1000  # Maximum episodes to store
 
+    # =========================================================================
+    # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
+    # =========================================================================
+    # Biological reality: Memory consolidation operates over multiple timescales
+    # - Fast trace (synaptic tagging): Minutes, ~60s tau
+    # - Slow trace (systems consolidation): Hours, ~3600s tau
+    # - Consolidation: Gradual transfer from fast (episodic) to slow (semantic)
+    #
+    # This implements "systems consolidation theory" (McClelland et al., 1995):
+    # - Fast learning in hippocampus captures episodic details
+    # - Slow consolidation transfers statistical regularities to neocortex
+    # - Gradual interleaving prevents catastrophic forgetting
+    #
+    # References:
+    # - McClelland et al. (1995): Why there are complementary learning systems
+    # - Dudai et al. (2015): The consolidation and transformation of memory
+    # - Frankland & Bontempi (2005): Organization of recent and remote memories
+    use_multiscale_consolidation: bool = False  # Enable multi-timescale traces
+    fast_trace_tau_ms: float = 60_000.0  # Fast trace decay (1 minute = 60,000ms)
+    slow_trace_tau_ms: float = 3_600_000.0  # Slow trace decay (1 hour = 3,600,000ms)
+    consolidation_rate: float = 0.001  # Transfer rate from fast to slow (0.1% per timestep)
+    slow_trace_contribution: float = 0.1  # Weight of slow trace in learning (10%)
+
 
 @dataclass
 class HippocampusState(BaseRegionState):

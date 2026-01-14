@@ -184,6 +184,49 @@ class PrefrontalConfig(NeuralComponentConfig):
     hyperbolic_config: Optional["HyperbolicDiscountingConfig"] = None
     """Configuration for hyperbolic discounter (Phase 3)."""
 
+    # =========================================================================
+    # HETEROGENEOUS WORKING MEMORY (Phase 1B Enhancement)
+    # =========================================================================
+    # Biological reality: PFC neurons show heterogeneous maintenance properties
+    # - Stable neurons: Strong recurrence, long time constants (~1-2s)
+    # - Flexible neurons: Weak recurrence, short time constants (~100-200ms)
+    #
+    # This heterogeneity enables:
+    # - Stable neurons: Maintain context/goals over long delays
+    # - Flexible neurons: Rapid updating for new information
+    # - Mixed selectivity: Distributed representations across neuron types
+    #
+    # References:
+    # - Rigotti et al. (2013): Mixed selectivity in prefrontal cortex
+    # - Murray et al. (2017): Stable population coding for working memory
+    # - Wasmuht et al. (2018): Intrinsic neuronal dynamics in PFC
+    use_heterogeneous_wm: bool = False  # Enable heterogeneous WM neurons
+    stability_cv: float = 0.3  # Coefficient of variation for recurrent strength
+    tau_mem_min: float = 100.0  # Minimum membrane time constant (ms) - flexible neurons
+    tau_mem_max: float = 500.0  # Maximum membrane time constant (ms) - stable neurons
+
+    # =========================================================================
+    # D1/D2 DOPAMINE RECEPTOR SUBTYPES (Phase 1B Enhancement)
+    # =========================================================================
+    # Biological reality: PFC has both D1 (excitatory) and D2 (inhibitory) receptors
+    # - D1-dominant neurons (~60%): "Go" pathway, enhance signals with DA
+    # - D2-dominant neurons (~40%): "NoGo" pathway, suppress noise with DA
+    #
+    # This enables:
+    # - D1: Update WM when DA high (new information is important)
+    # - D2: Maintain WM when DA low (protect current state)
+    # - Opponent modulation: D1 and D2 have opposite DA responses
+    #
+    # References:
+    # - Seamans & Yang (2004): D1 and D2 dopamine systems in PFC
+    # - Durstewitz & Seamans (2008): Neurocomputational perspective on PFC
+    # - Cools & D'Esposito (2011): Inverted-U dopamine in working memory
+    use_d1_d2_subtypes: bool = False  # Enable D1/D2 receptor subtypes
+    d1_fraction: float = 0.6  # Fraction of neurons that are D1-dominant (60%)
+    d1_da_gain: float = 0.5  # DA gain for D1 neurons (excitatory, 1.0 + gain*DA)
+    d2_da_gain: float = 0.3  # DA suppression for D2 neurons (inhibitory, 1.0 - gain*DA)
+    d2_output_weight: float = 0.5  # Weight of D2 output in competition (D1 - weight*D2)
+
     def __post_init__(self) -> None:
         """Auto-compute output_size and total_neurons from n_neurons."""
         # Properties handle this now - no manual assignment needed

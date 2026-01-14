@@ -19,6 +19,8 @@ from thalia.components.synapses.stp_presets import (
     STPPreset,
     get_stp_config,
     list_presets,
+    sample_heterogeneous_stp_params,
+    create_heterogeneous_stp_configs,
 )
 from thalia.components.synapses.traces import (
     SpikeTrace,
@@ -44,6 +46,8 @@ __all__ = [
     "STPPreset",
     "get_stp_config",
     "list_presets",
+    "sample_heterogeneous_stp_params",
+    "create_heterogeneous_stp_configs",
     # Spike Traces
     "SpikeTrace",
     "PairedTraces",

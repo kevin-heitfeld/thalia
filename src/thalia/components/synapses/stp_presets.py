@@ -24,7 +24,8 @@ References:
 """
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Optional, Tuple
+import numpy as np
 
 from thalia.components.synapses.stp import STPConfig
 
@@ -314,3 +315,134 @@ def list_presets() -> Dict[str, str]:
         name: preset.description
         for name, preset in STP_PRESETS.items()
     }
+
+
+def sample_heterogeneous_stp_params(
+    base_preset: str,
+    n_synapses: int,
+    variability: float = 0.3,
+    seed: Optional[int] = None,
+    dt: float = 1.0,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Sample heterogeneous STP parameters from biological distributions.
+
+    Biological basis:
+        Even within a single pathway type, individual synapses show substantial
+        variability in STP parameters (Dobrunz & Stevens 1997, Markram et al. 1998).
+        Release probability U can vary 10-fold within the same connection.
+
+        This heterogeneity enables richer temporal filtering: some synapses act as
+        high-pass filters (strong depression), others as low-pass (weak depression),
+        creating a diverse population of temporal feature detectors.
+
+    Args:
+        base_preset: Name of base STP preset (e.g., "corticostriatal")
+        n_synapses: Number of synapses to sample parameters for
+        variability: Coefficient of variation (std/mean) for parameter sampling
+                     Typical biological range: 0.2-0.5
+        seed: Random seed for reproducibility
+        dt: Simulation timestep in milliseconds
+
+    Returns:
+        Tuple of (U_array, tau_d_array, tau_f_array) each shape [n_synapses]
+        All arrays contain per-synapse parameters sampled from lognormal distributions
+
+    Example:
+        >>> U, tau_d, tau_f = sample_heterogeneous_stp_params(
+        ...     "corticostriatal", n_synapses=1000, variability=0.3
+        ... )
+        >>> print(f"U range: {U.min():.3f} - {U.max():.3f}")
+        U range: 0.185 - 0.642
+        >>> print(f"Mean U: {U.mean():.3f}, Target: 0.4")
+        Mean U: 0.401, Target: 0.4
+
+    References:
+        - Dobrunz & Stevens (1997): Heterogeneity of release probability at
+          hippocampal synapses. Neuron 18, 995-1008.
+        - Markram et al. (1998): Differential signaling via the same axon.
+          PNAS 95, 5323-5328.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Get base configuration
+    base_config = get_stp_config(base_preset, dt=dt)
+
+    # Sample from lognormal distributions (ensures positive values)
+    # lognormal(mu, sigma) where mean = exp(mu + sigma^2/2)
+    # For CV = sigma_y / mu_y = variability, we have:
+    # sigma = sqrt(log(1 + CV^2))
+    # mu = log(mean) - sigma^2 / 2
+
+    def sample_lognormal(mean_val: float, cv: float, size: int) -> np.ndarray:
+        """Sample from lognormal with specified mean and coefficient of variation."""
+        sigma = np.sqrt(np.log(1 + cv**2))
+        mu = np.log(mean_val) - sigma**2 / 2
+        return np.random.lognormal(mu, sigma, size=size)
+
+    # Sample U (release probability)
+    U_samples = sample_lognormal(base_config.U, variability, n_synapses)
+    U_samples = np.clip(U_samples, 0.01, 0.99)  # Biological bounds
+
+    # Sample tau_d (depression recovery time constant)
+    tau_d_samples = sample_lognormal(base_config.tau_d, variability, n_synapses)
+    tau_d_samples = np.clip(tau_d_samples, 50.0, 2000.0)  # Biological bounds
+
+    # Sample tau_f (facilitation decay time constant)
+    tau_f_samples = sample_lognormal(base_config.tau_f, variability, n_synapses)
+    tau_f_samples = np.clip(tau_f_samples, 10.0, 2000.0)  # Biological bounds
+
+    return U_samples, tau_d_samples, tau_f_samples
+
+
+def create_heterogeneous_stp_configs(
+    base_preset: str,
+    n_synapses: int,
+    variability: float = 0.3,
+    seed: Optional[int] = None,
+    dt: float = 1.0,
+) -> list[STPConfig]:
+    """Create list of heterogeneous STP configs for per-synapse dynamics.
+
+    Convenience wrapper around sample_heterogeneous_stp_params() that returns
+    a list of STPConfig objects, one per synapse.
+
+    Args:
+        base_preset: Name of base STP preset
+        n_synapses: Number of synapses
+        variability: Coefficient of variation (0.2-0.5 typical)
+        seed: Random seed for reproducibility
+        dt: Simulation timestep in milliseconds
+
+    Returns:
+        List of STPConfig objects, one per synapse
+
+    Example:
+        >>> configs = create_heterogeneous_stp_configs(
+        ...     "corticostriatal", n_synapses=100, variability=0.3
+        ... )
+        >>> print(f"First synapse U={configs[0].U:.3f}")
+        First synapse U=0.382
+        >>> print(f"Last synapse U={configs[-1].U:.3f}")
+        Last synapse U=0.431
+    """
+    U_samples, tau_d_samples, tau_f_samples = sample_heterogeneous_stp_params(
+        base_preset=base_preset,
+        n_synapses=n_synapses,
+        variability=variability,
+        seed=seed,
+        dt=dt,
+    )
+
+    # Create STPConfig for each synapse
+    configs = []
+    for i in range(n_synapses):
+        config = STPConfig(
+            U=float(U_samples[i]),
+            tau_d=float(tau_d_samples[i]),
+            tau_f=float(tau_f_samples[i]),
+            dt=dt,
+        )
+        configs.append(config)
+
+    return configs
