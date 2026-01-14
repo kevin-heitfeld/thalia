@@ -33,7 +33,7 @@ class TestOscillatorManagerIntegration:
         """Create simple brain for testing."""
         brain = (
             BrainBuilder(global_config)
-            .add_component("input", "thalamic_relay", n_input=64, n_output=64)
+            .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))
             .connect("input", "cortex", pathway_type="axonal_projection")
             .build()
@@ -173,7 +173,7 @@ class TestOscillatorManagerIntegration:
     def test_theta_frequency_from_config(self, global_config):
         """Test that theta frequency comes from config."""
         # Config has theta_frequency_hz=8.0
-        brain = BrainBuilder(global_config).add_component("input", "thalamic_relay", n_input=64, n_output=64).build()
+        brain = BrainBuilder(global_config).add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0).build()
 
         # Theta should have frequency from config
         assert brain.oscillators.theta.frequency_hz == 8.0

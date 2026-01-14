@@ -45,7 +45,7 @@ class TestDynamicBrainIntegration:
         """Test creating and executing a simple custom brain."""
         brain = (
             BrainBuilder(global_config)
-            .add_component("input", "thalamic_relay", n_input=64, n_output=64)
+            .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))  # n_input inferred!
             .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
             .build()
@@ -68,7 +68,7 @@ class TestDynamicBrainIntegration:
         """Test creating a 3-region chain: A -> B -> C."""
         brain = (
             BrainBuilder(global_config)
-            .add_component("region_a", "thalamic_relay", n_input=32, n_output=32)
+            .add_component("region_a", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component("region_b", "layered_cortex", **calculate_layer_sizes(64))  # n_input inferred from region_a
             .add_component("region_c", "layered_cortex", **calculate_layer_sizes(16))  # n_input inferred from region_b
             .connect("region_a", "region_b", pathway_type="axonal_projection", axonal_delay_ms=3.0)
@@ -91,7 +91,7 @@ class TestDynamicBrainIntegration:
         """Test diamond topology: A -> B, C -> D."""
         brain = (
             BrainBuilder(global_config)
-            .add_component("source", "thalamic_relay", n_input=32, n_output=32)
+            .add_component("source", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component("branch1", "layered_cortex", **calculate_layer_sizes(16))  # n_input=32 inferred
             .add_component("branch2", "layered_cortex", **calculate_layer_sizes(16))  # n_input=32 inferred
             .add_component("sink", "layered_cortex", **calculate_layer_sizes(8))      # n_input=32 inferred (16+16)
@@ -116,7 +116,7 @@ class TestDynamicBrainIntegration:
         """Test adding components dynamically after brain creation."""
         brain = (
             BrainBuilder(global_config)
-            .add_component("input", "thalamic_relay", n_input=32, n_output=32)
+            .add_component("input", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .build()
         )
 
@@ -256,7 +256,7 @@ class TestSaveAndLoad:
         """Test saving and loading brain specification."""
         original_builder = (
             BrainBuilder(global_config)
-            .add_component("input", "thalamic_relay", n_input=32, n_output=32)
+            .add_component("input", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(16))  # n_input inferred
             .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
         )

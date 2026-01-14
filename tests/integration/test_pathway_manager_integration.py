@@ -31,7 +31,7 @@ class TestPathwayManagerIntegration:
         """Create simple brain for testing."""
         brain = (
             BrainBuilder(global_config)
-            .add_component("input", "thalamic_relay", n_input=64, n_output=64)
+            .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))
             .connect("input", "cortex", pathway_type="axonal_projection")  # Routing pathway (no weights)
             .build()
