@@ -30,9 +30,9 @@ def health_brain() -> DynamicBrain:
     builder = BrainBuilder(global_config)
 
     # Add minimal regions for testing
-    builder.add_component("cortex", "cortex", n_output=64, n_input=32, l4_size=32, l23_size=48, l5_size=16, l6a_size=0, l6b_size=0)
+    builder.add_component("cortex", "cortex", input_size=32, n_output=64, n_input=32, l4_size=32, l23_size=48, l5_size=16, l6a_size=0, l6b_size=0)
     builder.add_component("hippocampus", "hippocampus", n_output=32)
-    builder.add_component("pfc", "prefrontal", n_output=16, n_input=64)
+    builder.add_component("pfc", "prefrontal", input_size=64, n_neurons=16)
 
     # Add connections
     builder.connect("cortex", "hippocampus", "axonal_projection")
@@ -63,9 +63,9 @@ def criticality_brain() -> DynamicBrain:
     builder = BrainBuilder(global_config)
 
     # Add minimal regions for testing
-    builder.add_component("cortex", "cortex", n_output=64, n_input=32, l4_size=32, l23_size=48, l5_size=16, l6a_size=0, l6b_size=0)
+    builder.add_component("cortex", "cortex", input_size=32, n_output=64, n_input=32, l4_size=32, l23_size=48, l5_size=16, l6a_size=0, l6b_size=0)
     builder.add_component("hippocampus", "hippocampus", n_output=32)
-    builder.add_component("pfc", "prefrontal", n_output=16, n_input=64)
+    builder.add_component("pfc", "prefrontal", input_size=64, n_neurons=16)
 
     # Add connections
     builder.connect("cortex", "hippocampus", "axonal_projection")

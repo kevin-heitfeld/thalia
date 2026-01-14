@@ -337,35 +337,35 @@ class CheckpointManager:
         """
         config = state.get("config", {})
 
-        # Check critical dimensions
-        if config.get("input_size") != self.brain.config.input_size:
+        # Check critical dimensions (use getattr with None to handle missing attributes)
+        if config.get("input_size") != getattr(self.brain.config, "input_size", None):
             raise ValueError(
                 f"Config mismatch: input_size {config.get('input_size')} "
-                f"!= {self.brain.config.input_size}"
+                f"!= {getattr(self.brain.config, 'input_size', None)}"
             )
 
-        if config.get("cortex_size") != self.brain.config.cortex_size:
+        if config.get("cortex_size") != getattr(self.brain.config, "cortex_size", None):
             raise ValueError(
                 f"Config mismatch: cortex_size {config.get('cortex_size')} "
-                f"!= {self.brain.config.cortex_size}"
+                f"!= {getattr(self.brain.config, 'cortex_size', None)}"
             )
 
-        if config.get("hippocampus_size") != self.brain.config.hippocampus_size:
+        if config.get("hippocampus_size") != getattr(self.brain.config, "hippocampus_size", None):
             raise ValueError(
                 f"Config mismatch: hippocampus_size {config.get('hippocampus_size')} "
-                f"!= {self.brain.config.hippocampus_size}"
+                f"!= {getattr(self.brain.config, 'hippocampus_size', None)}"
             )
 
-        if config.get("pfc_size") != self.brain.config.pfc_size:
+        if config.get("pfc_size") != getattr(self.brain.config, "pfc_size", None):
             raise ValueError(
                 f"Config mismatch: pfc_size {config.get('pfc_size')} "
-                f"!= {self.brain.config.pfc_size}"
+                f"!= {getattr(self.brain.config, 'pfc_size', None)}"
             )
 
-        if config.get("n_actions") != self.brain.config.n_actions:
+        if config.get("n_actions") != getattr(self.brain.config, "n_actions", None):
             raise ValueError(
                 f"Config mismatch: n_actions {config.get('n_actions')} "
-                f"!= {self.brain.config.n_actions}"
+                f"!= {getattr(self.brain.config, 'n_actions', None)}"
             )
 
 

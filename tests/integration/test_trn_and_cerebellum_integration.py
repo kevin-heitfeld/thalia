@@ -36,13 +36,12 @@ def enhanced_cerebellum_brain(global_config, device):
     builder = BrainBuilder(global_config)
 
     # Add components with proper sizes
-    builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
+    builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
     builder.add_component("cortex", "cortex", n_output=256,
                          l4_size=64, l23_size=128, l5_size=128, l6a_size=0, l6b_size=0)
     builder.add_component("cerebellum", "cerebellum",
-                         n_input=256, n_output=64,
+                         input_size=256, granule_size=256, purkinje_size=64,
                          use_enhanced_microcircuit=True,
-                         granule_expansion_factor=4.0,
                          granule_sparsity=0.03,
                          purkinje_n_dendrites=100)
 
@@ -265,11 +264,10 @@ class TestEnhancedCerebellumIntegration:
     def test_granule_layer_in_brain_context(self, global_config, device):
         """Test granule layer expansion works in full brain."""
         builder = BrainBuilder(global_config)
-        builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
+        builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
         builder.add_component("cerebellum", "cerebellum",
-                             n_input=128, n_output=64,
+                             input_size=128, granule_size=512, purkinje_size=64,
                              use_enhanced_microcircuit=True,
-                             granule_expansion_factor=4.0,
                              granule_sparsity=0.03)
         builder.connect("thalamus", "cerebellum", pathway_type="axonal")
 
@@ -329,12 +327,12 @@ class TestMultiRegionCoordination:
 
         # Add components with proper sizes (pass parameters directly)
         # Note: L6 size must match thalamus n_input for feedback pathway
-        builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
+        builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
         builder.add_component("cortex", "cortex",
                              n_input=128, n_output=256,
                              l4_size=64, l23_size=128, l5_size=128, l6a_size=64, l6b_size=64)
         builder.add_component("cerebellum", "cerebellum",
-                             n_input=256, n_output=64,
+                             input_size=256, granule_size=256, purkinje_size=64,
                              use_enhanced_microcircuit=True)
 
         # Connections
@@ -392,12 +390,12 @@ class TestSystemRobustness:
         builder = BrainBuilder(global_config)
 
         # Add components with proper sizes (pass parameters directly)
-        builder.add_component("thalamus", "thalamus", n_input=128, n_output=128)
+        builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
         builder.add_component("cortex", "cortex",
                              n_input=128, n_output=256,
                              l4_size=64, l23_size=128, l5_size=128, l6a_size=64, l6b_size=64)
         builder.add_component("cerebellum", "cerebellum",
-                             n_input=256, n_output=64,
+                             input_size=256, granule_size=256, purkinje_size=64,
                              use_enhanced_microcircuit=True)
 
         builder.connect("thalamus", "cortex", pathway_type="axonal")

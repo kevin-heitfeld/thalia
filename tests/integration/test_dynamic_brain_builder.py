@@ -210,7 +210,7 @@ class TestPresetArchitectures:
     def test_preset_with_modifications(self, device, global_config):
         """Test building from preset with custom modifications."""
         builder = BrainBuilder.preset_builder("default", global_config)
-        builder.add_component("custom_region", "prefrontal", n_output=64)  # n_input inferred from cortex
+        builder.add_component("custom_region", "prefrontal", input_size=256, n_neurons=64)  # Custom PFC region
         builder.connect("cortex", "custom_region", pathway_type="axonal_projection", axonal_delay_ms=5.0)
         brain = builder.build()
 
@@ -307,9 +307,9 @@ class TestThaliaConfigCompatibility:
 
         # Verify thalamus has valid dimensions (relay preserves size)
         thalamus = brain.components["thalamus"]
-        assert thalamus.n_input > 0
-        assert thalamus.n_output > 0
-        assert thalamus.n_input == thalamus.n_output  # Relay property
+        assert thalamus.input_size > 0
+        assert thalamus.relay_size > 0
+        assert thalamus.input_size == thalamus.relay_size  # Relay property
 
         # Test execution
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -341,8 +341,8 @@ class TestThaliaConfigCompatibility:
         striatum = brain.components["striatum"]
 
         # Validate thalamus dimensions
-        assert thalamus.n_input > 0
-        assert thalamus.n_input == config.brain.sizes.input_size
+        assert thalamus.input_size > 0
+        assert thalamus.input_size == config.brain.sizes.input_size
 
         # Striatum uses population coding: actual neurons = n_actions * neurons_per_action
         assert striatum.n_actions == config.brain.sizes.n_actions
@@ -666,12 +666,12 @@ class TestStateManagement:
         """Create a simple brain for state testing."""
         return (
             BrainBuilder(global_config)
-            .add_component("thalamus", "thalamic_relay", n_input=10, n_output=10)
+            .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
             .add_component("hippocampus", "hippocampus", n_output=15)
-            .add_component("pfc", "prefrontal", n_output=12)
-            .add_component("striatum", "striatum", n_output=5)
-            .add_component("cerebellum", "cerebellum", n_output=10)
+            .add_component("pfc", "prefrontal", input_size=20, n_neurons=12)
+            .add_component("striatum", "striatum", n_actions=3, neurons_per_action=2)
+            .add_component("cerebellum", "cerebellum", purkinje_size=10)
             .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .connect("cortex", "hippocampus", pathway_type="axonal_projection", axonal_delay_ms=5.0)
             .connect("cortex", "pfc", pathway_type="axonal_projection", axonal_delay_ms=4.0)
@@ -824,7 +824,7 @@ class TestStateManagement:
         """Test that topology information is preserved through save/load."""
         brain1 = (
             BrainBuilder(global_config)
-            .add_component("thalamus", "thalamic_relay", n_input=10, n_output=10)
+            .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
             .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
@@ -841,7 +841,7 @@ class TestStateManagement:
         # Load state into new brain
         brain2 = (
             BrainBuilder(global_config)
-            .add_component("thalamus", "thalamic_relay", n_input=10, n_output=10)
+            .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
             .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
             .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()

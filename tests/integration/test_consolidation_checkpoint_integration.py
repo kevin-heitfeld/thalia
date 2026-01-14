@@ -57,7 +57,7 @@ class TestCheckpointManagerIntegration:
         brain = minimal_rl_brain
 
         # Run some forward passes to create state
-        sensory_input = torch.randn(brain.components["thalamus"].config.n_input, device=brain.device)
+        sensory_input = torch.randn(brain.components["thalamus"].input_size, device=brain.device)
         brain.forward({"thalamus": sensory_input}, n_timesteps=10)
 
         # Save checkpoint
