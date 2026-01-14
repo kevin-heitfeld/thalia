@@ -1,7 +1,7 @@
 # Checkpoint Format Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-09 00:11:42
+> Last updated: 2026-01-14 17:31:39
 > Generated from: `scripts/generate_api_docs.py`
 
 > **📚 For complete binary format specification, version compatibility, and implementation details, see [checkpoint_format.md](../design/checkpoint_format.md)**
@@ -59,7 +59,6 @@ All regions include these base fields:
 | `default_learning_rule` | `Any` | Default learning strategy |
 | `input_sources` | `Any` | Input source names |
 | `synaptic_weights` | `Dict[str, Any]` | Weight matrices per source |
-| `plasticity_enabled` | `Any` | Learning enabled flag |
 
 **Source**: [`thalia/core/neural_region.py`](../../src/thalia/core/neural_region.py)
 

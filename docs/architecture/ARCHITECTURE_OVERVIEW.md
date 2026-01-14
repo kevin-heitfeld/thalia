@@ -328,15 +328,27 @@ Hierarchical planning and temporal abstraction:
 
 **Function**: Action selection and reinforcement learning
 
+**Architecture**: Multi-source with D1/D2 opponent pathways
+- Per-source synaptic weights (e.g., `"cortex:l5_d1"`, `"hippocampus_d2"`)
+- Separate D1-MSNs (direct/GO) and D2-MSNs (indirect/NOGO)
+- Source-specific eligibility traces with different tau values:
+  - Cortex: 1000ms (standard corticostriatal)
+  - Hippocampus: 300ms (fast episodic context)
+  - Thalamus: 500ms (phasic signals)
+
 **Learning Rules**:
 - Three-factor Hebbian (eligibility × dopamine × activity)
 - TD(λ) for multi-step credit assignment
 - Direct (D1) / indirect (D2) pathway competition
+- Per-source short-term plasticity (STP):
+  - Cortical: depressing (U=0.4)
+  - Thalamic: facilitating (U=0.25)
+  - Hippocampal: depressing (U=0.35)
 
 **Key Features**:
 - Model-free RL with TD(λ)
 - Dyna planning (model-based lookahead)
-- Eligibility traces (500-2000ms biological range)
+- Eligibility traces (300-1000ms per source)
 - Action chunking (habits)
 - Soft winner-take-all action selection
 

@@ -1,8 +1,8 @@
 # Striatum Multi-Source Architecture
 
-**Status:** Known Limitation  
-**Date:** January 12, 2026  
-**Context:** Config migration and test suite cleanup  
+**Status:** Known Limitation
+**Date:** January 12, 2026
+**Context:** Config migration and test suite cleanup
 
 ## Issue
 
@@ -82,12 +82,16 @@ striatum.synaptic_weights = {
 
 ## Decision
 
-**Deferred:** This is an architectural decision that needs neuroscience input and careful design.
+**APPROVED:** Implement **per-source with D1/D2 separation** architecture (Modified Option 3).
 
-**For now:** Skip the 3 affected port routing tests with clear documentation:
-- `test_cortex_l5_to_striatum`
-- `test_cortex_outputs_to_multiple_targets_with_different_layers`
-- `test_striatum_multiple_input_sources`
+**Rationale:**
+- Biologically accurate: MSNs receive converging inputs from multiple sources with unique synaptic weights
+- Source-specific plasticity: Different learning rules for cortical vs hippocampal vs thalamic inputs
+- D1/D2 opponent processing: Both pathways receive same inputs but learn differently (DA+ → LTP for D1, DA+ → LTD for D2)
+- NeuralRegion compatible: Matches multi-source pattern used by other regions
+- Port-based routing: Supports layer-specific cortical connections
+
+**See:** [striatum-multi-source-implementation-plan.md](striatum-multi-source-implementation-plan.md) for detailed implementation plan.
 
 ## Future Work
 

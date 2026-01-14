@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-09 00:11:42
+> Last updated: 2026-01-14 17:31:39
 > Generated from: `scripts/generate_api_docs.py`
 
 ![Components](https://img.shields.io/badge/Regions-8-blue) ![Pathways](https://img.shields.io/badge/Pathways-4-green) ![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)
@@ -166,7 +166,7 @@ Total: **8** regions
 
 ### `cerebellum`
 
-**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum_region.py#L460)
+**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum_region.py#L464)
 
 **Config Class**: [`CerebellumConfig`](../../src/thalia/regions/cerebellum_region.py#L104)
 
@@ -178,7 +178,7 @@ Total: **8** regions
 
 ### `cortex`
 
-**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L150)
+**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L160)
 
 **Aliases**: `layered_cortex`
 
@@ -192,7 +192,7 @@ Total: **8** regions
 
 ### `hippocampus`
 
-**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L137)
+**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L152)
 
 **Aliases**: `trisynaptic, trisynaptic_hippocampus`
 
@@ -220,7 +220,7 @@ Total: **8** regions
 
 ### `predictive_cortex`
 
-**Class**: [`PredictiveCortex`](../../src/thalia/regions/cortex/predictive_cortex.py#L153)
+**Class**: [`PredictiveCortex`](../../src/thalia/regions/cortex/predictive_cortex.py#L263)
 
 **Aliases**: `predictive`
 
@@ -234,7 +234,7 @@ Total: **8** regions
 
 ### `prefrontal`
 
-**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal.py#L366)
+**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal.py#L376)
 
 **Aliases**: `pfc`
 
@@ -262,7 +262,7 @@ Total: **8** regions
 
 ### `thalamus`
 
-**Class**: [`ThalamicRelay`](../../src/thalia/regions/thalamus.py#L372)
+**Class**: [`ThalamicRelay`](../../src/thalia/regions/thalamus.py#L378)
 
 **Aliases**: `thalamic_relay`
 

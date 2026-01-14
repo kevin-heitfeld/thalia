@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-09 00:11:42
+> Last updated: 2026-01-14 17:31:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -21,10 +21,6 @@ Total: 3 configuration classes
 | Field | Type | Default |
 |-------|------|-------|
 | `learning_rate` | `float` | `LEARNING_RATE_ONE_SHOT` |
-| `dg_size` | `int` | `0` |
-| `ca3_size` | `int` | `0` |
-| `ca2_size` | `int` | `0` |
-| `ca1_size` | `int` | `0` |
 | `dg_sparsity` | `float` | `HIPPOCAMPUS_SPARSITY_TARGET` |
 | `dg_inhibition` | `float` | `5.0` |
 | `ca3_recurrent_strength` | `float` | `0.4` |
@@ -84,7 +80,7 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L137)
+- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L152)
 
 ---
 
@@ -98,11 +94,6 @@ Total: 3 configuration classes
 
 | Field | Type | Default |
 |-------|------|-------|
-| `l4_size` | `int` | `0` |
-| `l23_size` | `int` | `0` |
-| `l5_size` | `int` | `0` |
-| `l6a_size` | `int` | `0` |
-| `l6b_size` | `int` | `0` |
 | `l4_sparsity` | `float` | `0.15` |
 | `l23_sparsity` | `float` | `0.1` |
 | `l5_sparsity` | `float` | `0.2` |
@@ -146,7 +137,7 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`cortex`](../../src/thalia/regions/cortex/layered_cortex.py#L150)
+- [`cortex`](../../src/thalia/regions/cortex/layered_cortex.py#L160)
 
 ---
 
@@ -154,20 +145,16 @@ Total: 3 configuration classes
 
 **Source**: [`thalia/regions/striatum/config.py`](../../src/thalia/regions/striatum/config.py)
 
-**Description**: Configuration specific to striatal regions.
+**Description**: Configuration specific to striatal regions (behavior only, no sizes).
 
 **Fields**:
 
 | Field | Type | Default |
 |-------|------|-------|
+| `d1_d2_ratio` | `float` | `0.5` |
 | `learning_rate` | `float` | `0.005` |
 | `lateral_inhibition` | `bool` | `True` |
 | `inhibition_strength` | `float` | `2.0` |
-| `population_coding` | `bool` | `True` |
-| `d1_size` | `int` | `0` |
-| `d2_size` | `int` | `0` |
-| `n_actions` | `int` | `0` |
-| `neurons_per_action` | `int` | `10` |
 | `d1_lr_scale` | `float` | `1.0` |
 | `d2_lr_scale` | `float` | `1.0` |
 | `d1_da_sensitivity` | `float` | `1.0` |

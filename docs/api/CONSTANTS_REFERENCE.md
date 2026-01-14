@@ -1,20 +1,20 @@
 # Constants Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-09 00:11:42
+> Last updated: 2026-01-14 17:31:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all module-level constants with biological context, ranges, and scientific references.
 
-Total: **176** constants
+Total: **175** constants
 
-![Constants](https://img.shields.io/badge/Constants-176-blue) ![Biological](https://img.shields.io/badge/Type-Biological-orange) ![References](https://img.shields.io/badge/Citations-Scientific-green)
+![Constants](https://img.shields.io/badge/Constants-175-blue) ![Biological](https://img.shields.io/badge/Type-Biological-orange) ![References](https://img.shields.io/badge/Citations-Scientific-green)
 
 ## 📊 Category Overview
 
 ```mermaid
 pie title Constants by Category
-    "General" : 122
+    "General" : 121
     "LEARNING RATES dimensionless" : 8
     "MEMBRANE DYNAMICS TIME CONSTAN" : 13
     "MOTOR SPIKE PROBABILITIES" : 5
@@ -153,7 +153,6 @@ pie title Constants by Category
 | `THALAMUS_TRN_FEEDBACK_SPARSITY` | `0.2` | — | Sparsity for cortex → TRN feedback connections. |
 | `THALAMUS_TRN_FEEDFORWARD_SPARSITY` | `0.3` | — | Sparsity for TRN → relay feedforward connections. |
 | `THALAMUS_TRN_INHIBITION` | `0.3` | — | Strength of TRN → relay inhibition. |
-| `THALAMUS_TRN_RATIO` | `0.2` | — | TRN neurons as fraction of relay neurons. |
 | `THALAMUS_TRN_RECURRENT` | `0.4` | 7-14 Hz | TRN recurrent inhibition strength. |
 | `THRESHOLD_ADAPTATION_TAU` | `1000.0` | — | Time constant for adaptive threshold mechanisms (1 second). |
 | `V_RESET_STANDARD` | `0.0` | — | Standard reset potential (normalized). |

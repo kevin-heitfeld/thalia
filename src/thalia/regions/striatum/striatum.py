@@ -102,7 +102,6 @@ See: docs/decisions/adr-011-large-file-justification.md
 from __future__ import annotations
 
 from typing import Optional, Dict, Any, List, Union
-import weakref
 
 import torch
 import torch.nn as nn
@@ -122,7 +121,6 @@ from thalia.components.neurons import (
 )
 from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, get_stp_config
 from thalia.utils.core_utils import clamp_weights
-from thalia.utils.input_routing import InputRouter
 from thalia.regions.striatum.exploration import ExplorationConfig
 from thalia.neuromodulation import ACH_BASELINE, NE_BASELINE
 
@@ -138,6 +136,10 @@ from .checkpoint_manager import StriatumCheckpointManager
 from .state_tracker import StriatumStateTracker
 from .forward_coordinator import ForwardPassCoordinator
 from .td_lambda import TDLambdaLearner, TDLambdaConfig
+
+# Oscillator and neuromodulation utilities
+from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
+from thalia.neuromodulation.constants import compute_ne_gain
 
 
 @register_region(
@@ -235,6 +237,22 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Store n_output for NeuralRegion interface
         self.n_output = total_neurons
+
+        # Store D1/D2 sizes for backward compatibility with code that uses n_d1/n_d2
+        self.n_d1 = self.d1_size
+        self.n_d2 = self.d2_size
+
+        # =====================================================================
+        # MULTI-SOURCE ELIGIBILITY TRACES (Phase 3)
+        # =====================================================================
+        # Per-source-pathway eligibility traces for multi-source learning
+        # Structure: {"source_d1": tensor, "source_d2": tensor, ...}
+        self._eligibility_d1: Dict[str, torch.Tensor] = {}
+        self._eligibility_d2: Dict[str, torch.Tensor] = {}
+
+        # Source-specific eligibility tau configuration (optional overrides)
+        # If not set, uses biological defaults in _get_source_eligibility_tau()
+        self._source_eligibility_tau: Dict[str, float] = {}
 
         # =====================================================================
         # ELASTIC TENSOR CAPACITY TRACKING (Phase 1 - Growth Support)
@@ -376,28 +394,27 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.gap_junctions_fsi = None
 
         # =====================================================================
-        # INITIALIZE SYNAPTIC WEIGHTS (Phase 2 - Option B)
+        # SYNAPTIC WEIGHTS - Multi-Source Per-Pathway Architecture
         # =====================================================================
-        # Weights are stored in parent's synaptic_weights dict, NOT in pathways.
-        # Structure: synaptic_weights["source"] = [n_d1 + n_d2, n_source]
-        # First n_d1 rows = D1 MSNs, next n_d2 rows = D2 MSNs
-        # Each MSN has unique weights (biologically accurate).
+        # Weights are stored in parent's synaptic_weights dict per source-pathway.
+        # Structure: synaptic_weights["{source}_d1"] = [n_d1, n_source_size]
+        #            synaptic_weights["{source}_d2"] = [n_d2, n_source_size]
         #
-        # MIGRATION STRATEGY (Part 2):
-        # For backward compatibility during migration, we maintain BOTH:
-        # 1. Legacy: D1/D2 pathway weights (self.d1_pathway.weights, self.d2_pathway.weights)
-        # 2. New: Combined matrix in synaptic_weights["default"]
+        # Examples:
+        #   "cortex:l5_d1": [d1_size, n_cortex_l5]  - D1 MSNs ← Cortex L5
+        #   "cortex:l5_d2": [d2_size, n_cortex_l5]  - D2 MSNs ← Cortex L5
+        #   "hippocampus_d1": [d1_size, n_hippo]    - D1 MSNs ← Hippocampus
+        #   "hippocampus_d2": [d2_size, n_hippo]    - D2 MSNs ← Hippocampus
         #
-        # The combined matrix is the SOURCE OF TRUTH - D1/D2 pathway weights are
-        # VIEWS into it. When pathways update their weights, they update the parent's
-        # combined matrix. This allows incremental migration of all references.
+        # This is biologically accurate:
+        # - Each MSN has unique synaptic weights per input source
+        # - D1 and D2 MSNs receive same inputs but learn differently
+        # - D1: DA+ → LTP (reinforce GO)
+        # - D2: DA+ → LTD (suppress NOGO)
         #
-        # Part 3 will update all code to use accessor methods (get_d1_weights, etc.)
-        # Part 4 will remove D1/D2 pathway weights entirely.
-        self._initialize_default_synaptic_weights(self.input_size)
-
-        # Link D1/D2 pathway weights to parent's combined matrix (temporary bridge)
-        self._link_pathway_weights_to_parent()
+        # Weights are initialized dynamically when sources are added via
+        # add_input_source_striatum() or during brain construction.
+        # No default weights created at __init__.
 
         # Create manager context for learning
         learning_context = ManagerContext(
@@ -446,14 +463,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if self.config.homeostasis_enabled:
             # Compute budget from initialized weights (per-action sum of D1+D2)
             # This ensures the budget matches the actual weight scale
-            # Access D1 and D2 weights separately (Phase 2)
-            if "default_d1" in self.synaptic_weights and "default_d2" in self.synaptic_weights:
-                d1_sum = self.synaptic_weights["default_d1"].sum()
-                d2_sum = self.synaptic_weights["default_d2"].sum()
-                dynamic_budget = ((d1_sum + d2_sum) / self.n_actions).item()
-            else:
-                # Fallback to default budget if no weights initialized yet
-                dynamic_budget = 0.5  # Conservative default
+            # With multi-source architecture, budget is computed after all sources added
+            # Use conservative default for now (will be recomputed after first weights added)
+            dynamic_budget = 0.5  # Conservative default, recomputed on first learning update
 
             homeostasis_config = HomeostasisManagerConfig(
                 weight_budget=dynamic_budget,
@@ -525,44 +537,23 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # - Cortex→MSNs: DEPRESSING (U=0.4) - prevents saturation, novelty detection
         # - Thalamus→MSNs: WEAK FACILITATION (U=0.25) - phasic amplification
         #
-        # NOTE: Striatum doesn't have explicit "cortex" and "thalamus" source names.
-        # Instead, it receives concatenated multi-source input. For STP implementation,
-        # we assume:
-        # - Primary input source uses corticostriatal STP (depressing)
-        # - Could be extended to separate cortical/thalamic sources in future
+        # =====================================================================
+        # SHORT-TERM PLASTICITY (Per-Source)
+        # =====================================================================
+        # Multi-source architecture: Each source-pathway has its own STP module.
+        # Different sources have different dynamics:
+        # - Cortical inputs: DEPRESSING (U=0.4) - context filtering
+        # - Thalamic inputs: FACILITATING (U=0.25) - phasic amplification
+        # - Hippocampal inputs: DEPRESSING (U=0.35) - episodic filtering
         #
-        # For now, apply corticostriatal STP to ALL inputs (biologically reasonable
-        # as cortex provides ~95% of striatal input volume).
+        # STP modules are created dynamically via add_input_source_striatum()
+        # when sources are connected.
         if self.config.stp_enabled:
-            # Use self.device string directly for STP modules
-
-            # Corticostriatal STP: DEPRESSING (U=0.4)
-            # Applied to D1 and D2 MSN populations
-            # Context-dependent filtering prevents saturation from sustained cortical input
-            # Use explicit d1_size + d2_size for n_post
-            n_total_msns = self.d1_size + self.d2_size
-            self.stp_corticostriatal = ShortTermPlasticity(
-                n_pre=self.input_size,
-                n_post=n_total_msns,  # Total MSNs (D1 + D2 populations)
-                config=get_stp_config("corticostriatal", dt=config.dt_ms),
-                per_synapse=True,
-            )
-            self.stp_corticostriatal.to(self.device)
-
-            # Thalamostriatal STP: WEAK FACILITATION (U=0.25)
-            # Reserved for future use when thalamic inputs are explicitly separated
-            # For now, we initialize but don't use it in forward pass
-            # (keeping for future multi-source routing enhancement)
-            self.stp_thalamostriatal = ShortTermPlasticity(
-                n_pre=self.input_size,
-                n_post=n_total_msns,
-                config=get_stp_config("thalamostriatal", dt=config.dt_ms),
-                per_synapse=True,
-            )
-            self.stp_thalamostriatal.to(self.device)
+            self.stp_modules: Dict[str, ShortTermPlasticity] = {}
+            # Note: STP modules will be added per-source in add_input_source_striatum()
+            # Each source-pathway (e.g., "cortex:l5_d1", "hippocampus_d2") gets its own STP
         else:
-            self.stp_corticostriatal = None
-            self.stp_thalamostriatal = None
+            self.stp_modules = {}
 
         # =====================================================================
         # GOAL-CONDITIONED VALUES (Phase 1 Week 2-3 Enhancement)
@@ -649,6 +640,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # FORWARD PASS COORDINATOR
         # =====================================================================
         # Handles D1/D2 pathway coordination and modulation during forward pass
+        # Note: STP is now applied per-source in forward() loop (Phase 5)
         self.forward_coordinator = ForwardPassCoordinator(
             config=self.config,
             d1_pathway=self.d1_pathway,
@@ -658,7 +650,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             homeostasis_manager=self.homeostasis,
             pfc_modulation_d1=self.pfc_modulation_d1,
             pfc_modulation_d2=self.pfc_modulation_d2,
-            stp_module=self.stp_corticostriatal,  # Apply corticostriatal STP
+            stp_module=None,  # Deprecated: STP now per-source in forward()
             device=self.device,
             n_actions=self.n_actions,
             d1_size=self.d1_size,
@@ -876,152 +868,236 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     # SYNAPTIC WEIGHT INITIALIZATION (Phase 2 - Option B)
     # =========================================================================
 
-    def _initialize_default_synaptic_weights(self, n_input: int) -> None:
-        """Initialize default synaptic weights for D1 and D2 pathways.
+    def add_input_source_striatum(
+        self,
+        source_name: str,
+        n_input: int,
+        sparsity: float = 0.0,
+        weight_scale: float = 1.0,
+        learning_rule: Optional[str] = "three_factor",
+    ) -> None:
+        """Add input source with automatic D1/D2 pathway weight creation.
 
-        Option B Architecture: D1 and D2 MSNs have SEPARATE weights because they
-        learn differently (opposite dopamine responses). Both receive the same inputs.
-
-        Structure:
-        - synaptic_weights["default_d1"] = [d1_size, n_input]  # D1 MSN weights
-        - synaptic_weights["default_d2"] = [d2_size, n_input]  # D2 MSN weights
-
-        This is biologically accurate: each MSN has unique synaptic weights,
-        and D1/D2 differ in their dopamine receptors (and thus learning rules).
+        This is the primary method for connecting input sources to the striatum.
+        It creates BOTH D1 and D2 pathway weights for the given source.
 
         Args:
-            n_input: Input dimension size
+            source_name: Source name (e.g., "cortex:l5", "hippocampus", "thalamus")
+            n_input: Input size from this source
+            sparsity: Connection sparsity (0.0 = fully connected)
+            weight_scale: Initial weight scale multiplier
+            learning_rule: Learning rule name (default: "three_factor")
+
+        Example:
+            >>> striatum.add_input_source_striatum("cortex:l5", n_input=256)
+            # Creates:
+            #   synaptic_weights["cortex:l5_d1"] = [d1_size, 256]
+            #   synaptic_weights["cortex:l5_d2"] = [d2_size, 256]
         """
-        # Use explicit MSN counts, not action counts
-        # When population_coding: d1_size = n_actions * neurons_per_action / 2
-        # When not: d1_size = n_actions / 2
-        n_d1 = self.d1_size
-        n_d2 = self.d2_size
-
-        # Initialize D1 weights using Xavier initialization
+        # Initialize D1 weights for this source
         d1_weights = WeightInitializer.xavier(
-            n_output=n_d1,
+            n_output=self.d1_size,
             n_input=n_input,
-            gain=0.2,  # Conservative initialization
+            gain=0.2 * weight_scale,
             device=self.device,
         ) * self.config.w_max
 
-        # Initialize D2 weights (separate matrix, same initialization)
+        # Initialize D2 weights for this source (same initialization)
         d2_weights = WeightInitializer.xavier(
-            n_output=n_d2,
+            n_output=self.d2_size,
             n_input=n_input,
-            gain=0.2,
+            gain=0.2 * weight_scale,
             device=self.device,
         ) * self.config.w_max
 
-        # Register as separate sources (will initialize with sparse_random, we'll override)
-        self.add_input_source("default_d1", n_input, sparsity=0.0, weight_scale=1.0)
-        self.add_input_source("default_d2", n_input, sparsity=0.0, weight_scale=1.0)
+        # Register D1 pathway weights
+        d1_key = f"{source_name}_d1"
+        self.add_input_source(d1_key, n_input, sparsity=0.0, weight_scale=1.0)
+        self.synaptic_weights[d1_key].data = d1_weights
 
-        # Override with our Xavier-initialized weights
-        self.synaptic_weights["default_d1"].data = d1_weights
-        self.synaptic_weights["default_d2"].data = d2_weights
+        # Register D2 pathway weights
+        d2_key = f"{source_name}_d2"
+        self.add_input_source(d2_key, n_input, sparsity=0.0, weight_scale=1.0)
+        self.synaptic_weights[d2_key].data = d2_weights
 
-        # Store sizes for easy access
-        self.n_d1 = n_d1
-        self.n_d2 = n_d2
+        # Initialize eligibility traces for source-pathway combinations
+        if hasattr(self, 'learning') and self.learning is not None:
+            self.learning.add_source_eligibility_traces(source_name, n_input)
 
         # =====================================================================
-        # FSI WEIGHTS AND GAP JUNCTIONS
+        # CREATE STP MODULES FOR SOURCE-PATHWAY (Phase 5)
         # =====================================================================
-        # If FSI enabled, create weights from inputs to FSI
-        # FSI use these weights for both: (1) spike generation, (2) gap junction neighborhoods
-        if self.fsi_size > 0:
-            # Initialize FSI weights (input → FSI)
-            fsi_weights = WeightInitializer.xavier(
-                n_output=self.fsi_size,
-                n_input=n_input,
-                gain=0.3,  # Slightly stronger than MSNs (FSI are more excitable)
+        # Each source-pathway gets its own STP module with source-specific config.
+        # Biology: Different input pathways have different short-term dynamics.
+        if self.config.stp_enabled:
+            # Determine STP type based on source name
+            if "cortex" in source_name or "cortical" in source_name:
+                stp_type = "corticostriatal"  # Depressing (U=0.4)
+            elif "thalamus" in source_name or "thalamic" in source_name:
+                stp_type = "thalamostriatal"  # Facilitating (U=0.25)
+            elif "hippocampus" in source_name or "hippoc" in source_name:
+                stp_type = "schaffer_collateral"  # Depressing (U=0.46) - hippocampal preset
+            else:
+                stp_type = "corticostriatal"  # Default to cortical
+
+            # Create STP for D1 pathway
+            d1_stp = ShortTermPlasticity(
+                n_pre=n_input,
+                n_post=self.d1_size,
+                config=get_stp_config(stp_type, dt=self.config.dt_ms),
+                per_synapse=True,
+            )
+            d1_stp.to(self.device)
+            self.stp_modules[d1_key] = d1_stp
+
+            # Create STP for D2 pathway
+            d2_stp = ShortTermPlasticity(
+                n_pre=n_input,
+                n_post=self.d2_size,
+                config=get_stp_config(stp_type, dt=self.config.dt_ms),
+                per_synapse=True,
+            )
+            d2_stp.to(self.device)
+            self.stp_modules[d2_key] = d2_stp
+
+    def add_fsi_source(
+        self,
+        source_name: str,
+        n_input: int,
+        weight_scale: float = 1.0,
+    ) -> None:
+        """Add FSI input source (no D1/D2 separation for interneurons).
+
+        FSI (fast-spiking interneurons) are parvalbumin+ interneurons that provide
+        feedforward inhibition. Unlike MSNs, FSI don't have D1/D2 separation.
+
+        Args:
+            source_name: Source name (e.g., "cortex", "thalamus")
+            n_input: Input size from this source
+            weight_scale: Initial weight scale multiplier
+        """
+        if self.fsi_size == 0:
+            return  # FSI disabled
+
+        # Initialize FSI weights (input → FSI)
+        fsi_weights = WeightInitializer.xavier(
+            n_output=self.fsi_size,
+            n_input=n_input,
+            gain=0.3 * weight_scale,  # FSI more excitable than MSNs
+            device=self.device,
+        ) * self.config.w_max
+
+        # Register FSI source
+        fsi_key = f"fsi_{source_name}"
+        self.add_input_source(fsi_key, n_input, sparsity=0.0, weight_scale=1.0)
+        self.synaptic_weights[fsi_key].data = fsi_weights
+
+        # Create gap junction coupling (if enabled and this is first FSI source)
+        if hasattr(self, '_gap_config_fsi') and self.gap_junctions_fsi is None:
+            from thalia.components.gap_junctions import GapJunctionCoupling
+            # Use first FSI source weights for gap junction neighborhood computation
+            self.gap_junctions_fsi = GapJunctionCoupling(
+                n_neurons=self.fsi_size,
+                afferent_weights=fsi_weights,  # Use current source weights
+                config=self._gap_config_fsi,
                 device=self.device,
-            ) * self.config.w_max
-
-            # Register FSI as input source
-            self.add_input_source("fsi", n_input, sparsity=0.0, weight_scale=1.0)
-            self.synaptic_weights["fsi"].data = fsi_weights
-
-            # Create gap junction coupling (uses fsi weights for neighborhoods)
-            if hasattr(self, '_gap_config_fsi'):
-                from thalia.components.gap_junctions import GapJunctionCoupling
-                self.gap_junctions_fsi = GapJunctionCoupling(
-                    n_neurons=self.fsi_size,
-                    afferent_weights=self.synaptic_weights["fsi"],
-                    config=self._gap_config_fsi,
-                    device=self.device,
-                )
+            )
 
     def _link_pathway_weights_to_parent(self) -> None:
-        """Pass parent reference to D1/D2 pathways for weight access.
+        """REMOVED: No longer needed with multi-source architecture.
 
-        D1/D2 pathways no longer own weights - they access parent's synaptic_weights
-        dict via a reference. This implements Option B (biologically accurate).
-
-        Each pathway gets:
-        - parent reference (for weight access)
-        - source name ("default_d1" or "default_d2")
+        D1/D2 pathways don't store weights - weights are in parent's synaptic_weights
+        dict with keys like "{source}_d1" and "{source}_d2".
         """
-        # Pass parent reference to pathways (using weakref to avoid circular module references)
-        self.d1_pathway._parent_striatum_ref = weakref.ref(self)
-        self.d1_pathway._weight_source = "default_d1"
-
-        self.d2_pathway._parent_striatum_ref = weakref.ref(self)
-        self.d2_pathway._weight_source = "default_d2"
+        return  # No-op for backward compatibility
 
     def _sync_pathway_weights_to_parent(self) -> None:
-        """No-op: Pathways access parent weights directly, no sync needed."""
-        pass
+        """REMOVED: No sync needed with multi-source architecture.
 
-    def get_d1_weights(self, source: str = "default_d1") -> torch.Tensor:
+        Weights are always in parent's synaptic_weights dict.
+        D1/D2 pathways don't maintain local weight copies.
+        """
+        return  # No-op for backward compatibility
+
+    def get_d1_weights(self, source: str) -> torch.Tensor:
         """Get D1 MSN weights for a given source.
 
         Args:
-            source: Input source name (default: "default_d1")
+            source: Input source name (without "_d1" suffix)
+                   Example: "cortex:l5" returns weights for "cortex:l5_d1"
 
         Returns:
             D1 weights [n_d1, n_input]
-        """
-        if source not in self.synaptic_weights:
-            raise KeyError(f"Source '{source}' not found in synaptic_weights")
-        return self.synaptic_weights[source]
 
-    def get_d2_weights(self, source: str = "default_d2") -> torch.Tensor:
+        Raises:
+            KeyError: If source not found
+        """
+        d1_key = f"{source}_d1"
+        if d1_key not in self.synaptic_weights:
+            raise KeyError(
+                f"Source '{source}' not found in D1 pathway. "
+                f"Available sources: {self._list_d1_sources()}"
+            )
+        return self.synaptic_weights[d1_key]
+
+    def get_d2_weights(self, source: str) -> torch.Tensor:
         """Get D2 MSN weights for a given source.
 
         Args:
-            source: Input source name (default: "default_d2")
+            source: Input source name (without "_d2" suffix)
+                   Example: "cortex:l5" returns weights for "cortex:l5_d2"
 
         Returns:
             D2 weights [n_d2, n_input]
-        """
-        if source not in self.synaptic_weights:
-            raise KeyError(f"Source '{source}' not found in synaptic_weights")
-        return self.synaptic_weights[source]
 
-    def set_d1_weights(self, weights: torch.Tensor, source: str = "default_d1") -> None:
+        Raises:
+            KeyError: If source not found
+        """
+        d2_key = f"{source}_d2"
+        if d2_key not in self.synaptic_weights:
+            raise KeyError(
+                f"Source '{source}' not found in D2 pathway. "
+                f"Available sources: {self._list_d2_sources()}"
+            )
+        return self.synaptic_weights[d2_key]
+
+    def set_d1_weights(self, weights: torch.Tensor, source: str) -> None:
         """Update D1 MSN weights for a given source.
 
         Args:
             weights: New D1 weights [n_d1, n_input]
-            source: Input source name (default: "default_d1")
-        """
-        if source not in self.synaptic_weights:
-            raise KeyError(f"Source '{source}' not found in synaptic_weights")
-        self.synaptic_weights[source].data = weights
+            source: Input source name (without "_d1" suffix)
 
-    def set_d2_weights(self, weights: torch.Tensor, source: str = "default_d2") -> None:
+        Raises:
+            KeyError: If source not found
+        """
+        d1_key = f"{source}_d1"
+        if d1_key not in self.synaptic_weights:
+            raise KeyError(f"Source '{source}' not found in D1 pathway")
+        self.synaptic_weights[d1_key].data = weights
+
+    def set_d2_weights(self, weights: torch.Tensor, source: str) -> None:
         """Update D2 MSN weights for a given source.
 
         Args:
             weights: New D2 weights [n_d2, n_input]
-            source: Input source name (default: "default_d2")
+            source: Input source name (without "_d2" suffix)
+
+        Raises:
+            KeyError: If source not found
         """
-        if source not in self.synaptic_weights:
-            raise KeyError(f"Source '{source}' not found in synaptic_weights")
-        self.synaptic_weights[source].data = weights
+        d2_key = f"{source}_d2"
+        if d2_key not in self.synaptic_weights:
+            raise KeyError(f"Source '{source}' not found in D2 pathway")
+        self.synaptic_weights[d2_key].data = weights
+
+    def _list_d1_sources(self) -> List[str]:
+        """List all sources connected to D1 pathway."""
+        return [key[:-3] for key in self.synaptic_weights.keys() if key.endswith("_d1")]
+
+    def _list_d2_sources(self) -> List[str]:
+        """List all sources connected to D2 pathway."""
+        return [key[:-3] for key in self.synaptic_weights.keys() if key.endswith("_d2")]
 
     # =========================================================================
     # NEUROMORPHIC ID MANAGEMENT (Phase 2)
@@ -1341,45 +1417,253 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         initialization: str = 'xavier',
         sparsity: float = 0.1,
     ) -> None:
-        """Grow striatum input dimension when upstream regions grow.
+        """DEPRECATED: Use grow_source() for multi-source architecture.
 
-        When upstream regions (cortex, hippocampus, PFC) add neurons, this
-        method expands the striatum's D1 and D2 pathway weights by delegating
-        to the pathway objects' grow_input() method.
+        Striatum now uses per-source synaptic weights (e.g., "cortex:l5_d1",
+        "hippocampus_d2") instead of a unified input space. To grow a specific
+        input source, use grow_source(source_name, new_size) instead.
 
         Args:
-            n_new: Number of input neurons to add
-            initialization: Weight init strategy
-            sparsity: Connection sparsity for new inputs
+            n_new: Number of input neurons to add (IGNORED)
+            initialization: Weight init strategy (IGNORED)
+            sparsity: Connection sparsity (IGNORED)
+
+        Raises:
+            NotImplementedError: Always, directing users to grow_source()
+
+        Example (NEW API):
+            >>> cortex.grow_output(20)
+            >>> cortex_to_striatum.grow_source('cortex:l5', new_size=cortex.l5_size)
+            >>> striatum.grow_source('cortex:l5', new_size=cortex.l5_size)
+        """
+        raise NotImplementedError(
+            "grow_input() is not supported for multi-source striatum architecture. "
+            "Use grow_source(source_name, new_size) to expand specific input sources. "
+            "Example: striatum.grow_source('cortex:l5', new_size=300)"
+        )
+
+    def grow_source(
+        self,
+        source_name: str,
+        new_size: int,
+        initialization: str = 'xavier',
+        sparsity: float = 0.1,
+    ) -> None:
+        """Grow input size for a specific source (expands both D1 and D2 weights).
+
+        **Multi-Source Architecture**: Each input source (cortex:l5, hippocampus, etc.)
+        has separate weight matrices for D1 and D2 pathways. This method expands
+        the input dimension (columns) for a specific source while preserving existing
+        weights.
+
+        When upstream regions grow their output, call this method to expand the
+        corresponding input weights in the striatum.
+
+        Args:
+            source_name: Name of the source to grow (e.g., "cortex:l5", "hippocampus")
+            new_size: New total size for this source's input dimension
+            initialization: Weight init strategy ('xavier', 'sparse_random', 'uniform')
+            sparsity: Connection sparsity for new weights (0.0 = no connections)
 
         Example:
-            >>> cortex.grow_output(20)
-            >>> cortex_to_striatum.grow_source('cortex', new_size)
-            >>> striatum.grow_input(20)  # Expand D1/D2 input weights
+            >>> # Cortex L5 grows from 200 to 220 neurons
+            >>> cortex.grow_output(20)  # L5 now has 220 neurons
+            >>> # Update axonal projection
+            >>> cortex_to_striatum.grow_source('cortex:l5', new_size=220)
+            >>> # Update striatum weights
+            >>> striatum.grow_source('cortex:l5', new_size=220)
+
+        Raises:
+            KeyError: If source not found in synaptic_weights
         """
-        old_n_input = self.input_size
-        new_n_input = old_n_input + n_new
+        # Grow D1 pathway weights for this source
+        d1_key = f"{source_name}_d1"
+        if d1_key in self.synaptic_weights:
+            old_weights_d1 = self.synaptic_weights[d1_key]
+            old_n_input = old_weights_d1.shape[1]
+            n_new = new_size - old_n_input
 
-        # Delegate to internal pathway grow_input() methods
-        # (Pathways handle weight expansion, eligibility reset)
-        # Note: Pathways use their default Xavier initialization
-        self.d1_pathway.grow_input(n_new_inputs=n_new)
-        self.d2_pathway.grow_input(n_new_inputs=n_new)
+            if n_new > 0:
+                # Expand weight matrix (add columns - input dimension)
+                # Cannot use _expand_weights (adds rows), must expand columns manually
+                device = old_weights_d1.device
+                w_scale = self.config.w_max * 0.2
 
-        # Grow STP modules using auto-detection (track n_pre = input size)
-        self._auto_grow_stp_modules('pre', n_new)
+                # Initialize new input weights
+                if initialization == 'xavier':
+                    new_cols = WeightInitializer.xavier(
+                        n_output=self.d1_size,
+                        n_input=n_new,
+                        gain=0.2,
+                        device=device,
+                    ) * self.config.w_max
+                elif initialization == 'sparse_random':
+                    new_cols = WeightInitializer.sparse_random(
+                        n_output=self.d1_size,
+                        n_input=n_new,
+                        sparsity=sparsity,
+                        scale=w_scale,
+                        device=device,
+                    )
+                else:  # uniform
+                    new_cols = WeightInitializer.uniform(
+                        n_output=self.d1_size,
+                        n_input=n_new,
+                        low=0.0,
+                        high=w_scale,
+                        device=device,
+                    )
 
-        # Grow TD(λ) traces for both D1 and D2
-        if self.td_lambda_d1 is not None:
-            self.td_lambda_d1.grow_input(n_new)
-        if self.td_lambda_d2 is not None:
-            self.td_lambda_d2.grow_input(n_new)
+                # Concatenate columns (dim=1 for input dimension)
+                new_weights_d1 = torch.cat([old_weights_d1.data, new_cols], dim=1)
+                self.synaptic_weights[d1_key].data = new_weights_d1
 
-        # Update instance variable (sizes no longer in config)
-        self.input_size = new_n_input
+                # Expand D1 eligibility trace for this source
+                if hasattr(self, '_eligibility_d1') and d1_key in self._eligibility_d1:
+                    old_elig_d1 = self._eligibility_d1[d1_key]
+                    # Expand columns (input dimension)
+                    expanded = torch.cat([
+                        old_elig_d1,
+                        torch.zeros(old_elig_d1.shape[0], n_new, device=self.device)
+                    ], dim=1)
+                    self._eligibility_d1[d1_key] = expanded
 
-        # Validate growth completed correctly
-        self._validate_input_growth(old_n_input, n_new)
+        # Grow D2 pathway weights for this source
+        d2_key = f"{source_name}_d2"
+        if d2_key in self.synaptic_weights:
+            old_weights_d2 = self.synaptic_weights[d2_key]
+            old_n_input = old_weights_d2.shape[1]
+            n_new = new_size - old_n_input
+
+            if n_new > 0:
+                # Expand weight matrix (add columns - input dimension)
+                device = old_weights_d2.device
+                w_scale = self.config.w_max * 0.2
+
+                # Initialize new input weights
+                if initialization == 'xavier':
+                    new_cols = WeightInitializer.xavier(
+                        n_output=self.d2_size,
+                        n_input=n_new,
+                        gain=0.2,
+                        device=device,
+                    ) * self.config.w_max
+                elif initialization == 'sparse_random':
+                    new_cols = WeightInitializer.sparse_random(
+                        n_output=self.d2_size,
+                        n_input=n_new,
+                        sparsity=sparsity,
+                        scale=w_scale,
+                        device=device,
+                    )
+                else:  # uniform
+                    new_cols = WeightInitializer.uniform(
+                        n_output=self.d2_size,
+                        n_input=n_new,
+                        low=0.0,
+                        high=w_scale,
+                        device=device,
+                    )
+
+                # Concatenate columns (dim=1 for input dimension)
+                new_weights_d2 = torch.cat([old_weights_d2.data, new_cols], dim=1)
+                self.synaptic_weights[d2_key].data = new_weights_d2
+
+                # Expand D2 eligibility trace for this source
+                if hasattr(self, '_eligibility_d2') and d2_key in self._eligibility_d2:
+                    old_elig_d2 = self._eligibility_d2[d2_key]
+                    # Expand columns (input dimension)
+                    expanded = torch.cat([
+                        old_elig_d2,
+                        torch.zeros(old_elig_d2.shape[0], n_new, device=self.device)
+                    ], dim=1)
+                    self._eligibility_d2[d2_key] = expanded
+
+        # Grow FSI weights for this source (if present)
+        fsi_key = f"fsi_{source_name}"
+        if fsi_key in self.synaptic_weights:
+            old_weights_fsi = self.synaptic_weights[fsi_key]
+            old_n_input = old_weights_fsi.shape[1]
+            n_new = new_size - old_n_input
+
+            if n_new > 0:
+                # Expand FSI weight matrix (add columns - input dimension)
+                device = old_weights_fsi.device
+                w_scale = self.config.w_max * 0.3  # FSI slightly stronger
+
+                # Initialize new input weights
+                if initialization == 'xavier':
+                    new_cols = WeightInitializer.xavier(
+                        n_output=self.fsi_size,
+                        n_input=n_new,
+                        gain=0.2,
+                        device=device,
+                    ) * self.config.w_max
+                elif initialization == 'sparse_random':
+                    new_cols = WeightInitializer.sparse_random(
+                        n_output=self.fsi_size,
+                        n_input=n_new,
+                        sparsity=sparsity,
+                        scale=w_scale,
+                        device=device,
+                    )
+                else:  # uniform
+                    new_cols = WeightInitializer.uniform(
+                        n_output=self.fsi_size,
+                        n_input=n_new,
+                        low=0.0,
+                        high=w_scale,
+                        device=device,
+                    )
+
+                # Concatenate columns (dim=1 for input dimension)
+                new_weights_fsi = torch.cat([old_weights_fsi.data, new_cols], dim=1)
+                self.synaptic_weights[fsi_key].data = new_weights_fsi
+
+        # Grow STP modules for this source (Phase 5)
+        if self.config.stp_enabled:
+            # Grow D1 STP module
+            if d1_key in self.stp_modules:
+                # STP modules need to expand n_pre dimension
+                # Note: ShortTermPlasticity doesn't have a grow method, so recreate
+                old_stp = self.stp_modules[d1_key]
+                new_stp_d1 = ShortTermPlasticity(
+                    n_pre=new_size,
+                    n_post=self.d1_size,
+                    config=old_stp.config,
+                    per_synapse=True,
+                )
+                new_stp_d1.to(self.device)
+                # Copy existing state (u, x) with padding
+                if old_stp.u is not None:
+                    old_size = old_stp.u.shape[0]
+                    new_stp_d1.u[:old_size] = old_stp.u
+                if old_stp.x is not None:
+                    old_size = old_stp.x.shape[0]
+                    new_stp_d1.x[:old_size] = old_stp.x
+                self.stp_modules[d1_key] = new_stp_d1
+
+            # Grow D2 STP module
+            if d2_key in self.stp_modules:
+                old_stp = self.stp_modules[d2_key]
+                new_stp_d2 = ShortTermPlasticity(
+                    n_pre=new_size,
+                    n_post=self.d2_size,
+                    config=old_stp.config,
+                    per_synapse=True,
+                )
+                new_stp_d2.to(self.device)
+                # Copy existing state (u, x) with padding
+                if old_stp.u is not None:
+                    old_size = old_stp.u.shape[0]
+                    new_stp_d2.u[:old_size] = old_stp.u
+                if old_stp.x is not None:
+                    old_size = old_stp.x.shape[0]
+                    new_stp_d2.x[:old_size] = old_stp.x
+                self.stp_modules[d2_key] = new_stp_d2
+
+        # Note: No need to update self.input_size since we don't track unified input size
+        # in multi-source architecture. Each source has its own size.
 
     def _initialize_pathway_weights(self) -> torch.Tensor:
         """Initialize weights for D1 or D2 pathway with balanced, principled scaling.
@@ -1411,14 +1695,20 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         return clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
 
     def _update_d1_d2_eligibility(
-        self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor,
+        self,
+        inputs: Dict[str, torch.Tensor],  # Changed from input_spikes
+        d1_spikes: torch.Tensor,
+        d2_spikes: torch.Tensor,
         chosen_action: int | None = None
     ) -> None:
-        """Update separate eligibility traces for D1 and D2 pathways.
+        """Update separate eligibility traces for D1 and D2 pathways per source.
+
+        **Multi-Source Architecture**: Each input source (cortex:l5, hippocampus, etc.)
+        has separate eligibility traces for D1 and D2 pathways.
 
         With SEPARATE neuron populations:
-        - D1 eligibility is computed from input-D1 spike coincidence
-        - D2 eligibility is computed from input-D2 spike coincidence
+        - D1 eligibility is computed from input-D1 spike coincidence PER SOURCE
+        - D2 eligibility is computed from input-D2 spike coincidence PER SOURCE
 
         CRITICAL: When chosen_action is provided, eligibility is ONLY built for
         the neurons corresponding to that action. This is biologically correct:
@@ -1428,21 +1718,19 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         Timestep (dt) is obtained from self.config.dt_ms for temporal dynamics.
 
         Args:
-            input_spikes: Input spike tensor [n_input] (1D)
+            inputs: Dict mapping source names to spike tensors
+                   e.g., {"cortex:l5": [n_l5], "hippocampus": [n_hc]}
             d1_spikes: D1 neuron population spikes [n_d1] (1D)
             d2_spikes: D2 neuron population spikes [n_d2] (1D)
             chosen_action: If provided, only build eligibility for this action's neurons
         """
-        # Ensure 1D
-        if input_spikes.dim() != 1:
-            input_spikes = input_spikes.squeeze()
+        # Ensure D1/D2 spikes are 1D
         if d1_spikes.dim() != 1:
             d1_spikes = d1_spikes.squeeze()
         if d2_spikes.dim() != 1:
             d2_spikes = d2_spikes.squeeze()
 
         # Get float versions for trace updates
-        input_1d = input_spikes.float()
         d1_output_1d = d1_spikes.float()
         d2_output_1d = d2_spikes.float()
 
@@ -1460,13 +1748,117 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             d1_output_1d = d1_output_1d * action_mask
             d2_output_1d = d2_output_1d * action_mask
 
-        # Update eligibility traces using pathway strategies
-        # Note: D1 and D2 pathways have separate learning strategies
-        self.d1_pathway.update_eligibility(input_1d, d1_output_1d)
-        self.d2_pathway.update_eligibility(input_1d, d2_output_1d)
+        # Update eligibility traces PER SOURCE
+        # Each source-pathway combination has its own eligibility traces
+        for source_name, source_spikes in inputs.items():
+            # Ensure 1D
+            if source_spikes.dim() != 1:
+                source_spikes = source_spikes.squeeze()
+
+            # Get float version
+            source_spikes_float = source_spikes.float()
+
+            # Update D1 eligibility for this source
+            d1_key = f"{source_name}_d1"
+            if d1_key in self.synaptic_weights:
+                # Get or create eligibility trace for this source-pathway
+                if not hasattr(self, '_eligibility_d1'):
+                    self._eligibility_d1 = {}
+                if d1_key not in self._eligibility_d1:
+                    weight_shape = self.synaptic_weights[d1_key].shape
+                    self._eligibility_d1[d1_key] = torch.zeros(
+                        weight_shape, device=self.device
+                    )
+
+                # Update using STDP-style eligibility: outer product of pre and post
+                eligibility_update = torch.outer(d1_output_1d, source_spikes_float)
+
+                # Get source-specific tau (or use default)
+                tau_ms = self._get_source_eligibility_tau(source_name)
+                decay = torch.exp(torch.tensor(-self.config.dt_ms / tau_ms))
+
+                # Decay old eligibility and add new
+                self._eligibility_d1[d1_key] = (
+                    self._eligibility_d1[d1_key] * decay +
+                    eligibility_update * self.config.stdp_lr
+                )
+
+            # Update D2 eligibility for this source
+            d2_key = f"{source_name}_d2"
+            if d2_key in self.synaptic_weights:
+                # Get or create eligibility trace for this source-pathway
+                if not hasattr(self, '_eligibility_d2'):
+                    self._eligibility_d2 = {}
+                if d2_key not in self._eligibility_d2:
+                    weight_shape = self.synaptic_weights[d2_key].shape
+                    self._eligibility_d2[d2_key] = torch.zeros(
+                        weight_shape, device=self.device
+                    )
+
+                # Update using STDP-style eligibility: outer product of pre and post
+                eligibility_update = torch.outer(d2_output_1d, source_spikes_float)
+
+                # Get source-specific tau (or use default)
+                tau_ms = self._get_source_eligibility_tau(source_name)
+                decay = torch.exp(torch.tensor(-self.config.dt_ms / tau_ms))
+
+                # Decay old eligibility and add new
+                self._eligibility_d2[d2_key] = (
+                    self._eligibility_d2[d2_key] * decay +
+                    eligibility_update * self.config.stdp_lr
+                )
+
+    def _get_source_eligibility_tau(self, source_name: str) -> float:
+        """Get source-specific eligibility trace tau.
+
+        Different input sources have different temporal dynamics:
+        - Cortical inputs: Long traces (1000ms) for sustained context
+        - Hippocampal inputs: Fast traces (300ms) for episodic snapshots
+        - Thalamic inputs: Intermediate (500ms) for phasic signals
+
+        Args:
+            source_name: Source identifier (e.g., "cortex:l5", "hippocampus")
+
+        Returns:
+            Eligibility tau in milliseconds
+        """
+        # Check if custom tau is configured
+        if hasattr(self, '_source_eligibility_tau') and source_name in self._source_eligibility_tau:
+            tau_value = self._source_eligibility_tau[source_name]
+            # Ensure it's a float (handle tensor or other numeric types)
+            if isinstance(tau_value, torch.Tensor):
+                return float(tau_value.item())
+            return float(tau_value)
+
+        # Apply biological defaults based on source type
+        if "cortex" in source_name:
+            return 1000.0  # Standard corticostriatal (long traces)
+        elif "hippocampus" in source_name or "hippoc" in source_name:
+            return 300.0   # Fast episodic context
+        elif "thalamus" in source_name or "thal" in source_name:
+            return 500.0   # Intermediate phasic signals
+        else:
+            # Default to config value
+            return self.config.eligibility_tau_ms
+
+    def set_source_eligibility_tau(self, source_name: str, tau_ms: float) -> None:
+        """Configure custom eligibility tau for a specific source.
+
+        Override the biological default with a custom value for specific sources.
+        Useful for fine-tuning learning dynamics per input pathway.
+
+        Args:
+            source_name: Source identifier (e.g., "cortex:l5", "hippocampus")
+            tau_ms: Eligibility trace decay time constant in milliseconds
+
+        Example:
+            >>> striatum.set_source_eligibility_tau("cortex:l5", 1200.0)
+            >>> striatum.set_source_eligibility_tau("hippocampus", 250.0)
+        """
+        self._source_eligibility_tau[source_name] = tau_ms
 
     def _update_d1_d2_eligibility_all(
-        self, input_spikes: torch.Tensor, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor
+        self, inputs: Dict[str, torch.Tensor], d1_spikes: torch.Tensor, d2_spikes: torch.Tensor
     ) -> None:
         """Update eligibility traces for ALL active D1/D2 neurons.
 
@@ -1482,13 +1874,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         Timestep (dt) is obtained from self.config.dt_ms for temporal dynamics.
 
         Args:
-            input_spikes: Input spike tensor
+            inputs: Dict mapping source names to spike tensors
             d1_spikes: D1 neuron population spikes
             d2_spikes: D2 neuron population spikes
         """
         # Just call the existing method with chosen_action=None
         # which will update eligibility for all active neurons
-        self._update_d1_d2_eligibility(input_spikes, d1_spikes, d2_spikes, chosen_action=None)
+        self._update_d1_d2_eligibility(inputs, d1_spikes, d2_spikes, chosen_action=None)
 
     def set_oscillator_phases(
         self,
@@ -1659,7 +2051,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         return total_current
 
-    def _apply(self, fn):
+    def _apply(self, fn, recurse: bool = True):
         """Override _apply to handle non-parameter tensors in TD-lambda learners.
 
         This is called by .to(), .cpu(), .cuda(), etc. to transfer all tensors.
@@ -1667,12 +2059,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         Args:
             fn: Function to apply (e.g., lambda t: t.cuda())
+            recurse: Whether to apply recursively (inherited from nn.Module)
 
         Returns:
             Self after applying function
         """
         # Apply to all nn.Module parameters and buffers
-        super()._apply(fn)
+        super()._apply(fn, recurse)
 
         # Transfer TD-lambda learners (not nn.Modules, so need manual transfer)
         if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
@@ -1706,11 +2099,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - Action selection: argmax(D1_activity - D2_activity) per action
 
         Args:
-            inputs: Either:
-                   - Dict mapping source names to spike tensors
-                     e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo]}
-                   - Tensor of spikes (auto-wrapped as {"default": tensor}) [n_input]
-                   PFC component (if present) is used for goal modulation.
+            inputs: Dict mapping source names to spike tensors
+                   e.g., {"cortex:l5": [n_l5], "hippocampus": [n_hc], "thalamus": [n_thal]}
+                   Each source has separate D1 and D2 synaptic weights.
 
         NOTE: Exploration is handled by finalize_action() at trial end, not per-timestep.
         NOTE: Theta modulation computed internally from self._theta_phase (set by Brain)
@@ -1722,22 +2113,54 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - NET = D1_votes - D2_votes
         - Selected action = argmax(NET)
         """
-        # Concatenate all input sources (D1/D2 pathways apply their own weights)
-        input_spikes = InputRouter.concatenate_sources(
-            inputs,
-            component_name="Striatum",
-            n_input=self.input_size,
-            device=self.device,
-        )
+        # Convert single tensor to dict if needed (backward compatibility)
+        if isinstance(inputs, torch.Tensor):
+            # Legacy support: wrap as "default" source
+            # Caller must have added "default" source via add_input_source_striatum()
+            inputs = {"default": inputs}
 
-        # Ensure 1D (ADR-005)
-        if input_spikes.dim() != 1:
-            input_spikes = input_spikes.squeeze()
+        # =====================================================================
+        # MULTI-SOURCE SYNAPTIC INTEGRATION - Per-Source D1/D2 Weights
+        # =====================================================================
+        # Each source (cortex:l5, hippocampus, thalamus) has separate weights
+        # for D1 and D2 pathways. Accumulate synaptic currents separately.
+        d1_current = torch.zeros(self.d1_size, device=self.device)
+        d2_current = torch.zeros(self.d2_size, device=self.device)
 
-        assert input_spikes.dim() == 1, (
-            f"Striatum.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}. "
-            "Thalia uses single-brain architecture with no batch dimension."
-        )
+        for source_name, source_spikes in inputs.items():
+            # Ensure 1D (ADR-005)
+            if source_spikes.dim() != 1:
+                source_spikes = source_spikes.squeeze()
+
+            # Convert to float for matrix multiplication
+            source_spikes_float = source_spikes.float() if source_spikes.dtype == torch.bool else source_spikes
+
+            # D1 pathway weights with per-source STP
+            d1_key = f"{source_name}_d1"
+            if d1_key in self.synaptic_weights:
+                d1_weights = self.synaptic_weights[d1_key]
+                # Apply source-specific STP if enabled (Phase 5)
+                if self.config.stp_enabled and d1_key in self.stp_modules:
+                    efficacy = self.stp_modules[d1_key](source_spikes_float)  # [n_input, d1_size]
+                    # Modulate weights element-wise: effective_w = w * efficacy.T
+                    # weights shape: [d1_size, n_input], efficacy.T shape: [d1_size, n_input]
+                    effective_weights = d1_weights * efficacy.T
+                    d1_current += effective_weights @ source_spikes_float
+                else:
+                    d1_current += d1_weights @ source_spikes_float
+
+            # D2 pathway weights with per-source STP
+            d2_key = f"{source_name}_d2"
+            if d2_key in self.synaptic_weights:
+                d2_weights = self.synaptic_weights[d2_key]
+                # Apply source-specific STP if enabled (Phase 5)
+                if self.config.stp_enabled and d2_key in self.stp_modules:
+                    efficacy = self.stp_modules[d2_key](source_spikes_float)  # [n_input, d2_size]
+                    # Modulate weights element-wise: effective_w = w * efficacy.T
+                    effective_weights = d2_weights * efficacy.T
+                    d2_current += effective_weights @ source_spikes_float
+                else:
+                    d2_current += d2_weights @ source_spikes_float
 
         # =====================================================================
         # FSI (FAST-SPIKING INTERNEURONS) - Feedforward Inhibition
@@ -1747,22 +2170,24 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # 2. Feedforward inhibition to MSNs (sharpens action timing)
         # Biology: FSI are parvalbumin+ interneurons (~2% of striatum)
         fsi_inhibition = 0.0  # Scalar value broadcast to all MSNs
-        if self.fsi_size > 0 and "fsi" in self.synaptic_weights:
-            # Compute FSI synaptic current (weights applied at dendrites)
-            fsi_weights = self.synaptic_weights["fsi"]
-            # Convert boolean spikes to float for matrix multiplication
-            input_spikes_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
-            fsi_synaptic_current = fsi_weights @ input_spikes_float  # [n_fsi]
+        if self.fsi_size > 0:
+            # Accumulate FSI currents from all sources
+            fsi_current = torch.zeros(self.fsi_size, device=self.device)
+            for source_name, source_spikes in inputs.items():
+                fsi_key = f"fsi_{source_name}"
+                if fsi_key in self.synaptic_weights:
+                    source_spikes_float = source_spikes.float() if source_spikes.dtype == torch.bool else source_spikes
+                    fsi_current += self.synaptic_weights[fsi_key] @ source_spikes_float
 
             # Apply gap junction coupling (if enabled and state available)
             if self.gap_junctions_fsi is not None and self.state.fsi_membrane is not None:
                 gap_current = self.gap_junctions_fsi(self.state.fsi_membrane)
-                fsi_synaptic_current = fsi_synaptic_current + gap_current
+                fsi_current = fsi_current + gap_current
 
             # Update FSI neurons (fast kinetics, tau_mem ~5ms)
             fsi_spikes, fsi_membrane = self.fsi_neurons(
-                g_exc_input=fsi_synaptic_current,
-                g_inh_input=torch.zeros_like(fsi_synaptic_current),  # FSI receive minimal inhibition
+                g_exc_input=fsi_current,
+                g_inh_input=torch.zeros_like(fsi_current),  # FSI receive minimal inhibition
             )
 
             # Store FSI membrane for next timestep gap junctions
@@ -1773,20 +2198,34 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             fsi_inhibition = torch.sum(fsi_spikes) * 0.5
 
         # =====================================================================
-        # FORWARD PASS COORDINATION - Delegate to ForwardPassCoordinator
+        # D1/D2 NEURON ACTIVATION with Modulation
         # =====================================================================
-        # ForwardPassCoordinator handles all the complex modulation logic:
-        # - D1/D2 pathway activation computation
-        # - Theta/beta oscillator modulation
-        # - Tonic dopamine and norepinephrine gain modulation
-        # - Goal-conditioned modulation (PFC → Striatum)
-        # - Homeostatic excitability modulation
-        # - FSI feedforward inhibition (sharpens action timing)
-        # - D1/D2 neuron population execution
-        d1_spikes, d2_spikes, pfc_goal_context = self.forward_coordinator.forward(
-            input_spikes=input_spikes,
-            recent_spikes=self.state_tracker.recent_spikes,
-            fsi_inhibition=fsi_inhibition,  # FSI feedforward inhibition
+        # Apply all modulation (theta, dopamine, NE, PFC, homeostasis) to currents
+        # before neuron execution
+
+        # Theta modulation (encoding/retrieval phases)
+        encoding_mod, retrieval_mod = compute_theta_encoding_retrieval(self._theta_phase)
+        d1_current = d1_current * (1.0 + 0.2 * encoding_mod)  # D1 enhanced during encoding
+        d2_current = d2_current * (1.0 + 0.2 * retrieval_mod)  # D2 enhanced during retrieval
+
+        # Tonic dopamine and NE gain modulation
+        da_gain = 1.0 + 0.3 * (self.state.dopamine - 0.5)  # Centered at 0.5 baseline
+        ne_gain = compute_ne_gain(self.state.norepinephrine)
+        d1_current = d1_current * da_gain * ne_gain
+        d2_current = d2_current * da_gain * ne_gain
+
+        # Apply FSI inhibition (broadcast to all MSNs)
+        d1_current = d1_current - fsi_inhibition
+        d2_current = d2_current - fsi_inhibition
+
+        # Execute D1 and D2 MSN populations
+        d1_spikes, _ = self.d1_pathway.neurons(
+            g_exc_input=d1_current.clamp(min=0),
+            g_inh_input=torch.zeros_like(d1_current),
+        )
+        d2_spikes, _ = self.d2_pathway.neurons(
+            g_exc_input=d2_current.clamp(min=0),
+            g_inh_input=torch.zeros_like(d2_current),
         )
 
         # =====================================================================
@@ -1876,8 +2315,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # STORE GOAL CONTEXT AND SPIKES FOR LEARNING
         # =====================================================================
-        # Store PFC goal context and D1/D2 spikes for goal-conditioned learning
-        # These will be used in deliver_reward() to modulate weight updates
+        # Store PFC goal context (if present) and D1/D2 spikes for goal-conditioned learning
+        # TODO (Future): Extract PFC goal context from inputs["pfc"] for goal-conditioned learning
+        # This is a separate feature, not part of multi-source architecture refactoring
+        pfc_goal_context = None  # Will be extracted when PFC integration is implemented
         self.state_tracker.store_spikes_for_learning(d1_spikes, d2_spikes, pfc_goal_context)
 
         # =====================================================================
@@ -1887,28 +2328,30 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Eligibility accumulates for ALL neurons that fire during the trial.
         # When reward arrives, deliver_reward() uses last_action (set by finalize_action)
         # to apply learning only to the chosen action's synapses.
-        self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes)
+        # Pass inputs dict to eligibility update (multi-source aware)
+        self._update_d1_d2_eligibility_all(inputs, d1_spikes, d2_spikes)
 
         # UPDATE TD(λ) ELIGIBILITY (if enabled)
         # TD(λ) traces accumulate with factor (γλ) instead of simple decay,
         # enabling credit assignment over longer delays (5-10 seconds)
         if self.td_lambda_d1 is not None:
-            # Convert bool spikes to float for gradient computation
-            input_spikes_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
+            # Accumulate all source spikes (TD-lambda needs combined input)
+            combined_input = torch.zeros(self.input_size, device=self.device)
+            offset = 0
+            for source_name, source_spikes in inputs.items():
+                source_size = source_spikes.shape[0]
+                combined_input[offset:offset + source_size] = source_spikes.float()
+                offset += source_size
 
             # Update TD(λ) eligibility for D1 pathway
             # Note: We update for ALL neurons here; masking to chosen action
             # happens in deliver_reward() using last_action
-            d1_gradient = torch.outer(d1_spikes.float(), input_spikes_float)
+            d1_gradient = torch.outer(d1_spikes.float(), combined_input)
             self.td_lambda_d1.traces.update(d1_gradient)
 
             # Update TD(λ) eligibility for D2 pathway
-            d2_gradient = torch.outer(d2_spikes.float(), input_spikes_float)
+            d2_gradient = torch.outer(d2_spikes.float(), combined_input)
             self.td_lambda_d2.traces.update(d2_gradient)
-
-        # Update D1/D2 eligibility traces for ALL active neurons
-        # The action-specific masking happens in deliver_reward(), not here
-        self._update_d1_d2_eligibility_all(input_spikes, d1_spikes, d2_spikes)
 
         # Update recent spikes and trial activity via state_tracker
         self.state_tracker.update_recent_spikes(d1_spikes, d2_spikes, decay=0.9)
@@ -1929,13 +2372,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     def deliver_reward(self, reward: float) -> Dict[str, Any]:
         """Deliver reward signal and trigger D1/D2 learning.
 
-        Delegates to LearningManager for dopamine-gated three-factor learning.
+        **Multi-Source Learning**: Applies dopamine-modulated plasticity to each
+        source-pathway combination separately using their respective eligibility traces.
 
         Args:
             reward: Raw reward signal (for adaptive exploration tracking only)
 
         Returns:
-            Metrics dict with dopamine level and weight changes.
+            Metrics dict with dopamine level and weight changes per source.
         """
         # Use dopamine from forward_coordinator (set via set_neuromodulators)
         da_level = self.forward_coordinator._tonic_dopamine
@@ -1949,10 +2393,63 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         correct = reward > 0
         self.exploration.update_performance(reward, correct)
 
-        # Delegate to learning manager (new component API)
-        goal_context = self._last_pfc_goal_context if hasattr(self, '_last_pfc_goal_context') else None
+        # Apply learning per source-pathway using eligibility traces
+        # Three-factor rule: Δw = eligibility × dopamine × learning_rate
+        d1_total_ltp = 0.0
+        d1_total_ltd = 0.0
+        d2_total_ltp = 0.0
+        d2_total_ltd = 0.0
 
-        return self.learning.apply_learning(da_level, goal_context)
+        # D1 pathway learning (DA+ → LTP, DA- → LTD)
+        if hasattr(self, '_eligibility_d1'):
+            for source_key, eligibility in self._eligibility_d1.items():
+                if source_key in self.synaptic_weights:
+                    # Compute weight update: Δw = eligibility × dopamine × lr
+                    weight_update = eligibility * da_level * self.config.stdp_lr
+
+                    # Apply update with weight bounds
+                    new_weights = torch.clamp(
+                        self.synaptic_weights[source_key] + weight_update,
+                        min=self.config.w_min,
+                        max=self.config.w_max,
+                    )
+                    self.synaptic_weights[source_key].data = new_weights
+
+                    # Track LTP/LTD for diagnostics
+                    if da_level > 0:
+                        d1_total_ltp += weight_update.sum().item()
+                    else:
+                        d1_total_ltd += weight_update.sum().item()
+
+        # D2 pathway learning (DA+ → LTD, DA- → LTP - INVERTED!)
+        if hasattr(self, '_eligibility_d2'):
+            for source_key, eligibility in self._eligibility_d2.items():
+                if source_key in self.synaptic_weights:
+                    # Compute weight update with INVERTED dopamine
+                    weight_update = eligibility * (-da_level) * self.config.stdp_lr
+
+                    # Apply update with weight bounds
+                    new_weights = torch.clamp(
+                        self.synaptic_weights[source_key] + weight_update,
+                        min=self.config.w_min,
+                        max=self.config.w_max,
+                    )
+                    self.synaptic_weights[source_key].data = new_weights
+
+                    # Track LTP/LTD for diagnostics (note inverted dopamine)
+                    if da_level > 0:
+                        d2_total_ltd += weight_update.sum().item()
+                    else:
+                        d2_total_ltp += weight_update.sum().item()
+
+        return {
+            "d1_ltp": d1_total_ltp,
+            "d1_ltd": d1_total_ltd,
+            "d2_ltp": d2_total_ltp,
+            "d2_ltd": d2_total_ltd,
+            "net_change": d1_total_ltp + d1_total_ltd + d2_total_ltp + d2_total_ltd,
+            "dopamine": da_level,
+        }
 
 
     def deliver_counterfactual_reward(
@@ -2033,6 +2530,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         Resets:
         - State tracker (votes, spikes, trials)
         - D1/D2 pathway eligibility and neurons
+        - Multi-source eligibility traces
         - TD(λ) traces (if enabled)
         - Delay buffers (if enabled)
         """
@@ -2042,6 +2540,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Reset D1/D2 pathways (eligibility and neurons)
         self.d1_pathway.reset_state()
         self.d2_pathway.reset_state()
+
+        # Reset multi-source eligibility traces (Phase 3)
+        if hasattr(self, '_eligibility_d1'):
+            for key in self._eligibility_d1:
+                self._eligibility_d1[key].zero_()
+        if hasattr(self, '_eligibility_d2'):
+            for key in self._eligibility_d2:
+                self._eligibility_d2[key].zero_()
 
         # Reset TD(λ) traces if enabled
         if self.td_lambda_d1 is not None:
@@ -2352,11 +2858,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             homeostatic_scaling_applied=self._homeostatic_scaling_applied if hasattr(self, '_homeostatic_scaling_applied') else False,
             homeostasis_manager_state=homeostasis_manager_state,
 
-            # STP state (optional)
-            stp_corticostriatal_u=self.stp_corticostriatal.u.detach().clone() if (self.stp_corticostriatal is not None and self.stp_corticostriatal.u is not None) else None,
-            stp_corticostriatal_x=self.stp_corticostriatal.x.detach().clone() if (self.stp_corticostriatal is not None and self.stp_corticostriatal.x is not None) else None,
-            stp_thalamostriatal_u=self.stp_thalamostriatal.u.detach().clone() if (self.stp_thalamostriatal is not None and self.stp_thalamostriatal.u is not None) else None,
-            stp_thalamostriatal_x=self.stp_thalamostriatal.x.detach().clone() if (self.stp_thalamostriatal is not None and self.stp_thalamostriatal.x is not None) else None,
+            # STP state (per-source, Phase 5)
+            stp_modules_state={key: {'u': stp.u.detach().clone() if stp.u is not None else None,
+                                      'x': stp.x.detach().clone() if stp.x is not None else None}
+                               for key, stp in self.stp_modules.items()} if hasattr(self, 'stp_modules') else {},
+            # DEPRECATED (backward compatibility): Old single STP modules
+            stp_corticostriatal_u=None,
+            stp_corticostriatal_x=None,
+            stp_thalamostriatal_u=None,
+            stp_thalamostriatal_x=None,
 
             # Neuromodulators
             dopamine=dopamine,
@@ -2428,15 +2938,22 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if state.last_expected is not None:
             self.state_tracker._last_expected = state.last_expected
 
-        # Restore STP state (optional)
-        if state.stp_corticostriatal_u is not None and self.stp_corticostriatal is not None and self.stp_corticostriatal.u is not None:
-            self.stp_corticostriatal.u.data = state.stp_corticostriatal_u.to(self.device)
-        if state.stp_corticostriatal_x is not None and self.stp_corticostriatal is not None and self.stp_corticostriatal.x is not None:
-            self.stp_corticostriatal.x.data = state.stp_corticostriatal_x.to(self.device)
-        if state.stp_thalamostriatal_u is not None and self.stp_thalamostriatal is not None and self.stp_thalamostriatal.u is not None:
-            self.stp_thalamostriatal.u.data = state.stp_thalamostriatal_u.to(self.device)
-        if state.stp_thalamostriatal_x is not None and self.stp_thalamostriatal is not None and self.stp_thalamostriatal.x is not None:
-            self.stp_thalamostriatal.x.data = state.stp_thalamostriatal_x.to(self.device)
+        # Restore STP state (per-source, Phase 5)
+        if hasattr(state, 'stp_modules_state') and state.stp_modules_state and hasattr(self, 'stp_modules'):
+            for key, stp_state in state.stp_modules_state.items():
+                if key in self.stp_modules:
+                    if stp_state['u'] is not None and self.stp_modules[key].u is not None:
+                        self.stp_modules[key].u.data = stp_state['u'].to(self.device)
+                    if stp_state['x'] is not None and self.stp_modules[key].x is not None:
+                        self.stp_modules[key].x.data = stp_state['x'].to(self.device)
+        # DEPRECATED: Load old single STP modules (backward compatibility with old checkpoints)
+        elif hasattr(state, 'stp_corticostriatal_u') and state.stp_corticostriatal_u is not None:
+            # Old checkpoint format - try to migrate to first cortical source
+            cortical_keys = [k for k in self.stp_modules.keys() if 'cortex' in k]
+            if cortical_keys and self.stp_modules[cortical_keys[0]].u is not None:
+                self.stp_modules[cortical_keys[0]].u.data = state.stp_corticostriatal_u.to(self.device)
+            if cortical_keys and state.stp_corticostriatal_x is not None and self.stp_modules[cortical_keys[0]].x is not None:
+                self.stp_modules[cortical_keys[0]].x.data = state.stp_corticostriatal_x.to(self.device)
 
         # Restore goal modulation (optional)
         if state.pfc_modulation_d1 is not None and hasattr(self, 'pfc_modulation_d1'):

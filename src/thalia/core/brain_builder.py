@@ -646,6 +646,63 @@ class BrainBuilder:
             f"Component {type(source_comp).__name__} does not support port '{source_port}'"
         )
 
+    def _initialize_target_weights(
+        self,
+        brain: "DynamicBrain",
+        components: Dict[str, LearnableComponent],
+        connection_specs: Dict[Tuple[str, str], Any],
+    ) -> None:
+        """Initialize synaptic weights in target regions after pathways are created.
+
+        For multi-source regions (striatum, NeuralRegion subclasses), notify them about
+        their input sources so they can create appropriate synaptic weight matrices.
+
+        Args:
+            brain: The DynamicBrain instance
+            components: Dict of component instances
+            connection_specs: Connection specifications with port info
+        """
+        # Group connections by target to initialize weights once per target
+        targets_to_sources: Dict[str, List[Tuple[str, Optional[str], int]]] = {}
+
+        for (source_name, target_key), spec in connection_specs.items():
+            # Handle compound keys like "striatum" or "striatum:feedforward"
+            target_name = target_key.split(":")[0] if ":" in target_key else target_key
+            target_port = spec.target_port if hasattr(spec, 'target_port') else None
+            source_port = spec.source_port if hasattr(spec, 'source_port') else None
+
+            if target_name not in targets_to_sources:
+                targets_to_sources[target_name] = []
+
+            # Get source size
+            source_comp = components[source_name]
+            source_size = self._get_pathway_source_size(source_comp, source_port)
+
+            targets_to_sources[target_name].append((source_name, source_port, source_size))
+
+        # For each target, call add_input_source to initialize weights
+        for target_name, sources in targets_to_sources.items():
+            target_comp = components[target_name]
+
+            # Special handling for Striatum (has add_input_source_striatum)
+            # Check this FIRST before checking for standard add_input_source
+            if hasattr(target_comp, 'add_input_source_striatum'):
+                for source_name, source_port, source_size in sources:
+                    # Build source key (with port if specified)
+                    source_key = f"{source_name}:{source_port}" if source_port else source_name
+
+                    # Call striatum-specific method (creates D1/D2 weights)
+                    target_comp.add_input_source_striatum(source_key, n_input=source_size)
+
+            # Check if target has standard add_input_source method (NeuralRegion, etc.)
+            elif hasattr(target_comp, 'add_input_source'):
+                for source_name, source_port, source_size in sources:
+                    # Build source key (with port if specified)
+                    source_key = f"{source_name}:{source_port}" if source_port else source_name
+
+                    # Call add_input_source (standard NeuralRegion method)
+                    target_comp.add_input_source(source_key, n_input=source_size)
+
     def _create_axonal_projection(
         self,
         target_specs: List[ConnectionSpec],
@@ -950,6 +1007,11 @@ class BrainBuilder:
 
         # Store registry reference for adapter lookup
         brain._registry = self._registry
+
+        # === INITIALIZE TARGET REGION WEIGHTS ===
+        # After pathways are created, notify target regions about their input sources
+        # so they can initialize synaptic weights (multi-source architecture)
+        self._initialize_target_weights(brain, components, connection_specs_dict)
 
         return brain
 

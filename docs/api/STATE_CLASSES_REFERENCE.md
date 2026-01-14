@@ -1,12 +1,12 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-09 00:11:42
+> Last updated: 2026-01-14 17:31:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
 
-Total: 7 state classes
+Total: 8 state classes
 
 ## Overview
 
@@ -32,7 +32,7 @@ RegionState (Protocol)
 
 ## Region State Classes
 
-Total region states: 7
+Total region states: 8
 
 ### [``AxonalProjectionState``](../../src/thalia/core/pathway_state.py#L130)
 
@@ -50,7 +50,7 @@ Total region states: 7
 
 ---
 
-### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L214)
+### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L218)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -78,7 +78,7 @@ Total region states: 7
 
 ---
 
-### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L282)
+### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L279)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -114,7 +114,7 @@ Total region states: 7
 
 ---
 
-### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L208)
+### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L209)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -149,7 +149,35 @@ Total region states: 7
 
 ---
 
-### [``PrefrontalState``](../../src/thalia/regions/prefrontal.py#L184)
+### [``PredictiveCortexState``](../../src/thalia/regions/cortex/predictive_cortex.py#L115)
+
+**Base Class**: `BaseRegionState`  
+**Version**: 1  
+**Source**: [`thalia/regions/cortex/predictive_cortex.py`](../../src/thalia/regions/cortex/predictive_cortex.py)
+
+**Description**: State for predictive cortex with RegionState protocol compliance.
+
+**Fields**:
+
+| Field | Type | Default |
+|-------|------|----------|
+| `l4_spikes` | `Optional[torch.Tensor]` | `None` |
+| `l23_spikes` | `Optional[torch.Tensor]` | `None` |
+| `l5_spikes` | `Optional[torch.Tensor]` | `None` |
+| `l6a_spikes` | `Optional[torch.Tensor]` | `None` |
+| `l6b_spikes` | `Optional[torch.Tensor]` | `None` |
+| `input_spikes` | `Optional[torch.Tensor]` | `None` |
+| `prediction` | `Optional[torch.Tensor]` | `None` |
+| `error` | `Optional[torch.Tensor]` | `None` |
+| `precision` | `Optional[torch.Tensor]` | `None` |
+| `free_energy` | `float` | `0.0` |
+| `attention_weights` | `Optional[torch.Tensor]` | `None` |
+| `_oscillator_phases` | `Optional[Dict[str, float]]` | `None` |
+| `_oscillator_signals` | `Optional[Dict[str, float]]` | `None` |
+
+---
+
+### [``PrefrontalState``](../../src/thalia/regions/prefrontal.py#L194)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -168,7 +196,7 @@ Total region states: 7
 
 ---
 
-### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L225)
+### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L284)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -209,10 +237,11 @@ Total region states: 7
 | `stp_corticostriatal_x` | `Optional[torch.Tensor]` | `None` |
 | `stp_thalamostriatal_u` | `Optional[torch.Tensor]` | `None` |
 | `stp_thalamostriatal_x` | `Optional[torch.Tensor]` | `None` |
+| `stp_modules_state` | `Dict[str, Dict[str, Optional[torch.Tensor]]]` | `{}` |
 
 ---
 
-### [``ThalamicRelayState``](../../src/thalia/regions/thalamus.py#L237)
+### [``ThalamicRelayState``](../../src/thalia/regions/thalamus.py#L243)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  

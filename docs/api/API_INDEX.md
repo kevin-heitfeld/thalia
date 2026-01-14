@@ -1,7 +1,7 @@
 # API Index
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-09 00:11:42
+> Last updated: 2026-01-14 17:31:39
 > Generated from: `scripts/generate_api_docs.py`
 
 Comprehensive searchable index of all Thalia API components.
@@ -18,11 +18,11 @@ Comprehensive searchable index of all Thalia API components.
 | **Monitors** | 4 | [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md) |
 | **Mixins** | 4 | [MIXINS_REFERENCE.md](MIXINS_REFERENCE.md) |
 | **Exceptions** | 6 | [EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md) |
-| **Constants** | 176 | [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) |
+| **Constants** | 175 | [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) |
 | **Protocols** | 8 | [PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md) |
 | **Type Aliases** | 15 | [TYPE_ALIASES.md](TYPE_ALIASES.md) |
 | **Enumerations** | 47 | [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) |
-| **State Classes** | 7 | [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) |
+| **State Classes** | 8 | [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) |
 | **Neuron Factories** | 5 | [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) |
 | **Compute Functions** | 12 | [COMPUTE_FUNCTIONS_REFERENCE.md](COMPUTE_FUNCTIONS_REFERENCE.md) |
 | **Visualization Functions** | 9 | [VISUALIZATION_REFERENCE.md](VISUALIZATION_REFERENCE.md) |

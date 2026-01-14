@@ -1,7 +1,7 @@
 # Compute Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-09 00:11:42
+> Last updated: 2026-01-14 17:31:39
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all `compute_*` utility functions that implement biological computations throughout the Thalia codebase.
@@ -201,7 +201,7 @@ Args:
 
 ## 📏 Region Sizing Functions
 
-### [``compute_cerebellum_sizes()``](../../src/thalia/config/region_sizes.py#L366)
+### [``compute_cerebellum_sizes()``](../../src/thalia/config/region_sizes.py#L438)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -217,7 +217,7 @@ Args:
 
 ---
 
-### [``compute_cortex_layer_sizes()``](../../src/thalia/config/region_sizes.py#L268)
+### [``compute_cortex_layer_sizes()``](../../src/thalia/config/region_sizes.py#L283)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -232,7 +232,7 @@ Args:
 
 ---
 
-### [``compute_hippocampus_sizes()``](../../src/thalia/config/region_sizes.py#L246)
+### [``compute_hippocampus_sizes()``](../../src/thalia/config/region_sizes.py#L247)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -247,7 +247,7 @@ Args:
 
 ---
 
-### [``compute_multisensory_sizes()``](../../src/thalia/config/region_sizes.py#L335)
+### [``compute_multisensory_sizes()``](../../src/thalia/config/region_sizes.py#L407)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -265,7 +265,7 @@ Args:
 
 ---
 
-### [``compute_striatum_sizes()``](../../src/thalia/config/region_sizes.py#L289)
+### [``compute_striatum_sizes()``](../../src/thalia/config/region_sizes.py#L321)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -282,7 +282,7 @@ Args:
 
 ---
 
-### [``compute_thalamus_sizes()``](../../src/thalia/config/region_sizes.py#L317)
+### [``compute_thalamus_sizes()``](../../src/thalia/config/region_sizes.py#L366)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)

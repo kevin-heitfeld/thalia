@@ -90,6 +90,25 @@ class StriatumLearningComponent(LearningComponent):
         self._last_d1_spikes: Optional[torch.Tensor] = None
         self._last_d2_spikes: Optional[torch.Tensor] = None
 
+    def add_source_eligibility_traces(self, source_name: str, n_input: int) -> None:
+        """Initialize eligibility traces for a new source.
+
+        Called when a new input source is added via add_input_source_striatum().
+        Creates eligibility trace tensors for both D1 and D2 pathways.
+
+        Args:
+            source_name: Source identifier (e.g., "cortex:l5", "hippocampus")
+            n_input: Input size from this source
+
+        Note:
+            Actual trace tensors are stored in parent Striatum, not in this component.
+            This method is a notification hook for future extensions.
+        """
+        # Eligibility traces are now managed directly in Striatum
+        # per-source-pathway (_eligibility_d1, _eligibility_d2 dicts)
+        # This method is kept for API compatibility and future extensions
+        pass
+
     def apply_learning(
         self,
         dopamine: float,

@@ -410,17 +410,23 @@ class StriatumState(BaseRegionState):
     # ========================================================================
     # SHORT-TERM PLASTICITY (STP)
     # ========================================================================
+    # DEPRECATED (backward compatibility): Old single STP modules
     stp_corticostriatal_u: Optional[torch.Tensor] = None
-    """STP release probability for corticostriatal pathway [n_pre, n_post]."""
+    """DEPRECATED: STP release probability for corticostriatal pathway [n_pre, n_post]."""
 
     stp_corticostriatal_x: Optional[torch.Tensor] = None
-    """STP available resources for corticostriatal pathway [n_pre, n_post]."""
+    """DEPRECATED: STP available resources for corticostriatal pathway [n_pre, n_post]."""
 
     stp_thalamostriatal_u: Optional[torch.Tensor] = None
-    """STP release probability for thalamostriatal pathway [n_pre, n_post]."""
+    """DEPRECATED: STP release probability for thalamostriatal pathway [n_pre, n_post]."""
 
     stp_thalamostriatal_x: Optional[torch.Tensor] = None
-    """STP available resources for thalamostriatal pathway [n_pre, n_post]."""
+    """DEPRECATED: STP available resources for thalamostriatal pathway [n_pre, n_post]."""
+
+    # NEW (Phase 5): Per-source STP modules
+    stp_modules_state: Dict[str, Dict[str, Optional[torch.Tensor]]] = field(default_factory=dict)
+    """Per-source STP states. Keys are source-pathway names (e.g., 'cortex:l5_d1'),
+    values are dicts with 'u' and 'x' tensors."""
 
     # Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
     # inherited from BaseRegionState

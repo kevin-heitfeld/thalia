@@ -99,10 +99,26 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             "n_neurons_capacity": s.n_neurons_capacity,
         }
 
-        # 2. PATHWAY STATE (D1/D2 weights, eligibility, etc.)
+        # 2. PATHWAY STATE (Multi-source weights, eligibility, etc.)
+        # PHASE 5: Multi-source architecture - save per-source weights and eligibility
         pathway_state = {
             "d1_state": s.d1_pathway.get_state(),
             "d2_state": s.d2_pathway.get_state(),
+
+            # Multi-source weights (Phase 5)
+            "synaptic_weights": {key: tensor.detach().clone() for key, tensor in s.synaptic_weights.items()},
+
+            # Multi-source eligibility traces (Phase 3)
+            "eligibility_d1": {key: tensor.detach().clone() for key, tensor in s._eligibility_d1.items()} if hasattr(s, '_eligibility_d1') else {},
+            "eligibility_d2": {key: tensor.detach().clone() for key, tensor in s._eligibility_d2.items()} if hasattr(s, '_eligibility_d2') else {},
+
+            # Per-source STP modules (Phase 5)
+            "stp_modules": {key: {'u': stp.u.detach().clone() if stp.u is not None else None,
+                                   'x': stp.x.detach().clone() if stp.x is not None else None}
+                            for key, stp in s.stp_modules.items()} if hasattr(s, 'stp_modules') else {},
+
+            # Input source tracking
+            "input_sources": dict(s.input_sources) if hasattr(s, 'input_sources') else {},
         }
 
         # 3. LEARNING STATE
@@ -254,10 +270,57 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             n_restore = min(membrane.shape[0], s.d1_pathway.neurons.membrane.shape[0])
             s.d1_pathway.neurons.membrane[:n_restore] = membrane[:n_restore]
 
-        # 2. RESTORE PATHWAY STATE
+        # 2. RESTORE PATHWAY STATE (Multi-source architecture)
         pathway_state = state["pathway_state"]
-        s.d1_pathway.load_state(pathway_state["d1_state"])
-        s.d2_pathway.load_state(pathway_state["d2_state"])
+
+        # Check if this is a new multi-source checkpoint
+        if "synaptic_weights" in pathway_state:
+            # NEW FORMAT (Phase 5): Multi-source weights
+            for key, weights in pathway_state["synaptic_weights"].items():
+                if key in s.synaptic_weights:
+                    # Restore weight data
+                    s.synaptic_weights[key].data = weights.to(s.device)
+                else:
+                    import warnings
+                    warnings.warn(
+                        f"Checkpoint has source '{key}' but current brain doesn't. "
+                        "Skipping this source weight.",
+                        UserWarning
+                    )
+
+            # Restore multi-source eligibility traces (Phase 3)
+            if "eligibility_d1" in pathway_state and hasattr(s, '_eligibility_d1'):
+                for key, elig in pathway_state["eligibility_d1"].items():
+                    if key in s._eligibility_d1:
+                        s._eligibility_d1[key] = elig.to(s.device)
+
+            if "eligibility_d2" in pathway_state and hasattr(s, '_eligibility_d2'):
+                for key, elig in pathway_state["eligibility_d2"].items():
+                    if key in s._eligibility_d2:
+                        s._eligibility_d2[key] = elig.to(s.device)
+
+            # Restore per-source STP modules (Phase 5)
+            if "stp_modules" in pathway_state and hasattr(s, 'stp_modules'):
+                for key, stp_state in pathway_state["stp_modules"].items():
+                    if key in s.stp_modules:
+                        if stp_state['u'] is not None and s.stp_modules[key].u is not None:
+                            s.stp_modules[key].u.data = stp_state['u'].to(s.device)
+                        if stp_state['x'] is not None and s.stp_modules[key].x is not None:
+                            s.stp_modules[key].x.data = stp_state['x'].to(s.device)
+
+            # Restore input source tracking
+            if "input_sources" in pathway_state:
+                s.input_sources = pathway_state["input_sources"]
+        else:
+            # OLD FORMAT (backward compatibility): Pathway-based weights
+            import warnings
+            warnings.warn(
+                "Loading checkpoint from old pathway-based format. "
+                "This checkpoint predates multi-source architecture and may not restore correctly.",
+                UserWarning
+            )
+            s.d1_pathway.load_state(pathway_state["d1_state"])
+            s.d2_pathway.load_state(pathway_state["d2_state"])
 
         # 3. RESTORE LEARNING STATE
         learning_state = state["learning_state"]
@@ -437,28 +500,39 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                 if d2_idx < s.d2_pathway.neurons.membrane.shape[0]:
                     s.d2_pathway.neurons.membrane[d2_idx] = neuron_data["membrane"]
 
-            # Restore synapses (weights and eligibility)
+            # Restore synapses (weights and eligibility) - Multi-source architecture
             for synapse in neuron_data["incoming_synapses"]:
-                # Parse source neuron ID to get input index
+                # Parse source neuron ID to determine source and index
+                # Format: "{source_name}_neuron_{idx}" (e.g., "cortex:l5_neuron_42")
                 source_id = synapse["from"]
-                if "_" in source_id:
+                if "_neuron_" in source_id:
                     try:
-                        input_idx = int(source_id.split("_")[-1])
+                        # Split into source_name and neuron index
+                        parts = source_id.rsplit("_neuron_", 1)
+                        source_name = parts[0]
+                        input_idx = int(parts[1])
 
-                        # Restore weight (use .data[] to avoid in-place operation errors)
-                        if neuron_type == "D1-MSN" and idx < s.d1_pathway.weights.shape[0]:
-                            if input_idx < s.d1_pathway.weights.shape[1]:
-                                s.d1_pathway.weights.data[idx, input_idx] = synapse["weight"]
-                                if s.d1_pathway.eligibility is not None:
-                                    s.d1_pathway.eligibility.data[idx, input_idx] = synapse["eligibility"]
+                        # Restore weight in appropriate source-pathway weight matrix
+                        if neuron_type == "D1-MSN":
+                            d1_key = f"{source_name}_d1"
+                            if d1_key in s.synaptic_weights:
+                                weights = s.synaptic_weights[d1_key]
+                                if idx < weights.shape[0] and input_idx < weights.shape[1]:
+                                    weights.data[idx, input_idx] = synapse["weight"]
+                                    # Restore eligibility
+                                    if d1_key in s._eligibility_d1:
+                                        s._eligibility_d1[d1_key][idx, input_idx] = synapse["eligibility"]
                         elif neuron_type == "D2-MSN":
-                            d2_idx = idx - (s.d1_pathway.weights.shape[0] // 2)
-                            if d2_idx < s.d2_pathway.weights.shape[0] and input_idx < s.d2_pathway.weights.shape[1]:
-                                s.d2_pathway.weights.data[d2_idx, input_idx] = synapse["weight"]
-                                if s.d2_pathway.eligibility is not None:
-                                    s.d2_pathway.eligibility.data[d2_idx, input_idx] = synapse["eligibility"]
-                    except (ValueError, IndexError):
-                        # Invalid source ID format, skip
+                            d2_key = f"{source_name}_d2"
+                            if d2_key in s.synaptic_weights:
+                                weights = s.synaptic_weights[d2_key]
+                                if idx < weights.shape[0] and input_idx < weights.shape[1]:
+                                    weights.data[idx, input_idx] = synapse["weight"]
+                                    # Restore eligibility
+                                    if d2_key in s._eligibility_d2:
+                                        s._eligibility_d2[d2_key][idx, input_idx] = synapse["eligibility"]
+                    except (ValueError, IndexError, KeyError):
+                        # Invalid source ID format or missing source, skip
                         pass
 
             restored_count += 1
@@ -547,17 +621,17 @@ class StriatumCheckpointManager(BaseCheckpointManager):
     def _get_neurons_data(self) -> list[Dict[str, Any]]:
         """Extract per-neuron data with incoming synapses for D1 and D2 neurons.
 
+        **Multi-source architecture (Phase 5)**: Synapses are now per-source, so
+        each neuron will have synapses grouped by source (e.g., "cortex:l5", "hippocampus").
+
         Returns:
-            List of neuron dicts with membrane, synapses, and eligibility
+            List of neuron dicts with membrane, synapses (grouped by source), and eligibility
         """
         s = self.striatum
         neurons = []
 
         # Extract D1 pathway neurons
-        d1_weights = s.d1_pathway.weights
-        d1_eligibility = s.d1_pathway.eligibility if s.d1_pathway.eligibility is not None else torch.zeros_like(d1_weights)
-
-        n_d1 = d1_weights.shape[0]  # D1 pathway weight matrix rows = D1 neuron count
+        n_d1 = s.d1_size
 
         for i in range(n_d1):
             neuron_id = s.neuron_ids[i] if i < len(s.neuron_ids) else f"striatum_d1_neuron_{i}_step0"
@@ -567,21 +641,31 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             if "_step" in neuron_id:
                 created_step = int(neuron_id.split("_step")[1])
 
+            # Collect all incoming synapses from all sources for this D1 neuron
+            incoming_synapses = []
+            for source_name, source_size in s.input_sources.items():
+                d1_key = f"{source_name}_d1"
+                if d1_key in s.synaptic_weights:
+                    weights = s.synaptic_weights[d1_key]
+                    eligibility = s._eligibility_d1.get(d1_key, torch.zeros_like(weights)) if hasattr(s, '_eligibility_d1') else torch.zeros_like(weights)
+
+                    # Extract synapses for this neuron from this source
+                    source_prefix = f"{source_name}_neuron"
+                    synapses = self._extract_synapses_for_neuron(i, weights, eligibility, source_prefix)
+                    incoming_synapses.extend(synapses)
+
             neuron_data = {
                 "id": neuron_id,
                 "type": "D1-MSN",
                 "region": "striatum",
                 "created_step": created_step,
                 "membrane": s.d1_pathway.neurons.membrane[i].item() if s.d1_pathway.neurons.membrane is not None else 0.0,
-                "incoming_synapses": self._extract_synapses_for_neuron(i, d1_weights, d1_eligibility, "input"),
+                "incoming_synapses": incoming_synapses,
             }
             neurons.append(neuron_data)
 
         # Extract D2 pathway neurons
-        d2_weights = s.d2_pathway.weights
-        d2_eligibility = s.d2_pathway.eligibility if s.d2_pathway.eligibility is not None else torch.zeros_like(d2_weights)
-
-        n_d2 = d2_weights.shape[0]  # D2 pathway weight matrix rows = D2 neuron count
+        n_d2 = s.d2_size
 
         for i in range(n_d2):
             neuron_idx = n_d1 + i
@@ -592,13 +676,26 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             if "_step" in neuron_id:
                 created_step = int(neuron_id.split("_step")[1])
 
+            # Collect all incoming synapses from all sources for this D2 neuron
+            incoming_synapses = []
+            for source_name, source_size in s.input_sources.items():
+                d2_key = f"{source_name}_d2"
+                if d2_key in s.synaptic_weights:
+                    weights = s.synaptic_weights[d2_key]
+                    eligibility = s._eligibility_d2.get(d2_key, torch.zeros_like(weights)) if hasattr(s, '_eligibility_d2') else torch.zeros_like(weights)
+
+                    # Extract synapses for this neuron from this source
+                    source_prefix = f"{source_name}_neuron"
+                    synapses = self._extract_synapses_for_neuron(i, weights, eligibility, source_prefix)
+                    incoming_synapses.extend(synapses)
+
             neuron_data = {
                 "id": neuron_id,
                 "type": "D2-MSN",
                 "region": "striatum",
                 "created_step": created_step,
                 "membrane": s.d2_pathway.neurons.membrane[i].item() if s.d2_pathway.neurons.membrane is not None else 0.0,
-                "incoming_synapses": self._extract_synapses_for_neuron(i, d2_weights, d2_eligibility, "input"),
+                "incoming_synapses": incoming_synapses,
             }
             neurons.append(neuron_data)
 

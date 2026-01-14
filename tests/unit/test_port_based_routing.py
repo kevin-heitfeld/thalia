@@ -216,7 +216,7 @@ class TestLayerSpecificCorticalRouting:
 
     @pytest.mark.skip(reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md")
     def test_cortex_l5_to_striatum(self, global_config):
-        """Test that cortex L5 output routes to striatum."""
+        """Test that cortex L5 output routes to striatum with D1/D2 separation."""
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=0)
@@ -231,13 +231,20 @@ class TestLayerSpecificCorticalRouting:
         cortex = brain.components["cortex"]
         striatum = brain.components["striatum"]
 
-        # Striatum should receive only L5 size (check synaptic_weights)
-        assert "cortex:l5" in striatum.synaptic_weights
-        assert striatum.synaptic_weights["cortex:l5"].shape[1] == cortex.l5_size
+        # Striatum should have separate D1 and D2 weights for cortex:l5 source
+        assert "cortex:l5_d1" in striatum.synaptic_weights
+        assert "cortex:l5_d2" in striatum.synaptic_weights
 
-    @pytest.mark.skip(reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md")
+        # Both D1 and D2 should match L5 size (input dimension)
+        assert striatum.synaptic_weights["cortex:l5_d1"].shape[1] == cortex.l5_size
+        assert striatum.synaptic_weights["cortex:l5_d2"].shape[1] == cortex.l5_size
+
+        # D1 and D2 should have different output dimensions (neuron counts)
+        assert striatum.synaptic_weights["cortex:l5_d1"].shape[0] == striatum.d1_size
+        assert striatum.synaptic_weights["cortex:l5_d2"].shape[0] == striatum.d2_size
+
     def test_cortex_outputs_to_multiple_targets_with_different_layers(self, global_config):
-        """Test cortex routing L2/3 to one target and L5 to another."""
+        """Test cortex routing L2/3 to one target and L5 to another with D1/D2 separation."""
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
@@ -255,11 +262,14 @@ class TestLayerSpecificCorticalRouting:
         hippo = brain.components["hippocampus"]
         striatum = brain.components["striatum"]
 
-        # Each target receives appropriate layer size
+        # Hippocampus receives L2/3 size
         assert hippo.input_size == cortex.l23_size
-        # Check striatum synaptic weights shape
-        assert "cortex:l5" in striatum.synaptic_weights
-        assert striatum.synaptic_weights["cortex:l5"].shape[1] == cortex.l5_size
+
+        # Striatum has D1 and D2 weights for cortex:l5 source
+        assert "cortex:l5_d1" in striatum.synaptic_weights
+        assert "cortex:l5_d2" in striatum.synaptic_weights
+        assert striatum.synaptic_weights["cortex:l5_d1"].shape[1] == cortex.l5_size
+        assert striatum.synaptic_weights["cortex:l5_d2"].shape[1] == cortex.l5_size
 
 
 class TestMultipleInputPorts:
@@ -318,7 +328,7 @@ class TestMultipleInputPorts:
 
     @pytest.mark.skip(reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md")
     def test_striatum_multiple_input_sources(self, global_config):
-        """Test striatum receiving inputs from cortex, hippocampus, and PFC."""
+        """Test striatum receiving inputs from cortex, hippocampus, and PFC with D1/D2 separation."""
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
@@ -344,10 +354,24 @@ class TestMultipleInputPorts:
         pfc = brain.components["pfc"]
         striatum = brain.components["striatum"]
 
-        # Striatum n_input should sum cortical and hippocampal
-        # (pfc_modulation is separate for goal conditioning)
-        expected_input = cortex.l5_size + hippo.n_output
-        assert striatum.n_input == expected_input
+        # Striatum should have D1 and D2 weights for each source
+        # Cortex source
+        assert "cortex:l5_d1" in striatum.synaptic_weights
+        assert "cortex:l5_d2" in striatum.synaptic_weights
+        assert striatum.synaptic_weights["cortex:l5_d1"].shape[1] == cortex.l5_size
+        assert striatum.synaptic_weights["cortex:l5_d2"].shape[1] == cortex.l5_size
+
+        # Hippocampus source
+        assert "hippocampus_d1" in striatum.synaptic_weights
+        assert "hippocampus_d2" in striatum.synaptic_weights
+        assert striatum.synaptic_weights["hippocampus_d1"].shape[1] == hippo.n_output
+        assert striatum.synaptic_weights["hippocampus_d2"].shape[1] == hippo.n_output
+
+        # Verify D1 and D2 output dimensions
+        assert striatum.synaptic_weights["cortex:l5_d1"].shape[0] == striatum.d1_size
+        assert striatum.synaptic_weights["cortex:l5_d2"].shape[0] == striatum.d2_size
+        assert striatum.synaptic_weights["hippocampus_d1"].shape[0] == striatum.d1_size
+        assert striatum.synaptic_weights["hippocampus_d2"].shape[0] == striatum.d2_size
 
 
 class TestPortBasedForwardPass:
