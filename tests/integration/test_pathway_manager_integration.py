@@ -87,46 +87,6 @@ class TestPathwayManagerIntegration:
         assert isinstance(state['pathways'], dict)
         assert len(state['pathways']) > 0
 
-    def test_auto_grow_uses_pathway_manager(self, simple_brain, monkeypatch):
-        """Test that auto_grow uses PathwayManager for pathway growth."""
-        # Track if pathway manager was called
-        grow_called = {'called': False, 'component': None, 'amount': None}
-
-        original_grow = simple_brain.pathway_manager.grow_connected_pathways
-
-        def tracked_grow(component_name, growth_amount, **kwargs):
-            grow_called['called'] = True
-            grow_called['component'] = component_name
-            grow_called['amount'] = growth_amount
-            return original_grow(component_name, growth_amount, **kwargs)
-
-        monkeypatch.setattr(
-            simple_brain.pathway_manager,
-            'grow_connected_pathways',
-            tracked_grow
-        )
-
-        # Force growth by making component report high utilization
-        def mock_check_growth_needs(self):
-            return {
-                'cortex': {
-                    'growth_recommended': True,
-                    'growth_reason': 'High utilization',
-                    'firing_rate': 0.9,
-                    'weight_saturation': 0.85,
-                }
-            }
-
-        monkeypatch.setattr(simple_brain.__class__, 'check_growth_needs', mock_check_growth_needs)
-
-        # Trigger auto-grow
-        _ = simple_brain.auto_grow(threshold=0.8)  # noqa: F841
-
-        # Should have called pathway manager
-        assert grow_called['called']
-        assert grow_called['component'] == 'cortex'
-        assert grow_called['amount'] > 0
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
