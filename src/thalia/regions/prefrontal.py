@@ -336,6 +336,110 @@ class PrefrontalState(BaseRegionState):
         self.stp_recurrent_state = None
 
 
+# =============================================================================
+# HETEROGENEOUS WM NEURON SAMPLING (Phase 1B Enhancement)
+# =============================================================================
+
+
+def sample_heterogeneous_wm_neurons(
+    n_neurons: int,
+    stability_cv: float = 0.3,
+    tau_mem_min: float = 100.0,
+    tau_mem_max: float = 500.0,
+    device: str = "cpu",
+    seed: Optional[int] = None,
+) -> Dict[str, torch.Tensor]:
+    """Sample heterogeneous working memory neuron properties.
+
+    Creates a distribution of neurons with varying maintenance capabilities:
+    - Stable neurons: Strong recurrence, long time constants (~500ms)
+    - Flexible neurons: Weak recurrence, short time constants (~100ms)
+
+    This heterogeneity enables:
+    - Stable neurons maintain context/goals over long delays
+    - Flexible neurons enable rapid updating for new information
+    - Mixed selectivity for distributed representations
+
+    Biological motivation:
+    - Real PFC neurons show 2-10× variability in maintenance properties
+    - Heterogeneity provides robustness and mixed selectivity
+    - Enables both persistent representations and flexible updating
+
+    References:
+    - Rigotti et al. (2013): Mixed selectivity in prefrontal cortex
+    - Murray et al. (2017): Stable population coding for working memory
+    - Wasmuht et al. (2018): Intrinsic neuronal dynamics in PFC
+
+    Args:
+        n_neurons: Number of neurons to sample
+        stability_cv: Coefficient of variation for recurrent strength (default 0.3)
+        tau_mem_min: Minimum membrane time constant in ms (default 100.0)
+        tau_mem_max: Maximum membrane time constant in ms (default 500.0)
+        device: Device for tensors ('cpu' or 'cuda')
+        seed: Random seed for reproducibility (optional)
+
+    Returns:
+        Dictionary with:
+        - recurrent_strength: [n_neurons] tensor of recurrent weights (0.2-1.0 range)
+        - tau_mem: [n_neurons] tensor of membrane time constants (100-500ms)
+        - neuron_type: [n_neurons] tensor of 0 (flexible) or 1 (stable) labels
+
+    Example:
+        >>> props = sample_heterogeneous_wm_neurons(100, stability_cv=0.3)
+        >>> props['recurrent_strength']  # Shape: [100], mean ~0.6, CV ~0.3
+        >>> props['tau_mem']              # Shape: [100], range 100-500ms
+        >>> props['neuron_type']          # Shape: [100], 0=flexible, 1=stable
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+
+    device_obj = torch.device(device)
+
+    # Sample recurrent strength from lognormal distribution
+    # Mean = 0.6 (moderate recurrence), CV = stability_cv
+    # This creates a distribution with:
+    # - Lower tail: Flexible neurons (weak recurrence ~0.2-0.4)
+    # - Upper tail: Stable neurons (strong recurrence ~0.8-1.0)
+    mean_recurrent = 0.6
+    std_recurrent = mean_recurrent * stability_cv
+
+    # Lognormal parameters: log_mean, log_std
+    # For lognormal: mean = exp(μ + σ²/2), var = [exp(σ²) - 1] * exp(2μ + σ²)
+    # Solve for μ, σ given desired mean and std
+    log_var = torch.log(torch.tensor(1.0 + (std_recurrent / mean_recurrent) ** 2))
+    log_std = torch.sqrt(log_var)
+    log_mean = torch.log(torch.tensor(mean_recurrent)) - log_var / 2
+
+    # Sample from lognormal
+    recurrent_strength = torch.distributions.LogNormal(log_mean, log_std).sample((n_neurons,))
+
+    # Clamp to reasonable range [0.2, 1.0]
+    # 0.2 = minimum for any persistent activity
+    # 1.0 = maximum stability (approaches attractor)
+    recurrent_strength = torch.clamp(recurrent_strength, 0.2, 1.0)
+
+    # Tau_mem scales with recurrent strength
+    # Stable neurons (high recurrence) have longer time constants
+    # Linear mapping: recurrent 0.2→100ms, recurrent 1.0→500ms
+    tau_mem = tau_mem_min + (tau_mem_max - tau_mem_min) * (recurrent_strength - 0.2) / 0.8
+
+    # Classify neurons as flexible (0) or stable (1)
+    # Threshold at median: lower half = flexible, upper half = stable
+    median_strength = torch.median(recurrent_strength)
+    neuron_type = (recurrent_strength > median_strength).long()
+
+    # Move to device
+    recurrent_strength = recurrent_strength.to(device_obj)
+    tau_mem = tau_mem.to(device_obj)
+    neuron_type = neuron_type.to(device_obj)
+
+    return {
+        "recurrent_strength": recurrent_strength,
+        "tau_mem": tau_mem,
+        "neuron_type": neuron_type,
+    }
+
+
 class DopamineGatingSystem:
     """Dopamine-based gating for working memory updates.
 
@@ -464,6 +568,41 @@ class Prefrontal(NeuralRegion):
         self.n_output = self.n_neurons  # PFC output = neuron count
         self.total_neurons = self.n_neurons
 
+        # =====================================================================
+        # HETEROGENEOUS WORKING MEMORY NEURONS (Phase 1B)
+        # =====================================================================
+        # Sample heterogeneous recurrent strengths and time constants
+        # mimicking biological diversity in WM stability across neurons
+        if config.use_heterogeneous_wm:
+            wm_properties = sample_heterogeneous_wm_neurons(
+                n_neurons=self.n_neurons,
+                stability_cv=config.stability_cv,
+                tau_mem_min=config.tau_mem_min,
+                tau_mem_max=config.tau_mem_max,
+                device=self.device,
+                seed=None,  # Use random seed for variability
+            )
+            self._recurrent_strength = wm_properties["recurrent_strength"]
+            self._tau_mem_heterogeneous = wm_properties["tau_mem"]
+            self._neuron_type = wm_properties["neuron_type"]  # 0=flexible, 1=stable
+        else:
+            self._recurrent_strength = None
+            self._tau_mem_heterogeneous = None
+            self._neuron_type = None
+
+        # =====================================================================
+        # D1/D2 RECEPTOR SUBTYPES (Phase 1B)
+        # =====================================================================
+        # Split neurons into D1-dominant (excitatory DA response) and
+        # D2-dominant (inhibitory DA response) populations
+        if config.use_d1_d2_subtypes:
+            n_d1 = int(self.n_neurons * config.d1_fraction)
+            self._d1_neurons = torch.arange(n_d1, device=self.device)
+            self._d2_neurons = torch.arange(n_d1, self.n_neurons, device=self.device)
+        else:
+            self._d1_neurons = None
+            self._d2_neurons = None
+
         # Initialize NeuralRegion with total neurons
         super().__init__(
             n_neurons=self.n_neurons,
@@ -506,10 +645,16 @@ class Prefrontal(NeuralRegion):
             ),
             requires_grad=False
         )
-        # Initialize with some self-excitation
-        self.rec_weights.data += torch.eye(
-            self.n_neurons, device=self.device
-        ) * config.recurrent_strength
+        # Initialize with self-excitation (heterogeneous if enabled)
+        if config.use_heterogeneous_wm:
+            # Scale diagonal by heterogeneous recurrent strengths
+            diag_strength = torch.diag(self._recurrent_strength)
+            self.rec_weights.data += diag_strength
+        else:
+            # Uniform self-excitation
+            self.rec_weights.data += torch.eye(
+                self.n_neurons, device=self.device
+            ) * config.recurrent_strength
 
         # Lateral inhibition weights
         self.inhib_weights = nn.Parameter(
@@ -780,6 +925,30 @@ class Prefrontal(NeuralRegion):
 
         # Run through neurons (returns 1D bool spikes)
         output_spikes, _ = self.neurons(g_exc, g_inh)
+
+        # =====================================================================
+        # D1/D2 RECEPTOR SUBTYPES - Differential Dopamine Modulation (Phase 1B)
+        # =====================================================================
+        # D1-dominant neurons: DA increases excitability (excitatory response)
+        # D2-dominant neurons: DA decreases excitability (inhibitory response)
+        # Biological: D1 receptors increase cAMP → enhanced firing
+        #            D2 receptors decrease cAMP → reduced firing
+        if self.pfc_config.use_d1_d2_subtypes and da_level != 0.0:
+            # Create output buffer for modulated activity
+            modulated_output = output_spikes.float().clone()
+
+            # D1 neurons: Excitatory DA response (gain boost)
+            d1_gain = 1.0 + self.pfc_config.d1_da_gain * da_level
+            modulated_output[self._d1_neurons] *= d1_gain
+
+            # D2 neurons: Inhibitory DA response (gain reduction)
+            d2_gain = 1.0 - self.pfc_config.d2_da_gain * da_level
+            modulated_output[self._d2_neurons] *= d2_gain
+
+            # Convert back to spikes (probabilistic based on modulated activity)
+            # High activity → more likely to spike
+            spike_probs = modulated_output.clamp(0, 1)
+            output_spikes = (torch.rand_like(spike_probs) < spike_probs).bool()
 
         # Update working memory with gating
         # High gate (high DA) → update with new activity
