@@ -125,10 +125,9 @@ class TestHippocampusStateEdgeCases:
         # Verify CA3 persistent activity preserved
         assert torch.allclose(state2.ca3_persistent, state1.ca3_persistent)
 
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_save_cuda_load_cpu(self, tmp_path):
         """Test save on CUDA, load on CPU (if available)."""
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
 
         # Create state on CUDA
         state1 = HippocampusState(

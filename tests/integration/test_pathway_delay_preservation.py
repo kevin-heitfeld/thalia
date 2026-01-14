@@ -245,10 +245,9 @@ class TestAxonalProjectionDelayPreservation:
             # Output is boolean, convert for comparison
             assert torch.allclose(output_dict["cortex"].float(), torch.zeros(64))
 
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_device_transfer_preserves_delays(self):
         """Test delay buffer preservation across device transfer (CPU↔CUDA)."""
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
 
         # Create projection on CPU
         projection = AxonalProjection(

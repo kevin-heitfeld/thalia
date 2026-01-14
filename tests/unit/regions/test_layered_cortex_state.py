@@ -48,10 +48,9 @@ class TestLayeredCortexStateEdgeCases:
         assert torch.equal(data["stp_l23_recurrent_state"]["u"], stp_state["u"])
         assert torch.equal(data["stp_l23_recurrent_state"]["x"], stp_state["x"])
 
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_file_io_with_cuda_transfer(self, tmp_path):
         """Test save on CPU, load on CUDA (if available)."""
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
 
         # Create state on CPU
         sizes = {

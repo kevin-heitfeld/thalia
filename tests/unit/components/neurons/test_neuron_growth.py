@@ -157,17 +157,14 @@ class TestNeuronGrowth:
         # New thresholds use default
         assert neurons.v_threshold[initial_n:].allclose(torch.full((growth_amount,), config.v_threshold))
 
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_grow_neurons_device_consistency(self):
         """Test that growth respects device placement."""
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-
         config = ConductanceLIFConfig()
         initial_n = 50
         growth_amount = 30
         device = torch.device("cuda")
-        neurons = ConductanceLIF(n_neurons=initial_n, config=config)
-        neurons.to(device)
+        neurons = ConductanceLIF(n_neurons=initial_n, config=config, device=device)
         neurons.reset_state()
 
         # Grow
