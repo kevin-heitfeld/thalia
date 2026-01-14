@@ -258,15 +258,26 @@ class TestMultiRegionIndependence:
     @given(seed=st.integers(min_value=0, max_value=10000))
     @settings(max_examples=20, deadline=None)
     def test_deterministic_forward_pass(self, seed):
-        """Property: Same state + same input → same output (determinism).
+        """Property: Same state + same input + same RNG → same output (determinism).
 
-        TODO: This test currently fails due to non-determinism in hippocampus
-        spike generation. This is a known issue that needs investigation - likely
-        related to stochastic neuron dynamics or incomplete state capture.
-        Marking as xfail until hippocampus determinism is resolved.
+        Currently skipped because neuron state (refractory counters, conductances)
+        is NOT saved in get_state/load_state. This means two instances with "same state"
+        actually have different neuron states, causing non-deterministic forward passes.
+
+        To fix this, we need to:
+        1. Add neuron state to HippocampusState (and all region states)
+        2. Call neurons.get_state() in region get_state()
+        3. Call neurons.load_state() in region load_state()
+
+        This is tracked in: TODO - add issue number
         """
         import pytest
-        pytest.skip("Hippocampus non-determinism needs investigation - not related to config migration")
+        pytest.skip(
+            "Requires neuron state serialization (refractory, g_E, g_I, g_adapt). "
+            "Region get_state/load_state currently only saves membrane voltages, "
+            "not full neuron model state. This causes non-determinism even with "
+            "same RNG state."
+        )
         torch.manual_seed(seed)
 
         # Use hippocampus (no exploration randomness like striatum)
@@ -276,11 +287,12 @@ class TestMultiRegionIndependence:
         for _ in range(5):
             hippocampus.forward(torch.rand(20) > 0.6)
 
-        # Save state
+        # Save state AND RNG state
         state = hippocampus.get_state()
+        rng_state = torch.get_rng_state()
 
         # Create two new instances with same loaded state
-        torch.manual_seed(seed + 1)  # Reset RNG for neuron noise
+        torch.manual_seed(seed + 1)  # Reset RNG for initialization
         hippocampus1 = create_test_hippocampus(input_size=20, device="cpu", dt_ms=1.0)
         hippocampus1.load_state(state)
 
@@ -290,9 +302,12 @@ class TestMultiRegionIndependence:
 
         # Run same input with same RNG - should get same output
         test_input = torch.rand(20) > 0.6
-        torch.manual_seed(seed + 2)
+
+        # Set same RNG state for both forward passes
+        torch.set_rng_state(rng_state)
         output1 = hippocampus1.forward(test_input.clone())
-        torch.manual_seed(seed + 2)  # Reset to same RNG
+
+        torch.set_rng_state(rng_state)  # Reset to same RNG
         output2 = hippocampus2.forward(test_input.clone())
 
         # Check determinism (spike outputs should be identical with same RNG)
