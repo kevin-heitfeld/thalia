@@ -146,13 +146,15 @@ class PrefrontalConfig(NeuralComponentConfig):
     adapt_tau: float = 150.0      # Slower decay (longer timescale for WM)
 
     # =========================================================================
-    # SHORT-TERM PLASTICITY (STP) for recurrent connections
+    # SHORT-TERM PLASTICITY (STP)
     # =========================================================================
-    # PFC recurrent connections show SHORT-TERM DEPRESSION, preventing
-    # frozen attractors. This allows working memory to be updated.
-    stp_recurrent_enabled: bool = True
+    # Feedforward connections: Facilitation for temporal filtering
+    stp_feedforward_enabled: bool = True
+    """Enable short-term plasticity on feedforward (input) connections."""
 
-    # Note: Synaptic scaling parameters inherited from NeuralComponentConfig
+    # Recurrent connections: Depression prevents frozen attractors
+    stp_recurrent_enabled: bool = True
+    """Enable short-term plasticity on recurrent connections."""
 
     # =========================================================================
     # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
@@ -268,6 +270,9 @@ class PrefrontalState(BaseRegionState):
     # STP state (recurrent connections)
     stp_recurrent_state: Optional[Dict[str, Any]] = None
     """Short-term plasticity state for recurrent connections."""
+
+    stp_feedforward_state: Optional[Dict[str, Any]] = None
+    """Short-term plasticity state for feedforward connections."""
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize state to dictionary for checkpointing."""
@@ -757,6 +762,22 @@ class Prefrontal(NeuralRegion):
         neurons.to(self.device)
 
         # =====================================================================
+        # SHORT-TERM PLASTICITY for feedforward connections
+        # =====================================================================
+        # PFC feedforward connections show SHORT-TERM FACILITATION/DEPRESSION
+        # for temporal filtering and gain control during encoding.
+        if cfg.stp_feedforward_enabled:
+            self.stp_feedforward = ShortTermPlasticity(
+                n_pre=self.input_size,
+                n_post=self.n_neurons,
+                config=STPConfig.from_type(STPType.FACILITATING, dt=cfg.dt_ms),
+                per_synapse=True,
+            )
+            self.stp_feedforward.to(self.device)
+        else:
+            self.stp_feedforward = None
+
+        # =====================================================================
         # SHORT-TERM PLASTICITY for recurrent connections
         # =====================================================================
         # PFC recurrent connections show SHORT-TERM DEPRESSION, preventing
@@ -774,6 +795,10 @@ class Prefrontal(NeuralRegion):
 
         # =====================================================================
         # Phase 2 Registration: Opt-in auto-growth for STP modules
+        if self.stp_feedforward is not None:
+            # Feedforward STP (input -> n_output): grows during grow_input (pre) and grow_output (post)
+            self._register_stp('stp_feedforward', direction='pre', recurrent=False)
+
         if self.stp_recurrent is not None:
             # Recurrent STP (n_output -> n_output): only grows during grow_output
             self._register_stp('stp_recurrent', direction='post', recurrent=True)
@@ -803,7 +828,7 @@ class Prefrontal(NeuralRegion):
         )
 
         # Reset subsystems using helper
-        self._reset_subsystems('neurons', 'dopamine_system', 'stp_recurrent')
+        self._reset_subsystems('neurons', 'dopamine_system', 'stp_recurrent', 'stp_feedforward')
 
     def forward(
         self,
@@ -876,8 +901,19 @@ class Prefrontal(NeuralRegion):
         rec_gain = compute_oscillator_modulated_gain(PFC_RECURRENT_GAIN_MIN, PFC_RECURRENT_GAIN_RANGE, retrieval_mod)
 
         # Feedforward input - modulated by encoding phase
-        # Apply synaptic weights: weights[n_output, n_input] @ input[n_input] → [n_output]
-        ff_input = (self.synaptic_weights["default"] @ input_spikes.float()) * ff_gain
+        # Apply STP if enabled (temporal filtering and gain control)
+        if hasattr(self, 'stp_feedforward') and self.stp_feedforward is not None:
+            # Apply STP to feedforward connections (1D → 2D per-synapse efficacy)
+            # stp_efficacy has shape [n_output, n_input] - per-synapse modulation
+            stp_efficacy = self.stp_feedforward(input_spikes.float())
+            # Effective weights: element-wise multiply with STP efficacy
+            effective_ff_weights = self.synaptic_weights["default"] * stp_efficacy.t()
+            # Apply synaptic weights: weights[n_output, n_input] @ input[n_input] → [n_output]
+            ff_input = (effective_ff_weights @ input_spikes.float()) * ff_gain
+        else:
+            # No STP: direct feedforward
+            # Apply synaptic weights: weights[n_output, n_input] @ input[n_input] → [n_output]
+            ff_input = (self.synaptic_weights["default"] @ input_spikes.float()) * ff_gain
 
         # =====================================================================
         # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -1062,11 +1098,15 @@ class Prefrontal(NeuralRegion):
             sparsity=sparsity
         )
 
-        # NOTE: Do NOT grow STP here - Prefrontal only has recurrent STP,
-        # which tracks n_output (not n_input) and is grown in grow_output() only
+        # NOTE: STP auto-growth via Phase 2 registration system:
+        # - stp_feedforward (if enabled): auto-grows via _auto_grow_registered_components('input')
+        # - stp_recurrent: only grows in grow_output() (tracks n_output, not n_input)
 
         # Update instance variable
         self.input_size += n_new
+
+        # Auto-grow registered STP modules (Phase 2)
+        self._auto_grow_registered_components('input', n_new)
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
@@ -1457,9 +1497,13 @@ class Prefrontal(NeuralRegion):
             PrefrontalState with current region state
         """
         # Capture STP state if enabled
-        stp_state = None
+        stp_recurrent_state = None
         if self.stp_recurrent is not None:
-            stp_state = self.stp_recurrent.get_state()
+            stp_recurrent_state = self.stp_recurrent.get_state()
+
+        stp_feedforward_state = None
+        if hasattr(self, 'stp_feedforward') and self.stp_feedforward is not None:
+            stp_feedforward_state = self.stp_feedforward.get_state()
 
         return PrefrontalState(
             spikes=self.state.spikes.clone() if self.state.spikes is not None else None,
@@ -1470,7 +1514,8 @@ class Prefrontal(NeuralRegion):
             dopamine=self.state.dopamine,
             acetylcholine=self.state.acetylcholine,
             norepinephrine=self.state.norepinephrine,
-            stp_recurrent_state=stp_state,
+            stp_recurrent_state=stp_recurrent_state,
+            stp_feedforward_state=stp_feedforward_state,
         )
 
     def load_state(self, state: PrefrontalState) -> None:
@@ -1513,6 +1558,9 @@ class Prefrontal(NeuralRegion):
         # Restore STP state
         if state.stp_recurrent_state is not None and self.stp_recurrent is not None:
             self.stp_recurrent.load_state(state.stp_recurrent_state)
+
+        if state.stp_feedforward_state is not None and hasattr(self, 'stp_feedforward') and self.stp_feedforward is not None:
+            self.stp_feedforward.load_state(state.stp_feedforward_state)
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.
