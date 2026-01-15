@@ -73,6 +73,7 @@ def striatum_config_no_delays(device):
 def striatum_with_delays(striatum_config_with_delays, striatum_sizes_with_delays, device):
     """Create striatum instance with delays."""
     striatum = Striatum(config=striatum_config_with_delays, sizes=striatum_sizes_with_delays, device=device)
+    striatum.add_input_source_striatum("default", striatum_sizes_with_delays['input_size'])
     striatum.reset_state()
     return striatum
 
@@ -81,6 +82,7 @@ def striatum_with_delays(striatum_config_with_delays, striatum_sizes_with_delays
 def striatum_no_delays(striatum_config_no_delays, striatum_sizes_with_delays, device):
     """Create striatum instance without delays."""
     striatum = Striatum(config=striatum_config_no_delays, sizes=striatum_sizes_with_delays, device=device)
+    striatum.add_input_source_striatum("default", striatum_sizes_with_delays['input_size'])
     striatum.reset_state()
     return striatum
 
@@ -99,6 +101,7 @@ def test_delay_configuration_affects_temporal_competition(striatum_config_with_d
     - 10ms window where D1 can initiate action before D2 inhibition
     """
     striatum = Striatum(config=striatum_config_with_delays, sizes=striatum_sizes_with_delays, device=device)
+    striatum.add_input_source_striatum("default", striatum_sizes_with_delays['input_size'])
     striatum.reset_state()
 
     # Calculate expected delay difference from config
@@ -115,7 +118,7 @@ def test_delay_configuration_affects_temporal_competition(striatum_config_with_d
     d2_first_vote_time = None
 
     for t in range(50):
-        _ = striatum(input_spikes)
+        _ = striatum({"default": input_spikes})
         d1_votes, d2_votes = striatum.state_tracker.get_accumulated_votes()
 
         if d1_first_vote_time is None and d1_votes.sum() > 0:
@@ -142,7 +145,7 @@ def test_delays_work_from_first_forward(striatum_with_delays, striatum_sizes_wit
     """Test that delays take effect immediately from first forward pass."""
     # First forward pass with input
     input_spikes = generate_sparse_spikes(50, firing_rate=0.2)
-    output = striatum_with_delays(input_spikes)
+    output = striatum_with_delays({"default": input_spikes})
 
     # Behavioral contract: output should be valid even on first pass
     assert output is not None
@@ -164,7 +167,7 @@ def test_delays_work_from_first_forward(striatum_with_delays, striatum_sizes_wit
     d1_delay_steps = int(config.d1_to_output_delay_ms / config.dt_ms)
 
     for _ in range(d1_delay_steps):
-        _ = striatum_with_delays(input_spikes)
+        _ = striatum_with_delays({"default": input_spikes})
 
     # Now D1 should have some votes
     d1_votes, d2_votes = striatum_with_delays.state_tracker.get_accumulated_votes()
@@ -174,6 +177,8 @@ def test_delays_work_from_first_forward(striatum_with_delays, striatum_sizes_wit
 def test_d1_arrives_before_d2(striatum_config_with_delays, striatum_sizes_with_delays, device):
     """Test that D1 votes arrive before D2 votes (temporal competition)."""
     striatum = Striatum(config=striatum_config_with_delays, sizes=striatum_sizes_with_delays, device=device)
+
+    striatum.add_input_source_striatum("default", striatum_sizes_with_delays['input_size'])
     striatum.reset_state()
 
     # Create strong input that will activate D1 and D2
@@ -187,7 +192,7 @@ def test_d1_arrives_before_d2(striatum_config_with_delays, striatum_sizes_with_d
 
     # Run until D1 delay has passed (D1 should have votes, D2 should not)
     for _ in range(d1_delay_steps + 1):
-        _ = striatum(input_spikes)
+        _ = striatum({"default": input_spikes})
 
     # Get accumulated votes via PUBLIC API (behavioral contract)
     d1_accumulated_after_d1_delay, d2_accumulated_after_d1_delay = striatum.state_tracker.get_accumulated_votes()
@@ -206,7 +211,7 @@ def test_d1_arrives_before_d2(striatum_config_with_delays, striatum_sizes_with_d
 
     # Now run until D2 delay has also passed
     for _ in range(d2_delay_steps - d1_delay_steps):
-        _ = striatum(input_spikes)
+        _ = striatum({"default": input_spikes})
 
     # Now both D1 and D2 should have accumulated votes (via PUBLIC API)
     d1_accumulated_final, d2_accumulated_final = striatum.state_tracker.get_accumulated_votes()
@@ -221,7 +226,7 @@ def test_zero_delays_produce_immediate_votes(striatum_no_delays):
     input_spikes = torch.ones(50, dtype=torch.bool)
 
     # Run single forward pass
-    _ = striatum_no_delays(input_spikes)
+    _ = striatum_no_delays({"default": input_spikes})
 
     # Behavioral contract: both D1 and D2 votes appear immediately
     d1_votes, d2_votes = striatum_no_delays.state_tracker.get_accumulated_votes()
@@ -249,7 +254,7 @@ def test_circular_buffer_wrapping(striatum_with_delays):
     # Run for more than buffer size to force wrapping
     # BEHAVIORAL CONTRACT: No crashes, no NaN in outputs
     for _ in range(buffer_size + 10):
-        _ = striatum_with_delays(input_spikes)
+        _ = striatum_with_delays({"default": input_spikes})
 
     # Validate behavior: votes should still be valid (no NaN/inf)
     # This tests buffer health WITHOUT accessing internal buffer state
@@ -263,7 +268,7 @@ def test_circular_buffer_wrapping(striatum_with_delays):
     # Run multiple timesteps with strong input to allow delays to deliver spikes
     strong_input = torch.ones(50, dtype=torch.bool)
     for _ in range(max(d1_delay_steps, d2_delay_steps) + 5):
-        _ = striatum_with_delays(strong_input)
+        _ = striatum_with_delays({"default": strong_input})
     d1_after, d2_after = striatum_with_delays.state_tracker.get_accumulated_votes()
     # After strong input with sufficient delay time, at least one pathway should show increased votes
     assert d1_after.sum() > d1_votes.sum() or d2_after.sum() > d2_votes.sum(), \
@@ -275,24 +280,25 @@ def test_checkpoint_preserves_delay_behavior(striatum_with_delays, striatum_conf
     # Run forward passes to build up delayed state
     input_spikes = torch.ones(50, dtype=torch.bool)
     for _ in range(30):  # Run past both delays
-        _ = striatum_with_delays(input_spikes)
+        _ = striatum_with_delays({"default": input_spikes})
 
     # Save checkpoint BEFORE seeing future behavior
     checkpoint = striatum_with_delays.checkpoint_manager.get_full_state()
 
     # Continue running original striatum to see future behavior
     for _ in range(10):
-        _ = striatum_with_delays(input_spikes)
+        _ = striatum_with_delays({"default": input_spikes})
     d1_votes_future, d2_votes_future = striatum_with_delays.state_tracker.get_accumulated_votes()
 
     # Create new striatum and restore checkpoint (back to 30-step state)
     striatum_restored = Striatum(config=striatum_config_with_delays, sizes=striatum_sizes_with_delays, device=device)
+    striatum_restored.add_input_source("default", striatum_sizes_with_delays['input_size'])
     striatum_restored.reset_state()
     striatum_restored.checkpoint_manager.load_full_state(checkpoint)
 
     # Run restored striatum for same 10 steps
     for _ in range(10):
-        _ = striatum_restored(input_spikes)
+        _ = striatum_restored({"default": input_spikes})
     d1_votes_restored, d2_votes_restored = striatum_restored.state_tracker.get_accumulated_votes()
 
     # Behavioral contract: restored striatum should produce same future behavior
@@ -328,7 +334,18 @@ def test_different_delay_values(device):
         d2_to_output_delay_ms=30.0,  # 30ms (20ms difference!)
         homeostasis_enabled=False,
     )
+    striatum_small = Striatum(config=config_small_diff, sizes=sizes, device=device)
+    striatum_small.add_input_source("default", sizes['input_size'])
+
+    # Test with large delay difference
+    config_large_diff = StriatumConfig(
+        dt_ms=1.0,
+        d1_to_output_delay_ms=10.0,  # 10ms
+        d2_to_output_delay_ms=30.0,  # 30ms (20ms difference!)
+        homeostasis_enabled=False,
+    )
     striatum_large = Striatum(config=config_large_diff, sizes=sizes, device=device)
+    striatum_large.add_input_source("default", sizes['input_size'])
 
     # Test behavioral difference: larger delay difference creates longer competition window
     input_spikes = torch.ones(50, dtype=torch.bool)
@@ -337,7 +354,7 @@ def test_different_delay_values(device):
     striatum_small.reset_state()
     d1_time_small, d2_time_small = None, None
     for t in range(50):
-        _ = striatum_small(input_spikes)
+        _ = striatum_small({"default": input_spikes})
         d1_votes, d2_votes = striatum_small.state_tracker.get_accumulated_votes()
         if d1_time_small is None and d1_votes.sum() > 0:
             d1_time_small = t
@@ -350,7 +367,7 @@ def test_different_delay_values(device):
     striatum_large.reset_state()
     d1_time_large, d2_time_large = None, None
     for t in range(50):
-        _ = striatum_large(input_spikes)
+        _ = striatum_large({"default": input_spikes})
         d1_votes, d2_votes = striatum_large.state_tracker.get_accumulated_votes()
         if d1_time_large is None and d1_votes.sum() > 0:
             d1_time_large = t
@@ -382,11 +399,12 @@ def test_population_coding_with_delays(device):
         homeostasis_enabled=False,
     )
     striatum_pop = Striatum(config=config_pop, sizes=sizes, device=device)
+    striatum_pop.add_input_source("default", sizes['input_size'])
     striatum_pop.reset_state()
 
     # Run forward pass
     input_spikes = generate_sparse_spikes(50, firing_rate=0.2)
-    _ = striatum_pop(input_spikes)
+    _ = striatum_pop({"default": input_spikes})
 
     # Behavioral contract: population coding aggregates to action-level votes
     # Verify votes are tracked per action (4 actions), not per neuron (40 neurons)
@@ -410,11 +428,12 @@ def test_reset_clears_delay_state(device):
         homeostasis_enabled=False,
     )
     striatum = Striatum(config=config, sizes=sizes, device=device)
+    striatum.add_input_source_striatum("default", sizes['input_size'])
 
     # Run forward passes to accumulate votes
     input_spikes = torch.ones(50, dtype=torch.bool)
     for _ in range(30):
-        _ = striatum(input_spikes)
+        _ = striatum({"default": input_spikes})
 
     # Votes should be accumulated
     d1_votes_before, d2_votes_before = striatum.state_tracker.get_accumulated_votes()
@@ -442,13 +461,14 @@ def test_striatum_silent_input(device):
         d2_to_output_delay_ms=25.0,
     )
     striatum = Striatum(config=config, sizes=sizes, device=device)
+    striatum.add_input_source_striatum("default", sizes['input_size'])
 
     # All-zero input
     input_spikes = torch.zeros(50, dtype=torch.bool)
 
     # Run multiple steps
     for _ in range(50):
-        output = striatum(input_spikes)
+        output = striatum({"default": input_spikes})
 
     # Contract: should not crash, produce valid output (D1+D2 neurons = 8)
     assert output.shape == (8,), f"Expected (8,), got {output.shape}"
@@ -472,13 +492,14 @@ def test_striatum_saturated_input(device):
         d2_to_output_delay_ms=25.0,
     )
     striatum = Striatum(config=config, sizes=sizes, device=device)
+    striatum.add_input_source_striatum("default", sizes['input_size'])
 
     # All neurons firing
     input_spikes = torch.ones(50, dtype=torch.bool)
 
     # Run multiple steps with maximum input
     for _ in range(50):
-        output = striatum(input_spikes)
+        output = striatum({"default": input_spikes})
 
     # Contract: should produce valid output without saturation (D1+D2 neurons = 8)
     assert output.shape == (8,), f"Expected (8,), got {output.shape}"
@@ -509,7 +530,7 @@ def test_striatum_extreme_dopamine(device):
     striatum.set_neuromodulators(dopamine=2.0)
 
     # Run forward pass
-    output = striatum(input_spikes)
+    output = striatum({"default": input_spikes})
 
     # Contract: extreme neuromodulation shouldn't cause numerical issues
     assert not torch.isnan(output.float()).any(), "Output should not have NaN"
@@ -530,12 +551,13 @@ def test_striatum_repeated_forward_numerical_stability(device):
         d2_to_output_delay_ms=25.0,
     )
     striatum = Striatum(config=config, sizes=sizes, device=device)
+    striatum.add_input_source_striatum("default", sizes['input_size'])
 
     input_spikes = generate_sparse_spikes(50, firing_rate=0.5)
 
     # Run many forward passes
     for _ in range(200):
-        _output = striatum(input_spikes)
+        _output = striatum({"default": input_spikes})
 
     # Contract: long-term operation shouldn't cause corruption
     d1_votes, d2_votes = striatum.state_tracker.get_accumulated_votes()

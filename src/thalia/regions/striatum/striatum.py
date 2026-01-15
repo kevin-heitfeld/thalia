@@ -938,6 +938,17 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.add_input_source(d2_key, n_input, sparsity=0.0, weight_scale=1.0)
         self.synaptic_weights[d2_key].data = d2_weights
 
+        # Link pathways to parent on first source (for checkpoint compatibility)
+        # Pathways need _parent_striatum_ref and _weight_source to access weights
+        if self.d1_pathway._parent_striatum_ref is None:
+            import weakref
+            self.d1_pathway._parent_striatum_ref = weakref.ref(self)
+            self.d1_pathway._weight_source = d1_key
+        if self.d2_pathway._parent_striatum_ref is None:
+            import weakref
+            self.d2_pathway._parent_striatum_ref = weakref.ref(self)
+            self.d2_pathway._weight_source = d2_key
+
         # Initialize eligibility traces for source-pathway combinations
         if hasattr(self, 'learning') and self.learning is not None:
             self.learning.add_source_eligibility_traces(source_name, n_input)
@@ -2308,11 +2319,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - NET = D1_votes - D2_votes
         - Selected action = argmax(NET)
         """
-        # Convert single tensor to dict if needed (backward compatibility)
-        if isinstance(inputs, torch.Tensor):
-            # Legacy support: wrap as "default" source
-            # Caller must have added "default" source via add_input_source_striatum()
-            inputs = {"default": inputs}
+        # Validate input type - must be dict with multi-source architecture
+        if not isinstance(inputs, dict):
+            raise TypeError(
+                f"Striatum.forward() requires Dict[str, Tensor] input (multi-source architecture). "
+                f"Got {type(inputs).__name__}. "
+                f"Example: striatum.forward({{'cortex:l5': spikes, 'hippocampus': spikes}})"
+            )
 
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION - Per-Source D1/D2 Weights

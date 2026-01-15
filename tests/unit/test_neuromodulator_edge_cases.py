@@ -47,7 +47,9 @@ def create_test_striatum(
     sizes = calc.striatum_from_actions(n_actions, neurons_per_action)
     sizes["input_size"] = input_size
     config = StriatumConfig(device=device, **kwargs)
-    return Striatum(config, sizes, device)
+    striatum = Striatum(config, sizes, device)
+    striatum.add_input_source_striatum("default", input_size)
+    return striatum
 
 
 def create_test_hippocampus(
@@ -97,7 +99,7 @@ def test_striatum_handles_valid_dopamine_range(dopamine, device):
     input_spikes = torch.rand(50, device=device) > 0.8
 
     # Should not crash
-    output = striatum(input_spikes)
+    output = striatum({"default": input_spikes})
 
     # Should not produce NaN or Inf
     assert not torch.isnan(output).any(), f"NaN output with dopamine={dopamine}"
@@ -331,7 +333,7 @@ def test_striatum_stable_with_fluctuating_dopamine(device):
 
     for t, da in enumerate(dopamine_sequence):
         striatum.set_neuromodulators(dopamine=da)
-        output = striatum(input_spikes)
+        output = striatum({"default": input_spikes})
 
         # Should not crash or produce invalid outputs
         assert not torch.isnan(output).any(), \
@@ -388,7 +390,7 @@ def test_striatum_learning_stable_with_valid_dopamine(modulator_value, device):
     # Run learning with strong consistent input
     input_spikes = torch.ones(50, device=device)
     for _ in range(10):
-        striatum(input_spikes)
+        striatum({"default": input_spikes})
 
     # Check weights are still valid
     if hasattr(striatum, 'synaptic_weights'):
@@ -452,7 +454,7 @@ def test_striatum_extended_run_with_valid_dopamine(device):
     input_spikes = torch.rand(50, device=device) > 0.8
 
     for step in range(100):
-        output = striatum(input_spikes)
+        output = striatum({"default": input_spikes})
 
         # Check every 25 steps for efficiency
         if step % 25 == 0:
@@ -490,7 +492,7 @@ def test_multi_region_neuromodulator_stability(device):
 
     # Run all regions
     for _ in range(20):
-        striatum_out = striatum(torch.rand(50, device=device) > 0.8)
+        striatum_out = striatum({"default": torch.rand(50, device=device) > 0.8})
         hippo_out = hippocampus(torch.rand(40, device=device) > 0.8)
         pfc_out = pfc(torch.rand(50, device=device) > 0.8)
 
