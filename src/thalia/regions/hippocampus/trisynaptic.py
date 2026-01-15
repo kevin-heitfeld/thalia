@@ -1677,6 +1677,26 @@ class TrisynapticHippocampus(NeuralRegion):
         # Learning rate modulated by theta phase AND gamma amplitude
         # Continuous: learning automatically weak when encoding_mod is low
         ca3_activity = ca3_spikes.float()  # Already 1D, no squeeze needed
+
+        # =========================================================
+        # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
+        # =========================================================
+        # Trace decay happens CONTINUOUSLY based on time, not conditionally
+        # on activity. This is biologically accurate - molecular traces
+        # decay with their own time constants regardless of neural activity.
+        if self.config.use_multiscale_consolidation:
+            # Compute decay factors
+            fast_decay = dt / self.config.fast_trace_tau_ms
+            slow_decay = dt / self.config.slow_trace_tau_ms
+
+            # Apply decay to fast trace
+            self._ca3_ca3_fast = (1.0 - fast_decay) * self._ca3_ca3_fast
+
+            # Apply decay to slow trace + consolidation transfer
+            consolidation = self.config.consolidation_rate * self._ca3_ca3_fast
+            self._ca3_ca3_slow = (1.0 - slow_decay) * self._ca3_ca3_slow + consolidation
+
+        # Learning happens only when there's CA3 activity
         if ca3_activity.sum() > 0:
             # Hebbian outer product: neurons that fire together wire together
             #
@@ -1713,19 +1733,10 @@ class TrisynapticHippocampus(NeuralRegion):
                 hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
                 dW = dW + hetero_dW
 
-            # =========================================================
-            # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
-            # =========================================================
+            # Add learning to traces (if multi-timescale enabled)
             if self.config.use_multiscale_consolidation:
-                # Fast trace: Immediate synaptic tagging (minutes)
-                fast_decay = dt / self.config.fast_trace_tau_ms
-                self._ca3_ca3_fast = (1.0 - fast_decay) * self._ca3_ca3_fast + dW
-
-                # Slow trace: Systems consolidation (hours)
-                # Gradual transfer from fast to slow (consolidation)
-                slow_decay = dt / self.config.slow_trace_tau_ms
-                consolidation = self.config.consolidation_rate * self._ca3_ca3_fast
-                self._ca3_ca3_slow = (1.0 - slow_decay) * self._ca3_ca3_slow + consolidation
+                # Accumulate new learning into fast trace
+                self._ca3_ca3_fast = self._ca3_ca3_fast + dW
 
                 # Combined weight update: Fast (episodic) + Slow (semantic)
                 # Fast trace dominates initially, slow trace provides stability
@@ -1804,6 +1815,16 @@ class TrisynapticHippocampus(NeuralRegion):
         ca3_activity_for_ca2 = ca3_spikes_for_ca2.float()
         ca2_activity = ca2_spikes.float()
 
+        # Multi-timescale trace decay (continuous, time-based)
+        if self.config.use_multiscale_consolidation:
+            fast_decay = dt / self.config.fast_trace_tau_ms
+            slow_decay = dt / self.config.slow_trace_tau_ms
+
+            self._ca3_ca2_fast = (1.0 - fast_decay) * self._ca3_ca2_fast
+            consolidation = self.config.consolidation_rate * self._ca3_ca2_fast
+            self._ca3_ca2_slow = (1.0 - slow_decay) * self._ca3_ca2_slow + consolidation
+
+        # Learning only when there's activity
         if ca3_activity_for_ca2.sum() > 0 and ca2_activity.sum() > 0:
             # Very weak learning rate (stability hub)
             base_lr = self.config.ca3_ca2_learning_rate * encoding_mod
@@ -1816,15 +1837,8 @@ class TrisynapticHippocampus(NeuralRegion):
 
             dW = effective_lr * torch.outer(ca2_activity, ca3_activity_for_ca2)
 
-            # Multi-timescale consolidation for CA3→CA2
             if self.config.use_multiscale_consolidation:
-                fast_decay = dt / self.config.fast_trace_tau_ms
-                self._ca3_ca2_fast = (1.0 - fast_decay) * self._ca3_ca2_fast + dW
-
-                slow_decay = dt / self.config.slow_trace_tau_ms
-                consolidation = self.config.consolidation_rate * self._ca3_ca2_fast
-                self._ca3_ca2_slow = (1.0 - slow_decay) * self._ca3_ca2_slow + consolidation
-
+                self._ca3_ca2_fast = self._ca3_ca2_fast + dW
                 combined_dW = self._ca3_ca2_fast + self.config.slow_trace_contribution * self._ca3_ca2_slow
                 self.synaptic_weights["ca3_ca2"].data += combined_dW
             else:
@@ -1833,6 +1847,16 @@ class TrisynapticHippocampus(NeuralRegion):
             clamp_weights(self.synaptic_weights["ca3_ca2"].data, self.config.w_min, self.config.w_max)
 
         # EC→CA2 STRONG PLASTICITY (temporal encoding)
+        # Multi-timescale trace decay (continuous, time-based)
+        if self.config.use_multiscale_consolidation:
+            fast_decay = dt / self.config.fast_trace_tau_ms
+            slow_decay = dt / self.config.slow_trace_tau_ms
+
+            self._ec_ca2_fast = (1.0 - fast_decay) * self._ec_ca2_fast
+            consolidation = self.config.consolidation_rate * self._ec_ca2_fast
+            self._ec_ca2_slow = (1.0 - slow_decay) * self._ec_ca2_slow + consolidation
+
+        # Learning only when there's activity
         if input_spikes.float().sum() > 0 and ca2_activity.sum() > 0:
             base_lr = self.config.ec_ca2_learning_rate * encoding_mod
 
@@ -1844,15 +1868,8 @@ class TrisynapticHippocampus(NeuralRegion):
 
             dW = effective_lr * torch.outer(ca2_activity, input_spikes.float())
 
-            # Multi-timescale consolidation for EC→CA2
             if self.config.use_multiscale_consolidation:
-                fast_decay = dt / self.config.fast_trace_tau_ms
-                self._ec_ca2_fast = (1.0 - fast_decay) * self._ec_ca2_fast + dW
-
-                slow_decay = dt / self.config.slow_trace_tau_ms
-                consolidation = self.config.consolidation_rate * self._ec_ca2_fast
-                self._ec_ca2_slow = (1.0 - slow_decay) * self._ec_ca2_slow + consolidation
-
+                self._ec_ca2_fast = self._ec_ca2_fast + dW
                 combined_dW = self._ec_ca2_fast + self.config.slow_trace_contribution * self._ec_ca2_slow
                 self.synaptic_weights["ec_ca2"].data += combined_dW
             else:
