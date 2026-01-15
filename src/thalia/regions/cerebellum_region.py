@@ -584,8 +584,10 @@ class Cerebellum(NeuralRegion):
             )
 
             # Enhanced Purkinje cells (one per output neuron)
+            # Pass granule layer size as n_parallel_fibers for eager initialization
             self.purkinje_cells = torch.nn.ModuleList([
                 EnhancedPurkinjeCell(
+                    n_parallel_fibers=self.granule_layer.n_granule,
                     n_dendrites=self.config.purkinje_n_dendrites,
                     device=device,
                     dt_ms=config.dt_ms,
@@ -900,10 +902,11 @@ class Cerebellum(NeuralRegion):
             # Use efficient in-place neuron growth (ConductanceLIF)
             self.neurons.grow_neurons(n_new)
         else:
-            # Enhanced pathway: add new Purkinje cells
+            # Enhanced pathway: add new Purkinje cells with current granule layer size
             for _ in range(n_new):
                 self.purkinje_cells.append(
                     EnhancedPurkinjeCell(
+                        n_parallel_fibers=self.granule_layer.n_granule,
                         n_dendrites=self.config.purkinje_n_dendrites,
                         device=self.device,
                         dt_ms=self.config.dt_ms,
@@ -1040,7 +1043,7 @@ class Cerebellum(NeuralRegion):
 
                 # Process parallel fibers + climbing fiber
                 # EnhancedPurkinjeCell returns (simple_spikes, complex_spike_occurred)
-                simple_spikes, complex_spike = purkinje(granule_spikes, climbing_fiber)
+                simple_spikes, _complex_spike = purkinje(granule_spikes, climbing_fiber)
                 purkinje_spikes.append(simple_spikes)
 
             purkinje_output = torch.stack(purkinje_spikes)  # [n_output]

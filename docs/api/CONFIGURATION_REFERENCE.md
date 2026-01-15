@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-14 17:31:39
+> Last updated: 2026-01-15 16:07:49
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -77,6 +77,11 @@ Total: 3 configuration classes
 | `her_strategy` | `str` | `'future'` |
 | `her_goal_tolerance` | `float` | `0.1` |
 | `her_buffer_size` | `int` | `1000` |
+| `use_multiscale_consolidation` | `bool` | `False` |
+| `fast_trace_tau_ms` | `float` | `60000.0` |
+| `slow_trace_tau_ms` | `float` | `3600000.0` |
+| `consolidation_rate` | `float` | `0.001` |
+| `slow_trace_contribution` | `float` | `0.1` |
 
 **Used By**:
 
@@ -134,6 +139,10 @@ Total: 3 configuration classes
 | `bcm_enabled` | `bool` | `False` |
 | `bcm_config` | `Optional[BCMConfig]` | `None` |
 | `robustness` | `Optional[RobustnessConfig]` | `None` |
+| `use_layer_heterogeneity` | `bool` | `False` |
+| `layer_tau_mem` | `Dict[str, float]` | `(factory)` |
+| `layer_v_threshold` | `Dict[str, float]` | `(factory)` |
+| `layer_adaptation` | `Dict[str, float]` | `(factory)` |
 
 **Used By**:
 
@@ -202,6 +211,14 @@ Total: 3 configuration classes
 | `d1_to_output_delay_ms` | `float` | `15.0` |
 | `d2_to_output_delay_ms` | `float` | `25.0` |
 | `stp_enabled` | `bool` | `True` |
+| `heterogeneous_stp` | `bool` | `False` |
+| `stp_variability` | `float` | `0.3` |
+| `stp_seed` | `Optional[int]` | `None` |
+| `use_multiscale_eligibility` | `bool` | `False` |
+| `fast_eligibility_tau_ms` | `float` | `500.0` |
+| `slow_eligibility_tau_ms` | `float` | `60000.0` |
+| `eligibility_consolidation_rate` | `float` | `0.01` |
+| `slow_trace_weight` | `float` | `0.3` |
 | `growth_enabled` | `bool` | `True` |
 | `reserve_capacity` | `float` | `0.5` |
 

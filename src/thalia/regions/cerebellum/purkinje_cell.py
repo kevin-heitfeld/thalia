@@ -19,7 +19,7 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
-from typing import Tuple, Optional
+from typing import Tuple
 import torch
 import torch.nn as nn
 
@@ -39,6 +39,7 @@ class EnhancedPurkinjeCell(nn.Module):
 
     def __init__(
         self,
+        n_parallel_fibers: int,
         n_dendrites: int = 100,
         device: str = "cpu",
         dt_ms: float = 1.0,
@@ -46,11 +47,13 @@ class EnhancedPurkinjeCell(nn.Module):
         """Initialize enhanced Purkinje cell.
 
         Args:
+            n_parallel_fibers: Number of parallel fiber inputs (typically granule layer size)
             n_dendrites: Number of dendritic compartments (simplified model)
             device: Torch device
             dt_ms: Simulation timestep
         """
         super().__init__()
+        self.n_parallel_fibers = n_parallel_fibers
         self.n_dendrites = n_dendrites
         self.device = device
         self.dt_ms = dt_ms
@@ -78,11 +81,18 @@ class EnhancedPurkinjeCell(nn.Module):
         self.last_complex_spike_time: int = -1000
         self.complex_spike_refractory_ms: float = 100.0  # ~10 Hz max
         self.timestep: int = 0
-        self.n_parallel_fibers: Optional[int] = None  # Set on first forward()
 
         # Dendritic weights (parallel fiber → dendrites)
-        # Initialized on first forward pass when we know n_parallel_fibers
-        self.dendritic_weights: Optional[nn.Parameter] = None
+        # EAGER INITIALIZATION: Weights created immediately
+        from thalia.components.synapses.weight_init import WeightInitializer
+        self.dendritic_weights = nn.Parameter(
+            WeightInitializer.sparse_random(
+                n_output=1,  # Single Purkinje cell
+                n_input=n_parallel_fibers,
+                sparsity=0.2,  # 20% connectivity (sparse but not ultra-sparse)
+                device=device,
+            )
+        )
 
     def forward(
         self,
@@ -99,20 +109,6 @@ class EnhancedPurkinjeCell(nn.Module):
             simple_spikes: Regular output spikes [bool]
             complex_spike: Whether complex spike occurred [bool]
         """
-        # Lazy weight initialization on first forward pass
-        if self.dendritic_weights is None:
-            self.n_parallel_fibers = parallel_fiber_input.shape[0]
-            # Initialize sparse dendritic weights
-            from thalia.components.synapses.weight_init import WeightInitializer
-            self.dendritic_weights = nn.Parameter(
-                WeightInitializer.sparse_random(
-                    n_output=1,  # Single Purkinje cell
-                    n_input=self.n_parallel_fibers,
-                    sparsity=0.2,  # 20% connectivity (sparse but not ultra-sparse)
-                    device=parallel_fiber_input.device,
-                )
-            )
-
         # Dendritic processing (parallel fiber input to dendrites)
         dendrite_input = torch.mv(self.dendritic_weights, parallel_fiber_input.float())
 
@@ -153,7 +149,7 @@ class EnhancedPurkinjeCell(nn.Module):
         return self.dendrite_calcium
 
     @property
-    def pf_synaptic_weights(self) -> Optional[torch.Tensor]:
+    def pf_synaptic_weights(self) -> torch.Tensor:
         """Get parallel fiber synaptic weights (alias for dendritic_weights)."""
         return self.dendritic_weights
 

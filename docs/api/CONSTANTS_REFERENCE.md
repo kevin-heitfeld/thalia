@@ -1,7 +1,7 @@
 # Constants Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-14 17:31:39
+> Last updated: 2026-01-15 16:07:49
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all module-level constants with biological context, ranges, and scientific references.
@@ -177,7 +177,7 @@ LTD amplitude for cortical STDP (depression when pre follows post).
 
 LTP amplitude for cortical STDP (potentiation when post follows pre).
 
-**References**: Bi & Poo (1998), Clopath et al. (2010)
+**References**: Clopath et al. (2010), Bi & Poo (1998)
 
 **Source**: `[`thalia/regulation/learning_constants.py`](../../src/thalia/regulation/learning_constants.py)`
 
@@ -234,7 +234,7 @@ Long eligibility trace (2 seconds).
 
 Very strong adaptation for cortical L2/3 pyramidal neurons.
 
-**References**: Vives et al. (2000), Cormick et al. (1985)
+**References**: Cormick et al. (1985), Vives et al. (2000)
 
 **Source**: `[`thalia/components/neurons/neuron_constants.py`](../../src/thalia/components/neurons/neuron_constants.py)`
 

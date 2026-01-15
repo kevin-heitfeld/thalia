@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-14 17:31:39
+> Last updated: 2026-01-15 16:07:49
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 45 modules, 586 exports
+Total: 45 modules, 588 exports
 
 ## 📑 Table of Contents
 
@@ -167,7 +167,7 @@ from thalia.components.neurons import ConductanceLIF
 
 **Source**: [`thalia/components/synapses/__init__.py`](../../src/thalia/components/synapses/__init__.py)
 
-**Exports** (17):
+**Exports** (19):
 
 - `InitStrategy`
 - `WeightInitializer`
@@ -179,6 +179,8 @@ from thalia.components.neurons import ConductanceLIF
 - `STPPreset`
 - `get_stp_config`
 - `list_presets`
+- `sample_heterogeneous_stp_params`
+- `create_heterogeneous_stp_configs`
 - `SpikeTrace`
 - `PairedTraces`
 - `TraceConfig`

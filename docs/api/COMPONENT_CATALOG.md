@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-14 17:31:39
+> Last updated: 2026-01-15 16:07:49
 > Generated from: `scripts/generate_api_docs.py`
 
 ![Components](https://img.shields.io/badge/Regions-8-blue) ![Pathways](https://img.shields.io/badge/Pathways-4-green) ![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)
@@ -166,7 +166,7 @@ Total: **8** regions
 
 ### `cerebellum`
 
-**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum_region.py#L464)
+**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum_region.py#L511)
 
 **Config Class**: [`CerebellumConfig`](../../src/thalia/regions/cerebellum_region.py#L104)
 
@@ -234,7 +234,7 @@ Total: **8** regions
 
 ### `prefrontal`
 
-**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal.py#L376)
+**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal.py#L523)
 
 **Aliases**: `pfc`
 

@@ -201,6 +201,7 @@ class TestEnhancedPurkinjeCell:
         """Test Purkinje cell initializes with dendrites."""
         n_dendrites = 100
         purkinje = EnhancedPurkinjeCell(
+            n_parallel_fibers=512,
             n_dendrites=n_dendrites,
             device=device,
             dt_ms=1.0,
@@ -215,6 +216,7 @@ class TestEnhancedPurkinjeCell:
     def test_purkinje_simple_spikes(self, device):
         """Test Purkinje generates simple spikes from parallel fibers."""
         purkinje = EnhancedPurkinjeCell(
+            n_parallel_fibers=512,
             n_dendrites=100,
             device=device,
             dt_ms=1.0,
@@ -239,6 +241,7 @@ class TestEnhancedPurkinjeCell:
     def test_purkinje_complex_spikes(self, device):
         """Test climbing fiber triggers complex spikes."""
         purkinje = EnhancedPurkinjeCell(
+            n_parallel_fibers=512,
             n_dendrites=100,
             device=device,
             dt_ms=1.0,
@@ -267,6 +270,7 @@ class TestEnhancedPurkinjeCell:
     def test_purkinje_complex_spike_refractory(self, device):
         """Test complex spikes have refractory period (~100ms)."""
         purkinje = EnhancedPurkinjeCell(
+            n_parallel_fibers=512,
             n_dendrites=100,
             device=device,
             dt_ms=1.0,
@@ -299,6 +303,7 @@ class TestEnhancedPurkinjeCell:
     def test_purkinje_calcium_dynamics(self, device):
         """Test dendritic calcium dynamics with complex spikes."""
         purkinje = EnhancedPurkinjeCell(
+            n_parallel_fibers=512,
             n_dendrites=100,
             device=device,
             dt_ms=1.0,

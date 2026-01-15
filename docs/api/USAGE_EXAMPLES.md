@@ -1,7 +1,7 @@
 # Usage Examples
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-14 17:31:39
+> Last updated: 2026-01-15 16:07:49
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs usage examples extracted from docstrings and training scripts.

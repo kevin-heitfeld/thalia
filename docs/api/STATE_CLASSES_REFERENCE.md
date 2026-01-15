@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-14 17:31:39
+> Last updated: 2026-01-15 16:07:49
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -50,7 +50,7 @@ Total region states: 8
 
 ---
 
-### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L218)
+### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L265)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -78,7 +78,7 @@ Total region states: 8
 
 ---
 
-### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L279)
+### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L302)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -114,7 +114,7 @@ Total region states: 8
 
 ---
 
-### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L209)
+### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L293)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -177,7 +177,7 @@ Total region states: 8
 
 ---
 
-### [``PrefrontalState``](../../src/thalia/regions/prefrontal.py#L194)
+### [``PrefrontalState``](../../src/thalia/regions/prefrontal.py#L237)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -196,7 +196,7 @@ Total region states: 8
 
 ---
 
-### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L284)
+### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L306)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
