@@ -213,6 +213,53 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
     gap_junction_max_neighbors: int = 12
     """Maximum gap junction neighbors per IO neuron (biological: 6-15, IO is densely coupled)."""
 
+    # =========================================================================
+    # COMPLEX SPIKE DYNAMICS (Phase 2B Enhancement)
+    # =========================================================================
+    # Climbing fibers trigger complex spikes in Purkinje cells - bursts of 2-7
+    # spikes with very short inter-spike intervals (1-2ms). These bursts encode
+    # ERROR MAGNITUDE: larger errors → longer bursts → more calcium influx.
+    #
+    # This provides GRADED ERROR SIGNALING instead of binary (error/no-error),
+    # enabling more nuanced learning: small errors trigger small corrections,
+    # large errors trigger large corrections.
+    #
+    # Biological Evidence:
+    # - Mathy et al. (2009): Complex spikes have 2-7 spikelets per burst
+    # - Davie et al. (2008): Number of spikelets correlates with error magnitude
+    # - Najafi & Medina (2013): Graded complex spikes enable graded learning
+    # - Yang & Lisberger (2014): Complex spike amplitude predicts learning rate
+    #
+    # Mechanism:
+    # 1. Climbing fiber error → complex spike burst (not single spike)
+    # 2. Each spikelet triggers dendritic calcium influx (~0.2 units)
+    # 3. Total calcium = n_spikes × ca2_per_spike
+    # 4. LTD magnitude ∝ total calcium (graded learning)
+    #
+    # Example:
+    # - Small error (0.2): 3 spikes → Ca²⁺ = 0.6 → small LTD
+    # - Large error (0.8): 6 spikes → Ca²⁺ = 1.2 → large LTD
+    #
+    # References:
+    # - Mathy et al. (2009): Nature Neuroscience 12:1378-1387
+    # - Najafi & Medina (2013): J. Neuroscience 33:15825-15840
+    # - Yang & Lisberger (2014): Neuron 82:1389-1401
+    # - Davie et al. (2008): Nature Neuroscience 11:838-848
+    use_complex_spike_bursts: bool = False
+    """Enable complex spike burst dynamics (graded error signaling)."""
+
+    min_complex_spike_count: int = 2
+    """Minimum spikelets per complex spike burst (biological: 2-3)."""
+
+    max_complex_spike_count: int = 7
+    """Maximum spikelets per complex spike burst (biological: 5-8)."""
+
+    complex_spike_isi_ms: float = 1.5
+    """Inter-spike interval within burst (biological: 1-2ms, very fast)."""
+
+    ca2_per_spikelet: float = 0.2
+    """Calcium influx per spikelet (arbitrary units, scaled for learning)."""
+
 
 @dataclass
 class CerebellumState(BaseRegionState):
@@ -1079,6 +1126,52 @@ class Cerebellum(NeuralRegion):
         # Axonal delays are handled by AxonalProjection pathways, not within regions
         return output_spikes
 
+    def _generate_complex_spike_burst(
+        self,
+        error_magnitude: torch.Tensor,  # [n_output] - Absolute error per Purkinje cell
+    ) -> torch.Tensor:
+        """Generate complex spike burst with graded calcium influx.
+
+        Converts error magnitude to complex spike bursts (2-7 spikelets per burst).
+        Larger errors trigger longer bursts, which produce more calcium influx,
+        leading to stronger LTD. This provides GRADED ERROR SIGNALING.
+
+        Biological mechanism:
+        - Small error (0.1): 2-3 spikelets → Ca²⁺ = 0.4-0.6 → small LTD
+        - Medium error (0.5): 4-5 spikelets → Ca²⁺ = 0.8-1.0 → medium LTD
+        - Large error (0.9): 6-7 spikelets → Ca²⁺ = 1.2-1.4 → large LTD
+
+        Args:
+            error_magnitude: Absolute error per Purkinje cell [n_output]
+
+        Returns:
+            total_calcium: Total Ca²⁺ influx per Purkinje cell [n_output]
+                          (proportional to burst length)
+
+        References:
+        - Mathy et al. (2009): Complex spike burst length encodes error
+        - Najafi & Medina (2013): Graded complex spikes → graded learning
+        - Yang & Lisberger (2014): Burst amplitude predicts learning rate
+        """
+        cfg = self.config
+
+        # Error magnitude → burst length (linear scaling)
+        # error 0.0 → min_count spikes
+        # error 1.0 → max_count spikes
+        spike_range = cfg.max_complex_spike_count - cfg.min_complex_spike_count
+        n_spikes = cfg.min_complex_spike_count + spike_range * torch.clamp(error_magnitude, 0.0, 1.0)
+
+        # Round to integer spike counts (stochastic rounding for biological variability)
+        n_spikes_floor = n_spikes.floor()
+        n_spikes_frac = n_spikes - n_spikes_floor
+        stochastic_round = (torch.rand_like(n_spikes_frac) < n_spikes_frac).float()
+        n_spikes_int = n_spikes_floor + stochastic_round
+
+        # Total calcium influx = n_spikes × ca2_per_spikelet
+        total_calcium = n_spikes_int * cfg.ca2_per_spikelet
+
+        return total_calcium
+
     def _apply_error_learning(
         self,
         output_spikes: torch.Tensor,
@@ -1119,6 +1212,28 @@ class Cerebellum(NeuralRegion):
         # ======================================================================
         error = self.climbing_fiber.compute_error(output_spikes.float(), target.float())
         # error is already 1D from compute_error()
+
+        # ======================================================================
+        # COMPLEX SPIKE BURST DYNAMICS (Phase 2B Enhancement)
+        # ======================================================================
+        # Convert error magnitude to complex spike bursts (2-7 spikelets).
+        # Larger errors trigger longer bursts, producing more calcium influx,
+        # which leads to stronger LTD. This provides GRADED ERROR SIGNALING.
+        #
+        # Without this: Error is binary (present/absent) or linear magnitude
+        # With this: Error is converted to calcium dynamics (biophysical)
+        #
+        # This modulates the effective error magnitude used for learning,
+        # making it proportional to the total calcium influx from the burst.
+        if cfg.use_complex_spike_bursts:
+            # Generate complex spike burst: error magnitude → calcium influx
+            error_magnitude = error.abs()  # [n_output]
+            calcium_influx = self._generate_complex_spike_burst(error_magnitude)  # [n_output]
+
+            # Use calcium influx as the effective error magnitude
+            # The sign of the error is preserved (LTP vs LTD direction)
+            error_sign = torch.sign(error)  # [n_output]
+            error = error_sign * calcium_influx  # [n_output]
 
         # ======================================================================
         # GAP JUNCTION SYNCHRONIZATION (Inferior Olive)

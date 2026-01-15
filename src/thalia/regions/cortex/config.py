@@ -204,6 +204,90 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # UnifiedHomeostasis (in NeuralComponentConfig base class).
     robustness: Optional[RobustnessConfig] = field(default=None)
 
+    # =========================================================================
+    # LAYER-SPECIFIC HETEROGENEITY (Phase 2A Enhancement)
+    # =========================================================================
+    # Biological reality: Each cortical layer has distinct cell types with
+    # different electrophysiological properties:
+    # - L4 spiny stellate: Fast, small tau_mem (~10ms), low threshold
+    # - L2/3 pyramidal: Medium tau_mem (~20ms), moderate threshold
+    # - L5 thick-tuft pyramidal: Slow tau_mem (~30ms), high threshold, burst-capable
+    # - L6 corticothalamic: Variable tau_mem (~15-25ms), moderate threshold
+    #
+    # This heterogeneity enables:
+    # - L4: Fast sensory processing and feature detection
+    # - L2/3: Integration and association over longer timescales
+    # - L5: Decision-making and sustained output generation
+    # - L6: Feedback control with tuned dynamics
+    #
+    # References:
+    # - Connors & Gutnick (1990): Intrinsic firing patterns of diverse neocortical neurons
+    # - Markram et al. (2015): Reconstruction and simulation of neocortical microcircuitry
+    # - Ramaswamy & Markram (2015): Anatomy and physiology of the thick-tufted layer 5 pyramidal neuron
+    use_layer_heterogeneity: bool = False
+    """Enable layer-specific neuron properties (Phase 2A).
+
+    When True:
+        - Each layer has distinct tau_mem, v_threshold, adaptation properties
+        - Reflects biological diversity of cortical cell types
+        - Improves layer-specific computational roles
+        - Requires layer_properties config
+    """
+
+    # Layer-specific membrane time constants (ms)
+    # These control integration timescales for each layer
+    layer_tau_mem: Dict[str, float] = field(default_factory=lambda: {
+        "l4": 10.0,   # Fast integration for sensory input
+        "l23": 20.0,  # Moderate integration for association
+        "l5": 30.0,   # Slow integration for output generation
+        "l6a": 15.0,  # Fast for TRN feedback (low gamma)
+        "l6b": 25.0,  # Moderate for relay feedback (high gamma)
+    })
+    """Membrane time constants per layer (Phase 2A).
+
+    Biological ranges:
+    - L4 spiny stellate: 8-12ms (fast sensory processing)
+    - L2/3 pyramidal: 18-25ms (integration)
+    - L5 pyramidal: 25-35ms (sustained output)
+    - L6 pyramidal: 12-20ms (feedback control)
+    """
+
+    # Layer-specific voltage thresholds (mV)
+    # Higher threshold = more selective, requires more input
+    layer_v_threshold: Dict[str, float] = field(default_factory=lambda: {
+        "l4": -52.0,  # Low threshold for sensitive input detection
+        "l23": -55.0, # Moderate threshold for balanced processing
+        "l5": -50.0,  # Lower threshold for reliable output (compensated by high tau)
+        "l6a": -55.0, # Moderate for attention gating
+        "l6b": -52.0, # Low for fast gain modulation
+    })
+    """Voltage thresholds per layer (Phase 2A).
+
+    Biological values:
+    - L4: -50 to -55mV (sensitive to input)
+    - L2/3: -53 to -58mV (selective integration)
+    - L5: -48 to -52mV (reliable output despite high tau)
+    - L6: -50 to -55mV (varied for feedback roles)
+    """
+
+    # Layer-specific adaptation strengths
+    # Controls spike-frequency adaptation per layer
+    layer_adaptation: Dict[str, float] = field(default_factory=lambda: {
+        "l4": 0.05,  # Minimal adaptation for faithful sensory relay
+        "l23": 0.15, # Strong adaptation for decorrelation (inherited default)
+        "l5": 0.10,  # Moderate adaptation for sustained output
+        "l6a": 0.08, # Light adaptation for feedback
+        "l6b": 0.12, # Moderate adaptation for gain control
+    })
+    """Adaptation increments per layer (Phase 2A).
+
+    Biological justification:
+    - L4: Minimal (faithful relay of sensory input)
+    - L2/3: Strong (prevents runaway recurrence, decorrelates features)
+    - L5: Moderate (allows burst patterns while preventing runaway)
+    - L6: Light-moderate (supports feedback dynamics)
+    """
+
 
 @dataclass
 class LayeredCortexState(BaseRegionState):

@@ -394,25 +394,85 @@ class LayeredCortex(NeuralRegion):
         - Shunting inhibition (divisive effect)
         - Natural saturation at reversal potentials
         - No need for artificial divisive normalization
+
+        **Layer-Specific Heterogeneity (Phase 2A)**:
+        If config.use_layer_heterogeneity=True, applies distinct electrophysiological
+        properties per layer (tau_mem, v_threshold, adaptation) reflecting biological
+        diversity of cortical cell types.
         """
         cfg = self.config
 
-        # Create layer-specific neurons using factory functions
-        self.l4_neurons = create_cortical_layer_neurons(self.l4_size, "L4", self.device)
+        # =====================================================================
+        # LAYER-SPECIFIC HETEROGENEITY (Phase 2A)
+        # =====================================================================
+        # Prepare layer-specific overrides if heterogeneity enabled
+        l4_overrides = {}
+        l23_overrides = {}
+        l5_overrides = {}
+        l6a_overrides = {}
+        l6b_overrides = {}
+
+        if cfg.use_layer_heterogeneity:
+            # L4: Fast sensory processing
+            l4_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l4"],
+                "v_threshold": cfg.layer_v_threshold["l4"],
+                "adapt_increment": cfg.layer_adaptation["l4"],
+            }
+
+            # L2/3: Integration and association
+            l23_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l23"],
+                "v_threshold": cfg.layer_v_threshold["l23"],
+                "adapt_increment": cfg.layer_adaptation["l23"],
+            }
+
+            # L5: Output generation
+            l5_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l5"],
+                "v_threshold": cfg.layer_v_threshold["l5"],
+                "adapt_increment": cfg.layer_adaptation["l5"],
+            }
+
+            # L6a: TRN feedback (low gamma)
+            l6a_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l6a"],
+                "v_threshold": cfg.layer_v_threshold["l6a"],
+                "adapt_increment": cfg.layer_adaptation["l6a"],
+            }
+
+            # L6b: Relay feedback (high gamma)
+            l6b_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l6b"],
+                "v_threshold": cfg.layer_v_threshold["l6b"],
+                "adapt_increment": cfg.layer_adaptation["l6b"],
+            }
+
+        # Create layer-specific neurons using factory functions with heterogeneous properties
+        self.l4_neurons = create_cortical_layer_neurons(
+            self.l4_size, "L4", self.device, **l4_overrides
+        )
         self.l23_neurons = create_cortical_layer_neurons(
             self.l23_size,
             "L2/3",
             self.device,
-            adapt_increment=cfg.adapt_increment,  # SFA to prevent frozen attractors
+            adapt_increment=cfg.adapt_increment if not cfg.use_layer_heterogeneity else l23_overrides["adapt_increment"],
             tau_adapt=cfg.adapt_tau,
+            **({} if not cfg.use_layer_heterogeneity else {k: v for k, v in l23_overrides.items() if k != "adapt_increment"})
         )
-        self.l5_neurons = create_cortical_layer_neurons(self.l5_size, "L5", self.device)
+        self.l5_neurons = create_cortical_layer_neurons(
+            self.l5_size, "L5", self.device, **l5_overrides
+        )
 
         # L6 split into two subtypes:
         # - L6a (corticothalamic type I): Projects to TRN (inhibitory modulation)
         # - L6b (corticothalamic type II): Projects to relay (excitatory modulation)
-        self.l6a_neurons = create_cortical_layer_neurons(self.l6a_size, "L6a", self.device)
-        self.l6b_neurons = create_cortical_layer_neurons(self.l6b_size, "L6b", self.device)
+        self.l6a_neurons = create_cortical_layer_neurons(
+            self.l6a_size, "L6a", self.device, **l6a_overrides
+        )
+        self.l6b_neurons = create_cortical_layer_neurons(
+            self.l6b_size, "L6b", self.device, **l6b_overrides
+        )
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for L2/3 recurrent connections
@@ -946,26 +1006,70 @@ class LayeredCortex(NeuralRegion):
         self.weights = self.synaptic_weights["l23_l5"]
 
         # 5. Expand neurons for all layers using factory functions
+        # Apply layer-specific heterogeneity if enabled (Phase 2A)
+        cfg = self.config
+        l4_overrides = {}
+        l23_overrides = {}
+        l5_overrides = {}
+        l6a_overrides = {}
+        l6b_overrides = {}
+
+        if cfg.use_layer_heterogeneity:
+            l4_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l4"],
+                "v_threshold": cfg.layer_v_threshold["l4"],
+                "adapt_increment": cfg.layer_adaptation["l4"],
+            }
+            l23_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l23"],
+                "v_threshold": cfg.layer_v_threshold["l23"],
+                "adapt_increment": cfg.layer_adaptation["l23"],
+            }
+            l5_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l5"],
+                "v_threshold": cfg.layer_v_threshold["l5"],
+                "adapt_increment": cfg.layer_adaptation["l5"],
+            }
+            l6a_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l6a"],
+                "v_threshold": cfg.layer_v_threshold["l6a"],
+                "adapt_increment": cfg.layer_adaptation["l6a"],
+            }
+            l6b_overrides = {
+                "tau_mem": cfg.layer_tau_mem["l6b"],
+                "v_threshold": cfg.layer_v_threshold["l6b"],
+                "adapt_increment": cfg.layer_adaptation["l6b"],
+            }
+
         self.l4_size = new_l4_size
-        self.l4_neurons = create_cortical_layer_neurons(self.l4_size, "L4", self.device)
+        self.l4_neurons = create_cortical_layer_neurons(
+            self.l4_size, "L4", self.device, **l4_overrides
+        )
 
         self.l23_size = new_l23_size
         self.l23_neurons = create_cortical_layer_neurons(
             self.l23_size,
             "L2/3",
             self.device,
-            adapt_increment=self.config.adapt_increment,
+            adapt_increment=self.config.adapt_increment if not cfg.use_layer_heterogeneity else l23_overrides["adapt_increment"],
             tau_adapt=self.config.adapt_tau,
+            **({} if not cfg.use_layer_heterogeneity else {k: v for k, v in l23_overrides.items() if k != "adapt_increment"})
         )
 
         self.l5_size = new_l5_size
-        self.l5_neurons = create_cortical_layer_neurons(self.l5_size, "L5", self.device)
+        self.l5_neurons = create_cortical_layer_neurons(
+            self.l5_size, "L5", self.device, **l5_overrides
+        )
 
         self.l6a_size = new_l6a_size
-        self.l6a_neurons = create_cortical_layer_neurons(self.l6a_size, "L6a", self.device)
+        self.l6a_neurons = create_cortical_layer_neurons(
+            self.l6a_size, "L6a", self.device, **l6a_overrides
+        )
 
         self.l6b_size = new_l6b_size
-        self.l6b_neurons = create_cortical_layer_neurons(self.l6b_size, "L6b", self.device)
+        self.l6b_neurons = create_cortical_layer_neurons(
+            self.l6b_size, "L6b", self.device, **l6b_overrides
+        )
 
         # 6. Update STP module to match L2/3 growth
         self.stp_l23_recurrent = ShortTermPlasticity(

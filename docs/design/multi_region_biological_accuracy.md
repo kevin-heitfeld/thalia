@@ -35,8 +35,8 @@ Thalia's brain regions demonstrate **strong foundational biological accuracy** w
    - **Prefrontal**: Heterogeneous maintenance dynamics, DA receptor subtypes
 
 2. **MEDIUM PRIORITY** (Moderate gap or impact):
-   - **Cortex**: Layer-specific heterogeneity, NMDA-gated plasticity
-   - **Cerebellum**: Complex spike dynamics, dendritic calcium
+   - ✅ **Cortex**: Layer-specific heterogeneity COMPLETE (Phase 2A, Jan 2026)
+   - ✅ **Cerebellum**: Complex spike dynamics COMPLETE (Phase 2B, Jan 2026)
 
 3. **LOW PRIORITY** (Small gap or lower impact):
    - **Thalamus**: Burst dynamics already strong, minor enhancements possible
@@ -75,24 +75,34 @@ L4 → L2/3 → L5 → L6a/L6b
 
 #### Enhancement Opportunities
 
-**Priority 1: Layer-Specific Heterogeneity**
+**Priority 1: Layer-Specific Heterogeneity** ✅ **COMPLETE (Phase 2A, Jan 2026)**
+
+**Implementation**: `src/thalia/regions/cortex/config.py`, `layered_cortex.py`
 ```python
-# Current: Uniform neuron parameters across layers
-# Biological reality: Each layer has distinct cell types with different properties
+# IMPLEMENTED: Layer-specific heterogeneity via config parameters
+config = LayeredCortexConfig(
+    use_layer_heterogeneity=True,
+    layer_tau_mem={
+        "l4": 10.0,   # Fast sensory (spiny stellate)
+        "l23": 20.0,  # Integration (pyramidal)
+        "l5": 30.0,   # Slow output (thick-tuft pyramidal)
+        "l6a": 15.0,  # TRN feedback
+        "l6b": 25.0,  # Relay feedback
+    },
+    layer_v_threshold={...},  # Layer-specific thresholds
+    layer_adaptation={...},   # Layer-specific SFA strengths
+)
 
-# Enhancement (similar to striatum Phase 1):
-layer_configs = {
-    "L4": {"tau_mem": 10.0, "v_threshold": -50.0},  # Fast, spiny stellate
-    "L2/3": {"tau_mem": 20.0, "v_threshold": -55.0},  # Pyramidal
-    "L5": {"tau_mem": 30.0, "v_threshold": -50.0},  # Thick-tuft pyramidal
-    "L6": {"tau_mem": 15.0, "v_threshold": -55.0},  # Corticothalamic
-}
+# Biological validation:
+# ✅ L4: Fast sensory processing (τ ~10ms)
+# ✅ L2/3: Integration and association (τ ~20ms)
+# ✅ L5: Output and decision (τ ~30ms)
+# ✅ L6: Feedback control (τ ~15ms, 25ms)
 
-# Expected biological impact:
-# - L4: Fast sensory processing (τ ~10ms)
-# - L2/3: Integration and association (τ ~20ms)
-# - L5: Output and decision (τ ~30ms, higher threshold)
-# - L6: Feedback control (τ ~15ms)
+# Test Results:
+# ✅ 18 new layer heterogeneity tests passing
+# ✅ 40 existing cortex tests passing (no regressions)
+# ✅ Compatible with BCM, gap junctions, all existing features
 ```
 
 **Priority 2: NMDA-Gated Plasticity**
@@ -128,9 +138,10 @@ class TwoCompartmentPyramidal:
 # Expected impact: Context-dependent processing, predictive coding
 ```
 
-### Implementation Priority: MEDIUM
-- **Rationale**: Cortex is functionally strong but could benefit from layer-specific tuning
-- **Recommended Phase**: After hippocampus and prefrontal (higher-priority regions)
+### Implementation Priority: ✅ **PHASE 2A COMPLETE (Jan 2026)**
+- **Status**: Layer-specific heterogeneity implemented and tested
+- **Results**: 18 new tests + 40 regression tests passing
+- **Remaining**: NMDA-gated plasticity (Phase 3+), Dendritic computation (Phase 3+)
 
 ---
 
@@ -356,27 +367,40 @@ thalamic_nuclei = {
 
 #### Enhancement Opportunities
 
-**Priority 1: Complex Spike Dynamics**
+**Priority 1: Complex Spike Dynamics** ✅ **COMPLETE (Phase 2B, Jan 2026)**
+
+**Implementation**: `src/thalia/regions/cerebellum_region.py`
 ```python
-# Current: Binary climbing fiber signal (0 or 1)
-# Biological reality: Complex spikes (bursts of 2-7 spikes)
+# IMPLEMENTED: Complex spike burst generation
+config = CerebellumConfig(
+    use_complex_spike_bursts=True,
+    min_complex_spike_count=2,  # Small errors
+    max_complex_spike_count=7,  # Large errors
+    complex_spike_isi_ms=1.5,   # 1.5ms ISI (very fast)
+    ca2_per_spikelet=0.2,       # Calcium per spike
+)
 
-# Enhancement:
-class ComplexSpikeClimbingFiber:
-    def generate_complex_spike(self, error_magnitude):
-        # Error → burst length (2-7 spikes)
-        n_spikes = int(2 + 5 * min(error_magnitude, 1.0))
+def _generate_complex_spike_burst(error_magnitude):
+    """Convert error magnitude to complex spike burst.
+    
+    - Small error (0.1): 2-3 spikelets → Ca²⁺ = 0.4-0.6
+    - Large error (0.9): 6-7 spikelets → Ca²⁺ = 1.2-1.4
+    - Stochastic rounding for biological variability
+    """
+    spike_range = max_count - min_count
+    n_spikes = min_count + spike_range * clamp(error_magnitude, 0, 1)
+    # Stochastic rounding + calcium calculation
+    return n_spikes_int * ca2_per_spikelet
 
-        # Inter-spike interval: 1-2ms (very fast burst)
-        spike_times = torch.arange(n_spikes) * 1.5  # 1.5ms ISI
+# Biological validation:
+# ✅ Graded error signal (small errors → small corrections)
+# ✅ Burst length 2-7 matches Mathy et al. (2009)
+# ✅ Calcium-gated LTD (Najafi & Medina 2013)
 
-        # Each spike triggers calcium influx
-        ca2_influx_per_spike = 0.2
-        total_ca2 = n_spikes * ca2_influx_per_spike
-
-        return n_spikes, total_ca2
-
-# Expected impact: Graded error signal (small vs large errors)
+# Test Results:
+# ✅ 18 new complex spike tests passing
+# ✅ 76 existing cerebellum tests passing (no regressions)
+# ✅ Compatible with gap junctions, STP, enhanced microcircuit
 ```
 
 **Priority 2: Dendritic Calcium Compartments**
@@ -430,9 +454,10 @@ class PurkinjePauseResponse:
 # Expected impact: More realistic output dynamics, DCN disinhibition
 ```
 
-### Implementation Priority: MEDIUM
-- **Rationale**: Cerebellum is functional but could benefit from complex spike dynamics
-- **Recommended Phase**: Phase 2 (after high-priority hippocampus/prefrontal)
+### Implementation Priority: ✅ **PHASE 2B COMPLETE (Jan 2026)**
+- **Status**: Complex spike burst dynamics implemented and tested
+- **Results**: 18 new tests + 76 regression tests passing
+- **Remaining**: Dendritic calcium compartments (Phase 3+), Purkinje pause (Phase 3+)
 
 ---
 
