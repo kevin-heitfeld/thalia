@@ -57,11 +57,11 @@ class TestThalamusSTPConfiguration:
         from thalia.components.synapses.stp import STPType
         config, sizes, device = thalamus_config
 
-        # Check config values
-        assert config.stp_sensory_relay_type == STPType.DEPRESSING, \
-            "Sensory relay STP should be depressing (U=0.4)"
-        assert config.stp_l6_feedback_type == STPType.DEPRESSING, \
-            "L6 feedback STP should be depressing (U=0.7)"
+        # Check config values - biologically accurate defaults
+        assert config.stp_sensory_relay_type == STPType.DEPRESSING_MODERATE, \
+            "Sensory relay STP should be moderate depression (U=0.4)"
+        assert config.stp_l6_feedback_type == STPType.DEPRESSING_STRONG, \
+            "L6 feedback STP should be strong depression (U=0.7)"
 
     def test_stp_dimensions_correct(self, thalamus_config):
         """Test that STP modules have correct dimensions."""
@@ -293,8 +293,8 @@ class TestL6FeedbackDepression:
         sensory_ratio = sensory_efficacies[-1] / (sensory_efficacies[0] + 1e-6)
         l6_ratio = l6_efficacies[-1] / (l6_efficacies[0] + 1e-6)
 
-        # L6 should show stronger or equal depression (lower or equal ratio)
-        # Note: With default config both use STPType.DEPRESSING (U=0.5), so they may be equal
+        # L6 should show stronger depression (lower ratio)
+        # Config: sensory U=0.4, L6 U=0.7 → L6 should depress more
         assert l6_ratio <= sensory_ratio, \
             f"L6 feedback should depress at least as much as sensory (L6={l6_ratio:.3f}, sensory={sensory_ratio:.3f})"
 

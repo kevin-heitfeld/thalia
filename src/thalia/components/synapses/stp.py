@@ -54,8 +54,10 @@ class STPType(Enum):
     """Predefined synapse types based on Markram et al. (1998) classification."""
 
     # Depressing synapses (high U, dominant depression)
-    DEPRESSING = "depressing"         # Strong initial, rapid fatigue
-    DEPRESSING_FAST = "depressing_fast"  # Very fast depression, quick recovery
+    DEPRESSING = "depressing"         # Strong initial, rapid fatigue (U=0.5)
+    DEPRESSING_MODERATE = "depressing_moderate"  # Moderate depression (U=0.4, thalamic sensory)
+    DEPRESSING_STRONG = "depressing_strong"  # Strong depression (U=0.7, thalamic L6 feedback)
+    DEPRESSING_FAST = "depressing_fast"  # Very fast depression, quick recovery (U=0.8)
 
     # Facilitating synapses (low U, dominant facilitation)
     FACILITATING = "facilitating"     # Weak initial, builds up with activity
@@ -109,6 +111,10 @@ class STPConfig:
         """
         if stp_type == STPType.DEPRESSING:
             return cls(U=0.5, tau_d=800.0, tau_f=20.0, dt=dt)
+        elif stp_type == STPType.DEPRESSING_MODERATE:
+            return cls(U=0.4, tau_d=700.0, tau_f=30.0, dt=dt)
+        elif stp_type == STPType.DEPRESSING_STRONG:
+            return cls(U=0.7, tau_d=600.0, tau_f=15.0, dt=dt)
         elif stp_type == STPType.DEPRESSING_FAST:
             return cls(U=0.8, tau_d=200.0, tau_f=10.0, dt=dt)
         elif stp_type == STPType.FACILITATING:

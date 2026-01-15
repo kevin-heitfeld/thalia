@@ -224,14 +224,14 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     - References: Castro-Alamancos (2002), Swadlow & Gusev (2001)
     """
 
-    stp_sensory_relay_type: STPType = STPType.DEPRESSING
+    stp_sensory_relay_type: STPType = STPType.DEPRESSING_MODERATE
     """Sensory input → relay depression (U=0.4, moderate).
 
     Implements novelty detection: Sustained inputs depress, novel stimuli get
     through. Critical for attention capture and change detection.
     """
 
-    stp_l6_feedback_type: STPType = STPType.DEPRESSING
+    stp_l6_feedback_type: STPType = STPType.DEPRESSING_STRONG
     """L6 cortical feedback → relay depression (U=0.7, strong).
 
     Implements dynamic gain control: Sustained cortical feedback reduces
