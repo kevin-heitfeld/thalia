@@ -2477,10 +2477,20 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # STORE GOAL CONTEXT AND SPIKES FOR LEARNING
         # =====================================================================
-        # Store PFC goal context (if present) and D1/D2 spikes for goal-conditioned learning
-        # TODO (Future): Extract PFC goal context from inputs["pfc"] for goal-conditioned learning
-        # This is a separate feature, not part of multi-source architecture refactoring
-        pfc_goal_context = None  # Will be extracted when PFC integration is implemented
+        # Extract PFC goal context from inputs (if present)
+        # PFC output spikes encode working memory state, which represents current goal/context
+        # This enables goal-conditioned learning: same input → different actions based on goal
+        pfc_goal_context = None
+        if "pfc" in inputs:
+            # PFC spikes encode working memory (goal context)
+            # Convert to float for use in learning (firing rate representation)
+            pfc_spikes = inputs["pfc"]
+            if pfc_spikes.dtype == torch.bool:
+                pfc_goal_context = pfc_spikes.float()
+            else:
+                pfc_goal_context = pfc_spikes.clone()
+
+        # Store for goal-conditioned learning during reward delivery
         self.state_tracker.store_spikes_for_learning(d1_spikes, d2_spikes, pfc_goal_context)
 
         # =====================================================================
