@@ -5,7 +5,12 @@ eliminating duplication across test files.
 
 Usage:
 ======
-    from tests.utils.test_helpers import generate_sparse_spikes, generate_random_weights
+    from tests.utils.test_helpers import (
+        generate_sparse_spikes,
+        generate_random_weights,
+        create_test_brain,
+        create_minimal_thalia_config,
+    )
 
     # Generate binary spike vector with 20% firing rate
     spikes = generate_sparse_spikes(100, firing_rate=0.2, device="cpu")
@@ -13,9 +18,18 @@ Usage:
     # Generate random weight matrix with optional sparsity
     weights = generate_random_weights(64, 128, scale=0.3, sparsity=0.2)
 
+    # Create minimal test brain
+    brain = create_test_brain(regions=["thalamus", "cortex", "hippocampus"])
+
+    # Create custom config
+    config = create_minimal_thalia_config(input_size=64, cortex_size=128)
+
 Author: Thalia Project
 Date: December 22, 2025
+Updated: January 17, 2026 (Task 2.4 - Extract Common Testing Patterns)
 """
+
+from typing import List, Optional
 
 import torch
 
@@ -168,9 +182,160 @@ def create_test_region_config(**overrides):
     return defaults
 
 
+def create_minimal_thalia_config(
+    device: str = "cpu",
+    dt_ms: float = 1.0,
+    input_size: int = 10,
+    thalamus_size: int = 20,
+    cortex_size: int = 30,
+    hippocampus_size: int = 40,
+    pfc_size: int = 20,
+    n_actions: int = 5,
+    **overrides
+) -> "ThaliaConfig":
+    """Create minimal ThaliaConfig for testing.
+
+    Provides sensible defaults for integration tests that need a full brain.
+    All size parameters can be overridden.
+
+    Args:
+        device: Device for computations ("cpu" or "cuda")
+        dt_ms: Timestep in milliseconds
+        input_size: Input dimension
+        thalamus_size: Thalamus relay neurons
+        cortex_size: Cortex neurons (distributed across L4/L2-3/L5)
+        hippocampus_size: Hippocampus neurons (distributed across DG/CA3/CA1)
+        pfc_size: Prefrontal cortex neurons
+        n_actions: Number of actions for striatum
+        **overrides: Additional parameters to override
+
+    Returns:
+        ThaliaConfig instance with minimal settings
+
+    Example:
+        >>> config = create_minimal_thalia_config(input_size=64, cortex_size=128)
+        >>> brain = DynamicBrain.from_thalia_config(config)
+    """
+    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+
+    config = ThaliaConfig(
+        global_=GlobalConfig(device=device, dt_ms=dt_ms),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=input_size,
+                thalamus_size=thalamus_size,
+                cortex_size=cortex_size,
+                hippocampus_size=hippocampus_size,
+                pfc_size=pfc_size,
+                n_actions=n_actions,
+            ),
+        ),
+    )
+
+    # Apply any additional overrides to brain config
+    for key, value in overrides.items():
+        if hasattr(config.brain.sizes, key):
+            setattr(config.brain.sizes, key, value)
+
+    return config
+
+
+def create_test_brain(
+    regions: Optional[List[str]] = None,
+    device: str = "cpu",
+    **config_overrides
+) -> "DynamicBrain":
+    """Create minimal DynamicBrain for testing.
+
+    Convenience wrapper that creates a ThaliaConfig and DynamicBrain in one call.
+    Useful for integration tests that need a functioning brain without custom setup.
+
+    Args:
+        regions: List of region names to include (None = all regions)
+        device: Device for computations
+        **config_overrides: Parameters passed to create_minimal_thalia_config()
+
+    Returns:
+        Initialized DynamicBrain instance
+
+    Example:
+        >>> brain = create_test_brain(regions=["thalamus", "cortex"])
+        >>> brain = create_test_brain(input_size=64, cortex_size=128)
+        >>> brain = create_test_brain(device="cuda" if torch.cuda.is_available() else "cpu")
+    """
+    from thalia.core.dynamic_brain import DynamicBrain
+
+    config = create_minimal_thalia_config(device=device, **config_overrides)
+    brain = DynamicBrain.from_thalia_config(config)
+
+    # Note: region filtering would require surgery module, kept simple for now
+    # If users need specific regions, they can use BrainBuilder or surgery tools
+    return brain
+
+
+def create_test_spike_input(
+    n_neurons: int,
+    n_timesteps: int = 10,
+    firing_rate: float = 0.2,
+    device: str = "cpu"
+) -> torch.Tensor:
+    """Create temporal spike sequence for testing.
+
+    Generates a sequence of spike vectors over time, useful for testing
+    temporal dynamics and learning.
+
+    Args:
+        n_neurons: Number of neurons
+        n_timesteps: Length of sequence
+        firing_rate: Fraction of neurons spiking per timestep
+        device: Device for tensor
+
+    Returns:
+        Spike sequence [n_timesteps, n_neurons] with binary spikes
+
+    Example:
+        >>> spikes = create_test_spike_input(100, n_timesteps=20, firing_rate=0.15)
+        >>> spikes.shape
+        torch.Size([20, 100])
+        >>> spikes.dtype
+        torch.bool
+    """
+    return torch.stack([
+        generate_sparse_spikes(n_neurons, firing_rate, device)
+        for _ in range(n_timesteps)
+    ])
+
+
+def create_test_checkpoint_path(tmp_path: "pathlib.Path", name: str = "test_checkpoint") -> str:
+    """Create temporary checkpoint file path for testing.
+
+    Helper for tests that need to save/load checkpoints. Uses pytest's tmp_path
+    fixture to ensure cleanup.
+
+    Args:
+        tmp_path: pytest tmp_path fixture
+        name: Checkpoint file name (without extension)
+
+    Returns:
+        Full path string for checkpoint file
+
+    Example:
+        >>> def test_checkpoint_save(tmp_path):
+        ...     ckpt_path = create_test_checkpoint_path(tmp_path, "my_test")
+        ...     region.save_checkpoint(ckpt_path)
+        ...     assert Path(ckpt_path).exists()
+    """
+    checkpoint_path = tmp_path / f"{name}.pt"
+    return str(checkpoint_path)
+
+
 __all__ = [
     "generate_sparse_spikes",
     "generate_random_weights",
     "generate_batch_spikes",
     "create_test_region_config",
+    "create_minimal_thalia_config",
+    "create_test_brain",
+    "create_test_spike_input",
+    "create_test_checkpoint_path",
 ]

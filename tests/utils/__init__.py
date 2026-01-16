@@ -5,6 +5,10 @@ from .test_helpers import (
     generate_random_weights,
     generate_batch_spikes,
     create_test_region_config,
+    create_minimal_thalia_config,
+    create_test_brain,
+    create_test_spike_input,
+    create_test_checkpoint_path,
 )
 
 __all__ = [
@@ -12,4 +16,8 @@ __all__ = [
     "generate_random_weights",
     "generate_batch_spikes",
     "create_test_region_config",
+    "create_minimal_thalia_config",
+    "create_test_brain",
+    "create_test_spike_input",
+    "create_test_checkpoint_path",
 ]

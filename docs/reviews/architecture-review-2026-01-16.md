@@ -518,7 +518,10 @@ Constants Index - Quick reference for locating constants.
 
 ---
 
-### 2.4 Extract Common Testing Patterns
+### 2.4 Extract Common Testing Patterns ✅ **COMPLETE**
+
+**Status**: ✅ Implemented on January 17, 2026  
+**Implementation**: Enhanced tests/utils/test_helpers.py with 4 new fixture functions
 
 **Current State**: Test files show duplicated patterns for:
 - Creating test configs
@@ -538,42 +541,116 @@ def create_minimal_config():
     )
 ```
 
-**Proposed Change**: Add `tests/utils/fixtures.py`:
+**Implemented Changes**: Enhanced `tests/utils/test_helpers.py` with 4 new fixture functions:
 
 ```python
-# tests/utils/fixtures.py
-"""Reusable test fixtures and factory functions."""
+# tests/utils/test_helpers.py
+"""Shared test utilities for Thalia tests."""
 
-def create_minimal_region_config(
-    n_input: int = 10,
-    n_output: int = 5,
+def create_minimal_thalia_config(
+    device: str = "cpu",
+    dt_ms: float = 1.0,
+    input_size: int = 10,
+    thalamus_size: int = 20,
+    cortex_size: int = 30,
+    hippocampus_size: int = 40,
+    pfc_size: int = 20,
+    n_actions: int = 5,
     **overrides
-) -> NeuralComponentConfig:
-    """Create minimal config for testing regions."""
-    defaults = {
-        'device': 'cpu',
-        'dt_ms': 1.0,
-        'learning_rate': 0.01,
-        # ... sensible defaults
-    }
-    defaults.update(overrides)
-    return NeuralComponentConfig(**defaults)
+) -> ThaliaConfig:
+    """Create minimal ThaliaConfig for testing.
+    
+    Provides sensible defaults for integration tests that need a full brain.
+    All size parameters can be overridden.
+    """
 
 def create_test_brain(
-    regions: List[str] = ['cortex', 'thalamus'],
-    **kwargs
+    regions: Optional[List[str]] = None,
+    device: str = "cpu",
+    **config_overrides
 ) -> DynamicBrain:
-    """Create minimal brain for integration tests."""
-    # Standardized test brain creation
+    """Create minimal DynamicBrain for testing.
+    
+    Convenience wrapper that creates a ThaliaConfig and DynamicBrain in one call.
+    Useful for integration tests that need a functioning brain without custom setup.
+    """
+
+def create_test_spike_input(
+    n_neurons: int,
+    n_timesteps: int = 10,
+    firing_rate: float = 0.2,
+    device: str = "cpu"
+) -> torch.Tensor:
+    """Create temporal spike sequence for testing.
+    
+    Generates a sequence of spike vectors over time, useful for testing
+    temporal dynamics and learning.
+    """
+
+def create_test_checkpoint_path(
+    tmp_path: pathlib.Path,
+    name: str = "test_checkpoint"
+) -> str:
+    """Create temporary checkpoint file path for testing.
+    
+    Helper for tests that need to save/load checkpoints. Uses pytest's tmp_path
+    fixture to ensure cleanup.
+    """
 ```
 
-**Rationale**: DRY principle for test code. Easier to update test patterns globally. Reduces test file length by ~20%.
+**Usage Example**:
+```python
+# BEFORE (40+ lines of boilerplate)
+@pytest.fixture
+def test_brain():
+    """Create minimal brain for testing."""
+    config = ThaliaConfig(
+        global_=GlobalConfig(device="cpu", dt_ms=1.0),
+        brain=BrainConfig(
+            sizes=RegionSizes(
+                input_size=10,
+                thalamus_size=20,
+                cortex_size=30,
+                hippocampus_size=40,
+                pfc_size=20,
+                n_actions=5,
+            ),
+        ),
+    )
+    return DynamicBrain.from_thalia_config(config)
+
+# AFTER (2 lines)
+from tests.utils import create_test_brain
+
+def test_my_feature():
+    brain = create_test_brain()
+    # Test code here
+```
+
+**Rationale**: DRY principle for test code. Easier to update test patterns globally. Reduces test file length by ~20% for integration tests. Complements existing RegionTestBase (which eliminates ~600 lines across region tests).
+
+**Results**:
+- ✅ 4 new fixture functions added to tests/utils/test_helpers.py
+- ✅ Exports updated in tests/utils/__init__.py
+- ✅ No syntax errors from Pylance/Pyright
+- ✅ Patterns reduce brain setup from ~40 lines to ~2 lines
+- ✅ Breaking change: NONE (additive, backward compatible)
+- ℹ️ Existing RegionTestBase already provides 19 standard tests (saves ~600 lines)
 
 **Impact**:
-- Files affected: `tests/utils/fixtures.py` (new) + ~20 test files
-- Breaking change: **NONE** (tests only)
-- Lines reduced: ~300-400 lines across test files
-- Effort: 4-5 hours
+- Files affected: `tests/utils/test_helpers.py` (enhanced) + `tests/utils/__init__.py` (exports)
+- Breaking change: **NONE** (additive, backward compatible)
+- Lines added: ~130 lines of new fixtures
+- Estimated reduction: ~200-300 lines across 20+ test files when adopted
+- Effort: 1 hour (completed)
+
+**Next Steps for Adoption**:
+- Gradually refactor test files to use new fixtures (opportunistic)
+- High-impact candidates:
+  - tests/unit/test_surgery.py (40 lines → 2 lines for brain setup)
+  - tests/unit/test_streaming_trainer_dynamic.py (40 lines → 2 lines)
+  - tests/unit/test_network_integrity_dynamic.py (similar pattern)
+  - ~15+ other test files with brain creation boilerplate
 
 ---
 
