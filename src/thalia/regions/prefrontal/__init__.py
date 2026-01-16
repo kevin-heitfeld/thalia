@@ -11,6 +11,9 @@ Author: Thalia Project
 Date: January 16, 2026
 """
 
+from __future__ import annotations
+
+
 from thalia.regions.prefrontal.prefrontal import Prefrontal, PrefrontalConfig, PrefrontalState
 from thalia.regions.prefrontal.hierarchy import (
     Goal,

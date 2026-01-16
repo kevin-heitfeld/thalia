@@ -14,9 +14,12 @@ Date: December 10, 2025
 Phase: 2 - Model-Based Planning
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional, Dict
 import random
+from typing import Optional, Dict
+
 import torch
 
 

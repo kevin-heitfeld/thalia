@@ -3,6 +3,9 @@
 Registry and base manager classes for brain components.
 """
 
+from __future__ import annotations
+
+
 from thalia.managers.component_registry import (
     ComponentRegistry,
     register_region,

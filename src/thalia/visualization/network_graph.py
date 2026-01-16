@@ -24,12 +24,14 @@ Usage:
     export_topology_to_graphviz(brain, "brain_topology.dot")
 """
 
-from typing import Dict, Any, Optional, Tuple
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Dict, Any, Optional, Tuple
 
 import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 
 try:
     import networkx as nx
@@ -38,16 +40,16 @@ except ImportError:
     NETWORKX_AVAILABLE = False
 
 from thalia.visualization.constants import (
+    ARC_RADIUS,
     DEFAULT_NODE_SIZE_SCALE,
-    NODE_ALPHA_DEFAULT,
     EDGE_ALPHA_DEFAULT,
     EDGE_WIDTH_SCALE,
-    LAYOUT_K_FACTOR,
-    LAYOUT_ITERATIONS,
-    ARC_RADIUS,
-    LEGEND_FRAMEALPHA,
     HIERARCHICAL_Y_SPACING,
     HIERARCHICAL_X_SPACING,
+    LAYOUT_ITERATIONS,
+    LAYOUT_K_FACTOR,
+    LEGEND_FRAMEALPHA,
+    NODE_ALPHA_DEFAULT,
 )
 
 

@@ -4,6 +4,9 @@ Stability mechanisms including unified homeostasis, synaptic scaling,
 intrinsic plasticity, and metabolic constraints.
 """
 
+from __future__ import annotations
+
+
 # Import from synaptic_homeostasis (main file)
 from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasis,

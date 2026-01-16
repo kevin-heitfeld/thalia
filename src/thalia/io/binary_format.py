@@ -15,11 +15,13 @@ File Format:
     [CHECKSUM]        32 bytes (SHA-256)
 """
 
-import struct
+from __future__ import annotations
+
+from dataclasses import dataclass
 import hashlib
 import json
+import struct
 from typing import Dict, Any, BinaryIO, List, Tuple
-from dataclasses import dataclass
 
 
 # Format version

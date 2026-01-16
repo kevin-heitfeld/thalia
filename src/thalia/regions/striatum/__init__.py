@@ -17,6 +17,9 @@ Usage:
     striatum = Striatum(config)
 """
 
+from __future__ import annotations
+
+
 from .config import StriatumConfig
 from .action_selection import ActionSelectionMixin
 from .striatum import Striatum

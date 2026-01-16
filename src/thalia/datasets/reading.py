@@ -14,11 +14,14 @@ Biologically relevant:
 - Prepares for complex language understanding
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Tuple, Dict, Optional
-import torch
-import numpy as np
 from enum import Enum
+from typing import List, Tuple, Dict, Optional
+
+import numpy as np
+import torch
 
 
 class Language(Enum):
@@ -47,7 +50,7 @@ class ReadingConfig:
     embedding_dim: int = 64
     language: Language = Language.ENGLISH  # Language to use
     device: torch.device = torch.device("cpu")
-    
+
     def __post_init__(self):
         if self.tasks_to_test is None:
             self.tasks_to_test = [
@@ -60,10 +63,10 @@ class ReadingConfig:
 
 class ReadingVocabulary:
     """Vocabulary for reading tasks with multilingual support."""
-    
+
     def __init__(self, language: Language = Language.ENGLISH):
         self.language = language
-        
+
         if language == Language.ENGLISH:
             self._init_english()
         elif language == Language.GERMAN:
@@ -72,7 +75,7 @@ class ReadingVocabulary:
             self._init_spanish()
         else:
             raise ValueError(f"Unsupported language: {language}")
-        
+
         # Combine all words
         self.all_words = {
             **self.nouns,
@@ -80,32 +83,32 @@ class ReadingVocabulary:
             **self.adjectives,
             **self.function_words,
         }
-        
+
         # Build mappings
         self.word2idx = {word: idx for idx, word in enumerate(self.all_words.keys())}
         self.idx2word = {idx: word for word, idx in self.word2idx.items()}
-        
+
         # Phoneme inventory
         self.phonemes = set()
         for phoneme_list in self.all_words.values():
             self.phonemes.update(phoneme_list)
         self.phonemes = sorted(list(self.phonemes))
-        
+
         self.phoneme2idx = {p: idx for idx, p in enumerate(self.phonemes)}
         self.idx2phoneme = {idx: p for p, idx in self.phoneme2idx.items()}
-        
+
         # Special tokens
         self.word2idx['<PAD>'] = len(self.word2idx)
         self.word2idx['<UNK>'] = len(self.word2idx)
         self.pad_idx = self.word2idx['<PAD>']
         self.unk_idx = self.word2idx['<UNK>']
-        
+
         self.phoneme2idx['<PAD>'] = len(self.phoneme2idx)
         self.phoneme_pad_idx = self.phoneme2idx['<PAD>']
-        
+
         self.vocab_size = len(self.word2idx)
         self.n_phonemes = len(self.phoneme2idx)
-    
+
     def _init_english(self):
         """Initialize English vocabulary."""
         # Common nouns
@@ -122,7 +125,7 @@ class ReadingVocabulary:
             'girl': ['g', 'ɜ', 'r', 'l'],
             'boy': ['b', 'ɔɪ'],
         }
-        
+
         # Common verbs
         self.verbs = {
             'runs': ['r', 'ʌ', 'n', 'z'],
@@ -134,7 +137,7 @@ class ReadingVocabulary:
             'throws': ['θ', 'r', 'oʊ', 'z'],
             'catches': ['k', 'æ', 'tʃ', 'ɪ', 'z'],
         }
-        
+
         # Common adjectives
         self.adjectives = {
             'big': ['b', 'ɪ', 'g'],
@@ -144,7 +147,7 @@ class ReadingVocabulary:
             'fast': ['f', 'æ', 's', 't'],
             'happy': ['h', 'æ', 'p', 'i'],
         }
-        
+
         # Function words
         self.function_words = {
             'the': ['ð', 'ə'],
@@ -154,7 +157,7 @@ class ReadingVocabulary:
             'with': ['w', 'ɪ', 'θ'],
             'is': ['ɪ', 'z'],
         }
-    
+
     def _init_german(self):
         """Initialize German vocabulary with IPA phonemes."""
         # Common nouns (German nouns are capitalized)
@@ -171,7 +174,7 @@ class ReadingVocabulary:
             'Mädchen': ['m', 'ɛː', 't', 'ç', 'ən'],  # girl
             'Junge': ['j', 'ʊ', 'ŋ', 'ə'],  # boy
         }
-        
+
         # Common verbs
         self.verbs = {
             'läuft': ['l', 'ɔɪ', 'f', 't'],  # runs
@@ -183,7 +186,7 @@ class ReadingVocabulary:
             'wirft': ['v', 'ɪ', 'r', 'f', 't'],  # throws
             'fängt': ['f', 'ɛ', 'ŋ', 't'],  # catches
         }
-        
+
         # Common adjectives
         self.adjectives = {
             'groß': ['g', 'r', 'oː', 's'],  # big
@@ -193,7 +196,7 @@ class ReadingVocabulary:
             'schnell': ['ʃ', 'n', 'ɛ', 'l'],  # fast
             'glücklich': ['g', 'l', 'ʏ', 'k', 'l', 'ɪ', 'ç'],  # happy
         }
-        
+
         # Function words
         self.function_words = {
             'der': ['d', 'eː', 'ɐ'],  # the (masc)
@@ -206,7 +209,7 @@ class ReadingVocabulary:
             'mit': ['m', 'ɪ', 't'],  # with
             'ist': ['ɪ', 's', 't'],  # is
         }
-    
+
     def _init_spanish(self):
         """Initialize Spanish vocabulary with IPA phonemes."""
         # Common nouns
@@ -223,7 +226,7 @@ class ReadingVocabulary:
             'niña': ['n', 'i', 'ɲ', 'a'],  # girl
             'niño': ['n', 'i', 'ɲ', 'o'],  # boy
         }
-        
+
         # Common verbs
         self.verbs = {
             'corre': ['k', 'o', 'r', 'e'],  # runs
@@ -235,7 +238,7 @@ class ReadingVocabulary:
             'lanza': ['l', 'a', 'n', 's', 'a'],  # throws
             'atrapa': ['a', 't', 'r', 'a', 'p', 'a'],  # catches
         }
-        
+
         # Common adjectives
         self.adjectives = {
             'grande': ['g', 'r', 'a', 'n', 'd', 'e'],  # big
@@ -245,7 +248,7 @@ class ReadingVocabulary:
             'rápido': ['r', 'a', 'p', 'i', 'ð', 'o'],  # fast
             'feliz': ['f', 'e', 'l', 'i', 's'],  # happy
         }
-        
+
         # Function words
         self.function_words = {
             'el': ['e', 'l'],  # the (masc)
@@ -262,23 +265,23 @@ class ReadingVocabulary:
 class ReadingDataset:
     """
     Reading comprehension dataset for Stage 3.
-    
+
     Generates tasks progressing from phoneme decoding to comprehension:
     - Phoneme → word mapping
     - Word → meaning mapping
     - Sentence completion
     - Simple question answering
-    
+
     Usage:
         >>> config = ReadingConfig()
         >>> dataset = ReadingDataset(config)
         >>> task_data, label, task_type = dataset.generate_task()
     """
-    
+
     def __init__(self, config: ReadingConfig):
         self.config = config
         self.vocab = ReadingVocabulary(language=config.language)
-        
+
         # Task generators
         self.task_generators = {
             ReadingTask.PHONEME_TO_WORD: self._generate_phoneme_to_word,
@@ -287,17 +290,17 @@ class ReadingDataset:
             ReadingTask.SIMPLE_QA: self._generate_simple_qa,
             ReadingTask.SEMANTIC_ROLE: self._generate_semantic_role,
         }
-    
+
     def generate_task(
         self,
         task_type: Optional[ReadingTask] = None,
     ) -> Tuple[Dict, torch.Tensor, ReadingTask]:
         """
         Generate single reading task.
-        
+
         Args:
             task_type: Specific task type (random if None)
-            
+
         Returns:
             task_data: Dict with task-specific inputs
             label: Target output
@@ -305,15 +308,15 @@ class ReadingDataset:
         """
         if task_type is None:
             task_type = np.random.choice(self.config.tasks_to_test)
-        
+
         task_data, label = self.task_generators[task_type]()
-        
+
         return task_data, label, task_type
-    
+
     def _generate_phoneme_to_word(self) -> Tuple[Dict, torch.Tensor]:
         """
         Phoneme decoding: Given phonemes, predict word.
-        
+
         Returns:
             task_data: {'phonemes': tensor of phoneme indices}
             label: Word index
@@ -321,14 +324,14 @@ class ReadingDataset:
         # Sample random word
         word = np.random.choice(list(self.vocab.all_words.keys()))
         phonemes = self.vocab.all_words[word]
-        
+
         # Convert to indices
         phoneme_indices = [self.vocab.phoneme2idx[p] for p in phonemes]
-        
+
         # Pad to max length
         while len(phoneme_indices) < self.config.max_phonemes:
             phoneme_indices.append(self.vocab.phoneme_pad_idx)
-        
+
         task_data = {
             'phonemes': torch.tensor(
                 phoneme_indices[:self.config.max_phonemes],
@@ -336,37 +339,37 @@ class ReadingDataset:
                 device=self.config.device,
             )
         }
-        
+
         label = torch.tensor(
             self.vocab.word2idx[word],
             dtype=torch.long,
             device=self.config.device,
         )
-        
+
         return task_data, label
-    
+
     def _generate_word_to_meaning(self) -> Tuple[Dict, torch.Tensor]:
         """
         Word → meaning: Given word, predict semantic features.
-        
+
         Semantic features:
         - Is animate? (0/1)
         - Is object? (0/1)
         - Is action? (0/1)
         - Size category (0=small, 1=medium, 2=large)
-        
+
         Returns:
             task_data: {'word': word index}
             label: (4,) semantic feature vector
         """
         # Sample word
         word = np.random.choice(list(self.vocab.all_words.keys()))
-        
+
         # Determine semantic features
         is_animate = 1 if word in self.vocab.nouns and word in ['cat', 'dog', 'bird', 'fish', 'girl', 'boy'] else 0
         is_object = 1 if word in self.vocab.nouns else 0
         is_action = 1 if word in self.vocab.verbs else 0
-        
+
         # Size (simplified)
         if word in ['cat', 'dog', 'bird', 'fish', 'ball', 'book']:
             size = 0  # small
@@ -374,7 +377,7 @@ class ReadingDataset:
             size = 2  # large
         else:
             size = 1  # medium
-        
+
         task_data = {
             'word': torch.tensor(
                 self.vocab.word2idx[word],
@@ -382,21 +385,21 @@ class ReadingDataset:
                 device=self.config.device,
             )
         }
-        
+
         label = torch.tensor(
             [is_animate, is_object, is_action, size],
             dtype=torch.float,
             device=self.config.device,
         )
-        
+
         return task_data, label
-    
+
     def _generate_sentence_completion(self) -> Tuple[Dict, torch.Tensor]:
         """
         Sentence completion: Fill in missing word.
-        
+
         "The cat ___ the ball" → "catches"
-        
+
         Returns:
             task_data: {'sentence': partial sentence indices}
             label: Missing word index
@@ -407,21 +410,21 @@ class ReadingDataset:
         verb = np.random.choice(list(self.vocab.verbs.keys()))
         det2 = 'the'
         obj = np.random.choice(list(self.vocab.nouns.keys()))
-        
+
         sentence = [det1, subj, verb, det2, obj]
-        
+
         # Remove one content word (noun or verb)
         missing_pos = np.random.choice([1, 2, 4])  # subj, verb, or obj
         missing_word = sentence[missing_pos]
         sentence[missing_pos] = '<UNK>'
-        
+
         # Convert to indices
         sentence_indices = [self.vocab.word2idx.get(w, self.vocab.unk_idx) for w in sentence]
-        
+
         # Pad
         while len(sentence_indices) < self.config.max_sentence_length:
             sentence_indices.append(self.vocab.pad_idx)
-        
+
         task_data = {
             'sentence': torch.tensor(
                 sentence_indices[:self.config.max_sentence_length],
@@ -434,22 +437,22 @@ class ReadingDataset:
                 device=self.config.device,
             ),
         }
-        
+
         label = torch.tensor(
             self.vocab.word2idx[missing_word],
             dtype=torch.long,
             device=self.config.device,
         )
-        
+
         return task_data, label
-    
+
     def _generate_simple_qa(self) -> Tuple[Dict, torch.Tensor]:
         """
         Simple question answering.
-        
+
         Sentence: "The girl reads the book"
         Question: "Who reads?" → "girl"
-        
+
         Returns:
             task_data: {'sentence': indices, 'question': indices}
             label: Answer word index
@@ -460,12 +463,12 @@ class ReadingDataset:
         verb = np.random.choice(list(self.vocab.verbs.keys()))
         det2 = 'the'
         obj = np.random.choice(list(self.vocab.nouns.keys()))
-        
+
         sentence = [det1, subj, verb, det2, obj]
-        
+
         # Generate question
         question_type = np.random.choice(['who', 'what_action', 'what_object'])
-        
+
         if question_type == 'who':
             question = ['who', verb]  # Who <verbs>?
             answer = subj
@@ -475,17 +478,17 @@ class ReadingDataset:
         else:  # what_object
             question = ['what', 'object']  # What object?
             answer = obj
-        
+
         # Convert to indices
         sentence_indices = [self.vocab.word2idx.get(w, self.vocab.unk_idx) for w in sentence]
         question_indices = [self.vocab.word2idx.get(w, self.vocab.unk_idx) for w in question]
-        
+
         # Pad
         while len(sentence_indices) < self.config.max_sentence_length:
             sentence_indices.append(self.vocab.pad_idx)
         while len(question_indices) < self.config.max_sentence_length:
             question_indices.append(self.vocab.pad_idx)
-        
+
         task_data = {
             'sentence': torch.tensor(
                 sentence_indices[:self.config.max_sentence_length],
@@ -498,22 +501,22 @@ class ReadingDataset:
                 device=self.config.device,
             ),
         }
-        
+
         label = torch.tensor(
             self.vocab.word2idx.get(answer, self.vocab.unk_idx),
             dtype=torch.long,
             device=self.config.device,
         )
-        
+
         return task_data, label
-    
+
     def _generate_semantic_role(self) -> Tuple[Dict, torch.Tensor]:
         """
         Semantic role labeling: Identify agent/action/patient.
-        
+
         Sentence: "The girl throws the ball"
         Roles: agent=girl, action=throws, patient=ball
-        
+
         Returns:
             task_data: {'sentence': indices}
             label: (3,) roles [agent_idx, action_idx, patient_idx]
@@ -524,20 +527,20 @@ class ReadingDataset:
         verb = np.random.choice(list(self.vocab.verbs.keys()))
         det2 = 'the'
         obj = np.random.choice(list(self.vocab.nouns.keys()))
-        
+
         sentence = [det1, subj, verb, det2, obj]
-        
+
         # Roles: positions in sentence
         agent_pos = 1  # subj
         action_pos = 2  # verb
         patient_pos = 4  # obj
-        
+
         sentence_indices = [self.vocab.word2idx.get(w, self.vocab.unk_idx) for w in sentence]
-        
+
         # Pad
         while len(sentence_indices) < self.config.max_sentence_length:
             sentence_indices.append(self.vocab.pad_idx)
-        
+
         task_data = {
             'sentence': torch.tensor(
                 sentence_indices[:self.config.max_sentence_length],
@@ -545,15 +548,15 @@ class ReadingDataset:
                 device=self.config.device,
             ),
         }
-        
+
         label = torch.tensor(
             [agent_pos, action_pos, patient_pos],
             dtype=torch.long,
             device=self.config.device,
         )
-        
+
         return task_data, label
-    
+
     def compute_accuracy(
         self,
         predictions: torch.Tensor,
@@ -562,12 +565,12 @@ class ReadingDataset:
     ) -> float:
         """
         Compute task-specific accuracy.
-        
+
         Args:
             predictions: Model predictions (shape depends on task)
             labels: True labels
             task_type: Type of task
-            
+
         Returns:
             accuracy: Fraction correct
         """
@@ -591,7 +594,7 @@ class ReadingDataset:
             total = len(labels)
         else:
             return 0.0
-        
+
         return correct / total if total > 0 else 0.0
 
 
@@ -601,11 +604,11 @@ def create_stage3_reading_dataset(
 ) -> ReadingDataset:
     """
     Create reading dataset for Stage 3.
-    
+
     Args:
         device: Device to place tensors on
         language: Language to use (English, German, or Spanish)
-        
+
     Returns:
         dataset: ReadingDataset instance
     """
@@ -623,5 +626,5 @@ def create_stage3_reading_dataset(
         language=language,
         device=device,
     )
-    
+
     return ReadingDataset(config)

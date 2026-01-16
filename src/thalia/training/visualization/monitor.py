@@ -16,6 +16,8 @@ Usage:
     monitor.start_auto_refresh(interval=5)  # Update every 5 seconds
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 import threading
 import time

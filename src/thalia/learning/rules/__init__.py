@@ -3,6 +3,9 @@
 Core learning algorithms including BCM and pluggable learning strategies.
 """
 
+from __future__ import annotations
+
+
 from thalia.learning.rules.bcm import (
     BCMRule,
     BCMConfig,

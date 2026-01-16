@@ -1,7 +1,11 @@
 """Programmatic stimulus pattern."""
 
+from __future__ import annotations
+
 from typing import Callable, Optional
+
 import torch
+
 from .base import StimulusPattern
 
 

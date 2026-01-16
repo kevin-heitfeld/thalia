@@ -8,13 +8,15 @@ Provides simple API for checkpoint persistence:
     BrainCheckpoint.validate(path)
 """
 
-import time
+from __future__ import annotations
+
+from dataclasses import is_dataclass, asdict
+from datetime import datetime
+from enum import Enum
 import json
 from pathlib import Path
+import time
 from typing import Dict, Any, Optional, Union
-from datetime import datetime
-from dataclasses import is_dataclass, asdict
-from enum import Enum
 
 import torch
 
@@ -31,7 +33,6 @@ from .binary_format import (
     PATCH_VERSION,
     HEADER_SIZE,
 )
-from .tensor_encoding import encode_tensor, decode_tensor
 from .precision import (
     get_precision_policy,
     apply_precision_policy_to_state,
@@ -39,6 +40,7 @@ from .precision import (
     get_precision_statistics,
     PrecisionPolicy,
 )
+from .tensor_encoding import encode_tensor, decode_tensor
 
 
 def _convert_to_json_serializable(obj: Any) -> Any:

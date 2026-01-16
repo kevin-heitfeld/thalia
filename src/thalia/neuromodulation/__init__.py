@@ -5,6 +5,9 @@ This module provides neuromodulator systems (VTA, locus coeruleus, nucleus basal
 and management infrastructure for global neuromodulatory signals.
 """
 
+from __future__ import annotations
+
+
 from thalia.constants.neuromodulation import (
     ACH_BASELINE,
     DA_BASELINE_STANDARD,

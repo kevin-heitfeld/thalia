@@ -14,9 +14,12 @@ Encoding format for each tensor:
     [variable] data
 """
 
-from typing import BinaryIO, Tuple
+from __future__ import annotations
+
 from enum import IntEnum
 import struct
+from typing import BinaryIO, Tuple
+
 import torch
 
 

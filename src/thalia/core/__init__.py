@@ -12,6 +12,8 @@ For other components, import from their actual locations:
 - Neuromodulation: thalia.neuromodulation
 """
 
+from __future__ import annotations
+
 # Core infrastructure only
 from thalia.core.errors import (
     ThaliaError,

@@ -4,6 +4,8 @@ Neuron models and dendritic computation.
 This module contains spiking neuron models and dendritic processing components.
 """
 
+from __future__ import annotations
+
 from thalia.components.neurons.dendritic import (
     DendriticBranch,
     DendriticBranchConfig,

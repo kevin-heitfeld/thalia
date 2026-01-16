@@ -8,12 +8,14 @@ Author: Thalia Project
 Date: December 12, 2025
 """
 
+from __future__ import annotations
+
 import torch
 
 from thalia.constants.task import (
-    STIMULUS_NOISE_SCALE,
-    SPIKE_PROBABILITY_LOW,
     PROPRIOCEPTION_NOISE_SCALE,
+    SPIKE_PROBABILITY_LOW,
+    STIMULUS_NOISE_SCALE,
 )
 
 

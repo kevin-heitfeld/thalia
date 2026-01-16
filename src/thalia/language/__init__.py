@@ -11,6 +11,9 @@ Components:
 - LanguageBrain: Language-enabled brain (integrates with DynamicBrain)
 """
 
+from __future__ import annotations
+
+
 from thalia.language.encoder import (
     SpikeEncoder,
     SpikeEncoderConfig,

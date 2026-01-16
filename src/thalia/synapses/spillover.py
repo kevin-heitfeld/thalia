@@ -24,6 +24,8 @@ References:
     - Zoli et al. (1999): Volume transmission in the CNS
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Literal, Optional
 

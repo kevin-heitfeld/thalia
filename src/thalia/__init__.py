@@ -30,6 +30,8 @@ Internal code should use explicit imports for clarity:
 This helps with IDE navigation and makes dependencies explicit.
 """
 
+from __future__ import annotations
+
 __version__ = "0.2.0"
 
 # ============================================================================

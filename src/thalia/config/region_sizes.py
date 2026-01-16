@@ -7,6 +7,8 @@ documenting the neuroscience basis for architectural choices.
 DEPRECATED: Use :class:`LayerSizeCalculator` in :mod:`thalia.config.size_calculator`
 """
 
+from __future__ import annotations
+
 import warnings
 
 from thalia.config.size_calculator import LayerSizeCalculator

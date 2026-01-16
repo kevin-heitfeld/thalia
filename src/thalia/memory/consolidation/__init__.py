@@ -5,6 +5,9 @@ and advanced consolidation processes including schema extraction,
 semantic reorganization, and interference resolution.
 """
 
+from __future__ import annotations
+
+
 from thalia.memory.consolidation.consolidation import (
     MemoryPressureDetector,
     MemoryPressureConfig,

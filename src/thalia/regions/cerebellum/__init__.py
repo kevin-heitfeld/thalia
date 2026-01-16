@@ -14,6 +14,9 @@ Author: Thalia Project
 Date: December 17, 2025
 """
 
+from __future__ import annotations
+
+
 from thalia.regions.cerebellum.granule_layer import GranuleCellLayer
 from thalia.regions.cerebellum.purkinje_cell import EnhancedPurkinjeCell
 from thalia.regions.cerebellum.deep_nuclei import DeepCerebellarNuclei

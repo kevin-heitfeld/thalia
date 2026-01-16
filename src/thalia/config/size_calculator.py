@@ -10,6 +10,8 @@ Author: Thalia Project
 Date: January 10, 2026
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Dict
 

@@ -14,6 +14,9 @@ Available Mixins:
 - StateLoadingMixin: Common state restoration logic for load_state()
 """
 
+from __future__ import annotations
+
+
 from thalia.mixins.device_mixin import DeviceMixin
 from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.mixins.configurable_mixin import ConfigurableMixin

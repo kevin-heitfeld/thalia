@@ -20,6 +20,9 @@ Usage:
     obs_spikes, reward, done, truncated = wrapper.step(motor_spikes)
 """
 
+from __future__ import annotations
+
+
 from thalia.environments.sensorimotor_wrapper import (
     SensorimotorWrapper,
     SensorimotorConfig,

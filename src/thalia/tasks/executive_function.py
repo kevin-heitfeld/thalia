@@ -14,19 +14,22 @@ References:
 - Mischel et al. (1989): Marshmallow test
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Tuple, List, Dict, Optional, Any
 from enum import Enum
+from typing import Tuple, List, Dict, Optional, Any
+
 import numpy as np
 import torch
 
 from thalia.constants.task import (
-    STIMULUS_STRENGTH_HIGH,
-    WEIGHT_INIT_SCALE_SMALL,
     FEATURE_INCREMENT_BASE,
     FEATURE_INCREMENT_COLUMN,
     FEATURE_INCREMENT_INTERACTION,
     FEATURE_NOISE_MATCH,
+    STIMULUS_STRENGTH_HIGH,
+    WEIGHT_INIT_SCALE_SMALL,
 )
 from thalia.tasks.stimulus_utils import (
     create_random_stimulus,

@@ -7,6 +7,8 @@ metric collection for stage gate evaluation.
 Integration with stage_gates.py for comprehensive safety system.
 """
 
+from __future__ import annotations
+
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum

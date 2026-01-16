@@ -10,6 +10,8 @@ Design Pattern: Template Method + DRY
 - Child configs inherit and add model-specific parameters
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from thalia.config.base import BaseConfig

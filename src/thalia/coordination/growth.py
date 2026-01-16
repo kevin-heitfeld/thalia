@@ -37,6 +37,8 @@ Both regions AND pathways implement growth:
 **Date**: December 2025 (Updated from Dec 7, 2025)
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional

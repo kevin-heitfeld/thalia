@@ -28,6 +28,8 @@ Author: Thalia Project
 Date: December 2025
 """
 
+from __future__ import annotations
+
 # Re-export component configs from core/
 from thalia.core.base.component_config import (
     NeuralComponentConfig,

@@ -5,6 +5,8 @@ conductances, neuromodulators, STP, etc.) to eliminate ~200-300 lines of duplica
 across 15-18 region implementations.
 """
 
+from __future__ import annotations
+
 from typing import Any, Dict
 
 import torch

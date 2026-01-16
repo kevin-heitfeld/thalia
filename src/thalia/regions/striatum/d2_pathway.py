@@ -10,9 +10,12 @@ D2-MSNs express D2 dopamine receptors and form the INDIRECT pathway:
 Biological role: "NOGO" signal for action suppression
 """
 
+from __future__ import annotations
+
 from typing import Dict, Any
 
 import torch
+
 from .pathway_base import StriatumPathway, StriatumPathwayConfig
 
 

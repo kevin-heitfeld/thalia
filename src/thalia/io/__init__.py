@@ -41,6 +41,9 @@ Example:
     info = BrainCheckpoint.info("checkpoint.thalia")
 """
 
+from __future__ import annotations
+
+
 from .checkpoint import BrainCheckpoint
 from .checkpoint_manager import CheckpointManager, save_checkpoint, load_checkpoint
 from .compression import compress_file, decompress_file, CompressionError

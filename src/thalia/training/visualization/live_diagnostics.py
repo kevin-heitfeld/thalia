@@ -22,6 +22,8 @@ Author: Thalia Project
 Date: December 10, 2025
 """
 
+from __future__ import annotations
+
 from collections import deque
 from typing import Dict, Any, Optional
 
@@ -32,11 +34,11 @@ import torch
 
 from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.constants.visualization import (
-    TEXT_POSITION_CENTER,
     ALPHA_SEMI_TRANSPARENT,
     PERFORMANCE_EXCELLENT,
     PERFORMANCE_GOOD,
     PERFORMANCE_ACCEPTABLE,
+    TEXT_POSITION_CENTER,
 )
 
 # Use non-interactive backend to avoid blocking windows

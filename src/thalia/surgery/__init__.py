@@ -89,6 +89,9 @@ Author: Thalia Project
 Date: December 12, 2025 (Tier 3 Implementation)
 """
 
+from __future__ import annotations
+
+
 from .lesion import (
     lesion_region,
     partial_lesion,

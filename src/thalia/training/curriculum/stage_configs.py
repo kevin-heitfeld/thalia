@@ -11,9 +11,12 @@ Usage:
     trainer.train_stage(stage, config, task_loader)
 """
 
+from __future__ import annotations
+
 from dataclasses import replace
-from thalia.training.curriculum.stage_manager import StageConfig, TaskConfig
+
 from thalia.config.curriculum_growth import CurriculumStage
+from thalia.training.curriculum.stage_manager import StageConfig, TaskConfig
 
 
 # =============================================================================

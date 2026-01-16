@@ -5,6 +5,8 @@ This module defines constants for retinal, cochlear, and somatosensory processin
 that reflect biological sensor dynamics and adaptation.
 """
 
+from __future__ import annotations
+
 # ============================================================================
 # RETINAL PROCESSING CONSTANTS
 # ============================================================================

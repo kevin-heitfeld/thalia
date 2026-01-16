@@ -103,9 +103,9 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any, List
 from enum import Enum
 import math
+from typing import Optional, Tuple, Dict, Any, List
 
 import torch
 import torch.nn as nn

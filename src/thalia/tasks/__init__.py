@@ -2,6 +2,9 @@
 Cognitive tasks for Thalia's developmental curriculum.
 """
 
+from __future__ import annotations
+
+
 from thalia.tasks.executive_function import (
     ExecutiveFunctionTasks,
     TaskType,

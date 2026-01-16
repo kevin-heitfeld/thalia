@@ -14,19 +14,15 @@ Author: Thalia Project
 Date: December 21, 2025
 """
 
-from typing import Dict, List, Tuple, Optional, Any
-try:
-    from typing import TypedDict  # Python 3.8+
-except ImportError:
-    from typing_extensions import TypedDict  # Fallback for older Python
+from __future__ import annotations
+
+from typing import Dict, List, Tuple, TypedDict, Optional, Any, TYPE_CHECKING
+
 import torch
 
-# Re-export for convenience when using TYPE_CHECKING
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from thalia.regions.base import NeuralRegion
     from thalia.learning.rules.strategies import LearningStrategy
+    from thalia.regions.base import NeuralRegion
 
 # ============================================================================
 # Component Organization

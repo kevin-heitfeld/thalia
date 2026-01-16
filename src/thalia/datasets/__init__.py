@@ -9,6 +9,8 @@ Provides task-specific datasets for each developmental stage:
 - Stage 3: Reading comprehension (phoneme→word, simple QA)
 """
 
+from __future__ import annotations
+
 from thalia.datasets.phonology import (
     PhonologicalDataset,
     PhonologicalConfig,

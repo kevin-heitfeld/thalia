@@ -10,6 +10,9 @@ v3.0 Architecture:
 - All learning happens at dendrites (NeuralRegion pattern)
 """
 
+from __future__ import annotations
+
+
 # Protocol
 from thalia.pathways.protocol import NeuralPathway
 

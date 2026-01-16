@@ -25,15 +25,12 @@ References:
 - Siegle & Wilson (2014): Enhancement of encoding and retrieval
 """
 
-from typing import Optional
+from __future__ import annotations
+
 import math
+from typing import Optional
 
 import torch
-
-__all__ = [
-    "StimulusGating",
-    "TemporalIntegrationLayer",
-]
 
 
 class StimulusGating:
@@ -260,3 +257,9 @@ class TemporalIntegrationLayer:
     def reset_state(self) -> None:
         """Reset integration state (for hard episode boundaries only)."""
         self._trace = None
+
+
+__all__ = [
+    "StimulusGating",
+    "TemporalIntegrationLayer",
+]

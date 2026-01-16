@@ -13,6 +13,8 @@ These utilities work with binary spike tensors (0 or 1) and handle edge cases
 like empty tensors or all-zero spike trains.
 """
 
+from __future__ import annotations
+
 import torch
 
 

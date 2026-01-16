@@ -8,6 +8,8 @@ Author: Thalia Project
 Date: January 16, 2026 (Architecture Review Tier 1.2 - Complete Migration)
 """
 
+from __future__ import annotations
+
 # =============================================================================
 # HIPPOCAMPUS ARCHITECTURE
 # =============================================================================

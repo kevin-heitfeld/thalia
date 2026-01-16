@@ -3,6 +3,8 @@
 Protocol definitions for brain components and neural elements.
 """
 
+from __future__ import annotations
+
 from thalia.core.protocols.component import (
     BrainComponent,
     BrainComponentBase,

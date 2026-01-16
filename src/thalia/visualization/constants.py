@@ -8,6 +8,8 @@ Author: Thalia Project
 Date: December 23, 2025
 """
 
+from __future__ import annotations
+
 # =============================================================================
 # NETWORK GRAPH VISUALIZATION
 # =============================================================================

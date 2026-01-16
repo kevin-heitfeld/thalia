@@ -9,7 +9,10 @@ Provides tools for detecting and measuring oscillatory dynamics in spike trains:
 Used for validating emergent oscillations (gamma, theta, etc.) in neural circuits.
 """
 
+from __future__ import annotations
+
 from typing import Tuple, Optional
+
 import numpy as np
 from scipy.fft import fft, fftfreq
 from scipy.signal import correlate

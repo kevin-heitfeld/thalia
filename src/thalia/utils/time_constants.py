@@ -5,6 +5,8 @@ This module defines constants for converting between milliseconds and seconds,
 which is common in neuroscience simulations (timesteps in ms, frequencies in Hz).
 """
 
+from __future__ import annotations
+
 import math
 
 # ============================================================================

@@ -4,6 +4,8 @@ Spike coding and spike utilities.
 This module provides spike encoding/decoding strategies and spike manipulation utilities.
 """
 
+from __future__ import annotations
+
 from thalia.components.coding.spike_coding import (
     CodingStrategy,
     SpikeCodingConfig,

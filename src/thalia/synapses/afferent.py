@@ -16,14 +16,16 @@ Author: Thalia Project
 Date: December 2025
 """
 
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Optional, Dict, Any, TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
     from thalia.learning.rules.strategies import LearningStrategy
-    from thalia.components.plasticity.stp import ShortTermPlasticity, STPConfig
 
 
 @dataclass

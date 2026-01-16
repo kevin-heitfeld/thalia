@@ -26,6 +26,8 @@ Author: Thalia Project
 Date: December 2025
 """
 
+from __future__ import annotations
+
 
 class DiagnosticKeys:
     """Standard diagnostic key names."""

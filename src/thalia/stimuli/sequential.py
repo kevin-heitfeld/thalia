@@ -1,7 +1,11 @@
 """Sequential stimulus pattern."""
 
+from __future__ import annotations
+
 from typing import List, Optional
+
 import torch
+
 from .base import StimulusPattern
 
 

@@ -10,9 +10,12 @@ D1-MSNs express D1 dopamine receptors and form the DIRECT pathway:
 Biological role: "GO" signal for action selection
 """
 
+from __future__ import annotations
+
 from typing import Dict, Any
 
 import torch
+
 from .pathway_base import StriatumPathway, StriatumPathwayConfig
 
 

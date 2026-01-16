@@ -59,6 +59,8 @@ Usage:
     activity = homeostasis.normalize_activity(activity)
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, Tuple
 
@@ -66,8 +68,8 @@ import torch
 import torch.nn as nn
 
 from thalia.config.base import BaseConfig
-from thalia.utils.core_utils import clamp_weights
 from thalia.constants.learning import EMA_DECAY_FAST
+from thalia.utils.core_utils import clamp_weights
 
 
 @dataclass

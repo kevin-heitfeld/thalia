@@ -13,6 +13,9 @@ Author: Thalia Project
 Date: December 12, 2025
 """
 
+from __future__ import annotations
+
+
 from thalia.constants.training import (
     AttentionStage,
     get_attention_weights,

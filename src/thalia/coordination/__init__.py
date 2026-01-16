@@ -3,30 +3,32 @@
 Oscillatory dynamics, trial coordination, and growth management.
 """
 
-from thalia.coordination.oscillator import (
-    OscillatorManager,
-    BrainOscillator,
-    OscillatorConfig,
-    SinusoidalOscillator,
-    OscillatorCoupling,
-)
+from __future__ import annotations
+
 from thalia.coordination.growth import (
-    GrowthManager,
-    GrowthEvent,
     CapacityMetrics,
     GrowthCoordinator,
+    GrowthEvent,
+    GrowthManager,
+)
+from thalia.coordination.oscillator import (
+    BrainOscillator,
+    OscillatorConfig,
+    OscillatorCoupling,
+    OscillatorManager,
+    SinusoidalOscillator,
 )
 
 __all__ = [
-    # Oscillator
-    "OscillatorManager",
-    "BrainOscillator",
-    "OscillatorConfig",
-    "SinusoidalOscillator",
-    "OscillatorCoupling",
     # Growth
-    "GrowthManager",
-    "GrowthEvent",
     "CapacityMetrics",
     "GrowthCoordinator",
+    "GrowthEvent",
+    "GrowthManager",
+    # Oscillator
+    "BrainOscillator",
+    "OscillatorConfig",
+    "OscillatorCoupling",
+    "OscillatorManager",
+    "SinusoidalOscillator",
 ]

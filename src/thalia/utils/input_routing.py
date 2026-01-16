@@ -67,6 +67,8 @@ References:
 - Architecture Review 2025-12-20, Tier 2, Recommendation 2.2
 """
 
+from __future__ import annotations
+
 from typing import Dict, List, Optional, Union
 
 import torch

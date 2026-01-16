@@ -24,6 +24,8 @@ Date: December 10, 2025
 Phase: 3 - Hierarchical Goals & Temporal Abstraction
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, Callable, Any

@@ -26,6 +26,8 @@ Different brain regions require different checkpoint strategies:
 - Prefrontal: Feedforward/recurrent/inhibitory separation, working memory
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 

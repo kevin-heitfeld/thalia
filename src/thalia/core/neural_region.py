@@ -15,21 +15,23 @@ Biological accuracy:
 - Soma = integration + spiking
 """
 
+from __future__ import annotations
+
 from typing import Dict, Optional, Any, Protocol
 import torch
 import torch.nn as nn
 
-from thalia.typing import SourceOutputs, DiagnosticsDict, StateDict
-from thalia.learning import create_strategy
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import WeightInitializer
+from thalia.core.protocols.component import BrainComponentMixin
+from thalia.learning import create_strategy
+from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.mixins.state_loading_mixin import StateLoadingMixin
-from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
-from thalia.core.protocols.component import BrainComponentMixin
+from thalia.typing import SourceOutputs, DiagnosticsDict, StateDict
 
 
 # Custom warning for performance issues

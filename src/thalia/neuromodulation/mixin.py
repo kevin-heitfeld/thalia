@@ -124,6 +124,8 @@ Author: Thalia Project
 Date: December 2025
 """
 
+from __future__ import annotations
+
 import math
 from typing import Optional
 

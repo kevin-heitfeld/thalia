@@ -23,6 +23,8 @@ References:
     - Landisman et al. (2002): Gap junctions in thalamic reticular nucleus
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional
 

@@ -51,8 +51,11 @@ Follows centralized broadcast pattern:
 **Date**: December 2025
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional
+
 from thalia.neuromodulation.homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
 
 

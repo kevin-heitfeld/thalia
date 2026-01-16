@@ -13,11 +13,14 @@ Biologically relevant:
 - Critical for speech sound sequence learning
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Dict
 from enum import Enum
-import torch
+from typing import List, Optional, Tuple, Dict
+
 import numpy as np
+import torch
 
 
 class PatternType(Enum):

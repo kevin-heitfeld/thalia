@@ -27,6 +27,8 @@ Author: Thalia Project
 Date: December 2025
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Tuple, Dict, Any
 

@@ -7,6 +7,8 @@ Author: Thalia Project
 Date: January 11, 2026
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 

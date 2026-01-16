@@ -14,16 +14,18 @@ Author: Thalia Project
 Date: December 2025
 """
 
-from typing import Dict, List, Optional, Tuple, Any, Union
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, Any, Union
 
 import torch
 
+from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.pathway_state import AxonalProjectionState
 from thalia.core.protocols.component import RoutingComponent
 from thalia.managers.component_registry import register_pathway
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.utils.delay_buffer import CircularDelayBuffer
-from thalia.core.pathway_state import AxonalProjectionState
 
 
 @dataclass

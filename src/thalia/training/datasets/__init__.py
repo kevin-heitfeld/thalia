@@ -12,6 +12,9 @@ Author: Thalia Project
 Date: December 12, 2025
 """
 
+from __future__ import annotations
+
+
 from thalia.training.datasets.loaders import (
     BaseTaskLoader,
     SensorimotorTaskLoader,

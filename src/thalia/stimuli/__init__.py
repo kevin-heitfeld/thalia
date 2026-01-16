@@ -20,6 +20,9 @@ Example:
     >>> brain.forward({"thalamus": stim})
 """
 
+from __future__ import annotations
+
+
 from .base import StimulusPattern
 from .sustained import Sustained
 from .transient import Transient

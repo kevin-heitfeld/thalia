@@ -20,6 +20,8 @@ Author: Thalia Project
 Date: December 21, 2025
 """
 
+from __future__ import annotations
+
 import torch
 
 

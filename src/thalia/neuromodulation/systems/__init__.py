@@ -5,6 +5,9 @@ These systems provide global neuromodulatory signals that influence learning,
 attention, and arousal throughout the brain.
 """
 
+from __future__ import annotations
+
+
 from thalia.neuromodulation.systems.vta import VTADopamineSystem, VTAConfig
 from thalia.neuromodulation.systems.locus_coeruleus import (
     LocusCoeruleusSystem,

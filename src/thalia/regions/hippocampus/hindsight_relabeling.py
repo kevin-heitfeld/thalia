@@ -24,9 +24,12 @@ Author: Thalia Project
 Date: December 2025
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Any
 from enum import Enum
+from typing import List, Dict, Optional, Any
+
 import torch
 
 

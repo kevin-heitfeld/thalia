@@ -11,6 +11,9 @@ This package provides monitoring and analysis tools for network health:
 - Metacognitive monitoring (confidence estimation, abstention)
 """
 
+from __future__ import annotations
+
+
 from .criticality import (
     CriticalityConfig,
     CriticalityMonitor,

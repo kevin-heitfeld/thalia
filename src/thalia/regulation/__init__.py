@@ -7,6 +7,9 @@ NOTE: Constants have been fully consolidated to thalia.constants module.
 This file maintains exports for backward compatibility within the regulation module.
 """
 
+from __future__ import annotations
+
+
 from thalia.constants.exploration import (
     # Exploration strategies
     DEFAULT_EPSILON_EXPLORATION,

@@ -34,6 +34,8 @@ Growth Checklist (for implementers of grow_input):
 5. ❌ NO neuron growth - Input growth does NOT add neurons
 """
 
+from __future__ import annotations
+
 from typing import Dict, Optional
 
 import torch

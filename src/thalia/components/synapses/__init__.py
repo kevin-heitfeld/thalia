@@ -4,6 +4,8 @@ Synaptic components: weight initialization, short-term plasticity, and traces.
 This module provides synaptic mechanisms for spiking neural networks.
 """
 
+from __future__ import annotations
+
 from thalia.components.synapses.weight_init import (
     InitStrategy,
     WeightInitializer,

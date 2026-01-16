@@ -19,6 +19,9 @@ Author: Thalia Project
 Date: December 12, 2025
 """
 
+from __future__ import annotations
+
+
 # Import from reorganized subdirectories
 from thalia.training.curriculum import (
     # Curriculum mechanics

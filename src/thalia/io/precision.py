@@ -18,8 +18,11 @@ Usage:
     BrainCheckpoint.save(brain, path, precision_policy=policy)
 """
 
-from typing import Dict, Any, Union
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Dict, Any, Union
+
 import torch
 
 

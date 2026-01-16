@@ -3,6 +3,9 @@
 General utility functions for the Thalia framework.
 """
 
+from __future__ import annotations
+
+
 from thalia.utils.core_utils import (
     clamp_weights,
     cosine_similarity_safe,

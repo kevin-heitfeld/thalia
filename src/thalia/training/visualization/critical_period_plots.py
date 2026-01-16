@@ -5,11 +5,14 @@ Visualize critical period windows and their progression over training.
 Shows how learning rate multipliers change across developmental stages.
 """
 
+from __future__ import annotations
+
 from typing import Dict, List, Optional
+
+import numpy as np
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.figure import Figure
-import numpy as np
 
 from thalia.learning.critical_periods import CriticalPeriodGating
 

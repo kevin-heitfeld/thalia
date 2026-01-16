@@ -12,6 +12,9 @@ Components:
 - Advanced Consolidation: Schema extraction, semantic reorganization, interference resolution
 """
 
+from __future__ import annotations
+
+
 from thalia.memory.sequence import (
     SequenceMemory,
     SequenceContext,

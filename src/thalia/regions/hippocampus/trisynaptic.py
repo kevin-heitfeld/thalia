@@ -84,15 +84,17 @@ References:
 - Colgin (2013): Theta-gamma coupling in hippocampus
 """
 
+from __future__ import annotations
+
 from typing import Optional, Dict, Any, List, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 from thalia.components.neurons import create_pyramidal_neurons
 from thalia.components.synapses import ShortTermPlasticity, get_stp_config, update_trace, WeightInitializer
-from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 from thalia.constants.architecture import (
     ACTIVITY_HISTORY_DECAY,
     ACTIVITY_HISTORY_INCREMENT,
@@ -129,16 +131,16 @@ from thalia.typing import HippocampusDiagnostics
 from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
-    compute_theta_encoding_retrieval,
     compute_ach_recurrent_suppression,
-    compute_oscillator_modulated_gain,
     compute_learning_rate_modulation,
+    compute_theta_encoding_retrieval,
+    compute_oscillator_modulated_gain,
 )
 
-from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
+from .checkpoint_manager import HippocampusCheckpointManager
 from .config import Episode, HippocampusConfig, HippocampusState
 from .memory_component import HippocampusMemoryComponent
-from .checkpoint_manager import HippocampusCheckpointManager
+from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
 
 
 @register_region(

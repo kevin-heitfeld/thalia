@@ -5,6 +5,8 @@ This module provides the fundamental building blocks for constructing
 spiking neural networks in Thalia.
 """
 
+from __future__ import annotations
+
 # Neuron models and constants
 from thalia.components.neurons import (
     ConductanceLIF,

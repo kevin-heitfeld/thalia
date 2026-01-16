@@ -15,6 +15,9 @@ This module provides:
 5. Critical Period Gating - time-windowed plasticity modulation
 """
 
+from __future__ import annotations
+
+
 from thalia.learning.rules.bcm import (
     BCMRule,
     BCMConfig,

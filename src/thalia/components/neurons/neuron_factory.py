@@ -34,6 +34,8 @@ Author: Thalia Project
 Date: December 2025
 """
 
+from __future__ import annotations
+
 from typing import Callable, Dict, List
 
 import torch
@@ -41,19 +43,19 @@ import torch
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.constants.neuron import (
     G_LEAK_STANDARD,
-    TAU_SYN_EXCITATORY,
-    TAU_SYN_INHIBITORY,
-    TAU_EXCITATORY_CONDUCTANCE,
-    TAU_INHIBITORY_CONDUCTANCE,
-    V_THRESHOLD_STANDARD,
-    V_RESET_STANDARD,
-    E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
+    E_LEAK,
+    FAST_SPIKING_INTERNEURON,
+    TAU_EXCITATORY_CONDUCTANCE,
+    TAU_INHIBITORY_CONDUCTANCE,
     TAU_MEM_STANDARD,
     TAU_MEM_FAST,
     TAU_REF_FAST,
-    FAST_SPIKING_INTERNEURON,
+    TAU_SYN_EXCITATORY,
+    TAU_SYN_INHIBITORY,
+    V_RESET_STANDARD,
+    V_THRESHOLD_STANDARD,
 )
 
 
