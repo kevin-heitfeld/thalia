@@ -24,7 +24,7 @@
   "reportUnknownMemberType": false,
   "reportUnknownParameterType": "warning",
   "reportUnknownVariableType": "warning",
-  "reportUnknownArgumentType": false,
+  "reportUnknownArgumentType": "warning",
   "reportGeneralTypeIssues": "warning",
   "reportOptionalMemberAccess": "warning",
   "reportOptionalSubscript": "warning",
