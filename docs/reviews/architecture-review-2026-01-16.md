@@ -1085,7 +1085,84 @@ src/thalia_apps/ (NEW - applications of Thalia)
 
 ---
 
-### 3.3 Implement Strict Type Checking
+### 3.3 Implement Strict Type Checking 🔄 **IN PROGRESS 2026-01-16**
+
+**Status**: 🔄 **PHASE 1 IN PROGRESS** - Moderate type checking enabled, type alias usage being standardized.
+
+**Implementation Summary**:
+
+**Phase 1: Enable Moderate Type Checking** ✅
+
+Updated [pyrightconfig.json](../../pyrightconfig.json):
+```json
+{
+  "typeCheckingMode": "standard",  // Upgraded from "basic"
+  "reportUnknownParameterType": "warning",  // Was: false
+  "reportUnknownVariableType": "warning",   // Was: false
+  "reportGeneralTypeIssues": "warning",     // Was: false
+  "reportOptionalMemberAccess": "warning",  // Was: false
+  "reportOptionalSubscript": "warning",     // Was: false
+  "reportDuplicateImport": "error",         // Was: warning
+  "reportConstantRedefinition": "error",    // Was: warning
+  "reportIncompatibleMethodOverride": "error",  // Was: warning
+  "reportIncompatibleVariableOverride": "error", // Was: warning
+  "reportUntypedFunctionDecorator": "warning",  // Was: false
+  "reportUntypedBaseClass": "warning",           // Was: false
+}
+```
+
+**Phase 2: Standardize Type Alias Usage** 🔄
+
+**Type Aliases to Use** (from [src/thalia/typing.py](../../src/thalia/typing.py)):
+
+**Component Organization**:
+- ✅ `ComponentGraph` instead of `Dict[str, NeuralRegion]`
+- ✅ `ConnectionGraph` instead of `Dict[Tuple[str, str], NeuralRegion]`
+- ✅ `TopologyGraph` instead of `Dict[str, List[str]]`
+
+**Multi-Source Pathways**:
+- ⚠️ `SourceOutputs` instead of `Dict[str, torch.Tensor]` (for spike inputs)
+- ⚠️ `SynapticWeights` instead of `Dict[str, torch.Tensor]` (for weight matrices)
+- ⚠️ `LearningStrategies` instead of `Dict[str, LearningStrategy]`
+- ⚠️ `InputSizes` instead of `Dict[str, int]`
+
+**State Management**:
+- ⚠️ `StateDict` instead of `Dict[str, torch.Tensor]` (for component state)
+- ⚠️ `CheckpointMetadata` instead of `Dict[str, Any]` (for training metadata)
+
+**Diagnostics**:
+- ✅ `LayeredCortexDiagnostics`, `StriatumDiagnostics`, etc. (region-specific)
+- ✅ `BaseDiagnostics` (common fields)
+- ❌ **DEPRECATED**: `DiagnosticsDict = Dict[str, Any]` (use TypedDict subclasses)
+
+**Neuromodulation**:
+- ⚠️ `NeuromodulatorLevels` instead of `Dict[str, float]`
+
+**Files Needing Updates** (15+ occurrences found):
+- `src/thalia/regions/striatum/striatum.py` - 8 uses of `Dict[str, torch.Tensor]` for eligibility traces
+- `src/thalia/regions/thalamus/thalamus.py` - weight_matrices parameter
+- `src/thalia/tasks/sensorimotor.py` - 4 output parameter types
+- `src/thalia/surgery/lesion.py` - original_weights parameter
+- `src/thalia/surgery/ablation.py` - original_weights parameter
+- `src/thalia/core/region_state.py` - to_dict()/from_dict() return types
+
+**Benefits Achieved**:
+- ✅ Stricter type checking catches more errors at development time
+- ✅ Warnings for untyped parameters and variables
+- ✅ Errors for duplicate imports and constant redefinition
+- 🔄 **IN PROGRESS**: Type alias standardization for better readability
+
+**Next Steps**:
+1. ⏭️ **Phase 2**: Replace `Dict[str, torch.Tensor]` with appropriate type aliases (StateDict, SourceOutputs, SynapticWeights)
+2. ⏭️ **Phase 3**: Add missing parameter types based on warnings
+3. ⏭️ **Phase 4**: Enable `"reportUnknownArgumentType": "warning"`
+4. ⏭️ **Phase 5**: Consider `"typeCheckingMode": "strict"` for select modules
+
+**Breaking Changes**: **NONE** (internal type checking configuration only)
+
+---
+
+**ORIGINAL PROPOSAL** (for reference):
 
 **Issue**: Inconsistent type annotation coverage (~70% annotated).
 
@@ -1094,30 +1171,12 @@ src/thalia_apps/ (NEW - applications of Thalia)
 - Some parameters lack types
 - Protocols used but not consistently
 
-**Proposed Solution**: Enable strict mode in `pyrightconfig.json`:
-```json
-{
-  "typeCheckingMode": "strict",
-  "strictListInference": true,
-  "strictDictionaryInference": true,
-  "strictParameterNoneValue": true,
-  "reportMissingTypeStubs": "warning",
-  "reportUnknownParameterType": "error",
-  "reportUnknownVariableType": "error"
-}
-```
-
 **Gradual Migration**:
-1. Phase 1: Add types to public APIs (4 weeks)
-2. Phase 2: Add types to internal functions (6 weeks)
-3. Phase 3: Enable strict mode incrementally (file-by-file)
-
-**Benefits**:
-- Catch bugs at development time
-- Better IDE support (autocomplete, refactoring)
-- Self-documenting code
-
-**Breaking Changes**: **NONE** (internal improvement)
+1. Phase 1: Enable moderate type checking ✅ **COMPLETE**
+2. Phase 2: Standardize type alias usage 🔄 **IN PROGRESS**
+3. Phase 3: Add missing parameter types
+4. Phase 4: Enable stricter warnings
+5. Phase 5: Incremental strict mode (file-by-file)
 
 ---
 

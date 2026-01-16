@@ -16,6 +16,8 @@ from dataclasses import dataclass
 
 import torch
 
+from thalia.typing import SynapticWeights
+
 if TYPE_CHECKING:
     from thalia.core.dynamic_brain import DynamicBrain
 
@@ -24,7 +26,7 @@ if TYPE_CHECKING:
 class LesionState:
     """Saved state for lesion reversal."""
     region_name: str
-    original_weights: Dict[str, torch.Tensor]
+    original_weights: SynapticWeights
     original_plasticity: bool
     lesion_type: str  # "complete" or "partial"
     lesioned_indices: Optional[torch.Tensor] = None
@@ -286,7 +288,7 @@ def _zero_neurons_weights(region_impl, neuron_indices: torch.Tensor) -> None:
                 param.data[valid_indices] = 0.0
 
 
-def _restore_weights(region_impl, original_weights: Dict[str, torch.Tensor]) -> None:
+def _restore_weights(region_impl, original_weights: SynapticWeights) -> None:
     """Restore weights from saved state."""
     for name, param in region_impl.named_parameters():
         if name in original_weights:

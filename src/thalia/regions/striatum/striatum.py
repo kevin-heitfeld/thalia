@@ -122,7 +122,7 @@ from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
 from thalia.neuromodulation import ACH_BASELINE, NE_BASELINE
 from thalia.regions.striatum.exploration import ExplorationConfig
-from thalia.typing import StriatumDiagnostics
+from thalia.typing import StriatumDiagnostics, StateDict, SourceOutputs
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
@@ -252,15 +252,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # - Slow traces (~60s): Consolidated long-term tags for delayed reward
         # Combined eligibility = fast + α*slow enables both rapid and multi-second
         # credit assignment. (Yagishita et al. 2014, Shindou et al. 2019)
-        self._eligibility_d1: Dict[str, torch.Tensor] = {}
-        self._eligibility_d2: Dict[str, torch.Tensor] = {}
+        self._eligibility_d1: StateDict = {}
+        self._eligibility_d2: StateDict = {}
 
         # Multi-timescale eligibility (optional, enabled via config)
         if config.use_multiscale_eligibility:
-            self._eligibility_d1_fast: Dict[str, torch.Tensor] = {}
-            self._eligibility_d2_fast: Dict[str, torch.Tensor] = {}
-            self._eligibility_d1_slow: Dict[str, torch.Tensor] = {}
-            self._eligibility_d2_slow: Dict[str, torch.Tensor] = {}
+            self._eligibility_d1_fast: StateDict = {}
+            self._eligibility_d2_fast: StateDict = {}
+            self._eligibility_d1_slow: StateDict = {}
+            self._eligibility_d2_slow: StateDict = {}
         else:
             # Single-timescale mode: fast traces are the regular eligibility
             # (no separate fast/slow dicts)
@@ -1843,7 +1843,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     def _update_d1_d2_eligibility(
         self,
-        inputs: Dict[str, torch.Tensor],  # Changed from input_spikes
+        inputs: SourceOutputs,  # Changed from Dict[str, torch.Tensor] - multi-source spike inputs
         d1_spikes: torch.Tensor,
         d2_spikes: torch.Tensor,
         chosen_action: int | None = None
