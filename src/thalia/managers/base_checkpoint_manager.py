@@ -622,21 +622,6 @@ class BaseCheckpointManager(ABC):
 
     # ==================== OPTIONAL METHODS ====================
 
-    def _get_elastic_tensor_metadata(self, n_active: int, n_capacity: int) -> Dict[str, Any]:
-        """Get metadata for elastic tensor format (optional).
-
-        Deprecated: Use extract_elastic_tensor_metadata() instead.
-        This method is kept for backward compatibility.
-
-        Args:
-            n_active: Number of currently active neurons
-            n_capacity: Total neuron capacity (including inactive/reserved)
-
-        Returns:
-            Metadata dict for capacity tracking
-        """
-        return self.extract_elastic_tensor_metadata(n_active, n_capacity)
-
     def validate_checkpoint_compatibility(self, state: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """Validate checkpoint format and version compatibility.
 

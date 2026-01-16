@@ -17,7 +17,7 @@ This comprehensive architectural review analyzed the Thalia codebase (241 Python
 
 ### 1.1 Consolidate Checkpoint Manager Implementations ✅ **COMPLETE**
 
-**Status**: ✅ Implemented on January 16, 2026  
+**Status**: ✅ Implemented on January 16, 2026
 **Implementation**: See [task-1.1-implementation-summary.md](task-1.1-implementation-summary.md)
 
 **Current State**: Three nearly identical checkpoint managers exist with 80-90% code overlap:
@@ -44,29 +44,29 @@ src/thalia/regions/hippocampus/checkpoint_manager.py:67-444
 # In managers/base_checkpoint_manager.py (IMPLEMENTED)
 class BaseCheckpointManager(ABC):
     """Base checkpoint manager with common state extraction patterns."""
-    
+
     # State Extraction Helpers
     def extract_neuron_state_common(self, neurons, n_neurons, device) -> Dict[str, Any]:
         """Extract common neuron state (membrane potential, dimensions)."""
-        
+
     def extract_elastic_tensor_metadata(self, n_active, n_capacity) -> Dict[str, Any]:
         """Extract metadata for elastic tensor capacity tracking."""
-        
+
     def validate_elastic_metadata(self, neuron_state) -> tuple[bool, Optional[str]]:
         """Validate elastic tensor metadata in checkpoint."""
-    
+
     # Validation Utilities
     def validate_state_dict_keys(self, state, required_keys, section_name) -> None:
         """Validate that state dict contains all required keys."""
-        
+
     def validate_tensor_shapes(self, checkpoint_tensor, current_tensor, tensor_name) -> tuple[bool, Optional[str]]:
         """Validate tensor shape compatibility."""
-        
+
     def validate_checkpoint_compatibility(self, state) -> tuple[bool, Optional[str]]:
         """Validate checkpoint format and version compatibility (enhanced)."""
-    
+
     # Growth Handling
-    def handle_elastic_tensor_growth(self, checkpoint_active, current_active, 
+    def handle_elastic_tensor_growth(self, checkpoint_active, current_active,
                                      neurons_per_unit, region_name) -> tuple[bool, int, Optional[str]]:
         """Handle elastic tensor growth/shrinkage during checkpoint restore."""
 ```
@@ -81,7 +81,7 @@ class BaseCheckpointManager(ABC):
 
 **Rationale**: Reduces ~400 lines of duplicated code across 3 files. Easier maintenance when checkpoint format changes. Single source of truth for validation and serialization logic.
 
-**Impact**: 
+**Impact**:
 - Files affected: 3 checkpoint managers + 1 base class
 - Breaking change: **LOW** (internal refactoring, no API changes)
 - Lines added to base: ~200 lines (utilities)
@@ -91,7 +91,7 @@ class BaseCheckpointManager(ABC):
 
 **Implementation Details**: See [task-1.1-migration-complete.md](task-1.1-migration-complete.md)
 
-**Next Steps for Full Migration**: 
+**Next Steps for Full Migration**:
 - ✅ Striatum checkpoint manager updated to use utilities (COMPLETE)
 - ℹ️ Prefrontal checkpoint manager uses delegation pattern (no changes needed)
 - ℹ️ Hippocampus checkpoint manager uses delegation pattern (no changes needed)
@@ -131,7 +131,7 @@ WM_MATCH_THRESHOLD = 0.7
 WM_HIGH_ACCURACY_THRESHOLD = 0.85
 """High accuracy threshold for working memory maintenance tests."""
 
-# Executive Function Task Thresholds  
+# Executive Function Task Thresholds
 EXEC_SET_SHIFTING_THRESHOLD = 0.65
 """Accuracy threshold for set-shifting executive function tests."""
 
@@ -203,7 +203,7 @@ weights = torch.randn(n_output, n_input, device=device) * 0.1 + 0.3
 # AFTER
 weights = WeightInitializer.gaussian(
     n_output=n_output,
-    n_input=n_input, 
+    n_input=n_input,
     mean=0.3,
     std=0.1,
     device=device
@@ -277,7 +277,7 @@ regions/striatum/homeostasis_component.py       # Striatum-specific
    # neuromodulation/homeostasis.py
    """
    Neuromodulator Homeostasis - Global baseline control.
-   
+
    Related modules:
    - learning/homeostasis/: Synaptic scaling, intrinsic plasticity
    - regions/*/homeostasis_component.py: Region-specific integration
@@ -302,7 +302,7 @@ regions/striatum/homeostasis_component.py       # Striatum-specific
 
 **Striatum components** (`regions/striatum/`):
 - `learning_component.py` - StriatumLearningComponent
-- `exploration_component.py` - StriatumExplorationComponent  
+- `exploration_component.py` - StriatumExplorationComponent
 - `homeostasis_component.py` - StriatumHomeostasisComponent
 
 **Hippocampus components** (`regions/hippocampus/`):
@@ -311,16 +311,16 @@ regions/striatum/homeostasis_component.py       # Striatum-specific
 
 **Pattern**: Each inherits from base classes (`LearningComponent`, `MemoryComponent`, etc.) but implementations are thin wrappers (50-150 lines each) that mostly delegate to the region's main class.
 
-**Proposed Change**: 
+**Proposed Change**:
 
 **Option A (Recommended)**: **Inline components into main region classes** for clearer architecture:
 ```python
 class Striatum(NeuralRegion):
     """Striatum with integrated learning, exploration, homeostasis."""
-    
+
     def __init__(self, config):
         super().__init__(config)
-        
+
         # Previously separate components become internal subsystems
         self._init_learning_subsystem()
         self._init_exploration_subsystem()
@@ -335,7 +335,7 @@ class RegionComponent(ABC):
     # Common component lifecycle, state management
 ```
 
-**Rationale**: 
+**Rationale**:
 - Most component classes are <150 lines and tightly coupled to their parent region
 - Reduces indirection (currently: `region.learning_component.method()` → `region._learning_method()`)
 - Simplifies checkpointing (fewer nested objects)
@@ -360,7 +360,7 @@ class StriatumState(BaseRegionState):
     d1_spikes: torch.Tensor
     d2_spikes: torch.Tensor
     # ... 20+ typed fields
-    
+
 # Usage
 state = region.get_full_state()  # Returns StriatumState
 region.load_state(state)         # Type-checked
@@ -388,13 +388,13 @@ pathways/dynamic_pathway_manager.py:207
 # BEFORE
 def load_state(self, state: Dict[str, Any]) -> None:
     self.traces = state['traces']  # No type checking
-    
+
 # AFTER
 @dataclass
 class ComponentState:
     traces: torch.Tensor
     eligibility: torch.Tensor
-    
+
 def load_state(self, state: ComponentState) -> None:
     self.traces = state.traces  # Type-checked
 ```
@@ -439,7 +439,7 @@ Constants Index - Quick reference for locating constants.
 
 ## Learning Parameters
 - Learning rates, STDP, BCM → constants.learning
-- Eligibility traces → constants.learning  
+- Eligibility traces → constants.learning
 - Homeostatic regulation → constants.homeostasis
 
 ## Neuron Parameters
@@ -547,41 +547,41 @@ def create_test_brain(
 class NeuralRegion(nn.Module, ...):
     """
     Base class for brain regions with biologically accurate synaptic inputs.
-    
+
     ## When to Subclass NeuralRegion
-    
+
     **Simple regions** (single neuron population):
     - Use default forward() implementation
     - Only need to override if custom integration logic required
-    
+
     **Structured regions** (multiple layers/populations):
     - Override forward() for internal processing
     - Call super().__init__() to get synaptic_weights dict
     - Example: LayeredCortex (L4 → L2/3 → L5)
-    
+
     ## Required Method Implementations
-    
+
     1. **grow_output(n_new: int)**: Always required
        - Expand neuron population
        - Update weight matrices (add rows)
        - Update config.n_output
        - See GrowthMixin for helpers
-       
+
     2. **grow_input(n_new: int)**: Required if accepting external input
        - Expand weight matrices (add columns)
        - Update config.n_input
        - Does NOT add neurons
-       
+
     3. **forward(inputs: Dict[str, Tensor])**: Override for custom processing
        - Default implementation: apply synaptic weights + neuron dynamics
        - Custom: add internal layers, recurrent connections, etc.
-    
+
     ## Multi-Source Input Patterns
-    
+
     Pattern 1: Simple summation (default)
     Pattern 2: Gated integration (use NeuromodulatorMixin)
     Pattern 3: Port-based routing (LayeredCortex style)
-    
+
     [See examples below]
     """
 ```
@@ -614,7 +614,7 @@ class NeuralRegion(nn.Module, ...):
 ```python
 # cortex/layers/
 #   l4_layer.py
-#   l23_layer.py  
+#   l23_layer.py
 #   l5_layer.py
 #   l6_layer.py
 
@@ -634,7 +634,7 @@ class LayeredCortex(NeuralRegion):
 # SECTION 1: INITIALIZATION (lines 1-300)
 # ============================================================================
 
-# ============================================================================  
+# ============================================================================
 # SECTION 2: D1 PATHWAY (lines 301-800)
 # ============================================================================
 
@@ -643,7 +643,7 @@ class LayeredCortex(NeuralRegion):
 # ============================================================================
 ```
 
-**Rationale**: 
+**Rationale**:
 - **Against splitting**: These are biologically unified structures. Striatum's D1/D2 pathways are tightly coupled. Splitting may reduce cohesion.
 - **For splitting**: Easier navigation. Clearer boundaries for unit testing individual layers.
 - **Recommendation**: Keep monolithic for now, add section markers (Option B). Consider splitting only if files exceed 3500-4000 lines.
@@ -710,9 +710,9 @@ All strategies inherit from `BaseStrategy(nn.Module, ABC)` but Protocol is separ
 # learning/strategy_registry.py (enhance existing registry)
 class StrategyRegistry:
     """Centralized registry for learning strategies."""
-    
+
     _strategies: Dict[str, Type[LearningStrategy]] = {}
-    
+
     @classmethod
     def register(cls, name: str):
         """Decorator to register learning strategy."""
@@ -1057,7 +1057,7 @@ The Thalia codebase demonstrates **strong architectural foundations** with excel
 
 ---
 
-**Review Date**: January 16, 2026  
-**Reviewer**: AI Architecture Analysis  
-**Files Analyzed**: 241 Python files in `src/thalia/`  
+**Review Date**: January 16, 2026
+**Reviewer**: AI Architecture Analysis
+**Files Analyzed**: 241 Python files in `src/thalia/`
 **Next Review**: Recommended after Sprint 1-2 completion (March 2026)

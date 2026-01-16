@@ -8,8 +8,6 @@ of concerns and maintainability.
 **Responsibilities:**
 - Serialize complete striatum state (weights, eligibility, exploration, etc.)
 - Deserialize and restore state from checkpoints
-- Handle backward compatibility with older checkpoint formats
-- Manage version migration for checkpoint schema changes
 - Provide get_full_state() and restore_from_state() interface
 
 **Used By:**
@@ -62,8 +60,8 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
     Handles:
     - Full state serialization (weights, eligibility, exploration, etc.)
-    - State restoration with backward compatibility
-    - Version migration for old checkpoint formats
+    - State restoration with elastic tensor support
+    - Neuromorphic format for growth-enabled configurations
 
     Inherits from BaseCheckpointManager for shared synapse extraction logic.
     """
@@ -227,13 +225,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
             if should_grow:
                 s.grow_output(n_new=n_grow_actions)
-        else:
-            # Old format without capacity metadata
-            warnings.warn(
-                "Loading checkpoint from old format without capacity metadata. "
-                "Assuming checkpoint size matches brain size.",
-                UserWarning
-            )
 
         # 1. RESTORE NEURON STATE
         if s.d1_pathway.neurons is not None and neuron_state.get("membrane_potential") is not None:
@@ -249,52 +240,41 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         # 2. RESTORE PATHWAY STATE (Multi-source architecture)
         pathway_state = state["pathway_state"]
 
-        # Check if this is a new multi-source checkpoint
-        if "synaptic_weights" in pathway_state:
-            # NEW FORMAT (Phase 5): Multi-source weights
-            for key, weights in pathway_state["synaptic_weights"].items():
-                if key in s.synaptic_weights:
-                    # Restore weight data
-                    s.synaptic_weights[key].data = weights.to(s.device)
-                else:
-                    warnings.warn(
-                        f"Checkpoint has source '{key}' but current brain doesn't. "
-                        "Skipping this source weight.",
-                        UserWarning
-                    )
+        # Multi-source weights
+        for key, weights in pathway_state["synaptic_weights"].items():
+            if key in s.synaptic_weights:
+                # Restore weight data
+                s.synaptic_weights[key].data = weights.to(s.device)
+            else:
+                warnings.warn(
+                    f"Checkpoint has source '{key}' but current brain doesn't. "
+                    "Skipping this source weight.",
+                    UserWarning
+                )
 
-            # Restore multi-source eligibility traces (Phase 3)
-            if "eligibility_d1" in pathway_state and hasattr(s, '_eligibility_d1'):
-                for key, elig in pathway_state["eligibility_d1"].items():
-                    if key in s._eligibility_d1:
-                        s._eligibility_d1[key] = elig.to(s.device)
+        # Restore multi-source eligibility traces
+        if "eligibility_d1" in pathway_state and hasattr(s, '_eligibility_d1'):
+            for key, elig in pathway_state["eligibility_d1"].items():
+                if key in s._eligibility_d1:
+                    s._eligibility_d1[key] = elig.to(s.device)
 
-            if "eligibility_d2" in pathway_state and hasattr(s, '_eligibility_d2'):
-                for key, elig in pathway_state["eligibility_d2"].items():
-                    if key in s._eligibility_d2:
-                        s._eligibility_d2[key] = elig.to(s.device)
+        if "eligibility_d2" in pathway_state and hasattr(s, '_eligibility_d2'):
+            for key, elig in pathway_state["eligibility_d2"].items():
+                if key in s._eligibility_d2:
+                    s._eligibility_d2[key] = elig.to(s.device)
 
-            # Restore per-source STP modules (Phase 5)
-            if "stp_modules" in pathway_state and hasattr(s, 'stp_modules'):
-                for key, stp_state in pathway_state["stp_modules"].items():
-                    if key in s.stp_modules:
-                        if stp_state['u'] is not None and s.stp_modules[key].u is not None:
-                            s.stp_modules[key].u.data = stp_state['u'].to(s.device)
-                        if stp_state['x'] is not None and s.stp_modules[key].x is not None:
-                            s.stp_modules[key].x.data = stp_state['x'].to(s.device)
+        # Restore per-source STP modules
+        if "stp_modules" in pathway_state and hasattr(s, 'stp_modules'):
+            for key, stp_state in pathway_state["stp_modules"].items():
+                if key in s.stp_modules:
+                    if stp_state['u'] is not None and s.stp_modules[key].u is not None:
+                        s.stp_modules[key].u.data = stp_state['u'].to(s.device)
+                    if stp_state['x'] is not None and s.stp_modules[key].x is not None:
+                        s.stp_modules[key].x.data = stp_state['x'].to(s.device)
 
-            # Restore input source tracking
-            if "input_sources" in pathway_state:
-                s.input_sources = pathway_state["input_sources"]
-        else:
-            # OLD FORMAT (backward compatibility): Pathway-based weights
-            warnings.warn(
-                "Loading checkpoint from old pathway-based format. "
-                "This checkpoint predates multi-source architecture and may not restore correctly.",
-                UserWarning
-            )
-            s.d1_pathway.load_state(pathway_state["d1_state"])
-            s.d2_pathway.load_state(pathway_state["d2_state"])
+        # Restore input source tracking
+        if "input_sources" in pathway_state:
+            s.input_sources = pathway_state["input_sources"]
 
         # 3. RESTORE LEARNING STATE
         learning_state = state["learning_state"]
@@ -309,19 +289,17 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         s._trial_timesteps = learning_state["trial_timesteps"]
         s._homeostatic_scaling_applied = learning_state["homeostatic_scaling_applied"]
 
-        # Homeostasis manager (with backward compatibility)
-        if s.homeostasis is not None:
-            # Try new format first, fall back to old format
-            if "homeostasis_manager_state" in learning_state and learning_state["homeostasis_manager_state"] is not None:
-                s.homeostasis.unified_homeostasis.load_state(learning_state["homeostasis_manager_state"])
+        # Homeostasis manager
+        if s.homeostasis is not None and "homeostasis_manager_state" in learning_state and learning_state["homeostasis_manager_state"] is not None:
+            s.homeostasis.unified_homeostasis.load_state(learning_state["homeostasis_manager_state"])
 
-        # 4. RESTORE EXPLORATION STATE (delegate to ExplorationManager)
+        # 4. RESTORE EXPLORATION STATE
         exploration_state = state["exploration_state"]
         s.state_tracker.exploring = exploration_state["exploring"]
         s.state_tracker._last_uncertainty = exploration_state["last_uncertainty"]
         s.state_tracker._last_exploration_prob = exploration_state["last_exploration_prob"]
 
-        # Load exploration manager state if present (new format)
+        # Load exploration manager state
         if "manager_state" in exploration_state:
             s.exploration.load_state(exploration_state["manager_state"])
 
@@ -616,18 +594,15 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             # Collect all incoming synapses from all sources for this D1 neuron
             incoming_synapses = []
             for source_name, source_size in s.input_sources.items():
-                # Check if source_name already has pathway suffix (e.g., "cortex_d1")
-                # If so, only process D1 sources for D1 neurons
+                # Source format: "source_d1" or "source_d2"
                 if source_name.endswith('_d1'):
-                    # Source already has D1 suffix - use directly
                     d1_key = source_name
-                    # Remove pathway suffix for source prefix
                     base_source = source_name.rsplit('_d1', 1)[0]
                 elif source_name.endswith('_d2'):
                     # Skip D2 sources when processing D1 neurons
                     continue
                 else:
-                    # Old format without pathway suffix - add it
+                    # Source without pathway suffix - add D1 suffix
                     d1_key = f"{source_name}_d1"
                     base_source = source_name
 
@@ -665,18 +640,15 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             # Collect all incoming synapses from all sources for this D2 neuron
             incoming_synapses = []
             for source_name, source_size in s.input_sources.items():
-                # Check if source_name already has pathway suffix (e.g., "cortex_d2")
-                # If so, only process D2 sources for D2 neurons
+                # Source format: "source_d1" or "source_d2"
                 if source_name.endswith('_d2'):
-                    # Source already has D2 suffix - use directly
                     d2_key = source_name
-                    # Remove pathway suffix for source prefix
                     base_source = source_name.rsplit('_d2', 1)[0]
                 elif source_name.endswith('_d1'):
                     # Skip D1 sources when processing D2 neurons
                     continue
                 else:
-                    # Old format without pathway suffix - add it
+                    # Source without pathway suffix - add D2 suffix
                     d2_key = f"{source_name}_d2"
                     base_source = source_name
 
