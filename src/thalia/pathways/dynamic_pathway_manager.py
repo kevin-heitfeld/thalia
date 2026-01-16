@@ -15,12 +15,16 @@ Date: December 15, 2025
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Union
 
 import torch
 
 from thalia.core.protocols.component import LearnableComponent
 from thalia.typing import TopologyGraph
+
+# Type alias for dynamic pathway states
+# Pathways can return different state types (dicts, dataclasses, etc.)
+PathwayStateDict = Dict[str, Union[Dict[str, Any], Any]]
 
 
 class DynamicPathwayManager:
@@ -179,13 +183,17 @@ class DynamicPathwayManager:
                     except Exception:
                         pass  # Pathway may not support growth
 
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> PathwayStateDict:
         """Get state dict for checkpointing.
 
         Returns:
-            State dict with pathway states
+            Dict mapping "{src}_to_{tgt}" -> pathway state (Dict or dataclass)
+
+        Note:
+            Pathways may return different state types (typed dataclasses or dicts).
+            This manager preserves the original state type for each pathway.
         """
-        state = {}
+        state: PathwayStateDict = {}
 
         for (src, tgt), pathway in self.connections.items():
             pathway_name = f"{src}_to_{tgt}"
@@ -204,11 +212,15 @@ class DynamicPathwayManager:
 
         return state
 
-    def load_state(self, state: Dict[str, Any]) -> None:
+    def load_state(self, state: PathwayStateDict) -> None:
         """Load state dict from checkpoint.
 
         Args:
-            state: State dict with pathway states
+            state: State dict with pathway states (from get_state())
+
+        Note:
+            Handles both typed dataclass states and Dict-based states.
+            Each pathway's load_state() method determines how to process its state.
         """
         for (src, tgt), pathway in self.connections.items():
             pathway_name = f"{src}_to_{tgt}"

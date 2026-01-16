@@ -7,6 +7,7 @@ Standardized component following the region_components pattern.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, Any, List, TYPE_CHECKING
 
 import torch
@@ -16,6 +17,24 @@ from thalia.managers.base_manager import ManagerContext
 
 if TYPE_CHECKING:
     from thalia.regions.striatum.config import StriatumConfig
+
+
+@dataclass
+class ExplorationState:
+    """State for exploration component.
+
+    Attributes:
+        action_counts: Number of times each action has been selected [n_actions]
+        total_trials: Total number of trials (for UCB computation)
+        recent_rewards: Sliding window of recent rewards for adaptive exploration
+        recent_accuracy: Recent accuracy metric
+        tonic_dopamine: Current tonic dopamine level (motivation/exploration)
+    """
+    action_counts: torch.Tensor  # [n_actions] int tensor
+    total_trials: int
+    recent_rewards: List[float]
+    recent_accuracy: float
+    tonic_dopamine: float
 
 
 class StriatumExplorationComponent(ExplorationComponent):
@@ -214,31 +233,31 @@ class StriatumExplorationComponent(ExplorationComponent):
         )
         return ucb_bonus
 
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> ExplorationState:
         """Get exploration component state for checkpointing.
 
         Returns:
-            Dict containing all state needed to restore exploration
+            ExplorationState containing all state needed to restore exploration
         """
-        return {
-            "action_counts": self._action_counts.detach().clone(),
-            "total_trials": self._total_trials,
-            "recent_rewards": self._recent_rewards.copy(),
-            "recent_accuracy": self._recent_accuracy,
-            "tonic_dopamine": self.tonic_dopamine,
-        }
+        return ExplorationState(
+            action_counts=self._action_counts.detach().clone(),
+            total_trials=self._total_trials,
+            recent_rewards=self._recent_rewards.copy(),
+            recent_accuracy=self._recent_accuracy,
+            tonic_dopamine=self.tonic_dopamine,
+        )
 
-    def load_state(self, state: Dict[str, Any]) -> None:
+    def load_state(self, state: ExplorationState) -> None:
         """Restore exploration component state from checkpoint.
 
         Args:
-            state: Dict from get_state()
+            state: ExplorationState from get_state()
         """
-        self._action_counts = state["action_counts"].to(self.context.device)
-        self._total_trials = state["total_trials"]
-        self._recent_rewards = state["recent_rewards"].copy()
-        self._recent_accuracy = state["recent_accuracy"]
-        self.tonic_dopamine = state["tonic_dopamine"]
+        self._action_counts = state.action_counts.to(self.context.device)
+        self._total_trials = state.total_trials
+        self._recent_rewards = state.recent_rewards.copy()
+        self._recent_accuracy = state.recent_accuracy
+        self.tonic_dopamine = state.tonic_dopamine
 
     def get_exploration_diagnostics(self) -> Dict[str, Any]:
         """Get exploration-specific diagnostics."""

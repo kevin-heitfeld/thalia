@@ -19,11 +19,30 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
-from typing import Tuple
+from dataclasses import dataclass
+from typing import Tuple, Dict, Any
 import torch
 import torch.nn as nn
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+
+
+@dataclass
+class PurkinjeCellState:
+    """State for Purkinje cell component.
+
+    Attributes:
+        dendrite_voltage: Voltage of each dendritic compartment [n_dendrites]
+        dendrite_calcium: Calcium level in each dendrite [n_dendrites]
+        soma_neurons: State dict from the soma neuron model (ConductanceLIF)
+        last_complex_spike_time: Timestep of last complex spike (for refractory period)
+        timestep: Current timestep counter
+    """
+    dendrite_voltage: torch.Tensor
+    dendrite_calcium: torch.Tensor
+    soma_neurons: Dict[str, Any]  # State from ConductanceLIF.get_state()
+    last_complex_spike_time: int
+    timestep: int
 
 
 class EnhancedPurkinjeCell(nn.Module):
@@ -161,23 +180,23 @@ class EnhancedPurkinjeCell(nn.Module):
         self.last_complex_spike_time = -1000
         self.timestep = 0
 
-    def get_state(self) -> dict:
+    def get_state(self) -> PurkinjeCellState:
         """Get Purkinje cell state for checkpointing."""
-        return {
-            "dendrite_voltage": self.dendrite_voltage.clone(),
-            "dendrite_calcium": self.dendrite_calcium.clone(),
-            "soma_neurons": self.soma_neurons.get_state(),
-            "last_complex_spike_time": self.last_complex_spike_time,
-            "timestep": self.timestep,
-        }
+        return PurkinjeCellState(
+            dendrite_voltage=self.dendrite_voltage.clone(),
+            dendrite_calcium=self.dendrite_calcium.clone(),
+            soma_neurons=self.soma_neurons.get_state(),
+            last_complex_spike_time=self.last_complex_spike_time,
+            timestep=self.timestep,
+        )
 
-    def load_state(self, state: dict) -> None:
+    def load_state(self, state: PurkinjeCellState) -> None:
         """Load Purkinje cell state from checkpoint."""
-        self.dendrite_voltage.copy_(state["dendrite_voltage"])
-        self.dendrite_calcium.copy_(state["dendrite_calcium"])
-        self.soma_neurons.load_state(state["soma_neurons"])
-        self.last_complex_spike_time = state["last_complex_spike_time"]
-        self.timestep = state["timestep"]
+        self.dendrite_voltage.copy_(state.dendrite_voltage)
+        self.dendrite_calcium.copy_(state.dendrite_calcium)
+        self.soma_neurons.load_state(state.soma_neurons)
+        self.last_complex_spike_time = state.last_complex_spike_time
+        self.timestep = state.timestep
 
 
 __all__ = ["EnhancedPurkinjeCell"]

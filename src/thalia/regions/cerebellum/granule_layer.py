@@ -19,13 +19,26 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
 
 import torch
 import torch.nn as nn
 
 from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+
+
+@dataclass
+class GranuleLayerState:
+    """State for granule cell layer.
+
+    Attributes:
+        mossy_to_granule: Synaptic weights from mossy fibers to granule cells
+        granule_neurons: State dict from granule neuron model (ConductanceLIF)
+    """
+    mossy_to_granule: torch.Tensor
+    granule_neurons: Dict[str, Any]  # State from ConductanceLIF.get_state()
 
 
 class GranuleCellLayer(nn.Module):
@@ -155,14 +168,14 @@ class GranuleCellLayer(nn.Module):
         """Reset granule cell states."""
         self.granule_neurons.reset_state()
 
-    def get_state(self) -> dict:
+    def get_state(self) -> GranuleLayerState:
         """Get granule layer state for checkpointing."""
-        return {
-            "mossy_to_granule": self.mossy_to_granule.data.clone(),
-            "granule_neurons": self.granule_neurons.get_state(),
-        }
+        return GranuleLayerState(
+            mossy_to_granule=self.mossy_to_granule.data.clone(),
+            granule_neurons=self.granule_neurons.get_state(),
+        )
 
-    def load_state(self, state: dict) -> None:
+    def load_state(self, state: GranuleLayerState) -> None:
         """Load granule layer state from checkpoint."""
         # Detect target device - prefer self.device if it's set, else infer from state
         if hasattr(self, 'mossy_to_granule') and self.mossy_to_granule is not None:
@@ -170,7 +183,7 @@ class GranuleCellLayer(nn.Module):
             target_device = self.mossy_to_granule.device
         else:
             # Module doesn't exist yet, use state's device
-            target_device = state["mossy_to_granule"].device
+            target_device = state.mossy_to_granule.device
 
         # Update device attribute
         self.device = str(target_device)
@@ -179,14 +192,14 @@ class GranuleCellLayer(nn.Module):
         self.to(target_device)
 
         # Now copy state (ensure source is moved to target device)
-        self.mossy_to_granule.data.copy_(state["mossy_to_granule"].to(target_device))
-        self.granule_neurons.load_state(state["granule_neurons"])
+        self.mossy_to_granule.data.copy_(state.mossy_to_granule.to(target_device))
+        self.granule_neurons.load_state(state.granule_neurons)
 
-    def get_full_state(self) -> dict:
+    def get_full_state(self) -> GranuleLayerState:
         """Get full granule layer state (alias for get_state)."""
         return self.get_state()
 
-    def load_full_state(self, state: dict) -> None:
+    def load_full_state(self, state: GranuleLayerState) -> None:
         """Load granule layer state from checkpoint (alias for load_state)."""
         self.load_state(state)
 

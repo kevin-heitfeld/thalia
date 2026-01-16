@@ -62,6 +62,26 @@ class StriatumPathwayConfig(PathwayConfig):
     e_inhibitory: float = E_INHIBITORY
 
 
+@dataclass
+class StriatumPathwayState:
+    """State for a striatal pathway (D1 or D2).
+
+    Attributes:
+        weights: Synaptic weight matrix [n_output, n_input]
+        eligibility: Eligibility traces for three-factor learning (can be None)
+        neuron_membrane: Membrane potentials [n_output] (can be None)
+        neuron_g_E: Excitatory conductance [n_output] (can be None)
+        neuron_g_I: Inhibitory conductance [n_output] (can be None)
+        neuron_refractory: Refractory counters [n_output] (can be None)
+    """
+    weights: torch.Tensor
+    eligibility: Optional[torch.Tensor]
+    neuron_membrane: Optional[torch.Tensor]
+    neuron_g_E: Optional[torch.Tensor]
+    neuron_g_I: Optional[torch.Tensor]
+    neuron_refractory: Optional[torch.Tensor]
+
+
 class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
     """
     Base class for D1 and D2 striatal pathways.
@@ -367,33 +387,33 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
 
         # NOTE: Config is NOT updated here - parent region (Striatum) manages config
 
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> StriatumPathwayState:
         """Get pathway state for checkpointing.
 
         Returns:
-            State dict with weights, eligibility, neuron state
+            StriatumPathwayState with weights, eligibility, neuron state
         """
-        return {
-            'weights': self.weights.detach().clone(),
-            'eligibility': self.eligibility.clone() if self.eligibility is not None else None,
-            'neuron_membrane': self.neurons.membrane.clone() if self.neurons.membrane is not None else None,
-            'neuron_g_E': self.neurons.g_E.clone() if self.neurons.g_E is not None else None,
-            'neuron_g_I': self.neurons.g_I.clone() if self.neurons.g_I is not None else None,
-            'neuron_refractory': self.neurons.refractory.clone() if self.neurons.refractory is not None else None,
-        }
+        return StriatumPathwayState(
+            weights=self.weights.detach().clone(),
+            eligibility=self.eligibility.clone() if self.eligibility is not None else None,
+            neuron_membrane=self.neurons.membrane.clone() if self.neurons.membrane is not None else None,
+            neuron_g_E=self.neurons.g_E.clone() if self.neurons.g_E is not None else None,
+            neuron_g_I=self.neurons.g_I.clone() if self.neurons.g_I is not None else None,
+            neuron_refractory=self.neurons.refractory.clone() if self.neurons.refractory is not None else None,
+        )
 
-    def load_state(self, state: Dict[str, Any]) -> None:
+    def load_state(self, state: StriatumPathwayState) -> None:
         """Load pathway state from checkpoint.
 
         Args:
-            state: State dict from get_state()
+            state: StriatumPathwayState from get_state()
         """
         # Use property setter to update parent's synaptic_weights dict
-        self.weights = state['weights']
+        self.weights = state.weights
 
         # Load eligibility: prefer parent's dict (new architecture) over learning_strategy (old)
-        if state.get('eligibility') is not None:
-            eligibility_value = state['eligibility']
+        if state.eligibility is not None:
+            eligibility_value = state.eligibility
 
             # Try to load into parent's eligibility dict (new multi-source architecture)
             if hasattr(self, '_parent_striatum_ref') and self._parent_striatum_ref is not None:
@@ -417,14 +437,14 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             # Fallback: also set learning_strategy (for backward compatibility)
             self.learning_strategy.eligibility = eligibility_value
 
-        if state.get('neuron_membrane') is not None:
-            self.neurons.membrane = state['neuron_membrane']
-        if state.get('neuron_g_E') is not None:
-            self.neurons.g_E = state['neuron_g_E']
-        if state.get('neuron_g_I') is not None:
-            self.neurons.g_I = state['neuron_g_I']
-        if state.get('neuron_refractory') is not None:
-            self.neurons.refractory = state['neuron_refractory']
+        if state.neuron_membrane is not None:
+            self.neurons.membrane = state.neuron_membrane
+        if state.neuron_g_E is not None:
+            self.neurons.g_E = state.neuron_g_E
+        if state.neuron_g_I is not None:
+            self.neurons.g_I = state.neuron_g_I
+        if state.neuron_refractory is not None:
+            self.neurons.refractory = state.neuron_refractory
 
     def reset_state(self) -> None:
         """Reset pathway state (eligibility, neurons)."""
