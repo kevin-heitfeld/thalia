@@ -126,7 +126,7 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.region_state import BaseRegionState
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
-from thalia.typing import ThalamicRelayDiagnostics
+from thalia.typing import ThalamicRelayDiagnostics, SynapticWeights
 from thalia.utils.input_routing import InputRouter
 
 
@@ -650,7 +650,7 @@ class ThalamicRelay(NeuralRegion):
     def collect_standard_diagnostics(
         self,
         region_name: str,
-        weight_matrices: Dict[str, torch.Tensor],
+        weight_matrices: SynapticWeights,
         custom_metrics: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Collect standard diagnostics for a region.

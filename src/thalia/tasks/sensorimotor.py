@@ -35,6 +35,7 @@ from thalia.tasks.stimulus_utils import (
     create_random_position,
     add_proprioceptive_noise,
 )
+from thalia.typing import SourceOutputs
 
 
 # ============================================================================
@@ -228,7 +229,7 @@ class MotorControlTask:
 
     def compute_reward(
         self,
-        output: Dict[str, torch.Tensor],
+        output: SourceOutputs,
         target: Optional[torch.Tensor] = None
     ) -> float:
         """Compute reward based on movement accuracy.
@@ -395,7 +396,7 @@ class ReachingTask:
 
     def compute_reward(
         self,
-        output: Dict[str, torch.Tensor],
+        output: SourceOutputs,
         target_pos: Optional[torch.Tensor] = None,
         start_pos: Optional[torch.Tensor] = None
     ) -> float:
@@ -528,7 +529,7 @@ class ManipulationTask:
 
     def compute_reward(
         self,
-        output: Dict[str, torch.Tensor],
+        output: SourceOutputs,
         target_action: Optional[str] = None
     ) -> float:
         """Compute reward for manipulation success.
@@ -686,7 +687,7 @@ class SensorimotorTaskLoader:
 
     def compute_reward(
         self,
-        output: Dict[str, torch.Tensor],
+        output: SourceOutputs,
         task_data: Optional[Dict[str, Any]] = None
     ) -> float:
         """Compute reward for current task.

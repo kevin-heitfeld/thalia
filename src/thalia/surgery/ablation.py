@@ -6,20 +6,18 @@ Implements pathway ablation for testing necessity of connections.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict
 from dataclasses import dataclass
+from typing import Dict
 
-import torch
-
-if TYPE_CHECKING:
-    from thalia.core.dynamic_brain import DynamicBrain
+from thalia.core.dynamic_brain import DynamicBrain
+from thalia.typing import SynapticWeights
 
 
 @dataclass
 class AblationState:
     """Saved state for pathway restoration."""
     pathway_name: str
-    original_weights: Dict[str, torch.Tensor]
+    original_weights: SynapticWeights
     original_plasticity: bool
 
 
@@ -27,7 +25,7 @@ _ablation_cache: Dict[str, AblationState] = {}
 
 
 def ablate_pathway(
-    brain: "DynamicBrain",
+    brain: DynamicBrain,
     pathway_name: str,
     save_for_restore: bool = True,
 ) -> None:
@@ -91,7 +89,7 @@ def ablate_pathway(
 
 
 def restore_pathway(
-    brain: "DynamicBrain",
+    brain: DynamicBrain,
     pathway_name: str,
 ) -> None:
     """Restore an ablated pathway to original state.
@@ -129,7 +127,7 @@ def restore_pathway(
 
 # Helper functions
 
-def _get_pathway(brain: "DynamicBrain", pathway_name: str):
+def _get_pathway(brain: DynamicBrain, pathway_name: str):
     """Get pathway by name.
 
     Converts string pathway names like 'cortex_to_hippocampus' to tuple keys like ('cortex', 'hippocampus').
@@ -180,7 +178,7 @@ def _get_pathway(brain: "DynamicBrain", pathway_name: str):
 
 
 def _save_ablation_state(
-    brain: "DynamicBrain",
+    brain: DynamicBrain,
     pathway_name: str,
     pathway,
 ) -> AblationState:
