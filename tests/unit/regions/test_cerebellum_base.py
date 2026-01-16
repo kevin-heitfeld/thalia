@@ -9,9 +9,10 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 
 import torch
 
-from tests.utils.region_test_base import RegionTestBase
-from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
 from thalia.config import compute_cerebellum_sizes
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+
+from tests.utils.region_test_base import RegionTestBase
 
 
 class TestCerebellum(RegionTestBase):

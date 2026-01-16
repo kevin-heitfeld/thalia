@@ -74,19 +74,19 @@ Biological References:
 
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.regions.base import LearningRule, NeuralComponentState
-from thalia.regions.factory import RegionFactory, RegionRegistry, register_region
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig, CerebellumState
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
-from thalia.regions.striatum import Striatum, StriatumConfig
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 from thalia.regions.hippocampus import (
     Hippocampus,
     HippocampusConfig,
     HippocampusState,
 )
-from thalia.regions.stimulus_gating import StimulusGating
+from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig, PrefrontalState
+from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig, ThalamicRelayState
+from thalia.regions.factory import RegionFactory, RegionRegistry, register_region
+from thalia.regions.stimulus_gating import StimulusGating
 
 __all__ = [
     # Base classes
@@ -107,12 +107,14 @@ __all__ = [
     # Cerebellum
     "Cerebellum",
     "CerebellumConfig",
+    "CerebellumState",
     # Striatum
     "Striatum",
     "StriatumConfig",
     # Prefrontal
     "Prefrontal",
     "PrefrontalConfig",
+    "PrefrontalState",
     # Hippocampus (trisynaptic circuit: DG→CA3→CA1)
     "Hippocampus",
     "HippocampusConfig",

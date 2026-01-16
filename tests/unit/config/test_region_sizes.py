@@ -11,24 +11,22 @@ Test Coverage:
 - Edge cases (zero sizes, first growth, large growth)
 """
 
-import pytest
 import torch
 
 from thalia.config import (
-    compute_hippocampus_sizes,
+    compute_cerebellum_sizes,
     compute_cortex_layer_sizes,
+    compute_hippocampus_sizes,
+    compute_striatum_sizes,
     compute_thalamus_sizes,
     compute_multisensory_sizes,
-    compute_cerebellum_sizes,
-    compute_striatum_sizes,
-    CEREBELLUM_GRANULE_EXPANSION,
 )
-from thalia.regions.hippocampus import HippocampusConfig, Hippocampus
+from thalia.regions.cerebellum import CerebellumConfig, Cerebellum
 from thalia.regions.cortex import LayeredCortexConfig, LayeredCortex
+from thalia.regions.hippocampus import HippocampusConfig, Hippocampus
+from thalia.regions.striatum import StriatumConfig, Striatum
 from thalia.regions.thalamus import ThalamicRelayConfig, ThalamicRelay
 from thalia.regions.multisensory import MultimodalIntegrationConfig, MultimodalIntegration
-from thalia.regions.cerebellum_region import CerebellumConfig, Cerebellum
-from thalia.regions.striatum import StriatumConfig, Striatum
 
 
 class TestHelperFunctions:

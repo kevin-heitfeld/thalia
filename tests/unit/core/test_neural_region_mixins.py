@@ -2,11 +2,11 @@
 
 import torch
 
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
 from thalia.config.region_sizes import compute_cerebellum_sizes
-from thalia.mixins.state_loading_mixin import StateLoadingMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
+from thalia.mixins.state_loading_mixin import StateLoadingMixin
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 
 
 def create_test_prefrontal(input_size: int, n_neurons: int, device: str) -> Prefrontal:

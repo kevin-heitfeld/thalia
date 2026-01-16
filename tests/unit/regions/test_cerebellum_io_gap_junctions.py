@@ -14,8 +14,8 @@ Biology:
 import pytest
 import torch
 
-from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
 from thalia.config import compute_cerebellum_sizes
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig, CerebellumState
 
 
 def create_test_cerebellum(
@@ -205,7 +205,6 @@ def test_io_gap_junction_backward_compatibility():
     del old_state_dict["io_membrane"]  # Remove to simulate old checkpoint
 
     # Reconstruct state from dict (simulating from_dict)
-    from thalia.regions.cerebellum_region import CerebellumState
     old_state = CerebellumState.from_dict(old_state_dict, device=device)
 
     # Load into new cerebellum with gap junctions enabled

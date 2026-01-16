@@ -13,11 +13,10 @@ Biological validation:
 - Integration with gap junctions and error learning
 """
 
-import torch
 import pytest
+import torch
 
-from thalia.regions import Cerebellum
-from thalia.regions.cerebellum_region import CerebellumConfig
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
 
 # =====================================================================

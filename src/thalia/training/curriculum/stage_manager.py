@@ -162,7 +162,7 @@ from thalia.memory.consolidation.consolidation import (
     MemoryPressureDetector,
     SleepStageController,
 )
-from thalia.regions.prefrontal_hierarchy import Goal
+from thalia.regions.prefrontal import Goal
 from thalia.training.curriculum.curriculum import (
     InterleavedCurriculumSampler,
     SpacedRepetitionScheduler,

@@ -8,12 +8,12 @@ Author: Thalia Project
 Date: December 2025
 """
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
-from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
 from thalia.config import compute_cerebellum_sizes
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
 
 def create_test_cerebellum(

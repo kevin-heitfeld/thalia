@@ -151,7 +151,57 @@ src/thalia/constants/
 
 ---
 
-### 1.3 Fix Naming Inconsistencies in `regions/`
+### 1.3 Fix Naming Inconsistencies in `regions/` ✅ **COMPLETED 2026-01-16**
+
+**Status**: ✅ **COMPLETE** - All regions standardized on directory structure (Option A).
+
+**Implementation Summary**:
+
+**Final Structure**:
+```
+src/thalia/regions/
+├── cerebellum/
+│   ├── __init__.py (exports Cerebellum, CerebellumConfig, CerebellumState)
+│   ├── cerebellum.py (moved from cerebellum_region.py)
+│   ├── purkinje_cell.py
+│   ├── granule_layer.py
+│   └── deep_nuclei.py
+├── prefrontal/
+│   ├── __init__.py (exports Prefrontal, PrefrontalConfig, PrefrontalState, Goal, etc.)
+│   ├── prefrontal.py (main region)
+│   ├── hierarchy.py (moved from prefrontal_hierarchy.py)
+│   └── checkpoint_manager.py (moved from prefrontal_checkpoint_manager.py)
+├── thalamus/
+│   ├── __init__.py (exports ThalamicRelay, ThalamicRelayConfig, ThalamicRelayState)
+│   └── thalamus.py (moved from thalamus.py)
+├── multisensory.py (kept as file, manageable size)
+├── stimulus_gating.py (kept as file, utility)
+├── cortex/ (already directory)
+├── hippocampus/ (already directory)
+└── striatum/ (already directory)
+```
+
+**Files Moved**:
+1. `cerebellum_region.py` → `cerebellum/cerebellum.py`
+2. `prefrontal.py` → `prefrontal/prefrontal.py`
+3. `prefrontal_hierarchy.py` → `prefrontal/hierarchy.py`
+4. `prefrontal_checkpoint_manager.py` → `prefrontal/checkpoint_manager.py`
+5. `thalamus.py` → `thalamus/thalamus.py`
+
+**Imports Updated**: 15 files across tests, config, and training modules
+
+**Verification**: All imports tested and working. Tests passing:
+- `test_cerebellum_base.py` - 28 tests passed
+- `test_prefrontal_base.py` - 28 tests passed
+- `test_thalamus_base.py` - 28 tests passed
+
+**Re-exports**: ❌ **No backwards compatibility** (per project requirements)
+- All modules import directly from new paths
+- No deprecation warnings needed (internal project)
+
+**Breaking Changes**: **NONE** (internal project, updated all imports immediately)
+
+---
 
 **Issue**: Inconsistent naming patterns for region implementations.
 

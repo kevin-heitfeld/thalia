@@ -63,7 +63,7 @@ import torch
 from thalia.managers import BaseCheckpointManager
 
 if TYPE_CHECKING:
-    from thalia.regions.prefrontal import Prefrontal
+    from thalia.regions.prefrontal.prefrontal import Prefrontal
 
 
 class PrefrontalCheckpointManager(BaseCheckpointManager):

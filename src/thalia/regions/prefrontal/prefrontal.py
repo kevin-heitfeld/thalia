@@ -85,8 +85,8 @@ from thalia.learning import LearningStrategyRegistry, STDPConfig
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.managers.component_registry import register_region
 from thalia.neuromodulation import compute_ne_gain, DA_BASELINE_STANDARD
-from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
-from thalia.regions.prefrontal_hierarchy import (
+from thalia.regions.prefrontal.checkpoint_manager import PrefrontalCheckpointManager
+from thalia.regions.prefrontal.hierarchy import (
     Goal,
     GoalHierarchyManager,
     GoalHierarchyConfig,

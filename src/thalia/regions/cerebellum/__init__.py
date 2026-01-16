@@ -17,9 +17,7 @@ Date: December 17, 2025
 from thalia.regions.cerebellum.granule_layer import GranuleCellLayer
 from thalia.regions.cerebellum.purkinje_cell import EnhancedPurkinjeCell
 from thalia.regions.cerebellum.deep_nuclei import DeepCerebellarNuclei
-
-# Import legacy Cerebellum from cerebellum_region.py
-from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
+from thalia.regions.cerebellum.cerebellum import Cerebellum, CerebellumConfig, CerebellumState
 
 __all__ = [
     "GranuleCellLayer",
@@ -27,4 +25,5 @@ __all__ = [
     "DeepCerebellarNuclei",
     "Cerebellum",
     "CerebellumConfig",
+    "CerebellumState",
 ]

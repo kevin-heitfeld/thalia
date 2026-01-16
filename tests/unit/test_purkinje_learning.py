@@ -5,11 +5,11 @@ Tests the biologically accurate LTD/LTP mechanism for individual Purkinje cell
 dendritic weight plasticity.
 """
 
-import torch
 import pytest
+import torch
 
-from thalia.regions.cerebellum_region import Cerebellum, CerebellumConfig
 from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
 
 class TestPurkinjePerDendriteLearning:
