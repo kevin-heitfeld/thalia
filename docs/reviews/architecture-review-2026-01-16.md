@@ -1208,6 +1208,49 @@ All multi-source pathway types now use semantic aliases for clarity.
 
 **Assessment**:
 - **reportUnknownParameterType: "warning"** already enabled in Phase 1
+- Most parameters are well-typed through inference
+- No widespread annotation needed - type coverage is strong
+- Focus on fixing concrete issues (CapacityMetrics API) more valuable than adding annotations
+
+**Phase 3 Summary**: Fixed critical API mismatch (6 errors), improved code quality with ellipsis, assessed type coverage (found to be strong). No widespread parameter annotation needed.
+
+**Phase 4: Enable Stricter Argument Type Checking** ✅ **COMPLETE 2026-01-16**
+
+**Action**: Enable `reportUnknownArgumentType: "warning"` to catch argument type mismatches at function call sites.
+
+**Impact Assessment** (15 files checked across 6 module categories):
+
+**Results Summary**: **Zero new warnings introduced** by enabling `reportUnknownArgumentType: "warning"`.
+
+**Files Verified**:
+- ✅ Core: `neural_region.py`, `dynamic_brain.py` - No new errors
+- ✅ Regions: `striatum`, `hippocampus`, `cortex`, `prefrontal`, `cerebellum`, `thalamus` - No new errors (pre-existing errors unrelated to Phase 4)
+- ✅ Training/Curriculum: `stage_manager.py`, `monitor.py` - No new errors
+- ✅ Learning: `strategies.py` - No new errors
+- ✅ Components: `axonal_projection.py`, `conductance_lif.py`, `weight_init.py` - No new errors (pre-existing unnecessary ellipsis warnings unrelated)
+- ✅ Tests: `test_brain_builder.py`, `test_striatum.py` - No new errors
+- ✅ Datasets: `temporal.py` - No new errors
+- ✅ Infrastructure: `neuromodulator_manager.py`, `growth.py`, `health_monitor.py` - No new errors
+
+**Configuration Change** (Commit 9c537d5):
+```jsonc
+// pyrightconfig.json line 26:
+"reportUnknownArgumentType": "warning",  // Was: false
+```
+
+**Benefit**: Catches argument type mismatches at function call sites, complementing `reportUnknownParameterType` for complete type coverage (definitions + call sites).
+
+**Conclusion**: Type coverage is sufficient - no new warnings introduced. Stricter checking safely enabled without requiring fixes.
+
+**Phase 5: Consider Strict Mode for Select Modules** ℹ️ **OPTIONAL**
+
+**Approach**: Incrementally enable `typeCheckingMode: "strict"` for well-typed modules using `# pyright: strict` comment.
+
+**Candidate Modules**:
+- `src/thalia/typing.py` (type definitions)
+- `src/thalia/core/diagnostics_schema.py` (TypedDict definitions)
+- `src/thalia/coordination/growth.py` (growth protocol)
+- New modules written with strict type checking from the start
 - Most parameters are already well-typed or successfully inferred by Pyright
 - Remaining unknown type warnings are for truly generic parameters (**kwargs) or Protocol methods
 - No actionable missing parameter types found in core public APIs
