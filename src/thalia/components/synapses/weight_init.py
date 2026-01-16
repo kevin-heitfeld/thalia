@@ -1,3 +1,4 @@
+# pyright: strict
 """Weight Initialization Registry - Biologically-Motivated Initialization Strategies.
 
 This module provides a unified registry of weight initialization methods used

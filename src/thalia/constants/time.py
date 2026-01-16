@@ -1,3 +1,4 @@
+# pyright: strict
 """
 Time conversion constants for spike-based simulations.
 

@@ -232,7 +232,6 @@ class PrefrontalConfig(NeuralComponentConfig):
     def __post_init__(self) -> None:
         """Auto-compute output_size and total_neurons from n_neurons."""
         # Properties handle this now - no manual assignment needed
-        pass
 
 
 @dataclass

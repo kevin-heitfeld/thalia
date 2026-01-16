@@ -1,3 +1,4 @@
+# pyright: strict
 """
 Neuron Constants - Membrane time constants, thresholds, refractory periods.
 

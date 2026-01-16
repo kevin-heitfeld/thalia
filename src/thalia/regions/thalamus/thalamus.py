@@ -126,7 +126,7 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.region_state import BaseRegionState
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
-from thalia.typing import ThalamicRelayDiagnostics, SynapticWeights
+from thalia.typing import ThalamicRelayDiagnostics
 from thalia.utils.input_routing import InputRouter
 
 
@@ -610,62 +610,6 @@ class ThalamicRelay(NeuralRegion):
     def _create_neurons(self) -> Optional[Any]:
         """Neurons created in __init__, return None."""
         return None
-
-    def spike_diagnostics(self, spikes: torch.Tensor, prefix: str = "") -> Dict[str, Any]:
-        """Compute spike statistics for diagnostics.
-
-        Helper for backward compatibility with DiagnosticsMixin pattern.
-        """
-        if prefix:
-            prefix = f"{prefix}_"
-
-        # Convert spike rate to Hz using dt_ms
-        spike_rate = spikes.float().mean().item()
-        firing_rate_hz = spike_rate * (MS_PER_SECOND / self.dt_ms)  # Convert to Hz
-
-        return {
-            f"{prefix}spike_count": spikes.sum().item(),
-            f"{prefix}firing_rate_hz": firing_rate_hz,
-        }
-
-    def membrane_diagnostics(
-        self,
-        membrane: torch.Tensor,
-        threshold: float,
-        prefix: str = "",
-    ) -> Dict[str, Any]:
-        """Compute membrane potential statistics for diagnostics.
-
-        Helper for backward compatibility with DiagnosticsMixin pattern.
-        """
-        if prefix:
-            prefix = f"{prefix}_"
-
-        return {
-            f"{prefix}membrane_mean": membrane.mean().item(),
-            f"{prefix}membrane_std": membrane.std().item(),
-            f"{prefix}near_threshold_fraction": (membrane > threshold * 0.9).float().mean().item(),
-        }
-
-    def collect_standard_diagnostics(
-        self,
-        region_name: str,
-        weight_matrices: SynapticWeights,
-        custom_metrics: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Collect standard diagnostics for a region.
-
-        Helper for backward compatibility with DiagnosticsMixin pattern.
-        """
-        diagnostics = custom_metrics.copy() if custom_metrics else {}
-
-        # Add weight statistics
-        for name, weights in weight_matrices.items():
-            diagnostics[f"{name}_mean"] = weights.mean().item()
-            diagnostics[f"{name}_std"] = weights.std().item()
-            diagnostics[f"{name}_shape"] = list(weights.shape)
-
-        return diagnostics
 
     def _build_center_surround_filter(self) -> None:
         """Build center-surround spatial filter for receptive fields.

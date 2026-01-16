@@ -698,11 +698,14 @@ class Cerebellum(NeuralRegion):
             else:
                 self.stp_mf_granule = None
 
-            # Climbing Fibers→Purkinje: NO STP (reliable error signal)
-            # Every climbing fiber spike is critical - no adaptation
+        # Climbing Fibers→Purkinje: NO STP (reliable error signal)
+        # Every climbing fiber spike is critical - no adaptation
         else:
             self.stp_pf_purkinje = None
             self.stp_mf_granule = None
+
+        # Initialize for forward() storage (fixes attribute outside __init__)
+        self.last_effective_input: Optional[torch.Tensor] = None
 
         # =====================================================================
         # GAP JUNCTIONS (Inferior Olive Synchronization)
@@ -1441,7 +1444,7 @@ class Cerebellum(NeuralRegion):
         """
         # Cerebellum doesn't currently support neurogenesis, but we implement
         # this method for API consistency with other regions
-        pass
+        return
 
     def grow_input(
         self,
