@@ -6,6 +6,15 @@ Provides common patterns for neuromorphic (neuron-centric) checkpointing:
 - Elastic tensor capacity handling
 - Shared utility methods for state extraction
 
+**NEW (Jan 2026 - Architecture Review Task 1.1):**
+- Common state extraction helpers (extract_neuron_state_common, etc.)
+- Validation utilities (validate_state_dict_keys, validate_tensor_shapes)
+- Elastic tensor growth handling (handle_elastic_tensor_growth)
+- Version compatibility checking (validate_checkpoint_compatibility)
+
+These additions consolidate ~200-300 lines of duplicated code across
+3 region-specific checkpoint managers (Striatum, Prefrontal, Hippocampus).
+
 Region-specific managers should inherit from this base and implement:
 - _get_neurons_data(): Extract per-neuron data and synapses
 - _get_learning_state(): Extract learning-related state (STP, STDP, etc.)
@@ -40,11 +49,69 @@ class BaseCheckpointManager(ABC):
     Provides shared logic for neuromorphic checkpointing while allowing
     region-specific customization through abstract methods.
 
+    **New Helper Methods (Jan 2026 - Architecture Review Task 1.1):**
+
+    State Extraction:
+        - extract_neuron_state_common(): Extract membrane potential + dimensions
+        - extract_elastic_tensor_metadata(): Extract capacity metadata
+        - validate_elastic_metadata(): Validate capacity metadata
+
+    Validation:
+        - validate_state_dict_keys(): Check for required keys
+        - validate_tensor_shapes(): Check shape compatibility
+        - validate_checkpoint_compatibility(): Check version compatibility
+
+    Growth Handling:
+        - handle_elastic_tensor_growth(): Auto-grow logic for checkpoints
+
     Usage:
         class MyRegionCheckpointManager(BaseCheckpointManager):
             def __init__(self, region):
                 super().__init__(format_version="2.0.0")
                 self.region = region
+
+            def collect_state(self) -> Dict[str, Any]:
+                # Use helper for common neuron state
+                neuron_state = self.extract_neuron_state_common(
+                    self.region.neurons,
+                    self.region.n_neurons,
+                    self.region.device
+                )
+
+                # Add elastic tensor metadata
+                neuron_state.update(
+                    self.extract_elastic_tensor_metadata(
+                        self.region.n_neurons_active,
+                        self.region.n_neurons_capacity
+                    )
+                )
+
+                return {"neuron_state": neuron_state, ...}
+
+            def restore_state(self, state: Dict[str, Any]) -> None:
+                # Validate keys
+                self.validate_state_dict_keys(
+                    state,
+                    ["neuron_state", "pathway_state"],
+                    "checkpoint"
+                )
+
+                # Validate and handle elastic growth
+                neuron_state = state["neuron_state"]
+                is_valid, msg = self.validate_elastic_metadata(neuron_state)
+                if not is_valid:
+                    raise ValueError(msg)
+
+                # Handle auto-growth if needed
+                needs_growth, n_units, warning = self.handle_elastic_tensor_growth(
+                    neuron_state["n_neurons_active"],
+                    self.region.n_neurons_active,
+                    neurons_per_unit=self.region.neurons_per_action
+                )
+                if needs_growth:
+                    import warnings
+                    warnings.warn(warning, UserWarning)
+                    self.region.grow_output(n_units)
 
             def _get_neurons_data(self) -> list[Dict[str, Any]]:
                 # Extract per-neuron data with incoming synapses
@@ -193,6 +260,188 @@ class BaseCheckpointManager(ABC):
             checkpoint.update(additional_state)
 
         return checkpoint
+
+    # ==================== COMMON STATE EXTRACTION HELPERS ====================
+
+    def extract_neuron_state_common(
+        self,
+        neurons: Any,
+        n_neurons: int,
+        device: str,
+    ) -> Dict[str, Any]:
+        """Extract common neuron state (membrane potential, dimensions).
+
+        This consolidates the pattern used by all 3 checkpoint managers for
+        extracting basic neuron information.
+
+        Args:
+            neurons: Neuron module (e.g., ConductanceLIF)
+            n_neurons: Total number of neurons in region
+            device: Device string ('cpu' or 'cuda')
+
+        Returns:
+            Dict with membrane potential and neuron dimensions
+        """
+        return {
+            "membrane_potential": (
+                neurons.membrane.detach().clone()
+                if neurons is not None and hasattr(neurons, 'membrane') and neurons.membrane is not None
+                else None
+            ),
+            "n_neurons": n_neurons,
+            "device": device,
+        }
+
+    def extract_elastic_tensor_metadata(
+        self,
+        n_active: int,
+        n_capacity: int,
+    ) -> Dict[str, Any]:
+        """Extract metadata for elastic tensor capacity tracking.
+
+        Elastic tensor format supports brain growth by tracking active vs capacity neurons.
+        This consolidates the pattern used across checkpoint managers.
+
+        Args:
+            n_active: Number of currently active neurons
+            n_capacity: Total neuron capacity (including inactive/reserved)
+
+        Returns:
+            Metadata dict for capacity tracking
+        """
+        if n_capacity < n_active:
+            raise ValueError(
+                f"Capacity ({n_capacity}) cannot be less than active neurons ({n_active})"
+            )
+
+        return {
+            "n_neurons_active": n_active,
+            "n_neurons_capacity": n_capacity,
+        }
+
+    def validate_elastic_metadata(
+        self,
+        neuron_state: Dict[str, Any],
+    ) -> tuple[bool, Optional[str]]:
+        """Validate elastic tensor metadata in checkpoint.
+
+        Args:
+            neuron_state: Neuron state dict from checkpoint
+
+        Returns:
+            (is_valid, error_message) tuple
+        """
+        if "n_neurons_active" in neuron_state and "n_neurons_capacity" in neuron_state:
+            active = neuron_state["n_neurons_active"]
+            capacity = neuron_state["n_neurons_capacity"]
+
+            if capacity < active:
+                return False, f"Capacity ({capacity}) < active neurons ({active}). Corrupted checkpoint?"
+
+            return True, None
+
+        # Old format without metadata - valid but warn caller
+        return True, "Old format without capacity metadata"
+
+    # ==================== VALIDATION UTILITIES ====================
+
+    def validate_state_dict_keys(
+        self,
+        state: Dict[str, Any],
+        required_keys: list[str],
+        section_name: str = "checkpoint",
+    ) -> None:
+        """Validate that state dict contains all required keys.
+
+        Consolidates validation pattern used across all checkpoint managers.
+
+        Args:
+            state: State dict to validate
+            required_keys: List of required key names
+            section_name: Name of section for error messages
+
+        Raises:
+            ValueError: If any required key is missing
+        """
+        missing_keys = [key for key in required_keys if key not in state]
+        if missing_keys:
+            raise ValueError(
+                f"Missing required keys in {section_name}: {missing_keys}. "
+                f"Available keys: {list(state.keys())}"
+            )
+
+    def validate_tensor_shapes(
+        self,
+        checkpoint_tensor: torch.Tensor,
+        current_tensor: torch.Tensor,
+        tensor_name: str,
+    ) -> tuple[bool, Optional[str]]:
+        """Validate tensor shape compatibility between checkpoint and current state.
+
+        Args:
+            checkpoint_tensor: Tensor from checkpoint
+            current_tensor: Current tensor in region
+            tensor_name: Name of tensor for error messages
+
+        Returns:
+            (is_compatible, warning_message) tuple
+        """
+        if checkpoint_tensor.shape != current_tensor.shape:
+            return False, (
+                f"{tensor_name} shape mismatch: checkpoint={checkpoint_tensor.shape}, "
+                f"current={current_tensor.shape}"
+            )
+        return True, None
+
+    def handle_elastic_tensor_growth(
+        self,
+        checkpoint_active: int,
+        current_active: int,
+        neurons_per_unit: int = 1,
+        region_name: str = "region",
+    ) -> tuple[bool, int, Optional[str]]:
+        """Handle elastic tensor growth/shrinkage during checkpoint restore.
+
+        Consolidates the auto-growth logic used across checkpoint managers.
+
+        Args:
+            checkpoint_active: Number of active neurons in checkpoint
+            current_active: Number of active neurons in current brain
+            neurons_per_unit: Neurons per growth unit (e.g., neurons_per_action for striatum)
+            region_name: Name of region for warning messages
+
+        Returns:
+            (needs_growth, n_units_to_grow, warning_message) tuple
+        """
+        if checkpoint_active == current_active:
+            return False, 0, None
+
+        if checkpoint_active > current_active:
+            # Need to grow
+            n_grow_neurons = checkpoint_active - current_active
+
+            # Check alignment with growth unit
+            if n_grow_neurons % neurons_per_unit != 0:
+                return False, 0, (
+                    f"Checkpoint neuron count ({checkpoint_active}) is not aligned with "
+                    f"growth unit ({neurons_per_unit} neurons/unit). Cannot auto-grow {region_name}."
+                )
+
+            n_grow_units = n_grow_neurons // neurons_per_unit
+            warning = (
+                f"Checkpoint has {checkpoint_active} neurons but {region_name} has "
+                f"{current_active}. Auto-growing by {n_grow_units} units "
+                f"({n_grow_neurons} neurons)."
+            )
+            return True, n_grow_units, warning
+
+        # Checkpoint has fewer neurons - partial restore
+        warning = (
+            f"Checkpoint has {checkpoint_active} neurons but {region_name} has "
+            f"{current_active}. Will restore {checkpoint_active} neurons, "
+            f"remaining {current_active - checkpoint_active} keep current state."
+        )
+        return False, 0, warning
 
     # ==================== ABSTRACT METHODS (region-specific) ====================
 
@@ -376,7 +625,8 @@ class BaseCheckpointManager(ABC):
     def _get_elastic_tensor_metadata(self, n_active: int, n_capacity: int) -> Dict[str, Any]:
         """Get metadata for elastic tensor format (optional).
 
-        Elastic tensor format supports brain growth by tracking active vs capacity neurons.
+        Deprecated: Use extract_elastic_tensor_metadata() instead.
+        This method is kept for backward compatibility.
 
         Args:
             n_active: Number of currently active neurons
@@ -385,13 +635,12 @@ class BaseCheckpointManager(ABC):
         Returns:
             Metadata dict for capacity tracking
         """
-        return {
-            "n_neurons_active": n_active,
-            "n_neurons_capacity": n_capacity,
-        }
+        return self.extract_elastic_tensor_metadata(n_active, n_capacity)
 
     def validate_checkpoint_compatibility(self, state: Dict[str, Any]) -> tuple[bool, Optional[str]]:
-        """Validate checkpoint format and version compatibility (optional).
+        """Validate checkpoint format and version compatibility.
+
+        Consolidates version checking logic used across checkpoint managers.
 
         Args:
             state: Checkpoint dict to validate
@@ -405,17 +654,23 @@ class BaseCheckpointManager(ABC):
 
         # Check version (basic semantic versioning)
         if "format_version" not in state:
-            return False, "Missing 'format_version' field in checkpoint"
+            return True, "Missing 'format_version' field (assuming compatible)"
 
         checkpoint_version = state["format_version"]
         current_version = self.format_version
 
         # Simple major version check (e.g., "2.0.0" vs "1.0.0")
-        checkpoint_major = int(checkpoint_version.split(".")[0])
-        current_major = int(current_version.split(".")[0])
+        try:
+            checkpoint_major = int(checkpoint_version.split(".")[0])
+            current_major = int(current_version.split(".")[0])
 
-        if checkpoint_major != current_major:
-            return False, f"Incompatible major version: checkpoint={checkpoint_version}, current={current_version}"
+            if checkpoint_major != current_major:
+                return False, (
+                    f"Incompatible major version: checkpoint={checkpoint_version}, "
+                    f"current={current_version}"
+                )
+        except (ValueError, IndexError):
+            return True, f"Could not parse version numbers (checkpoint={checkpoint_version})"
 
         return True, None
 

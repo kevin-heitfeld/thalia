@@ -47,6 +47,7 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, Any
+import warnings
 
 import torch
 
@@ -84,20 +85,23 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         """
         s = self.striatum
 
-        # 1. NEURON STATE
-        neuron_state = {
-            "membrane_potential": (
-                s.d1_pathway.neurons.membrane.detach().clone()
-                if s.d1_pathway.neurons is not None and s.d1_pathway.neurons.membrane is not None
-                else None
-            ),
+        # 1. NEURON STATE - Use base class utility for common extraction
+        neuron_state = self.extract_neuron_state_common(
+            neurons=s.d1_pathway.neurons,
+            n_neurons=s.d1_size + s.d2_size,
+            device=s.device
+        )
+        # Add elastic tensor metadata
+        neuron_state.update(self.extract_elastic_tensor_metadata(
+            n_active=s.n_neurons_active,
+            n_capacity=s.n_neurons_capacity
+        ))
+        # Add striatum-specific fields
+        neuron_state.update({
             "n_actions": s.n_actions,
             "total_input": s.input_size,
             "total_neurons": s.d1_size + s.d2_size,
-            # Elastic tensor capacity tracking (Phase 1)
-            "n_neurons_active": s.n_neurons_active,
-            "n_neurons_capacity": s.n_neurons_capacity,
-        }
+        })
 
         # 2. PATHWAY STATE (Multi-source weights, eligibility, etc.)
         # PHASE 5: Multi-source architecture - save per-source weights and eligibility
@@ -201,56 +205,30 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         """
         s = self.striatum
 
-        # PHASE 1: ELASTIC TENSOR CAPACITY HANDLING
-        # Check if checkpoint has capacity metadata (new format)
+        # PHASE 1: ELASTIC TENSOR CAPACITY HANDLING - Use base class utilities
         neuron_state = state["neuron_state"]
 
+        # Validate elastic metadata if present
+        is_valid, error_msg = self.validate_elastic_metadata(neuron_state)
+        if not is_valid:
+            raise ValueError(f"Invalid elastic tensor metadata: {error_msg}")
+
         if "n_neurons_active" in neuron_state and "n_neurons_capacity" in neuron_state:
-            # New elastic tensor format
-            checkpoint_active = neuron_state["n_neurons_active"]
-            checkpoint_capacity = neuron_state["n_neurons_capacity"]
+            # Handle elastic tensor growth/shrinkage using base class utility
+            should_grow, n_grow_actions, warning_msg = self.handle_elastic_tensor_growth(
+                checkpoint_active=neuron_state["n_neurons_active"],
+                current_active=s.n_neurons_active,
+                neurons_per_unit=s.neurons_per_action,
+                region_name="Striatum"
+            )
 
-            # Validate capacity
-            if checkpoint_capacity < checkpoint_active:
-                raise ValueError(
-                    f"Checkpoint capacity ({checkpoint_capacity}) less than active "
-                    f"neurons ({checkpoint_active}). Corrupted checkpoint?"
-                )
+            if warning_msg:
+                warnings.warn(warning_msg, UserWarning)
 
-            # Auto-grow if checkpoint has more neurons than current brain
-            if checkpoint_active > s.n_neurons_active:
-                n_grow_neurons = checkpoint_active - s.n_neurons_active
-
-                # Convert neuron count to action count (for population coding)
-                n_grow_actions = n_grow_neurons // s.neurons_per_action
-                if n_grow_neurons % s.neurons_per_action != 0:
-                    raise ValueError(
-                        f"Checkpoint neuron count ({checkpoint_active}) is not aligned with "
-                        f"population coding ({s.neurons_per_action} neurons/action). "
-                        f"Cannot auto-grow brain."
-                    )
-
-                import warnings
-                warnings.warn(
-                    f"Checkpoint has {checkpoint_active} neurons but brain has "
-                    f"{s.n_neurons_active}. Auto-growing by {n_grow_actions} actions "
-                    f"({n_grow_neurons} neurons).",
-                    UserWarning
-                )
+            if should_grow:
                 s.grow_output(n_new=n_grow_actions)
-
-            # Warn if checkpoint has fewer neurons
-            elif checkpoint_active < s.n_neurons_active:
-                import warnings
-                warnings.warn(
-                    f"Checkpoint has {checkpoint_active} neurons but brain has "
-                    f"{s.n_neurons_active}. Will restore {checkpoint_active} neurons, "
-                    f"remaining {s.n_neurons_active - checkpoint_active} keep current state.",
-                    UserWarning
-                )
         else:
-            # Old format without capacity metadata - assume full restore
-            import warnings
+            # Old format without capacity metadata
             warnings.warn(
                 "Loading checkpoint from old format without capacity metadata. "
                 "Assuming checkpoint size matches brain size.",
@@ -279,7 +257,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                     # Restore weight data
                     s.synaptic_weights[key].data = weights.to(s.device)
                 else:
-                    import warnings
                     warnings.warn(
                         f"Checkpoint has source '{key}' but current brain doesn't. "
                         "Skipping this source weight.",
@@ -311,7 +288,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                 s.input_sources = pathway_state["input_sources"]
         else:
             # OLD FORMAT (backward compatibility): Pathway-based weights
-            import warnings
             warnings.warn(
                 "Loading checkpoint from old pathway-based format. "
                 "This checkpoint predates multi-source architecture and may not restore correctly.",
@@ -544,7 +520,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
         # Log warnings
         if missing_count > 0:
-            import warnings
             warnings.warn(
                 f"Checkpoint has {missing_count} neurons not in current brain. "
                 f"Skipped those neurons. Restored {restored_count} neurons.",
@@ -557,7 +532,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         extra_ids = current_ids - checkpoint_ids
 
         if len(extra_ids) > 0:
-            import warnings
             warnings.warn(
                 f"Brain has {len(extra_ids)} neurons not in checkpoint. "
                 f"Keeping their current state.",
