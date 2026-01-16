@@ -29,40 +29,40 @@ Date: December 9, 2025
 
 from __future__ import annotations
 
-from typing import Protocol, Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
+from typing import Protocol, Dict, Any, Optional, List
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
-from thalia.training.constants import (
+from thalia.constants.task import (
+    DATASET_WEIGHT_MNIST,
+    DATASET_WEIGHT_TEMPORAL,
+    DATASET_WEIGHT_PHONOLOGY,
+    DATASET_WEIGHT_GAZE,
+    REWARD_SCALE_PREDICTION,
+    SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
+    SENSORIMOTOR_WEIGHT_REACHING,
+    SENSORIMOTOR_WEIGHT_MANIPULATION,
+    SENSORIMOTOR_WEIGHT_PREDICTION,
+    SPIKE_PROBABILITY_HIGH,
+    SPIKE_PROBABILITY_MEDIUM,
+    SPIKE_PROBABILITY_LOW,
+)
+from thalia.constants.training import (
+    REWARD_MANIPULATION_BASE,
     REWARD_MOVEMENT_THRESHOLD,
-    REWARD_SMALL_SUCCESS,
     REWARD_REACHING_THRESHOLD,
     REWARD_HIGH_SUCCESS,
-    REWARD_MANIPULATION_BASE,
+    REWARD_SMALL_SUCCESS,
 )
 from thalia.pathways.sensory_pathways import (
     VisualConfig,
     RetinalEncoder,
 )
 from thalia.tasks.stimulus_utils import create_motor_spikes
-from thalia.training.datasets.constants import (
-    SPIKE_PROBABILITY_LOW,
-    SPIKE_PROBABILITY_MEDIUM,
-    SPIKE_PROBABILITY_HIGH,
-    SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
-    SENSORIMOTOR_WEIGHT_REACHING,
-    SENSORIMOTOR_WEIGHT_MANIPULATION,
-    SENSORIMOTOR_WEIGHT_PREDICTION,
-    DATASET_WEIGHT_MNIST,
-    DATASET_WEIGHT_TEMPORAL,
-    DATASET_WEIGHT_PHONOLOGY,
-    DATASET_WEIGHT_GAZE,
-    REWARD_SCALE_PREDICTION,
-)
 
 
 # ============================================================================

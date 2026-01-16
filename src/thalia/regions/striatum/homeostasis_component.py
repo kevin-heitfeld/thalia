@@ -14,13 +14,13 @@ import torch
 import torch.nn as nn
 
 from thalia.config.base import BaseConfig
+from thalia.constants.learning import EMA_DECAY_FAST
 from thalia.core.region_components import HomeostasisComponent
-from thalia.managers.base_manager import ManagerContext
 from thalia.learning.homeostasis.synaptic_homeostasis import (
     StriatumHomeostasis,
     UnifiedHomeostasisConfig,
 )
-from thalia.regulation.learning_constants import EMA_DECAY_FAST
+from thalia.managers.base_manager import ManagerContext
 
 if TYPE_CHECKING:
     from thalia.regions.striatum.config import StriatumConfig

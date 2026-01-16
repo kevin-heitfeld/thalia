@@ -89,45 +89,45 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Union
 import math
+from typing import Optional, Dict, Any, Union
 
 import torch
 import torch.nn as nn
 
-from thalia.typing import ThalamicRelayDiagnostics
-from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.region_state import BaseRegionState
+from thalia.components.coding import compute_firing_rate, compute_spike_count
 from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
-from thalia.core.neural_region import NeuralRegion
-from thalia.utils.input_routing import InputRouter
-from thalia.managers.component_registry import register_region
 from thalia.components.neurons import create_relay_neurons, create_trn_neurons
 from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, STPConfig, STPType
-from thalia.components.coding import compute_firing_rate, compute_spike_count
-from thalia.regulation.region_constants import (
-    THALAMUS_BURST_THRESHOLD,
-    THALAMUS_TONIC_THRESHOLD,
-    THALAMUS_BURST_SPIKE_COUNT,
-    THALAMUS_BURST_GAIN,
+from thalia.constants.regions import (
     THALAMUS_ALPHA_SUPPRESSION,
     THALAMUS_ALPHA_GATE_THRESHOLD,
-    THALAMUS_TRN_INHIBITION,
-    THALAMUS_TRN_RECURRENT,
-    THALAMUS_SPATIAL_FILTER_WIDTH,
+    THALAMUS_BURST_GAIN,
+    THALAMUS_BURST_SPIKE_COUNT,
+    THALAMUS_BURST_THRESHOLD,
     THALAMUS_CENTER_EXCITATION,
+    THALAMUS_MODE_THRESHOLD,
+    THALAMUS_NE_GAIN_SCALE,
+    THALAMUS_RELAY_SCALE,
+    THALAMUS_RELAY_SPARSITY,
+    THALAMUS_RELAY_STRENGTH,
+    THALAMUS_SPATIAL_CENTER_SPARSITY,
+    THALAMUS_SPATIAL_FILTER_WIDTH,
     THALAMUS_SURROUND_INHIBITION,
     THALAMUS_SURROUND_WIDTH_RATIO,
-    THALAMUS_RELAY_STRENGTH,
-    THALAMUS_NE_GAIN_SCALE,
-    THALAMUS_MODE_THRESHOLD,
-    THALAMUS_RELAY_SPARSITY,
-    THALAMUS_RELAY_SCALE,
+    THALAMUS_TONIC_THRESHOLD,
     THALAMUS_TRN_FEEDBACK_SPARSITY,
     THALAMUS_TRN_FEEDBACK_SCALE,
     THALAMUS_TRN_FEEDFORWARD_SPARSITY,
-    THALAMUS_SPATIAL_CENTER_SPARSITY,
+    THALAMUS_TRN_INHIBITION,
+    THALAMUS_TRN_RECURRENT,
 )
+from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.region_state import BaseRegionState
+from thalia.core.neural_region import NeuralRegion
+from thalia.managers.component_registry import register_region
+from thalia.typing import ThalamicRelayDiagnostics
+from thalia.utils.input_routing import InputRouter
 
 
 @dataclass

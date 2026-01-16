@@ -73,21 +73,21 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Optional, Dict, Any, Tuple
 
 import torch
 import torch.nn as nn
 
+from thalia.constants.learning import LEARNING_RATE_PRECISION
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.managers.component_registry import register_region
-from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
+from thalia.regions.cortex.layered_cortex import LayeredCortexConfig, LayeredCortex
 from thalia.regions.cortex.predictive_coding import (
-    PredictiveCodingLayer,
     PredictiveCodingConfig,
+    PredictiveCodingLayer,
 )
-from thalia.regulation.learning_constants import LEARNING_RATE_PRECISION
 
 
 @dataclass

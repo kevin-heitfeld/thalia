@@ -53,7 +53,7 @@ from typing import TYPE_CHECKING, Optional, Dict, Any, List
 
 import torch
 
-from thalia.regulation.exploration_constants import SOFTMAX_TEMPERATURE_DEFAULT
+from thalia.constants.exploration import SOFTMAX_TEMPERATURE_DEFAULT
 
 if TYPE_CHECKING:
     from thalia.regions.striatum.config import StriatumConfig

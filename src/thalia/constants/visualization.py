@@ -1,11 +1,10 @@
 """
-Visualization Constants - UI positioning and threshold values.
+Visualization Constants - UI positioning, plot alphas, thresholds.
 
-This module centralizes constants used in training visualization,
-replacing magic numbers with named, documented values.
+Consolidated from training/visualization/constants.py.
 
 Author: Thalia Project
-Date: December 12, 2025
+Date: January 16, 2026 (Architecture Review Tier 1.2)
 """
 
 # =============================================================================
@@ -37,11 +36,21 @@ AXIS_MARGIN_POSITIVE = 0.5
 AXIS_MARGIN_NEGATIVE = -0.5
 """Negative axis margin for plot boundaries."""
 
+# =============================================================================
+# Alpha (Transparency) Values
+# =============================================================================
+
 ALPHA_SEMI_TRANSPARENT = 0.5
 """Alpha value for semi-transparent overlays."""
 
 ALPHA_HIGHLIGHT = 0.2
 """Alpha value for subtle highlight regions."""
+
+ALPHA_GRID = 0.3
+"""Alpha value for grid lines."""
+
+ALPHA_TRANSPARENT = 0.3
+"""General transparency value for backgrounds."""
 
 # =============================================================================
 # Biological Firing Rate Thresholds
@@ -85,8 +94,55 @@ CALIBRATION_EXCELLENT_ECE = 0.10
 CALIBRATION_GOOD_ECE = 0.15
 """Expected Calibration Error threshold for good calibration."""
 
+# =============================================================================
+# Difficulty Range
+# =============================================================================
+
 DIFFICULTY_RANGE_MIN = 0.3
 """Minimum difficulty for task generation (30%)."""
 
 DIFFICULTY_RANGE_MAX = 0.9
 """Maximum difficulty for task generation (90%)."""
+
+# =============================================================================
+# Plot Configuration
+# =============================================================================
+
+LINE_WIDTH_STANDARD = 2.0
+"""Standard line width for plots."""
+
+LINE_WIDTH_THIN = 1.0
+"""Thin line width for secondary elements."""
+
+LINE_WIDTH_HIGHLIGHT = 0.5
+"""Very thin line width for background elements."""
+
+
+__all__ = [
+    "TEXT_POSITION_CENTER",
+    "TEXT_POSITION_BOTTOM_RIGHT_X",
+    "TEXT_POSITION_BOTTOM_RIGHT_Y",
+    "TEXT_POSITION_TOP_LEFT",
+    "PROGRESS_BAR_HEIGHT",
+    "AXIS_MARGIN_POSITIVE",
+    "AXIS_MARGIN_NEGATIVE",
+    "ALPHA_SEMI_TRANSPARENT",
+    "ALPHA_HIGHLIGHT",
+    "ALPHA_GRID",
+    "ALPHA_TRANSPARENT",
+    "TARGET_SPIKE_RATE_LOWER",
+    "TARGET_SPIKE_RATE_UPPER",
+    "FIRING_RATE_SILENCE_THRESHOLD",
+    "FIRING_RATE_RUNAWAY_THRESHOLD",
+    "PERFORMANCE_EXCELLENT",
+    "PERFORMANCE_GOOD",
+    "PERFORMANCE_ACCEPTABLE",
+    "PERFORMANCE_POOR",
+    "CALIBRATION_EXCELLENT_ECE",
+    "CALIBRATION_GOOD_ECE",
+    "DIFFICULTY_RANGE_MIN",
+    "DIFFICULTY_RANGE_MAX",
+    "LINE_WIDTH_STANDARD",
+    "LINE_WIDTH_THIN",
+    "LINE_WIDTH_HIGHLIGHT",
+]

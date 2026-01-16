@@ -17,13 +17,13 @@ Usage:
 """
 
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-import time
 import threading
+import time
+from typing import Dict, Any, List, Optional
 
 import matplotlib.pyplot as plt
 
-from thalia.training.visualization.constants import (
+from thalia.constants.visualization import (
     TEXT_POSITION_CENTER,
     PROGRESS_BAR_HEIGHT,
     AXIS_MARGIN_POSITIVE,

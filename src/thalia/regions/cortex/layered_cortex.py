@@ -111,39 +111,39 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.typing import LayeredCortexDiagnostics
-from thalia.core.neural_region import NeuralRegion
-from thalia.neuromodulation import compute_ne_gain
+from thalia.components.coding import compute_firing_rate, compute_spike_count
+from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
 from thalia.components.neurons import create_cortical_layer_neurons
 from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer, update_trace
-from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
-from thalia.components.coding import compute_firing_rate, compute_spike_count
-from thalia.managers.component_registry import register_region
-from thalia.utils.core_utils import ensure_1d, clamp_weights, initialize_phase_preferences
-from thalia.utils.input_routing import InputRouter
-from thalia.utils.oscillator_utils import (
-    compute_theta_encoding_retrieval,
-    compute_ach_recurrent_suppression,
-)
-from thalia.regulation.learning_constants import EMA_DECAY_FAST
-from thalia.regulation.oscillator_constants import (
-    L4_INPUT_ENCODING_SCALE,
-    L23_RECURRENT_RETRIEVAL_SCALE,
-)
-from thalia.regulation.region_architecture_constants import (
+from thalia.constants.architecture import (
     CORTEX_L4_DA_FRACTION,
     CORTEX_L23_DA_FRACTION,
     CORTEX_L5_DA_FRACTION,
     CORTEX_L6_DA_FRACTION,
 )
-from thalia.regions.stimulus_gating import StimulusGating
+from thalia.constants.learning import EMA_DECAY_FAST
+from thalia.constants.oscillator import (
+    L4_INPUT_ENCODING_SCALE,
+    L23_RECURRENT_RETRIEVAL_SCALE,
+)
+from thalia.core.diagnostics_schema import (
+    compute_activity_metrics,
+    compute_health_metrics,
+    compute_plasticity_metrics,
+)
+from thalia.core.neural_region import NeuralRegion
+from thalia.managers.component_registry import register_region
+from thalia.neuromodulation import compute_ne_gain
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
 from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.core.diagnostics_schema import (
-    compute_activity_metrics,
-    compute_plasticity_metrics,
-    compute_health_metrics,
+from thalia.regions.stimulus_gating import StimulusGating
+from thalia.typing import LayeredCortexDiagnostics
+from thalia.utils.core_utils import ensure_1d, clamp_weights, initialize_phase_preferences
+from thalia.utils.input_routing import InputRouter
+from thalia.utils.oscillator_utils import (
+    compute_theta_encoding_retrieval,
+    compute_ach_recurrent_suppression,
 )
 
 from .config import LayeredCortexConfig, LayeredCortexState

@@ -14,12 +14,13 @@ from typing import Optional, Dict, Any
 
 import torch
 
+from thalia.constants.learning import STDP_A_PLUS_CORTEX, STDP_A_MINUS_CORTEX
+from thalia.constants.neuromodulation import DA_BASELINE_STANDARD, ACH_BASELINE, NE_BASELINE
+from thalia.constants.neuron import ADAPT_INCREMENT_CORTEX_L23
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.region_state import BaseRegionState
 from thalia.learning.rules.bcm import BCMConfig
-from thalia.regulation.learning_constants import STDP_A_PLUS_CORTEX, STDP_A_MINUS_CORTEX
-from thalia.neuromodulation.constants import DA_BASELINE_STANDARD, ACH_BASELINE, NE_BASELINE
-from thalia.components.neurons.neuron_constants import ADAPT_INCREMENT_CORTEX_L23
+
 from .robustness_config import RobustnessConfig
 
 

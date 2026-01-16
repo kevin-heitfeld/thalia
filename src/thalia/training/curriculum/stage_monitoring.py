@@ -7,19 +7,18 @@ metric collection for stage gate evaluation.
 Integration with stage_gates.py for comprehensive safety system.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
-import torch
-import numpy as np
 from collections import deque
+from dataclasses import dataclass, field
 from enum import Enum
 import logging
+from typing import Dict, Optional, Tuple
 
-from thalia.training.curriculum.constants import (
-    WM_CRITICAL_FIRING_THRESHOLD,
-    THETA_VARIANCE_MAX_STRICT,
+import numpy as np
+
+from thalia.constants.training import (
     PERFORMANCE_DROP_WARNING_STRICT,
-    COGNITIVE_LOAD_CHECK_INTERVAL,
+    THETA_VARIANCE_MAX_STRICT,
+    WM_CRITICAL_FIRING_THRESHOLD,
 )
 
 logger = logging.getLogger(__name__)

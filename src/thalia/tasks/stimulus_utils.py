@@ -10,7 +10,7 @@ Date: December 12, 2025
 
 import torch
 
-from thalia.tasks.task_constants import (
+from thalia.constants.task import (
     STIMULUS_NOISE_SCALE,
     SPIKE_PROBABILITY_LOW,
     PROPRIOCEPTION_NOISE_SCALE,

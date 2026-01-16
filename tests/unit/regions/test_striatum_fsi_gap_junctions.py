@@ -86,6 +86,9 @@ def test_gap_junctions_enabled_by_default(default_config, striatum_sizes):
     """Test that FSI and gap junctions are enabled by default."""
     striatum = Striatum(config=default_config, sizes=striatum_sizes, device="cpu")
 
+    # Add FSI input source (required to initialize gap junctions)
+    striatum.add_fsi_source("default", 64)
+
     # FSI should be 2% of MSN population
     # With 50 actions × 1 neuron/action × 2 pathways = 100 MSNs
     # FSI = int(100*0.02) = 2
@@ -98,6 +101,8 @@ def test_gap_junctions_enabled_by_default(default_config, striatum_sizes):
 def test_gap_junction_creates_coupling(default_config, striatum_sizes, device):
     """Test that gap junctions create non-zero coupling currents and increase voltage correlation."""
     striatum = Striatum(config=default_config, sizes=striatum_sizes, device=device)
+    striatum.add_input_source_striatum("default", 64)
+    striatum.add_fsi_source("default", 64)
     striatum.reset_state()
 
     # Run several forward passes to establish FSI activity
@@ -106,7 +111,7 @@ def test_gap_junction_creates_coupling(default_config, striatum_sizes, device):
 
     fsi_membranes = []
     for _ in range(10):
-        _output = striatum(input_spikes)
+        _output = striatum({"default": input_spikes})
         if striatum.state.fsi_membrane is not None:
             fsi_membranes.append(striatum.state.fsi_membrane.clone())
 
@@ -128,6 +133,8 @@ def test_gap_junction_creates_coupling(default_config, striatum_sizes, device):
 def test_fsi_inhibition_effect(default_config, striatum_sizes, device):
     """Test that FSI provide feedforward inhibition to MSNs."""
     striatum = Striatum(config=default_config, sizes=striatum_sizes, device=device)
+    striatum.add_input_source_striatum("default", 64)
+    striatum.add_fsi_source("default", 64)
     striatum.reset_state()
 
     # Create strong input to drive FSI activity
@@ -135,7 +142,7 @@ def test_fsi_inhibition_effect(default_config, striatum_sizes, device):
     input_spikes[:32] = 1.0  # Strong input
 
     # Run forward pass
-    _ = striatum(input_spikes)
+    _ = striatum({"default": input_spikes})
 
     # Check that FSI spiked (if they did, they should inhibit MSNs)
     # Note: FSI inhibition is broadcast to all MSNs
@@ -148,6 +155,8 @@ def test_fsi_inhibition_effect(default_config, striatum_sizes, device):
 def test_gap_junction_state_management(default_config, striatum_sizes, device):
     """Test that FSI membrane state is properly initialized and updated."""
     striatum = Striatum(config=default_config, sizes=striatum_sizes, device=device)
+    striatum.add_input_source_striatum("default", 64)
+    striatum.add_fsi_source("default", 64)
     striatum.reset_state()
 
     # FSI membrane should be initialized
@@ -157,7 +166,7 @@ def test_gap_junction_state_management(default_config, striatum_sizes, device):
 
     # After forward pass, membrane should be updated
     input_spikes = torch.randn(64, device=device).abs()
-    striatum(input_spikes)
+    striatum({"default": input_spikes})
 
     # Membrane should have changed from initial zeros
     assert striatum.state.fsi_membrane is not None
@@ -166,11 +175,13 @@ def test_gap_junction_state_management(default_config, striatum_sizes, device):
 def test_gap_junction_state_serialization(default_config, striatum_sizes, device):
     """Test that FSI membrane state can be saved and loaded."""
     striatum = Striatum(config=default_config, sizes=striatum_sizes, device=device)
+    striatum.add_input_source_striatum("default", 64)
+    striatum.add_fsi_source("default", 64)
     striatum.reset_state()
 
     # Run forward pass to establish state
     input_spikes = torch.randn(64, device=device).abs()
-    striatum(input_spikes)
+    striatum({"default": input_spikes})
 
     # Save state
     state_dict = striatum.state.to_dict()
@@ -232,6 +243,8 @@ def test_gap_junction_uses_fsi_weights(default_config, striatum_sizes, device):
 def test_gap_junction_integration_with_beta(default_config, striatum_sizes, device):
     """Test that FSI gap junctions work correctly during beta oscillations."""
     striatum = Striatum(config=default_config, sizes=striatum_sizes, device=device)
+    striatum.add_input_source_striatum("default", 64)
+    striatum.add_fsi_source("default", 64)
     striatum.reset_state()
 
     # Set beta oscillation (13-30 Hz)
@@ -248,7 +261,7 @@ def test_gap_junction_integration_with_beta(default_config, striatum_sizes, devi
     input_spikes[0:20] = 1.0
 
     for _ in range(20):
-        _output = striatum(input_spikes)
+        _output = striatum({"default": input_spikes})
 
         # FSI membrane should be tracked
         assert striatum.state.fsi_membrane is not None

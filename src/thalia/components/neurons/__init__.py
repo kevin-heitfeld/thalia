@@ -4,8 +4,25 @@ Neuron models and dendritic computation.
 This module contains spiking neuron models and dendritic processing components.
 """
 
+from thalia.components.neurons.dendritic import (
+    DendriticBranch,
+    DendriticBranchConfig,
+    DendriticNeuron,
+    DendriticNeuronConfig,
+    compute_branch_selectivity,
+    create_clustered_input,
+    create_scattered_input,
+)
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.neurons.neuron_constants import (
+from thalia.components.neurons.neuron_factory import (
+    NeuronFactory,
+    create_pyramidal_neurons,
+    create_relay_neurons,
+    create_trn_neurons,
+    create_cortical_layer_neurons,
+    create_fast_spiking_neurons,
+)
+from thalia.constants.neuron import (
     # Membrane time constants
     TAU_MEM_STANDARD,
     TAU_MEM_FAST,
@@ -42,28 +59,26 @@ from thalia.components.neurons.neuron_constants import (
     STANDARD_PYRAMIDAL,
     FAST_SPIKING_INTERNEURON,
 )
-from thalia.components.neurons.neuron_factory import (
-    NeuronFactory,
-    create_pyramidal_neurons,
-    create_relay_neurons,
-    create_trn_neurons,
-    create_cortical_layer_neurons,
-    create_fast_spiking_neurons,
-)
-from thalia.components.neurons.dendritic import (
-    DendriticBranch,
-    DendriticBranchConfig,
-    DendriticNeuron,
-    DendriticNeuronConfig,
-    compute_branch_selectivity,
-    create_clustered_input,
-    create_scattered_input,
-)
 
 __all__ = [
     # Neuron models
     "ConductanceLIF",
     "ConductanceLIFConfig",
+    # Neuron factory
+    "NeuronFactory",
+    "create_pyramidal_neurons",
+    "create_relay_neurons",
+    "create_trn_neurons",
+    "create_cortical_layer_neurons",
+    "create_fast_spiking_neurons",
+    # Dendritic computation
+    "DendriticBranch",
+    "DendriticBranchConfig",
+    "DendriticNeuron",
+    "DendriticNeuronConfig",
+    "compute_branch_selectivity",
+    "create_clustered_input",
+    "create_scattered_input",
     # Neuron constants
     "TAU_MEM_STANDARD",
     "TAU_MEM_FAST",
@@ -91,19 +106,4 @@ __all__ = [
     "WEIGHT_INIT_SCALE_SPARSITY_DEFAULT",
     "STANDARD_PYRAMIDAL",
     "FAST_SPIKING_INTERNEURON",
-    # Neuron factory
-    "NeuronFactory",
-    "create_pyramidal_neurons",
-    "create_relay_neurons",
-    "create_trn_neurons",
-    "create_cortical_layer_neurons",
-    "create_fast_spiking_neurons",
-    # Dendritic computation
-    "DendriticBranch",
-    "DendriticBranchConfig",
-    "DendriticNeuron",
-    "DendriticNeuronConfig",
-    "compute_branch_selectivity",
-    "create_clustered_input",
-    "create_scattered_input",
 ]

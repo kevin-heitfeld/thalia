@@ -378,6 +378,9 @@ class TestGrowthMethods:
         )
 
         striatum = Striatum(config, sizes, "cpu")
+        # Link pathways to parent (required for multi-source architecture)
+        striatum.add_input_source_striatum("cortex", 100)
+
         initial_d1 = sizes["d1_size"]
         initial_d2 = sizes["d2_size"]
         initial_total = initial_d1 + initial_d2

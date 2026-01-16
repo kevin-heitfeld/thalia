@@ -143,8 +143,8 @@ def test_delay_configuration_affects_temporal_competition(striatum_config_with_d
 
 def test_delays_work_from_first_forward(striatum_with_delays, striatum_sizes_with_delays):
     """Test that delays take effect immediately from first forward pass."""
-    # First forward pass with input
-    input_spikes = generate_sparse_spikes(50, firing_rate=0.2)
+    # First forward pass with input (use 40% firing rate for reliable excitation)
+    input_spikes = generate_sparse_spikes(50, firing_rate=0.4)
     output = striatum_with_delays({"default": input_spikes})
 
     # Behavioral contract: output should be valid even on first pass
@@ -335,7 +335,7 @@ def test_different_delay_values(device):
         homeostasis_enabled=False,
     )
     striatum_small = Striatum(config=config_small_diff, sizes=sizes, device=device)
-    striatum_small.add_input_source("default", sizes['input_size'])
+    striatum_small.add_input_source_striatum("default", sizes['input_size'])
 
     # Test with large delay difference
     config_large_diff = StriatumConfig(
@@ -345,7 +345,7 @@ def test_different_delay_values(device):
         homeostasis_enabled=False,
     )
     striatum_large = Striatum(config=config_large_diff, sizes=sizes, device=device)
-    striatum_large.add_input_source("default", sizes['input_size'])
+    striatum_large.add_input_source_striatum("default", sizes['input_size'])
 
     # Test behavioral difference: larger delay difference creates longer competition window
     input_spikes = torch.ones(50, dtype=torch.bool)

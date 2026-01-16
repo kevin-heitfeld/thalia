@@ -20,7 +20,7 @@ from enum import Enum
 import numpy as np
 import torch
 
-from thalia.tasks.task_constants import (
+from thalia.constants.task import (
     STIMULUS_STRENGTH_HIGH,
     WEIGHT_INIT_SCALE_SMALL,
     FEATURE_INCREMENT_BASE,

@@ -48,7 +48,13 @@ def create_test_striatum(input_sources: dict, n_actions: int, device: str, **kwa
     sizes['input_size'] = sum(input_sources.values())
 
     config = StriatumConfig(**kwargs)
-    return Striatum(config=config, sizes=sizes, device=device)
+    striatum = Striatum(config=config, sizes=sizes, device=device)
+
+    # Link pathways to parent (required for multi-source architecture)
+    for source_name, source_size in input_sources.items():
+        striatum.add_input_source_striatum(source_name, source_size)
+
+    return striatum
 
 
 def create_test_cortex(l4_size: int, l23_size: int, l5_size: int, device: str, **kwargs) -> LayeredCortex:

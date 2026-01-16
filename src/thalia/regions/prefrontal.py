@@ -68,27 +68,24 @@ from typing import Optional, Dict, Any, List, Union
 import torch
 import torch.nn as nn
 
-from thalia.typing import PrefrontalDiagnostics
-from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.errors import ConfigurationError
-from thalia.core.neural_region import NeuralRegion
-from thalia.core.region_state import BaseRegionState
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
-from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
-from thalia.managers.component_registry import register_region
-from thalia.neuromodulation import compute_ne_gain, DA_BASELINE_STANDARD
-from thalia.regulation.learning_constants import LEARNING_RATE_STDP, WM_NOISE_STD_DEFAULT
-from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.learning import LearningStrategyRegistry, STDPConfig
-from thalia.utils.input_routing import InputRouter
-from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval, compute_oscillator_modulated_gain
-from thalia.regulation.oscillator_constants import (
+from thalia.constants.learning import LEARNING_RATE_STDP, WM_NOISE_STD_DEFAULT
+from thalia.constants.oscillator import (
     PFC_FEEDFORWARD_GAIN_MIN,
     PFC_FEEDFORWARD_GAIN_RANGE,
     PFC_RECURRENT_GAIN_MIN,
     PFC_RECURRENT_GAIN_RANGE,
 )
+from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.errors import ConfigurationError
+from thalia.core.neural_region import NeuralRegion
+from thalia.core.region_state import BaseRegionState
+from thalia.learning import LearningStrategyRegistry, STDPConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.managers.component_registry import register_region
+from thalia.neuromodulation import compute_ne_gain, DA_BASELINE_STANDARD
+from thalia.regions.prefrontal_checkpoint_manager import PrefrontalCheckpointManager
 from thalia.regions.prefrontal_hierarchy import (
     Goal,
     GoalHierarchyManager,
@@ -96,6 +93,9 @@ from thalia.regions.prefrontal_hierarchy import (
     HyperbolicDiscounter,
     HyperbolicDiscountingConfig,
 )
+from thalia.typing import PrefrontalDiagnostics
+from thalia.utils.input_routing import InputRouter
+from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval, compute_oscillator_modulated_gain
 
 
 @dataclass
@@ -285,6 +285,7 @@ class PrefrontalState(BaseRegionState):
             'acetylcholine': self.acetylcholine,
             'norepinephrine': self.norepinephrine,
             'stp_recurrent_state': self.stp_recurrent_state,
+            'stp_feedforward_state': self.stp_feedforward_state,
         })
         return base_dict
 
@@ -310,11 +311,18 @@ class PrefrontalState(BaseRegionState):
             rule = rule.to(device)
 
         # Transfer nested STP state tensors
-        stp_state = data.get('stp_recurrent_state')
-        if stp_state is not None:
-            stp_state = {
+        stp_recurrent = data.get('stp_recurrent_state')
+        if stp_recurrent is not None:
+            stp_recurrent = {
                 k: v.to(device) if isinstance(v, torch.Tensor) else v
-                for k, v in stp_state.items()
+                for k, v in stp_recurrent.items()
+            }
+
+        stp_feedforward = data.get('stp_feedforward_state')
+        if stp_feedforward is not None:
+            stp_feedforward = {
+                k: v.to(device) if isinstance(v, torch.Tensor) else v
+                for k, v in stp_feedforward.items()
             }
 
         return cls(
@@ -326,7 +334,8 @@ class PrefrontalState(BaseRegionState):
             dopamine=data.get('dopamine', 0.2),
             acetylcholine=data.get('acetylcholine', 0.0),
             norepinephrine=data.get('norepinephrine', 0.0),
-            stp_recurrent_state=stp_state,
+            stp_recurrent_state=stp_recurrent,
+            stp_feedforward_state=stp_feedforward,
         )
 
     def reset(self) -> None:
@@ -797,10 +806,11 @@ class Prefrontal(NeuralRegion):
         # Phase 2 Registration: Opt-in auto-growth for STP modules
         if self.stp_feedforward is not None:
             # Feedforward STP (input -> n_output): grows during grow_input (pre) and grow_output (post)
-            self._register_stp('stp_feedforward', direction='pre', recurrent=False)
+            self._register_stp('stp_feedforward', direction='both', recurrent=False)
 
         if self.stp_recurrent is not None:
-            # Recurrent STP (n_output -> n_output): only grows during grow_output
+            # Recurrent STP (n_output -> n_output): ONLY grows during grow_output (both pre and post)
+            # NOT during grow_input - recurrent connections track n_output, not n_input
             self._register_stp('stp_recurrent', direction='post', recurrent=True)
 
         return neurons

@@ -43,8 +43,8 @@ Date: December 8, 2025
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Any
 from enum import IntEnum
+from typing import Dict, Optional, Any
 
 
 class CurriculumStage(IntEnum):
@@ -69,7 +69,7 @@ def get_attention_stage_for_curriculum(curriculum_stage: CurriculumStage) -> "At
     Returns:
         Corresponding AttentionStage enum
     """
-    from thalia.training.curriculum.constants import AttentionStage
+    from thalia.constants.training import AttentionStage
 
     mapping = {
         CurriculumStage.SENSORIMOTOR: AttentionStage.INFANT,    # Pure bottom-up

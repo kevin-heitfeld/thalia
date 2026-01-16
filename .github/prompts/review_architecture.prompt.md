@@ -71,6 +71,7 @@ Provide recommendations in three priority tiers:
 **Output & File Delivery:**
 - Write the complete analysis to a markdown file so it is captured in the repository history.
 - Target path: `docs/reviews/architecture-review-YYYY-MM-DD.md` (use current date, e.g., `architecture-review-2025-11-01.md`).
+- To avoid response length limits, output the markdown file in small sections if needed.
 - If `docs/reviews/` does not exist, create it.
 - File structure:
    1. Title: `# Architecture Review – YYYY-MM-DD`

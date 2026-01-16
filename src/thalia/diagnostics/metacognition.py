@@ -14,12 +14,13 @@ References:
 """
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict
 from enum import Enum
+from typing import Optional, Tuple, Dict
+
 import torch
 import torch.nn as nn
 
-from thalia.regulation.region_architecture_constants import (
+from thalia.constants.architecture import (
     METACOG_ABSTENTION_STAGE1,
     METACOG_ABSTENTION_STAGE2,
     METACOG_ABSTENTION_STAGE3,

@@ -37,20 +37,19 @@ Date: December 15, 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Any
 from enum import Enum
+from typing import Dict, Optional
 
 from thalia.config.curriculum_growth import CurriculumStage
-from thalia.training.curriculum.constants import (
-    NOISE_PERFORMANCE_LOW,
-    NOISE_PERFORMANCE_HIGH,
-    NOISE_CRITICALITY_BOOST,
-    NOISE_CRITICALITY_REDUCTION,
-)
-from thalia.components.neurons.neuron_constants import (
+from thalia.constants.neuron import (
     NOISE_STD_NONE,
     NOISE_STD_LOW,
-    NOISE_STD_MODERATE,
+)
+from thalia.constants.training import (
+    NOISE_CRITICALITY_BOOST,
+    NOISE_CRITICALITY_REDUCTION,
+    NOISE_PERFORMANCE_HIGH,
+    NOISE_PERFORMANCE_LOW,
 )
 
 

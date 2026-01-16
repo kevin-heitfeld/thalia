@@ -56,6 +56,7 @@ def base_config():
 def striatum_neuromorphic(base_config, base_sizes, device):
     """Create striatum with neuromorphic checkpoint format (no population coding)."""
     region = Striatum(config=base_config, sizes=base_sizes, device=device)
+    region.add_input_source_striatum("default", base_sizes['input_size'])
     region.reset_state()
     return region
 
@@ -64,6 +65,7 @@ def striatum_neuromorphic(base_config, base_sizes, device):
 def striatum_neuromorphic_population(base_config, base_sizes_population, device):
     """Create striatum with neuromorphic checkpoint format (WITH population coding)."""
     region = Striatum(config=base_config, sizes=base_sizes_population, device=device)
+    region.add_input_source_striatum("default", base_sizes_population['input_size'])
     region.reset_state()
     return region
 
@@ -221,7 +223,7 @@ class TestNeuronIDPersistence:
             device=striatum_neuromorphic.device
         )
         for _ in range(1000):
-            striatum_neuromorphic.forward(silent_input)
+            striatum_neuromorphic.forward({"default": silent_input})
 
         # Add neurons after time advancement
         striatum_neuromorphic.grow_actions(n_new=2)
@@ -343,6 +345,7 @@ class TestLoadingWithExtraNeurons:
         sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
         sizes['input_size'] = 100
         large_brain = Striatum(config=striatum_neuromorphic.config, sizes=sizes, device=striatum_neuromorphic.device)
+        large_brain.add_input_source_striatum("default", sizes['input_size'])
         large_brain.reset_state()
         large_brain.grow_output(n_new=3)
 
@@ -376,6 +379,7 @@ class TestLoadingWithExtraNeurons:
         sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
         sizes['input_size'] = 100
         large_brain = Striatum(config=striatum_neuromorphic.config, sizes=sizes, device=striatum_neuromorphic.device)
+        large_brain.add_input_source_striatum("default", sizes['input_size'])
         large_brain.reset_state()
         large_brain.grow_output(n_new=3)
 
@@ -495,7 +499,7 @@ class TestPartialCheckpointLoading:
             device=striatum_neuromorphic.device
         )
         for _ in range(1000):
-            striatum_neuromorphic.forward(silent_input)
+            striatum_neuromorphic.forward({"default": silent_input})
 
         # Add neurons after time advancement
         striatum_neuromorphic.grow_actions(n_new=3)
@@ -556,7 +560,7 @@ class TestNeuronMetadata:
             device=striatum_neuromorphic.device
         )
         for _ in range(1000):
-            striatum_neuromorphic.forward(silent_input)
+            striatum_neuromorphic.forward({"default": silent_input})
 
         # Add new neurons after time advancement
         striatum_neuromorphic.grow_actions(n_new=2)
@@ -608,9 +612,11 @@ class TestNeuromorphicPerformance:
         sizes['input_size'] = 100
 
         region1 = Striatum(config=config, sizes=sizes, device=device)
+        region1.add_input_source_striatum("default", sizes['input_size'])
         region1.reset_state()
 
         region2 = Striatum(config=config, sizes=sizes, device=device)
+        region2.add_input_source_striatum("default", sizes['input_size'])
         region2.reset_state()
 
         # Make region2 more sparse by zeroing out most weights

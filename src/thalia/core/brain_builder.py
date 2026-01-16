@@ -691,6 +691,10 @@ class BrainBuilder:
                     # Build source key (with port if specified)
                     source_key = f"{source_name}:{source_port}" if source_port else source_name
 
+                    # Skip if input source already registered (avoid duplicate registration)
+                    if hasattr(target_comp, 'input_sources') and source_key in target_comp.input_sources:
+                        continue
+
                     # Call striatum-specific method (creates D1/D2 weights)
                     target_comp.add_input_source_striatum(source_key, n_input=source_size)
 
@@ -699,6 +703,10 @@ class BrainBuilder:
                 for source_name, source_port, source_size in sources:
                     # Build source key (with port if specified)
                     source_key = f"{source_name}:{source_port}" if source_port else source_name
+
+                    # Skip if input source already registered (avoid duplicate registration)
+                    if hasattr(target_comp, 'input_sources') and source_key in target_comp.input_sources:
+                        continue
 
                     # Call add_input_source (standard NeuralRegion method)
                     target_comp.add_input_source(source_key, n_input=source_size)

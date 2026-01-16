@@ -13,7 +13,7 @@ Design Pattern: Template Method + DRY
 from dataclasses import dataclass
 
 from thalia.config.base import BaseConfig
-from thalia.components.neurons.neuron_constants import (
+from thalia.constants.neuron import (
     TAU_MEM_STANDARD,
     TAU_REF_STANDARD,
     V_RESET_STANDARD,

@@ -35,10 +35,11 @@ Date: December 2025
 """
 
 from typing import Callable, Dict, List
+
 import torch
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.neurons.neuron_constants import (
+from thalia.constants.neuron import (
     G_LEAK_STANDARD,
     TAU_SYN_EXCITATORY,
     TAU_SYN_INHIBITORY,

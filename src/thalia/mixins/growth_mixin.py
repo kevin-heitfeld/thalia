@@ -142,7 +142,7 @@ class GrowthMixin:
 
         # Default scale: Use constant from regulation module (Architecture Review 2025-12-21, Tier 1.3)
         if scale is None:
-            from thalia.regulation.region_architecture_constants import GROWTH_NEW_WEIGHT_SCALE
+            from thalia.constants.architecture import GROWTH_NEW_WEIGHT_SCALE
             scale = self.config.w_max * GROWTH_NEW_WEIGHT_SCALE
 
         # Initialize new weights using specified strategy

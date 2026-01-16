@@ -76,12 +76,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, Type, TypeVar
 from pathlib import Path
+from typing import Dict, Any, Optional, Type, TypeVar
 
 import torch
 
-from thalia.neuromodulation.constants import (
+from thalia.constants.neuromodulation import (
     DA_BASELINE_STANDARD,
     ACH_BASELINE,
     NE_BASELINE,

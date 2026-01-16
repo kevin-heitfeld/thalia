@@ -28,15 +28,6 @@ Author: Thalia Project
 Date: December 2025
 """
 
-# Re-export region configs from canonical locations
-from thalia.regions.cortex.config import LayeredCortexConfig
-from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
-from thalia.regions.cortex.robustness_config import RobustnessConfig
-from thalia.regions.hippocampus.config import HippocampusConfig
-from thalia.regions.striatum.config import StriatumConfig
-from thalia.regions.prefrontal import PrefrontalConfig
-from thalia.regions.cerebellum import CerebellumConfig
-
 # Re-export component configs from core/
 from thalia.core.base.component_config import (
     NeuralComponentConfig,
@@ -44,26 +35,16 @@ from thalia.core.base.component_config import (
     PathwayConfig,
 )
 
-# Re-export region architecture constants from regulation module
-from thalia.regulation.region_architecture_constants import (
-    HIPPOCAMPUS_DG_EXPANSION_FACTOR,
-    HIPPOCAMPUS_SPARSITY_TARGET,
-    MULTISENSORY_VISUAL_RATIO,
-    MULTISENSORY_AUDITORY_RATIO,
-    MULTISENSORY_LANGUAGE_RATIO,
-    MULTISENSORY_INTEGRATION_RATIO,
-    CEREBELLUM_GRANULE_EXPANSION,
-    CEREBELLUM_PURKINJE_PER_DCN,
-    PFC_WM_CAPACITY_RATIO,
-    METACOG_ABSTENTION_STAGE1,
-    METACOG_ABSTENTION_STAGE2,
-    METACOG_ABSTENTION_STAGE3,
-    METACOG_ABSTENTION_STAGE4,
-    METACOG_CALIBRATION_LR,
-)
+# Re-export region configs from canonical locations
+from thalia.regions.cerebellum import CerebellumConfig
+from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
+from thalia.regions.cortex.robustness_config import RobustnessConfig
+from thalia.regions.hippocampus.config import HippocampusConfig
+from thalia.regions.prefrontal import PrefrontalConfig
+from thalia.regions.striatum.config import StriatumConfig
 
 from .base import BaseConfig
-
 from .learning_config import (
     BaseLearningConfig,
     ModulatedLearningConfig,
@@ -97,11 +78,6 @@ from .validation import (
     ValidatorRegistry,
 )
 from .region_sizes import (
-    # Default sizes
-    DEFAULT_CORTEX_SIZE,
-    DEFAULT_HIPPOCAMPUS_SIZE,
-    DEFAULT_PFC_SIZE,
-    DEFAULT_N_ACTIONS,
     # Utility functions (DEPRECATED - use LayerSizeCalculator instead)
     compute_hippocampus_sizes,
     compute_cortex_layer_sizes,
@@ -160,11 +136,6 @@ __all__ = [
     # Size calculator (NEW - preferred)
     "LayerSizeCalculator",
     "BiologicalRatios",
-    # Region size constants
-    "DEFAULT_CORTEX_SIZE",
-    "DEFAULT_HIPPOCAMPUS_SIZE",
-    "DEFAULT_PFC_SIZE",
-    "DEFAULT_N_ACTIONS",
     # DEPRECATED size functions (use LayerSizeCalculator instead)
     "compute_hippocampus_sizes",
     "compute_cortex_layer_sizes",
@@ -172,20 +143,4 @@ __all__ = [
     "compute_thalamus_sizes",
     "compute_multisensory_sizes",
     "compute_cerebellum_sizes",
-    # Region architecture constants
-    "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
-    "HIPPOCAMPUS_SPARSITY_TARGET",
-    "MULTISENSORY_VISUAL_RATIO",
-    "MULTISENSORY_AUDITORY_RATIO",
-    "MULTISENSORY_LANGUAGE_RATIO",
-    "MULTISENSORY_INTEGRATION_RATIO",
-    "CEREBELLUM_GRANULE_EXPANSION",
-    "PFC_WM_CAPACITY_RATIO",
-    "CEREBELLUM_GRANULE_EXPANSION",
-    "CEREBELLUM_PURKINJE_PER_DCN",
-    "METACOG_ABSTENTION_STAGE1",
-    "METACOG_ABSTENTION_STAGE2",
-    "METACOG_ABSTENTION_STAGE3",
-    "METACOG_ABSTENTION_STAGE4",
-    "METACOG_CALIBRATION_LR",
 ]

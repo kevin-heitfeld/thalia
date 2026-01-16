@@ -32,6 +32,7 @@ def global_config():
 class TestClockDrivenPerformance:
     """Benchmark clock-driven execution performance."""
 
+    @pytest.mark.slow
     def test_benchmark_default_brain_1000_steps(self, global_config):
         """Benchmark 1000 timesteps of default brain execution."""
         brain = BrainBuilder.preset("default", global_config)
@@ -62,6 +63,7 @@ class TestClockDrivenPerformance:
         # Sanity check: should be at least 100 timesteps/sec on CPU
         assert timesteps_per_sec > 100, f"Too slow: {timesteps_per_sec:.1f} timesteps/sec"
 
+    @pytest.mark.slow
     def test_benchmark_minimal_brain_10000_steps(self, global_config):
         """Benchmark 10000 timesteps of minimal brain (fewer components)."""
         brain = BrainBuilder.preset("minimal", global_config)

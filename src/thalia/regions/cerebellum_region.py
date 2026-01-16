@@ -59,8 +59,8 @@ When to Use:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, asdict
+import math
 from typing import Optional, Dict, Any, Union
 
 import torch
@@ -83,7 +83,7 @@ from thalia.components.neurons import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
-from thalia.neuromodulation.constants import (
+from thalia.constants.neuromodulation import (
     compute_ne_gain,
     DA_BASELINE_STANDARD,
     ACH_BASELINE,

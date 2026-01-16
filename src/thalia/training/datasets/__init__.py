@@ -22,7 +22,7 @@ from thalia.training.datasets.loaders import (
     create_sensorimotor_loader,
     create_phonology_loader,
 )
-from thalia.training.datasets.constants import (
+from thalia.constants.task import (
     SPIKE_PROBABILITY_LOW,
     SPIKE_PROBABILITY_MEDIUM,
     SPIKE_PROBABILITY_HIGH,

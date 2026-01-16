@@ -12,12 +12,12 @@ Author: Thalia Project
 Date: December 15, 2025
 """
 
+from thalia.config.curriculum_growth import CurriculumStage
+from thalia.constants.neuron import NOISE_STD_LOW
 from thalia.training.curriculum import (
     NoiseScheduler,
     NoiseSchedulerConfig,
 )
-from thalia.config.curriculum_growth import CurriculumStage
-from thalia.components.neurons.neuron_constants import NOISE_STD_LOW
 
 
 def test_noise_scheduler_init():

@@ -13,7 +13,7 @@ Author: Thalia Project
 Date: December 12, 2025
 """
 
-from thalia.training.curriculum.constants import (
+from thalia.constants.training import (
     AttentionStage,
     get_attention_weights,
 )
@@ -32,6 +32,34 @@ from thalia.training.curriculum.curriculum import (
     StageTransitionConfig,
     TransitionWeekConfig,
 )
+from thalia.training.curriculum.logger import (
+    CurriculumLogger,
+    LogLevel,
+    StageLog,
+)
+from thalia.training.curriculum.noise_scheduler import (
+    NoiseScheduler,
+    NoiseSchedulerConfig,
+    NoiseProfile,
+    NoiseType,
+)
+from thalia.training.curriculum.safety_system import (
+    CurriculumSafetySystem,
+    SafetyStatus,
+)
+from thalia.training.curriculum.stage_evaluation import (
+    evaluate_stage_sensorimotor,
+    evaluate_stage_phonology,
+    evaluate_stage_toddler,
+    check_system_health,
+    generate_evaluation_report,
+)
+from thalia.training.curriculum.stage_gates import (
+    Stage1SurvivalGate,
+    GracefulDegradationManager,
+    GateResult,
+    GateDecision,
+)
 from thalia.training.curriculum.stage_manager import (
     CurriculumTrainer,
     StageConfig,
@@ -41,39 +69,11 @@ from thalia.training.curriculum.stage_manager import (
     ActiveMechanism,
     CognitiveLoadMonitor,
 )
-from thalia.training.curriculum.stage_evaluation import (
-    evaluate_stage_sensorimotor,
-    evaluate_stage_phonology,
-    evaluate_stage_toddler,
-    check_system_health,
-    generate_evaluation_report,
-)
-from thalia.training.curriculum.logger import (
-    CurriculumLogger,
-    LogLevel,
-    StageLog,
-)
-from thalia.training.curriculum.safety_system import (
-    CurriculumSafetySystem,
-    SafetyStatus,
-)
-from thalia.training.curriculum.stage_gates import (
-    Stage1SurvivalGate,
-    GracefulDegradationManager,
-    GateResult,
-    GateDecision,
-)
 from thalia.training.curriculum.stage_monitoring import (
     ContinuousMonitor,
     Stage1Monitor,
     InterventionType,
     MonitoringMetrics,
-)
-from thalia.training.curriculum.noise_scheduler import (
-    NoiseScheduler,
-    NoiseSchedulerConfig,
-    NoiseProfile,
-    NoiseType,
 )
 
 __all__ = [

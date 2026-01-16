@@ -319,12 +319,14 @@ class TestMultipleInputPorts:
         hippo = brain.components["hippocampus"]
 
         # Hippocampus has multiple input sources (cortical + entorhinal)
-        # Total n_input is sum of all sources
-        assert hippo.n_input == cortex.l23_size + 64  # cortical (96) + ec_l3 (64) = 160
+        # Note: hippo.n_input represents internal neurons (DG+CA3+CA2+CA1=320), NOT external inputs
+        # Check input sources are registered correctly instead
+        assert "cortex:l23" in hippo.input_sources
+        assert hippo.input_sources["cortex:l23"] == cortex.l23_size  # cortical = 96
 
         # ec_l3 should be registered as input source
-        assert "ec_l3" in hippo.input_sources
-        assert hippo.input_sources["ec_l3"] == 64
+        assert "thalamus" in hippo.input_sources
+        assert hippo.input_sources["thalamus"] == 64  # entorhinal from thalamus
 
     @pytest.mark.skip(reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md")
     def test_striatum_multiple_input_sources(self, global_config):

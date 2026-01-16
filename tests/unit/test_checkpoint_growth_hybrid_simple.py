@@ -26,6 +26,7 @@ def small_striatum(device):
     sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
     sizes['input_size'] = 100
     striatum = Striatum(config=config, sizes=sizes, device=device)
+    striatum.add_input_source_striatum("default", sizes['input_size'])
     striatum.reset_state()
     return striatum
 
@@ -38,6 +39,7 @@ def small_striatum_population(device):
     sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=10)
     sizes['input_size'] = 100
     striatum = Striatum(config=config, sizes=sizes, device=device)
+    striatum.add_input_source_striatum("default", sizes['input_size'])
     striatum.reset_state()
     return striatum
 
@@ -50,6 +52,7 @@ def large_striatum(device):
     sizes = calc.striatum_from_actions(n_actions=150, neurons_per_action=1)
     sizes['input_size'] = 100
     striatum = Striatum(config=config, sizes=sizes, device=device)
+    striatum.add_input_source_striatum("default", sizes['input_size'])
     striatum.reset_state()
     return striatum
 
@@ -62,6 +65,7 @@ def large_striatum_population(device):
     sizes = calc.striatum_from_actions(n_actions=150, neurons_per_action=10)
     sizes['input_size'] = 100
     striatum = Striatum(config=config, sizes=sizes, device=device)
+    striatum.add_input_source_striatum("default", sizes['input_size'])
     striatum.reset_state()
     return striatum
 
@@ -137,6 +141,7 @@ class TestFormatAutoSelection:
         sizes = calc.striatum_from_actions(n_actions=80, neurons_per_action=1)
         sizes['input_size'] = 100
         striatum = Striatum(config=config, sizes=sizes, device=device)
+        striatum.add_input_source_striatum("default", sizes['input_size'])
 
         checkpoint_path = tmp_path / "growth_enabled.pt"
         striatum.checkpoint_manager.save(checkpoint_path)
@@ -157,6 +162,7 @@ class TestFormatAutoSelection:
         sizes_99 = calc.striatum_from_actions(n_actions=99, neurons_per_action=1)
         sizes_99['input_size'] = 100
         striatum_99 = Striatum(config=config_99, sizes=sizes_99, device=device)
+        striatum_99.add_input_source_striatum("default", sizes_99['input_size'])
 
         checkpoint_99 = tmp_path / "threshold_99.pt"
         striatum_99.checkpoint_manager.save(checkpoint_99)
@@ -169,6 +175,7 @@ class TestFormatAutoSelection:
         sizes_101 = calc.striatum_from_actions(n_actions=101, neurons_per_action=1)
         sizes_101['input_size'] = 100
         striatum_101 = Striatum(config=config_101, sizes=sizes_101, device=device)
+        striatum_101.add_input_source_striatum("default", sizes_101['input_size'])
 
         checkpoint_101 = tmp_path / "threshold_101.pt"
         striatum_101.checkpoint_manager.save(checkpoint_101)
@@ -286,23 +293,25 @@ class TestHybridSaveLoad:
         small_sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
         small_sizes['input_size'] = 100
         small = Striatum(config=small_config, sizes=small_sizes, device=device)
+        small.add_input_source_striatum("default", small_sizes['input_size'])
         small.reset_state()
 
         # Set distinctive weights
-        small.d1_pathway.weights.data[0, 10] = 0.777
-        small.d1_pathway.weights.data[1, 20] = 0.888
+        small.synaptic_weights["default_d1"].data[0, 10] = 0.777
+        small.synaptic_weights["default_d1"].data[1, 20] = 0.888
 
         # Save
         small.checkpoint_manager.save(checkpoint_path)
 
         # Load into same small striatum
         small2 = Striatum(config=small_config, sizes=small_sizes, device=device)
+        small2.add_input_source_striatum("default", small_sizes['input_size'])
         small2.reset_state()
         small2.checkpoint_manager.load(checkpoint_path)
 
         # Verify weights restored
-        assert abs(small2.d1_pathway.weights[0, 10].item() - 0.777) < 1e-6
-        assert abs(small2.d1_pathway.weights[1, 20].item() - 0.888) < 1e-6
+        assert abs(small2.synaptic_weights["default_d1"][0, 10].item() - 0.777) < 1e-6
+        assert abs(small2.synaptic_weights["default_d1"][1, 20].item() - 0.888) < 1e-6
 
     def test_state_preserved_with_population_coding(self, device, tmp_path):
         """State should be preserved with population coding enabled."""
@@ -314,23 +323,25 @@ class TestHybridSaveLoad:
         sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=10)
         sizes['input_size'] = 100
         striatum = Striatum(config=config, sizes=sizes, device=device)
+        striatum.add_input_source_striatum("default", sizes['input_size'])
         striatum.reset_state()
 
         # Set distinctive weights in first few neurons
-        striatum.d1_pathway.weights.data[0, 10] = 0.333
-        striatum.d1_pathway.weights.data[5, 20] = 0.444  # Different action's neurons
+        striatum.synaptic_weights["default_d1"].data[0, 10] = 0.333
+        striatum.synaptic_weights["default_d1"].data[5, 20] = 0.444  # Different action's neurons
 
         # Save
         striatum.checkpoint_manager.save(checkpoint_path)
 
         # Load into new instance
         striatum2 = Striatum(config=config, sizes=sizes, device=device)
+        striatum2.add_input_source_striatum("default", sizes['input_size'])
         striatum2.reset_state()
         striatum2.checkpoint_manager.load(checkpoint_path)
 
         # Verify weights restored
-        assert abs(striatum2.d1_pathway.weights[0, 10].item() - 0.333) < 1e-6
-        assert abs(striatum2.d1_pathway.weights[5, 20].item() - 0.444) < 1e-6
+        assert abs(striatum2.synaptic_weights["default_d1"][0, 10].item() - 0.333) < 1e-6
+        assert abs(striatum2.synaptic_weights["default_d1"][5, 20].item() - 0.444) < 1e-6
 
     def test_load_rejects_checkpoint_without_metadata(self, small_striatum, tmp_path):
         """Loading checkpoint without hybrid_metadata should raise error."""

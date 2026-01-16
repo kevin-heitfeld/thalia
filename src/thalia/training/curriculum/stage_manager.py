@@ -130,58 +130,52 @@ Date: December 8, 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Tuple, Callable
-from pathlib import Path
-from enum import IntEnum
 from collections import deque, defaultdict
+from dataclasses import dataclass, field
+from enum import IntEnum
+from pathlib import Path
 import time
+from typing import Dict, List, Optional, Any, Tuple, Callable
 
 import numpy as np
 
 from thalia.components.coding.spike_utils import compute_firing_rate
-from thalia.coordination.growth import GrowthManager
-from thalia.training.constants import (
-    FIRING_RATE_MINIMUM,
-    CURRICULUM_LOAD_THRESHOLD,
-    CURRICULUM_MARGIN,
-)
 from thalia.config.curriculum_growth import (
     CurriculumGrowthConfig,
     CurriculumStage,
     get_curriculum_growth_config,
 )
+from thalia.constants.training import (
+    FIRING_RATE_MINIMUM,
+    CURRICULUM_LOAD_THRESHOLD,
+    CURRICULUM_MARGIN,
+)
+from thalia.coordination.growth import GrowthManager
+from thalia.diagnostics import (
+    HealthConfig,
+    HealthMonitor,
+    PerformanceProfiler,
+)
+from thalia.io import CheckpointManager
+from thalia.learning.critical_periods import CriticalPeriodGating
+from thalia.memory.consolidation.consolidation import (
+    MemoryPressureDetector,
+    SleepStageController,
+)
+from thalia.regions.prefrontal_hierarchy import Goal
 from thalia.training.curriculum.curriculum import (
     InterleavedCurriculumSampler,
     SpacedRepetitionScheduler,
-    TestingPhaseProtocol,
     StageTransitionProtocol,
+    TestingPhaseProtocol,
 )
 from thalia.training.curriculum.noise_scheduler import (
     NoiseScheduler,
     NoiseSchedulerConfig,
 )
-from thalia.memory.consolidation.consolidation import (
-    MemoryPressureDetector,
-    SleepStageController,
-)
-from thalia.io import CheckpointManager
+from thalia.training.curriculum.safety_system import CurriculumSafetySystem
+from thalia.training.curriculum.stage_monitoring import InterventionType
 from thalia.training.visualization.live_diagnostics import LiveDiagnostics
-from thalia.regions.prefrontal_hierarchy import Goal
-from thalia.learning.critical_periods import (
-    CriticalPeriodGating,
-)
-from thalia.diagnostics import (
-    PerformanceProfiler,
-    HealthMonitor,
-    HealthConfig,
-)
-from thalia.training.curriculum.safety_system import (
-    CurriculumSafetySystem,
-)
-from thalia.training.curriculum.stage_monitoring import (
-    InterventionType,
-)
 
 
 # ============================================================================
@@ -1769,7 +1763,7 @@ class CurriculumTrainer:
             curriculum_stage: Current curriculum training stage
         """
         from thalia.config.curriculum_growth import get_attention_stage_for_curriculum
-        from thalia.training.curriculum.constants import get_attention_weights
+        from thalia.constants.training import get_attention_weights
 
         # Get attention stage and weights for this curriculum stage
         attention_stage = get_attention_stage_for_curriculum(curriculum_stage)
@@ -1796,7 +1790,7 @@ class CurriculumTrainer:
         # Lower bottom-up weight → higher suppression (ignore distractors)
         if hasattr(thalamus, 'thalamus_config'):
             # Base suppression from constants
-            from thalia.regulation.region_constants import THALAMUS_ALPHA_SUPPRESSION
+            from thalia.constants.regions import THALAMUS_ALPHA_SUPPRESSION
 
             # Scale suppression inversely with bottom-up weight
             # Infant (100% bottom-up): 0.5x suppression (very reactive)

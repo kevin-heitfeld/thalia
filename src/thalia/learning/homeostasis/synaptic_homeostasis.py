@@ -61,12 +61,13 @@ Usage:
 
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, Tuple
+
 import torch
 import torch.nn as nn
 
 from thalia.config.base import BaseConfig
 from thalia.utils.core_utils import clamp_weights
-from thalia.regulation.learning_constants import EMA_DECAY_FAST
+from thalia.constants.learning import EMA_DECAY_FAST
 
 
 @dataclass

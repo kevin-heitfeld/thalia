@@ -2,9 +2,12 @@
 Regulation Constants.
 
 Constants and utilities for homeostasis, learning, exploration, and normalization.
+
+NOTE: Constants have been fully consolidated to thalia.constants module.
+This file maintains exports for backward compatibility within the regulation module.
 """
 
-from thalia.regulation.exploration_constants import (
+from thalia.constants.exploration import (
     # Exploration strategies
     DEFAULT_EPSILON_EXPLORATION,
     EPSILON_MIN,
@@ -14,18 +17,8 @@ from thalia.regulation.exploration_constants import (
     SOFTMAX_TEMPERATURE_DEFAULT,
     SOFTMAX_TEMPERATURE_MIN,
     SOFTMAX_TEMPERATURE_MAX,
-    # Learning rates
-    LR_VERY_SLOW,
-    LR_SLOW,
-    LR_MODERATE,
-    LR_FAST,
-    LR_CORTEX_DEFAULT,
-    LR_HIPPOCAMPUS_DEFAULT,
-    LR_STRIATUM_DEFAULT,
-    LR_CEREBELLUM_DEFAULT,
-    LR_PFC_DEFAULT,
 )
-from thalia.regulation.homeostasis_constants import (
+from thalia.constants.homeostasis import (
     TARGET_FIRING_RATE_STANDARD,
     TARGET_FIRING_RATE_LOW,
     TARGET_FIRING_RATE_MEDIUM,
@@ -41,73 +34,43 @@ from thalia.regulation.homeostasis_constants import (
     MIN_FIRING_RATE_HZ,
     MAX_FIRING_RATE_HZ,
 )
-from thalia.regulation.learning_constants import (
+from thalia.constants.learning import (
+    # Learning rates
     LEARNING_RATE_DEFAULT,
     LEARNING_RATE_STDP,
     LEARNING_RATE_BCM,
     LEARNING_RATE_HEBBIAN,
-    TAU_ELIGIBILITY_STANDARD,
-    TAU_BCM_THRESHOLD,
+    # STDP
     TAU_STDP_PLUS,
     TAU_STDP_MINUS,
     STDP_A_PLUS_CORTEX,
     STDP_A_MINUS_CORTEX,
     STDP_A_PLUS_HIPPOCAMPUS,
     STDP_A_MINUS_HIPPOCAMPUS,
+    # BCM
+    TAU_BCM_THRESHOLD,
+    # Eligibility
+    TAU_ELIGIBILITY_STANDARD,
+    # Weight initialization
     WEIGHT_INIT_SCALE_PREDICTIVE,
     WEIGHT_INIT_SCALE_RECURRENT,
+    # EMA
     EMA_DECAY_FAST,
     EMA_DECAY_SLOW,
+    # Working memory
     WM_NOISE_STD_DEFAULT,
+    # Region-specific learning rates
+    LR_VERY_SLOW,
+    LR_SLOW,
+    LR_MODERATE,
+    LR_FAST,
+    LR_CORTEX_DEFAULT,
+    LR_HIPPOCAMPUS_DEFAULT,
+    LR_STRIATUM_DEFAULT,
+    LR_CEREBELLUM_DEFAULT,
+    LR_PFC_DEFAULT,
 )
-from thalia.regulation.region_constants import (
-    # Thalamus - Mode Switching
-    THALAMUS_BURST_THRESHOLD,
-    THALAMUS_TONIC_THRESHOLD,
-    THALAMUS_BURST_SPIKE_COUNT,
-    THALAMUS_BURST_GAIN,
-    # Thalamus - Attention Gating
-    THALAMUS_ALPHA_SUPPRESSION,
-    THALAMUS_ALPHA_GATE_THRESHOLD,
-    # Thalamus - TRN
-    THALAMUS_TRN_INHIBITION,
-    THALAMUS_TRN_RECURRENT,
-    # Thalamus - Spatial Filtering
-    THALAMUS_SPATIAL_FILTER_WIDTH,
-    THALAMUS_CENTER_EXCITATION,
-    THALAMUS_SURROUND_INHIBITION,
-    THALAMUS_SURROUND_WIDTH_RATIO,
-    # Thalamus - Relay
-    THALAMUS_RELAY_STRENGTH,
-    # Striatum - TD(λ) Learning
-    STRIATUM_TD_LAMBDA,
-    STRIATUM_GAMMA,
-    STRIATUM_TD_MIN_TRACE,
-    STRIATUM_TD_ACCUMULATING,
-)
-from thalia.regulation.region_architecture_constants import (
-    # Hippocampus
-    HIPPOCAMPUS_DG_EXPANSION_FACTOR,
-    HIPPOCAMPUS_SPARSITY_TARGET,
-    # Prefrontal
-    PFC_WM_CAPACITY_RATIO,
-    # Cerebellum
-    CEREBELLUM_GRANULE_EXPANSION,
-    CEREBELLUM_PURKINJE_PER_DCN,
-    # Metacognition
-    METACOG_ABSTENTION_STAGE1,
-    METACOG_ABSTENTION_STAGE2,
-    METACOG_ABSTENTION_STAGE3,
-    METACOG_ABSTENTION_STAGE4,
-    METACOG_CALIBRATION_LR,
-)
-from thalia.regulation.normalization import (
-    DivisiveNormConfig,
-    DivisiveNormalization,
-    ContrastNormalization,
-    SpatialDivisiveNorm,
-)
-from thalia.regulation.oscillator_constants import (
+from thalia.constants.oscillator import (
     # Theta modulation
     THETA_ENCODING_PHASE_SCALE,
     THETA_RETRIEVAL_PHASE_SCALE,
@@ -118,6 +81,12 @@ from thalia.regulation.oscillator_constants import (
     EC_CA3_GATE_RANGE,
     CA3_RECURRENT_GATE_MIN,
     CA3_RECURRENT_GATE_RANGE,
+    # Gamma attention
+    GAMMA_LEARNING_MODULATION_SCALE,
+    # ACh suppression
+    ACH_RECURRENT_SUPPRESSION_MIN,
+    ACH_RECURRENT_SUPPRESSION_MAX,
+    # Hippocampal gating
     CA3_CA1_ENCODING_SCALE,
     CA1_SPARSITY_RETRIEVAL_BOOST,
     # Cortical gating
@@ -138,11 +107,17 @@ from thalia.regulation.oscillator_constants import (
     ACH_ENCODING_BOOST_RANGE,
     # Gamma attention
     GAMMA_ATTENTION_THRESHOLD,
-    GAMMA_LEARNING_MODULATION_SCALE,
     # Theta-gamma coupling
     THETA_GAMMA_PHASE_DIFF_SIGMA,
     # Striatal learning
     STRIATUM_PFC_MODULATION_LR,
+)
+
+from thalia.regulation.normalization import (
+    DivisiveNormConfig,
+    DivisiveNormalization,
+    ContrastNormalization,
+    SpatialDivisiveNorm,
 )
 
 __all__ = [
@@ -206,48 +181,14 @@ __all__ = [
     "EMA_DECAY_SLOW",
     # Learning Constants - Noise Parameters
     "WM_NOISE_STD_DEFAULT",
-    # Region Constants - Thalamus Mode Switching
-    "THALAMUS_BURST_THRESHOLD",
-    "THALAMUS_TONIC_THRESHOLD",
-    "THALAMUS_BURST_SPIKE_COUNT",
-    "THALAMUS_BURST_GAIN",
-    # Region Constants - Thalamus Attention
-    "THALAMUS_ALPHA_SUPPRESSION",
-    "THALAMUS_ALPHA_GATE_THRESHOLD",
-    # Region Constants - Thalamus TRN
-    "THALAMUS_TRN_INHIBITION",
-    "THALAMUS_TRN_RECURRENT",
-    # Region Constants - Thalamus Spatial Filtering
-    "THALAMUS_SPATIAL_FILTER_WIDTH",
-    "THALAMUS_CENTER_EXCITATION",
-    "THALAMUS_SURROUND_INHIBITION",
-    "THALAMUS_SURROUND_WIDTH_RATIO",
-    # Region Constants - Thalamus Relay
-    "THALAMUS_RELAY_STRENGTH",
-    # Region Constants - Striatum TD(λ)
-    "STRIATUM_TD_LAMBDA",
-    "STRIATUM_GAMMA",
-    "STRIATUM_TD_MIN_TRACE",
-    "STRIATUM_TD_ACCUMULATING",
-    # Region Architecture - Hippocampus
-    "HIPPOCAMPUS_DG_EXPANSION_FACTOR",
-    "HIPPOCAMPUS_SPARSITY_TARGET",
-    # Region Architecture - Prefrontal
-    "PFC_WM_CAPACITY_RATIO",
-    # Region Architecture - Cerebellum
-    "CEREBELLUM_GRANULE_EXPANSION",
-    "CEREBELLUM_PURKINJE_PER_DCN",
-    # Region Architecture - Metacognition
-    "METACOG_ABSTENTION_STAGE1",
-    "METACOG_ABSTENTION_STAGE2",
-    "METACOG_ABSTENTION_STAGE3",
-    "METACOG_ABSTENTION_STAGE4",
-    "METACOG_CALIBRATION_LR",
     # Normalization Classes
     "DivisiveNormConfig",
     "DivisiveNormalization",
     "ContrastNormalization",
     "SpatialDivisiveNorm",
+    # ACh suppression
+    "ACH_RECURRENT_SUPPRESSION_MIN",
+    "ACH_RECURRENT_SUPPRESSION_MAX",
     # Oscillator Constants - Theta modulation
     "THETA_ENCODING_PHASE_SCALE",
     "THETA_RETRIEVAL_PHASE_SCALE",
@@ -271,14 +212,14 @@ __all__ = [
     # Oscillator Constants - Cerebellum gating
     "CEREBELLUM_INPUT_BASE_GAIN",
     "CEREBELLUM_INPUT_MODULATION_RANGE",
+    # Oscillator Constants - Gamma attention
+    "GAMMA_ATTENTION_THRESHOLD",
+    "GAMMA_LEARNING_MODULATION_SCALE",
     # Oscillator Constants - Neuromodulator interactions
     "ACH_RECURRENT_SUPPRESSION",
     "ACH_THRESHOLD_FOR_SUPPRESSION",
     "ACH_ENCODING_BOOST_BASE",
     "ACH_ENCODING_BOOST_RANGE",
-    # Oscillator Constants - Gamma attention
-    "GAMMA_ATTENTION_THRESHOLD",
-    "GAMMA_LEARNING_MODULATION_SCALE",
     # Oscillator Constants - Theta-gamma coupling
     "THETA_GAMMA_PHASE_DIFF_SIGMA",
     # Oscillator Constants - Striatal learning

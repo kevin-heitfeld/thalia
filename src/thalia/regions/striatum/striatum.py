@@ -106,10 +106,6 @@ from typing import Optional, Dict, Any, List, Union
 import torch
 import torch.nn as nn
 
-from thalia.typing import StriatumDiagnostics
-from thalia.core.neural_region import NeuralRegion
-from thalia.managers.base_manager import ManagerContext
-from thalia.managers.component_registry import register_region
 from thalia.components.neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,
@@ -120,26 +116,28 @@ from thalia.components.neurons import (
     E_INHIBITORY,
 )
 from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, get_stp_config
-from thalia.utils.core_utils import clamp_weights
-from thalia.regions.striatum.exploration import ExplorationConfig
+from thalia.constants.neuromodulation import compute_ne_gain
+from thalia.core.neural_region import NeuralRegion
+from thalia.managers.base_manager import ManagerContext
+from thalia.managers.component_registry import register_region
 from thalia.neuromodulation import ACH_BASELINE, NE_BASELINE
+from thalia.regions.striatum.exploration import ExplorationConfig
+from thalia.typing import StriatumDiagnostics
+from thalia.utils.core_utils import clamp_weights
+from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
-from .config import StriatumConfig, StriatumState
 from .action_selection import ActionSelectionMixin
-from .pathway_base import StriatumPathwayConfig
+from .checkpoint_manager import StriatumCheckpointManager
+from .config import StriatumConfig, StriatumState
 from .d1_pathway import D1Pathway
 from .d2_pathway import D2Pathway
+from .exploration_component import StriatumExplorationComponent
+from .forward_coordinator import ForwardPassCoordinator
 from .homeostasis_component import StriatumHomeostasisComponent, HomeostasisManagerConfig
 from .learning_component import StriatumLearningComponent
-from .exploration_component import StriatumExplorationComponent
-from .checkpoint_manager import StriatumCheckpointManager
+from .pathway_base import StriatumPathwayConfig
 from .state_tracker import StriatumStateTracker
-from .forward_coordinator import ForwardPassCoordinator
 from .td_lambda import TDLambdaLearner, TDLambdaConfig
-
-# Oscillator and neuromodulation utilities
-from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
-from thalia.neuromodulation.constants import compute_ne_gain
 
 
 @register_region(
@@ -913,18 +911,22 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             #   synaptic_weights["cortex:l5_d2"] = [d2_size, 256]
         """
         # Initialize D1 weights for this source
-        d1_weights = WeightInitializer.xavier(
+        # Use sparse random initialization with positive weights for reliable excitation
+        # Biology: Most synapses are excitatory (glutamatergic) in corticostriatal pathways
+        d1_weights = WeightInitializer.sparse_random(
             n_output=self.d1_size,
             n_input=n_input,
-            gain=0.2 * weight_scale,
+            sparsity=0.8,  # 80% connectivity - biologically realistic
+            weight_scale=0.25 * weight_scale,  # Scaled to produce sufficient drive
             device=self.device,
         ) * self.config.w_max
 
         # Initialize D2 weights for this source (same initialization)
-        d2_weights = WeightInitializer.xavier(
+        d2_weights = WeightInitializer.sparse_random(
             n_output=self.d2_size,
             n_input=n_input,
-            gain=0.2 * weight_scale,
+            sparsity=0.8,  # 80% connectivity - biologically realistic
+            weight_scale=0.25 * weight_scale,  # Scaled to produce sufficient drive
             device=self.device,
         ) * self.config.w_max
 
@@ -1337,6 +1339,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.td_lambda_d1.traces.n_output = self.d1_size
             self.td_lambda_d1.n_actions = self.n_actions
 
+        # Expand multi-source D1 eligibility traces
+        if hasattr(self, '_eligibility_d1'):
+            for source_key in list(self._eligibility_d1.keys()):
+                old_elig = self._eligibility_d1[source_key]
+                expanded = self._expand_state_tensors({'elig': old_elig}, n_new_d1)
+                self._eligibility_d1[source_key] = expanded['elig']
+
         # Expand D2 pathway tensors
         state_2d_d2 = {
             'd2_eligibility': self.d2_pathway.eligibility,
@@ -1350,6 +1359,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.td_lambda_d2.traces.traces = expanded_2d_d2['td_lambda_d2_traces']
             self.td_lambda_d2.traces.n_output = self.d2_size
             self.td_lambda_d2.n_actions = self.n_actions
+
+        # Expand multi-source D2 eligibility traces
+        if hasattr(self, '_eligibility_d2'):
+            for source_key in list(self._eligibility_d2.keys()):
+                old_elig = self._eligibility_d2[source_key]
+                expanded = self._expand_state_tensors({'elig': old_elig}, n_new_d2)
+                self._eligibility_d2[source_key] = expanded['elig']
 
         # Build state dict for all 1D tensors [n_neurons]
         state_1d = {
@@ -1397,10 +1413,17 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         new_fsi_weights
                     ], dim=0)
 
-        # 4.5. GROW STP MODULES using auto-detection
+        # 4.5. GROW STP MODULES (D1 and D2 separately)
         # =====================================================================
-        # STP modules track n_post (total MSN count), need to expand
-        self._auto_grow_stp_modules('post', n_new_neurons)
+        # STP modules are per-pathway (D1/D2), need to expand separately
+        # Each source has "_d1" and "_d2" STP modules that track n_post neurons
+        for key in list(self.stp_modules.keys()):
+            if '_d1' in key:
+                # D1 pathway STP: grow by n_new_d1
+                self.stp_modules[key].grow(n_new_d1, target='post')
+            elif '_d2' in key:
+                # D2 pathway STP: grow by n_new_d2
+                self.stp_modules[key].grow(n_new_d2, target='post')
         # =====================================================================
         # Homeostasis tracks per-neuron activity, needs to expand D1 and D2 separately
         if self.homeostasis is not None:
@@ -1589,6 +1612,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 new_weights_d1 = torch.cat([old_weights_d1.data, new_cols], dim=1)
                 self.synaptic_weights[d1_key].data = new_weights_d1
 
+                # Update input_sources tracking
+                self.input_sources[d1_key] = new_size
+
                 # Expand D1 eligibility trace for this source
                 if hasattr(self, '_eligibility_d1') and d1_key in self._eligibility_d1:
                     old_elig_d1 = self._eligibility_d1[d1_key]
@@ -1640,6 +1666,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 new_weights_d2 = torch.cat([old_weights_d2.data, new_cols], dim=1)
                 self.synaptic_weights[d2_key].data = new_weights_d2
 
+                # Update input_sources tracking
+                self.input_sources[d2_key] = new_size
+
                 # Expand D2 eligibility trace for this source
                 if hasattr(self, '_eligibility_d2') and d2_key in self._eligibility_d2:
                     old_elig_d2 = self._eligibility_d2[d2_key]
@@ -1690,6 +1719,53 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 # Concatenate columns (dim=1 for input dimension)
                 new_weights_fsi = torch.cat([old_weights_fsi.data, new_cols], dim=1)
                 self.synaptic_weights[fsi_key].data = new_weights_fsi
+
+        # Update total input_size (sum of all unique sources, accounting for D1/D2 duplication)
+        # Each base source (e.g., "default") appears as both "default_d1" and "default_d2"
+        # We need to count each base source once
+        unique_sources = set()
+        for key in self.input_sources.keys():
+            if key.endswith('_d1'):
+                base = key[:-3]
+                unique_sources.add(base)
+            elif key.endswith('_d2'):
+                base = key[:-3]
+                unique_sources.add(base)
+            else:
+                unique_sources.add(key)
+
+        # Use D1 keys to get sizes (D1 and D2 should have same input size)
+        self.input_size = sum(
+            self.input_sources.get(f"{src}_d1", self.input_sources.get(src, 0))
+            for src in unique_sources
+        )
+
+        # Grow TD(λ) traces to match new input_size
+        if self.td_lambda_d1 is not None:
+            old_n_input = self.td_lambda_d1.traces.traces.shape[1]
+            if self.input_size > old_n_input:
+                n_new_inputs = self.input_size - old_n_input
+                # Expand traces [n_output, n_input]
+                new_cols = torch.zeros(
+                    self.d1_size, n_new_inputs, device=self.device
+                )
+                self.td_lambda_d1.traces.traces = torch.cat([
+                    self.td_lambda_d1.traces.traces, new_cols
+                ], dim=1)
+                self.td_lambda_d1.traces.n_input = self.input_size
+
+        if self.td_lambda_d2 is not None:
+            old_n_input = self.td_lambda_d2.traces.traces.shape[1]
+            if self.input_size > old_n_input:
+                n_new_inputs = self.input_size - old_n_input
+                # Expand traces [n_output, n_input]
+                new_cols = torch.zeros(
+                    self.d2_size, n_new_inputs, device=self.device
+                )
+                self.td_lambda_d2.traces.traces = torch.cat([
+                    self.td_lambda_d2.traces.traces, new_cols
+                ], dim=1)
+                self.td_lambda_d2.traces.n_input = self.input_size
 
         # Grow STP modules for this source (Phase 5)
         if self.config.stp_enabled:

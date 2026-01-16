@@ -25,12 +25,13 @@ Phase: 3 - Hierarchical Goals & Temporal Abstraction
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Callable, Any
 from enum import Enum
+from typing import Optional, List, Dict, Callable, Any
+
 import torch
 
-from thalia.regulation.exploration_constants import DEFAULT_EPSILON_EXPLORATION
-from thalia.regulation.region_constants import PREFRONTAL_PATIENCE_MIN
+from thalia.constants.exploration import DEFAULT_EPSILON_EXPLORATION
+from thalia.constants.regions import PREFRONTAL_PATIENCE_MIN
 
 
 class GoalStatus(Enum):

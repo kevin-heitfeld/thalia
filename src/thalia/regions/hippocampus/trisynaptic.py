@@ -90,22 +90,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.typing import HippocampusDiagnostics
-from thalia.core.errors import ComponentError
-from thalia.core.neural_region import NeuralRegion
-from thalia.neuromodulation import compute_ne_gain
 from thalia.components.neurons import create_pyramidal_neurons
 from thalia.components.synapses import ShortTermPlasticity, get_stp_config, update_trace, WeightInitializer
 from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
-from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
-from thalia.utils.input_routing import InputRouter
-from thalia.utils.oscillator_utils import (
-    compute_theta_encoding_retrieval,
-    compute_ach_recurrent_suppression,
-    compute_oscillator_modulated_gain,
-    compute_learning_rate_modulation,
+from thalia.constants.architecture import (
+    ACTIVITY_HISTORY_DECAY,
+    ACTIVITY_HISTORY_INCREMENT,
 )
-from thalia.regulation.oscillator_constants import (
+from thalia.constants.oscillator import (
     DG_CA3_GATE_MIN,
     DG_CA3_GATE_RANGE,
     EC_CA3_GATE_MIN,
@@ -116,23 +108,31 @@ from thalia.regulation.oscillator_constants import (
     CA1_SPARSITY_RETRIEVAL_BOOST,
     GAMMA_LEARNING_MODULATION_SCALE,
 )
-from thalia.regulation.region_architecture_constants import (
-    ACTIVITY_HISTORY_DECAY,
-    ACTIVITY_HISTORY_INCREMENT,
+from thalia.core.diagnostics_schema import (
+    compute_activity_metrics,
+    compute_plasticity_metrics,
+    compute_health_metrics,
 )
+from thalia.core.errors import ComponentError
+from thalia.core.neural_region import NeuralRegion
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.managers.base_manager import ManagerContext
+from thalia.managers.component_registry import register_region
+from thalia.neuromodulation import compute_ne_gain
 from thalia.regions.hippocampus.hindsight_relabeling import (
     HippocampalHERIntegration,
     HERConfig,
     HERStrategy,
 )
-from thalia.managers.base_manager import ManagerContext
-from thalia.managers.component_registry import register_region
-from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
 from thalia.regions.stimulus_gating import StimulusGating
-from thalia.core.diagnostics_schema import (
-    compute_activity_metrics,
-    compute_plasticity_metrics,
-    compute_health_metrics,
+from thalia.typing import HippocampusDiagnostics
+from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
+from thalia.utils.input_routing import InputRouter
+from thalia.utils.oscillator_utils import (
+    compute_theta_encoding_retrieval,
+    compute_ach_recurrent_suppression,
+    compute_oscillator_modulated_gain,
+    compute_learning_rate_modulation,
 )
 
 from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode

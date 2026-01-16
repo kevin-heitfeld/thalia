@@ -220,15 +220,18 @@ class TestEnhancements:
         brain = BrainBuilder.preset("default", config)
         striatum = brain.components["striatum"]
 
-        # Check D1/D2 weights exist separately
-        assert "default_d1" in striatum.synaptic_weights
-        assert "default_d2" in striatum.synaptic_weights
+        # Check D1/D2 weights exist for each source (cortex, hippocampus, pfc)
+        # BrainBuilder creates connections like "cortex_d1", "hippocampus_d1", etc.
+        assert "cortex_d1" in striatum.synaptic_weights
+        assert "cortex_d2" in striatum.synaptic_weights
+        assert "hippocampus_d1" in striatum.synaptic_weights
+        assert "hippocampus_d2" in striatum.synaptic_weights
 
         # Verify shapes match pathway sizes
-        d1_weights = striatum.synaptic_weights["default_d1"]
-        d2_weights = striatum.synaptic_weights["default_d2"]
-        assert d1_weights.shape[0] == striatum.n_d1
-        assert d2_weights.shape[0] == striatum.n_d2
+        cortex_d1_weights = striatum.synaptic_weights["cortex_d1"]
+        cortex_d2_weights = striatum.synaptic_weights["cortex_d2"]
+        assert cortex_d1_weights.shape[0] == striatum.n_d1
+        assert cortex_d2_weights.shape[0] == striatum.n_d2
 
 
 if __name__ == "__main__":

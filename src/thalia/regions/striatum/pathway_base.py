@@ -157,8 +157,31 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
 
     @property
     def eligibility(self) -> Optional[torch.Tensor]:
-        """Eligibility traces [n_output, n_input] (from learning strategy)."""
-        return self.learning_strategy.eligibility
+        """Eligibility traces [n_output, n_input] (from learning strategy or parent striatum).
+
+        Returns eligibility trace from parent's dict (new multi-source architecture).
+        Falls back to learning_strategy only if parent ref not available (legacy/standalone pathways).
+        """
+        # Prefer parent striatum's eligibility dict (new multi-source architecture)
+        if hasattr(self, '_parent_striatum_ref') and self._parent_striatum_ref is not None:
+            parent = self._parent_striatum_ref()
+            if parent is not None:
+                # Get pathway-specific eligibility dict (_eligibility_d1 or _eligibility_d2)
+                pathway_type = type(self).__name__
+                if 'D1' in pathway_type:
+                    elig_dict = getattr(parent, '_eligibility_d1', {})
+                else:
+                    elig_dict = getattr(parent, '_eligibility_d2', {})
+
+                # Return first available eligibility trace (usually only one source in tests)
+                if elig_dict:
+                    return next(iter(elig_dict.values()))
+
+        # Fallback: learning_strategy (backward compatibility for standalone pathways)
+        if hasattr(self.learning_strategy, 'eligibility') and self.learning_strategy.eligibility is not None:
+            return self.learning_strategy.eligibility
+
+        return None
 
     @eligibility.setter
     def eligibility(self, value: torch.Tensor) -> None:
@@ -367,8 +390,32 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         """
         # Use property setter to update parent's synaptic_weights dict
         self.weights = state['weights']
+
+        # Load eligibility: prefer parent's dict (new architecture) over learning_strategy (old)
         if state.get('eligibility') is not None:
-            self.learning_strategy.eligibility = state['eligibility']
+            eligibility_value = state['eligibility']
+
+            # Try to load into parent's eligibility dict (new multi-source architecture)
+            if hasattr(self, '_parent_striatum_ref') and self._parent_striatum_ref is not None:
+                parent = self._parent_striatum_ref()
+                if parent is not None and hasattr(self, '_weight_source'):
+                    # Determine pathway type and eligibility dict
+                    pathway_type = type(self).__name__
+                    if 'D1' in pathway_type:
+                        elig_attr = '_eligibility_d1'
+                    else:
+                        elig_attr = '_eligibility_d2'
+
+                    # Ensure eligibility dict exists
+                    if not hasattr(parent, elig_attr):
+                        setattr(parent, elig_attr, {})
+
+                    elig_dict = getattr(parent, elig_attr)
+                    # Store under the weight source key (e.g., "default_d1")
+                    elig_dict[self._weight_source] = eligibility_value.to(self.device)
+
+            # Fallback: also set learning_strategy (for backward compatibility)
+            self.learning_strategy.eligibility = eligibility_value
 
         if state.get('neuron_membrane') is not None:
             self.neurons.membrane = state['neuron_membrane']

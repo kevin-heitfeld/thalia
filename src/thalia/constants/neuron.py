@@ -1,5 +1,7 @@
 """
-Standard neuron parameter values used across Thalia.
+Neuron Constants - Membrane time constants, thresholds, refractory periods.
+
+Consolidated from components/neurons/neuron_constants.py and utils/time_constants.py.
 
 This module defines biologically-motivated constants for neuron parameters,
 eliminating magic numbers scattered throughout the codebase.
@@ -33,24 +35,24 @@ References:
 - Gerstner et al. (2014): Neuronal Dynamics, Chapter 1
 - Johnston & Wu (1994): Foundations of Cellular Neurophysiology
 
-Usage:
-======
-    from thalia.core.neuron_constants import (
-        TAU_MEM_STANDARD, V_THRESHOLD_STANDARD,
-        E_EXCITATORY, E_INHIBITORY
-    )
-
-    config = LIFConfig(
-        tau_mem=TAU_MEM_STANDARD,
-        v_threshold=V_THRESHOLD_STANDARD,
-    )
-
 Author: Thalia Project
-Date: December 11, 2025
+Date: January 16, 2026 (Architecture Review Tier 1.2 - Full Consolidation)
 """
 
+import math
+
 # =============================================================================
-# MEMBRANE DYNAMICS TIME CONSTANTS (milliseconds)
+# TIME UNIT CONVERSIONS
+# =============================================================================
+
+MS_PER_SECOND = 1000.0
+"""Milliseconds per second (1000.0 ms/s)."""
+
+SECONDS_PER_MS = 1.0 / 1000.0
+"""Seconds per millisecond (0.001 s/ms)."""
+
+# =============================================================================
+# MEMBRANE TIME CONSTANTS (milliseconds)
 # =============================================================================
 
 TAU_MEM_STANDARD = 20.0
@@ -74,6 +76,16 @@ TAU_MEM_SLOW = 30.0
 Used for slowly-adapting neurons, some CA1 pyramidal cells.
 Provides longer temporal integration for pattern completion.
 """
+
+# Aliases for backward compatibility
+TAU_MEMBRANE_MS = TAU_MEM_STANDARD
+"""Alias for TAU_MEM_STANDARD."""
+
+TAU_MEMBRANE_FAST_MS = TAU_MEM_FAST
+"""Alias for TAU_MEM_FAST."""
+
+TAU_MEMBRANE_SLOW_MS = TAU_MEM_SLOW
+"""Alias for TAU_MEM_SLOW."""
 
 # =============================================================================
 # SYNAPTIC TIME CONSTANTS (milliseconds)
@@ -107,7 +119,7 @@ Slow inhibition, modulatory effects.
 G-protein coupled, affects excitability over hundreds of ms.
 """
 
-# Alias for backward compatibility and clarity
+# Aliases for backward compatibility and clarity
 TAU_EXCITATORY_CONDUCTANCE = TAU_SYN_EXCITATORY
 """Excitatory conductance decay time constant (ms).
 
@@ -120,6 +132,67 @@ TAU_INHIBITORY_CONDUCTANCE = TAU_SYN_INHIBITORY
 
 Alias for TAU_SYN_INHIBITORY. Used in conductance-based neuron models
 to determine how quickly inhibitory conductance decays after synaptic input.
+"""
+
+TAU_SYNAPTIC_FAST_MS = 2.0
+"""Fast synaptic time constant for AMPA receptors (2ms).
+
+Alternative value used in some configurations. Faster than TAU_SYN_EXCITATORY.
+"""
+
+TAU_SYNAPTIC_SLOW_MS = 10.0
+"""Slow synaptic time constant for NMDA receptors (10ms).
+
+Alternative value used in some configurations. Faster than TAU_SYN_NMDA.
+"""
+
+TAU_SYNAPTIC_GABA_MS = 5.0
+"""GABAergic inhibitory synaptic time constant (5ms).
+
+Alternative value used in some configurations. Faster than TAU_SYN_INHIBITORY.
+"""
+
+# =============================================================================
+# REFRACTORY PERIODS (milliseconds)
+# =============================================================================
+
+TAU_REF_STANDARD = 5.0
+"""Standard absolute refractory period (ms).
+
+Typical refractory period for cortical pyramidal neurons (3-7ms biological range).
+Increased from 2ms to 5ms to prevent instant re-firing and allow proper
+temporal integration. This ensures oscillations are driven by feedback loop
+delays rather than just refractory period cycling.
+
+Biological basis: Na+ channel inactivation + K+ afterhyperpolarization
+"""
+
+TAU_REF_FAST = 1.0
+"""Fast refractory period (ms).
+
+Used for fast-spiking interneurons.
+Shorter refractory period enables higher firing rates.
+"""
+
+TAU_REF_SLOW = 7.0
+"""Slow refractory period (ms).
+
+Used for slowly-adapting neurons with strong adaptation.
+Longer refractory period limits maximum firing rate and enforces
+longer inter-spike intervals for proper temporal coding.
+"""
+
+# Aliases for backward compatibility
+REFRACTORY_PERIOD_MS = 2.0
+"""Absolute refractory period after spike (2ms).
+
+Legacy value. Use TAU_REF_STANDARD for new code.
+"""
+
+REFRACTORY_PERIOD_RELATIVE_MS = 5.0
+"""Relative refractory period (5ms total).
+
+Legacy value indicating total refractory period including relative phase.
 """
 
 # =============================================================================
@@ -158,6 +231,33 @@ Normalized to 0.0 (matches resting potential in our convention).
 Biological equivalent: ~-70mV.
 """
 
+V_REST_STANDARD = 0.0
+"""Standard resting membrane potential (normalized).
+
+Equilibrium potential with no input.
+Normalized to 0.0 as reference point.
+Biological equivalent: ~-70mV for pyramidal neurons.
+"""
+
+# Legacy aliases (millivolt versions for backward compatibility)
+SPIKE_THRESHOLD_MV = -50.0
+"""Spike threshold voltage (-50mV).
+
+Legacy value in absolute millivolts. Use V_THRESHOLD_STANDARD for normalized models.
+"""
+
+RESTING_POTENTIAL_MV = -70.0
+"""Resting membrane potential (-70mV).
+
+Legacy value in absolute millivolts. Use V_REST_STANDARD for normalized models.
+"""
+
+RESET_POTENTIAL_MV = -65.0
+"""Reset potential after spike (-65mV).
+
+Legacy value in absolute millivolts. Use V_RESET_STANDARD for normalized models.
+"""
+
 # =============================================================================
 # SPIKE DETECTION THRESHOLDS
 # =============================================================================
@@ -177,13 +277,8 @@ Used in diagnostics to count "active" neurons (those that spiked).
 A spike value > 0.5 indicates the neuron was active in that timestep.
 """
 
-V_REST_STANDARD = 0.0
-"""Standard resting membrane potential (normalized).
-
-Equilibrium potential with no input.
-Normalized to 0.0 as reference point.
-Biological equivalent: ~-70mV for pyramidal neurons.
-"""
+SPIKE_RATE_NORMALIZATION_FACTOR = 1000.0
+"""Convert spike rate to Hz: rate_hz = spike_rate * 1000.0 / dt_ms."""
 
 # =============================================================================
 # REVERSAL POTENTIALS (Conductance-Based Models, normalized)
@@ -237,34 +332,23 @@ Lower leak = longer time constant (tau_mem ≈ 30ms).
 Used for some hippocampal and prefrontal neurons.
 """
 
-# =============================================================================
-# REFRACTORY PERIODS (milliseconds)
-# =============================================================================
+# Legacy aliases (nanosiemens versions)
+CONDUCTANCE_LEAK_NS = 10.0
+"""Leak conductance (10 nS).
 
-TAU_REF_STANDARD = 5.0
-"""Standard absolute refractory period (ms).
-
-Typical refractory period for cortical pyramidal neurons (3-7ms biological range).
-Increased from 2ms to 5ms to prevent instant re-firing and allow proper
-temporal integration. This ensures oscillations are driven by feedback loop
-delays rather than just refractory period cycling.
-
-Biological basis: Na+ channel inactivation + K+ afterhyperpolarization
+Legacy value in absolute units. Use G_LEAK_STANDARD for normalized models.
 """
 
-TAU_REF_FAST = 1.0
-"""Fast refractory period (ms).
+CONDUCTANCE_EXCITATORY_NS = 0.5
+"""Excitatory synaptic conductance (0.5 nS).
 
-Used for fast-spiking interneurons.
-Shorter refractory period enables higher firing rates.
+Legacy value in absolute units. Use model-specific parameters for conductance-based models.
 """
 
-TAU_REF_SLOW = 7.0
-"""Slow refractory period (ms).
+CONDUCTANCE_INHIBITORY_NS = 1.0
+"""Inhibitory synaptic conductance (1.0 nS).
 
-Used for slowly-adapting neurons with strong adaptation.
-Longer refractory period limits maximum firing rate and enforces
-longer inter-spike intervals for proper temporal coding.
+Legacy value in absolute units. Use model-specific parameters for conductance-based models.
 """
 
 # =============================================================================
@@ -412,13 +496,10 @@ Used for salient or superthreshold stimuli.
 # =============================================================================
 
 NE_MAX_GAIN = 1.5
+"""Maximum norepinephrine gain multiplier.
 
-# ============================================================================
-# DEPRECATED CONSTANTS - Use thalia.neuromodulation.constants instead
-# ============================================================================
-
-# NE_GAIN_RANGE has been removed. Use compute_ne_gain() from thalia.neuromodulation.constants
-# Migration: Replace `1.0 + NE_GAIN_RANGE * ne_level` with `compute_ne_gain(ne_level)`
+Used to scale responsiveness during high arousal states.
+"""
 
 TONIC_D1_GAIN_SCALE = 0.5
 """Tonic dopamine modulation of D1 pathway gain.
@@ -490,6 +571,19 @@ Values above this threshold indicate successful pattern match.
 """
 
 # =============================================================================
+# PHASE AND OSCILLATION CONSTANTS
+# =============================================================================
+
+TAU = 2.0 * math.pi
+"""Full circle in radians (τ ≈ 6.283185307179586).
+
+Tau (τ) represents one complete turn, making circle mathematics more intuitive.
+"""
+
+TWO_PI = TAU  # Alias for compatibility
+"""Alias for TAU. Use TAU for new code."""
+
+# =============================================================================
 # CONVENIENCE PRESETS
 # =============================================================================
 
@@ -528,14 +622,22 @@ SLOW_ADAPTING = {
 # =============================================================================
 
 __all__ = [
+    # Time unit conversions
+    "MS_PER_SECOND",
+    "SECONDS_PER_MS",
     # Membrane time constants
     "TAU_MEM_STANDARD",
     "TAU_MEM_FAST",
     "TAU_MEM_SLOW",
+    "TAU_MEMBRANE_MS",
+    "TAU_MEMBRANE_FAST_MS",
+    "TAU_MEMBRANE_SLOW_MS",
     # Refractory periods
     "TAU_REF_STANDARD",
     "TAU_REF_FAST",
     "TAU_REF_SLOW",
+    "REFRACTORY_PERIOD_MS",
+    "REFRACTORY_PERIOD_RELATIVE_MS",
     # Synaptic time constants
     "TAU_SYN_EXCITATORY",
     "TAU_SYN_INHIBITORY",
@@ -543,13 +645,20 @@ __all__ = [
     "TAU_SYN_GABA_B",
     "TAU_EXCITATORY_CONDUCTANCE",
     "TAU_INHIBITORY_CONDUCTANCE",
+    "TAU_SYNAPTIC_FAST_MS",
+    "TAU_SYNAPTIC_SLOW_MS",
+    "TAU_SYNAPTIC_GABA_MS",
     # Voltage thresholds
     "V_THRESHOLD_STANDARD",
     "V_RESET_STANDARD",
     "V_REST_STANDARD",
+    "SPIKE_THRESHOLD_MV",
+    "RESTING_POTENTIAL_MV",
+    "RESET_POTENTIAL_MV",
     # Spike detection
     "SPIKE_DETECTION_THRESHOLD",
     "SPIKE_ACTIVITY_THRESHOLD",
+    "SPIKE_RATE_NORMALIZATION_FACTOR",
     # Reversal potentials
     "E_LEAK",
     "E_EXCITATORY",
@@ -560,9 +669,45 @@ __all__ = [
     "G_LEAK_SLOW",
     "MEMBRANE_CAPACITANCE_STANDARD",
     "C_MEM_STANDARD",
-    # Learning/pattern thresholds
+    "CONDUCTANCE_LEAK_NS",
+    "CONDUCTANCE_EXCITATORY_NS",
+    "CONDUCTANCE_INHIBITORY_NS",
+    # Adaptation parameters
+    "TAU_ADAPT_STANDARD",
+    "ADAPT_INCREMENT_NONE",
+    "ADAPT_INCREMENT_MODERATE",
+    "ADAPT_INCREMENT_STRONG",
+    "ADAPT_INCREMENT_CORTEX_L23",
+    # Noise parameters
+    "NOISE_STD_NONE",
+    "NOISE_STD_LOW",
+    "NOISE_STD_MODERATE",
+    # Weight initialization
+    "WEIGHT_INIT_SCALE_SMALL",
+    "WEIGHT_INIT_SCALE_MODERATE",
+    "WEIGHT_INIT_SCALE_SPARSITY_DEFAULT",
+    # Task parameters
+    "SPIKE_PROBABILITY_LOW",
+    "SPIKE_PROBABILITY_MEDIUM",
+    "SPIKE_PROBABILITY_HIGH",
+    "PROPRIOCEPTION_NOISE_SCALE",
+    "DECISION_THRESHOLD_DEFAULT",
+    "STIMULUS_STRENGTH_HIGH",
+    # Neuromodulator gains
+    "NE_MAX_GAIN",
+    "TONIC_D1_GAIN_SCALE",
+    # Theta modulation
+    "THETA_BASELINE_MIN",
+    "THETA_BASELINE_RANGE",
+    "THETA_CONTRAST_MIN",
+    "THETA_CONTRAST_RANGE",
+    "BASELINE_EXCITATION_SCALE",
+    # Learning thresholds
     "INTRINSIC_LEARNING_THRESHOLD",
     "MATCH_THRESHOLD",
+    # Phase constants
+    "TAU",
+    "TWO_PI",
     # Convenience presets
     "STANDARD_PYRAMIDAL",
     "FAST_SPIKING_INTERNEURON",

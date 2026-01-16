@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 
-from thalia.regulation.oscillator_constants import (
+from thalia.constants.oscillator import (
     THETA_ENCODING_PHASE_SCALE,
     THETA_RETRIEVAL_PHASE_SCALE,
     ACH_RECURRENT_SUPPRESSION,
@@ -194,7 +194,7 @@ def compute_oscillator_modulated_gain(
 
     Examples:
         >>> # DG→CA3 gating during encoding
-        >>> from thalia.regulation.oscillator_constants import (
+        >>> from thalia.constants.oscillator import (
         ...     DG_CA3_GATE_MIN, DG_CA3_GATE_RANGE
         ... )
         >>> enc_mod = 1.0  # Full encoding

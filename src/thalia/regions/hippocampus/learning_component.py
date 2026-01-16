@@ -12,14 +12,14 @@ from typing import Optional, Dict, Any, TYPE_CHECKING
 import torch
 import torch.nn as nn
 
-from thalia.core.region_components import LearningComponent
-from thalia.managers.base_manager import ManagerContext
-from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.core.diagnostics_keys import DiagnosticKeys as DK
-from thalia.regulation.region_architecture_constants import (
+from thalia.constants.architecture import (
     ACTIVITY_HISTORY_DECAY,
     ACTIVITY_HISTORY_INCREMENT,
 )
+from thalia.core.diagnostics_keys import DiagnosticKeys as DK
+from thalia.core.region_components import LearningComponent
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.managers.base_manager import ManagerContext
 
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.config import HippocampusConfig, HippocampusState

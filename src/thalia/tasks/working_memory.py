@@ -51,7 +51,7 @@ import torch.nn as nn
 
 from thalia.tasks.stimulus_utils import create_random_stimulus
 from thalia.regions.prefrontal import Prefrontal
-from thalia.training.datasets.constants import MATCH_PROBABILITY_DEFAULT
+from thalia.constants.task import MATCH_PROBABILITY_DEFAULT
 
 
 @dataclass

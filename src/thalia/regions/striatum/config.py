@@ -12,11 +12,11 @@ from typing import Optional, Dict, Any
 
 import torch
 
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.config.learning_config import ModulatedLearningConfig
+from thalia.constants.learning import EMA_DECAY_FAST, LEARNING_RATE_HEBBIAN_SLOW
+from thalia.constants.neuromodulation import DA_BASELINE_STRIATUM
+from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.region_state import BaseRegionState
-from thalia.neuromodulation.constants import DA_BASELINE_STRIATUM
-from thalia.regulation.learning_constants import EMA_DECAY_FAST, LEARNING_RATE_HEBBIAN_SLOW
 
 
 @dataclass

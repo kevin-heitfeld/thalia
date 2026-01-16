@@ -644,13 +644,27 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             # Collect all incoming synapses from all sources for this D1 neuron
             incoming_synapses = []
             for source_name, source_size in s.input_sources.items():
-                d1_key = f"{source_name}_d1"
+                # Check if source_name already has pathway suffix (e.g., "cortex_d1")
+                # If so, only process D1 sources for D1 neurons
+                if source_name.endswith('_d1'):
+                    # Source already has D1 suffix - use directly
+                    d1_key = source_name
+                    # Remove pathway suffix for source prefix
+                    base_source = source_name.rsplit('_d1', 1)[0]
+                elif source_name.endswith('_d2'):
+                    # Skip D2 sources when processing D1 neurons
+                    continue
+                else:
+                    # Old format without pathway suffix - add it
+                    d1_key = f"{source_name}_d1"
+                    base_source = source_name
+
                 if d1_key in s.synaptic_weights:
                     weights = s.synaptic_weights[d1_key]
                     eligibility = s._eligibility_d1.get(d1_key, torch.zeros_like(weights)) if hasattr(s, '_eligibility_d1') else torch.zeros_like(weights)
 
                     # Extract synapses for this neuron from this source
-                    source_prefix = f"{source_name}_neuron"
+                    source_prefix = f"{base_source}_neuron"
                     synapses = self._extract_synapses_for_neuron(i, weights, eligibility, source_prefix)
                     incoming_synapses.extend(synapses)
 
@@ -679,13 +693,27 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             # Collect all incoming synapses from all sources for this D2 neuron
             incoming_synapses = []
             for source_name, source_size in s.input_sources.items():
-                d2_key = f"{source_name}_d2"
+                # Check if source_name already has pathway suffix (e.g., "cortex_d2")
+                # If so, only process D2 sources for D2 neurons
+                if source_name.endswith('_d2'):
+                    # Source already has D2 suffix - use directly
+                    d2_key = source_name
+                    # Remove pathway suffix for source prefix
+                    base_source = source_name.rsplit('_d2', 1)[0]
+                elif source_name.endswith('_d1'):
+                    # Skip D1 sources when processing D2 neurons
+                    continue
+                else:
+                    # Old format without pathway suffix - add it
+                    d2_key = f"{source_name}_d2"
+                    base_source = source_name
+
                 if d2_key in s.synaptic_weights:
                     weights = s.synaptic_weights[d2_key]
                     eligibility = s._eligibility_d2.get(d2_key, torch.zeros_like(weights)) if hasattr(s, '_eligibility_d2') else torch.zeros_like(weights)
 
                     # Extract synapses for this neuron from this source
-                    source_prefix = f"{source_name}_neuron"
+                    source_prefix = f"{base_source}_neuron"
                     synapses = self._extract_synapses_for_neuron(i, weights, eligibility, source_prefix)
                     incoming_synapses.extend(synapses)
 

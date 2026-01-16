@@ -145,6 +145,27 @@ class RegionTestBase(ABC):
         """
         return False
 
+    def _prepare_forward_input(self, input_spikes: torch.Tensor):
+        """Prepare input for forward() call (handles multi-source regions).
+
+        Args:
+            input_spikes: Raw tensor input
+
+        Returns:
+            Input in format expected by region (Tensor or Dict[str, Tensor])
+        """
+        # Try to detect if region expects dict input
+        # Multi-source regions (like Striatum) should override get_input_dict()
+        input_dict = self.get_input_dict(input_spikes.shape[0], device=str(input_spikes.device))
+
+        # If get_input_dict returns single "default" source, check if region accepts dict
+        if len(input_dict) == 1 and "default" in input_dict:
+            # Return dict for regions that require it (detected via signature check)
+            return {"default": input_spikes}
+        else:
+            # Multi-source case: split input across sources
+            return input_dict
+
     # =========================================================================
     # SEMANTIC FIELD NAME HELPERS
     # =========================================================================
@@ -278,19 +299,19 @@ class RegionTestBase(ABC):
         # Output size is computed, just verify it's > 0
         assert self._get_region_output_size(region) > 0
 
-    def test_forward_pass_tensor_input(self):
-        """Test forward pass with single tensor input returns correct shape."""
+    def test_forward_pass_dict_input(self):
+        """Test forward pass with dict input (standardized multi-source API)."""
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # Create input spikes (1D, no batch dimension per ADR-005)
+        # Create dict input (all regions now use dict format)
         input_size = self._get_input_size(params)
-        input_spikes = torch.zeros(input_size, device=region.device)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
 
         # Forward pass
-        output = region.forward(input_spikes)
+        output = region.forward(input_dict)
 
-        # Verify output shape (1D per ADR-005) - get from region config
+        # Verify output shape (1D per ADR-005)
         output_size = self._get_region_output_size(region)
         assert output.dim() == 1, f"Expected 1D output (ADR-005), got {output.dim()}D"
         assert output.shape[0] == output_size
@@ -298,34 +319,17 @@ class RegionTestBase(ABC):
         # Verify output is boolean or float
         assert output.dtype in [torch.bool, torch.float32, torch.float64]
 
-    def test_forward_pass_dict_input(self):
-        """Test forward pass with dict input (multi-source support)."""
-        params = self.get_default_params()
-        region = self.create_region(**params)
-
-        # Create dict input
-        input_size = self._get_input_size(params)
-        input_dict = self.get_input_dict(input_size, device=region.device.type)
-
-        # Forward pass
-        output = region.forward(input_dict)
-
-        # Verify output shape - get from region config
-        output_size = self._get_region_output_size(region)
-        assert output.dim() == 1
-        assert output.shape[0] == output_size
-
     def test_forward_pass_zero_input(self):
         """Test forward pass handles zero input (clock-driven execution)."""
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # Zero input (no spikes)
+        # Zero input (no spikes) - use dict format
         input_size = self._get_input_size(params)
-        input_spikes = torch.zeros(input_size, device=region.device)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
 
         # Should not raise error
-        output = region.forward(input_spikes)
+        output = region.forward(input_dict)
         output_size = self._get_region_output_size(region)
         assert output.shape[0] == output_size
 
@@ -336,11 +340,11 @@ class RegionTestBase(ABC):
 
         input_size = self._get_input_size(params)
         output_size = self._get_region_output_size(region)
-        input_spikes = torch.zeros(input_size, device=region.device)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
 
         # Multiple forward passes should not error
         for _ in range(10):
-            output = region.forward(input_spikes)
+            output = region.forward(input_dict)
             assert output.shape[0] == output_size
 
     def test_grow_output(self):
@@ -363,8 +367,8 @@ class RegionTestBase(ABC):
 
         # Verify forward pass still works with new size
         input_size = self._get_input_size(params)
-        input_spikes = torch.zeros(input_size, device=region.device)
-        output = region.forward(input_spikes)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
+        output = region.forward(input_dict)
         assert output.shape[0] == original_output + n_new
 
     def test_grow_input(self):
@@ -385,8 +389,8 @@ class RegionTestBase(ABC):
         assert self._get_region_input_size(region) == original_input + n_new
 
         # Verify forward pass works with new input size
-        input_spikes = torch.zeros(original_input + n_new, device=region.device)
-        output = region.forward(input_spikes)
+        input_dict = self.get_input_dict(original_input + n_new, device=region.device.type)
+        output = region.forward(input_dict)
         output_size = self._get_region_output_size(region)
         assert output.shape[0] == output_size
 
@@ -400,8 +404,8 @@ class RegionTestBase(ABC):
 
         # Run forward pass to initialize state
         input_size = self._get_input_size(params)
-        input_spikes = torch.ones(input_size, device=region.device)
-        region.forward(input_spikes)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
+        region.forward(input_dict)
 
         # Get state before growth
         state_before = region.get_state()
@@ -427,8 +431,8 @@ class RegionTestBase(ABC):
 
         # Run forward pass to generate non-trivial state
         input_size = self._get_input_size(params)
-        input_spikes = torch.ones(input_size, device=region.device)
-        region.forward(input_spikes)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
+        region.forward(input_dict)
 
         # Get state
         state = region.get_state()
@@ -470,8 +474,8 @@ class RegionTestBase(ABC):
 
         # Run forward pass to generate non-trivial state
         input_size = self._get_input_size(params)
-        input_spikes = torch.ones(input_size, device=region.device)
-        region.forward(input_spikes)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
+        region.forward(input_dict)
 
         # Reset state
         region.reset_state()
@@ -495,8 +499,8 @@ class RegionTestBase(ABC):
 
         # Verify forward pass works
         input_size = self._get_input_size(params)
-        input_spikes = torch.zeros(input_size, device="cpu")
-        output = region.forward(input_spikes)
+        input_dict = self.get_input_dict(input_size, device="cpu")
+        output = region.forward(input_dict)
         assert output.device.type == "cpu"
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -510,8 +514,8 @@ class RegionTestBase(ABC):
 
         # Verify forward pass works
         input_size = self._get_input_size(params)
-        input_spikes = torch.zeros(input_size, device="cuda")
-        output = region.forward(input_spikes)
+        input_dict = self.get_input_dict(input_size, device="cuda")
+        output = region.forward(input_dict)
         assert output.device.type == "cuda"
 
     def test_neuromodulator_update(self):
@@ -541,8 +545,8 @@ class RegionTestBase(ABC):
 
         # Run forward pass
         input_size = self._get_input_size(params)
-        input_spikes = torch.zeros(input_size, device=region.device)
-        region.forward(input_spikes)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
+        region.forward(input_dict)
 
         # Collect diagnostics (from DiagnosticsMixin)
         if hasattr(region, "get_diagnostics"):
@@ -567,9 +571,9 @@ class RegionTestBase(ABC):
 
         # Run forward to generate non-trivial state
         input_size = self._get_input_size(params)
-        input_spikes = torch.ones(input_size, device=region.device)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
         for _ in range(3):
-            region.forward(input_spikes)
+            region.forward(input_dict)
 
         # Get state
         state1 = region.get_state()
@@ -604,9 +608,9 @@ class RegionTestBase(ABC):
 
         # Run forward to activate STP
         input_size = self._get_input_size(params)
-        input_spikes = torch.ones(input_size, device=region.device)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
         for _ in range(5):
-            region.forward(input_spikes)
+            region.forward(input_dict)
 
         # Get state
         state = region.get_state()
@@ -644,9 +648,9 @@ class RegionTestBase(ABC):
 
         # Run forward to generate non-trivial state
         input_size = self._get_input_size(params)
-        input_spikes = torch.ones(input_size, device=region.device)
+        input_dict = self.get_input_dict(input_size, device=region.device.type)
         for _ in range(5):
-            region.forward(input_spikes)
+            region.forward(input_dict)
 
         # Get state and serialize
         state1 = region.get_state()

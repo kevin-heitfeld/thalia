@@ -76,7 +76,7 @@ from typing import Optional, Dict, Any
 
 import torch
 
-from thalia.regulation.region_constants import (
+from thalia.constants.regions import (
     STRIATUM_TD_LAMBDA,
     STRIATUM_GAMMA,
     STRIATUM_TD_MIN_TRACE,

@@ -12,14 +12,12 @@ from typing import Optional, Dict, Any, List
 
 import torch
 
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.config.learning_config import STDPLearningConfig
-from thalia.core.region_state import BaseRegionState
 from thalia.components.synapses.stp import STPType
-from thalia.regulation.learning_constants import LEARNING_RATE_ONE_SHOT
-from thalia.regulation.region_architecture_constants import (
-    HIPPOCAMPUS_SPARSITY_TARGET,
-)
+from thalia.constants.architecture import HIPPOCAMPUS_SPARSITY_TARGET
+from thalia.constants.learning import LEARNING_RATE_ONE_SHOT
+from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.region_state import BaseRegionState
 
 
 @dataclass

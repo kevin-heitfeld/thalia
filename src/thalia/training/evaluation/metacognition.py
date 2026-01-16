@@ -68,19 +68,19 @@ Date: December 8, 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Callable, Any
 from pathlib import Path
 import time
+from typing import Dict, List, Optional, Tuple, Callable, Any
 
-import torch
 import numpy as np
+import torch
 
-from thalia.training.constants import (
-    CURRICULUM_DIFFICULTY_MIN,
-    CURRICULUM_DIFFICULTY_MAX,
+from thalia.constants.training import (
     CALIBRATION_EXCELLENT_ECE,
     CALIBRATION_GOOD_ECE,
     CALIBRATION_ACCEPTABLE_ECE,
+    CURRICULUM_DIFFICULTY_MIN,
+    CURRICULUM_DIFFICULTY_MAX,
 )
 
 

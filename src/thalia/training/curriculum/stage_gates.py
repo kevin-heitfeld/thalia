@@ -11,19 +11,19 @@ Critical Design Principle:
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
-import torch
+from enum import Enum
+from typing import Dict, List, Tuple
 
-from thalia.training.curriculum.constants import (
-    SAFETY_CRITICAL_THRESHOLD,
-    SAFETY_LIMITED_THRESHOLD,
-    SAFETY_DEGRADABLE_THRESHOLD,
+import numpy as np
+
+from thalia.constants.training import (
     CRITICAL_SYSTEMS,
     DEGRADABLE_SYSTEMS,
     LIMITED_DEGRADATION,
+    SAFETY_CRITICAL_THRESHOLD,
+    SAFETY_DEGRADABLE_THRESHOLD,
+    SAFETY_LIMITED_THRESHOLD,
 )
-import numpy as np
-from enum import Enum
 
 
 class GateDecision(Enum):

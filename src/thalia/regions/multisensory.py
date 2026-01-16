@@ -92,20 +92,20 @@ Date: December 12, 2025 (Tier 3 Implementation)
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Optional, Dict, Any
 import math
+from typing import Optional, Dict, Any
 
 import torch
 
 from thalia.components.neurons import create_pyramidal_neurons
+from thalia.components.synapses import WeightInitializer
+from thalia.config.learning_config import HebbianLearningConfig
+from thalia.constants.learning import LEARNING_RATE_HEBBIAN_SLOW, SILENCE_DETECTION_THRESHOLD
+from thalia.coordination import SinusoidalOscillator
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.config.learning_config import HebbianLearningConfig
-from thalia.managers.component_registry import register_region
-from thalia.components.synapses import WeightInitializer
 from thalia.learning import create_strategy
-from thalia.regulation.learning_constants import LEARNING_RATE_HEBBIAN_SLOW, SILENCE_DETECTION_THRESHOLD
-from thalia.coordination import SinusoidalOscillator
+from thalia.managers.component_registry import register_region
 
 
 @dataclass

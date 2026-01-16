@@ -22,25 +22,25 @@ Author: Thalia Project
 Date: December 10, 2025
 """
 
-from typing import Dict, Any, Optional
 from collections import deque
+from typing import Dict, Any, Optional
 
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import torch
 
-# Use non-interactive backend to avoid blocking windows
-matplotlib.use('Agg')  # Non-interactive backend for saving plots
-
 from thalia.components.coding.spike_utils import compute_firing_rate
-from thalia.training.visualization.constants import (
+from thalia.constants.visualization import (
     TEXT_POSITION_CENTER,
     ALPHA_SEMI_TRANSPARENT,
     PERFORMANCE_EXCELLENT,
     PERFORMANCE_GOOD,
     PERFORMANCE_ACCEPTABLE,
 )
+
+# Use non-interactive backend to avoid blocking windows
+matplotlib.use('Agg')  # Non-interactive backend for saving plots
 
 
 class LiveDiagnostics:

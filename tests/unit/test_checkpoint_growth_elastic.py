@@ -59,6 +59,7 @@ def base_config(device):
 def striatum_small(base_config, base_sizes, device):
     """Create small striatum (5 actions)."""
     region = Striatum(config=base_config, sizes=base_sizes, device=device)
+    region.add_input_source_striatum("default", base_sizes['input_size'])
     region.reset_state()
     return region
 
@@ -70,6 +71,7 @@ def striatum_large(base_config, device):
     sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=1)
     sizes['input_size'] = 100
     region = Striatum(config=base_config, sizes=sizes, device=device)
+    region.add_input_source_striatum("default", sizes['input_size'])
     region.reset_state()
     return region
 
@@ -113,6 +115,7 @@ class TestElasticTensorMetadata:
 
         # Create striatum with population coding (5 actions * 10 neurons = 50 total)
         region = Striatum(config=base_config, sizes=base_sizes_population, device=device)
+        region.add_input_source_striatum("default", base_sizes_population['input_size'])
         region.reset_state()
 
         # Save checkpoint
@@ -140,6 +143,7 @@ class TestElasticTensorMetadata:
 
         # Create and grow
         region = Striatum(config=base_config, sizes=base_sizes_population, device=device)
+        region.add_input_source_striatum("default", base_sizes_population['input_size'])
         region.reset_state()
 
         # Initially 50 neurons (5 actions * 10 neurons/action)
@@ -167,6 +171,7 @@ class TestElasticTensorMetadata:
 
         # Create new brain and load
         region2 = Striatum(config=base_config, sizes=base_sizes_population, device=device)
+        region2.add_input_source_striatum("default", base_sizes_population['input_size'])
         region2.reset_state()
 
         loaded = torch.load(checkpoint_path, weights_only=False)
@@ -281,11 +286,11 @@ class TestLoadingSmallerCheckpoint:
             torch.arange(5, dtype=torch.float32, device=striatum_large.device)
         )
 
-        # After partial restore, pathways are updated to match checkpoint size
-        # This is expected behavior - pathway.load_state() updates sizes
+        # After partial restore, brain size is UNCHANGED (doesn't shrink)
+        # This matches the behavior established in test_load_smaller_checkpoint_succeeds
         expected_active = striatum_large.d1_size + striatum_large.d2_size
-        assert striatum_large.n_neurons_active == expected_active  # Brain thinks it has correct size
-        assert striatum_large.d1_pathway.neurons.membrane.shape[0] == 5  # But pathways loaded 5
+        assert striatum_large.n_neurons_active == expected_active  # Brain keeps its size
+        assert striatum_large.d1_pathway.neurons.membrane.shape[0] == striatum_large.d1_size  # Pathways keep size
 
 
 class TestLoadingLargerCheckpoint:
@@ -344,6 +349,7 @@ class TestLoadingLargerCheckpoint:
         large_sizes = calc.striatum_from_actions(n_actions=20, neurons_per_action=1)
         large_sizes['input_size'] = 100
         large_striatum = Striatum(config=base_config, sizes=large_sizes, device=device)
+        large_striatum.add_input_source_striatum("default", large_sizes['input_size'])
         large_striatum.reset_state()
 
         large_state = large_striatum.get_full_state()
@@ -353,6 +359,7 @@ class TestLoadingLargerCheckpoint:
         small_sizes = calc.striatum_from_actions(n_actions=5, neurons_per_action=1)
         small_sizes['input_size'] = 100
         small_striatum = Striatum(config=base_config, sizes=small_sizes, device=device)
+        small_striatum.add_input_source_striatum("default", small_sizes['input_size'])
         small_striatum.reset_state()
 
         # Load should auto-grow to match
@@ -514,6 +521,7 @@ class TestPerformance:
         sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=1)
         sizes['input_size'] = 100
         region = Striatum(config=base_config, sizes=sizes, device=device)
+        region.add_input_source_striatum("default", sizes['input_size'])
         region.reset_state()
 
         # Artificially set high capacity

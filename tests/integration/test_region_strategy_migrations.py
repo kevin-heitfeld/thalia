@@ -11,9 +11,9 @@ Date: December 11, 2025
 import pytest
 import torch
 
-from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
+from thalia.constants.learning import TAU_BCM_THRESHOLD
 from thalia.learning import BCMStrategy, CompositeStrategy
-from thalia.regulation.learning_constants import TAU_BCM_THRESHOLD
+from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 
 
 class TestLayeredCortexStrategyMigration:

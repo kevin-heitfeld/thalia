@@ -42,16 +42,17 @@ See Also:
 """
 
 from __future__ import annotations
+
 from abc import abstractmethod
 from typing import Dict, Any, TYPE_CHECKING
 
 import torch
 
-from thalia.managers.base_manager import BaseManager
-from thalia.regulation.region_architecture_constants import (
+from thalia.constants.architecture import (
     ACTIVITY_HISTORY_DECAY,
     ACTIVITY_HISTORY_INCREMENT,
 )
+from thalia.managers.base_manager import BaseManager
 
 if TYPE_CHECKING:
     from thalia.core.base.component_config import NeuralComponentConfig

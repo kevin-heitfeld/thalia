@@ -14,16 +14,16 @@ from typing import TYPE_CHECKING, Optional, Dict, Any
 import torch
 import torch.nn as nn
 
-from thalia.core.region_components import LearningComponent
-from thalia.managers.base_manager import ManagerContext
 from thalia.components.neurons import WEIGHT_INIT_SCALE_SMALL
 from thalia.components.synapses import WeightInitializer
-from thalia.regulation.oscillator_constants import STRIATUM_PFC_MODULATION_LR
+from thalia.constants.oscillator import STRIATUM_PFC_MODULATION_LR
+from thalia.core.region_components import LearningComponent
+from thalia.managers.base_manager import ManagerContext
 
 if TYPE_CHECKING:
+    from thalia.regions.striatum.config import StriatumConfig
     from thalia.regions.striatum.d1_pathway import D1Pathway
     from thalia.regions.striatum.d2_pathway import D2Pathway
-    from thalia.regions.striatum.config import StriatumConfig
 
 
 class StriatumLearningComponent(LearningComponent):

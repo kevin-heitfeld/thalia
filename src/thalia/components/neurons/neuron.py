@@ -38,12 +38,12 @@ import torch
 import torch.nn as nn
 
 from thalia.config.neuron_config import BaseNeuronConfig
-from thalia.components.neurons.neuron_constants import (
-    MEMBRANE_CAPACITANCE_STANDARD,
+from thalia.constants.neuron import (
     G_LEAK_STANDARD,
     E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
+    MEMBRANE_CAPACITANCE_STANDARD,
     TAU_EXCITATORY_CONDUCTANCE,
     TAU_INHIBITORY_CONDUCTANCE,
 )
