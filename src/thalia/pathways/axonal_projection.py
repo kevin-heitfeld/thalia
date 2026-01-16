@@ -25,6 +25,7 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.pathway_state import AxonalProjectionState
 from thalia.core.protocols.component import RoutingComponent
 from thalia.managers.component_registry import register_pathway
+from thalia.typing import SourceOutputs
 from thalia.utils.delay_buffer import CircularDelayBuffer
 
 
@@ -205,10 +206,7 @@ class AxonalProjection(RoutingComponent):
 
 
 
-    def forward(
-        self,
-        source_outputs: Dict[str, torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+    def forward(self, source_outputs: SourceOutputs) -> SourceOutputs:
         """Route spikes from sources with axonal delays.
 
         Biologically accurate: Returns dict so target regions can route inputs

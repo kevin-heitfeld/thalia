@@ -27,9 +27,7 @@ import random
 import torch
 import numpy as np
 
-from thalia.constants.task import (
-    PROPRIOCEPTION_NOISE_SCALE,
-)
+from thalia.constants.task import PROPRIOCEPTION_NOISE_SCALE
 from thalia.tasks.stimulus_utils import (
     create_zero_stimulus,
     create_random_position,

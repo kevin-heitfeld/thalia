@@ -1935,7 +1935,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     def _update_pathway_eligibility(
         self,
-        inputs: Dict[str, torch.Tensor],
+        inputs: SourceOutputs,
         post_spikes: torch.Tensor,
         pathway_suffix: str,
         eligibility_attr: str,
@@ -2080,7 +2080,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self._source_eligibility_tau[source_name] = tau_ms
 
     def _update_d1_d2_eligibility_all(
-        self, inputs: Dict[str, torch.Tensor], d1_spikes: torch.Tensor, d2_spikes: torch.Tensor
+        self, inputs: SourceOutputs, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor
     ) -> None:
         """Update eligibility traces for ALL active D1/D2 neurons.
 
@@ -2243,7 +2243,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     # region Forward Pass (D1/D2 Integration and Action Selection)
 
-    def _consolidate_inputs(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def _consolidate_inputs(self, inputs: SourceOutputs) -> torch.Tensor:
         """Convert Dict inputs to concatenated tensor for internal processing.
 
         **Phase 2 Method**: Applies synaptic weights per-source and concatenates.
@@ -2275,7 +2275,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     def _integrate_multi_source_inputs(
         self,
-        inputs: Dict[str, torch.Tensor],
+        inputs: SourceOutputs,
         pathway_suffix: str,
         n_neurons: int,
     ) -> torch.Tensor:

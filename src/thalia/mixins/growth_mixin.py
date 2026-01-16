@@ -42,6 +42,7 @@ import torch
 import torch.nn as nn
 
 from thalia.components.synapses import WeightInitializer
+from thalia.typing import StateDict
 from thalia.utils.core_utils import clamp_weights
 
 
@@ -221,11 +222,7 @@ class GrowthMixin:
         else:  # uniform
             return WeightInitializer.uniform(n_output, n_input, device=self.device)
 
-    def _expand_state_tensors(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        n_new: int,
-    ) -> Dict[str, torch.Tensor]:
+    def _expand_state_tensors(self, state_dict: StateDict, n_new: int) -> StateDict:
         """Expand 1D state tensors (membrane, traces, etc.) by n_new neurons.
 
         This helper consolidates state expansion logic that was duplicated
