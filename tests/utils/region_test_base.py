@@ -57,6 +57,7 @@ import pytest
 import torch
 
 from thalia.core.neural_region import NeuralRegion
+from thalia.typing import SourceOutputs
 
 
 class RegionTestBase(ABC):
@@ -124,7 +125,7 @@ class RegionTestBase(ABC):
         """
         return self.get_default_params()
 
-    def get_input_dict(self, n_input: int, device: str = "cpu") -> Dict[str, torch.Tensor]:
+    def get_input_dict(self, n_input: int, device: str = "cpu") -> SourceOutputs:
         """Return dict input for multi-source regions (default: single source).
 
         Override for regions that require multiple input sources.

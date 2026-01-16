@@ -55,6 +55,7 @@ from thalia.components.coding.spike_coding import (
     SpikeEncoder as BaseSpikeEncoder,
 )
 from thalia.constants.time import TAU, SECONDS_PER_MS
+from thalia.typing import SourceOutputs
 
 
 @dataclass
@@ -548,7 +549,7 @@ class HierarchicalSpikeEncoder(nn.Module):
         char_ids: Optional[torch.Tensor] = None,
         subword_ids: Optional[torch.Tensor] = None,
         word_ids: Optional[torch.Tensor] = None,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> SourceOutputs:
         """Encode at available levels."""
         outputs = {}
 

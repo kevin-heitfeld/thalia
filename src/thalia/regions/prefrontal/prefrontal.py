@@ -93,7 +93,7 @@ from thalia.regions.prefrontal.hierarchy import (
     HyperbolicDiscounter,
     HyperbolicDiscountingConfig,
 )
-from thalia.typing import PrefrontalDiagnostics
+from thalia.typing import PrefrontalDiagnostics, StateDict
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval, compute_oscillator_modulated_gain
 
@@ -362,7 +362,7 @@ def sample_heterogeneous_wm_neurons(
     tau_mem_max: float = 500.0,
     device: str = "cpu",
     seed: Optional[int] = None,
-) -> Dict[str, torch.Tensor]:
+) -> StateDict:
     """Sample heterogeneous working memory neuron properties.
 
     Creates a distribution of neurons with varying maintenance capabilities:
