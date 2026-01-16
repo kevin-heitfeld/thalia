@@ -31,7 +31,7 @@ from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.mixins.state_loading_mixin import StateLoadingMixin
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
-from thalia.typing import SourceOutputs, DiagnosticsDict, StateDict
+from thalia.typing import SourceOutputs, DiagnosticsDict, StateDict, InputSizes, LearningStrategies
 
 
 # Custom warning for performance issues
@@ -170,10 +170,10 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
 
         # Plasticity rules: one learning strategy per input source
         # Structure: {"thalamus": STDPStrategy(...), "hippocampus": BCMStrategy(...), ...}
-        self.plasticity_rules: Dict[str, LearningStrategy] = {}
+        self.plasticity_rules: LearningStrategies = {}
 
         # Track which sources have been added
-        self.input_sources: Dict[str, int] = {}  # {source_name: n_input}
+        self.input_sources: InputSizes = {}  # {source_name: n_input}
 
         # State
         self.output_spikes: Optional[torch.Tensor] = None
