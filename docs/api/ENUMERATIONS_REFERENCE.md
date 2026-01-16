@@ -1,7 +1,7 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
@@ -14,6 +14,7 @@ Jump to category:
 
 - [Thalia/Components](#thaliacomponents) (3 enums)
 - [Thalia/Config](#thaliaconfig) (5 enums)
+- [Thalia/Constants](#thaliaconstants) (1 enums)
 - [Thalia/Core](#thaliacore) (1 enums)
 - [Thalia/Datasets](#thaliadatasets) (8 enums)
 - [Thalia/Decision Making](#thaliadecision-making) (1 enums)
@@ -26,7 +27,7 @@ Jump to category:
 - [Thalia/Pathways](#thaliapathways) (1 enums)
 - [Thalia/Regions](#thaliaregions) (5 enums)
 - [Thalia/Tasks](#thaliatasks) (4 enums)
-- [Thalia/Training](#thaliatraining) (8 enums)
+- [Thalia/Training](#thaliatraining) (7 enums)
 
 ## Enumerations by Category
 
@@ -80,8 +81,10 @@ Predefined synapse types based on Markram et al. (1998) classification.
 
 **Members**:
 
-- `DEPRESSING` — Strong initial, rapid fatigue
-- `DEPRESSING_FAST` — Very fast depression, quick recovery
+- `DEPRESSING` — Strong initial, rapid fatigue (U=0.5)
+- `DEPRESSING_MODERATE` — Moderate depression (U=0.4, thalamic sensory)
+- `DEPRESSING_STRONG` — Strong depression (U=0.7, thalamic L6 feedback)
+- `DEPRESSING_FAST` — Very fast depression, quick recovery (U=0.8)
 - `FACILITATING` — Weak initial, builds up with activity
 - `FACILITATING_STRONG` — Very strong facilitation
 - `PSEUDOLINEAR` — Balanced, roughly linear response
@@ -107,7 +110,7 @@ PREDICTIVE: Layered cortex with predictive coding (local error signals)
 
 ---
 
-#### [``CurriculumStage``](../../src/thalia/config/curriculum_growth.py#L50) (IntEnum)
+#### [``CurriculumStage``](../../src/thalia/config/curriculum_growth.py#L54) (IntEnum)
 
 Curriculum stages matching main training plan.
 
@@ -171,6 +174,42 @@ Types of brain regions.
 
 ---
 
+### Thalia/Constants
+
+#### [``AttentionStage``](../../src/thalia/constants/training.py#L214) (Enum)
+
+Developmental stages of attention control.
+
+Represents the shift from reactive (bottom-up) to proactive (top-down)
+attention control across development, matching curriculum stages.
+
+Biological basis:
+- Infant: Pure bottom-up (novelty, salience, motion)
+- Toddler: Mostly bottom-up with emerging goal-directed control
+- Preschool: Balanced control (conflict monitoring emerges)
+- School-age: Top-down dominant (strategic attention allocation)
+
+Implementation:
+- Controls thalamic gating strength (alpha suppression)
+- Modulates PFC→thalamus feedback gain
+- Adjusts NE gain modulation sensitivity
+
+References:
+- Posner & Petersen (1990): Attention networks
+- Colombo (2001): Infant attention development
+- Diamond (2013): Executive function emergence
+
+**Source**: [`thalia/constants/training.py`](../../src/thalia/constants/training.py)
+
+**Members**:
+
+- `INFANT` — Stage 0: Pure bottom-up (100% reactive)
+- `TODDLER` — Stage 1: Mostly bottom-up (70% reactive, 30% goal-directed)
+- `PRESCHOOL` — Stage 2: Balanced (50% reactive, 50% goal-directed)
+- `SCHOOL_AGE` — Stage 3+: Top-down dominant (30% reactive, 70% goal-directed)
+
+---
+
 ### Thalia/Core
 
 #### [``DiagnosticLevel``](../../src/thalia/core/diagnostics.py#L46) (Enum)
@@ -190,7 +229,7 @@ Verbosity levels for diagnostics.
 
 ### Thalia/Datasets
 
-#### [``AgreementType``](../../src/thalia/datasets/grammar.py#L42) (Enum)
+#### [``AgreementType``](../../src/thalia/datasets/grammar.py#L45) (Enum)
 
 Subject-verb agreement types.
 
@@ -203,7 +242,7 @@ Subject-verb agreement types.
 
 ---
 
-#### [``GrammarRule``](../../src/thalia/datasets/grammar.py#L32) (Enum)
+#### [``GrammarRule``](../../src/thalia/datasets/grammar.py#L35) (Enum)
 
 Types of grammar rules to test.
 
@@ -220,7 +259,7 @@ Types of grammar rules to test.
 
 ---
 
-#### [``Language``](../../src/thalia/datasets/grammar.py#L25) (Enum)
+#### [``Language``](../../src/thalia/datasets/grammar.py#L28) (Enum)
 
 Supported languages for grammar tasks.
 
@@ -234,7 +273,7 @@ Supported languages for grammar tasks.
 
 ---
 
-#### [``Language``](../../src/thalia/datasets/phonology.py#L26) (Enum)
+#### [``Language``](../../src/thalia/datasets/phonology.py#L29) (Enum)
 
 Supported languages for phonological training.
 
@@ -248,7 +287,7 @@ Supported languages for phonological training.
 
 ---
 
-#### [``Language``](../../src/thalia/datasets/reading.py#L24) (Enum)
+#### [``Language``](../../src/thalia/datasets/reading.py#L27) (Enum)
 
 Supported languages for reading tasks.
 
@@ -262,7 +301,7 @@ Supported languages for reading tasks.
 
 ---
 
-#### [``PatternType``](../../src/thalia/datasets/temporal_sequences.py#L23) (Enum)
+#### [``PatternType``](../../src/thalia/datasets/temporal_sequences.py#L26) (Enum)
 
 Types of sequential patterns.
 
@@ -278,7 +317,7 @@ Types of sequential patterns.
 
 ---
 
-#### [``PhonemeCategory``](../../src/thalia/datasets/phonology.py#L33) (Enum)
+#### [``PhonemeCategory``](../../src/thalia/datasets/phonology.py#L36) (Enum)
 
 Phoneme categories for discrimination tasks (multi-language).
 
@@ -321,7 +360,7 @@ Phoneme categories for discrimination tasks (multi-language).
 
 ---
 
-#### [``ReadingTask``](../../src/thalia/datasets/reading.py#L31) (Enum)
+#### [``ReadingTask``](../../src/thalia/datasets/reading.py#L34) (Enum)
 
 Types of reading tasks.
 
@@ -339,7 +378,7 @@ Types of reading tasks.
 
 ### Thalia/Decision Making
 
-#### [``SelectionMode``](../../src/thalia/decision_making/action_selection.py#L26) (Enum)
+#### [``SelectionMode``](../../src/thalia/decision_making/action_selection.py#L28) (Enum)
 
 Action selection strategies.
 
@@ -407,7 +446,7 @@ Values represent severity scores (0-100, higher = worse).
 
 ---
 
-#### [``MetacognitiveStage``](../../src/thalia/diagnostics/metacognition.py#L30) (Enum)
+#### [``MetacognitiveStage``](../../src/thalia/diagnostics/metacognition.py#L33) (Enum)
 
 Developmental stages of metacognitive ability.
 
@@ -459,7 +498,7 @@ Spike encoding strategies for proprioception.
 
 ### Thalia/Io
 
-#### [``DType``](../../src/thalia/io/tensor_encoding.py#L29) (IntEnum)
+#### [``DType``](../../src/thalia/io/tensor_encoding.py#L32) (IntEnum)
 
 Supported data types.
 
@@ -476,7 +515,7 @@ Supported data types.
 
 ---
 
-#### [``EncodingType``](../../src/thalia/io/tensor_encoding.py#L23) (IntEnum)
+#### [``EncodingType``](../../src/thalia/io/tensor_encoding.py#L26) (IntEnum)
 
 Tensor encoding types.
 
@@ -508,7 +547,7 @@ Types of position encoding.
 
 ### Thalia/Learning
 
-#### [``SocialCueType``](../../src/thalia/learning/social_learning.py#L21) (Enum)
+#### [``SocialCueType``](../../src/thalia/learning/social_learning.py#L24) (Enum)
 
 Types of social cues.
 
@@ -573,11 +612,11 @@ Types of prediction errors.
 
 ---
 
-#### [``GoalStatus``](../../src/thalia/regions/prefrontal_hierarchy.py#L36) (Enum)
+#### [``GoalStatus``](../../src/thalia/regions/prefrontal/hierarchy.py#L39) (Enum)
 
 Status of a goal in the hierarchy.
 
-**Source**: [`thalia/regions/prefrontal_hierarchy.py`](../../src/thalia/regions/prefrontal_hierarchy.py)
+**Source**: [`thalia/regions/prefrontal/hierarchy.py`](../../src/thalia/regions/prefrontal/hierarchy.py)
 
 **Members**:
 
@@ -589,7 +628,7 @@ Status of a goal in the hierarchy.
 
 ---
 
-#### [``HERStrategy``](../../src/thalia/regions/hippocampus/hindsight_relabeling.py#L33) (Enum)
+#### [``HERStrategy``](../../src/thalia/regions/hippocampus/hindsight_relabeling.py#L36) (Enum)
 
 Strategy for selecting hindsight goals.
 
@@ -675,7 +714,7 @@ Types of sensorimotor tasks.
 
 ---
 
-#### [``StimulusType``](../../src/thalia/tasks/executive_function.py#L53) (Enum)
+#### [``StimulusType``](../../src/thalia/tasks/executive_function.py#L56) (Enum)
 
 Stimulus categories for Go/No-Go.
 
@@ -689,7 +728,7 @@ Stimulus categories for Go/No-Go.
 
 ---
 
-#### [``TaskType``](../../src/thalia/tasks/executive_function.py#L37) (Enum)
+#### [``TaskType``](../../src/thalia/tasks/executive_function.py#L40) (Enum)
 
 Types of executive function tasks.
 
@@ -709,41 +748,7 @@ Types of executive function tasks.
 
 ### Thalia/Training
 
-#### [``AttentionStage``](../../src/thalia/training/curriculum/constants.py#L35) (Enum)
-
-Developmental stages of attention control.
-
-Represents the shift from reactive (bottom-up) to proactive (top-down)
-attention control across development, matching curriculum stages.
-
-Biological basis:
-- Infant: Pure bottom-up (novelty, salience, motion)
-- Toddler: Mostly bottom-up with emerging goal-directed control
-- Preschool: Balanced control (conflict monitoring emerges)
-- School-age: Top-down dominant (strategic attention allocation)
-
-Implementation:
-- Controls thalamic gating strength (alpha suppression)
-- Modulates PFC→thalamus feedback gain
-- Adjusts NE gain modulation sensitivity
-
-References:
-- Posner & Petersen (1990): Attention networks
-- Colombo (2001): Infant attention development
-- Diamond (2013): Executive function emergence
-
-**Source**: [`thalia/training/curriculum/constants.py`](../../src/thalia/training/curriculum/constants.py)
-
-**Members**:
-
-- `INFANT` — Stage 0: Pure bottom-up (100% reactive)
-- `TODDLER` — Stage 1: Mostly bottom-up (70% reactive, 30% goal-directed)
-- `PRESCHOOL` — Stage 2: Balanced (50% reactive, 50% goal-directed)
-- `SCHOOL_AGE` — Stage 3+: Top-down dominant (30% reactive, 70% goal-directed)
-
----
-
-#### [``GateDecision``](../../src/thalia/training/curriculum/stage_gates.py#L29) (Enum)
+#### [``GateDecision``](../../src/thalia/training/curriculum/stage_gates.py#L31) (Enum)
 
 Gate decision outcomes.
 
@@ -758,7 +763,7 @@ Gate decision outcomes.
 
 ---
 
-#### [``InterventionType``](../../src/thalia/training/curriculum/stage_monitoring.py#L28) (Enum)
+#### [``InterventionType``](../../src/thalia/training/curriculum/stage_monitoring.py#L29) (Enum)
 
 Types of interventions that can be triggered.
 
@@ -775,7 +780,7 @@ Types of interventions that can be triggered.
 
 ---
 
-#### [``LogLevel``](../../src/thalia/training/curriculum/logger.py#L56) (Enum)
+#### [``LogLevel``](../../src/thalia/training/curriculum/logger.py#L58) (Enum)
 
 Logging levels for curriculum training.
 
@@ -790,7 +795,7 @@ Logging levels for curriculum training.
 
 ---
 
-#### [``MechanismPriority``](../../src/thalia/training/curriculum/stage_manager.py#L191) (IntEnum)
+#### [``MechanismPriority``](../../src/thalia/training/curriculum/stage_manager.py#L185) (IntEnum)
 
 Priority levels for cognitive mechanisms.
 
@@ -805,7 +810,7 @@ Priority levels for cognitive mechanisms.
 
 ---
 
-#### [``NoiseType``](../../src/thalia/training/curriculum/noise_scheduler.py#L57) (Enum)
+#### [``NoiseType``](../../src/thalia/training/curriculum/noise_scheduler.py#L56) (Enum)
 
 Types of noise that can be scheduled.
 

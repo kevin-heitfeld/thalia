@@ -1,7 +1,7 @@
 # Dependency Graph
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document visualizes the dependency relationships between Thalia modules.
@@ -41,30 +41,18 @@ graph LR
     Neurons["ConductanceLIF"]
     Strategy["LearningStrategy"]
 
-    cerebellum["cerebellum"]
-    NeuralRegion --> cerebellum
-    Mixins --> cerebellum
-    Config --> cerebellum
-    Neurons --> cerebellum
-    Strategy --> cerebellum
     multimodal_integration["multimodal_integration"]
     NeuralRegion --> multimodal_integration
     Mixins --> multimodal_integration
     Config --> multimodal_integration
     Neurons --> multimodal_integration
     Strategy --> multimodal_integration
-    prefrontal["prefrontal"]
-    NeuralRegion --> prefrontal
-    Mixins --> prefrontal
-    Config --> prefrontal
-    Neurons --> prefrontal
-    Strategy --> prefrontal
-    thalamus["thalamus"]
-    NeuralRegion --> thalamus
-    Mixins --> thalamus
-    Config --> thalamus
-    Neurons --> thalamus
-    Strategy --> thalamus
+    cerebellum["cerebellum"]
+    NeuralRegion --> cerebellum
+    Mixins --> cerebellum
+    Config --> cerebellum
+    Neurons --> cerebellum
+    Strategy --> cerebellum
     cortex["cortex"]
     NeuralRegion --> cortex
     Mixins --> cortex
@@ -77,6 +65,18 @@ graph LR
     Config --> predictive_cortex
     Neurons --> predictive_cortex
     Strategy --> predictive_cortex
+    hippocampus["hippocampus"]
+    NeuralRegion --> hippocampus
+    Mixins --> hippocampus
+    Config --> hippocampus
+    Neurons --> hippocampus
+    Strategy --> hippocampus
+    prefrontal["prefrontal"]
+    NeuralRegion --> prefrontal
+    Mixins --> prefrontal
+    Config --> prefrontal
+    Neurons --> prefrontal
+    Strategy --> prefrontal
     More["... +2 more regions"]
     NeuralRegion --> More
 ```

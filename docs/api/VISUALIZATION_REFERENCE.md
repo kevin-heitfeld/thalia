@@ -1,7 +1,7 @@
 # Visualization Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all visualization and plotting functions for analyzing brain topology, training progress, and diagnostic metrics.
@@ -36,7 +36,7 @@ graph TD
 
 ## 🧠 Network Topology Visualization
 
-### [``export_topology_to_graphviz()``](../../src/thalia/visualization/network_graph.py#L222)
+### [``export_topology_to_graphviz()``](../../src/thalia/visualization/network_graph.py#L224)
 
 **Returns**: `None`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
@@ -59,7 +59,7 @@ graph TD
 
 ---
 
-### [``plot_connectivity_matrix()``](../../src/thalia/visualization/network_graph.py#L269)
+### [``plot_connectivity_matrix()``](../../src/thalia/visualization/network_graph.py#L271)
 
 **Returns**: `None`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
@@ -76,7 +76,7 @@ graph TD
 
 ---
 
-### [``visualize_brain_topology()``](../../src/thalia/visualization/network_graph.py#L54)
+### [``visualize_brain_topology()``](../../src/thalia/visualization/network_graph.py#L56)
 
 **Returns**: `Any`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
@@ -104,7 +104,7 @@ graph TD
 
 ## 📈 Training Progress Visualization
 
-### [``quick_monitor()``](../../src/thalia/training/visualization/monitor.py#L442)
+### [``quick_monitor()``](../../src/thalia/training/visualization/monitor.py#L444)
 
 **Returns**: `None`  
 **Source**: [`thalia/training/visualization/monitor.py`](../../src/thalia/training/visualization/monitor.py)
@@ -121,7 +121,7 @@ graph TD
 
 ## 🔬 Diagnostic Monitoring
 
-### [``quick_diagnostics()``](../../src/thalia/training/visualization/live_diagnostics.py#L502)
+### [``quick_diagnostics()``](../../src/thalia/training/visualization/live_diagnostics.py#L504)
 
 **Returns**: `None`  
 **Source**: [`thalia/training/visualization/live_diagnostics.py`](../../src/thalia/training/visualization/live_diagnostics.py)
@@ -139,7 +139,7 @@ graph TD
 
 ## 🌱 Critical Period Analysis
 
-### [``plot_critical_period_timeline()``](../../src/thalia/training/visualization/critical_period_plots.py#L113)
+### [``plot_critical_period_timeline()``](../../src/thalia/training/visualization/critical_period_plots.py#L116)
 
 **Returns**: `Figure`  
 **Source**: [`thalia/training/visualization/critical_period_plots.py`](../../src/thalia/training/visualization/critical_period_plots.py)
@@ -155,7 +155,7 @@ graph TD
 
 ---
 
-### [``plot_critical_period_windows()``](../../src/thalia/training/visualization/critical_period_plots.py#L17)
+### [``plot_critical_period_windows()``](../../src/thalia/training/visualization/critical_period_plots.py#L20)
 
 **Returns**: `Figure`  
 **Source**: [`thalia/training/visualization/critical_period_plots.py`](../../src/thalia/training/visualization/critical_period_plots.py)
@@ -172,7 +172,7 @@ graph TD
 
 ---
 
-### [``plot_domain_status()``](../../src/thalia/training/visualization/critical_period_plots.py#L237)
+### [``plot_domain_status()``](../../src/thalia/training/visualization/critical_period_plots.py#L240)
 
 **Returns**: `Figure`  
 **Source**: [`thalia/training/visualization/critical_period_plots.py`](../../src/thalia/training/visualization/critical_period_plots.py)
@@ -190,7 +190,7 @@ graph TD
 
 ---
 
-### [``plot_training_metrics_with_critical_periods()``](../../src/thalia/training/visualization/critical_period_plots.py#L296)
+### [``plot_training_metrics_with_critical_periods()``](../../src/thalia/training/visualization/critical_period_plots.py#L299)
 
 **Returns**: `Figure`  
 **Source**: [`thalia/training/visualization/critical_period_plots.py`](../../src/thalia/training/visualization/critical_period_plots.py)

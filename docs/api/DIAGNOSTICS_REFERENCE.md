@@ -1,7 +1,7 @@
 # Diagnostics Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all diagnostic monitor classes for system health and performance monitoring.
@@ -56,7 +56,7 @@ graph LR
 
 ---
 
-### [``MetacognitiveMonitor``](../../src/thalia/diagnostics/metacognition.py#L219)
+### [``MetacognitiveMonitor``](../../src/thalia/diagnostics/metacognition.py#L222)
 
 **Source**: [`thalia/diagnostics/metacognition.py`](../../src/thalia/diagnostics/metacognition.py)
 
@@ -64,11 +64,11 @@ graph LR
 
 **Key Methods**:
 
-- [`estimate_confidence(population_activity)`](../../src/thalia/diagnostics/metacognition.py#L250)
-- [`should_abstain(confidence)`](../../src/thalia/diagnostics/metacognition.py#L320)
-- [`calibrate(population_activity, actual_correct, dopamine)`](../../src/thalia/diagnostics/metacognition.py#L348)
-- [`set_stage(stage)`](../../src/thalia/diagnostics/metacognition.py#L385)
-- [`get_stage()`](../../src/thalia/diagnostics/metacognition.py#L389)
+- [`estimate_confidence(population_activity)`](../../src/thalia/diagnostics/metacognition.py#L253)
+- [`should_abstain(confidence)`](../../src/thalia/diagnostics/metacognition.py#L323)
+- [`calibrate(population_activity, actual_correct, dopamine)`](../../src/thalia/diagnostics/metacognition.py#L351)
+- [`set_stage(stage)`](../../src/thalia/diagnostics/metacognition.py#L388)
+- [`get_stage()`](../../src/thalia/diagnostics/metacognition.py#L392)
 
 ---
 

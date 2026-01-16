@@ -537,7 +537,55 @@ src/thalia/regions/
 
 ---
 
-### 2.2 Merge RegionFactory with ComponentRegistry
+### 2.2 Merge RegionFactory with ComponentRegistry ✅ **COMPLETED 2026-01-16**
+
+**Status**: ✅ **COMPLETE** - RegionFactory removed, all regions now use ComponentRegistry's `register_region` decorator.
+
+**Implementation Summary**:
+
+**Changes Made**:
+1. Deleted `src/thalia/regions/factory.py` (272 lines removed)
+2. Updated `src/thalia/regions/__init__.py`:
+   - Removed `RegionFactory` and `RegionRegistry` exports
+   - Import `register_region` from `thalia.managers.component_registry`
+3. All 8 region implementations already importing from `ComponentRegistry`:
+   - ✅ LayeredCortex
+   - ✅ PredictiveCortex
+   - ✅ Cerebellum
+   - ✅ Striatum
+   - ✅ Prefrontal
+   - ✅ Hippocampus
+   - ✅ ThalamicRelay
+   - ✅ MultimodalIntegration
+
+**Pattern After Refactoring**:
+```python
+# All regions now use unified ComponentRegistry
+from thalia.managers.component_registry import register_region
+
+@register_region(
+    "cortex",
+    aliases=["layered_cortex"],
+    description="Multi-layer cortical microcircuit",
+    version="2.0",
+    author="Thalia Project",
+    config_class=LayeredCortexConfig,
+)
+class LayeredCortex(NeuralRegion):
+    ...
+```
+
+**Benefits Achieved**:
+- ✅ Single registration pattern for all components (regions, pathways, modules)
+- ✅ Removed confusion about which factory to use
+- ✅ Unified discovery: `ComponentRegistry.list_components("region")`
+- ✅ Cleaner codebase with 272 lines of duplicate code removed
+
+**Breaking Changes**: **NONE** (internal project, all imports updated immediately)
+
+---
+
+**ORIGINAL PROPOSAL** (for reference):
 
 **Issue**: Two overlapping registry systems for component creation.
 

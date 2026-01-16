@@ -1,7 +1,7 @@
 # Mixins Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all mixin classes used by `NeuralRegion`. These mixins provide standard functionality to all brain regions.
@@ -41,7 +41,7 @@ class NeuralRegion(nn.Module,
 
 ---
 
-### [``GrowthMixin``](../../src/thalia/mixins/growth_mixin.py#L46)
+### [``GrowthMixin``](../../src/thalia/mixins/growth_mixin.py#L48)
 
 **Source**: [`thalia/mixins/growth_mixin.py`](../../src/thalia/mixins/growth_mixin.py)
 
@@ -49,7 +49,7 @@ class NeuralRegion(nn.Module,
 
 ---
 
-### [``NeuromodulatorMixin``](../../src/thalia/neuromodulation/mixin.py#L211)
+### [``NeuromodulatorMixin``](../../src/thalia/neuromodulation/mixin.py#L213)
 
 **Source**: [`thalia/neuromodulation/mixin.py`](../../src/thalia/neuromodulation/mixin.py)
 
@@ -57,11 +57,11 @@ class NeuralRegion(nn.Module,
 
 **Public Methods**:
 
-- [`set_neuromodulators(dopamine, norepinephrine, acetylcholine)`](../../src/thalia/neuromodulation/mixin.py#L227)
-- [`set_neuromodulator(name, level)`](../../src/thalia/neuromodulation/mixin.py#L276)
-- [`decay_neuromodulators(dt_ms, dopamine_tau_ms, acetylcholine_tau_ms, norepinephrine_tau_ms)`](../../src/thalia/neuromodulation/mixin.py#L301)
-- [`get_effective_learning_rate(base_lr, dopamine_sensitivity)`](../../src/thalia/neuromodulation/mixin.py#L333)
-- [`get_neuromodulator_state()`](../../src/thalia/neuromodulation/mixin.py#L366)
+- [`set_neuromodulators(dopamine, norepinephrine, acetylcholine)`](../../src/thalia/neuromodulation/mixin.py#L229)
+- [`set_neuromodulator(name, level)`](../../src/thalia/neuromodulation/mixin.py#L278)
+- [`decay_neuromodulators(dt_ms, dopamine_tau_ms, acetylcholine_tau_ms, norepinephrine_tau_ms)`](../../src/thalia/neuromodulation/mixin.py#L303)
+- [`get_effective_learning_rate(base_lr, dopamine_sensitivity)`](../../src/thalia/neuromodulation/mixin.py#L335)
+- [`get_neuromodulator_state()`](../../src/thalia/neuromodulation/mixin.py#L368)
 
 ---
 

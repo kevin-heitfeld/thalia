@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 45 modules, 588 exports
+Total: 48 modules, 578 exports
 
 ## 📑 Table of Contents
 
@@ -14,15 +14,16 @@ Quick jump to module:
 
 - [thalia](#thalia) | - [thalia.components](#thaliacomponents) | - [thalia.components.coding](#thaliacomponentscoding)
 - [thalia.components.neurons](#thaliacomponentsneurons) | - [thalia.components.synapses](#thaliacomponentssynapses) | - [thalia.config](#thaliaconfig)
-- [thalia.coordination](#thaliacoordination) | - [thalia.core](#thaliacore) | - [thalia.core.base](#thaliacorebase)
-- [thalia.core.protocols](#thaliacoreprotocols) | - [thalia.datasets](#thaliadatasets) | - [thalia.decision_making](#thaliadecision_making)
-- [thalia.diagnostics](#thaliadiagnostics) | - [thalia.environments](#thaliaenvironments) | - [thalia.io](#thaliaio)
-- [thalia.language](#thalialanguage) | - [thalia.learning](#thalialearning) | - [thalia.learning.eligibility](#thalialearningeligibility)
-- [thalia.learning.homeostasis](#thalialearninghomeostasis) | - [thalia.learning.rules](#thalialearningrules) | - [thalia.managers](#thaliamanagers)
-- [thalia.memory](#thaliamemory) | - [thalia.memory.consolidation](#thaliamemoryconsolidation) | - [thalia.mixins](#thaliamixins)
-- [thalia.neuromodulation](#thalianeuromodulation) | - [thalia.neuromodulation.systems](#thalianeuromodulationsystems) | - [thalia.pathways](#thaliapathways)
-- [thalia.planning](#thaliaplanning) | - [thalia.regions](#thaliaregions) | - [thalia.regions.cerebellum](#thaliaregionscerebellum)
-- [thalia.regions.cortex](#thaliaregionscortex) | - [thalia.regions.hippocampus](#thaliaregionshippocampus) | - [thalia.regions.striatum](#thaliaregionsstriatum)
+- [thalia.constants](#thaliaconstants) | - [thalia.coordination](#thaliacoordination) | - [thalia.core](#thaliacore)
+- [thalia.core.base](#thaliacorebase) | - [thalia.core.protocols](#thaliacoreprotocols) | - [thalia.datasets](#thaliadatasets)
+- [thalia.decision_making](#thaliadecision_making) | - [thalia.diagnostics](#thaliadiagnostics) | - [thalia.environments](#thaliaenvironments)
+- [thalia.io](#thaliaio) | - [thalia.language](#thalialanguage) | - [thalia.learning](#thalialearning)
+- [thalia.learning.eligibility](#thalialearningeligibility) | - [thalia.learning.homeostasis](#thalialearninghomeostasis) | - [thalia.learning.rules](#thalialearningrules)
+- [thalia.managers](#thaliamanagers) | - [thalia.memory](#thaliamemory) | - [thalia.memory.consolidation](#thaliamemoryconsolidation)
+- [thalia.mixins](#thaliamixins) | - [thalia.neuromodulation](#thalianeuromodulation) | - [thalia.neuromodulation.systems](#thalianeuromodulationsystems)
+- [thalia.pathways](#thaliapathways) | - [thalia.planning](#thaliaplanning) | - [thalia.regions](#thaliaregions)
+- [thalia.regions.cerebellum](#thaliaregionscerebellum) | - [thalia.regions.cortex](#thaliaregionscortex) | - [thalia.regions.hippocampus](#thaliaregionshippocampus)
+- [thalia.regions.prefrontal](#thaliaregionsprefrontal) | - [thalia.regions.striatum](#thaliaregionsstriatum) | - [thalia.regions.thalamus](#thaliaregionsthalamus)
 - [thalia.regulation](#thaliaregulation) | - [thalia.stimuli](#thaliastimuli) | - [thalia.surgery](#thaliasurgery)
 - [thalia.synapses](#thaliasynapses) | - [thalia.tasks](#thaliatasks) | - [thalia.training](#thaliatraining)
 - [thalia.training.curriculum](#thaliatrainingcurriculum) | - [thalia.training.datasets](#thaliatrainingdatasets) | - [thalia.training.evaluation](#thaliatrainingevaluation)
@@ -136,24 +137,24 @@ from thalia.components.coding import CodingStrategy
 
 - `ConductanceLIF`
 - `ConductanceLIFConfig`
+- `NeuronFactory`
+- `create_pyramidal_neurons`
+- `create_relay_neurons`
+- `create_trn_neurons`
+- `create_cortical_layer_neurons`
+- `create_fast_spiking_neurons`
+- `DendriticBranch`
+- `DendriticBranchConfig`
+- `DendriticNeuron`
+- `DendriticNeuronConfig`
+- `compute_branch_selectivity`
+- `create_clustered_input`
+- `create_scattered_input`
 - `TAU_MEM_STANDARD`
 - `TAU_MEM_FAST`
 - `TAU_MEM_SLOW`
 - `TAU_SYN_EXCITATORY`
 - `TAU_SYN_INHIBITORY`
-- `TAU_SYN_NMDA`
-- `V_THRESHOLD_STANDARD`
-- `V_RESET_STANDARD`
-- `V_REST_STANDARD`
-- `SPIKE_DETECTION_THRESHOLD`
-- `SPIKE_ACTIVITY_THRESHOLD`
-- `E_LEAK`
-- `E_EXCITATORY`
-- `E_INHIBITORY`
-- `G_LEAK_STANDARD`
-- `G_LEAK_FAST`
-- `G_LEAK_SLOW`
-- `ADAPT_INCREMENT_NONE`
 
 **Usage**:
 
@@ -232,26 +233,54 @@ from thalia.config import ThaliaConfig
 
 ---
 
+### `thalia.constants`
+
+**Source**: [`thalia/constants/__init__.py`](../../src/thalia/constants/__init__.py)
+
+**Exports** (13):
+
+- `architecture`
+- `exploration`
+- `homeostasis`
+- `learning`
+- `neuromodulation`
+- `neuron`
+- `oscillator`
+- `regions`
+- `sensory`
+- `task`
+- `time`
+- `training`
+- `visualization`
+
+**Usage**:
+
+```python
+from thalia.constants import architecture
+```
+
+---
+
 ### `thalia.coordination`
 
 **Source**: [`thalia/coordination/__init__.py`](../../src/thalia/coordination/__init__.py)
 
 **Exports** (9):
 
-- `OscillatorManager`
-- `BrainOscillator`
-- `OscillatorConfig`
-- `SinusoidalOscillator`
-- `OscillatorCoupling`
-- `GrowthManager`
-- `GrowthEvent`
 - `CapacityMetrics`
 - `GrowthCoordinator`
+- `GrowthEvent`
+- `GrowthManager`
+- `BrainOscillator`
+- `OscillatorConfig`
+- `OscillatorCoupling`
+- `OscillatorManager`
+- `SinusoidalOscillator`
 
 **Usage**:
 
 ```python
-from thalia.coordination import OscillatorManager
+from thalia.coordination import CapacityMetrics
 ```
 
 ---
@@ -723,31 +752,31 @@ from thalia.mixins import DeviceMixin
 
 **Exports** (20):
 
-- `VTADopamineSystem`
-- `VTA`
-- `VTAConfig`
-- `LocusCoeruleusSystem`
 - `LocusCoeruleus`
 - `LocusCoeruleusConfig`
-- `NucleusBasalisSystem`
+- `LocusCoeruleusSystem`
 - `NucleusBasalis`
 - `NucleusBasalisConfig`
-- `NeuromodulatorManager`
+- `NucleusBasalisSystem`
+- `VTA`
+- `VTAConfig`
+- `VTADopamineSystem`
 - `NeuromodulatorHomeostasis`
 - `NeuromodulatorHomeostasisConfig`
+- `NeuromodulatorManager`
 - `NeuromodulatorMixin`
+- `ACH_BASELINE`
 - `DA_BASELINE_STANDARD`
 - `DA_BASELINE_STRIATUM`
-- `ACH_BASELINE`
 - `NE_BASELINE`
 - `NE_GAIN_MIN`
 - `NE_GAIN_MAX`
-- `decay_constant_to_tau`
+- `compute_ne_gain`
 
 **Usage**:
 
 ```python
-from thalia.neuromodulation import VTADopamineSystem
+from thalia.neuromodulation import LocusCoeruleus
 ```
 
 ---
@@ -780,7 +809,7 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 
 **Source**: [`thalia/pathways/__init__.py`](../../src/thalia/pathways/__init__.py)
 
-**Exports** (19):
+**Exports** (6):
 
 - `NeuralPathway`
 - `AxonalProjection`
@@ -788,19 +817,6 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 - `VisualPathway`
 - `AuditoryPathway`
 - `LanguagePathway`
-- `RETINA_ADAPTATION_DECAY`
-- `RETINA_ADAPTATION_RATE`
-- `DOG_FILTER_SIZE`
-- `DOG_SIGMA_CENTER`
-- `DOG_SIGMA_SURROUND`
-- `COCHLEA_MIN_FREQ_HZ`
-- `COCHLEA_MAX_FREQ_HZ`
-- `COCHLEA_INTEGRATION_WINDOW_MS`
-- `HAIR_CELL_COMPRESSION_EXPONENT`
-- `HAIR_CELL_ADAPTATION_SUPPRESSION`
-- `AUDITORY_NERVE_ADAPTATION_DECAY`
-- `AUDITORY_NERVE_ADAPTATION_RATE`
-- `LATENCY_EPSILON`
 
 **Usage**:
 
@@ -839,8 +855,6 @@ from thalia.planning import MentalSimulationCoordinator
 - `LearningRule`
 - `NeuralComponentConfig`
 - `NeuralComponentState`
-- `RegionFactory`
-- `RegionRegistry`
 - `register_region`
 - `LayeredCortex`
 - `LayeredCortexConfig`
@@ -848,10 +862,12 @@ from thalia.planning import MentalSimulationCoordinator
 - `PredictiveCortexConfig`
 - `Cerebellum`
 - `CerebellumConfig`
+- `CerebellumState`
 - `Striatum`
 - `StriatumConfig`
 - `Prefrontal`
 - `PrefrontalConfig`
+- `PrefrontalState`
 - `Hippocampus`
 - `HippocampusConfig`
 - `HippocampusState`
@@ -869,13 +885,14 @@ from thalia.regions import LearningRule
 
 **Source**: [`thalia/regions/cerebellum/__init__.py`](../../src/thalia/regions/cerebellum/__init__.py)
 
-**Exports** (5):
+**Exports** (6):
 
 - `GranuleCellLayer`
 - `EnhancedPurkinjeCell`
 - `DeepCerebellarNuclei`
 - `Cerebellum`
 - `CerebellumConfig`
+- `CerebellumState`
 
 **Usage**:
 
@@ -929,6 +946,27 @@ from thalia.regions.hippocampus import Hippocampus
 
 ---
 
+### `thalia.regions.prefrontal`
+
+**Source**: [`thalia/regions/prefrontal/__init__.py`](../../src/thalia/regions/prefrontal/__init__.py)
+
+**Exports** (6):
+
+- `Prefrontal`
+- `PrefrontalConfig`
+- `PrefrontalState`
+- `Goal`
+- `GoalStatus`
+- `PrefrontalCheckpointManager`
+
+**Usage**:
+
+```python
+from thalia.regions.prefrontal import Prefrontal
+```
+
+---
+
 ### `thalia.regions.striatum`
 
 **Source**: [`thalia/regions/striatum/__init__.py`](../../src/thalia/regions/striatum/__init__.py)
@@ -948,6 +986,24 @@ from thalia.regions.hippocampus import Hippocampus
 
 ```python
 from thalia.regions.striatum import Striatum
+```
+
+---
+
+### `thalia.regions.thalamus`
+
+**Source**: [`thalia/regions/thalamus/__init__.py`](../../src/thalia/regions/thalamus/__init__.py)
+
+**Exports** (3):
+
+- `ThalamicRelay`
+- `ThalamicRelayConfig`
+- `ThalamicRelayState`
+
+**Usage**:
+
+```python
+from thalia.regions.thalamus import ThalamicRelay
 ```
 
 ---
@@ -1233,7 +1289,7 @@ from thalia.training.visualization import TrainingMonitor
 
 **Source**: [`thalia/utils/__init__.py`](../../src/thalia/utils/__init__.py)
 
-**Exports** (16):
+**Exports** (12):
 
 - `clamp_weights`
 - `cosine_similarity_safe`
@@ -1247,10 +1303,6 @@ from thalia.training.visualization import TrainingMonitor
 - `compute_theta_gamma_coupling_gate`
 - `compute_oscillator_modulated_gain`
 - `compute_learning_rate_modulation`
-- `MS_PER_SECOND`
-- `SECONDS_PER_MS`
-- `TAU`
-- `TWO_PI`
 
 **Usage**:
 
@@ -1264,27 +1316,11 @@ from thalia.utils import clamp_weights
 
 **Source**: [`thalia/visualization/__init__.py`](../../src/thalia/visualization/__init__.py)
 
-**Exports** (19):
+**Exports** (3):
 
 - `visualize_brain_topology`
 - `export_topology_to_graphviz`
 - `plot_connectivity_matrix`
-- `DEFAULT_NODE_SIZE_SCALE`
-- `NODE_ALPHA_DEFAULT`
-- `EDGE_ALPHA_DEFAULT`
-- `EDGE_WIDTH_SCALE`
-- `LAYOUT_K_FACTOR`
-- `LAYOUT_ITERATIONS`
-- `ARC_RADIUS`
-- `LEGEND_FRAMEALPHA`
-- `HIERARCHICAL_Y_SPACING`
-- `HIERARCHICAL_X_SPACING`
-- `DPI_DEFAULT`
-- `DPI_MEDIUM`
-- `DPI_HIGH_RES`
-- `FIGURE_SIZE_SMALL`
-- `FIGURE_SIZE_MEDIUM`
-- `FIGURE_SIZE_LARGE`
 
 **Usage**:
 

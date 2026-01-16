@@ -1,7 +1,7 @@
 # Datasets Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all dataset classes and factory functions for curriculum training stages.
@@ -30,7 +30,7 @@ graph LR
 
 ## Dataset Classes
 
-### [``GrammarDataset``](../../src/thalia/datasets/grammar.py#L193)
+### [``GrammarDataset``](../../src/thalia/datasets/grammar.py#L196)
 
 **Source**: [`thalia/datasets/grammar.py`](../../src/thalia/datasets/grammar.py)
 
@@ -38,7 +38,7 @@ graph LR
 
 ---
 
-### [``PhonologicalDataset``](../../src/thalia/datasets/phonology.py#L287)
+### [``PhonologicalDataset``](../../src/thalia/datasets/phonology.py#L290)
 
 **Source**: [`thalia/datasets/phonology.py`](../../src/thalia/datasets/phonology.py)
 
@@ -48,7 +48,7 @@ graph LR
 
 ---
 
-### [``ReadingDataset``](../../src/thalia/datasets/reading.py#L262)
+### [``ReadingDataset``](../../src/thalia/datasets/reading.py#L265)
 
 **Source**: [`thalia/datasets/reading.py`](../../src/thalia/datasets/reading.py)
 
@@ -56,7 +56,7 @@ graph LR
 
 ---
 
-### [``TemporalSequenceDataset``](../../src/thalia/datasets/temporal_sequences.py#L47)
+### [``TemporalSequenceDataset``](../../src/thalia/datasets/temporal_sequences.py#L50)
 
 **Source**: [`thalia/datasets/temporal_sequences.py`](../../src/thalia/datasets/temporal_sequences.py)
 
@@ -68,7 +68,7 @@ graph LR
 
 ### Stage 0 (Temporal)
 
-#### [``create_stage0_temporal_dataset()``](../../src/thalia/datasets/temporal_sequences.py#L358)
+#### [``create_stage0_temporal_dataset()``](../../src/thalia/datasets/temporal_sequences.py#L361)
 
 **Source**: [`thalia/datasets/temporal_sequences.py`](../../src/thalia/datasets/temporal_sequences.py)
 
@@ -85,7 +85,7 @@ graph LR
 
 ### Stage 1 (Visual)
 
-#### [``create_stage1_cifar_datasets()``](../../src/thalia/datasets/cifar_wrapper.py#L371)
+#### [``create_stage1_cifar_datasets()``](../../src/thalia/datasets/cifar_wrapper.py#L374)
 
 **Source**: [`thalia/datasets/cifar_wrapper.py`](../../src/thalia/datasets/cifar_wrapper.py)
 
@@ -104,7 +104,7 @@ graph LR
 
 ### Stage 2 (Grammar)
 
-#### [``create_stage2_grammar_dataset()``](../../src/thalia/datasets/grammar.py#L523)
+#### [``create_stage2_grammar_dataset()``](../../src/thalia/datasets/grammar.py#L526)
 
 **Source**: [`thalia/datasets/grammar.py`](../../src/thalia/datasets/grammar.py)
 
@@ -123,7 +123,7 @@ graph LR
 
 ### Stage 3 (Reading)
 
-#### [``create_stage3_reading_dataset()``](../../src/thalia/datasets/reading.py#L598)
+#### [``create_stage3_reading_dataset()``](../../src/thalia/datasets/reading.py#L601)
 
 **Source**: [`thalia/datasets/reading.py`](../../src/thalia/datasets/reading.py)
 

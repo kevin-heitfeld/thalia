@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 ![Components](https://img.shields.io/badge/Regions-8-blue) ![Pathways](https://img.shields.io/badge/Pathways-4-green) ![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)
@@ -145,9 +145,9 @@ graph TB
     Brain --> Pathways[Axonal Pathways]
     Regions --> cerebellum[cerebellum]
     Regions --> cortex[cortex]
+    Regions --> hippocampus[hippocampus]
     Regions --> multimodal_integration[multimodal_integration]
-    Regions --> prefrontal[prefrontal]
-    Regions --> thalamus[thalamus]
+    Regions --> predictive_cortex[predictive_cortex]
     Regions --> More[... +3 more]
     Pathways --> auditory[auditory]
     Pathways --> axonal[axonal]
@@ -166,11 +166,11 @@ Total: **8** regions
 
 ### `cerebellum`
 
-**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum_region.py#L511)
+**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum/cerebellum.py#L511)
 
-**Config Class**: [`CerebellumConfig`](../../src/thalia/regions/cerebellum_region.py#L104)
+**Config Class**: [`CerebellumConfig`](../../src/thalia/regions/cerebellum/cerebellum.py#L104)
 
-**Source**: [`thalia/regions/cerebellum_region.py`](../../src/thalia/regions/cerebellum_region.py)
+**Source**: [`thalia/regions/cerebellum/cerebellum.py`](../../src/thalia/regions/cerebellum/cerebellum.py)
 
 **Description**: Cerebellar region with supervised error-corrective learning.
 
@@ -182,7 +182,7 @@ Total: **8** regions
 
 **Aliases**: `layered_cortex`
 
-**Config Class**: [`LayeredCortexConfig`](../../src/thalia/regions/cortex/config.py#L27)
+**Config Class**: [`LayeredCortexConfig`](../../src/thalia/regions/cortex/config.py#L28)
 
 **Source**: [`thalia/regions/cortex/layered_cortex.py`](../../src/thalia/regions/cortex/layered_cortex.py)
 
@@ -192,11 +192,11 @@ Total: **8** regions
 
 ### `hippocampus`
 
-**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L152)
+**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L154)
 
 **Aliases**: `trisynaptic, trisynaptic_hippocampus`
 
-**Config Class**: [`HippocampusConfig`](../../src/thalia/regions/hippocampus/config.py#L52)
+**Config Class**: [`HippocampusConfig`](../../src/thalia/regions/hippocampus/config.py#L50)
 
 **Source**: [`thalia/regions/hippocampus/trisynaptic.py`](../../src/thalia/regions/hippocampus/trisynaptic.py)
 
@@ -234,13 +234,13 @@ Total: **8** regions
 
 ### `prefrontal`
 
-**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal.py#L523)
+**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal/prefrontal.py#L537)
 
 **Aliases**: `pfc`
 
-**Config Class**: [`PrefrontalConfig`](../../src/thalia/regions/prefrontal.py#L102)
+**Config Class**: [`PrefrontalConfig`](../../src/thalia/regions/prefrontal/prefrontal.py#L102)
 
-**Source**: [`thalia/regions/prefrontal.py`](../../src/thalia/regions/prefrontal.py)
+**Source**: [`thalia/regions/prefrontal/prefrontal.py`](../../src/thalia/regions/prefrontal/prefrontal.py)
 
 **Description**: Prefrontal cortex with dopamine-gated working memory.
 
@@ -248,7 +248,7 @@ Total: **8** regions
 
 ### `striatum`
 
-**Class**: [`Striatum`](../../src/thalia/regions/striatum/striatum.py#L153)
+**Class**: [`Striatum`](../../src/thalia/regions/striatum/striatum.py#L151)
 
 **Aliases**: `basal_ganglia`
 
@@ -262,13 +262,13 @@ Total: **8** regions
 
 ### `thalamus`
 
-**Class**: [`ThalamicRelay`](../../src/thalia/regions/thalamus.py#L378)
+**Class**: [`ThalamicRelay`](../../src/thalia/regions/thalamus/thalamus.py#L378)
 
 **Aliases**: `thalamic_relay`
 
-**Config Class**: [`ThalamicRelayConfig`](../../src/thalia/regions/thalamus.py#L134)
+**Config Class**: [`ThalamicRelayConfig`](../../src/thalia/regions/thalamus/thalamus.py#L134)
 
-**Source**: [`thalia/regions/thalamus.py`](../../src/thalia/regions/thalamus.py)
+**Source**: [`thalia/regions/thalamus/thalamus.py`](../../src/thalia/regions/thalamus/thalamus.py)
 
 **Description**: Thalamic relay nucleus with burst/tonic modes and attentional gating.
 
@@ -294,7 +294,7 @@ Total: **4** pathways
 
 ### `axonal`
 
-**Class**: [`AxonalProjection`](../../src/thalia/pathways/axonal_projection.py#L81)
+**Class**: [`AxonalProjection`](../../src/thalia/pathways/axonal_projection.py#L83)
 
 **Aliases**: `axonal_projection, pure_axon`
 

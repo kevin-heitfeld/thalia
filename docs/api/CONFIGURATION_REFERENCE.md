@@ -1,7 +1,7 @@
 # Configuration Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all configuration dataclasses in Thalia.
@@ -10,7 +10,7 @@ Total: 3 configuration classes
 
 ## Configuration Classes
 
-### [``HippocampusConfig``](../../src/thalia/regions/hippocampus/config.py#L52)
+### [``HippocampusConfig``](../../src/thalia/regions/hippocampus/config.py#L50)
 
 **Source**: [`thalia/regions/hippocampus/config.py`](../../src/thalia/regions/hippocampus/config.py)
 
@@ -85,11 +85,11 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L152)
+- [`hippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L154)
 
 ---
 
-### [``LayeredCortexConfig``](../../src/thalia/regions/cortex/config.py#L27)
+### [``LayeredCortexConfig``](../../src/thalia/regions/cortex/config.py#L28)
 
 **Source**: [`thalia/regions/cortex/config.py`](../../src/thalia/regions/cortex/config.py)
 
@@ -224,7 +224,7 @@ Total: 3 configuration classes
 
 **Used By**:
 
-- [`striatum`](../../src/thalia/regions/striatum/striatum.py#L153)
+- [`striatum`](../../src/thalia/regions/striatum/striatum.py#L151)
 
 ---
 

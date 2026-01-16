@@ -11,7 +11,7 @@ Design Philosophy:
 - Enables dynamic component creation from configuration
 - Supports plugin system for external components
 - Foundation for save/load of arbitrary component graphs
-- Backward compatible with existing RegionFactory
+- Unified registration system (replaces deprecated RegionFactory)
 - Separates behavioral config from structural sizes
 
 Architecture:
@@ -49,10 +49,11 @@ Benefits:
 3. **Plugin Support**: External packages can register components
 4. **Discovery**: List/inspect all available components
 5. **Validation**: Type checking and config validation
-6. **Backward Compatible**: Works alongside existing RegionFactory
+6. **Unified Registry**: Single source of truth for all component types
 
 Author: Thalia Project
 Date: December 11, 2025
+Last Updated: January 16, 2026 (RegionFactory migration complete)
 """
 
 from __future__ import annotations
@@ -655,8 +656,8 @@ def register_region(
 ) -> Callable[[Type[BrainComponent]], Type[BrainComponent]]:
     """Shorthand for @ComponentRegistry.register(name, "region").
 
-    This provides backward compatibility with existing @register_region decorator
-    while migrating to the unified registry.
+    Convenience decorator for registering brain regions. This is the standard
+    way to register regions in the unified ComponentRegistry system.
 
     Args:
         name: Region name

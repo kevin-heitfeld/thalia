@@ -9,6 +9,11 @@ This file provides context for AI assistants working with the Thalia codebase.
 - `docs/COPILOT_AVAILABLE_TOOLS.md` - Complete list of available tools with descriptions
 - `docs/architecture/ARCHITECTURE_OVERVIEW.md` - System architecture overview (start here for architecture questions)
 
+**Important: Auto-Generated Documentation**
+- All files in `docs/api/` are **auto-generated** - never edit manually!
+- To update API docs, run the VSCode task: "Generate API Documentation"
+- Or run directly: `python scripts/generate_api_docs.py`
+
 ## Python Environment Setup
 
 **Configure the Python environment before running any Python code, tests, or commands.**

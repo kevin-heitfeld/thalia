@@ -1,7 +1,7 @@
 # Protocols Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all Protocol classes defining interfaces for duck-typed components in Thalia.

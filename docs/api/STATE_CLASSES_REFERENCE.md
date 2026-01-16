@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -50,11 +50,11 @@ Total region states: 8
 
 ---
 
-### [``CerebellumState``](../../src/thalia/regions/cerebellum_region.py#L265)
+### [``CerebellumState``](../../src/thalia/regions/cerebellum/cerebellum.py#L265)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: [`thalia/regions/cerebellum_region.py`](../../src/thalia/regions/cerebellum_region.py)
+**Source**: [`thalia/regions/cerebellum/cerebellum.py`](../../src/thalia/regions/cerebellum/cerebellum.py)
 
 **Description**: Complete state for Cerebellum region.
 
@@ -78,7 +78,7 @@ Total region states: 8
 
 ---
 
-### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L302)
+### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L300)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -114,7 +114,7 @@ Total region states: 8
 
 ---
 
-### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L293)
+### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L294)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -177,11 +177,11 @@ Total region states: 8
 
 ---
 
-### [``PrefrontalState``](../../src/thalia/regions/prefrontal.py#L237)
+### [``PrefrontalState``](../../src/thalia/regions/prefrontal/prefrontal.py#L239)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: [`thalia/regions/prefrontal.py`](../../src/thalia/regions/prefrontal.py)
+**Source**: [`thalia/regions/prefrontal/prefrontal.py`](../../src/thalia/regions/prefrontal/prefrontal.py)
 
 **Description**: State for prefrontal cortex region.
 
@@ -193,6 +193,7 @@ Total region states: 8
 | `update_gate` | `Optional[torch.Tensor]` | `None` |
 | `active_rule` | `Optional[torch.Tensor]` | `None` |
 | `stp_recurrent_state` | `Optional[Dict[str, Any]]` | `None` |
+| `stp_feedforward_state` | `Optional[Dict[str, Any]]` | `None` |
 
 ---
 
@@ -241,11 +242,11 @@ Total region states: 8
 
 ---
 
-### [``ThalamicRelayState``](../../src/thalia/regions/thalamus.py#L243)
+### [``ThalamicRelayState``](../../src/thalia/regions/thalamus/thalamus.py#L243)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
-**Source**: [`thalia/regions/thalamus.py`](../../src/thalia/regions/thalamus.py)
+**Source**: [`thalia/regions/thalamus/thalamus.py`](../../src/thalia/regions/thalamus/thalamus.py)
 
 **Description**: State for thalamic relay nucleus with RegionState protocol compliance.
 

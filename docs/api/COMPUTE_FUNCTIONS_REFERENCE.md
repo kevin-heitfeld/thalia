@@ -1,21 +1,21 @@
 # Compute Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-15 16:07:49
+> Last updated: 2026-01-16 21:25:28
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all `compute_*` utility functions that implement biological computations throughout the Thalia codebase.
 
-Total: **12** compute functions
+Total: **11** compute functions
 
-![Functions](https://img.shields.io/badge/Functions-12-blue) ![Biological](https://img.shields.io/badge/Type-Biologically--Grounded-orange) ![Utils](https://img.shields.io/badge/Category-Utilities-green)
+![Functions](https://img.shields.io/badge/Functions-11-blue) ![Biological](https://img.shields.io/badge/Type-Biologically--Grounded-orange) ![Utils](https://img.shields.io/badge/Category-Utilities-green)
 
 ## 📋 Quick Reference by Category
 
 | Category | Functions | Purpose |
 |----------|-----------|----------|
 | **Oscillator** | 5 | Phase-based modulation and coupling |
-| **Neuromodulation** | 1 | Dopamine, ACh effect computation |
+| **Neuromodulation** | 0 | Dopamine, ACh effect computation |
 | **Sizing** | 6 | Region size calculations |
 
 ## 🔬 Function Categories
@@ -169,39 +169,9 @@ Biological Basis:
 
 ---
 
-## 💊 Neuromodulation Functions
-
-### [``compute_ne_gain()``](../../src/thalia/neuromodulation/constants.py#L92)
-
-**Returns**: `float`  
-**Source**: [`thalia/neuromodulation/constants.py`](../../src/thalia/neuromodulation/constants.py)
-
-**Description**: Compute norepinephrine gain modulation from NE level.
-
-**Parameters**:
-
-| Parameter | Type | Default |
-|-----------|------|----------|
-| `ne_level` | `float` | `-` |
-
-**Biological Context**:
-
-Biological basis: β-adrenergic receptor effects on neural excitability.
-
-Args:
-
-**Examples**:
-
-```python
->>> compute_ne_gain(0.5)
-    1.25  # Moderate arousal
-```
-
----
-
 ## 📏 Region Sizing Functions
 
-### [``compute_cerebellum_sizes()``](../../src/thalia/config/region_sizes.py#L438)
+### [``compute_cerebellum_sizes()``](../../src/thalia/config/region_sizes.py#L208)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -217,7 +187,7 @@ Args:
 
 ---
 
-### [``compute_cortex_layer_sizes()``](../../src/thalia/config/region_sizes.py#L283)
+### [``compute_cortex_layer_sizes()``](../../src/thalia/config/region_sizes.py#L53)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -232,7 +202,7 @@ Args:
 
 ---
 
-### [``compute_hippocampus_sizes()``](../../src/thalia/config/region_sizes.py#L247)
+### [``compute_hippocampus_sizes()``](../../src/thalia/config/region_sizes.py#L17)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -247,7 +217,7 @@ Args:
 
 ---
 
-### [``compute_multisensory_sizes()``](../../src/thalia/config/region_sizes.py#L407)
+### [``compute_multisensory_sizes()``](../../src/thalia/config/region_sizes.py#L177)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -265,7 +235,7 @@ Args:
 
 ---
 
-### [``compute_striatum_sizes()``](../../src/thalia/config/region_sizes.py#L321)
+### [``compute_striatum_sizes()``](../../src/thalia/config/region_sizes.py#L91)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
@@ -277,12 +247,12 @@ Args:
 | Parameter | Type | Default |
 |-----------|------|----------|
 | `n_actions` | `int` | `-` |
-| `neurons_per_action` | `int` | `NEURONS_PER_ACTION_DEFAULT` |
+| `neurons_per_action` | `int` | `10` |
 | `d1_d2_ratio` | `float` | `0.5` |
 
 ---
 
-### [``compute_thalamus_sizes()``](../../src/thalia/config/region_sizes.py#L366)
+### [``compute_thalamus_sizes()``](../../src/thalia/config/region_sizes.py#L136)
 
 **Returns**: `dict`  
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
