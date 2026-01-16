@@ -256,6 +256,6 @@ class GlobalConfig(BaseConfig):
         }
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "GlobalConfig":
+    def from_dict(cls, d: Dict[str, Any]) -> GlobalConfig:
         """Create from dictionary."""
         return cls(**d)

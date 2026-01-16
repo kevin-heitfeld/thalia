@@ -12,8 +12,8 @@ from typing import Optional, Dict, Any, List
 
 import torch
 
-from thalia.config.learning_config import STDPLearningConfig
 from thalia.components.synapses.stp import STPType
+from thalia.config.learning_config import STDPLearningConfig
 from thalia.constants.architecture import HIPPOCAMPUS_SPARSITY_TARGET
 from thalia.constants.learning import LEARNING_RATE_ONE_SHOT
 from thalia.core.base.component_config import NeuralComponentConfig
@@ -408,7 +408,7 @@ class HippocampusState(BaseRegionState):
         cls,
         data: Dict[str, Any],
         device: str = "cpu",
-    ) -> "HippocampusState":
+    ) -> HippocampusState:
         """Deserialize state from dictionary.
 
         Args:

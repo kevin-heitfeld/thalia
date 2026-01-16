@@ -59,11 +59,11 @@ class EncodingConfig:
     # Embedding dimension (intermediate, before SDR projection)
     embedding_dim: int = 256
 
-    def get_sparsity(self, global_config: "GlobalConfig") -> float:
+    def get_sparsity(self, global_config: GlobalConfig) -> float:
         """Get effective sparsity, falling back to global default."""
         return self.sparsity if self.sparsity is not None else global_config.default_sparsity
 
-    def get_sdr_on_bits(self, n_neurons: int, global_config: "GlobalConfig") -> int:
+    def get_sdr_on_bits(self, n_neurons: int, global_config: GlobalConfig) -> int:
         """Get number of active bits in SDR."""
         if self.sdr_on_bits is not None:
             return self.sdr_on_bits

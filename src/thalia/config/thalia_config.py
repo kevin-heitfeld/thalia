@@ -15,9 +15,9 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
 import json
 from pathlib import Path
+from typing import Dict, Any, List, Optional
 
 from .global_config import GlobalConfig
 from .brain_config import BrainConfig, RegionSizes
@@ -26,7 +26,7 @@ from .training_config import TrainingConfig
 
 
 def print_config(
-    config: "ThaliaConfig",
+    config: ThaliaConfig,
     title: str = "CONFIGURATION",
     extra: Optional[Dict[str, Any]] = None,
     width: int = 70,
@@ -591,14 +591,14 @@ class ThaliaConfig:
         path.write_text(self.to_json())
 
     @classmethod
-    def load(cls, path: str | Path) -> "ThaliaConfig":
+    def load(cls, path: str | Path) -> ThaliaConfig:
         """Load configuration from JSON file."""
         path = Path(path)
         data = json.loads(path.read_text())
         return cls.from_dict(data)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "ThaliaConfig":
+    def from_dict(cls, d: Dict[str, Any]) -> ThaliaConfig:
         """Create from dictionary."""
         global_config = GlobalConfig.from_dict(d.get("global", {}))
 
@@ -645,7 +645,7 @@ class ThaliaConfig:
     # =========================================================================
 
     @classmethod
-    def minimal(cls, device: str = "cpu") -> "ThaliaConfig":
+    def minimal(cls, device: str = "cpu") -> ThaliaConfig:
         """Create minimal configuration for testing.
 
         Small network sizes for fast testing.

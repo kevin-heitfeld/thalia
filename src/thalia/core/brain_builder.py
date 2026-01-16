@@ -83,7 +83,7 @@ import json
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 
-from thalia.config.region_sizes import compute_thalamus_sizes, compute_hippocampus_sizes
+from thalia.config.region_sizes import compute_cerebellum_sizes, compute_hippocampus_sizes, compute_thalamus_sizes
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.protocols.component import LearnableComponent
 from thalia.managers.component_registry import ComponentRegistry
@@ -146,7 +146,6 @@ def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Di
         Computed size parameters suitable for region constructor
     """
     from thalia.config.size_calculator import LayerSizeCalculator
-    from thalia.config.region_sizes import compute_hippocampus_sizes, compute_cerebellum_sizes
 
     calc = LayerSizeCalculator()
 
@@ -215,11 +214,11 @@ class BrainBuilder:
     """
 
     # Registry of preset architectures
-    _presets: Dict[str, "PresetArchitecture"] = {}
+    _presets: Dict[str, PresetArchitecture] = {}
 
     def __init__(
         self,
-        global_config: "GlobalConfig",
+        global_config: GlobalConfig,
     ):
         """Initialize builder with global configuration.
 
@@ -236,7 +235,7 @@ class BrainBuilder:
         name: str,
         registry_name: str,
         **config_params: Any,
-    ) -> "BrainBuilder":
+    ) -> BrainBuilder:
         """Add a component (region, pathway, module) to the brain.
 
         Size Inference:
@@ -322,7 +321,7 @@ class BrainBuilder:
         source_port: Optional[str] = None,
         target_port: Optional[str] = None,
         **config_params: Any,
-    ) -> "BrainBuilder":
+    ) -> BrainBuilder:
         """Connect two components with a pathway.
 
         Args:
@@ -420,7 +419,7 @@ class BrainBuilder:
         - Sensory ports ('ec_l3'): Set as ec_l3_input_size
         """
         # Build incoming connection map with port information
-        incoming: Dict[str, List[Tuple[str, "ConnectionSpec"]]] = {name: [] for name in self._components}
+        incoming: Dict[str, List[Tuple[str, ConnectionSpec]]] = {name: [] for name in self._components}
         for conn in self._connections:
             incoming[conn.target].append((conn.source, conn))
 
@@ -648,7 +647,7 @@ class BrainBuilder:
 
     def _initialize_target_weights(
         self,
-        brain: "DynamicBrain",
+        brain: DynamicBrain,
         components: Dict[str, LearnableComponent],
         connection_specs: Dict[Tuple[str, str], Any],
     ) -> None:
@@ -716,7 +715,7 @@ class BrainBuilder:
         target_specs: List[ConnectionSpec],
         components: Dict[str, LearnableComponent],
         target_name: str,
-    ) -> "AxonalProjection":
+    ) -> AxonalProjection:
         """Create AxonalProjection from connection specs with per-target delay support.
 
         AxonalProjection has different initialization than standard pathways:
@@ -1061,8 +1060,8 @@ class BrainBuilder:
     def load_spec(
         cls,
         filepath: Path,
-        global_config: "GlobalConfig",
-    ) -> "BrainBuilder":
+        global_config: GlobalConfig,
+    ) -> BrainBuilder:
         """Load component graph specification from JSON.
 
         Args:
@@ -1108,7 +1107,7 @@ class BrainBuilder:
         cls,
         name: str,
         description: str,
-        builder_fn: "PresetBuilderFn",
+        builder_fn: PresetBuilderFn,
     ) -> None:
         """Register a preset architecture.
 
@@ -1139,7 +1138,7 @@ class BrainBuilder:
     def preset(
         cls,
         name: str,
-        global_config: "GlobalConfig",
+        global_config: GlobalConfig,
         **overrides: Any,
     ) -> DynamicBrain:
         """Create brain from preset architecture.
@@ -1195,8 +1194,8 @@ class BrainBuilder:
     def preset_builder(
         cls,
         name: str,
-        global_config: "GlobalConfig",
-    ) -> "BrainBuilder":
+        global_config: GlobalConfig,
+    ) -> BrainBuilder:
         """Create builder initialized with preset architecture.
 
         Unlike preset(), this returns the builder so you can modify it
@@ -1230,7 +1229,7 @@ class BrainBuilder:
 
 
 # Type alias for preset builder functions
-PresetBuilderFn = Callable[["BrainBuilder", Any], None]
+PresetBuilderFn = Callable[[BrainBuilder, Any], None]
 
 
 class PresetArchitecture:

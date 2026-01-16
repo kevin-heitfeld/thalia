@@ -75,7 +75,7 @@ class GrowthEvent:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'GrowthEvent':
+    def from_dict(cls, data: Dict[str, Any]) -> GrowthEvent:
         """Reconstruct from dict."""
         return cls(**data)
 

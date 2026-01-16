@@ -17,9 +17,9 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Dict, Iterator, Tuple, Union
 from pathlib import Path
 import random
+from typing import List, Dict, Iterator, Tuple, Union
 
 import torch
 
@@ -82,7 +82,7 @@ class SimpleTokenizer:
         self.id_to_token: Dict[int, str] = {}
         self._is_fitted = False
 
-    def fit(self, texts: List[str]) -> "SimpleTokenizer":
+    def fit(self, texts: List[str]) -> SimpleTokenizer:
         """
         Fit tokenizer on texts to build vocabulary.
 
@@ -172,7 +172,7 @@ class SimpleTokenizer:
             for token, idx in sorted(self.token_to_id.items(), key=lambda x: x[1]):
                 f.write(f"{idx}\t{token}\n")
 
-    def load(self, path: Union[str, Path]) -> "SimpleTokenizer":
+    def load(self, path: Union[str, Path]) -> SimpleTokenizer:
         """Load tokenizer vocabulary from file."""
         path = Path(path)
         self.token_to_id = {}
@@ -227,7 +227,7 @@ class TextDataPipeline:
 
         random.seed(config.seed)
 
-    def load_text(self, text: str) -> "TextDataPipeline":
+    def load_text(self, text: str) -> TextDataPipeline:
         """
         Load text and prepare sequences.
 
@@ -250,7 +250,7 @@ class TextDataPipeline:
 
         return self
 
-    def load_file(self, path: Union[str, Path]) -> "TextDataPipeline":
+    def load_file(self, path: Union[str, Path]) -> TextDataPipeline:
         """Load text from file."""
         path = Path(path)
         with open(path, "r", encoding="utf-8") as f:

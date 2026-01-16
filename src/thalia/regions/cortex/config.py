@@ -403,7 +403,7 @@ class LayeredCortexState(BaseRegionState):
         cls,
         data: Dict[str, Any],
         device: str = "cpu",
-    ) -> "LayeredCortexState":
+    ) -> LayeredCortexState:
         """Deserialize state from dictionary.
 
         Args:

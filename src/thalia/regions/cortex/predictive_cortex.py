@@ -186,7 +186,7 @@ class PredictiveCortexState(BaseRegionState):
         cls,
         data: Dict[str, Any],
         device: str = "cpu",
-    ) -> "PredictiveCortexState":
+    ) -> PredictiveCortexState:
         """Deserialize state from dictionary.
 
         Args:

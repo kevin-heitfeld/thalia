@@ -355,7 +355,7 @@ class CerebellumState(BaseRegionState):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], device: str = "cpu") -> "CerebellumState":
+    def from_dict(cls, data: Dict[str, Any], device: str = "cpu") -> CerebellumState:
         """Deserialize state from dictionary.
 
         Args:

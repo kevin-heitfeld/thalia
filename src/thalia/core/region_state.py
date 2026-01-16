@@ -77,19 +77,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional, Type, TypeVar
+from typing import Dict, Any, Optional, Type
 
 import torch
 
 from thalia.constants.neuromodulation import (
-    DA_BASELINE_STANDARD,
     ACH_BASELINE,
+    DA_BASELINE_STANDARD,
     NE_BASELINE,
 )
-
-
-# Type variable for state classes
-TRegionState = TypeVar("TRegionState", bound="RegionState")
 
 
 class RegionState(ABC):
@@ -123,7 +119,7 @@ class RegionState(ABC):
 
     @classmethod
     @abstractmethod
-    def from_dict(cls: Type[TRegionState], data: Dict[str, Any], device: str) -> TRegionState:
+    def from_dict(cls: Type[RegionState], data: Dict[str, Any], device: str) -> RegionState:
         """Deserialize state from dictionary.
 
         Args:
@@ -199,7 +195,7 @@ class BaseRegionState:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], device: str) -> "BaseRegionState":
+    def from_dict(cls, data: Dict[str, Any], device: str) -> BaseRegionState:
         """Deserialize common state fields."""
         version = data.get('state_version', 1)
         if version != cls.STATE_VERSION:
@@ -255,10 +251,10 @@ def save_region_state(state: RegionState, path: str | Path) -> None:
 
 
 def load_region_state(
-    state_class: Type[TRegionState],
+    state_class: Type[RegionState],
     path: str | Path,
     device: str = "cpu",
-) -> TRegionState:
+) -> RegionState:
     """Load region state from checkpoint file.
 
     Args:
@@ -281,7 +277,7 @@ def load_region_state(
     return state_class.from_dict(state_dict, device=device)
 
 
-def transfer_state(state: TRegionState, device: str) -> TRegionState:
+def transfer_state(state: RegionState, device: str) -> RegionState:
     """Transfer state to different device (CPU ↔ CUDA).
 
     Args:

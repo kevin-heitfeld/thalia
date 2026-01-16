@@ -73,6 +73,8 @@ from typing import Dict, List, Optional, Union
 
 import torch
 
+from thalia.typing import TopologyGraph
+
 
 class InputRouter:
     """Standardized multi-port input routing with alias resolution."""
@@ -80,7 +82,7 @@ class InputRouter:
     @staticmethod
     def route(
         inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
-        port_mapping: Dict[str, List[str]],
+        port_mapping: TopologyGraph,
         defaults: Optional[Dict[str, Optional[torch.Tensor]]] = None,
         required: Optional[List[str]] = None,
         component_name: str = "Component",

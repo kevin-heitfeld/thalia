@@ -21,9 +21,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
+from thalia.diagnostics.criticality import CriticalityConfig
 from thalia.learning.ei_balance import EIBalanceConfig
 from thalia.learning.homeostasis.metabolic import MetabolicConfig
-from thalia.diagnostics.criticality import CriticalityConfig
 
 
 @dataclass
@@ -83,7 +83,7 @@ class RobustnessConfig:
     metabolic: MetabolicConfig = field(default_factory=MetabolicConfig)
 
     @classmethod
-    def minimal(cls) -> "RobustnessConfig":
+    def minimal(cls) -> RobustnessConfig:
         """Create minimal config with only essential mechanisms.
 
         Enables E/I balance only (critical for recurrent stability).
@@ -103,7 +103,7 @@ class RobustnessConfig:
         )
 
     @classmethod
-    def full(cls) -> "RobustnessConfig":
+    def full(cls) -> RobustnessConfig:
         """Create full config with ALL robustness mechanisms.
 
         Maximum robustness with all mechanisms enabled.

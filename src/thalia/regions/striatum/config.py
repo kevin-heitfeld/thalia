@@ -167,7 +167,7 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
         neurons_per_action: int = 10,
         input_sources: Optional[Dict[str, int]] = None,
         **kwargs
-    ) -> "StriatumConfig":
+    ) -> StriatumConfig:
         """Create config with pathway sizes computed from number of actions.
 
         Uses biological ratio: D1 and D2 are equal in size (50/50 split)
@@ -519,7 +519,7 @@ class StriatumState(BaseRegionState):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], device: str = "cpu") -> "StriatumState":
+    def from_dict(cls, data: Dict[str, Any], device: str = "cpu") -> StriatumState:
         """Deserialize state from dictionary.
 
         Args:

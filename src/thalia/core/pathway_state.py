@@ -96,7 +96,7 @@ class PathwayState(ABC):
 
     @classmethod
     @abstractmethod
-    def from_dict(cls, data: Dict[str, Any], device: Optional[torch.device] = None) -> "PathwayState":
+    def from_dict(cls, data: Dict[str, Any], device: Optional[torch.device] = None) -> PathwayState:
         """Deserialize pathway state from dictionary with automatic migration.
 
         Should:
@@ -208,7 +208,7 @@ class AxonalProjectionState(PathwayState):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], device: Optional[torch.device] = None) -> "AxonalProjectionState":
+    def from_dict(cls, data: Dict[str, Any], device: Optional[torch.device] = None) -> AxonalProjectionState:
         """Deserialize delay buffers from dictionary.
 
         Args:

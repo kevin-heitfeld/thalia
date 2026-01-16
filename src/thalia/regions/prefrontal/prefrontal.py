@@ -170,7 +170,7 @@ class PrefrontalConfig(NeuralComponentConfig):
         - Requires goal_hierarchy_config
     """
 
-    goal_hierarchy_config: Optional["GoalHierarchyConfig"] = None
+    goal_hierarchy_config: Optional[GoalHierarchyConfig] = None
     """Configuration for goal hierarchy manager (Phase 3)."""
 
     use_hyperbolic_discounting: bool = True
@@ -183,7 +183,7 @@ class PrefrontalConfig(NeuralComponentConfig):
         - Requires hyperbolic_config
     """
 
-    hyperbolic_config: Optional["HyperbolicDiscountingConfig"] = None
+    hyperbolic_config: Optional[HyperbolicDiscountingConfig] = None
     """Configuration for hyperbolic discounter (Phase 3)."""
 
     # =========================================================================
@@ -290,7 +290,7 @@ class PrefrontalState(BaseRegionState):
         return base_dict
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], device: str) -> "PrefrontalState":
+    def from_dict(cls, data: Dict[str, Any], device: str) -> PrefrontalState:
         """Deserialize state from dictionary."""
         # Future: Handle version migration if needed
 
@@ -738,8 +738,8 @@ class Prefrontal(NeuralRegion):
         # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
         # =====================================================================
         # Initialize goal hierarchy (Phase 3)
-        self.goal_manager: Optional["GoalHierarchyManager"] = None
-        self.discounter: Optional["HyperbolicDiscounter"] = None
+        self.goal_manager: Optional[GoalHierarchyManager] = None
+        self.discounter: Optional[HyperbolicDiscounter] = None
 
         if config.use_hierarchical_goals:
             gh_config = config.goal_hierarchy_config or GoalHierarchyConfig()
@@ -1359,7 +1359,7 @@ class Prefrontal(NeuralRegion):
     # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
     # =========================================================================
 
-    def set_goal_hierarchy(self, root_goal: "Goal") -> None:
+    def set_goal_hierarchy(self, root_goal: Goal) -> None:
         """
         Set the top-level goal for hierarchical planning.
 
@@ -1379,7 +1379,7 @@ class Prefrontal(NeuralRegion):
             raise ConfigurationError("Hierarchical goals not enabled. Set use_hierarchical_goals=True in config.")
         self.goal_manager.set_root_goal(root_goal)
 
-    def push_goal(self, goal: "Goal") -> None:
+    def push_goal(self, goal: Goal) -> None:
         """
         Push a goal onto the active goal stack.
 
@@ -1399,7 +1399,7 @@ class Prefrontal(NeuralRegion):
             raise ConfigurationError("Hierarchical goals not enabled.")
         self.goal_manager.push_goal(goal)
 
-    def get_active_goals(self) -> List["Goal"]:
+    def get_active_goals(self) -> List[Goal]:
         """
         Get list of currently active goals.
 
@@ -1416,7 +1416,7 @@ class Prefrontal(NeuralRegion):
             return []
         return self.goal_manager.active_goals.copy()
 
-    def decompose_current_goal(self, state: torch.Tensor) -> List["Goal"]:
+    def decompose_current_goal(self, state: torch.Tensor) -> List[Goal]:
         """
         Decompose current goal into subgoals based on state.
 

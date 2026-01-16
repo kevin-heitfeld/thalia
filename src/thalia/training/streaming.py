@@ -101,27 +101,21 @@ Date: December 12, 2025 (Tier 3 Implementation)
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Iterator, Optional, Dict, Any, Callable, Deque
-from pathlib import Path
 from collections import deque
+from dataclasses import dataclass, field
+from pathlib import Path
 import time
+from typing import Iterator, Optional, Dict, Any, Callable, Deque, TYPE_CHECKING
 
-import torch
 import numpy as np
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from thalia.core.dynamic_brain import DynamicBrain
-
-    Brain = DynamicBrain
-else:
-    Brain = object
+import torch
 
 from thalia.diagnostics.health_monitor import HealthMonitor
 from thalia.diagnostics.performance_profiler import PerformanceProfiler
 from thalia.io.checkpoint import BrainCheckpoint
+
+if TYPE_CHECKING:
+    from thalia.core.dynamic_brain import DynamicBrain
 
 
 @dataclass
@@ -283,10 +277,10 @@ class StreamingTrainer:
 
     def __init__(
         self,
-        brain: "Brain",
+        brain: DynamicBrain,
         config: StreamConfig,
         checkpoint_dir: str | Path = "checkpoints/streaming",
-        evaluator: Optional[Callable[["Brain"], Dict[str, float]]] = None,
+        evaluator: Optional[Callable[[DynamicBrain], Dict[str, float]]] = None,
     ):
         """Initialize streaming trainer.
 

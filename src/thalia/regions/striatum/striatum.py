@@ -2734,7 +2734,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             "dopamine": da_level,
         }
 
-
     def deliver_counterfactual_reward(
         self,
         reward: float,
@@ -3043,7 +3042,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     # CHECKPOINT STATE MANAGEMENT
     # =========================================================================
 
-    def get_state(self) -> "StriatumState":
+    def get_state(self) -> StriatumState:
         """Get current state as StriatumState instance (RegionState protocol).
 
         Extracts complete striatal state including:
@@ -3157,7 +3156,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             norepinephrine=norepinephrine,
         )
 
-    def load_state(self, state: "StriatumState") -> None:
+    def load_state(self, state: StriatumState) -> None:
         """Restore state from StriatumState instance (RegionState protocol).
 
         Restores complete striatal state including:

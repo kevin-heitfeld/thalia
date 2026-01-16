@@ -85,7 +85,7 @@ class CheckpointHeader:
         return data + b'\x00' * (HEADER_SIZE - len(data))
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> 'CheckpointHeader':
+    def from_bytes(cls, data: bytes) -> CheckpointHeader:
         """Deserialize header from 256 bytes."""
         if len(data) < HEADER_SIZE:
             raise ValueError(f"Header data too short: {len(data)} < {HEADER_SIZE}")
@@ -152,7 +152,7 @@ class RegionIndexEntry:
         return name_bytes + struct.pack('<QQ', self.data_offset, self.data_length)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> 'RegionIndexEntry':
+    def from_bytes(cls, data: bytes) -> RegionIndexEntry:
         """Deserialize entry from 48 bytes."""
         if len(data) < 48:
             raise ValueError(f"Region index entry too short: {len(data)} < 48")

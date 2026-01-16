@@ -62,6 +62,7 @@ import inspect
 
 from thalia.core.protocols.component import BrainComponent
 from thalia.core.errors import ConfigurationError
+from thalia.typing import TopologyGraph
 
 
 class ComponentRegistry:
@@ -353,7 +354,7 @@ class ComponentRegistry:
     def list_components(
         cls,
         component_type: Optional[str] = None,
-    ) -> List[str] | Dict[str, List[str]]:
+    ) -> List[str] | TopologyGraph:
         """List all registered components.
 
         Args:

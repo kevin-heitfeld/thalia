@@ -38,8 +38,8 @@ Now a standalone manager component for cleaner separation of concerns.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
+import math
 from typing import List
 
 import torch
@@ -260,7 +260,7 @@ class ExplorationManager(BaseManager[ExplorationConfig]):
         # Only clear transient state if needed
         pass
 
-    def to(self, device: torch.device) -> "ExplorationManager":
+    def to(self, device: torch.device) -> ExplorationManager:
         """Move all tensors to specified device.
 
         Args:

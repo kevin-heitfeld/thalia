@@ -11,6 +11,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 from .base import BaseConfig
 
 
@@ -56,7 +57,7 @@ class TrainingConfig(BaseConfig):
 
     learning_rate_scale: float = 1.0
     """Global scaling factor for all learning rates.
-    
+
     Useful for quick experiments:
     - 0.5 = half speed learning
     - 2.0 = double speed learning
@@ -135,7 +136,7 @@ class TrainingConfig(BaseConfig):
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "TrainingConfig":
+    def from_dict(cls, d: dict) -> TrainingConfig:
         """Create from dictionary."""
         return cls(
             use_stdp=d.get("use_stdp", True),

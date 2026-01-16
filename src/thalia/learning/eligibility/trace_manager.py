@@ -343,7 +343,7 @@ class EligibilityTraceManager:
         """Reset eligibility only (keep spike traces)."""
         self.eligibility.zero_()
 
-    def to(self, device: torch.device) -> 'EligibilityTraceManager':
+    def to(self, device: torch.device) -> EligibilityTraceManager:
         """Move all tensors to specified device."""
         self.device = device
         self.input_trace = self.input_trace.to(device)
@@ -351,7 +351,7 @@ class EligibilityTraceManager:
         self.eligibility = self.eligibility.to(device)
         return self
 
-    def grow_dimension(self, n_new: int, dimension: str = 'output') -> 'EligibilityTraceManager':
+    def grow_dimension(self, n_new: int, dimension: str = 'output') -> EligibilityTraceManager:
         """
         Grow traces to accommodate new neurons.
 

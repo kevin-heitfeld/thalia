@@ -73,7 +73,7 @@ class DeltaHeader:
         return data + b'\x00' * (64 - len(data))
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> 'DeltaHeader':
+    def from_bytes(cls, data: bytes) -> DeltaHeader:
         """Deserialize from 64 bytes."""
         if len(data) < 64:
             raise ValueError(f"Delta header too short: {len(data)} < 64")

@@ -315,8 +315,8 @@ class DynamicBrain(nn.Module):
         # PLANNING SYSTEMS (Phase 1.7.5)
         # =================================================================
         # Mental simulation and Dyna planning for model-based RL
-        self.mental_simulation: Optional["MentalSimulationCoordinator"] = None
-        self.dyna_planner: Optional["DynaPlanner"] = None
+        self.mental_simulation: Optional[MentalSimulationCoordinator] = None
+        self.dyna_planner: Optional[DynaPlanner] = None
 
         # Check if planning is enabled (either direct flag or via brain config)
         planning_enabled = (
@@ -369,7 +369,7 @@ class DynamicBrain(nn.Module):
         self._component_specs: Dict[str, ComponentSpec] = {}
         """Component specifications (set by BrainBuilder after build)"""
 
-        self._registry: Optional["ComponentRegistry"] = None
+        self._registry: Optional[ComponentRegistry] = None
         """Component registry reference (for component type lookup)"""
 
     def _update_config_sizes(self) -> None:
@@ -425,8 +425,6 @@ class DynamicBrain(nn.Module):
         """
         return self._current_time
 
-
-
     @property
     def theta_oscillator(self):
         """Get theta oscillator (compatibility property for monitoring).
@@ -471,7 +469,7 @@ class DynamicBrain(nn.Module):
         return phase_locking
 
     @classmethod
-    def from_thalia_config(cls, config: "ThaliaConfig") -> "DynamicBrain":
+    def from_thalia_config(cls, config: ThaliaConfig) -> DynamicBrain:
         """Create DynamicBrain from ThaliaConfig (backward compatibility).
 
         This factory method enables drop-in replacement of EventDrivenBrain
@@ -640,7 +638,7 @@ class DynamicBrain(nn.Module):
 
     def forward(
         self,
-        sensory_input: Optional[Union[torch.Tensor, Dict[str, Union[torch.Tensor, List[torch.Tensor], "StimulusPattern"]]]] = None,
+        sensory_input: Optional[Union[torch.Tensor, Dict[str, Union[torch.Tensor, List[torch.Tensor], StimulusPattern]]]] = None,
         n_timesteps: Optional[int] = None,
     ) -> DiagnosticsDict:
         """Execute brain for n_timesteps.
@@ -1558,7 +1556,7 @@ class DynamicBrain(nn.Module):
     # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)
     # =========================================================================
 
-    def check_health(self) -> "HealthReport":
+    def check_health(self) -> HealthReport:
         """Check network health and detect pathological states.
 
         Returns health report with detected issues, severity, and recommendations.

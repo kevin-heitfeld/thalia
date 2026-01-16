@@ -93,7 +93,7 @@ class AfferentSynapses(nn.Module):
     def __init__(
         self,
         config: AfferentSynapsesConfig,
-        learning_strategy: Optional["LearningStrategy"] = None,
+        learning_strategy: Optional[LearningStrategy] = None,
     ):
         super().__init__()
 

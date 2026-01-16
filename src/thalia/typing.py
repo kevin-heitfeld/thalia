@@ -21,14 +21,14 @@ from typing import Dict, List, Tuple, TypedDict, Optional, Any, TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
+    from thalia.core.neural_region import NeuralRegion
     from thalia.learning.rules.strategies import LearningStrategy
-    from thalia.regions.base import NeuralRegion
 
 # ============================================================================
 # Component Organization
 # ============================================================================
 
-ComponentGraph = Dict[str, "NeuralRegion"]
+ComponentGraph = Dict[str, NeuralRegion]
 """Maps component names to component instances.
 
 Example:
@@ -38,7 +38,7 @@ Example:
     }
 """
 
-ConnectionGraph = Dict[Tuple[str, str], "NeuralRegion"]
+ConnectionGraph = Dict[Tuple[str, str], NeuralRegion]
 """Maps (source, target) pairs to pathway instances.
 
 Example:
@@ -98,7 +98,7 @@ Example:
     }
 """
 
-LearningStrategies = Dict[str, "LearningStrategy"]
+LearningStrategies = Dict[str, LearningStrategy]
 """Maps source names to their learning strategies.
 
 Each source can have its own learning rule (STDP, BCM, Hebbian, etc.)

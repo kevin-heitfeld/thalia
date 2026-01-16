@@ -173,7 +173,7 @@ class CircularDelayBuffer:
         self.buffer = new_buffer
         self.size = new_size
 
-    def to(self, device: str) -> "CircularDelayBuffer":
+    def to(self, device: str) -> CircularDelayBuffer:
         """Move buffer to different device.
 
         Args:

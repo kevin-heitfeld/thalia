@@ -149,10 +149,7 @@ class TDLambdaTraces:
         # Running product γλ for efficient decay
         self.decay_factor = self.config.gamma * self.config.lambda_
 
-    def update(
-        self,
-        gradient: torch.Tensor,
-    ) -> None:
+    def update(self, radient: torch.Tensor) -> None:
         """
         Update eligibility traces with current gradient.
 
@@ -183,7 +180,7 @@ class TDLambdaTraces:
         """Get current eligibility traces."""
         return self.traces
 
-    def to(self, device: torch.device) -> 'TDLambdaTraces':
+    def to(self, device: torch.device) -> TDLambdaTraces:
         """Move traces to specified device.
 
         Args:
@@ -303,7 +300,7 @@ class TDLambdaLearner:
         self._cumulative_td_error = 0.0
         self._cumulative_trace_magnitude = 0.0
 
-    def to(self, device: torch.device) -> 'TDLambdaLearner':
+    def to(self, device: torch.device) -> TDLambdaLearner:
         """Move learner to specified device.
 
         Args:
@@ -405,10 +402,7 @@ class TDLambdaLearner:
 
         return td_error
 
-    def compute_update(
-        self,
-        td_error: float,
-    ) -> torch.Tensor:
+    def compute_update(self, d_error: float) -> torch.Tensor:
         """
         Compute weight update using TD(λ) rule.
 

@@ -80,7 +80,7 @@ class SequenceContext:
     retrieval_count: int = 0       # How many times retrieved
     strength: float = 1.0          # Memory strength (decays or strengthens)
 
-    def to(self, device: torch.device) -> "SequenceContext":
+    def to(self, device: torch.device) -> SequenceContext:
         """Move tensors to device."""
         return SequenceContext(
             tokens=self.tokens.to(device),

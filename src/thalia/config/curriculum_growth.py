@@ -48,6 +48,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Dict, Optional, Any
 
+from thalia.constants.training import AttentionStage
+
 
 class CurriculumStage(IntEnum):
     """Curriculum stages matching main training plan."""
@@ -59,7 +61,7 @@ class CurriculumStage(IntEnum):
     ABSTRACT = 4       # Stage 4 (abstract reasoning)
 
 
-def get_attention_stage_for_curriculum(curriculum_stage: CurriculumStage) -> "AttentionStage":
+def get_attention_stage_for_curriculum(curriculum_stage: CurriculumStage) -> AttentionStage:
     """Map curriculum stage to attention developmental stage.
 
     Controls the balance between bottom-up (reactive) and top-down (goal-directed)
@@ -71,8 +73,6 @@ def get_attention_stage_for_curriculum(curriculum_stage: CurriculumStage) -> "At
     Returns:
         Corresponding AttentionStage enum
     """
-    from thalia.constants.training import AttentionStage
-
     mapping = {
         CurriculumStage.SENSORIMOTOR: AttentionStage.INFANT,    # Pure bottom-up
         CurriculumStage.PHONOLOGY: AttentionStage.INFANT,       # Pure bottom-up

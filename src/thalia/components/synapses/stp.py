@@ -104,7 +104,7 @@ class STPConfig:
     dt: float = 1.0             # Timestep (ms)
 
     @classmethod
-    def from_type(cls, stp_type: STPType, dt: float = 1.0) -> "STPConfig":
+    def from_type(cls, stp_type: STPType, dt: float = 1.0) -> STPConfig:
         """Create config from predefined synapse type.
 
         Parameters based on Markram et al. (1998) fits to cortical data.

@@ -59,8 +59,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.mixins import ConfigurableMixin
-
 # Import encoding/decoding components
 from thalia.language.encoder import (
     SpikeEncoder,
@@ -75,10 +73,11 @@ from thalia.language.position import (
     PositionEncoderConfig,
 )
 
-# Type checking imports
+from thalia.mixins import ConfigurableMixin
+
 if TYPE_CHECKING:
-    from thalia.core.dynamic_brain import DynamicBrain
     from thalia.config import ThaliaConfig
+    from thalia.core.dynamic_brain import DynamicBrain
 
 
 @dataclass
@@ -138,9 +137,9 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     @classmethod
     def from_thalia_config(
         cls,
-        brain: "DynamicBrain",
-        config: "ThaliaConfig",
-    ) -> "LanguageBrainInterface":
+        brain: DynamicBrain,
+        config: ThaliaConfig,
+    ) -> LanguageBrainInterface:
         """Create interface from ThaliaConfig.
 
         This overrides ConfigurableMixin.from_thalia_config to accept brain
@@ -167,7 +166,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
 
     def __init__(
         self,
-        brain: "DynamicBrain",
+        brain: DynamicBrain,
         config: Optional[LanguageInterfaceConfig] = None,
     ):
         super().__init__()

@@ -20,6 +20,7 @@ from typing import Dict, List, Tuple, Any
 import torch
 
 from thalia.core.protocols.component import LearnableComponent
+from thalia.typing import TopologyGraph
 
 
 class DynamicPathwayManager:
@@ -36,7 +37,7 @@ class DynamicPathwayManager:
     def __init__(
         self,
         connections: Dict[Tuple[str, str], LearnableComponent],
-        topology: Dict[str, List[str]],
+        topology: TopologyGraph,
         device: torch.device,
         dt_ms: float,
     ):
@@ -228,7 +229,7 @@ class DynamicPathwayManager:
                     pathway.weights.data = pathway_state['weights'].to(self.device)
 
     @property
-    def region_connections(self) -> Dict[str, List[str]]:
+    def region_connections(self) -> TopologyGraph:
         """Get region connectivity graph.
 
         Returns:

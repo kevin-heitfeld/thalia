@@ -64,8 +64,8 @@ class Goal:
     description: str = ""
 
     # Hierarchy
-    parent_goal: Optional['Goal'] = None
-    subgoals: List['Goal'] = field(default_factory=list)
+    parent_goal: Optional[Goal] = None
+    subgoals: List[Goal] = field(default_factory=list)
     level: int = 0  # 0=primitive actions, higher=more abstract
 
     # Status
@@ -90,7 +90,7 @@ class Goal:
     # Context
     context: Dict[str, Any] = field(default_factory=dict)  # Additional info
 
-    def add_subgoal(self, subgoal: 'Goal'):
+    def add_subgoal(self, subgoal: Goal):
         """Add a subgoal to this goal."""
         subgoal.parent_goal = self
         subgoal.level = self.level - 1  # Subgoals are one level lower

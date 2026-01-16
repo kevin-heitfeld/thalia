@@ -306,7 +306,7 @@ class ThalamicRelayState(BaseRegionState):
         cls,
         data: Dict[str, Any],  # Changed from state_dict to data to match base class
         device: str = "cpu",   # Changed from Optional[torch.device] to str to match base class
-    ) -> "ThalamicRelayState":
+    ) -> ThalamicRelayState:
         """Deserialize state from dictionary.
 
         Args:

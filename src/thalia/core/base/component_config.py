@@ -363,7 +363,7 @@ class PathwayConfig(NeuralComponentConfig):
     stp_type: str = "DEPRESSING"  # STPType enum value
     """Preset synapse type (DEPRESSING, FACILITATING, DUAL)."""
 
-    stp_config: Optional["STPConfig"] = None
+    stp_config: Optional[STPConfig] = None
     """Custom STP parameters (overrides stp_type)."""
 
     # =========================================================================
@@ -372,7 +372,7 @@ class PathwayConfig(NeuralComponentConfig):
     bcm_enabled: bool = False
     """Enable BCM sliding threshold rule."""
 
-    bcm_config: Optional["BCMConfig"] = None
+    bcm_config: Optional[BCMConfig] = None
     """Custom BCM parameters."""
 
 
