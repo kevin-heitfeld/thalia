@@ -488,7 +488,64 @@ if TYPE_CHECKING:
 
 ## Tier 2 Recommendations – Moderate Refactoring
 
-### 2.1 Reorganize `core/` vs `regions/` Boundary
+### 2.1 Reorganize `core/` vs `regions/` Boundary ✅ **COMPLETED 2026-01-16**
+
+**Status**: ✅ **COMPLETE** - Core types moved from regions/base.py to core/ modules.
+
+**Implementation Summary**:
+
+**Changes Made**:
+1. Created `src/thalia/core/learning_rules.py`:
+   - Moved `LearningRule` enum (11 learning rule types)
+   - Added comprehensive docstrings explaining biological basis
+   
+2. Created `src/thalia/core/component_state.py`:
+   - Moved `NeuralComponentState` dataclass
+   - Documents dynamic state for all neural components
+
+3. Updated `src/thalia/regions/base.py`:
+   - Removed original implementations
+   - Added re-exports for backward compatibility
+   - Updated docstring to explain refactoring
+
+4. Updated imports in 3 files:
+   - `src/thalia/regions/__init__.py` - Import from core modules
+   - `src/thalia/regions/cerebellum/cerebellum.py` - Import NeuralComponentState from core
+   - `src/thalia/core/protocols/component.py` - Import NeuralComponentState from core
+
+**Final Structure**:
+```
+src/thalia/core/
+├── neural_region.py (NeuralRegion base class)
+├── region_state.py (BaseRegionState, RegionState protocol)
+├── learning_rules.py ← NEW (LearningRule enum)
+├── component_state.py ← NEW (NeuralComponentState dataclass)
+├── dynamic_brain.py
+├── brain_builder.py
+└── protocols/
+
+src/thalia/regions/
+├── base.py (re-exports for backward compatibility)
+└── ... (actual region implementations only)
+```
+
+**Benefits Achieved**:
+- ✅ Clear separation: Core types in `core/`, implementations in `regions/`
+- ✅ Better import paths: `from thalia.core.learning_rules import LearningRule`
+- ✅ Improved discoverability: Core types grouped logically
+- ✅ Backward compatibility maintained via re-exports in regions/base.py
+
+**Verification**:
+- All imports working correctly
+- Tests passing (cortex initialization test)
+- LearningRule enum: 11 members
+- Re-exports functioning as expected
+
+**Breaking Changes**: **NONE** (re-exports maintain backward compatibility)
+
+---
+
+**ORIGINAL PROPOSAL** (for reference):
 
 **Issue**: Unclear separation between core infrastructure and region-specific code.
 

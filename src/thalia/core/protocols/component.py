@@ -32,6 +32,7 @@ from typing import Any, Dict, Protocol, runtime_checkable, Optional
 import torch
 import torch.nn as nn
 
+from thalia.core.component_state import NeuralComponentState
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
@@ -887,8 +888,6 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
         # =================================================================
         # NEURAL COMPONENT STATE
         # =================================================================
-        # Import here to avoid circular dependency
-        from thalia.regions.base import NeuralComponentState
         self.state = NeuralComponentState()
 
         # =================================================================

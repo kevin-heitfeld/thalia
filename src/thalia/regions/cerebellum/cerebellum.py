@@ -65,15 +65,10 @@ from typing import Optional, Dict, Any, Union
 
 import torch
 
-from thalia.typing import CerebellumDiagnostics
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.component_state import NeuralComponentState
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
-from thalia.config.learning_config import ErrorCorrectiveLearningConfig
-from thalia.learning import EligibilityTraceManager, EligibilitySTDPConfig as STDPConfig
-from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.managers.component_registry import register_region
-from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, STPConfig, STPType
 from thalia.components.neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,
@@ -83,21 +78,26 @@ from thalia.components.neurons import (
     E_EXCITATORY,
     E_INHIBITORY,
 )
+from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, STPConfig, STPType
+from thalia.config.learning_config import ErrorCorrectiveLearningConfig
 from thalia.constants.neuromodulation import (
-    compute_ne_gain,
-    DA_BASELINE_STANDARD,
     ACH_BASELINE,
+    DA_BASELINE_STANDARD,
     NE_BASELINE,
+    compute_ne_gain,
 )
+from thalia.learning import EligibilityTraceManager, EligibilitySTDPConfig as STDPConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.managers.component_registry import register_region
+from thalia.regions.cerebellum import (
+    EnhancedPurkinjeCell,
+    DeepCerebellarNuclei,
+    GranuleCellLayer,
+)
+from thalia.typing import CerebellumDiagnostics
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
-from thalia.regions.base import NeuralComponentState
-from thalia.regions.cerebellum import (
-    GranuleCellLayer,
-    EnhancedPurkinjeCell,
-    DeepCerebellarNuclei,
-)
 
 
 @dataclass

@@ -75,8 +75,9 @@ Biological References:
 from __future__ import annotations
 
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.learning_rules import LearningRule
+from thalia.core.component_state import NeuralComponentState
 from thalia.managers.component_registry import register_region
-from thalia.regions.base import LearningRule, NeuralComponentState
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig, CerebellumState
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
