@@ -14,27 +14,20 @@ from thalia.training.streaming import (
     ExperienceBuffer,
     DriftDetector,
 )
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from tests.utils import create_test_brain
 
 
 @pytest.fixture
 def mock_brain():
     """Create minimal brain for testing."""
-    config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu", dt_ms=1.0),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=10,
-                thalamus_size=20,
-                cortex_size=30,
-                hippocampus_size=40,
-                pfc_size=20,
-                n_actions=5,
-            ),
-        ),
+    return create_test_brain(
+        input_size=10,
+        thalamus_size=20,
+        cortex_size=30,
+        hippocampus_size=40,
+        pfc_size=20,
+        n_actions=5,
     )
-    return DynamicBrain.from_thalia_config(config)
 
 
 def test_stream_config_defaults():

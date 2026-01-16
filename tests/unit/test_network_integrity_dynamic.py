@@ -20,8 +20,7 @@ Priority: P0 (Critical)
 import pytest
 import torch
 
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from tests.utils import create_test_brain
 
 
 @pytest.fixture
@@ -33,23 +32,16 @@ def device():
 @pytest.fixture
 def test_brain(device):
     """Create test brain with known structure."""
-    config = ThaliaConfig(
-        global_=GlobalConfig(
-            device=str(device),
-            dt_ms=1.0,
-        ),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=100,
-                thalamus_size=200,
-                cortex_size=300,
-                hippocampus_size=150,
-                pfc_size=100,
-                n_actions=10,
-            ),
-        ),
+    brain = create_test_brain(
+        device=str(device),
+        dt_ms=1.0,
+        input_size=100,
+        thalamus_size=200,
+        cortex_size=300,
+        hippocampus_size=150,
+        pfc_size=100,
+        n_actions=10,
     )
-    brain = DynamicBrain.from_thalia_config(config)
     brain.reset_state()
     return brain
 

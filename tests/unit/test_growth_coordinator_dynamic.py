@@ -1,7 +1,9 @@
 """Unit tests for GrowthCoordinator - coordinated region and pathway growth."""
 
 from unittest.mock import Mock
+
 import pytest
+
 from thalia.coordination.growth import GrowthCoordinator
 
 
@@ -32,27 +34,17 @@ def test_coordinate_growth_missing_region():
 
 def test_state_persistence():
     """Growth coordinator should support checkpointing with real brain components."""
-    import torch
-    from thalia.core.dynamic_brain import DynamicBrain
-    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+    from tests.utils import create_test_brain
 
     # Create small real brain
-    device = torch.device("cpu")
-    config = ThaliaConfig(
-        global_=GlobalConfig(device=str(device)),
-        brain=BrainConfig(
-            device=str(device),
-            sizes=RegionSizes(
-                input_size=10,
-                thalamus_size=20,
-                cortex_size=30,
-                hippocampus_size=40,
-                pfc_size=20,
-                n_actions=5,
-            ),
-        ),
+    brain = create_test_brain(
+        input_size=10,
+        thalamus_size=20,
+        cortex_size=30,
+        hippocampus_size=40,
+        pfc_size=20,
+        n_actions=5,
     )
-    brain = DynamicBrain.from_thalia_config(config)
 
     coordinator = GrowthCoordinator(brain)
 
@@ -115,27 +107,17 @@ def test_coordinate_growth_with_real_brain():
 
     Cortex uses grow_output() API for growth (not a separate growth_manager).
     """
-    import torch
-    from thalia.core.dynamic_brain import DynamicBrain
-    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+    from tests.utils import create_test_brain
 
     # Create small real brain
-    device = torch.device("cpu")
-    config = ThaliaConfig(
-        global_=GlobalConfig(device=str(device)),
-        brain=BrainConfig(
-            device=str(device),  # Must match global_.device
-            sizes=RegionSizes(
-                input_size=10,
-                thalamus_size=20,
-                cortex_size=30,
-                hippocampus_size=40,
-                pfc_size=20,
-                n_actions=5,
-            ),
-        ),
+    brain = create_test_brain(
+        input_size=10,
+        thalamus_size=20,
+        cortex_size=30,
+        hippocampus_size=40,
+        pfc_size=20,
+        n_actions=5,
     )
-    brain = DynamicBrain.from_thalia_config(config)
 
     # Get initial sizes
     initial_cortex_size = brain.components['cortex'].n_output

@@ -16,40 +16,25 @@ from thalia.surgery import (
     restore_pathway,
     freeze_region,
     unfreeze_region,
-    freeze_pathway,
-    unfreeze_pathway,
 )
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from tests.utils import create_test_brain
 
 
 @pytest.fixture
 def test_brain():
     """Create minimal brain for testing."""
-    config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu", dt_ms=1.0),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=10,
-                thalamus_size=20,
-                cortex_size=30,
-                hippocampus_size=40,
-                pfc_size=20,
-                n_actions=5,
-            ),
-        ),
+    return create_test_brain(
+        input_size=10,
+        thalamus_size=20,
+        cortex_size=30,
+        hippocampus_size=40,
+        pfc_size=20,
+        n_actions=5,
     )
-    return DynamicBrain.from_thalia_config(config)
 
 
 def test_lesion_region_silences_region(test_brain):
     """Test complete region lesion."""
-    # Get initial weights
-    initial_weights = {
-        name: param.data.clone()
-        for name, param in test_brain.components["hippocampus"].named_parameters()
-    }
-
     # Lesion hippocampus
     lesion_region(test_brain, "hippocampus")
 
