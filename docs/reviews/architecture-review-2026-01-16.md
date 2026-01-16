@@ -644,20 +644,24 @@ def test_my_feature():
 - Estimated reduction: ~200-300 lines across 20+ test files when adopted
 - Effort: 1 hour (completed)
 
-**Next Steps for Adoption**: ✅ **COMPLETE**
+**Next Steps for Adoption**: ✅ **COMPLETE** (Batch 2)
 
-**Refactored Files** (January 17, 2026):
+**Refactored Files - Batch 1** (January 17, 2026):
 - ✅ [tests/unit/test_surgery.py](../../tests/unit/test_surgery.py) - Reduced 18 lines → 9 lines (saved 9 lines)
 - ✅ [tests/unit/test_streaming_trainer_dynamic.py](../../tests/unit/test_streaming_trainer_dynamic.py) - Reduced 18 lines → 9 lines (saved 9 lines)
 - ✅ [tests/unit/test_network_integrity_dynamic.py](../../tests/unit/test_network_integrity_dynamic.py) - Reduced 22 lines → 13 lines (saved 9 lines)
 - ✅ [tests/unit/test_network_visualization_dynamic.py](../../tests/unit/test_network_visualization_dynamic.py) - Reduced 18 lines → 12 lines (saved 6 lines)
 - ✅ [tests/unit/test_growth_coordinator_dynamic.py](../../tests/unit/test_growth_coordinator_dynamic.py) - Reduced 44 lines → 20 lines in 2 functions (saved 24 lines)
 
-**Total Immediate Impact**: 5 files refactored, **57 lines eliminated**
+**Refactored Files - Batch 2** (January 17, 2026):
+- ✅ [tests/unit/test_edge_cases_dynamic.py](../../tests/unit/test_edge_cases_dynamic.py) - Reduced 19 lines → 10 lines (saved 9 lines)
+- ✅ [tests/unit/test_dynamic_brain_new_features.py](../../tests/unit/test_dynamic_brain_new_features.py) - Reduced 19 lines → 10 lines (saved 9 lines)
+- ✅ [tests/integration/test_consolidation_checkpoint_integration.py](../../tests/integration/test_consolidation_checkpoint_integration.py) - Reduced 25 lines → 10 lines (saved 15 lines)
 
-**Remaining Candidates** (opportunistic refactoring):
-  - ~15+ other test files with similar brain creation patterns
-  - Estimated additional savings: ~150-200 lines across remaining files
+**Total Immediate Impact**: **8 files refactored, 90 lines eliminated**
+
+**Remaining Candidates**:
+Most remaining files with ThaliaConfig usage are testing the `from_thalia_config()` method itself and should keep using ThaliaConfig directly for proper test coverage. The most impactful refactoring candidates have been completed.
 
 ---
 

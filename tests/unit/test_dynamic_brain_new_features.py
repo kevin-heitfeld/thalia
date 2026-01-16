@@ -6,28 +6,24 @@ Verifies that the newly added methods work correctly in a realistic scenario.
 import pytest
 import torch
 
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
 from thalia.core.diagnostics import StriatumDiagnostics, HippocampusDiagnostics, BrainSystemDiagnostics
+
+from tests.utils import create_test_brain
 
 
 @pytest.fixture
 def brain():
     """Create a DynamicBrain for testing."""
-    config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu", dt_ms=1.0),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=64,
-                thalamus_size=64,
-                cortex_size=128,
-                hippocampus_size=64,
-                pfc_size=32,
-                n_actions=4,
-            ),
-        ),
+    return create_test_brain(
+        device="cpu",
+        dt_ms=1.0,
+        input_size=64,
+        thalamus_size=64,
+        cortex_size=128,
+        hippocampus_size=64,
+        pfc_size=32,
+        n_actions=4,
     )
-    return DynamicBrain.from_thalia_config(config)
 
 
 class TestCounterfactualLearning:

@@ -12,8 +12,7 @@ These tests focus on behavioral contracts rather than implementation details.
 import pytest
 import torch
 
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from tests.utils import create_test_brain
 
 
 @pytest.fixture
@@ -25,20 +24,16 @@ def device():
 @pytest.fixture
 def test_brain(device):
     """Create a small test brain."""
-    config = ThaliaConfig(
-        global_=GlobalConfig(device=str(device), dt_ms=1.0),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=10,
-                thalamus_size=20,
-                cortex_size=30,
-                hippocampus_size=40,
-                pfc_size=25,
-                n_actions=4,
-            ),
-        ),
+    return create_test_brain(
+        device=str(device),
+        dt_ms=1.0,
+        input_size=10,
+        thalamus_size=20,
+        cortex_size=30,
+        hippocampus_size=40,
+        pfc_size=25,
+        n_actions=4,
     )
-    return DynamicBrain.from_thalia_config(config)
 
 
 class TestSilentInput:

@@ -8,38 +8,27 @@ Author: Thalia Project
 Date: December 15, 2025
 """
 
-import tempfile
 from pathlib import Path
+import tempfile
+
 import pytest
 import torch
 
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.config import (
-    ThaliaConfig,
-    GlobalConfig,
-    BrainConfig,
-    RegionSizes,
-)
+from tests.utils import create_test_brain
 
 
 @pytest.fixture
 def minimal_rl_brain():
     """Create minimal brain with hippocampus and striatum for RL testing."""
-    config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu", dt_ms=1.0),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                thalamus_size=32,
-                cortex_size=64,
-                hippocampus_size=48,
-                pfc_size=40,
-                n_actions=3,
-            ),
-        ),
+    return create_test_brain(
+        device="cpu",
+        dt_ms=1.0,
+        thalamus_size=32,
+        cortex_size=64,
+        hippocampus_size=48,
+        pfc_size=40,
+        n_actions=3,
     )
-
-    brain = DynamicBrain.from_thalia_config(config)
-    return brain
 
 
 class TestCheckpointManagerIntegration:
