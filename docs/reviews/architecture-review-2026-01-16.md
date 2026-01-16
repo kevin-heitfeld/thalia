@@ -1186,6 +1186,36 @@ Systematically replaced 29+ generic Dict types with semantic type aliases across
 Only intentional generic Dict usage remains (serialization, utilities).
 All multi-source pathway types now use semantic aliases for clarity.
 
+**Phase 3: Add Missing Parameter Types** ✅ **COMPLETE 2026-01-16**
+
+**Approach**: Fix concrete type errors and improve code quality rather than blindly adding type annotations.
+
+**Changes Made** (Commit 32e7bc4):
+
+1. **Fixed CapacityMetrics API Mismatch** (neural_region.py):
+   - get_capacity_metrics() was using old constructor signature
+   - Updated to new API requiring: utilization, total_neurons, active_neurons
+   - Properly compute active_neurons from spike output
+   - Use optional fields: firing_rate, synapse_usage, synapse_count
+   - **Result**: Fixed 6 Pyright errors
+
+2. **Code Quality Improvements** (neural_region.py, axonal_projection.py, region_test_base.py):
+   - Replaced `pass` with `...` (ellipsis) in intentional no-ops
+   - Empty exception class (PerformanceWarning)
+   - Default no-op methods (set_oscillator_phases, grow_input)
+   - Abstract method stubs (create_region, get_default_params)
+   - **Result**: Cleaner code following Python conventions
+
+**Assessment**:
+- **reportUnknownParameterType: "warning"** already enabled in Phase 1
+- Most parameters are already well-typed or successfully inferred by Pyright
+- Remaining unknown type warnings are for truly generic parameters (**kwargs) or Protocol methods
+- No actionable missing parameter types found in core public APIs
+
+**Phase 3 Summary**:
+Fixed actual type errors (CapacityMetrics constructor mismatch) and improved code quality.
+Most code already has good type coverage. Remaining warnings are acceptable for generic code.
+
 **Next Steps**:
 1. ⏭️ **Phase 2**: Replace `Dict[str, torch.Tensor]` with appropriate type aliases (StateDict, SourceOutputs, SynapticWeights)
 2. ⏭️ **Phase 3**: Add missing parameter types based on warnings
