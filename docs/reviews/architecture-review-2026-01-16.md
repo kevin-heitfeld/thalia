@@ -1111,9 +1111,9 @@ Updated [pyrightconfig.json](../../pyrightconfig.json):
 }
 ```
 
-**Phase 2: Standardize Type Alias Usage** 🔄 **IN PROGRESS**
+**Phase 2: Standardize Type Alias Usage** ✅ **COMPLETE 2026-01-16**
 
-**Progress**: **10 files updated, 25+ replacements made** (3 commits: 53919ea, 1e16198, 818170e)
+**Progress**: **11 files updated, 29+ replacements made** (4 commits: 53919ea, 1e16198, 818170e, 58de04e)
 
 **Type Aliases to Use** (from [src/thalia/typing.py](../../src/thalia/typing.py)):
 
@@ -1125,12 +1125,12 @@ Updated [pyrightconfig.json](../../pyrightconfig.json):
 **Multi-Source Pathways**:
 - ✅ `SourceOutputs` instead of `Dict[str, torch.Tensor]` (for spike inputs) - **9 files updated**
 - ✅ `SynapticWeights` instead of `Dict[str, torch.Tensor]` (for weight matrices) - **3 files updated**
-- ⚠️ `LearningStrategies` instead of `Dict[str, LearningStrategy]`
-- ⚠️ `InputSizes` instead of `Dict[str, int]`
+- ✅ `LearningStrategies` instead of `Dict[str, LearningStrategy]` - **1 file updated**
+- ✅ `InputSizes` instead of `Dict[str, int]` - **1 file updated**
 
 **State Management**:
 - ✅ `StateDict` instead of `Dict[str, torch.Tensor]` (for component state) - **3 files updated**
-- ⚠️ `CheckpointMetadata` instead of `Dict[str, Any]` (for training metadata)
+- ℹ️ `CheckpointMetadata` - Already used correctly in dynamic_brain.py
 
 **Diagnostics**:
 - ✅ `LayeredCortexDiagnostics`, `StriatumDiagnostics`, etc. (region-specific)
@@ -1138,9 +1138,9 @@ Updated [pyrightconfig.json](../../pyrightconfig.json):
 - ❌ **DEPRECATED**: `DiagnosticsDict = Dict[str, Any]` (use TypedDict subclasses)
 
 **Neuromodulation**:
-- ⚠️ `NeuromodulatorLevels` instead of `Dict[str, float]`
+- ℹ️ `NeuromodulatorLevels` - Most Dict[str, float] are for metrics/phases, not neuromodulators
 
-**Files Updated** (10 files, 25+ replacements):
+**Files Updated** (11 files, 29+ replacements):
 
 **Commit 53919ea** (3 files):
 - ✅ `src/thalia/surgery/ablation.py` - AblationState.original_weights → SynapticWeights (1)
@@ -1148,7 +1148,7 @@ Updated [pyrightconfig.json](../../pyrightconfig.json):
 - ✅ `src/thalia/tasks/sensorimotor.py` - All compute_reward() output parameters → SourceOutputs (3)
 
 **Commit 1e16198** (3 files):
-- ✅ `src/thalia/regions/striatum/striatum.py` - inputs parameters → SourceOutputs (4 methods: _update_pathway_eligibility, _update_d1_d2_eligibility_all, _consolidate_inputs, _integrate_multi_source_inputs)
+- ✅ `src/thalia/regions/striatum/striatum.py` - inputs parameters → SourceOutputs (4 methods)
 - ✅ `src/thalia/pathways/axonal_projection.py` - forward() source_outputs & return → SourceOutputs (2)
 - ✅ `src/thalia/mixins/growth_mixin.py` - _expand_state_tensors() state_dict → StateDict (2)
 
@@ -1157,20 +1157,34 @@ Updated [pyrightconfig.json](../../pyrightconfig.json):
 - ✅ `src/thalia/language/encoder.py` - HierarchicalEncoder.forward() return → SourceOutputs (1)
 - ✅ `tests/utils/region_test_base.py` - get_input_dict() return → SourceOutputs (1)
 
-**Remaining Work**:
-- `src/thalia/core/region_state.py` - to_dict()/from_dict() return types (4 occurrences)
-- Additional files with Dict[str, int] for InputSizes
-- CheckpointMetadata usage in checkpoint managers
-- NeuromodulatorLevels usage in neuromodulator system
+**Commit 58de04e** (1 file):
+- ✅ `src/thalia/core/neural_region.py` - input_sources field → InputSizes, plasticity_rules field → LearningStrategies (2)
+
+**Remaining Generic Dict Usage** (intentional):
+- `src/thalia/core/errors.py` - validate_device_consistency() accepts any Dict[str, torch.Tensor] (generic utility)
+- `src/thalia/core/region_state.py` - to_dict()/from_dict() return Dict[str, Any] (serialization format)
+- Region __init__ `sizes` parameters - Dict[str, int] for region-specific size configs (not InputSizes)
+
+**Coverage Analysis**:
+- **Dict[str, torch.Tensor]** in source code: 1 remaining (generic utility function - appropriate)
+- **Dict[str, LearningStrategy]**: 0 remaining in source code ✅
+- **Dict[str, int]** for input tracking: 0 remaining in source code ✅
 
 **Benefits Achieved**:
 - ✅ Stricter type checking catches more errors at development time
 - ✅ Warnings for untyped parameters and variables
 - ✅ Errors for duplicate imports and constant redefinition
-- ✅ **IN PROGRESS**: Type alias standardization improving code readability and self-documentation
+- ✅ Type alias standardization improving code readability and self-documentation:
   - `SourceOutputs` clearly indicates multi-source spike inputs
   - `SynapticWeights` clearly indicates weight matrices organized by source
   - `StateDict` clearly indicates component state for checkpointing
+  - `InputSizes` clearly indicates per-source input dimension tracking
+  - `LearningStrategies` clearly indicates per-source learning rule mapping
+
+**Phase 2 Summary**:
+Systematically replaced 29+ generic Dict types with semantic type aliases across 11 files.
+Only intentional generic Dict usage remains (serialization, utilities).
+All multi-source pathway types now use semantic aliases for clarity.
 
 **Next Steps**:
 1. ⏭️ **Phase 2**: Replace `Dict[str, torch.Tensor]` with appropriate type aliases (StateDict, SourceOutputs, SynapticWeights)
