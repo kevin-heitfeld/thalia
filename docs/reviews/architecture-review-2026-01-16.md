@@ -498,7 +498,7 @@ if TYPE_CHECKING:
 1. Created `src/thalia/core/learning_rules.py`:
    - Moved `LearningRule` enum (11 learning rule types)
    - Added comprehensive docstrings explaining biological basis
-   
+
 2. Created `src/thalia/core/component_state.py`:
    - Moved `NeuralComponentState` dataclass
    - Documents dynamic state for all neural components
@@ -779,7 +779,50 @@ class LayeredCortex(NeuralRegion):
 
 ---
 
-### 2.4 Standardize Config Inheritance
+### 2.4 Standardize Config Inheritance ✅ **COMPLETED 2026-01-16**
+
+**Status**: ✅ **COMPLETE** - Config inheritance order standardized across all regions.
+
+**Implementation Summary**:
+
+**Standard Pattern Applied**:
+```python
+# ALWAYS: NeuralComponentConfig first, then learning config
+class RegionConfig(NeuralComponentConfig, LearningConfig):
+    """Standard pattern: structural config, then behavioral config."""
+    pass
+
+# Rationale:
+# - NeuralComponentConfig has structural params (n_neurons, device)
+# - LearningConfig has behavioral params (learning_rate, tau)
+# - Structural should take precedence in MRO
+```
+
+**Changes Made**:
+1. Fixed `CerebellumConfig` inheritance order:
+   - **Before**: `class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig)`
+   - **After**: `class CerebellumConfig(NeuralComponentConfig, ErrorCorrectiveLearningConfig)`
+
+2. Added "Config Inheritance Pattern Standard" section to [docs/patterns/configuration.md](docs/patterns/configuration.md):
+   - Documents the standard pattern with rationale
+   - Provides ✅ correct and ❌ incorrect examples
+   - Explains MRO precedence reasoning
+
+**Verification**:
+All config classes now follow consistent inheritance pattern:
+- ✅ `StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig)`
+- ✅ `HippocampusConfig(NeuralComponentConfig, STDPLearningConfig)`
+- ✅ `MultimodalIntegrationConfig(NeuralComponentConfig, HebbianLearningConfig)`
+- ✅ `CerebellumConfig(NeuralComponentConfig, ErrorCorrectiveLearningConfig)` ← FIXED
+- ✅ `LayeredCortexConfig(NeuralComponentConfig)` - Single inheritance (no learning config)
+- ✅ `PrefrontalConfig(NeuralComponentConfig)` - Single inheritance
+- ✅ `ThalamicRelayConfig(NeuralComponentConfig)` - Single inheritance
+
+**Breaking Changes**: **NONE** (Python MRO handles this gracefully, no API changes)
+
+---
+
+**ORIGINAL PROPOSAL** (for reference):
 
 **Issue**: Config classes use inconsistent inheritance patterns.
 
@@ -800,24 +843,9 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
 
 **Observation**: Python MRO (Method Resolution Order) can cause subtle bugs when inheritance order varies.
 
-**Proposed Standard**:
-```python
-# ALWAYS: NeuralComponentConfig first, then learning config
-class RegionConfig(NeuralComponentConfig, LearningConfig):
-    """Standard pattern: structural config, then behavioral config."""
-    pass
-
-# Rationale:
-# - NeuralComponentConfig has structural params (n_neurons, device)
-# - LearningConfig has behavioral params (learning_rate, tau)
-# - Structural should take precedence in MRO
-```
-
-**Files to Update**:
-1. `src/thalia/regions/cerebellum_region.py` - Swap inheritance order
-2. Document pattern in `docs/patterns/configuration.md`
-
-**Breaking Changes**: **LOW** (MRO fix, may affect edge cases)
+**Files Updated**:
+1. `src/thalia/regions/cerebellum/cerebellum.py` - Swapped inheritance order
+2. `docs/patterns/configuration.md` - Documented standard pattern
 
 ---
 

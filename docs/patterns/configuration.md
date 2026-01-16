@@ -23,6 +23,50 @@ This guide focuses on **patterns** for organizing and validating configuration.
 
 ## Configuration Organization
 
+### Config Inheritance Pattern Standard
+
+**Rule**: When using multiple inheritance with learning configs, ALWAYS use this order:
+
+```python
+class RegionConfig(NeuralComponentConfig, LearningConfig):
+    """Standard pattern: structural config first, then behavioral config."""
+    pass
+```
+
+**Rationale**:
+- `NeuralComponentConfig` contains structural parameters (n_neurons, device, etc.)
+- Learning configs contain behavioral parameters (learning_rate, tau, etc.)
+- **Structural should take precedence in Python's Method Resolution Order (MRO)**
+- Consistent order prevents subtle MRO bugs
+
+**Examples**:
+
+✅ **Correct** (NeuralComponentConfig first):
+```python
+class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
+    pass
+
+class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
+    pass
+
+class CerebellumConfig(NeuralComponentConfig, ErrorCorrectiveLearningConfig):
+    pass
+```
+
+❌ **Incorrect** (reversed order):
+```python
+class BadConfig(STDPLearningConfig, NeuralComponentConfig):  # WRONG ORDER
+    pass
+```
+
+**Single Inheritance** (no learning config): Fine to use directly
+```python
+class LayeredCortexConfig(NeuralComponentConfig):  # No learning config mixin
+    pass
+```
+
+---
+
 ### Extract to `region/config.py` when:
 
 ✅ **Config > 50 lines**

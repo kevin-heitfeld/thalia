@@ -101,7 +101,7 @@ from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
 
 @dataclass
-class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
+class CerebellumConfig(NeuralComponentConfig, ErrorCorrectiveLearningConfig):
     """Configuration specific to cerebellar regions.
 
     The cerebellum implements ERROR-CORRECTIVE learning through:
@@ -114,7 +114,7 @@ class CerebellumConfig(ErrorCorrectiveLearningConfig, NeuralComponentConfig):
     - Can learn arbitrary input-output mappings quickly
     - Uses eligibility traces for temporal credit assignment
 
-    Inherits from ErrorCorrectiveLearningConfig:
+    Inherits from NeuralComponentConfig (structural) then ErrorCorrectiveLearningConfig (behavioral):
     - learning_rate_ltp: LTP rate (default 0.01)
     - learning_rate_ltd: LTD rate (default 0.01)
     - error_threshold: Minimum error (default 0.01)
