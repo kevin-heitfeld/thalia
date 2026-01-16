@@ -1,8 +1,37 @@
 """
 Striatum Homeostasis Component
 
+**Scope**: Region-specific integration of homeostatic mechanisms for striatum
+**Focus**: Coordinates D1/D2 pathway stability using synaptic homeostasis
+
 Manages homeostatic regulation for D1/D2 opponent pathways.
 Standardized component following the region_components pattern.
+
+Related Homeostasis Modules:
+=============================
+This component INTEGRATES multiple global homeostasis mechanisms:
+
+1. **This component** (striatum/homeostasis_component.py):
+   - Striatum-specific coordination of homeostasis
+   - D1/D2 opponent pathway balance
+   - Uses synaptic_homeostasis.py for weight normalization
+
+2. **Global mechanisms available** (not all used here):
+   - **synaptic_homeostasis.py**: Weight normalization (USED by striatum)
+   - **intrinsic_plasticity.py**: Threshold adaptation (available)
+   - **metabolic.py**: Energy budgets (available)
+   - **neuromodulation/homeostasis.py**: Receptor sensitivity (managed globally)
+
+**Architecture Pattern**:
+Region-specific homeostasis components integrate global mechanisms:
+- Hippocampus might use intrinsic_plasticity + synaptic_homeostasis
+- Striatum uses synaptic_homeostasis (D1/D2 balance)
+- Cortex might use all mechanisms
+
+**When to Modify This Component**:
+- Need striatum-specific homeostatic tuning
+- Want to add metabolic constraints to action selection
+- Require different homeostasis for D1 vs D2 pathways
 """
 
 from __future__ import annotations

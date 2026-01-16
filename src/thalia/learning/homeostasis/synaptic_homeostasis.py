@@ -1,8 +1,26 @@
 """Unified Homeostasis - Constraint-Based Stability for Spiking Neural Networks.
 
+**Scope**: Synaptic weight normalization and scaling
+**Focus**: Mathematical constraints that GUARANTEE stability (not corrections)
+
 This module replaces multiple biological homeostatic mechanisms with a
 simpler, mathematically-guaranteed approach using CONSTRAINTS instead
 of CORRECTIONS.
+
+Related Homeostasis Modules:
+=============================
+This module is ONE of several homeostatic mechanisms in Thalia:
+
+- **This module** (synaptic_homeostasis.py): Synaptic weight constraints
+- **intrinsic_plasticity.py**: Neuron threshold adaptation (firing rate homeostasis)
+- **metabolic.py**: Energy-based constraints and sparsity pressure
+- **neuromodulation/homeostasis.py**: Global neuromodulator baseline regulation
+- **regions/*/homeostasis_component.py**: Region-specific integration
+
+**When to Use This Module**:
+- Need to prevent weight explosion/collapse
+- Want competitive normalization (zero-sum learning)
+- Require guaranteed stability (not heuristic corrections)
 
 **Philosophy**:
 ===============

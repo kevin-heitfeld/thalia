@@ -250,13 +250,16 @@ from thalia.typing import SourceOutputs  # Our aliases
 
 ---
 
-### 1.5 Consolidate Homeostasis Components
+### 1.5 Consolidate Homeostasis Components ✅ **COMPLETE**
+
+**Status**: ✅ Implemented on January 16, 2026  
+**Implementation**: Documentation-only (cross-references added to 6 modules)
 
 **Current State**: Homeostasis logic appears in multiple places with overlapping responsibilities:
 
 ```
 neuromodulation/homeostasis.py              # Neuromodulator homeostasis
-learning/homeostasis/homeostatic_regulation.py  # General homeostasis
+learning/homeostasis/homeostatic_regulation.py  # General homeostasis (DUPLICATE)
 learning/homeostasis/synaptic_homeostasis.py    # Synaptic scaling
 learning/homeostasis/intrinsic_plasticity.py    # Neuron excitability
 learning/homeostasis/metabolic.py               # Metabolic constraints
@@ -265,32 +268,55 @@ regions/striatum/homeostasis_component.py       # Striatum-specific
 
 **Issue**: Unclear boundary between "homeostasis as neuromodulation" vs "homeostasis as learning" vs "region-specific homeostasis."
 
-**Proposed Change**: Clarify module responsibilities:
+**Implemented Changes**: Added comprehensive cross-reference documentation to clarify module responsibilities:
 
-1. **Keep separate but document clearly**:
-   - `neuromodulation/homeostasis.py`: Global neuromodulator level control (dopamine, ACh, NE baselines)
-   - `learning/homeostasis/`: Synaptic and neural plasticity homeostasis
-   - `regions/*/homeostasis_component.py`: Region-specific integration
+1. **neuromodulation/homeostasis.py**:
+   - **Scope**: Global neuromodulator baseline control (DA, ACh, NE)
+   - **Focus**: Receptor sensitivity adaptation (downregulation/upregulation)
+   - Added section: "Related Homeostasis Modules" with full cross-reference
+   - Added section: "When to Use This Module" vs other modules
+   
+2. **learning/homeostasis/homeostatic_regulation.py**:
+   - Marked as DUPLICATE of neuromodulation/homeostasis.py (legacy)
+   - Added TODO note for future consolidation
+   - Added quick reference to other homeostasis modules
+   
+3. **learning/homeostasis/synaptic_homeostasis.py**:
+   - **Scope**: Synaptic weight normalization and scaling
+   - **Focus**: Mathematical constraints (GUARANTEE stability)
+   - Added cross-references to other homeostasis types
+   
+4. **learning/homeostasis/intrinsic_plasticity.py**:
+   - **Scope**: Neuron excitability adaptation (threshold modulation)
+   - **Focus**: Activity-dependent firing rate homeostasis
+   - Added cross-references and "When to Use" guidance
+   
+5. **learning/homeostasis/metabolic.py**:
+   - **Scope**: Energy-based activity regulation (ATP costs)
+   - **Focus**: Soft constraints for efficient, sparse representations
+   - Added cross-references and use case guidance
+   
+6. **regions/striatum/homeostasis_component.py**:
+   - **Scope**: Region-specific integration of homeostasis mechanisms
+   - **Focus**: Coordinates D1/D2 pathway stability
+   - Added architecture pattern documentation
+   - Clarifies which global mechanisms are used vs available
 
-2. **Add cross-reference comments** in each file:
-   ```python
-   # neuromodulation/homeostasis.py
-   """
-   Neuromodulator Homeostasis - Global baseline control.
+**Rationale**: Multiple types of homeostasis exist biologically (global neuromodulator tone, synaptic scaling, intrinsic excitability, metabolic). Current structure is correct but needs better documentation.
 
-   Related modules:
-   - learning/homeostasis/: Synaptic scaling, intrinsic plasticity
-   - regions/*/homeostasis_component.py: Region-specific integration
-   """
-   ```
+**Results**:
+- ✅ 6 modules documented with clear scope and cross-references
+- ✅ Identified homeostatic_regulation.py as duplicate (TODO for future consolidation)
+- ✅ Clear guidance on when to use each module
+- ✅ Architecture pattern documented for region-specific integration
+- ✅ No code changes (documentation only)
+- ℹ️ Breaking change: NONE
 
-**Rationale**: Multiple types of homeostasis exist biologically (global neuromodulator tone, synaptic scaling, intrinsic excitability). Current structure is correct but needs better documentation.
-
-**Impact**:
-- Files affected: 6 homeostasis modules (documentation only)
-- Breaking change: **NONE**
-- Lines added: ~30 lines of documentation/comments
-- Effort: 1 hour
+**Benefits**:
+- Developers can quickly find the right homeostasis module for their needs
+- Clear separation of concerns (neuromodulator vs synaptic vs neuron vs metabolic)
+- Architecture pattern established for future regions
+- Identified duplicate code for future cleanup
 
 ---
 

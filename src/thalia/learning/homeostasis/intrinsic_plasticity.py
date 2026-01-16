@@ -1,8 +1,26 @@
 """Intrinsic Plasticity - Activity-Dependent Threshold Adaptation for Homeostasis.
 
+**Scope**: Neuron excitability adaptation (firing rate homeostasis)
+**Focus**: Threshold modulation to maintain stable firing rates
+
 Intrinsic plasticity adjusts neuron EXCITABILITY based on activity history.
 Unlike synaptic plasticity (which modifies connections between neurons),
-intrinsic plasticity modifies the neuron's INTERNAL PROPERTIES:
+intrinsic plasticity modifies the neuron's INTERNAL PROPERTIES.
+
+Related Homeostasis Modules:
+=============================
+This module is ONE of several homeostatic mechanisms in Thalia:
+
+- **This module** (intrinsic_plasticity.py): Neuron threshold/excitability adaptation
+- **synaptic_homeostasis.py**: Synaptic weight normalization and scaling
+- **metabolic.py**: Energy-based constraints and sparsity pressure
+- **neuromodulation/homeostasis.py**: Global neuromodulator baseline regulation
+- **regions/*/homeostasis_component.py**: Region-specific integration
+
+**When to Use This Module**:
+- Need to maintain stable firing rates across neuron population
+- Want activity-dependent threshold adaptation
+- Require non-synaptic memory (persistent excitability changes)
 
 **What It Does**:
 =================

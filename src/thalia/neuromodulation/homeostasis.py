@@ -1,8 +1,54 @@
 """
 Homeostatic Regulation for Neuromodulator Systems.
 
+**Scope**: Global neuromodulator baseline control (dopamine, acetylcholine, norepinephrine)
+**Focus**: Receptor sensitivity adaptation to maintain dynamic range
+
 Provides common utilities for receptor sensitivity adaptation and system
 coordination to prevent saturation and maintain biological plausibility.
+
+Related Homeostasis Modules:
+=============================
+This module is ONE of several homeostatic mechanisms in Thalia:
+
+1. **neuromodulation/homeostasis.py** (THIS MODULE):
+   - Global neuromodulator baseline regulation
+   - Receptor sensitivity adaptation (downregulation/upregulation)
+   - System coordination (DA-ACh, NE-ACh interactions)
+
+2. **learning/homeostasis/homeostatic_regulation.py**:
+   - DUPLICATE of this module (legacy, will be consolidated)
+   - Same receptor sensitivity logic
+
+3. **learning/homeostasis/synaptic_homeostasis.py**:
+   - Synaptic weight normalization and scaling
+   - Constraint-based weight budgets (sum-to-constant)
+   - Per-neuron competitive normalization
+
+4. **learning/homeostasis/intrinsic_plasticity.py**:
+   - Neuron excitability adaptation (threshold modulation)
+   - Activity-dependent firing rate homeostasis
+   - Non-synaptic memory via threshold changes
+
+5. **learning/homeostasis/metabolic.py**:
+   - Energy-based constraints (ATP costs)
+   - Sparsity pressure through metabolic penalties
+   - Global/per-region energy budgets
+
+6. **regions/*/homeostasis_component.py**:
+   - Region-specific integration of above mechanisms
+   - Coordinates multiple homeostasis types for that region
+
+**When to Use This Module**:
+- Need to regulate global neuromodulator baseline levels
+- Prevent receptor saturation from sustained high/low levels
+- Model drug tolerance or sensitization effects
+
+**When to Use Other Modules**:
+- Synaptic weight stability → learning/homeostasis/synaptic_homeostasis.py
+- Firing rate stability → learning/homeostasis/intrinsic_plasticity.py
+- Energy constraints → learning/homeostasis/metabolic.py
+- Region integration → regions/*/homeostasis_component.py
 
 Biological Background:
 ======================

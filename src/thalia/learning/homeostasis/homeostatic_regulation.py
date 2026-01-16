@@ -1,8 +1,25 @@
 """
 Homeostatic Regulation for Neuromodulator Systems.
 
+**NOTE**: This module is a DUPLICATE of neuromodulation/homeostasis.py (legacy).
+**TODO**: Consolidate with neuromodulation/homeostasis.py in future refactoring.
+
+**Scope**: Global neuromodulator baseline control (dopamine, acetylcholine, norepinephrine)
+**Focus**: Receptor sensitivity adaptation to maintain dynamic range
+
 Provides common utilities for receptor sensitivity adaptation and system
 coordination to prevent saturation and maintain biological plausibility.
+
+Related Homeostasis Modules:
+=============================
+See neuromodulation/homeostasis.py for full cross-reference documentation.
+
+Quick Reference:
+- **Neuromodulator baselines** → neuromodulation/homeostasis.py (or this file)
+- **Synaptic weights** → learning/homeostasis/synaptic_homeostasis.py
+- **Firing rates** → learning/homeostasis/intrinsic_plasticity.py
+- **Energy budgets** → learning/homeostasis/metabolic.py
+- **Region integration** → regions/*/homeostasis_component.py
 
 Biological Background:
 ======================
