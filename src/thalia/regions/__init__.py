@@ -92,7 +92,7 @@ from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig, Thalamic
 from thalia.regions.stimulus_gating import StimulusGating
 
 __all__ = [
-    # Base classes
+    # Base classes (from core modules)
     "LearningRule",
     "NeuralComponentConfig",
     "NeuralComponentState",
