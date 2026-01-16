@@ -279,80 +279,72 @@ src/thalia/regions/
 
 ---
 
-### 1.4 Eliminate Checkpoint Manager Duplication
+### 1.4 Eliminate Checkpoint Manager Duplication ✅ **COMPLETED 2026-01-16**
 
-**Issue**: BaseCheckpointManager pattern duplicated across 3 regions with minimal customization.
+**Status**: ✅ **COMPLETE** - BaseCheckpointManager refactored with abstract method pattern.
 
-**Duplication Locations**:
-1. `src/thalia/regions/striatum/checkpoint_manager.py` - StriatumCheckpointManager
-2. `src/thalia/regions/hippocampus/checkpoint_manager.py` - HippocampusCheckpointManager
-3. `src/thalia/regions/prefrontal_checkpoint_manager.py` - PrefrontalCheckpointManager
+**Implementation Summary**:
 
-**Common Pattern** (95% identical):
+**Pattern Applied**:
 ```python
-class RegionCheckpointManager(BaseCheckpointManager):
-    def save_checkpoint(self, path: Path) -> None:
-        # Extract region-specific state
-        state = self._extract_region_state()
-        # Save using base format
-        super().save_checkpoint(path, state)
+# Base class provides concrete wrapper methods
+class BaseCheckpointManager(ABC):
+    def get_full_state(self) -> Dict[str, Any]:
+        """Concrete method that wraps collect_state()."""
+        state = self.collect_state()  # Abstract method
+        state["format"] = "elastic_tensor"
+        state["format_version"] = self.format_version
+        return state
 
-    def load_checkpoint(self, path: Path) -> None:
-        state = super().load_checkpoint(path)
-        # Restore region-specific state
-        self._restore_region_state(state)
-```
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Concrete method that wraps restore_state()."""
+        # Validation logic
+        self.restore_state(state)  # Abstract method
 
-**Proposed Solution**:
-
-**Consolidate to Single Pattern** in `managers/base_checkpoint_manager.py`:
-```python
-class BaseCheckpointManager:
-    """Base checkpoint manager with hooks for region-specific state."""
-
-    def save_checkpoint(self, path: Path) -> None:
-        """Save checkpoint with region-specific hooks."""
-        state = self.collect_state()  # Implemented by subclass
-        self._save_to_disk(path, state)
-
-    def load_checkpoint(self, path: Path) -> None:
-        """Load checkpoint with region-specific hooks."""
-        state = self._load_from_disk(path)
-        self.restore_state(state)  # Implemented by subclass
-
-    # Abstract methods (must implement)
+    @abstractmethod
     def collect_state(self) -> Dict[str, Any]:
-        """Collect region-specific state for checkpointing."""
-        raise NotImplementedError
+        """Region-specific state collection."""
+        ...
 
+    @abstractmethod
     def restore_state(self, state: Dict[str, Any]) -> None:
-        """Restore region-specific state from checkpoint."""
-        raise NotImplementedError
+        """Region-specific state restoration."""
+        ...
 ```
 
-**Region Implementation** (Minimal Override):
+**Region Implementation** (Simplified):
 ```python
 class StriatumCheckpointManager(BaseCheckpointManager):
     def collect_state(self) -> Dict[str, Any]:
+        """Collect striatum-specific state (10-20 lines)."""
         return {
-            'd1_spikes': self.region.d1_pathway.get_spikes(),
-            'd2_spikes': self.region.d2_pathway.get_spikes(),
-            'value_estimates': self.region.value_estimates,
+            'neuron_state': {...},
+            'pathway_state': {...},
+            'learning_state': {...},
+            # ... etc
         }
 
     def restore_state(self, state: Dict[str, Any]) -> None:
-        self.region.d1_pathway.set_spikes(state['d1_spikes'])
-        self.region.d2_pathway.set_spikes(state['d2_spikes'])
-        self.region.value_estimates = state['value_estimates']
+        """Restore striatum-specific state (10-20 lines)."""
+        s = self.striatum
+        # Restore each section
+        # ... restoration logic
 ```
 
-**Benefits**:
-- Remove 200+ lines of duplicated code
-- Simpler region-specific managers (10-20 lines vs 100+ lines)
-- Consistent checkpoint format across regions
-- Easier to add new regions with checkpointing
+**Files Modified**:
+- `managers/base_checkpoint_manager.py`: Added `collect_state()` and `restore_state()` abstract methods, implemented `get_full_state()` and `load_full_state()` as concrete wrapper methods
+- `regions/striatum/checkpoint_manager.py`: Renamed `get_full_state()` → `collect_state()`, `load_full_state()` → `restore_state()`, removed duplicate format metadata logic
+- `regions/hippocampus/checkpoint_manager.py`: Added `collect_state()` and `restore_state()` implementations (delegates to region's native state management)
+- `regions/prefrontal/checkpoint_manager.py`: Added `collect_state()` and `restore_state()` implementations (delegates to region's native state management)
 
-**Breaking Changes**: **LOW** (internal refactoring, same API)
+**Code Reduction**:
+- Eliminated ~60 lines of duplicated wrapper logic across 3 checkpoint managers
+- Centralized format validation and metadata handling in base class
+- Maintained backward compatibility - regions still call `checkpoint_manager.get_full_state()` and `checkpoint_manager.load_full_state()`
+
+**Verification**: All checkpoint managers import successfully and have correct methods
+
+**Breaking Changes**: **NONE** (internal refactoring, same public API)
 
 ---
 

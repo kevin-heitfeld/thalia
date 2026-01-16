@@ -76,8 +76,8 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         super().__init__(format_version="2.0.0")
         self.striatum = striatum
 
-    def get_full_state(self) -> Dict[str, Any]:
-        """Get complete striatum state for checkpointing.
+    def collect_state(self) -> Dict[str, Any]:
+        """Collect complete striatum state for checkpointing.
 
         Returns:
             Dict containing all state needed to restore striatum
@@ -178,8 +178,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         }
 
         return {
-            "format": "elastic_tensor",  # Format identifier for hybrid checkpoints
-            "format_version": "1.0.0",  # Checkpoint format version
             "neuron_state": neuron_state,
             "pathway_state": pathway_state,
             "learning_state": learning_state,
@@ -190,7 +188,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             "delay_state": delay_state,
         }
 
-    def load_full_state(self, state: Dict[str, Any]) -> None:
+    def restore_state(self, state: Dict[str, Any]) -> None:
         """Restore complete striatum state from checkpoint.
 
         Supports elastic tensor format (Phase 1):
@@ -199,7 +197,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         - Validates capacity metadata
 
         Args:
-            state: Dict from get_full_state()
+            state: Dict from collect_state()
         """
         s = self.striatum
 

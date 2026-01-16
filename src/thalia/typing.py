@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 # Component Organization
 # ============================================================================
 
-ComponentGraph = Dict[str, NeuralRegion]
+ComponentGraph = Dict[str, "NeuralRegion"]
 """Maps component names to component instances.
 
 Example:
@@ -38,7 +38,7 @@ Example:
     }
 """
 
-ConnectionGraph = Dict[Tuple[str, str], NeuralRegion]
+ConnectionGraph = Dict[Tuple[str, str], "NeuralRegion"]
 """Maps (source, target) pairs to pathway instances.
 
 Example:
@@ -98,7 +98,7 @@ Example:
     }
 """
 
-LearningStrategies = Dict[str, LearningStrategy]
+LearningStrategies = Dict[str, "LearningStrategy"]
 """Maps source names to their learning strategies.
 
 Each source can have its own learning rule (STDP, BCM, Hebbian, etc.)

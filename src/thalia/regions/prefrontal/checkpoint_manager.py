@@ -375,3 +375,54 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
             "spikes": pfc.state.spikes.detach().clone() if pfc.state.spikes is not None else None,
             "active_rule": pfc.state.active_rule.detach().clone() if pfc.state.active_rule is not None else None,
         }
+
+    def collect_state(self) -> Dict[str, Any]:
+        """Collect prefrontal state for checkpointing (elastic tensor format).
+
+        Note: Prefrontal primarily uses neuromorphic format. This elastic tensor
+        method delegates to the region's own state management.
+
+        Returns:
+            Dict with prefrontal state sections
+        """
+        pfc = self.prefrontal
+
+        # Use the region's native state representation
+        state_obj = pfc.get_state()
+        state = state_obj.to_dict()
+
+        # Add all weights
+        state['synaptic_weights'] = {
+            name: weights.detach().clone()
+            for name, weights in pfc.synaptic_weights.items()
+        }
+        if hasattr(pfc, 'rec_weights'):
+            state['rec_weights'] = pfc.rec_weights.detach().clone()
+
+        return state
+
+    def restore_state(self, state: Dict[str, Any]) -> None:
+        """Restore prefrontal state from checkpoint (elastic tensor format).
+
+        Note: Prefrontal primarily uses neuromorphic format. This elastic tensor
+        method delegates to the region's own state management.
+
+        Args:
+            state: Dict from collect_state()
+        """
+        pfc = self.prefrontal
+
+        # Use the region's native state restoration
+        from thalia.regions.prefrontal.prefrontal import PrefrontalState
+        state_obj = PrefrontalState.from_dict(state, device=str(pfc.device))
+        pfc.load_state(state_obj)
+
+        # Restore synaptic weights
+        if 'synaptic_weights' in state:
+            for name, weights in state['synaptic_weights'].items():
+                if name in pfc.synaptic_weights:
+                    pfc.synaptic_weights[name].data = weights.to(pfc.device)
+
+        # Restore recurrent weights
+        if 'rec_weights' in state and hasattr(pfc, 'rec_weights'):
+            pfc.rec_weights.data = state['rec_weights'].to(pfc.device)

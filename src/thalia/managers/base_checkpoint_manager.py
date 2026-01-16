@@ -257,6 +257,35 @@ class BaseCheckpointManager(ABC):
         ...
 
     @abstractmethod
+    def collect_state(self) -> Dict[str, Any]:
+        """Collect region-specific state for checkpointing (elastic tensor format).
+
+        This method should extract all state needed to restore the region,
+        organized into logical sections (neuron_state, pathway_state, learning_state, etc.).
+
+        This is the elastic tensor format counterpart to _get_neurons_data() +
+        _get_learning_state() + _get_neuromodulator_state() + _get_region_state().
+
+        Returns:
+            Dict with region-specific state sections
+        """
+        ...
+
+    @abstractmethod
+    def restore_state(self, state: Dict[str, Any]) -> None:
+        """Restore region-specific state from checkpoint (elastic tensor format).
+
+        This method should restore all state extracted by collect_state(),
+        handling backward compatibility and graceful degradation for missing fields.
+
+        This is the elastic tensor format counterpart to load_neuromorphic_state().
+
+        Args:
+            state: Dict from collect_state()
+        """
+        ...
+
+    @abstractmethod
     def get_neuromorphic_state(self) -> Dict[str, Any]:
         """Get complete region state in neuromorphic (neuron-centric) format.
 
@@ -273,6 +302,56 @@ class BaseCheckpointManager(ABC):
             Complete checkpoint dict in neuromorphic format
         """
         ...
+
+    def get_full_state(self) -> Dict[str, Any]:
+        """Get complete region state for checkpointing (elastic tensor format).
+
+        This is a concrete method that calls collect_state() and wraps it with
+        standardized metadata (format, version).
+
+        Returns:
+            Dict containing all state needed to restore region
+        """
+        state = self.collect_state()
+
+        # Add format metadata
+        state["format"] = "elastic_tensor"
+        state["format_version"] = self.format_version
+
+        return state
+
+    def load_full_state(self, state: Dict[str, Any]) -> None:
+        """Restore complete region state from checkpoint (elastic tensor format).
+
+        This is a concrete method that validates the state and calls restore_state().
+
+        Args:
+            state: Dict from get_full_state()
+        """
+        # Validate format (basic check)
+        if "format" not in state:
+            import warnings
+            warnings.warn(
+                "Checkpoint missing 'format' field. Assuming elastic_tensor format.",
+                UserWarning
+            )
+        elif state["format"] != "elastic_tensor":
+            raise ValueError(
+                f"Expected elastic_tensor format, got {state['format']}. "
+                f"Use load_neuromorphic_state() for neuromorphic format."
+            )
+
+        # Validate version compatibility (optional)
+        is_compatible, error_msg = self.validate_checkpoint_compatibility(state)
+        if not is_compatible:
+            import warnings
+            warnings.warn(
+                f"Checkpoint version compatibility warning: {error_msg}",
+                UserWarning
+            )
+
+        # Delegate to region-specific restore logic
+        self.restore_state(state)
 
     @abstractmethod
     def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:

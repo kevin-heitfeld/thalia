@@ -532,3 +532,48 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
     def _get_neuromodulator_state(self) -> Dict[str, Any]:
         """Extract neuromodulator state (delegate to hippocampus)."""
         return self.hippocampus.get_neuromodulator_state()
+
+    def collect_state(self) -> Dict[str, Any]:
+        """Collect hippocampus state for checkpointing (elastic tensor format).
+
+        Note: Hippocampus primarily uses neuromorphic format. This elastic tensor
+        method delegates to the region's own state management.
+
+        Returns:
+            Dict with hippocampus state sections
+        """
+        h = self.hippocampus
+
+        # Use the region's native state representation
+        state_obj = h.get_state()
+        state = state_obj.to_dict()
+
+        # Add synaptic weights
+        state['synaptic_weights'] = {
+            name: weights.detach().clone()
+            for name, weights in h.synaptic_weights.items()
+        }
+
+        return state
+
+    def restore_state(self, state: Dict[str, Any]) -> None:
+        """Restore hippocampus state from checkpoint (elastic tensor format).
+
+        Note: Hippocampus primarily uses neuromorphic format. This elastic tensor
+        method delegates to the region's own state management.
+
+        Args:
+            state: Dict from collect_state()
+        """
+        h = self.hippocampus
+
+        # Use the region's native state restoration
+        from thalia.regions.hippocampus.config import HippocampusState
+        state_obj = HippocampusState.from_dict(state, device=str(h.device))
+        h.load_state(state_obj)
+
+        # Restore synaptic weights
+        if 'synaptic_weights' in state:
+            for name, weights in state['synaptic_weights'].items():
+                if name in h.synaptic_weights:
+                    h.synaptic_weights[name].data = weights.to(h.device)
