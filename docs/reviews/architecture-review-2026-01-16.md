@@ -1242,15 +1242,58 @@ All multi-source pathway types now use semantic aliases for clarity.
 
 **Conclusion**: Type coverage is sufficient - no new warnings introduced. Stricter checking safely enabled without requiring fixes.
 
-**Phase 5: Consider Strict Mode for Select Modules** ℹ️ **OPTIONAL**
+**Phase 5: Consider Strict Mode for Select Modules** ✅ **COMPLETE 2026-01-16**
 
-**Approach**: Incrementally enable `typeCheckingMode: "strict"` for well-typed modules using `# pyright: strict` comment.
+**Approach**: Enable `# pyright: strict` for well-typed core infrastructure modules.
 
-**Candidate Modules**:
-- `src/thalia/typing.py` (type definitions)
-- `src/thalia/core/diagnostics_schema.py` (TypedDict definitions)
-- `src/thalia/coordination/growth.py` (growth protocol)
-- New modules written with strict type checking from the start
+**Modules with Strict Mode Enabled** (Commit e3829e3):
+
+1. **src/thalia/typing.py** - Type alias definitions
+   - Status: ✅ **0 errors** (already strict-mode compatible)
+   - Purpose: Central type alias repository
+   - Impact: Sets strict typing standard for project
+
+2. **src/thalia/core/diagnostics_schema.py** - TypedDict schemas
+   - Status: ✅ **Fixed 5 errors**
+   - Changes:
+     - Added explicit `list[str]` type annotation for `issues` list
+     - Fixed partially unknown `list.append()` calls (5 locations)
+   - Purpose: Standardized diagnostic schemas
+   - Impact: Better type inference for diagnostic operations
+
+3. **src/thalia/coordination/growth.py** - Growth protocols
+   - Status: ✅ **Fixed 56 errors**
+   - Changes:
+     - `List[tuple]` → `List[tuple[str, Any]]` in `_find_input_pathways()` and `_find_output_pathways()`
+     - Added explicit `list[GrowthEvent]` type for events list
+     - Added explicit `list[tuple[str, Any]]` types for pathway lists
+     - Added null checks: `synapse_count_before = metrics_before.synapse_count or 0`
+     - Changed `field(default_factory=dict)` → `field(default_factory=lambda: {})` (2 locations)
+   - Purpose: Dynamic capacity expansion
+   - Impact: Prevents partially unknown types in growth operations
+
+**Benefits Achieved**:
+- ✅ Catches more type errors during development (not just at runtime)
+- ✅ Forces explicit type annotations for complex expressions
+- ✅ Prevents partially unknown types from propagating through codebase
+- ✅ Establishes strict typing pattern for new modules to follow
+- ✅ Core infrastructure modules now have maximum type safety
+
+**Future Strict Mode Candidates**:
+- New modules should start with `# pyright: strict` from day one
+- Consider adding strict mode to other well-typed modules:
+  - `src/thalia/constants/*.py` (constant definitions)
+  - `src/thalia/exceptions.py` (exception hierarchy)
+  - `src/thalia/components/synapses/weight_init.py` (initialization utilities)
+
+**Task 3.3 Summary**: ✅ **COMPLETE**
+- Phase 1: Enable moderate type checking ✅
+- Phase 2: Standardize type alias usage ✅
+- Phase 3: Add missing parameter types ✅
+- Phase 4: Enable stricter argument type checking ✅
+- Phase 5: Enable strict mode for select modules ✅
+
+**Impact**: Comprehensive type safety improvements across codebase with zero regressions.
 - Most parameters are already well-typed or successfully inferred by Pyright
 - Remaining unknown type warnings are for truly generic parameters (**kwargs) or Protocol methods
 - No actionable missing parameter types found in core public APIs
