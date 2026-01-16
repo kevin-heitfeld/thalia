@@ -11,9 +11,10 @@ Date: December 2025
 from __future__ import annotations
 
 from typing import Optional
+
 import torch
 
-from thalia.utils.time_constants import MS_PER_SECOND
+from thalia.constants.time import MS_PER_SECOND
 
 
 class DiagnosticCollectorMixin:

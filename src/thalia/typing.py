@@ -385,14 +385,6 @@ class CerebellumDiagnostics(BaseDiagnostics):
     error_corrective_magnitude: float
 
 # ============================================================================
-# Configuration (dataclasses, not aliases)
-# ============================================================================
-
-# Note: ComponentSpec and ConnectionSpec are actual dataclasses,
-# not type aliases. They are defined in thalia.core.brain_builder
-# and thalia.config respectively.
-
-# ============================================================================
 # Neuromodulation
 # ============================================================================
 

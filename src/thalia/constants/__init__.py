@@ -24,9 +24,11 @@ Categories:
 - neuron: Membrane time constants, thresholds, refractory periods
 - oscillator: Theta, gamma, alpha frequencies and coupling
 - regions: Thalamus and striatum specialized constants
+- sensory: Retinal, cochlear, and somatosensory processing constants
 - task: Task-specific parameters
+- time: Time unit conversions (ms/s, TAU)
 - training: Batch sizes, learning schedules, augmentation rates
-- visualization: Plot alphas, thresholds, colors
+- visualization: Plot alphas, thresholds, colors, network graph styling
 
 Author: Thalia Project
 Date: January 16, 2026 (Architecture Review Tier 1.2)
@@ -43,7 +45,9 @@ from thalia.constants.neuromodulation import *
 from thalia.constants.neuron import *
 from thalia.constants.oscillator import *
 from thalia.constants.regions import *
+from thalia.constants.sensory import *
 from thalia.constants.task import *
+from thalia.constants.time import *
 from thalia.constants.training import *
 from thalia.constants.visualization import *
 
@@ -57,7 +61,9 @@ __all__ = [
     "neuron",
     "oscillator",
     "regions",
+    "sensory",
     "task",
+    "time",
     "training",
     "visualization",
 ]

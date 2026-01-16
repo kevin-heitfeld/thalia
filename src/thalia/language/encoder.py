@@ -43,8 +43,8 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any, List
 import math
+from typing import Optional, Tuple, Dict, Any, List
 
 import torch
 import torch.nn as nn
@@ -54,7 +54,7 @@ from thalia.components.coding.spike_coding import (
     SpikeCodingConfig,
     SpikeEncoder as BaseSpikeEncoder,
 )
-from thalia.utils.time_constants import TAU, SECONDS_PER_MS
+from thalia.constants.time import TAU, SECONDS_PER_MS
 
 
 @dataclass

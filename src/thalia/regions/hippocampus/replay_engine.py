@@ -27,13 +27,13 @@ Date: December 23, 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Callable, TYPE_CHECKING
 from enum import Enum
+from typing import List, Dict, Any, Optional, Callable, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 
-from thalia.utils.time_constants import SECONDS_PER_MS, TAU
+from thalia.constants.time import SECONDS_PER_MS, TAU
 
 if TYPE_CHECKING:
     from thalia.regions.hippocampus.config import Episode

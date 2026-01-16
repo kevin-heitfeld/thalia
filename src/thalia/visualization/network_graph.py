@@ -39,7 +39,7 @@ try:
 except ImportError:
     NETWORKX_AVAILABLE = False
 
-from thalia.visualization.constants import (
+from thalia.constants.visualization import (
     ARC_RADIUS,
     DEFAULT_NODE_SIZE_SCALE,
     EDGE_ALPHA_DEFAULT,

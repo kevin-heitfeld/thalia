@@ -3,6 +3,11 @@ Sensory pathway constants for biological sensory processing.
 
 This module defines constants for retinal, cochlear, and somatosensory processing
 that reflect biological sensor dynamics and adaptation.
+
+Consolidated from pathways/sensory_constants.py.
+
+Author: Thalia Project
+Date: January 16, 2026 (Architecture Review Tier 1.2)
 """
 
 from __future__ import annotations

@@ -34,7 +34,7 @@ from typing import Any, Dict, Optional
 
 import torch
 
-from thalia.utils.time_constants import MS_PER_SECOND
+from thalia.constants.time import MS_PER_SECOND
 
 
 class DiagnosticsMixin:

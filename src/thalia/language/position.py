@@ -42,13 +42,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Any
 import math
+from typing import Dict, Any
 
 import torch
 import torch.nn as nn
 
-from thalia.utils.time_constants import MS_PER_SECOND
+from thalia.constants.time import MS_PER_SECOND
 
 # Oscillators managed centrally by Brain (no local imports needed)
 
