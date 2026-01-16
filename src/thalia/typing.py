@@ -1,3 +1,4 @@
+# pyright: strict
 """
 Type Aliases for Thalia
 

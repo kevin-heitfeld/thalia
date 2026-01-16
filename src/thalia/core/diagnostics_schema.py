@@ -1,3 +1,4 @@
+# pyright: strict
 """
 Diagnostics Schema - Standardized Structure for Region Diagnostics.
 
@@ -247,7 +248,7 @@ def compute_health_metrics(
     Returns:
         HealthMetrics dict with health indicators
     """
-    issues = []
+    issues: list[str] = []
     has_nan = False
     has_inf = False
 

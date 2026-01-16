@@ -1,3 +1,4 @@
+# pyright: strict
 """
 Growth Mechanisms - Dynamic Capacity Expansion for Neural Circuits.
 
@@ -57,8 +58,8 @@ class GrowthEvent:
     n_neurons_added: int = 0
     n_synapses_added: int = 0
     reason: str = ""
-    metrics_before: Dict[str, float] = field(default_factory=dict)
-    metrics_after: Dict[str, float] = field(default_factory=dict)
+    metrics_before: Dict[str, float] = field(default_factory=lambda: {})
+    metrics_after: Dict[str, float] = field(default_factory=lambda: {})
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to JSON-serializable dict."""
@@ -339,13 +340,15 @@ class GrowthManager:
         metrics_after = self.get_capacity_metrics(component)
 
         # Create growth event
+        synapse_count_before = metrics_before.synapse_count or 0
+        synapse_count_after = metrics_after.synapse_count or 0
         event = GrowthEvent(
             timestamp=datetime.now(timezone.utc).isoformat(),
             component_name=self.region_name,
             component_type=component_type,
             event_type='grow_output',
             n_neurons_added=n_new,
-            n_synapses_added=metrics_after.synapse_count - metrics_before.synapse_count,
+            n_synapses_added=synapse_count_after - synapse_count_before,
             reason=reason or metrics_before.growth_reason,
             metrics_before=metrics_before.to_dict(),
             metrics_after=metrics_after.to_dict(),
@@ -514,6 +517,7 @@ class GrowthCoordinator:
         # 3. Grow input pathways (pre-synaptic → new post-synaptic)
         # These pathways send spikes TO the growing region
         # Need to add neurons to target side to match region growth
+        events: list[GrowthEvent] = []
         for pathway_name, pathway in input_pathways:
             if hasattr(pathway, 'grow_output'):
                 # Skip routing pathways (AxonalProjection) - they have no learnable weights
@@ -629,7 +633,7 @@ class GrowthCoordinator:
 
         return events
 
-    def _find_input_pathways(self, region_name: str) -> List[tuple]:
+    def _find_input_pathways(self, region_name: str) -> List[tuple[str, Any]]:
         """Find all pathways that send spikes TO this region.
 
         Args:
@@ -638,7 +642,7 @@ class GrowthCoordinator:
         Returns:
             List of (pathway_name, pathway) tuples
         """
-        input_pathways = []
+        input_pathways: list[tuple[str, Any]] = []
         for name, pathway in self.pathway_manager.get_all_pathways().items():
             # Parse pathway name: "source_to_target" or special names
             if '_to_' in name:
@@ -649,7 +653,7 @@ class GrowthCoordinator:
                         input_pathways.append((name, pathway))
         return input_pathways
 
-    def _find_output_pathways(self, region_name: str) -> List[tuple]:
+    def _find_output_pathways(self, region_name: str) -> List[tuple[str, Any]]:
         """Find all pathways that receive spikes FROM this region.
 
         Args:
@@ -658,7 +662,7 @@ class GrowthCoordinator:
         Returns:
             List of (pathway_name, pathway) tuples
         """
-        output_pathways = []
+        output_pathways: list[tuple[str, Any]] = []
         for name, pathway in self.pathway_manager.get_all_pathways().items():
             # Parse pathway name: "source_to_target"
             if '_to_' in name:
