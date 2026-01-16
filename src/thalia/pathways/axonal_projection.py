@@ -345,7 +345,7 @@ class AxonalProjection(RoutingComponent):
 
         Note: Axons grow via grow_source() instead.
         """
-        pass
+        ...
 
     def grow_output(
         self,
@@ -406,7 +406,7 @@ class AxonalProjection(RoutingComponent):
         coupled_amplitudes: Dict[str, float] | None = None,
     ) -> None:
         """Routing components don't use oscillators."""
-        pass
+        ...
 
     # =================================================================
     # CHECKPOINTING (PathwayState Protocol)

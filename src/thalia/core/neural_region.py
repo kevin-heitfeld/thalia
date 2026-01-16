@@ -37,7 +37,6 @@ from thalia.typing import SourceOutputs, DiagnosticsDict, StateDict, InputSizes,
 # Custom warning for performance issues
 class PerformanceWarning(UserWarning):
     """Warning for performance-degrading configurations."""
-    pass
 
 # Type hint for learning strategies (duck typing)
 class LearningStrategy(Protocol):
@@ -397,16 +396,25 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
 
         # Basic metrics - subclasses can override for sophisticated analysis
         firing_rate = 0.0
+        active_neurons = 0
         if self.output_spikes is not None:
             firing_rate = self.output_spikes.float().mean().item()
+            active_neurons = int(self.output_spikes.sum().item())
+
+        # Utilization estimate (firing rate as proxy)
+        utilization = firing_rate
+
+        synapse_count = sum(self.input_sources.values()) * self.n_neurons
 
         return CapacityMetrics(
-            firing_rate=firing_rate,
-            weight_saturation=0.0,
-            synapse_usage=0.0,
-            neuron_count=self.n_neurons,
-            synapse_count=sum(self.input_sources.values()) * self.n_neurons,
+            utilization=utilization,
+            total_neurons=self.n_neurons,
+            active_neurons=active_neurons,
             growth_recommended=False,
+            growth_amount=0,
+            firing_rate=firing_rate,
+            synapse_usage=0.0 if synapse_count == 0 else float(active_neurons) / synapse_count,
+            synapse_count=synapse_count,
             growth_reason="",
         )
 
@@ -472,7 +480,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
             theta_slot: Current theta slot for sequence learning
             coupled_amplitudes: Optional coupled oscillator amplitudes
         """
-        pass  # Default: no oscillators, subclasses override if needed
+        # Default: no oscillators, subclasses override if needed
 
     def grow_input(
         self,

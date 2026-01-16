@@ -92,7 +92,6 @@ class RegionTestBase(ABC):
                 config = LayeredCortexConfig(**kwargs)
                 return LayeredCortex(config)
         """
-        pass
 
     @abstractmethod
     def get_default_params(self) -> Dict[str, Any]:
@@ -112,7 +111,6 @@ class RegionTestBase(ABC):
                     "dt_ms": 1.0,
                 }
         """
-        pass
 
     # =========================================================================
     # OPTIONAL OVERRIDES
@@ -214,7 +212,7 @@ class RegionTestBase(ABC):
         field = self._get_input_field_name()
         return params[field]
 
-    def _get_region_input_size(self, region) -> int:
+    def _get_region_input_size(self, region: NeuralRegion) -> int:
         """Get input size from region (new pattern).
 
         Args:
@@ -225,7 +223,7 @@ class RegionTestBase(ABC):
         """
         return getattr(region, 'input_size', None)
 
-    def _get_region_output_size(self, region) -> int:
+    def _get_region_output_size(self, region: NeuralRegion) -> int:
         """Get output size from region (new pattern).
 
         Args:
@@ -236,7 +234,7 @@ class RegionTestBase(ABC):
         """
         return getattr(region, 'n_output', None)
 
-    def _get_config_input_size(self, config) -> int:
+    def _get_config_input_size(self, config: Any) -> int:
         """Get input size from config using semantic field name.
 
         DEPRECATED: Use _get_region_input_size() instead (new size-free config pattern).
@@ -251,7 +249,7 @@ class RegionTestBase(ABC):
         field = self._get_input_field_name()
         return getattr(config, field, None)
 
-    def _get_config_output_size(self, config) -> int:
+    def _get_config_output_size(self, config: Any) -> int:
         """Get output size from config using semantic field name.
 
         DEPRECATED: Use _get_region_output_size() instead (new size-free config pattern).
