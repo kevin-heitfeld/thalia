@@ -252,14 +252,14 @@ from thalia.typing import SourceOutputs  # Our aliases
 
 ### 1.5 Consolidate Homeostasis Components ✅ **COMPLETE**
 
-**Status**: ✅ Implemented on January 16, 2026  
-**Implementation**: Documentation-only (cross-references added to 6 modules)
+**Status**: ✅ Implemented on January 17, 2026  
+**Implementation**: Documentation + code consolidation (removed duplicate)
 
 **Current State**: Homeostasis logic appears in multiple places with overlapping responsibilities:
 
 ```
 neuromodulation/homeostasis.py              # Neuromodulator homeostasis
-learning/homeostasis/homeostatic_regulation.py  # General homeostasis (DUPLICATE)
+learning/homeostasis/homeostatic_regulation.py  # DUPLICATE (removed)
 learning/homeostasis/synaptic_homeostasis.py    # Synaptic scaling
 learning/homeostasis/intrinsic_plasticity.py    # Neuron excitability
 learning/homeostasis/metabolic.py               # Metabolic constraints
@@ -268,7 +268,10 @@ regions/striatum/homeostasis_component.py       # Striatum-specific
 
 **Issue**: Unclear boundary between "homeostasis as neuromodulation" vs "homeostasis as learning" vs "region-specific homeostasis."
 
-**Implemented Changes**: Added comprehensive cross-reference documentation to clarify module responsibilities:
+**Implemented Changes**:
+
+**Phase 1: Documentation** (January 16, 2026)
+Added comprehensive cross-reference documentation to clarify module responsibilities:
 
 1. **neuromodulation/homeostasis.py**:
    - **Scope**: Global neuromodulator baseline control (DA, ACh, NE)
@@ -278,45 +281,54 @@ regions/striatum/homeostasis_component.py       # Striatum-specific
    
 2. **learning/homeostasis/homeostatic_regulation.py**:
    - Marked as DUPLICATE of neuromodulation/homeostasis.py (legacy)
-   - Added TODO note for future consolidation
-   - Added quick reference to other homeostasis modules
+   - Added TODO note for consolidation
    
 3. **learning/homeostasis/synaptic_homeostasis.py**:
    - **Scope**: Synaptic weight normalization and scaling
    - **Focus**: Mathematical constraints (GUARANTEE stability)
-   - Added cross-references to other homeostasis types
    
 4. **learning/homeostasis/intrinsic_plasticity.py**:
    - **Scope**: Neuron excitability adaptation (threshold modulation)
    - **Focus**: Activity-dependent firing rate homeostasis
-   - Added cross-references and "When to Use" guidance
    
 5. **learning/homeostasis/metabolic.py**:
    - **Scope**: Energy-based activity regulation (ATP costs)
    - **Focus**: Soft constraints for efficient, sparse representations
-   - Added cross-references and use case guidance
    
 6. **regions/striatum/homeostasis_component.py**:
    - **Scope**: Region-specific integration of homeostasis mechanisms
    - **Focus**: Coordinates D1/D2 pathway stability
-   - Added architecture pattern documentation
-   - Clarifies which global mechanisms are used vs available
 
-**Rationale**: Multiple types of homeostasis exist biologically (global neuromodulator tone, synaptic scaling, intrinsic excitability, metabolic). Current structure is correct but needs better documentation.
+**Phase 2: Code Consolidation** (January 17, 2026)
+Removed duplicate module and unified imports:
+
+1. **Removed**: `learning/homeostasis/homeostatic_regulation.py` (341 lines eliminated)
+2. **Added backward-compatible aliases** to `neuromodulation/homeostasis.py`:
+   ```python
+   HomeostaticConfig = NeuromodulatorHomeostasisConfig
+   HomeostaticRegulator = NeuromodulatorHomeostasis
+   ```
+3. **Updated imports** in `thalia/__init__.py` and `learning/homeostasis/__init__.py`
+4. **Verified**: All imports work correctly, aliases function as expected
+
+**Rationale**: Multiple types of homeostasis exist biologically (global neuromodulator tone, synaptic scaling, intrinsic excitability, metabolic). Current structure is correct but had duplicate code and needed better documentation.
 
 **Results**:
 - ✅ 6 modules documented with clear scope and cross-references
-- ✅ Identified homeostatic_regulation.py as duplicate (TODO for future consolidation)
+- ✅ Duplicate module removed (341 lines eliminated)
+- ✅ Backward-compatible aliases maintain API compatibility
+- ✅ All imports tested and working
 - ✅ Clear guidance on when to use each module
 - ✅ Architecture pattern documented for region-specific integration
-- ✅ No code changes (documentation only)
-- ℹ️ Breaking change: NONE
+- ✅ Breaking change: NONE (backward-compatible aliases)
 
 **Benefits**:
-- Developers can quickly find the right homeostasis module for their needs
+- Single source of truth for neuromodulator homeostasis
+- Reduced code duplication (~340 lines)
+- Developers can quickly find the right homeostasis module
 - Clear separation of concerns (neuromodulator vs synaptic vs neuron vs metabolic)
 - Architecture pattern established for future regions
-- Identified duplicate code for future cleanup
+- Backward compatibility maintained through aliases
 
 ---
 

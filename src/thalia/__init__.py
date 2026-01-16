@@ -60,12 +60,12 @@ from thalia.typing import (
     BatchData,
 )
 
-# Brain System (DynamicBrain is now the primary API)
+# Brain System
 from thalia.core.dynamic_brain import DynamicBrain
 
 from thalia.core.base.component_config import NeuralComponentConfig
 
-# Brain Regions (most commonly used)
+# Brain Regions
 from thalia.regions import (
     Striatum,
     StriatumConfig,
@@ -81,7 +81,7 @@ from thalia.regions import (
     HippocampusConfig,
 )
 
-# Core Components (frequently needed)
+# Core Components
 from thalia.components.neurons.neuron import ConductanceLIF
 from thalia.components.synapses.weight_init import WeightInitializer, InitStrategy
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
@@ -91,14 +91,20 @@ from thalia.utils.core_utils import clamp_weights
 # Diagnostics
 from thalia.core.diagnostics_keys import DiagnosticKeys
 
-# Oscillators (for working memory, consolidation)
+# Oscillators
 from thalia.coordination.oscillator import (
     SinusoidalOscillator,
     OscillatorManager,
     OSCILLATOR_DEFAULTS,
 )
 
-# Neuromodulator Systems (centralized)
+# Neuromodulator Systems
+from thalia.neuromodulation.homeostasis import (
+    NeuromodulatorHomeostasis,
+    NeuromodulatorHomeostasisConfig,
+    NeuromodulatorCoordination,
+    inverted_u_function,
+)
 from thalia.neuromodulation.systems.vta import (
     VTADopamineSystem,
     VTAConfig,
@@ -111,23 +117,14 @@ from thalia.neuromodulation.systems.nucleus_basalis import (
     NucleusBasalisSystem,
     NucleusBasalisConfig,
 )
-from thalia.learning.homeostasis.homeostatic_regulation import (
-    HomeostaticRegulator,
-    HomeostaticConfig,
-    NeuromodulatorCoordination,
-    inverted_u_function,
-)
 
-# Learning Rules (common)
+# Learning Rules
 from thalia.learning import (
     BCMRule,
     STDPStrategy,
     HebbianStrategy,
     UnifiedHomeostasis,
 )
-
-# Pathways - SpikingPathway removed in v3.0
-# Use AxonalProjection for connections between regions
 
 # Visualization (optional - requires manim)
 # try:
@@ -137,7 +134,7 @@ from thalia.learning import (
 #     MANIM_AVAILABLE = False
 MANIM_AVAILABLE = False
 
-# Namespaces for topic-level imports (advanced users)
+# Namespaces for topic-level imports
 from thalia import regions  # noqa: F401
 from thalia import core  # noqa: F401
 from thalia import learning  # noqa: F401
@@ -205,16 +202,16 @@ __all__ = [
     "OscillatorManager",
     "OSCILLATOR_DEFAULTS",
     # Neuromodulator Systems
+    "NeuromodulatorHomeostasis",
+    "NeuromodulatorHomeostasisConfig",
+    "NeuromodulatorCoordination",
+    "inverted_u_function",
     "VTADopamineSystem",
     "VTAConfig",
     "LocusCoeruleusSystem",
     "LocusCoeruleusConfig",
     "NucleusBasalisSystem",
     "NucleusBasalisConfig",
-    "HomeostaticRegulator",
-    "HomeostaticConfig",
-    "NeuromodulatorCoordination",
-    "inverted_u_function",
     # Visualization
     "MANIM_AVAILABLE",
     # Namespaces

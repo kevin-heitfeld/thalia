@@ -382,3 +382,11 @@ def inverted_u_function(x: float, peak: float = 0.5, width: float = 0.5) -> floa
     """
     deviation = (x - peak) / width
     return math.exp(-0.5 * deviation * deviation)
+
+
+__all__ = [
+    "NeuromodulatorHomeostasisConfig",
+    "NeuromodulatorHomeostasis",
+    "NeuromodulatorCoordination",
+    "inverted_u_function",
+]

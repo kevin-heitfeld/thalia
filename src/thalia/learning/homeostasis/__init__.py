@@ -7,7 +7,6 @@ intrinsic plasticity, and metabolic constraints.
 from __future__ import annotations
 
 
-# Import from synaptic_homeostasis (main file)
 from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
@@ -23,11 +22,6 @@ from thalia.learning.homeostasis.metabolic import (
     MetabolicConstraint,
     RegionalMetabolicBudget,
 )
-from thalia.learning.homeostasis.homeostatic_regulation import (
-    HomeostaticConfig,
-    HomeostaticRegulator,
-    NeuromodulatorCoordination,
-)
 
 __all__ = [
     # Unified Homeostasis (constraint-based)
@@ -42,8 +36,4 @@ __all__ = [
     "MetabolicConfig",
     "MetabolicConstraint",
     "RegionalMetabolicBudget",
-    # Homeostatic Regulation
-    "HomeostaticConfig",
-    "HomeostaticRegulator",
-    "NeuromodulatorCoordination",
 ]
