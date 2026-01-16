@@ -104,20 +104,22 @@ noise = torch.randn_like(new_wm) * WORKING_MEMORY_NOISE_STD
 ```
 src/thalia/constants/
 ├── __init__.py (central re-export point)
-├── learning.py (learning rates, STDP, BCM, eligibility traces, region-specific LRs)
-├── neuron.py (membrane dynamics, synaptic time constants, thresholds, adaptation)
-├── neuromodulation.py (dopamine, acetylcholine, norepinephrine parameters)
-├── oscillator.py (theta-gamma-alpha phase modulation, coupling constants)
-├── homeostasis.py (target firing rates, synaptic scaling, metabolic costs)
-├── visualization.py (UI positioning, alphas, plot thresholds)
-├── task.py (task-specific parameters, spike probabilities)
-├── exploration.py (epsilon-greedy, UCB, softmax, Thompson sampling)
 ├── architecture.py (expansion factors, capacity ratios, metacognition)
+├── exploration.py (epsilon-greedy, UCB, softmax, Thompson sampling)
+├── homeostasis.py (target firing rates, synaptic scaling, metabolic costs)
+├── learning.py (learning rates, STDP, BCM, eligibility traces, region-specific LRs)
+├── neuromodulation.py (dopamine, acetylcholine, norepinephrine parameters)
+├── neuron.py (membrane dynamics, synaptic time constants, thresholds, adaptation)
+├── oscillator.py (theta-gamma-alpha phase modulation, coupling constants)
 ├── regions.py (thalamus, striatum, prefrontal specialized constants)
-└── training.py (performance thresholds, curriculum, calibration, stage progression)
+├── sensory.py (retinal, cochlear, somatosensory processing constants) ← NEW
+├── task.py (task-specific parameters, spike probabilities)
+├── time.py (time unit conversions: MS_PER_SECOND, TAU) ← NEW
+├── training.py (performance thresholds, curriculum, calibration, stage progression)
+└── visualization.py (UI positioning, alphas, plot thresholds, network graph styling) ← EXPANDED
 ```
 
-**Consolidated Files** (13 old files deleted):
+**Consolidated Files** (16 old files deleted):
 1. `regulation/learning_constants.py`
 2. `regulation/homeostasis_constants.py`
 3. `regulation/oscillator_constants.py`
@@ -131,13 +133,22 @@ src/thalia/constants/
 11. `training/curriculum/constants.py`
 12. `tasks/task_constants.py`
 13. `components/neurons/neuron_constants.py`
+14. `pathways/sensory_constants.py` ← FINAL CLEANUP
+15. `visualization/constants.py` ← FINAL CLEANUP
+16. `utils/time_constants.py` ← FINAL CLEANUP
 
-**Files Updated**: 59 import statements updated across:
+**Files Updated**: 70+ import statements updated across:
 - Core regions (cortex, hippocampus, striatum, thalamus, prefrontal, cerebellum)
+- Pathways (axonal projection, sensory pathways)
 - Training systems (curriculum, evaluation, datasets, visualization)
+- Visualization (network graph)
 - Configuration modules
 - Diagnostic systems
 - Learning strategies
+- Language processing (encoder, position)
+- Coordination (oscillator)
+- Mixins (diagnostics, diagnostic collector)
+- Utilities
 - Tests
 
 **Re-exports Removed**: ❌ **No backwards compatibility** (per project requirements)
