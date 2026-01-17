@@ -440,7 +440,7 @@ class ThalamicRelay(NeuralRegion):
         # Store config
         self.config = config
 
-        # Backward compatibility aliases
+        # Standard interface attributes (used throughout thalamus implementation)
         self.n_relay = self.relay_size
         self.n_trn = self.trn_size
 

@@ -762,11 +762,14 @@ class Prefrontal(NeuralRegion):
         - Much slower leak (τ_m ≈ 50ms vs 20ms) for temporal integration
         - Slower synaptic time constants for sustained integration
         - Spike-frequency adaptation for stable working memory
+
+        If heterogeneous WM is enabled, neurons will have varying membrane time constants
+        (tau_mem) to create populations of stable vs flexible neurons.
         """
         cfg = self.pfc_config
         # Custom config for PFC-specific slow dynamics
         neuron_config = ConductanceLIFConfig(
-            g_L=0.02,  # Slower leak (τ_m ≈ 50ms with C_m=1.0)
+            g_L=0.02,  # Default leak (will be overridden if heterogeneous)
             tau_E=10.0,  # Slower excitatory (for integration)
             tau_I=15.0,  # Slower inhibitory
             adapt_increment=cfg.adapt_increment,  # SFA enabled!
@@ -774,6 +777,23 @@ class Prefrontal(NeuralRegion):
         )
         neurons = ConductanceLIF(self.n_neurons, neuron_config)
         neurons.to(self.device)
+
+        # =====================================================================
+        # APPLY HETEROGENEOUS MEMBRANE TIME CONSTANTS (Phase 1B)
+        # =====================================================================
+        if self._tau_mem_heterogeneous is not None:
+            # Convert tau_mem to g_L: tau_mem = C_m / g_L  =>  g_L = C_m / tau_mem
+            # C_m = 1.0 (default), so g_L = 1 / tau_mem_ms
+            C_m = neurons.C_m.item()
+
+            # Compute per-neuron leak conductance from heterogeneous tau_mem
+            # tau_mem in ms, g_L dimensionless (leak per timestep)
+            g_L_heterogeneous = C_m / self._tau_mem_heterogeneous
+
+            # Replace scalar g_L buffer with per-neuron tensor
+            # Remove the old buffer and register new per-neuron buffer
+            delattr(neurons, "g_L")
+            neurons.register_buffer("g_L", g_L_heterogeneous.to(self.device))
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for feedforward connections

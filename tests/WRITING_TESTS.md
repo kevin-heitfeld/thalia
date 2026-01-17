@@ -1,25 +1,309 @@
 # Writing Tests for Thalia
 
-**Date:** December 21, 2025
-**Version:** 1.1 (Updated after Test Quality Audit)
+**Date:** January 17, 2026
+**Version:** 1.2 (Updated after January 2026 Comprehensive Audit)
 
 This guide documents test quality patterns for the Thalia spiking neural network framework. Tests should validate biological plausibility and learning correctness, not implementation details.
 
 **Recent Updates:**
-- Added parameterization best practices (December 21, 2025)
-- Added test consolidation guidelines (December 21, 2025)
-- Clarified hardcoded assertion anti-patterns (December 21, 2025)
-- Added examples of good parameterization from codebase (December 21, 2025)
+- **January 17, 2026:** Comprehensive audit findings - internal state coupling patterns, trivial assertion anti-patterns
+- December 21, 2025: Added parameterization best practices
+- December 21, 2025: Added test consolidation guidelines
+- December 21, 2025: Clarified hardcoded assertion anti-patterns
+- December 21, 2025: Added examples of good parameterization from codebase
+
+**Audit Report:** See `docs/TEST_QUALITY_AUDIT_REPORT.md` for comprehensive analysis and recommendations.
 
 ## Table of Contents
 1. [Core Principles](#core-principles)
-2. [Good vs Bad Test Patterns](#good-vs-bad-test-patterns)
-3. [Parameterization Best Practices](#parameterization-best-practices) ⭐ NEW
-4. [Test Consolidation Guidelines](#test-consolidation-guidelines) ⭐ NEW
-5. [Edge Case Testing](#edge-case-testing)
-6. [Network Integrity Validation](#network-integrity-validation)
-7. [Test Organization](#test-organization)
-8. [Common Pitfalls](#common-pitfalls)
+2. [January 2026 Audit Findings](#january-2026-audit-findings) ⭐ **UPDATED**
+3. [Good vs Bad Test Patterns](#good-vs-bad-test-patterns)
+4. [Parameterization Best Practices](#parameterization-best-practices)
+5. [Test Consolidation Guidelines](#test-consolidation-guidelines)
+6. [Edge Case Testing](#edge-case-testing)
+7. [Network Integrity Validation](#network-integrity-validation)
+8. [Test Organization](#test-organization)
+9. [Common Pitfalls](#common-pitfalls)
+10. [Test Quality Checklist](#test-quality-checklist)
+
+---
+
+## January 2026 Audit Findings
+
+**Full Report:** `docs/TEST_QUALITY_AUDIT_REPORT.md`
+
+**Overall Grade: B+** (Good quality with specific improvement opportunities)
+
+### Key Findings
+
+**Strengths ✅:**
+- Excellent parameterization usage (neuromodulators, delays, learning rates)
+- Comprehensive edge case testing (silent, saturated, extreme values)
+- Strong RegionTestBase framework for consistency
+- Good error handling validation with pytest.raises
+- Minimal test redundancy (already well-consolidated)
+
+**Areas for Improvement ⚠️:**
+1. **Internal State Coupling (P1):** ~50+ instances of `._private_attribute` testing
+2. **Hardcoded Value Assertions (P2):** ~25 instances coupling to exact implementation values
+3. **Trivial "is not None" Assertions (P3):** ~19 instances adding minimal confidence
+
+### Critical Anti-Pattern: Testing Private Attributes
+
+**Priority: P1 (High) - 50+ instances identified**
+
+```python
+# ❌ BRITTLE: Accessing private implementation details
+def test_neurogenesis_tracking():
+    pfc = create_test_prefrontal(n_neurons=50)
+    pfc.set_training_step(1000)
+
+    # BAD: Testing private attribute directly
+    assert pfc._current_training_step == 1000
+    assert pfc._neuron_birth_steps.shape == (50,)
+    assert torch.all(pfc._neuron_birth_steps == 0)
+
+# ❌ BRITTLE: Private trace attributes
+def test_multiscale_traces():
+    hippocampus = create_hippocampus()
+
+    # BAD: Testing private trace storage
+    assert hippocampus._ca3_ca3_fast is not None
+    assert hippocampus._ca3_ca3_slow is not None
+    assert hippocampus._ca3_ca2_fast.shape == (ca2_size, ca3_size)
+```
+
+**Why this is bad:**
+- Tests break when refactoring internal implementation
+- Couples tests to implementation details, not behavior
+- Survives refactoring poorly (changing variable names breaks tests)
+- Doesn't validate actual functionality (behavior untested)
+
+**SOLUTION 1: Use Public State API**
+```python
+# ✅ ROBUST: Access through public get_state() API
+def test_neurogenesis_tracking():
+    pfc = create_test_prefrontal(n_neurons=50)
+    pfc.set_training_step(1000)
+
+    # GOOD: Use public state API
+    state = pfc.get_state()
+    if hasattr(state, "neuron_birth_steps"):
+        assert state.neuron_birth_steps.shape == (50,)
+        assert torch.all(state.neuron_birth_steps == 0)
+
+    # GOOD: Verify training step through public API
+    assert pfc.get_training_step() == 1000  # Or equivalent public method
+
+# ✅ ROBUST: Test behavior of multiscale consolidation
+def test_multiscale_consolidation_behavior():
+    hippocampus = create_hippocampus()
+
+    # Store initial weights
+    weights_before = hippocampus.synaptic_weights["ca3_ca3"].clone()
+
+    # Repeated presentation of same pattern (should consolidate)
+    pattern = torch.ones(hippocampus.input_size)
+    for _ in range(100):
+        hippocampus.forward({"ec": pattern})
+
+    # GOOD: Test observable effect (weight change from consolidation)
+    weights_after = hippocampus.synaptic_weights["ca3_ca3"]
+    assert not torch.allclose(weights_before, weights_after, atol=1e-6)
+
+    # GOOD: Verify consolidation strengthens connections
+    weight_change = (weights_after - weights_before).abs().mean()
+    assert weight_change > 0, "Consolidation should modify weights"
+```
+
+**SOLUTION 2: Use Checkpoint/State Dict (Public API)**
+```python
+# ✅ ROBUST: Access through checkpoint (public API)
+def test_neurogenesis_in_checkpoint():
+    pfc = create_test_prefrontal(n_neurons=50)
+    pfc.set_training_step(1000)
+    pfc.grow_neurons(n_new=20)
+
+    # GOOD: Use public checkpoint API
+    checkpoint = pfc.checkpoint_manager.get_neuromorphic_state()
+    neurons = checkpoint["neurons"]
+
+    # GOOD: Validate public checkpoint structure
+    for i, neuron_data in enumerate(neurons[:10]):  # Sample neurons
+        assert "created_step" in neuron_data, "Neuromorphic format tracks birth"
+        if i < 50:
+            assert neuron_data["created_step"] == 0, "Original neurons"
+        else:
+            assert neuron_data["created_step"] == 1000, "New neurons"
+```
+
+**Files to Refactor (Priority Order):**
+1. `test_neurogenesis_tracking.py` - Heavy use of `._neuron_birth_steps`, `._current_training_step`
+2. `test_hippocampus_multiscale.py` - All trace attributes (`._ca3_ca3_fast`, etc.)
+3. Scattered usage in region-specific tests
+
+**Estimated Effort:** 3-4 hours (20-30 test functions)
+
+---
+
+### Anti-Pattern: Hardcoded Value Assertions
+
+**Priority: P2 (Medium) - 25 instances identified**
+
+```python
+# ❌ BRITTLE: Hardcoded exact spike counts
+def test_delay_timing():
+    projection = AxonalProjection(
+        sources=[("cortex", "l5", 128, 5.0)],
+        device="cpu",
+        dt_ms=1.0,
+    )
+    spikes = torch.ones(128, dtype=torch.bool)
+
+    for _ in range(6):
+        output = projection.forward({"cortex:l5": spikes})
+
+    # BAD: Hardcoded exact value
+    assert output["cortex:l5"].sum() == 128  # Breaks if implementation changes
+
+# ❌ BRITTLE: Hardcoded dimension calculations
+def test_multisensory_neurons():
+    region = create_multisensory_region()
+    # BAD: Hardcoded sum
+    assert region.n_neurons == 200  # 50+50+50+50 - brittle calculation
+
+# ❌ BRITTLE: Hardcoded config defaults
+def test_heterogeneous_config():
+    config = PrefrontalConfig()
+    # BAD: Testing default values
+    assert config.tau_mem_min == 100.0
+    assert config.tau_mem_max == 500.0
+```
+
+**Why this is bad:**
+- Tests couple to exact implementation values
+- Breaks when reasonable parameter tuning occurs
+- Doesn't test the actual contract (spike propagation, dimension compatibility, valid ranges)
+
+**SOLUTION: Test Invariants and Behaviors**
+```python
+# ✅ ROBUST: Test spike propagation behavior
+def test_delay_timing():
+    delay_ms = 5.0
+    dt_ms = 1.0
+    delay_steps = int(delay_ms / dt_ms)
+
+    projection = AxonalProjection(
+        sources=[("cortex", "l5", 128, delay_ms)],
+        device="cpu",
+        dt_ms=dt_ms,
+    )
+    input_spikes = torch.ones(128, dtype=torch.bool)
+    input_count = input_spikes.sum().item()
+
+    outputs = []
+    for _ in range(delay_steps + 2):
+        output = projection.forward({"cortex:l5": input_spikes})
+        outputs.append(output["cortex:l5"].sum().item())
+
+    # GOOD: Test behavioral contract (timing + conservation)
+    assert outputs[delay_steps - 1] == 0, "Spikes should not arrive early"
+    assert outputs[delay_steps] > 0, "Spikes should arrive on time"
+    assert 0 < outputs[delay_steps] <= input_count, "Spike count should be conserved"
+
+# ✅ ROBUST: Test dimension compatibility
+def test_multisensory_composition():
+    visual_size = 50
+    auditory_size = 50
+    tactile_size = 50
+    language_size = 50
+
+    region = create_multisensory_region(
+        visual=visual_size,
+        auditory=auditory_size,
+        tactile=tactile_size,
+        language=language_size,
+    )
+
+    # GOOD: Test invariant (composition of sources)
+    expected_size = visual_size + auditory_size + tactile_size + language_size
+    assert region.n_neurons == expected_size, "Should match source composition"
+
+# ✅ ROBUST: Test config invariants
+def test_heterogeneous_config_invariants():
+    config = PrefrontalConfig()
+
+    # GOOD: Test property relationships
+    assert config.tau_mem_min > 0, "Tau must be positive"
+    assert config.tau_mem_max > config.tau_mem_min, "Max must exceed min"
+    assert config.tau_mem_min < 1000.0, "Min tau should be biologically plausible"
+    assert config.tau_mem_max < 2000.0, "Max tau should be biologically plausible"
+```
+
+**Files to Refactor:**
+- `test_per_target_delays.py` - Exact spike count assertions
+- `test_neurogenesis_tracking.py` - Hardcoded timestep values
+- `test_multisensory.py` - Hardcoded neuron counts
+- `test_prefrontal_heterogeneous.py` - Hardcoded config defaults
+
+**Estimated Effort:** 2-3 hours (15-20 test functions)
+
+---
+
+### Anti-Pattern: Trivial "is not None" Assertions
+
+**Priority: P3 (Low) - 19 instances identified**
+
+```python
+# ❌ TRIVIAL: Obvious assertion (type system guarantees this)
+def test_forward_output():
+    output = region.forward(input_spikes)
+    assert output is not None  # Low value - type hints guarantee this
+
+# ❌ TRIVIAL: Redundant with later assertions
+def test_state_dict():
+    state_dict = region.get_state_dict()
+    assert state_dict is not None  # Redundant
+    assert "membrane" in state_dict  # This already validates non-None
+```
+
+**Why this is bad:**
+- Adds noise to test output
+- Minimal confidence gain (type system/pytest already validates)
+- Distracts from meaningful assertions
+
+**SOLUTION 1: Remove Trivial Assertions**
+```python
+# ✅ GOOD: Remove redundant check
+def test_forward_output():
+    output = region.forward(input_spikes)
+    # If output is None, later assertions will fail anyway
+    assert output.shape[0] == region.n_output
+    assert torch.is_tensor(output)
+```
+
+**SOLUTION 2: Strengthen to Meaningful Validation**
+```python
+# ✅ GOOD: Validate actual properties
+def test_forward_output():
+    output = region.forward(input_spikes)
+
+    # Meaningful validations
+    assert torch.is_tensor(output), "Output should be tensor"
+    assert output.shape[0] == region.n_output, "Output size should match neurons"
+    assert output.dtype == torch.bool, "Output should be binary spikes"
+    assert not torch.isnan(output.float()).any(), "Output should be valid"
+    assert 0 <= output.sum() <= region.n_output, "Spike count should be valid"
+```
+
+**Files to Refactor:**
+- `test_striatum_d1d2_delays.py`
+- `test_streaming_trainer_dynamic.py`
+- `test_checkpoint_versioning.py`
+- `diagnostics/test_oscillator_health.py`
+- `integration/test_state_checkpoint_workflow.py`
+
+**Estimated Effort:** 1 hour (remove or strengthen ~19 assertions)
 
 ---
 
@@ -1456,16 +1740,39 @@ def test_load_version_mismatch():
 
 Before submitting a PR with new tests, verify:
 
-- [ ] **No Private Attributes:** Tests don't access `_variables`
-- [ ] **No Hardcoded Defaults:** Tests don't assert default config values
-- [ ] **Behavioral Contracts:** Tests validate what component does, not how
+### January 2026 Critical Checks ⭐
+
+- [ ] **No Private Attributes:** Tests don't access `._variables` (use `get_state()` or public APIs)
+- [ ] **No Hardcoded Defaults:** Tests don't assert default config values (test invariants instead)
+- [ ] **No Trivial "is not None":** Assertions validate meaningful properties, not just existence
+- [ ] **Behavioral Contracts:** Tests validate what component does, not how (observable behavior)
+
+### Core Quality Checks
+
 - [ ] **Edge Cases:** Tests include silent input, saturated input, invalid input
-- [ ] **Error Conditions:** Tests validate error handling
+- [ ] **Error Conditions:** Tests validate error handling with `pytest.raises`
 - [ ] **No Over-Mocking:** Tests use real components when possible
 - [ ] **Network Integrity:** Integration tests validate dimension compatibility
 - [ ] **Fixtures:** Tests use fixtures to reduce duplication
 - [ ] **Single Responsibility:** Each test validates one behavior
 - [ ] **Descriptive Names:** Test names clearly state what is tested
+- [ ] **Parameterization:** Use `@pytest.mark.parametrize` for variations of same test logic
+- [ ] **Documentation:** Docstrings explain what is tested and why
+
+### January 2026 Refactoring Priorities
+
+**If your test fails these checks, refactor before merging:**
+
+| Check | Priority | Fix Time | Examples |
+|-------|----------|----------|----------|
+| Private attribute access (`._var`) | P1 High | 10-15 min/test | Use `get_state()` or checkpoint API |
+| Hardcoded exact values | P2 Medium | 5-10 min/test | Replace with invariant/range checks |
+| Trivial "is not None" | P3 Low | 2-5 min/test | Remove or strengthen with real validation |
+
+**Resources:**
+- Full audit report: `docs/TEST_QUALITY_AUDIT_REPORT.md`
+- Refactoring examples: See "January 2026 Audit Findings" section above
+- Questions: Open GitHub discussion or ask in team channel
 
 ---
 

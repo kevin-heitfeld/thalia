@@ -759,16 +759,6 @@ class Cerebellum(NeuralRegion):
         )
 
     @property
-    def weights(self) -> torch.Tensor:
-        """Backward compatibility: access synaptic_weights["default"]."""
-        return self.synaptic_weights["default"]  # type: ignore[no-any-return]
-
-    @weights.setter
-    def weights(self, value: torch.Tensor) -> None:
-        """Backward compatibility: set synaptic_weights["default"]."""
-        self.synaptic_weights["default"].data = value
-
-    @property
     def input_trace(self) -> torch.Tensor:
         """Input trace (delegated to trace manager)."""
         return self._trace_manager.input_trace

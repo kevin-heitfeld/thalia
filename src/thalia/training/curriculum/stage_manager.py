@@ -30,7 +30,6 @@ Key Responsibilities:
 
 3. EVALUATION & MONITORING
    - Continuous health monitoring
-   - Backward compatibility checks
    - Catastrophic forgetting detection
    - Performance tracking per task
 

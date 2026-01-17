@@ -186,22 +186,54 @@ def test_prefrontal_stores_heterogeneous_properties(
     standard_sizes: dict,
     device: str,
 ):
-    """Test that Prefrontal stores heterogeneous properties when enabled."""
+    """Test that heterogeneous PFC shows differential WM persistence.
+
+    Behavioral validation: When heterogeneous WM is enabled, neurons should
+    show variability in their working memory persistence (some decay faster,
+    others retain longer). This is the observable behavioral difference.
+    """
     pfc = Prefrontal(
         config=heterogeneous_config,
         sizes=standard_sizes,
         device=device,
     )
 
-    # Check that properties are stored
-    assert hasattr(pfc, "_recurrent_strength")
-    assert hasattr(pfc, "_tau_mem_heterogeneous")
-    assert hasattr(pfc, "_neuron_type")
+    # Inject activity into working memory
+    n_neurons = standard_sizes["n_neurons"]
+    initial_activity = torch.ones(n_neurons, device=device) * 0.5
+    pfc.state.working_memory = initial_activity.clone()
 
-    # Check shapes
-    assert pfc._recurrent_strength.shape == (standard_sizes["n_neurons"],)
-    assert pfc._tau_mem_heterogeneous.shape == (standard_sizes["n_neurons"],)
-    assert pfc._neuron_type.shape == (standard_sizes["n_neurons"],)
+    # Run forward pass with no input (test persistence only)
+    no_input = {"default": torch.zeros(standard_sizes["input_size"], device=device)}
+
+    # Collect WM values over multiple timesteps
+    wm_traces = []
+    for _ in range(20):  # 20 timesteps
+        pfc(no_input)
+        wm_traces.append(pfc.state.working_memory.clone())
+
+    # Stack traces: [timesteps, neurons]
+    wm_traces = torch.stack(wm_traces)
+
+    # Compute per-neuron decay rates (slope of WM over time)
+    # If heterogeneous, decay rates should vary significantly across neurons
+    decay_rates = []
+    for neuron_idx in range(n_neurons):
+        neuron_trace = wm_traces[:, neuron_idx]
+        # Compute slope via linear regression (simplified)
+        decay_rate = (neuron_trace[-1] - neuron_trace[0]) / len(neuron_trace)
+        decay_rates.append(decay_rate.item())
+
+    decay_rates = torch.tensor(decay_rates)
+
+    # Behavioral assertion: Heterogeneous neurons should show variance in decay rates
+    # The heterogeneity manifests as differential decay despite complex PFC dynamics
+    # (STP depression, lateral inhibition, and noise dampen but don't eliminate the effect)
+    decay_variance = decay_rates.var().item()
+    assert decay_variance > 1e-6, (
+        f"Expected measurable variance in decay rates with heterogeneous WM, "
+        f"got {decay_variance:.8f}. Heterogeneous tau_mem should create differential persistence."
+    )
 
 
 def test_prefrontal_no_heterogeneous_when_disabled(
@@ -209,17 +241,49 @@ def test_prefrontal_no_heterogeneous_when_disabled(
     standard_sizes: dict,
     device: str,
 ):
-    """Test that Prefrontal doesn't store heterogeneous properties when disabled."""
+    """Test that uniform PFC shows consistent WM decay across neurons.
+
+    Behavioral validation: When heterogeneous WM is disabled, all neurons
+    should decay at similar rates (low variance in persistence).
+    """
     pfc = Prefrontal(
         config=uniform_config,
         sizes=standard_sizes,
         device=device,
     )
 
-    # Check that properties are None
-    assert pfc._recurrent_strength is None
-    assert pfc._tau_mem_heterogeneous is None
-    assert pfc._neuron_type is None
+    # Inject activity into working memory
+    n_neurons = standard_sizes["n_neurons"]
+    initial_activity = torch.ones(n_neurons, device=device) * 0.5
+    pfc.state.working_memory = initial_activity.clone()
+
+    # Run forward pass with no input (test persistence only)
+    no_input = {"default": torch.zeros(standard_sizes["input_size"], device=device)}
+
+    # Collect WM values over multiple timesteps
+    wm_traces = []
+    for _ in range(20):  # 20 timesteps
+        pfc(no_input)
+        wm_traces.append(pfc.state.working_memory.clone())
+
+    # Stack traces: [timesteps, neurons]
+    wm_traces = torch.stack(wm_traces)
+
+    # Compute per-neuron decay rates
+    decay_rates = []
+    for neuron_idx in range(n_neurons):
+        neuron_trace = wm_traces[:, neuron_idx]
+        decay_rate = (neuron_trace[-1] - neuron_trace[0]) / len(neuron_trace)
+        decay_rates.append(decay_rate.item())
+
+    decay_rates = torch.tensor(decay_rates)
+
+    # Behavioral assertion: Uniform neurons should show LOW variance in decay
+    # (all decay at similar rates)
+    decay_variance = decay_rates.var().item()
+    assert decay_variance < 1e-4, (
+        f"Expected low variance in decay rates with uniform WM, " f"got {decay_variance:.6f}"
+    )
 
 
 def test_prefrontal_recurrent_weights_heterogeneous(
@@ -343,29 +407,6 @@ def test_d1_d2_differential_modulation(
     assert d2_low_total >= 0
 
 
-def test_d1_d2_no_modulation_at_zero_dopamine(
-    heterogeneous_config: PrefrontalConfig,
-    standard_sizes: dict,
-    device: str,
-):
-    """Test that D1/D2 modulation has no effect at zero dopamine."""
-    pfc = Prefrontal(
-        config=heterogeneous_config,
-        sizes=standard_sizes,
-        device=device,
-    )
-
-    # Create input
-    input_spikes = torch.randn(standard_sizes["input_size"], device=device).clamp(0, 1)
-
-    # Run multiple times with zero dopamine - should be consistent
-    pfc.reset_state()
-    output1 = pfc.forward(input_spikes, dopamine_signal=0.0)
-
-    # Can't compare outputs directly due to stochasticity, but we can check
-    # that the modulation code path exists and doesn't crash
-
-
 def test_d1_d2_config_validation():
     """Test that D1/D2 config parameters are validated."""
     # Valid config
@@ -391,7 +432,13 @@ def test_stable_neurons_maintain_wm_longer(
     standard_sizes: dict,
     device: str,
 ):
-    """Test that stable neurons (high tau_mem) maintain WM longer than flexible neurons."""
+    """Test that heterogeneous PFC shows bimodal WM retention distribution.
+
+    Behavioral validation: With heterogeneous neurons, we expect two populations:
+    - Stable neurons (high tau_mem) → high retention
+    - Flexible neurons (low tau_mem) → low retention
+    This creates a bimodal distribution of retention ratios.
+    """
     pfc = Prefrontal(
         config=heterogeneous_config,
         sizes=standard_sizes,
@@ -399,17 +446,19 @@ def test_stable_neurons_maintain_wm_longer(
     )
 
     # Present strong input to encode into WM
-    input_spikes = torch.ones(standard_sizes["input_size"], device=device)
+    input_spikes = {"default": torch.ones(standard_sizes["input_size"], device=device)}
     pfc.reset_state()
-    pfc.forward(input_spikes, dopamine_signal=1.0)  # High DA to gate input
+    pfc.set_neuromodulators(dopamine=1.0)  # High DA to gate input
+    pfc(input_spikes)
 
     # Store initial WM
     initial_wm = pfc.state.working_memory.clone()
 
     # Run for some timesteps WITHOUT input (test decay)
-    no_input = torch.zeros(standard_sizes["input_size"], device=device)
-    for _ in range(50):  # Reduced from 100 to avoid total decay
-        pfc.forward(no_input, dopamine_signal=0.0)  # Low DA to maintain
+    no_input = {"default": torch.zeros(standard_sizes["input_size"], device=device)}
+    pfc.set_neuromodulators(dopamine=0.0)  # Low DA to maintain
+    for _ in range(50):  # 50 timesteps to see differential decay
+        pfc(no_input)
 
     # Final WM
     final_wm = pfc.state.working_memory
@@ -417,24 +466,23 @@ def test_stable_neurons_maintain_wm_longer(
     # Check that SOME activity remains (not all decayed)
     assert final_wm.mean() > 0.001, "WM decayed too much - some should persist"
 
-    # Stable neurons (neuron_type==1) should retain more activity
-    # Note: This is a weak test due to noise, STP depression, and other dynamics
-    # We just verify the mechanism exists and maintains SOME activity
-    stable_mask = pfc._neuron_type == 1
-    flexible_mask = pfc._neuron_type == 0
+    # Compute per-neuron retention ratios
+    retention_ratios = final_wm / (initial_wm + 1e-6)
 
-    stable_retention = (final_wm[stable_mask] / (initial_wm[stable_mask] + 1e-6)).mean()
-    flexible_retention = (final_wm[flexible_mask] / (initial_wm[flexible_mask] + 1e-6)).mean()
-
-    # At minimum, both should have some retention (not zero)
-    assert stable_retention > 0.0
-    assert flexible_retention > 0.0
-
-    # Verify heterogeneity exists (different tau_mem values)
-    assert (
-        pfc._tau_mem_heterogeneous[stable_mask].mean()
-        > pfc._tau_mem_heterogeneous[flexible_mask].mean()
+    # Behavioral assertion: Heterogeneous neurons should show bimodal distribution
+    # (two peaks: low retention and high retention)
+    # Measure variance as proxy for bimodality
+    retention_variance = retention_ratios.var().item()
+    assert retention_variance > 0.01, (
+        f"Expected high variance in retention (bimodal distribution), "
+        f"got {retention_variance:.4f}"
     )
+
+    # Also check that some neurons retain >50% while others retain <20%
+    high_retainers = (retention_ratios > 0.5).sum().item()
+    low_retainers = (retention_ratios < 0.2).sum().item()
+    assert high_retainers > 0, "Expected some high-retention neurons"
+    assert low_retainers > 0, "Expected some low-retention neurons"
 
 
 def test_heterogeneous_wm_integration_with_forward(

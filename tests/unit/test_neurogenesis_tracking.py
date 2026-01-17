@@ -5,7 +5,6 @@ Tests that neuron birth timestamps are properly tracked and recorded in checkpoi
 """
 
 import pytest
-import torch
 
 from thalia.regions.hippocampus.config import HippocampusConfig
 from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
@@ -43,16 +42,30 @@ class TestPrefrontalNeurogenesisTracking:
         """All initial neurons should have birth_step=0."""
         pfc = create_test_prefrontal(input_size=64, n_neurons=50, device="cpu")
 
-        assert hasattr(pfc, "_neuron_birth_steps")
-        assert pfc._neuron_birth_steps.shape == (50,)
-        assert torch.all(pfc._neuron_birth_steps == 0)
+        # Use public checkpoint API to validate birth tracking
+        checkpoint = pfc.checkpoint_manager.get_neuromorphic_state()
+        assert "neurons" in checkpoint
+        neurons = checkpoint["neurons"]
+
+        # Validate shape and birth steps via checkpoint
+        assert len(neurons) == 50
+        for neuron in neurons:
+            assert "created_step" in neuron
+            assert neuron["created_step"] == 0
 
     def test_training_step_update(self):
         """Training step should be updateable."""
         pfc = create_test_prefrontal(input_size=64, n_neurons=50, device="cpu")
 
         pfc.set_training_step(1000)
-        assert pfc._current_training_step == 1000
+        # Verify training step persisted by growing and checking birth step
+        pfc.grow_neurons(n_new=5)
+
+        checkpoint = pfc.checkpoint_manager.get_neuromorphic_state()
+        neurons = checkpoint["neurons"]
+        # New neurons (last 5) should have been born at step 1000
+        for neuron in neurons[-5:]:
+            assert neuron["created_step"] == 1000
 
     def test_grow_output_tracks_birth_steps(self):
         """New neurons should record their birth timestep."""
@@ -64,10 +77,17 @@ class TestPrefrontalNeurogenesisTracking:
         # Grow by 20 neurons
         pfc.grow_neurons(n_new=20)
 
-        # Check birth steps
-        assert pfc._neuron_birth_steps.shape == (70,)
-        assert torch.all(pfc._neuron_birth_steps[:50] == 0)  # Original neurons
-        assert torch.all(pfc._neuron_birth_steps[50:] == 5000)  # New neurons
+        # Validate via checkpoint API
+        checkpoint = pfc.checkpoint_manager.get_neuromorphic_state()
+        neurons = checkpoint["neurons"]
+
+        assert len(neurons) == 70
+        # Original neurons have step 0
+        for neuron in neurons[:50]:
+            assert neuron["created_step"] == 0, "Original neurons should have birth_step=0"
+        # New neurons have step 5000
+        for neuron in neurons[50:]:
+            assert neuron["created_step"] == 5000, "New neurons should have birth_step=5000"
 
     def test_multiple_growth_events(self):
         """Multiple growth events should track different timesteps."""
@@ -76,17 +96,30 @@ class TestPrefrontalNeurogenesisTracking:
         # First growth at step 1000
         pfc.set_training_step(1000)
         pfc.grow_neurons(n_new=10)
-        assert pfc._neuron_birth_steps.shape == (60,)
-        assert torch.all(pfc._neuron_birth_steps[:50] == 0)
-        assert torch.all(pfc._neuron_birth_steps[50:60] == 1000)
+
+        # Validate first growth via checkpoint
+        checkpoint = pfc.checkpoint_manager.get_neuromorphic_state()
+        neurons = checkpoint["neurons"]
+        assert len(neurons) == 60
+        for neuron in neurons[:50]:
+            assert neuron["created_step"] == 0
+        for neuron in neurons[50:60]:
+            assert neuron["created_step"] == 1000
 
         # Second growth at step 5000
         pfc.set_training_step(5000)
         pfc.grow_neurons(n_new=15)
-        assert pfc._neuron_birth_steps.shape == (75,)
-        assert torch.all(pfc._neuron_birth_steps[:50] == 0)
-        assert torch.all(pfc._neuron_birth_steps[50:60] == 1000)
-        assert torch.all(pfc._neuron_birth_steps[60:75] == 5000)
+
+        # Validate second growth via checkpoint
+        checkpoint = pfc.checkpoint_manager.get_neuromorphic_state()
+        neurons = checkpoint["neurons"]
+        assert len(neurons) == 75
+        for neuron in neurons[:50]:
+            assert neuron["created_step"] == 0, "Original neurons"
+        for neuron in neurons[50:60]:
+            assert neuron["created_step"] == 1000, "First growth neurons"
+        for neuron in neurons[60:75]:
+            assert neuron["created_step"] == 5000, "Second growth neurons"
 
     def test_checkpoint_uses_birth_steps(self):
         """Checkpoint neuromorphic format should include birth steps."""
@@ -120,20 +153,39 @@ class TestHippocampusNeurogenesisTracking:
         """All initial neurons should have birth_step=0."""
         hippo = create_test_hippocampus(input_size=64, total_neurons=512, device="cpu")
 
-        assert hasattr(hippo, "_neuron_birth_steps_dg")
-        assert hasattr(hippo, "_neuron_birth_steps_ca3")
-        assert hasattr(hippo, "_neuron_birth_steps_ca1")
+        # Validate via checkpoint API
+        checkpoint = hippo.checkpoint_manager.get_neuromorphic_state()
+        assert "neurons" in checkpoint
+        neurons = checkpoint["neurons"]
 
-        assert torch.all(hippo._neuron_birth_steps_dg == 0)
-        assert torch.all(hippo._neuron_birth_steps_ca3 == 0)
-        assert torch.all(hippo._neuron_birth_steps_ca1 == 0)
+        # All layers should have neurons with birth_step=0
+        dg_neurons = [n for n in neurons if n["layer"] == "DG"]
+        ca3_neurons = [n for n in neurons if n["layer"] == "CA3"]
+        ca1_neurons = [n for n in neurons if n["layer"] == "CA1"]
+
+        assert len(dg_neurons) > 0, "Should have DG neurons"
+        assert len(ca3_neurons) > 0, "Should have CA3 neurons"
+        assert len(ca1_neurons) > 0, "Should have CA1 neurons"
+
+        for neuron in neurons:
+            assert (
+                neuron["created_step"] == 0
+            ), f"Initial {neuron['layer']} neurons should have birth_step=0"
 
     def test_training_step_update(self):
         """Training step should be updateable."""
         hippo = create_test_hippocampus(input_size=64, total_neurons=200, device="cpu")
 
         hippo.set_training_step(2000)
-        assert hippo._current_training_step == 2000
+        # Verify training step persisted by growing and checking birth step
+        hippo.grow_layer("CA1", n_new=2)
+
+        checkpoint = hippo.checkpoint_manager.get_neuromorphic_state()
+        neurons = checkpoint["neurons"]
+        # New CA1 neurons should have been born at step 2000
+        ca1_neurons = [n for n in neurons if n["layer"] == "CA1"]
+        new_neurons = [n for n in ca1_neurons if n["created_step"] == 2000]
+        assert len(new_neurons) > 0, "Should have new neurons born at step 2000"
 
     def test_grow_output_tracks_all_layers(self):
         """New neurons in all layers should record their birth timestep."""
@@ -152,23 +204,34 @@ class TestHippocampusNeurogenesisTracking:
         assert hippo.ca3_size > initial_ca3
         assert hippo.ca1_size == initial_ca1 + 8
 
-        # Check birth steps for new neurons
-        new_dg_start = initial_dg
-        new_ca3_start = initial_ca3
-        new_ca1_start = initial_ca1
+        # Validate birth steps via checkpoint API
+        checkpoint = hippo.checkpoint_manager.get_neuromorphic_state()
+        neurons = checkpoint["neurons"]
 
-        assert torch.all(hippo._neuron_birth_steps_dg[:new_dg_start] == 0)
-        assert torch.all(hippo._neuron_birth_steps_dg[new_dg_start:] == 3000)
+        # Group neurons by layer (sorting by ID not reliable - just count by birth step)
+        dg_neurons = [n for n in neurons if n["layer"] == "DG"]
+        ca3_neurons = [n for n in neurons if n["layer"] == "CA3"]
+        ca1_neurons = [n for n in neurons if n["layer"] == "CA1"]
 
-        assert torch.all(hippo._neuron_birth_steps_ca3[:new_ca3_start] == 0)
-        assert torch.all(hippo._neuron_birth_steps_ca3[new_ca3_start:] == 3000)
+        # Check that some neurons are original (birth_step=0) and some are new (birth_step=3000)
+        dg_original = [n for n in dg_neurons if n["created_step"] == 0]
+        dg_new = [n for n in dg_neurons if n["created_step"] == 3000]
 
-        assert torch.all(hippo._neuron_birth_steps_ca1[:new_ca1_start] == 0)
-        assert torch.all(hippo._neuron_birth_steps_ca1[new_ca1_start:] == 3000)
+        ca3_original = [n for n in ca3_neurons if n["created_step"] == 0]
+        ca3_new = [n for n in ca3_neurons if n["created_step"] == 3000]
 
-    def test_checkpoint_uses_birth_steps(self):
-        """Checkpoint neuromorphic format should include birth steps for all layers."""
-        hippo = create_test_hippocampus(input_size=64, total_neurons=200, device="cpu")
+        ca1_original = [n for n in ca1_neurons if n["created_step"] == 0]
+        ca1_new = [n for n in ca1_neurons if n["created_step"] == 3000]
+
+        # All layers should have both original and new neurons
+        assert len(dg_original) == initial_dg, f"Expected {initial_dg} original DG neurons"
+        assert len(dg_new) > 0, "Should have new DG neurons"
+
+        assert len(ca3_original) == initial_ca3, f"Expected {initial_ca3} original CA3 neurons"
+        assert len(ca3_new) > 0, "Should have new CA3 neurons"
+
+        assert len(ca1_original) == initial_ca1, f"Expected {initial_ca1} original CA1 neurons"
+        assert len(ca1_new) == 8, "Should have exactly 8 new CA1 neurons (as requested)"
 
         # Grow at specific timestep
         hippo.set_training_step(4500)

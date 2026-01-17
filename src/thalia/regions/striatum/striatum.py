@@ -256,10 +256,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Store n_output for NeuralRegion interface
         self.n_output = total_neurons
 
-        # Store D1/D2 sizes for backward compatibility with code that uses n_d1/n_d2
-        self.n_d1 = self.d1_size
-        self.n_d2 = self.d2_size
-
         # =====================================================================
         # MULTI-SOURCE ELIGIBILITY TRACES (Phase 3 + Phase 1 Enhancement)
         # =====================================================================
@@ -1124,22 +1120,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 device=self.device,
             )
 
-    def _link_pathway_weights_to_parent(self) -> None:
-        """REMOVED: No longer needed with multi-source architecture.
-
-        D1/D2 pathways don't store weights - weights are in parent's synaptic_weights
-        dict with keys like "{source}_d1" and "{source}_d2".
-        """
-        return  # No-op for backward compatibility
-
-    def _sync_pathway_weights_to_parent(self) -> None:
-        """REMOVED: No sync needed with multi-source architecture.
-
-        Weights are always in parent's synaptic_weights dict.
-        D1/D2 pathways don't maintain local weight copies.
-        """
-        return  # No-op for backward compatibility
-
     def get_d1_weights(self, source: str) -> torch.Tensor:
         """Get D1 MSN weights for a given source.
 
@@ -1350,8 +1330,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.n_actions += n_new
         self.d1_size = self.d1_size + n_new_d1
         self.d2_size = self.d2_size + n_new_d2
-        self.n_d1 = self.d1_size  # Keep n_d1 in sync with d1_size
-        self.n_d2 = self.d2_size  # Keep n_d2 in sync with d2_size
         self.n_output = self.d1_size + self.d2_size
 
         # Update forward_coordinator's cached sizes (critical for STP slicing!)
@@ -1562,37 +1540,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             >>> striatum.grow_actions(n_new=2)  # Add 2 actions
         """
         self.grow_output(n_new, initialization, sparsity)
-
-    def grow_input(
-        self,
-        n_new: int,
-        initialization: str = "xavier",
-        sparsity: float = 0.1,
-    ) -> None:
-        """DEPRECATED: Use grow_source() for multi-source architecture.
-
-        Striatum now uses per-source synaptic weights (e.g., "cortex:l5_d1",
-        "hippocampus_d2") instead of a unified input space. To grow a specific
-        input source, use grow_source(source_name, new_size) instead.
-
-        Args:
-            n_new: Number of input neurons to add (IGNORED)
-            initialization: Weight init strategy (IGNORED)
-            sparsity: Connection sparsity (IGNORED)
-
-        Raises:
-            NotImplementedError: Always, directing users to grow_source()
-
-        Example (NEW API):
-            >>> cortex.grow_output(20)
-            >>> cortex_to_striatum.grow_source('cortex:l5', new_size=cortex.l5_size)
-            >>> striatum.grow_source('cortex:l5', new_size=cortex.l5_size)
-        """
-        raise NotImplementedError(
-            "grow_input() is not supported for multi-source striatum architecture. "
-            "Use grow_source(source_name, new_size) to expand specific input sources. "
-            "Example: striatum.grow_source('cortex:l5', new_size=300)"
-        )
 
     def grow_source(
         self,

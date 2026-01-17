@@ -90,7 +90,6 @@ class HippocampusLearningComponent(LearningComponent):
         Args:
             state: Current hippocampus state
             w_ca3_ca3: CA3 recurrent weight matrix
-            effective_learning_rate: Unused (kept for interface compatibility)
             *args, **kwargs: Additional parameters
 
         Returns:

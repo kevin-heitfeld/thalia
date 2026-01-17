@@ -170,11 +170,8 @@ class MotorControlTask:
         self.current_target = None
         self.current_input = None
 
-    def get_task(self, task_name: str = "motor_control") -> Dict[str, Any]:
+    def get_task(self) -> Dict[str, Any]:
         """Generate one motor control trial.
-
-        Args:
-            task_name: Name of task (unused, for interface compatibility)
 
         Returns:
             Dictionary with:

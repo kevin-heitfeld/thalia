@@ -103,10 +103,7 @@ Usage Example:
         def forward(self, input, dt=1.0):
             output = self._compute_output(input)
 
-            # NO LONGER NEEDED - Brain handles decay:
-            # self.decay_neuromodulators(dt_ms=dt)  # ❌ Don't do this!
-
-            # Just use dopamine-modulated learning rate:
+            # Use dopamine-modulated learning rate:
             lr = self.get_effective_learning_rate(base_lr=0.01)
             self._apply_plasticity(lr=lr)
 
