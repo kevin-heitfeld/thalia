@@ -194,19 +194,6 @@ class ErrorCorrectiveLearningConfig(BaseLearningConfig):
 #     learning: ModulatedLearningConfig = field(default_factory=ModulatedLearningConfig)
 #     # Nested learning config instead of flat fields
 #
-# Example 3: Backward compatibility
-# ==================================
-# # Old style (flat config):
-# @dataclass
-# class OldConfig:
-#     learning_rate: float = 0.01
-#     learning_enabled: bool = True
-#
-# # New style (inherited):
-# @dataclass
-# class NewConfig(BaseLearningConfig):
-#     pass  # Same fields, inherited
-#
 # =============================================================================
 
 

@@ -587,7 +587,7 @@ class DynamicBrain(nn.Module):
            ```
            n_timesteps inferred from list length
 
-        **3. Single tensor + n_timesteps** - Broadcast mode (backward compat):
+        **3. Single tensor + n_timesteps** - Broadcast mode:
            ```python
            brain.forward({"thalamus": input}, n_timesteps=10)
            ```

@@ -86,12 +86,6 @@
 
 ---
 
-### **Category 2: Curriculum Backward Compatibility Checks**
-- Document recommended approach: use `lesion_region()` or manually zero weights
-- If kept, drastically simplify documentation
-
----
-
 ### **Category 4: Placeholder Evaluation Functions**
 
 **Affected File:**
@@ -111,42 +105,47 @@ stage_evaluation.py (lines 70-140)
 
 ---
 
-### **Category 5: Commented-Out Legacy Code**
+### **Category 5: Commented-Out Legacy Code** ✅ **COMPLETE**
 
-**Affected File:**
-learning_config.py (lines 195-210)
+**Status**: Removed commented-out backward compatibility example
 
-**Issue:** Large commented-out example showing "Old style" vs "New style" config patterns.
+**Completed Actions:**
+- ✅ Removed commented "Old style" vs "New style" config example (lines 195-210)
+- ✅ Cleaned up learning_config.py example section
 
-**Recommended Action:**
-- Remove commented examples (lines 195-210)
-- The documentation explains the pattern well without commented code
+**Files Modified:**
+- src/thalia/config/learning_config.py
+
+**Impact**: ~15 lines removed
 
 ---
 
-### **Category 6: Documentation Mentions**
+### **Category 6: Documentation Mentions** ✅ **COMPLETE**
 
-**Minor cleanup:** Several docstrings mention "backward compatibility" but this is just explaining the design, not actual legacy code:
-- input_routing.py docstring
-- dynamic_brain.py (line 585) - "backward compat" comment
+**Status**: Removed "backward compatibility" mentions from documentation
 
-**Recommended Action:**
-- After removing actual backward compat code, update these docstrings to remove those mentions
+**Completed Actions:**
+- ✅ Updated dynamic_brain.py forward() docstring (removed "backward compat" label)
+- ✅ Broadcast mode documentation now neutral (no longer labeled as compatibility feature)
+
+**Files Modified:**
+- src/thalia/core/dynamic_brain.py
+
+**Impact**: Documentation clarity improved
 
 ---
 
 ## 📊 Summary Statistics
 
 - ✅ **Category 1 COMPLETE**: 9 files modified, ~50 lines removed
-- **6 region files** - Union types removed, docstrings updated
-- **1 utility file** - backward compat conversion logic removed
-- **2 test files** - updated to use dict inputs
-- **2 curriculum files** with extensive (300+ lines) backward compatibility checking - TODO
-- **1 surgery file** with unused ablation functionality - IN PROGRESS
-- **5 placeholder functions** in evaluation module - TODO
-- **1 config file** with commented legacy examples - TODO
+- ✅ **Category 3 COMPLETE**: 3 files modified, ~150 lines removed
+- ✅ **Category 5 COMPLETE**: 1 file modified, ~15 lines removed
+- ✅ **Category 6 COMPLETE**: 1 file modified, documentation improved
+- **Category 2 TODO**: 2 curriculum files with extensive (300+ lines) backward compatibility checking
+- **Category 4 TODO**: 5 placeholder functions in evaluation module
 
-**Estimated Remaining LOC Reduction:** ~450-650 lines
+**Total LOC Removed So Far:** ~215 lines
+**Estimated Remaining LOC Reduction:** ~350-450 lines
 
 ---
 
@@ -154,20 +153,27 @@ learning_config.py (lines 195-210)
 
 1. ✅ **COMPLETE:** Remove single tensor input backward compatibility (Category 1)
    - Most pervasive across codebase
-   - Simplifies API significantly
-   - No functionality loss (all code already uses dict format)
+   - Simplified API with type-safe Dict[str, torch.Tensor] signatures
+   - 9 files modified, ~50 lines removed
 
-2. 🔄 **IN PROGRESS:** Remove ablation surgery shim (Category 3)
-   - Remove `ablate_pathway()` function
-   - Update/remove tests
+2. ✅ **COMPLETE:** Remove ablation surgery shim (Category 3)
+   - Removed ablate_pathway() and restore_pathway() functions
+   - Replaced with documentation pointing to alternatives
+   - 3 files modified, ~150 lines removed
 
-3. **TODO:** Remove curriculum backward compatibility checks (Category 2)
+3. ✅ **COMPLETE:** Clean up commented legacy code (Category 5)
+   - Removed commented "Old style" vs "New style" config example
+   - 1 file modified, ~15 lines removed
+
+4. ✅ **COMPLETE:** Update documentation mentions (Category 6)
+   - Removed "backward compat" labels from docstrings
+   - 1 file modified, documentation improved
+
+5. **TODO:** Remove curriculum backward compatibility checks (Category 2)
    - Large amount of code (~300 lines)
    - No checkpoints exist to test against
    - Can be reimplemented when actually needed
 
-4. **TODO:** Replace placeholder functions (Category 4)
+6. **TODO:** Replace placeholder functions (Category 4)
+   - 5 placeholder health check functions
    - Either implement properly or remove
-
-5. **TODO:** Clean up comments (Categories 5, 6)
-   - Smaller impact but improves code clarity
