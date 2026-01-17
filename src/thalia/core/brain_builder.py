@@ -87,7 +87,7 @@ from thalia.config import GlobalConfig
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.dynamic_brain import DynamicBrain
-from thalia.core.protocols.component import LearnableComponent
+from thalia.core.protocols.component import BrainComponent, LearnableComponent
 from thalia.managers.component_registry import ComponentRegistry
 from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions.cortex import calculate_layer_sizes
@@ -176,9 +176,9 @@ def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Di
         # Cerebellum needs purkinje_size → granule_size
         if "purkinje_size" in size_params and "granule_size" not in size_params:
             purkinje_size = size_params["purkinje_size"]
-            expansion = size_params.get("granule_expansion_factor", 4.0)
+            # expansion = size_params.get("granule_expansion_factor", 4.0)
             calc = LayerSizeCalculator()
-            computed = calc.cerebellum_from_purkinje(purkinje_size, expansion)
+            computed = calc.cerebellum_from_output(purkinje_size)
             return {**size_params, **computed}
 
     elif registry_name == "hippocampus":
@@ -687,7 +687,7 @@ class BrainBuilder:
         for (source_name, target_key), spec in connection_specs.items():
             # Handle compound keys like "striatum" or "striatum:feedforward"
             target_name = target_key.split(":")[0] if ":" in target_key else target_key
-            target_port = spec.target_port if hasattr(spec, "target_port") else None
+            # target_port = spec.target_port if hasattr(spec, "target_port") else None
             source_port = spec.source_port if hasattr(spec, "source_port") else None
 
             if target_name not in targets_to_sources:
@@ -934,55 +934,61 @@ class BrainBuilder:
         for (target_name, target_port), target_specs in connections_by_target_port.items():
             target_comp = components[target_name]
 
+            pathway: AxonalProjection | BrainComponent
+
             if len(target_specs) == 1:
                 # Single source - use standard pathway
-                spec: ConnectionSpec = target_specs[0]
-                source_comp = components[spec.source]
+                conn_spec = target_specs[0]
+                source_comp = components[conn_spec.source]
 
                 # Special handling for AxonalProjection (v2.0 architecture)
-                if spec.pathway_type in ("axonal", "axonal_projection"):
+                if conn_spec.pathway_type in ("axonal", "axonal_projection"):
                     pathway = self._create_axonal_projection(target_specs, components, target_name)
                     # Use compound key if target_port specified (e.g., cortex→thalamus with l6a vs l6b)
                     # This allows multiple pathways with same (source, target) but different ports
                     conn_key = (
-                        (spec.source, f"{spec.target}:{target_port}")
+                        (conn_spec.source, f"{conn_spec.target}:{target_port}")
                         if target_port
-                        else (spec.source, spec.target)
+                        else (conn_spec.source, conn_spec.target)
                     )
                     connections[conn_key] = pathway
-                    spec.instance = pathway
+                    conn_spec.instance = pathway
                     continue
 
                 # Determine pathway component type (should be "pathway")
                 pathway_component_type = None
                 for ctype in ["pathway", "module"]:
-                    if self._registry.is_registered(ctype, spec.pathway_type):
+                    if self._registry.is_registered(ctype, conn_spec.pathway_type):
                         pathway_component_type = ctype
                         break
 
                 if pathway_component_type is None:
-                    raise ValueError(f"Pathway '{spec.pathway_type}' not found in registry")
+                    raise ValueError(f"Pathway '{conn_spec.pathway_type}' not found in registry")
 
                 # Get pathway config class
                 config_class = self._registry.get_config_class(
-                    pathway_component_type, spec.pathway_type
+                    pathway_component_type, conn_spec.pathway_type
                 )
 
                 if config_class is None:
                     raise ValueError(
-                        f"Pathway '{spec.pathway_type}' has no config_class "
+                        f"Pathway '{conn_spec.pathway_type}' has no config_class "
                         f"registered. Update registry with config_class metadata."
                     )
 
                 # Determine pathway sizes based on ports
-                source_output_size = self._get_pathway_source_size(source_comp, spec.source_port)
-                target_input_size = self._get_pathway_target_size(target_comp, spec.target_port)
+                source_output_size = self._get_pathway_source_size(
+                    source_comp, conn_spec.source_port
+                )
+                target_input_size = self._get_pathway_target_size(
+                    target_comp, conn_spec.target_port
+                )
 
                 # Create pathway config with source/target sizes and global params
                 # Filter out port specifications (they're not pathway config params)
                 filtered_config_params = {
                     k: v
-                    for k, v in spec.config_params.items()
+                    for k, v in conn_spec.config_params.items()
                     if not k.startswith("_")  # Remove internal flags
                 }
 
@@ -998,7 +1004,7 @@ class BrainBuilder:
                 # Create pathway from registry
                 pathway = self._registry.create(
                     pathway_component_type,
-                    spec.pathway_type,
+                    conn_spec.pathway_type,
                     config=pathway_config,
                 )
 
@@ -1008,12 +1014,12 @@ class BrainBuilder:
 
                 # Use compound key if target_port specified
                 conn_key = (
-                    (spec.source, f"{spec.target}:{target_port}")
+                    (conn_spec.source, f"{conn_spec.target}:{target_port}")
                     if target_port
-                    else (spec.source, spec.target)
+                    else (conn_spec.source, conn_spec.target)
                 )
                 connections[conn_key] = pathway
-                spec.instance = pathway
+                conn_spec.instance = pathway
 
             else:
                 # Multiple sources - must use AxonalProjection
@@ -1027,19 +1033,19 @@ class BrainBuilder:
                     else (first_spec.source, first_spec.target)
                 )
                 connections[conn_key] = pathway
-                for spec in target_specs:
-                    spec.instance = pathway
+                for conn_spec in target_specs:
+                    conn_spec.instance = pathway
 
         # Create DynamicBrain
         # Build connection_specs dict with compound keys matching connections dict
         # For connections with target_port, use "target:port" key to avoid collisions
         connection_specs_dict = {}
-        for spec in self._connections:
-            if spec.target_port:
-                key = (spec.source, f"{spec.target}:{spec.target_port}")
+        for conn_spec in self._connections:
+            if conn_spec.target_port:
+                key = (conn_spec.source, f"{conn_spec.target}:{conn_spec.target_port}")
             else:
-                key = (spec.source, spec.target)
-            connection_specs_dict[key] = spec
+                key = (conn_spec.source, conn_spec.target)
+            connection_specs_dict[key] = conn_spec
 
         brain = DynamicBrain(
             components=components,
@@ -1263,7 +1269,8 @@ class BrainBuilder:
 
 
 # Type alias for preset builder functions
-PresetBuilderFn = Callable[[BrainBuilder, Any], None]
+# Accepts BrainBuilder and optional keyword overrides
+PresetBuilderFn = Callable[[BrainBuilder], None]
 
 
 class PresetArchitecture:

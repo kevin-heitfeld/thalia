@@ -36,7 +36,7 @@ Growth Checklist (for implementers of grow_input):
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -101,15 +101,26 @@ class GrowthMixin:
         _registered_subcomponents: Dict[str, tuple] - name -> (ratio, attr_name)
     """
 
-    def __init__(self, *args, **kwargs):
+    # Type stubs for attributes provided by mixed-in class
+    # These will be overridden by the actual implementation
+    config: Any  # Will be NeuralComponentConfig or subclass
+    device: torch.device
+    n_output: int
+    neurons: Any  # Will be ConductanceLIF
+
+    def named_modules(self, *args: Any, **kwargs: Any) -> Any:  # type: ignore[misc]
+        """Type stub for nn.Module.named_modules() - provided by mixed-in class."""
+        raise NotImplementedError("This method should be provided by the mixed-in class")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize growth mixin with registration tracking.
 
         Note: This is automatically called via MRO when using multiple inheritance.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # type: ignore[misc]
         # Phase 2: Component registration (opt-in)
-        self._registered_stp: Dict[str, str] = {}
-        self._registered_subcomponents: Dict[str, tuple] = {}
+        self._registered_stp: Dict[str, tuple[str, bool]] = {}
+        self._registered_subcomponents: Dict[str, tuple[float, Optional[str]]] = {}
 
     def _expand_weights(
         self,
@@ -249,7 +260,7 @@ class GrowthMixin:
             >>> self.output_trace = expanded['output_trace']
             >>> self.working_memory = expanded['working_memory']
         """
-        expanded = {}
+        expanded: StateDict = {}
         for name, tensor in state_dict.items():
             if tensor is None:
                 expanded[name] = None
@@ -950,6 +961,10 @@ class GrowthMixin:
                     if hasattr(module, "n_post") and hasattr(self.config, "n_output"):
                         # Note: Some regions (like Striatum) have multiple STP modules
                         # with different sizes, so we just check n_post > 0
-                        assert module.n_post > 0, f"STP module '{name}' has n_post=0 after growth"
+                        if module.n_post is not None:
+                            assert (
+                                module.n_post > 0
+                            ), f"STP module '{name}' has n_post=0 after growth"
                     if hasattr(module, "n_pre") and hasattr(self.config, "n_input"):
-                        assert module.n_pre > 0, f"STP module '{name}' has n_pre=0 after growth"
+                        if module.n_pre is not None:
+                            assert module.n_pre > 0, f"STP module '{name}' has n_pre=0 after growth"

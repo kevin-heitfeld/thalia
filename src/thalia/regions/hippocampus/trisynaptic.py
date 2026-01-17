@@ -318,7 +318,14 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # SHORT-TERM PLASTICITY (STP)
         # =====================================================================
-        # Initialize STP modules for each pathway if enabled
+        self.stp_mossy: Optional[ShortTermPlasticity] = None
+        self.stp_schaffer: Optional[ShortTermPlasticity] = None
+        self.stp_ec_ca1: Optional[ShortTermPlasticity] = None
+        self.stp_ca3_recurrent: Optional[ShortTermPlasticity] = None
+        self.stp_ca3_ca2: Optional[ShortTermPlasticity] = None
+        self.stp_ca2_ca1: Optional[ShortTermPlasticity] = None
+        self.stp_ec_ca2: Optional[ShortTermPlasticity] = None
+
         if config.stp_enabled:
             device_obj = self.device
 
@@ -412,14 +419,6 @@ class TrisynapticHippocampus(NeuralRegion):
                 per_synapse=True,
             )
             self.stp_ec_ca2.to(device_obj)
-        else:
-            self.stp_mossy = None
-            self.stp_schaffer = None
-            self.stp_ec_ca1 = None
-            self.stp_ca3_recurrent = None
-            self.stp_ca3_ca2 = None
-            self.stp_ca2_ca1 = None
-            self.stp_ec_ca2 = None
 
         # =====================================================================
         # INTER-LAYER AXONAL DELAYS
@@ -466,7 +465,7 @@ class TrisynapticHippocampus(NeuralRegion):
             w_max=config.w_max,
             soft_normalization=config.soft_normalization,
             normalization_rate=config.normalization_rate,
-            device=self.device,
+            device=str(self.device),
         )
         self.homeostasis = UnifiedHomeostasis(homeostasis_config)
 
@@ -529,6 +528,8 @@ class TrisynapticHippocampus(NeuralRegion):
         # HINDSIGHT EXPERIENCE REPLAY (HER)
         # =====================================================================
         # Goal relabeling for multi-goal learning
+        self.her_integration: Optional[HippocampalHERIntegration]
+
         if config.use_her:
             her_config = HERConfig(
                 strategy=HERStrategy[config.her_strategy.upper()],

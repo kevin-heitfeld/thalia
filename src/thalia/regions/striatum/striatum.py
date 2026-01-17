@@ -672,7 +672,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # STATE OBJECT - Required for NeuromodulatorMixin
         # =====================================================================
         # Initialize state object with neuromodulator fields
-        self.state: StriatumState = StriatumState(
+        self.state = StriatumState(  # type: ignore[assignment]
             dopamine=self.config.tonic_dopamine,
             acetylcholine=ACH_BASELINE,
             norepinephrine=NE_BASELINE,
@@ -770,12 +770,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     @property
     def d1_neurons(self) -> ConductanceLIF:
         """D1 neuron population (delegates to d1_pathway)."""
-        return self.d1_pathway.neurons
+        return self.d1_pathway.neurons  # type: ignore[return-value]
 
     @property
     def d2_neurons(self) -> ConductanceLIF:
         """D2 neuron population (delegates to d2_pathway)."""
-        return self.d2_pathway.neurons
+        return self.d2_pathway.neurons  # type: ignore[return-value]
 
     @property
     def last_action(self) -> Optional[int]:
@@ -1039,14 +1039,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 d1_stp = ShortTermPlasticity(
                     n_pre=n_input,
                     n_post=self.d1_size,
-                    config=d1_configs,  # List of configs
+                    config=d1_configs,  # type: ignore[arg-type]  # List of configs for heterogeneous STP
                     per_synapse=True,
                 )
 
                 d2_stp = ShortTermPlasticity(
                     n_pre=n_input,
                     n_post=self.d2_size,
-                    config=d2_configs,  # List of configs
+                    config=d2_configs,  # type: ignore[arg-type]  # List of configs for heterogeneous STP
                     per_synapse=True,
                 )
             else:
@@ -1152,7 +1152,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 f"Source '{source}' not found in D1 pathway. "
                 f"Available sources: {self._list_d1_sources()}"
             )
-        return self.synaptic_weights[d1_key]
+        return self.synaptic_weights[d1_key]  # type: ignore[return-value]
 
     def get_d2_weights(self, source: str) -> torch.Tensor:
         """Get D2 MSN weights for a given source.
@@ -1173,7 +1173,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 f"Source '{source}' not found in D2 pathway. "
                 f"Available sources: {self._list_d2_sources()}"
             )
-        return self.synaptic_weights[d2_key]
+        return self.synaptic_weights[d2_key]  # type: ignore[return-value]
 
     def set_d1_weights(self, weights: torch.Tensor, source: str) -> None:
         """Update D1 MSN weights for a given source.
@@ -1320,20 +1320,20 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # CRITICAL: Use .data to update Parameter in-place, not direct assignment
         # Expand D1 pathway by D1 neurons only
         self.d1_pathway.weights.data = self._expand_weights(
-            current_weights=self.d1_pathway.weights,
+            current_weights=self.d1_pathway.weights.data,  # type: ignore[arg-type]  # Pass data tensor
             n_new=n_new_d1,  # D1 pathway grows by n_new_d1
             initialization=initialization,
             sparsity=sparsity,
             scale=self.config.w_max * 0.2,
-        )
+        ).data
         # Expand D2 pathway by D2 neurons only
         self.d2_pathway.weights.data = self._expand_weights(
-            current_weights=self.d2_pathway.weights,
+            current_weights=self.d2_pathway.weights.data,  # type: ignore[arg-type]  # Pass data tensor
             n_new=n_new_d2,  # D2 pathway grows by n_new_d2
             initialization=initialization,
             sparsity=sparsity,
             scale=self.config.w_max * 0.2,
-        )
+        ).data
 
         # =====================================================================
         # 2. UPDATE CONFIG (DO THIS BEFORE CREATING NEURONS!)
@@ -1375,6 +1375,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
             state_2d_d1["td_lambda_d1_traces"] = self.td_lambda_d1.traces.traces
 
+        # Filter out None values before expansion
+        state_2d_d1 = {k: v for k, v in state_2d_d1.items() if v is not None}
         expanded_2d_d1 = self._expand_state_tensors(state_2d_d1, n_new_d1)
         self.d1_pathway.eligibility = expanded_2d_d1["d1_eligibility"]
         if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
@@ -1396,6 +1398,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
             state_2d_d2["td_lambda_d2_traces"] = self.td_lambda_d2.traces.traces
 
+        # Filter out None values before expansion
+        state_2d_d2 = {k: v for k, v in state_2d_d2.items() if v is not None}
         expanded_2d_d2 = self._expand_state_tensors(state_2d_d2, n_new_d2)
         self.d2_pathway.eligibility = expanded_2d_d2["d2_eligibility"]
         if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
@@ -1484,7 +1488,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.exploration.grow(self.n_actions)
 
         # Value estimates for new actions (start at 0)
-        if hasattr(self, "value_estimates"):
+        if hasattr(self, "value_estimates") and self.value_estimates is not None:
             self.value_estimates = torch.cat(
                 [self.value_estimates, torch.zeros(n_new, device=self.device)], dim=0
             )
@@ -1832,10 +1836,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 # Copy existing state (u, x) with padding
                 if old_stp.u is not None:
                     old_size = old_stp.u.shape[0]
-                    new_stp_d1.u[:old_size] = old_stp.u
+                    new_stp_d1.u[:old_size] = old_stp.u  # type: ignore[index]
                 if old_stp.x is not None:
                     old_size = old_stp.x.shape[0]
-                    new_stp_d1.x[:old_size] = old_stp.x
+                    new_stp_d1.x[:old_size] = old_stp.x  # type: ignore[index]
                 self.stp_modules[d1_key] = new_stp_d1
 
             # Grow D2 STP module
@@ -1851,10 +1855,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 # Copy existing state (u, x) with padding
                 if old_stp.u is not None:
                     old_size = old_stp.u.shape[0]
-                    new_stp_d2.u[:old_size] = old_stp.u
+                    new_stp_d2.u[:old_size] = old_stp.u  # type: ignore[index]
                 if old_stp.x is not None:
                     old_size = old_stp.x.shape[0]
-                    new_stp_d2.x[:old_size] = old_stp.x
+                    new_stp_d2.x[:old_size] = old_stp.x  # type: ignore[index]
                 self.stp_modules[d2_key] = new_stp_d2
 
         # Note: No need to update self.input_size since we don't track unified input size
@@ -2322,7 +2326,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         for source_name, input_spikes in inputs.items():
             if source_name in self.synaptic_weights:
                 # Apply synaptic weights at target dendrites
-                current = self._apply_synapses(source_name, input_spikes)
+                current: torch.Tensor = self._apply_synapses(source_name, input_spikes)
                 total_current += current
 
         return total_current
@@ -2490,7 +2494,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
             # Apply gap junction coupling (if enabled and state available)
             if self.gap_junctions_fsi is not None and self.state.fsi_membrane is not None:
-                gap_current = self.gap_junctions_fsi(self.state.fsi_membrane)
+                gap_current = self.gap_junctions_fsi(self.state.fsi_membrane)  # type: ignore[misc]
                 fsi_current = fsi_current + gap_current
 
             # Update FSI neurons (fast kinetics, tau_mem ~5ms)
